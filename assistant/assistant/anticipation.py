@@ -1065,6 +1065,21 @@ class AnticipationEngine:
             try:
                 await asyncio.sleep(self.check_interval)
 
+                # Quiet Hours: Pattern-Detection komplett ueberspringen.
+                # Spart CPU und vermeidet Log-Spam (Suggestions werden eh unterdrueckt).
+                from .config import yaml_config
+                from datetime import datetime
+                quiet_cfg = yaml_config.get("ambient_presence", {})
+                quiet_start = int(quiet_cfg.get("quiet_start", 22))
+                quiet_end = int(quiet_cfg.get("quiet_end", 7))
+                hour = datetime.now().hour
+                if quiet_start > quiet_end:
+                    is_quiet = hour >= quiet_start or hour < quiet_end
+                else:
+                    is_quiet = quiet_start <= hour < quiet_end
+                if is_quiet:
+                    continue
+
                 suggestions = await self.get_suggestions()
                 for suggestion in suggestions:
                     if self._notify_callback:

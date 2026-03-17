@@ -710,9 +710,17 @@ class InsightEngine:
             if increase_pct < self.energy_anomaly_pct:
                 return None
 
+            # Dynamische Urgency: >500% = high, >200% = medium, sonst low
+            if increase_pct > 500:
+                _urgency = "high"
+            elif increase_pct > 200:
+                _urgency = "medium"
+            else:
+                _urgency = "low"
+
             return {
                 "check": "energy_anomaly",
-                "urgency": "low",
+                "urgency": _urgency,
                 "message": (
                     f"{await self._get_title_for_home()}, der Stromverbrauch heute liegt {increase_pct:.0f}% über "
                     f"dem Durchschnitt. "
@@ -828,9 +836,17 @@ class InsightEngine:
             elif any(cl.get("state") == "off" for cl in data["climate"]):
                 cause_hint = " Heizung ist aus."
 
+            # Dynamische Urgency: <16°C oder >5°C Drop = high, <18°C = medium
+            if current_avg < 16 or drop > 5:
+                _urgency = "high"
+            elif current_avg < 18:
+                _urgency = "medium"
+            else:
+                _urgency = "low"
+
             return {
                 "check": "temp_drop",
-                "urgency": "low",
+                "urgency": _urgency,
                 "message": (
                     f"{await self._get_title_for_home()}, die Raumtemperatur fällt ungewöhnlich — "
                     f"{drop:.1f} Grad in 2 Stunden, jetzt bei {current_avg:.1f}°C.{cause_hint}"

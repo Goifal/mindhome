@@ -200,7 +200,7 @@ TTS_PLAYBACK_TIMEOUT: Final[int] = 15
 # Background Task Intervals (Sekunden)
 # ============================================================
 
-ENTITY_CATALOG_REFRESH_INTERVAL: Final[int] = 270  # 4.5 Min
+ENTITY_CATALOG_REFRESH_INTERVAL: Final[int] = 1800  # 30 Min (war 270/4.5 Min — unnoetig haeufig fuer statische Entity-Listen)
 ERROR_BACKOFF_SHORT: Final[int] = 60
 ERROR_BACKOFF_LONG: Final[int] = 3600  # 1h
 

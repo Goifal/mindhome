@@ -2987,6 +2987,9 @@ def _get_reloaded_modules(changed_settings: dict) -> list[str]:
     return reloaded
 
 
+_last_reload_ts: float = 0.0
+
+
 def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
     """F-038: Benachrichtigt alle Module deren Config sich geaendert hat.
 
@@ -2995,6 +2998,14 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
     Module die bei jedem Zugriff yaml_config lesen profitieren automatisch.
     Module die im __init__ cachen werden hier explizit aktualisiert.
     """
+    global _last_reload_ts
+    import time as _time
+    now = _time.monotonic()
+    if now - _last_reload_ts < 5.0:
+        logger.debug("_reload_all_modules: Debounce — uebersprungen (%.1fs seit letztem Reload)", now - _last_reload_ts)
+        return []
+    _last_reload_ts = now
+
     failed_modules: list[str] = []
 
     def _try_reload(name: str, fn):

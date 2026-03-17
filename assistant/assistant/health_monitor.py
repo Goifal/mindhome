@@ -287,11 +287,27 @@ class HealthMonitor:
                 {"sensor": name, "value": percent, "unit": "%"},
             )
         elif percent > self.humidity_high:
+            # Eskalation: Wenn humidity_high fuer denselben Sensor wiederholt
+            # auftritt (Cooldown laeuft ab und Alert kommt erneut), wird Urgency
+            # auf "high" erhoeht damit es auch in Quiet Hours durchkommt.
+            escalation_key = f"{entity_id}:humidity_high:count"
+            count = self._alert_cooldowns.get(escalation_key, 0)
+            if isinstance(count, int):
+                count += 1
+            else:
+                count = 1
+            self._alert_cooldowns[escalation_key] = count
+            urgency = "high" if count >= 3 else "medium"
             return self._make_alert(
-                entity_id, "humidity_high", "medium",
-                f"{name}: Luft zu feucht ({int(percent)}%). Lueften empfohlen.",
+                entity_id, "humidity_high", urgency,
+                f"{name}: Luft zu feucht ({int(percent)}%). Lueften empfohlen."
+                + (f" (seit {count}x persistent!)" if count >= 3 else ""),
                 {"sensor": name, "value": percent, "unit": "%"},
             )
+        else:
+            # Wert wieder im Normalbereich → Eskalations-Zaehler zuruecksetzen
+            escalation_key = f"{entity_id}:humidity_high:count"
+            self._alert_cooldowns.pop(escalation_key, None)
         return None
 
     def _check_humidor(self, entity_id: str, name: str, percent: float) -> Optional[dict]:

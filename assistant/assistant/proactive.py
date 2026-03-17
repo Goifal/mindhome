@@ -1049,6 +1049,11 @@ class ProactiveManager:
         Matching. Meldet nur HIGH/MEDIUM-Konflikte (CRITICAL wie Rauch/Wasser
         werden bereits direkt in _handle_state_change behandelt).
         """
+        # Quiet Hours: Nicht-kritische Dependency-Checks komplett ueberspringen.
+        # Spart CPU und verhindert Log-Spam (z.B. Bettsensor alle 30 Min).
+        if self._is_quiet_hours():
+            return
+
         from .state_change_log import StateChangeLog, DEVICE_DEPENDENCIES
 
         role = StateChangeLog._get_entity_role(entity_id)
@@ -1057,10 +1062,12 @@ class ProactiveManager:
 
         # Nur Regeln pruefen die durch diese Rolle getriggert werden
         # severity=info Regeln sind nur fuer LLM-Kontext, nicht fuer Notifications
+        eid_lower = entity_id.lower()
         matching_deps = [
             d for d in DEVICE_DEPENDENCIES
             if d["role"] == role and d["state"] == new_val
             and d.get("severity", "info") in ("critical", "high")
+            and not any(p in eid_lower for p in d.get("exclude_entity_patterns", []))
         ]
         if not matching_deps:
             return
@@ -4195,7 +4202,7 @@ class ProactiveManager:
             override_key = f"mha:cover:manual_override:{entity_id}"
             override = await redis_client.get(override_key)
             if override:
-                logger.debug("Cover-Auto: %s übersprungen — manueller Override aktiv", entity_id)
+                logger.info("Cover-Auto: %s uebersprungen — manueller Override aktiv", entity_id)
                 return False
 
         # Dedup per Redis (30 Min Cooldown) — Power-Close überspringt Dedup
@@ -4238,8 +4245,8 @@ class ProactiveManager:
                             entity_id, int(current_pos),
                         )
                         if abs(jarvis_pos - position) <= 5:
-                            logger.debug("Cover-Auto: %s bereits bei %d%% (Ziel %d%%) — übersprungen",
-                                         entity_id, jarvis_pos, position)
+                            logger.info("Cover-Auto: %s bereits bei %d%% (Ziel %d%%) — uebersprungen",
+                                        entity_id, jarvis_pos, position)
                             return False
                     except (ValueError, TypeError):
                         pass
