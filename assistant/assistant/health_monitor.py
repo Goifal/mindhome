@@ -57,6 +57,14 @@ class HealthMonitor:
         self.hydration_start = cfg.get("hydration_start_hour", DEFAULTS["hydration_start_hour"])
         self.hydration_end = cfg.get("hydration_end_hour", DEFAULTS["hydration_end_hour"])
 
+        # Humidity-Sensor Allowlist: Nur diese Sensoren pruefen.
+        # Wenn leer/nicht gesetzt → alle Humidity-Sensoren (bisheriges Verhalten).
+        # Beispiel: ["sensor.feuchtigkeit_wohnzimmer", "sensor.feuchtigkeit_schlafzimmer"]
+        raw_sensors = cfg.get("humidity_sensors") or []
+        if isinstance(raw_sensors, str):
+            raw_sensors = [s.strip() for s in raw_sensors.split(",") if s.strip()]
+        self._humidity_sensors: set[str] = {s.lower() for s in raw_sensors}
+
         # Cooldowns (entity_id -> letzte Warnung)
         self._alert_cooldowns: dict[str, datetime] = {}
         self._alert_cooldown_minutes = cfg.get("alert_cooldown_minutes", 60)
@@ -249,6 +257,9 @@ class HealthMonitor:
                         alert = self._check_humidor(entity_id, friendly_name, value)
                     else:
                         alert = None
+                elif self._humidity_sensors and entity_id.lower() not in self._humidity_sensors:
+                    # Allowlist aktiv → nur konfigurierte Sensoren pruefen
+                    alert = None
                 else:
                     alert = self._check_humidity(entity_id, friendly_name, value)
                 if alert:

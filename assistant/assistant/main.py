@@ -3158,6 +3158,11 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             if isinstance(user_excludes, str):
                 user_excludes = [p.strip() for p in user_excludes.splitlines() if p.strip()]
             hm._exclude_patterns = [p.lower() for p in (hm._default_excludes + user_excludes)]
+            # Humidity-Sensor Allowlist neu laden
+            raw_sensors = hm_cfg.get("humidity_sensors") or []
+            if isinstance(raw_sensors, str):
+                raw_sensors = [s.strip() for s in raw_sensors.split(",") if s.strip()]
+            hm._humidity_sensors = {s.lower() for s in raw_sensors}
             # Humidor-Config neu laden
             humidor_cfg = yaml_cfg.get("humidor", {})
             hm.humidor_enabled = bool(humidor_cfg.get("enabled", False))
