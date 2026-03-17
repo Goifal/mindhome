@@ -117,7 +117,12 @@ class AutonomyManager:
 
         # Konfigurierbare Action-Permissions und Evolution-Criteria
         auto_cfg = yaml_config.get("autonomy", {})
-        self._action_permissions = {k: int(v) for k, v in (auto_cfg.get("action_permissions") or ACTION_PERMISSIONS).items()}
+        # Defaults als Basis, Config-Werte ueberschreiben einzelne Keys
+        _merged_perms = dict(ACTION_PERMISSIONS)
+        _cfg_perms = auto_cfg.get("action_permissions")
+        if _cfg_perms:
+            _merged_perms.update({k: int(v) for k, v in _cfg_perms.items()})
+        self._action_permissions = _merged_perms
         raw_evo = auto_cfg.get("evolution_criteria")
         if raw_evo:
             self._evolution_criteria = {int(k): v for k, v in raw_evo.items()}

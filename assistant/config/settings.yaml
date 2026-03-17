@@ -413,6 +413,11 @@ autonomy:
     adjust_temperature_small: 3
     adjust_light_auto: 3
     pause_reminder: 3
+    set_light: 3
+    set_cover: 3
+    set_climate: 3
+    play_media: 3
+    get_active_intents: 2
     modify_routine: 4
     suggest_scene: 4
     learn_preferences: 4
