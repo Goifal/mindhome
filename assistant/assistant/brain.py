@@ -92,6 +92,8 @@ from .tts_enhancer import TTSEnhancer
 from .brain_callbacks import BrainCallbacksMixin
 from .brain_humanizers import BrainHumanizersMixin
 from .pre_classifier import PreClassifier
+from .response_cache import ResponseCache
+from .latency_tracker import latency_tracker
 from .circuit_breaker import registry as cb_registry, ollama_breaker, ha_breaker
 from .constants import REDIS_SECURITY_CONFIRM_KEY, REDIS_SECURITY_CONFIRM_TTL, ENTITY_CATALOG_REFRESH_INTERVAL, ERROR_BACKOFF_LONG, ERROR_BACKOFF_SHORT
 from .task_registry import TaskRegistry
@@ -379,6 +381,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.self_report = SelfReport()
         self.adaptive_thresholds = AdaptiveThresholds()
 
+        # Latenz-Optimierung: Semantic Response Cache + Latency Tracker
+        self.response_cache = ResponseCache()
+        self.latency_tracker = latency_tracker
+
         # Letzte fehlgeschlagene Anfrage für Retry bei "Ja"
         self._last_failed_query: Optional[str] = None
 
@@ -553,6 +559,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Autonomy Evolution: Redis für Interaktions-Tracking
         self.autonomy.set_redis(self.memory.redis)
+
+        # Response Cache + Latency Tracker: Redis-Verbindung setzen
+        self.response_cache.set_redis(self.memory.redis)
+        _rcache_cfg = cfg.yaml_config.get("response_cache", {})
+        self.response_cache.configure(
+            enabled=_rcache_cfg.get("enabled", True),
+            ttl_overrides=_rcache_cfg.get("ttl", {}),
+        )
+        self.latency_tracker.set_redis(self.memory.redis)
 
         # Mood Detector initialisieren
         await self.mood.initialize(redis_client=self.memory.redis)
@@ -1052,6 +1067,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             d["_emitted"] = True
         if extra:
             d.update(extra)
+
+        # Latency Tracking: Trace abschliessen (wenn aktiv)
+        _ltrace = getattr(self, "_active_ltrace", None)
+        if _ltrace:
+            durations = self.latency_tracker.record(_ltrace)
+            d["_latency_ms"] = durations
+            self._active_ltrace = None
+            # Async flush in Background (fire-and-forget)
+            self._task_registry.create_task(
+                self.latency_tracker.flush_to_redis(),
+                name="latency_flush",
+            )
         return d
 
     async def _llm_with_cascade(
@@ -1075,6 +1102,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 if stream_callback:
                     collected: list[str] = []
                     stream_error = False
+                    _first_token_marked = False
                     async for token in self.ollama.stream_chat(
                         messages=messages, model=current,
                         max_tokens=max_tokens, think=think,
@@ -1083,6 +1111,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         if token in ("[STREAM_TIMEOUT]", "[STREAM_ERROR]"):
                             stream_error = True
                             continue
+                        # Latency: Erstes Token markieren
+                        if not _first_token_marked:
+                            _lt = getattr(self, "_active_ltrace", None)
+                            if _lt:
+                                _lt.mark("llm_first_token")
+                            _first_token_marked = True
                         collected.append(token)
                         try:
                             await stream_callback(token)
@@ -1090,6 +1124,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             logger.warning("stream_callback Fehler: %s", _cb_err)
                             stream_error = True
                             break
+                    # Latency: LLM fertig
+                    _lt = getattr(self, "_active_ltrace", None)
+                    if _lt:
+                        _lt.mark("llm_complete")
                     if not stream_error and collected:
                         return {
                             "text": "".join(collected),
@@ -1106,6 +1144,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         ),
                         timeout=timeout,
                     )
+                    # Latency: Non-Streaming — first_token ≈ complete
+                    _lt = getattr(self, "_active_ltrace", None)
+                    if _lt:
+                        _lt.mark("llm_first_token")
+                        _lt.mark("llm_complete")
                     if "error" not in response:
                         msg = response.get("message", {})
                         return {
@@ -1351,6 +1394,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self._request_from_pipeline = (
             voice_metadata.get("source") == "ha_assist_pipeline" if voice_metadata else False
         )
+
+        # Latency Tracking: Trace starten
+        _ltrace = self.latency_tracker.begin()
+        self._active_ltrace = _ltrace
 
         # STT Text-Normalisierung: Typische Whisper-Fehler korrigieren
         text = self._normalize_stt_text(text)
@@ -2729,6 +2776,25 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # 0. Pre-Classification: Bestimmt welche Subsysteme gebraucht werden
         profile = await self.pre_classifier.classify_async(text)
         logger.info("Pre-Classification: %s", profile.category)
+        _ltrace.mark("pre_classify")
+
+        # 0a. Response Cache: Gecachte Antwort fuer wiederkehrende Status-Queries
+        _cached = await self.response_cache.get(text, profile.category, room=room)
+        if _cached and not stream_callback:
+            _ltrace.mark("context_gather")
+            _ltrace.mark("llm_first_token")
+            _ltrace.mark("llm_complete")
+            _durations = self.latency_tracker.record(_ltrace)
+            logger.info("Response Cache HIT — %dms total (ueberspringe LLM)", _durations.get("total", 0))
+            _cached_response = _cached["response"]
+            _cached_tts = _cached.get("tts")
+            self._remember_exchange(text, _cached_response)
+            if _cached_tts:
+                await self._speak_and_emit(_cached_response, room=room, tts_data=_cached_tts)
+            return self._result(
+                _cached_response, model=_cached.get("model", "cache"),
+                room=room, tts=_cached_tts, emitted=bool(_cached_tts),
+            )
 
         # 0b. Intent vorab bestimmen (rein pattern-basiert, kein I/O)
         intent_type = self._classify_intent(text)
@@ -2795,8 +2861,20 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # MEGA-PARALLEL GATHER: Context Build, alle Subsysteme, Running Gag,
         # Continuity und What-If laufen gleichzeitig statt nacheinander.
         # Spart 500ms-1.5s Latenz gegenueber der seriellen Ausfuehrung.
+        #
+        # Inkrementeller Modus: Bei einfachen Device-Commands/Queries wird
+        # der mega-gather mit kurzerem Timeout ausgefuehrt. Tasks die nicht
+        # rechtzeitig fertig werden, werden gedroppt — der LLM bekommt
+        # den verfuegbaren Kontext und startet frueher.
         # ----------------------------------------------------------------
-        ctx_timeout = float((cfg.yaml_config.get("context") or {}).get("api_timeout", 10))
+        _base_ctx_timeout = float((cfg.yaml_config.get("context") or {}).get("api_timeout", 10))
+        _incremental_cfg = cfg.yaml_config.get("incremental_llm", {})
+        _incremental_enabled = _incremental_cfg.get("enabled", True)
+        _fast_gather_timeout = float(_incremental_cfg.get("fast_gather_timeout", 3.0))
+        _is_fast_profile = profile.category in ("device_command", "device_query")
+        ctx_timeout = _fast_gather_timeout if (_incremental_enabled and _is_fast_profile) else _base_ctx_timeout
+        if _is_fast_profile and _incremental_enabled:
+            logger.info("Incremental LLM: Fast-Gather (%.1fs timeout) fuer %s", ctx_timeout, profile.category)
 
         async def _safe_security_score():
             try:
@@ -2890,7 +2968,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Individuelle Timeouts pro Task: Wenn ein einzelner Task haengt,
         # gehen die anderen Ergebnisse nicht verloren (statt alles-oder-nichts).
-        async def _with_timeout(key: str, coro, timeout: float = 30):
+        # Inkrementeller Modus: Bei Fast-Profile kuerzerer Timeout fuer alle Tasks.
+        _per_task_timeout = _fast_gather_timeout if (_incremental_enabled and _is_fast_profile) else 30
+
+        async def _with_timeout(key: str, coro, timeout: float = _per_task_timeout):
             try:
                 return await asyncio.wait_for(coro, timeout=timeout)
             except asyncio.TimeoutError:
@@ -2904,6 +2985,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             return_exceptions=True,
         )
         _result_map = dict(zip(_mega_keys, _mega_results))
+        _ltrace.mark("context_gather")
         # Exception-Handling erfolgt individuell pro Key (context, gag, etc.)
         # und via _safe_get() fuer Subsysteme — kein generischer Filter hier,
         # damit spezifische Fehlermeldungen (z.B. "Context Build Timeout") erhalten bleiben.
@@ -5694,6 +5776,17 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 response_text = self.personality.get_varied_confirmation(success=True)
 
         result = self._result(response_text, actions=executed_actions, model=model, room=context.get("room"), tts=tts_data)
+
+        # Response Cache: Erfolgreiche Antworten fuer Status-Queries cachen
+        if response_text and profile.category in ("device_query",):
+            self._task_registry.create_task(
+                self.response_cache.put(
+                    text, profile.category, response_text, model,
+                    room=room, tts=tts_data,
+                ),
+                name="response_cache_put",
+            )
+
         # WebSocket + Sprachausgabe ueber HA-Speaker
         # Bei Streaming sendet main.py via emit_stream_end — hier KEIN emit_speaking
         # (verhindert doppelte Chat-Nachrichten), aber TTS-Ausgabe trotzdem starten
