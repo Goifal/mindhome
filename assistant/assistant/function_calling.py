@@ -3977,23 +3977,28 @@ class FunctionExecutor:
 
         service = "turn_on" if state == "on" else "turn_off"
         count = 0
-        for s in states:
-            eid = s.get("entity_id", "")
-            if eid.startswith("light.") and (s.get("state") != state or (state == "on" and "brightness" in args)):
-                service_data = {"entity_id": eid}
-                if state == "on":
-                    if "brightness" in args:
-                        try:
-                            bri = str(args.get("brightness", "")).replace("%", "").strip()
-                            service_data["brightness_pct"] = max(1, min(100, int(float(bri))))
-                        except (ValueError, TypeError):
-                            pass
-                    else:
-                        # Adaptive Helligkeit wenn keine explizite Angabe
-                        room_name = eid.split(".", 1)[1] if "." in eid else ""
-                        service_data["brightness_pct"] = self.get_adaptive_brightness(room_name, eid)
-                await self.ha.call_service("light", service, service_data)
-                count += 1
+        # Bulk-Op: Dependency-Check ueberspringen — wird bereits vom Executor geprueft
+        self.ha._skip_dep_check = True
+        try:
+            for s in states:
+                eid = s.get("entity_id", "")
+                if eid.startswith("light.") and (s.get("state") != state or (state == "on" and "brightness" in args)):
+                    service_data = {"entity_id": eid}
+                    if state == "on":
+                        if "brightness" in args:
+                            try:
+                                bri = str(args.get("brightness", "")).replace("%", "").strip()
+                                service_data["brightness_pct"] = max(1, min(100, int(float(bri))))
+                            except (ValueError, TypeError):
+                                pass
+                        else:
+                            # Adaptive Helligkeit wenn keine explizite Angabe
+                            room_name = eid.split(".", 1)[1] if "." in eid else ""
+                            service_data["brightness_pct"] = self.get_adaptive_brightness(room_name, eid)
+                    await self.ha.call_service("light", service, service_data)
+                    count += 1
+        finally:
+            self.ha._skip_dep_check = False
 
         return {"success": True, "message": f"Alle Lichter {state} ({count} geschaltet)"}
 
@@ -4802,21 +4807,26 @@ class FunctionExecutor:
 
         count = 0
         skipped = []
-        for s in states:
-            eid = s.get("entity_id", "")
-            if not eid.startswith("cover."):
-                continue
-            if not await self._is_safe_cover(eid, s):
-                skipped.append(s.get("attributes", {}).get("friendly_name", eid))
-                continue
-            # Typ-Filter
-            if cover_type == "rollladen" and self._is_markise(eid, s):
-                continue
-            if cover_type == "markise" and not self._is_markise(eid, s):
-                continue
-            ha_pos = self._translate_cover_position(eid, position)
-            await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
-            count += 1
+        # Bulk-Op: Dependency-Check ueberspringen — wird bereits vom Executor geprueft
+        self.ha._skip_dep_check = True
+        try:
+            for s in states:
+                eid = s.get("entity_id", "")
+                if not eid.startswith("cover."):
+                    continue
+                if not await self._is_safe_cover(eid, s):
+                    skipped.append(s.get("attributes", {}).get("friendly_name", eid))
+                    continue
+                # Typ-Filter
+                if cover_type == "rollladen" and self._is_markise(eid, s):
+                    continue
+                if cover_type == "markise" and not self._is_markise(eid, s):
+                    continue
+                ha_pos = self._translate_cover_position(eid, position)
+                await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
+                count += 1
+        finally:
+            self.ha._skip_dep_check = False
 
         msg = f"Alle Rollläden auf {position}% ({count} geschaltet)"
         if skipped:
@@ -4829,14 +4839,18 @@ class FunctionExecutor:
         if not states:
             return {"success": False, "message": "Die Geräte reagieren gerade nicht. Einen Moment."}
         count = 0
-        for s in states:
-            eid = s.get("entity_id", "")
-            if not eid.startswith("cover."):
-                continue
-            if not await self._is_safe_cover(eid, s):
-                continue
-            await self.ha.call_service("cover", service, {"entity_id": eid})
-            count += 1
+        self.ha._skip_dep_check = True
+        try:
+            for s in states:
+                eid = s.get("entity_id", "")
+                if not eid.startswith("cover."):
+                    continue
+                if not await self._is_safe_cover(eid, s):
+                    continue
+                await self.ha.call_service("cover", service, {"entity_id": eid})
+                count += 1
+        finally:
+            self.ha._skip_dep_check = False
         return {"success": True, "message": f"{count} Rollläden: {service}"}
 
     # ── Cover-Automatik Konfiguration ──────────────────────

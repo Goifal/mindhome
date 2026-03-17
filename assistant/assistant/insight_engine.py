@@ -470,12 +470,23 @@ class InsightEngine:
             active = [c for c in conflicts if c.get("affected_active")]
             if not active:
                 return None
-            hints = [c.get("hint", "") for c in active[:3]]
+            # Deduplizieren: gleiche hint nur einmal zaehlen
+            seen_hints: set[str] = set()
+            unique_active: list[dict] = []
+            for c in active:
+                h = c.get("hint", "")
+                if h not in seen_hints:
+                    seen_hints.add(h)
+                    unique_active.append(c)
+            if not unique_active:
+                return None
+            hints = [c.get("hint", "") for c in unique_active[:3]]
+            count = len(unique_active)
             return {
                 "check": "device_dependency_conflicts",
-                "message": f"{len(active)} Geraete-Konflikt(e): {'; '.join(hints)}",
-                "urgency": "medium" if len(active) < 3 else "high",
-                "data": {"conflicts": active[:5], "count": len(active)},
+                "message": f"{count} Geraete-Konflikt(e): {'; '.join(hints)}",
+                "urgency": "medium" if count < 3 else "high",
+                "data": {"conflicts": unique_active[:5], "count": count},
             }
         except Exception as e:
             logger.debug("Device-Dependency-Insight Fehler: %s", e)
