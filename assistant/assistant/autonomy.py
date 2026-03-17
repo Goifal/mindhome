@@ -117,7 +117,12 @@ class AutonomyManager:
 
         # Konfigurierbare Action-Permissions und Evolution-Criteria
         auto_cfg = yaml_config.get("autonomy", {})
-        self._action_permissions = {k: int(v) for k, v in (auto_cfg.get("action_permissions") or ACTION_PERMISSIONS).items()}
+        # Defaults als Basis, Config-Werte ueberschreiben einzelne Keys
+        _merged_perms = dict(ACTION_PERMISSIONS)
+        _cfg_perms = auto_cfg.get("action_permissions")
+        if _cfg_perms:
+            _merged_perms.update({k: int(v) for k, v in _cfg_perms.items()})
+        self._action_permissions = _merged_perms
         raw_evo = auto_cfg.get("evolution_criteria")
         if raw_evo:
             self._evolution_criteria = {int(k): v for k, v in raw_evo.items()}
@@ -346,16 +351,17 @@ class AutonomyManager:
 
         Args:
             person: Name der Person (case-insensitive).
-                    Leerer String oder "global" = Owner-Kontext
-                    (Anticipation-Patterns ohne erkannte Person laufen
-                    im Kontext des Hauptnutzers, nicht als Gast).
+                    Leerer String = Gast (default_trust).
+                    "global" = Owner-Kontext (fuer interne Aufrufe).
 
         Returns:
             Trust-Level: 0 (Gast), 1 (Mitbewohner), 2 (Owner)
         """
-        if not person or person.lower() == "global":
-            # Kein identifizierter Nutzer oder globales Pattern:
-            # Im Einpersonen-Haushalt ist das der Owner, kein Gast.
+        if not person:
+            return self._default_trust
+
+        if person.lower() == "global":
+            # Expliziter globaler Kontext (interne Aufrufe):
             return 2
 
         person_lower = person.lower()

@@ -944,6 +944,11 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
 .chip-opt { border-color:rgba(0,212,255,0.1); }
 .chip-opt:hover { border-color:rgba(0,212,255,0.25); background:rgba(0,212,255,0.04); }
 .chip-opt.selected { background:rgba(0,212,255,0.08); border-color:rgba(0,212,255,0.4); }
+
+/* Category group header (used in Intelligence tab etc.) */
+.cat-header { margin:28px 0 10px; padding:12px 18px; background:linear-gradient(135deg, rgba(12,21,32,0.95), rgba(8,16,24,0.98)); border-radius:var(--radius-md); border:1px solid rgba(0,212,255,0.08); border-left:3px solid var(--accent); font-weight:600; font-size:13px; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-primary); position:relative; }
+.cat-header::before { content:''; position:absolute; top:0; left:3px; right:0; height:1px; background:linear-gradient(90deg, rgba(0,212,255,0.3), transparent 60%); border-radius:0 var(--radius-md) 0 0; }
+.cat-header::after { content:''; position:absolute; bottom:-1px; right:-1px; width:12px; height:12px; border-bottom:1px solid rgba(0,212,255,0.3); border-right:1px solid rgba(0,212,255,0.3); pointer-events:none; }
 </style>
 </head>
 <body>

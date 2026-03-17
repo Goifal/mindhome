@@ -561,19 +561,36 @@ class InsightEngine:
 
         # Anwesende
         if data.get("persons_home"):
-            summary_parts.append(f"Anwesend: {', '.join(p.get('name', '?') for p in data['persons_home'][:5])}")
+            _names = []
+            for p in data["persons_home"][:5]:
+                if isinstance(p, dict):
+                    _names.append(p.get("name", "?"))
+                elif isinstance(p, str):
+                    _names.append(p)
+            if _names:
+                summary_parts.append(f"Anwesend: {', '.join(_names)}")
         if data.get("persons_away"):
             summary_parts.append(f"Abwesend: {len(data['persons_away'])} Personen")
 
         # Alarm
         if data.get("alarm_state"):
-            summary_parts.append(f"Alarm: {data['alarm_state'].get('state', '?')}")
+            _alarm = data["alarm_state"]
+            if isinstance(_alarm, dict):
+                summary_parts.append(f"Alarm: {_alarm.get('state', '?')}")
+            elif isinstance(_alarm, str):
+                summary_parts.append(f"Alarm: {_alarm}")
 
         # Kalender
         if data.get("calendar_events"):
             events = data["calendar_events"][:3]
-            cal_lines = [f"  {e.get('summary', '?')} ({e.get('start', '?')})" for e in events]
-            summary_parts.append("Naechste Termine:\n" + "\n".join(cal_lines))
+            cal_lines = []
+            for e in events:
+                if isinstance(e, dict):
+                    cal_lines.append(f"  {e.get('summary', '?')} ({e.get('start', '?')})")
+                elif isinstance(e, str):
+                    cal_lines.append(f"  {e}")
+            if cal_lines:
+                summary_parts.append("Naechste Termine:\n" + "\n".join(cal_lines))
 
         # Lichter an
         if data.get("lights_on"):
@@ -583,11 +600,14 @@ class InsightEngine:
         if data.get("climate"):
             climate_lines = []
             for c in data["climate"][:4]:
-                eid = c.get("entity_id", "?")
-                cur = c.get("attributes", {}).get("current_temperature", "?")
-                target = c.get("attributes", {}).get("temperature", "?")
-                climate_lines.append(f"  {eid}: {cur}°C (Ziel: {target}°C)")
-            summary_parts.append("Klima:\n" + "\n".join(climate_lines))
+                if isinstance(c, dict):
+                    eid = c.get("entity_id", "?")
+                    attrs = c.get("attributes", {}) if isinstance(c.get("attributes"), dict) else {}
+                    cur = attrs.get("current_temperature", "?")
+                    target = attrs.get("temperature", "?")
+                    climate_lines.append(f"  {eid}: {cur}°C (Ziel: {target}°C)")
+            if climate_lines:
+                summary_parts.append("Klima:\n" + "\n".join(climate_lines))
 
         if len(summary_parts) < 3:
             return None  # Zu wenig Daten fuer sinnvolle Analyse
