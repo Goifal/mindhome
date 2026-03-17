@@ -11013,7 +11013,7 @@ Regeln:
         if mode == "auto" and _butler_enabled and self.autonomy.level >= _butler_min_autonomy:
             # F-027: Kombinierte Autonomie + Trust Pruefung via can_execute()
             exec_check = self.autonomy.can_execute(
-                person=person or "",
+                person=person or settings.user_name,
                 action_type=action,
                 function_name=action,
                 domain=suggestion.get("domain", ""),

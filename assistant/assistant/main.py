@@ -7437,6 +7437,11 @@ def _require_hardware_owner(request: Request) -> None:
     Erwartet den Personennamen im X-Person Header.
     """
     person = request.headers.get("x-person", "").strip()
+    if not person:
+        raise HTTPException(
+            status_code=401,
+            detail="X-Person Header fehlt — Authentifizierung erforderlich",
+        )
     trust = brain.autonomy.get_trust_level(person)
     if trust < 2:
         raise HTTPException(

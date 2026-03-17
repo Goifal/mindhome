@@ -351,16 +351,17 @@ class AutonomyManager:
 
         Args:
             person: Name der Person (case-insensitive).
-                    Leerer String oder "global" = Owner-Kontext
-                    (Anticipation-Patterns ohne erkannte Person laufen
-                    im Kontext des Hauptnutzers, nicht als Gast).
+                    Leerer String = Gast (default_trust).
+                    "global" = Owner-Kontext (fuer interne Aufrufe).
 
         Returns:
             Trust-Level: 0 (Gast), 1 (Mitbewohner), 2 (Owner)
         """
-        if not person or person.lower() == "global":
-            # Kein identifizierter Nutzer oder globales Pattern:
-            # Im Einpersonen-Haushalt ist das der Owner, kein Gast.
+        if not person:
+            return self._default_trust
+
+        if person.lower() == "global":
+            # Expliziter globaler Kontext (interne Aufrufe):
             return 2
 
         person_lower = person.lower()
