@@ -11,6 +11,7 @@ Features:
 Ergaenzt die bestehende anticipation.py mit manuellen Aktions-Mustern.
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -58,6 +59,7 @@ class LearningObserver:
 
     def __init__(self):
         self.redis: Optional[aioredis.Redis] = None
+        self._ollama = None
         self._notify_callback = None
 
         learn_cfg = yaml_config.get("learning", {})
@@ -73,6 +75,11 @@ class LearningObserver:
     def set_notify_callback(self, callback):
         """Setzt den Callback fuer Vorschlaege."""
         self._notify_callback = callback
+
+    def set_ollama(self, ollama_client):
+        """Setzt den OllamaClient fuer LLM-basierte Berichte."""
+        self._ollama = ollama_client
+        logger.info("LearningObserver: LLM-Rewrite aktiviert")
 
     async def mark_jarvis_action(self, entity_id: str):
         """Markiert eine Aktion als von Jarvis ausgefuehrt (nicht manuell)."""
@@ -543,6 +550,46 @@ class LearningObserver:
             lines.append(f"\n{suggestions} Vorschläge gemacht: {accepted} akzeptiert, {declined} abgelehnt.")
 
         return "\n".join(lines)
+
+    async def format_learning_report_llm(self, report: dict) -> str:
+        """LLM-basierte Version von format_learning_report.
+
+        Generiert einen natuerlichsprachlichen Bericht im JARVIS-Stil
+        statt einer Aufzaehlung. Fallback auf Template-Version bei Fehler.
+        """
+        # Template-Fallback generieren
+        fallback = self.format_learning_report(report)
+        if not self._ollama:
+            return fallback
+        cfg = yaml_config.get("learning", {})
+        if not cfg.get("llm_report", True):
+            return fallback
+        try:
+            from .config import settings
+            from .ollama_client import strip_think_tags
+            prompt = (
+                "Du bist JARVIS, ein britischer Smart-Home-Butler. "
+                "Fasse diesen Lern-Bericht in 3-5 Saetzen zusammen. "
+                "Ich-Form, trocken-humorvoll, konkret mit Zahlen. "
+                "Keine Aufzaehlung — fliessender Text.\n\n"
+                f"Rohdaten:\n{fallback}\n\n"
+                "Bericht:"
+            )
+            response = await asyncio.wait_for(
+                self._ollama.generate(
+                    prompt=prompt,
+                    model=settings.model_fast,
+                    temperature=0.5,
+                    max_tokens=500,
+                ),
+                timeout=4.0,
+            )
+            text = strip_think_tags(response or "").strip()
+            if text and len(text) > 20:
+                return text
+        except Exception as e:
+            logger.debug("LearningObserver LLM-Report fehlgeschlagen: %s", e)
+        return fallback
 
     # ------------------------------------------------------------------
     # B8: Dynamic Skill Acquisition — Abstrakte Konzepte

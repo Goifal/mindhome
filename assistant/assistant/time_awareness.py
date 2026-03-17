@@ -40,6 +40,7 @@ class TimeAwareness:
     def __init__(self, ha_client: HomeAssistantClient):
         self.ha = ha_client
         self.redis: Optional[redis.Redis] = None
+        self._ollama = None
         self._task: Optional[asyncio.Task] = None
         self._running = False
 
@@ -78,6 +79,11 @@ class TimeAwareness:
     def set_notify_callback(self, callback):
         """Setzt die Callback-Funktion fuer proaktive Meldungen."""
         self._notify_callback = callback
+
+    def set_ollama(self, ollama_client):
+        """Setzt den OllamaClient fuer LLM-basierte Warnungstexte."""
+        self._ollama = ollama_client
+        logger.info("TimeAwareness: LLM-Rewrite aktiviert")
 
     async def start(self):
         """Startet den periodischen Check-Loop."""
@@ -575,8 +581,52 @@ class TimeAwareness:
         await self.redis.delete(KEY_DEVICE_START + device_key)
         await self.redis.delete(KEY_DEVICE_NOTIFIED + device_key)
 
+    async def _llm_rewrite_alert(self, message: str, alert_type: str) -> str:
+        """Schreibt eine Warnung via LLM natuerlicher und variabler um.
+
+        Fallback auf Original bei Fehler oder wenn LLM deaktiviert.
+        """
+        if not self._ollama:
+            return message
+        ta_cfg = yaml_config.get("time_awareness", {})
+        if not ta_cfg.get("llm_rewrite", True):
+            return message
+        try:
+            from .config import settings
+            from .ollama_client import strip_think_tags
+            prompt = (
+                "Du bist JARVIS, ein britischer Smart-Home-Butler. "
+                "Formuliere diese Geraete-Warnung natuerlich um. "
+                "Trockener Butler-Ton, 1-2 Saetze. "
+                "Behalte alle Fakten (Minuten, Geraetename) exakt bei. "
+                "Variiere den Wortlaut — nicht immer gleich formulieren.\n\n"
+                f"Typ: {alert_type}\n"
+                f"Original: {message}\n\n"
+                "Umformulierung:"
+            )
+            response = await asyncio.wait_for(
+                self._ollama.generate(
+                    prompt=prompt,
+                    model=settings.model_fast,
+                    temperature=0.6,
+                    max_tokens=300,
+                ),
+                timeout=3.0,
+            )
+            text = strip_think_tags(response or "").strip()
+            if text and len(text) > 10:
+                return text
+        except Exception as e:
+            logger.debug("TimeAwareness LLM-Rewrite fehlgeschlagen: %s", e)
+        return message
+
     async def _send_alert(self, alert: dict):
         """Sendet eine Meldung ueber den Callback."""
+        # LLM-Rewrite fuer natuerlichere Warnungen
+        original_msg = alert.get("message", "")
+        alert["message"] = await self._llm_rewrite_alert(
+            original_msg, alert.get("type", ""),
+        )
         if self._notify_callback:
             try:
                 await self._notify_callback(alert)

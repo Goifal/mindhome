@@ -757,6 +757,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.explainability.set_ollama(self.ollama)
         self.seasonal_insight.set_ollama(self.ollama)
         self.seasonal_insight.set_ha(self.ha)
+        self.time_awareness.set_ollama(self.ollama)
+        self.music_dj.set_ollama(self.ollama)
+        self.visitor_manager.set_ollama(self.ollama)
+        self.learning_observer.set_ollama(self.ollama)
 
         if "WellnessAdvisor" not in _degraded_modules:
             await _safe_init("WellnessAdvisor.start", self.wellness_advisor.start())
@@ -7872,7 +7876,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             "welche muster", "erkannte muster",
         ]):
             report = await self.learning_observer.get_learning_report()
-            report_text = self.learning_observer.format_learning_report(report)
+            report_text = await self.learning_observer.format_learning_report_llm(report)
             return report_text
 
         # Feature 2: Protokoll-Erkennung — "Filmabend", "Protokoll Filmabend"
@@ -10598,6 +10602,7 @@ Regeln:
                         self.inner_state.on_action_failure(action, "anticipation_failed"),
                         name="inner_state_anticipation_failure",
                     )
+            text = await self._safe_format(text, "medium")
             await emit_proactive(text, "anticipation_auto", "medium")
             self._remember_exchange("[proaktiv: Antizipation]", text)
             logger.info("Anticipation auto-execute: %s (confidence: %d%%, success: %s)", desc, pct, _success)
@@ -10738,7 +10743,7 @@ Regeln:
                 else:
                     # Fallback: Alter Bericht via Learning Observer
                     lo_report = await self.learning_observer.get_learning_report()
-                    report_text = self.learning_observer.format_learning_report(lo_report)
+                    report_text = await self.learning_observer.format_learning_report_llm(lo_report)
                     if report_text and lo_report.get("total_observations", 0) > 0:
                         title = get_person_title()
                         message = f"{title}, hier ist dein woechentlicher Lern-Bericht:\n{report_text}"

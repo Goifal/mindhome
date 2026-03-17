@@ -6,6 +6,7 @@ zu einem "Music Context", der auf passende Spotify-Genres/Playlists gemappt wird
 Nutzer-Feedback wird in Redis gespeichert und beeinflusst zukuenftige Empfehlungen.
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -68,10 +69,16 @@ class MusicDJ:
         self.mood = mood_detector
         self.activity = activity_engine
         self.redis = None
+        self._ollama = None
         self._notify_callback = None
         self.executor = None
         self.enabled = True
         self._config: dict = {}
+
+    def set_ollama(self, ollama_client):
+        """Setzt den OllamaClient fuer LLM-basierte Empfehlungstexte."""
+        self._ollama = ollama_client
+        logger.info("MusicDJ: LLM-Rewrite aktiviert")
 
     async def initialize(self, redis_client=None):
         """Initialisiert den Music DJ mit Redis und Config."""
@@ -190,6 +197,46 @@ class MusicDJ:
 
         return genre
 
+    async def _llm_rewrite_reason(self, reason: str, label: str,
+                                   mood: str, time_of_day: str) -> str:
+        """Schreibt den Empfehlungsgrund via LLM natuerlicher um.
+
+        Fallback auf Original bei Fehler oder wenn LLM deaktiviert.
+        """
+        if not self._ollama:
+            return reason
+        cfg = yaml_config.get("music_dj", {})
+        if not cfg.get("llm_rewrite", True):
+            return reason
+        try:
+            from .config import settings
+            from .ollama_client import strip_think_tags
+            prompt = (
+                "Du bist JARVIS, ein britischer Smart-Home-Butler. "
+                "Formuliere diesen Musik-Empfehlungsgrund als EINEN natuerlichen Satz um. "
+                "Trockener Humor erlaubt. Keine Aufzaehlung. Behalte das Genre/Label exakt bei.\n\n"
+                f"Genre: {label}\n"
+                f"Stimmung: {mood}\n"
+                f"Tageszeit: {time_of_day}\n"
+                f"Original: {reason}\n\n"
+                "Umformulierung:"
+            )
+            response = await asyncio.wait_for(
+                self._ollama.generate(
+                    prompt=prompt,
+                    model=settings.model_fast,
+                    temperature=0.6,
+                    max_tokens=300,
+                ),
+                timeout=3.0,
+            )
+            text = strip_think_tags(response or "").strip()
+            if text and len(text) > 10:
+                return text
+        except Exception as e:
+            logger.debug("MusicDJ LLM-Rewrite fehlgeschlagen: %s", e)
+        return reason
+
     async def get_recommendation(self, person: str = "") -> dict:
         """Generiert eine kontextbewusste Musikempfehlung.
 
@@ -237,6 +284,11 @@ class MusicDJ:
         reason = (
             f"Bei {mood_de.get(context['mood'], context['mood'])} "
             f"am {time_de.get(context['time_of_day'], context['time_of_day'])}: {label}"
+        )
+
+        # LLM-Rewrite fuer natuerlicheren Empfehlungsgrund
+        reason = await self._llm_rewrite_reason(
+            reason, label, context["mood"], context["time_of_day"],
         )
 
         # Letzte Empfehlung in Redis speichern
