@@ -65,38 +65,69 @@
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:var(--font); background:var(--bg-primary); color:var(--text-primary); min-height:100vh; overflow-x:hidden; background-image: radial-gradient(circle at 20% 50%, rgba(0,212,255,0.015) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(0,212,255,0.01) 0%, transparent 40%); }
 
-/* ---- Login HUD ---- */
-.login-screen { display:flex; align-items:center; justify-content:center; min-height:100vh; background: radial-gradient(ellipse at center, rgba(0,212,255,0.04) 0%, var(--bg-primary) 70%); overflow: hidden; }
-.login-box { background: rgba(8,16,28,0.92); border: 1px solid var(--border-accent); border-radius:var(--radius-lg); padding:48px 40px; width:360px; text-align:center; box-shadow: var(--shadow-lg), var(--shadow-glow), inset 0 1px 0 rgba(0,212,255,0.1); position: relative; backdrop-filter: blur(16px); }
-.login-box h1 { font-size:28px; font-weight:600; margin-bottom:8px; color:var(--accent); letter-spacing: 6px; text-shadow: 0 0 30px rgba(0,212,255,0.5), 0 0 60px rgba(0,212,255,0.2); }
-.login-box p { color:var(--text-secondary); margin-bottom:32px; font-size:14px; text-transform: uppercase; letter-spacing: 3px; font-family: var(--mono); }
-.login-box input { width:100%; padding:14px 16px; background:rgba(0,212,255,0.03); border:1px solid var(--border-accent); border-radius:var(--radius-sm); color:var(--accent); font-family:var(--mono); font-size:24px; text-align:center; letter-spacing:12px; outline:none; transition: border-color var(--fast), box-shadow var(--fast); }
-.login-box input:focus { border-color:var(--accent); box-shadow: 0 0 25px rgba(0,212,255,0.2), inset 0 0 15px rgba(0,212,255,0.05); }
-.login-box input::placeholder { letter-spacing:4px; font-size:14px; color:var(--text-muted); }
-.login-box button { width:100%; margin-top:20px; padding:14px; background:transparent; color:var(--accent); border:1px solid var(--accent); border-radius:var(--radius-sm); font-family:var(--font); font-size:16px; font-weight:600; cursor:pointer; text-transform: uppercase; letter-spacing: 3px; transition: all var(--fast); box-shadow: 0 0 15px rgba(0,212,255,0.1), inset 0 0 15px rgba(0,212,255,0.05); }
-.login-box button:hover { background:rgba(0,212,255,0.1); box-shadow: 0 0 30px rgba(0,212,255,0.3), inset 0 0 20px rgba(0,212,255,0.1); }
-.login-error { color:var(--danger); font-size:13px; margin-top:12px; min-height:20px; text-shadow: 0 0 10px rgba(255,61,61,0.3); }
+/* ---- Login HUD (MCU Style) ---- */
+.login-screen { display:flex; align-items:center; justify-content:center; min-height:100vh; overflow:hidden; position:relative;
+  background:var(--bg-primary);
+  background-image:
+    radial-gradient(ellipse at center, rgba(0,212,255,0.05) 0%, transparent 60%),
+    linear-gradient(rgba(0,212,255,0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,255,0.012) 1px, transparent 1px);
+  background-size:100% 100%, 32px 32px, 32px 32px; }
+/* Background HUD rings */
+.login-bg-rings { position:absolute; width:700px; height:700px; top:50%; left:50%; transform:translate(-50%,-50%); pointer-events:none; z-index:0; }
+.login-bg-r1 { animation:hudSpin 40s linear infinite; transform-origin:350px 350px; }
+.login-bg-r2 { animation:hudSpinR 30s linear infinite; transform-origin:350px 350px; }
+.login-bg-r3 { animation:hudSpin 50s linear infinite; transform-origin:350px 350px; }
+/* Login box */
+.login-box { background:rgba(8,16,28,0.94); border:1px solid rgba(0,212,255,0.2); border-radius:var(--radius-lg); padding:48px 40px; width:380px; text-align:center; position:relative; z-index:1; backdrop-filter:blur(20px);
+  box-shadow:var(--shadow-lg), 0 0 40px rgba(0,212,255,0.08), inset 0 1px 0 rgba(0,212,255,0.1); }
+.login-box::before { content:''; position:absolute; inset:-1px; border-radius:var(--radius-lg); background:linear-gradient(135deg, rgba(0,212,255,0.12), transparent 40%, transparent 60%, rgba(0,212,255,0.06)); pointer-events:none; z-index:-1; }
+.login-box h1 { font-size:26px; font-weight:700; margin-bottom:4px; color:var(--accent); letter-spacing:8px; font-family:var(--mono); text-shadow:0 0 30px rgba(0,212,255,0.6), 0 0 60px rgba(0,212,255,0.2); }
+.login-box .login-version { font-size:8px; color:rgba(0,212,255,0.25); font-family:var(--mono); letter-spacing:2px; margin-bottom:6px; display:block; }
+.login-box p { color:var(--text-secondary); margin-bottom:24px; font-size:12px; text-transform:uppercase; letter-spacing:3px; font-family:var(--mono); }
+.login-auth-label { font-family:var(--mono); font-size:9px; color:rgba(0,212,255,0.35); letter-spacing:3px; text-transform:uppercase; margin-bottom:14px; display:block; }
+.login-box input { width:100%; padding:14px 16px; background:rgba(0,212,255,0.03); border:1px solid rgba(0,212,255,0.15); border-radius:var(--radius-sm); color:var(--accent); font-family:var(--mono); font-size:24px; text-align:center; letter-spacing:12px; outline:none; transition:border-color var(--fast), box-shadow var(--fast); }
+.login-box input:focus { border-color:var(--accent); box-shadow:0 0 25px rgba(0,212,255,0.2), inset 0 0 15px rgba(0,212,255,0.05); }
+.login-box input::placeholder { letter-spacing:4px; font-size:13px; color:var(--text-muted); }
+.login-box button { width:100%; margin-top:20px; padding:14px; background:transparent; color:var(--accent); border:1px solid var(--accent); border-radius:var(--radius-sm); font-family:var(--mono); font-size:14px; font-weight:600; cursor:pointer; text-transform:uppercase; letter-spacing:3px; transition:all var(--fast); box-shadow:0 0 15px rgba(0,212,255,0.1), inset 0 0 15px rgba(0,212,255,0.05); position:relative; overflow:hidden; }
+.login-box button::after { content:''; position:absolute; top:0; left:-100%; width:100%; height:100%; background:linear-gradient(90deg, transparent, rgba(0,212,255,0.1), transparent); transition:left 0.5s ease; }
+.login-box button:hover { background:rgba(0,212,255,0.08); box-shadow:0 0 30px rgba(0,212,255,0.25), inset 0 0 20px rgba(0,212,255,0.08); }
+.login-box button:hover::after { left:100%; }
+.login-box button:active { transform:scale(0.98); }
+.login-error { color:var(--danger); font-size:12px; margin-top:12px; min-height:18px; font-family:var(--mono); text-shadow:0 0 10px rgba(255,61,61,0.3); }
 .login-icon { font-size:44px; margin-bottom:14px; }
 .login-box input + input { margin-top:12px; }
-.login-box .recovery-hint { color:var(--accent); font-weight:600; margin-bottom:16px; text-shadow: 0 0 15px rgba(0,212,255,0.3); }
+.login-box .recovery-hint { color:var(--accent); font-weight:600; margin-bottom:16px; text-shadow:0 0 15px rgba(0,212,255,0.3); }
 .login-box .recovery-desc { margin-bottom:20px; font-size:13px; }
-.login-box .recovery-key-display { background:rgba(0,212,255,0.03); border:1px solid var(--accent); border-radius:var(--radius-sm); padding:18px; font-family:var(--mono); font-size:22px; letter-spacing:4px; color:var(--accent); margin-bottom:20px; user-select:all; text-shadow: 0 0 10px rgba(0,212,255,0.4); box-shadow: 0 0 20px rgba(0,212,255,0.1), inset 0 0 20px rgba(0,212,255,0.03); }
+.login-box .recovery-key-display { background:rgba(0,212,255,0.03); border:1px solid var(--accent); border-radius:var(--radius-sm); padding:18px; font-family:var(--mono); font-size:22px; letter-spacing:4px; color:var(--accent); margin-bottom:20px; user-select:all; text-shadow:0 0 10px rgba(0,212,255,0.4); box-shadow:0 0 20px rgba(0,212,255,0.1), inset 0 0 20px rgba(0,212,255,0.03); }
 .login-box .forgot-pin { margin-top:20px; }
-.login-box .forgot-pin a { color:var(--text-muted); font-size:12px; text-decoration:none; }
-.login-box .forgot-pin a:hover { color:var(--accent); text-shadow: 0 0 10px rgba(0,212,255,0.3); }
+.login-box .forgot-pin a { color:var(--text-muted); font-size:11px; text-decoration:none; font-family:var(--mono); letter-spacing:1px; }
+.login-box .forgot-pin a:hover { color:var(--accent); text-shadow:0 0 10px rgba(0,212,255,0.3); }
 .login-box .reset-input { margin-bottom:12px; letter-spacing:2px; text-transform:uppercase; }
-.login-hud-ring { position: absolute; top: -60px; left: 50%; transform: translateX(-50%); width: 120px; height: 120px; }
-.login-hud-ring svg { width: 100%; height: 100%; animation: hudSpin 8s linear infinite; }
-.login-hud-arc { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 40 20; opacity: 0.6; filter: drop-shadow(0 0 4px rgba(0,212,255,0.5)); }
-.login-hud-arc-inner { fill: none; stroke: rgba(0,212,255,0.3); stroke-width: 1; stroke-dasharray: 15 25; opacity: 0.4; }
-.login-scan-line { position: absolute; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: 0.4; animation: scanDown 3s ease-in-out infinite; filter: drop-shadow(0 0 6px rgba(0,212,255,0.6)); }
-.login-corner { position: absolute; width: 16px; height: 16px; border-color: var(--accent); opacity: 0.5; }
-.login-corner.tl { top: 8px; left: 8px; border-top: 1px solid; border-left: 1px solid; }
-.login-corner.tr { top: 8px; right: 8px; border-top: 1px solid; border-right: 1px solid; }
-.login-corner.bl { bottom: 8px; left: 8px; border-bottom: 1px solid; border-left: 1px solid; }
-.login-corner.br { bottom: 8px; right: 8px; border-bottom: 1px solid; border-right: 1px solid; }
-@keyframes hudSpin { to { transform: rotate(360deg); } }
-@keyframes scanDown { 0%,100% { top: 10%; } 50% { top: 90%; } }
+/* Multi-ring HUD around login box */
+.login-hud-ring { position:absolute; top:-80px; left:50%; transform:translateX(-50%); width:180px; height:180px; pointer-events:none; }
+.login-hud-ring svg { width:100%; height:100%; }
+.login-arc-1 { animation:hudSpin 6s linear infinite; transform-origin:90px 90px; }
+.login-arc-2 { animation:hudSpinR 10s linear infinite; transform-origin:90px 90px; }
+.login-arc-3 { animation:hudSpin 15s linear infinite; transform-origin:90px 90px; }
+.login-arc-4 { animation:hudSpinR 20s linear infinite; transform-origin:90px 90px; }
+/* Scan line */
+.login-scan-line { position:absolute; left:0; right:0; height:1px; background:linear-gradient(90deg, transparent, rgba(0,212,255,0.6), transparent); opacity:0.3; animation:scanDown 4s ease-in-out infinite; filter:drop-shadow(0 0 6px rgba(0,212,255,0.5)); pointer-events:none; }
+/* Corner brackets — larger, more prominent */
+.login-corner { position:absolute; border-color:rgba(0,212,255,0.5); opacity:0.7; }
+.login-corner.tl { top:6px; left:6px; width:24px; height:24px; border-top:1px solid; border-left:1px solid; }
+.login-corner.tr { top:6px; right:6px; width:24px; height:24px; border-top:1px solid; border-right:1px solid; }
+.login-corner.bl { bottom:6px; left:6px; width:24px; height:24px; border-bottom:1px solid; border-left:1px solid; }
+.login-corner.br { bottom:6px; right:6px; width:24px; height:24px; border-bottom:1px solid; border-right:1px solid; }
+/* Ambient data labels */
+.login-ambient { position:absolute; font-family:var(--mono); font-size:7px; color:rgba(0,212,255,0.2); letter-spacing:1px; text-transform:uppercase; pointer-events:none; }
+.login-ambient-tl { top:12px; left:34px; }
+.login-ambient-tr { top:12px; right:34px; }
+.login-ambient-bl { bottom:12px; left:34px; }
+.login-ambient-br { bottom:12px; right:34px; }
+@keyframes hudSpin { to { transform:rotate(360deg); } }
+@keyframes hudSpinR { to { transform:rotate(-360deg); } }
+@keyframes scanDown { 0%,100% { top:10%; } 50% { top:90%; } }
 
 /* ---- App ---- */
 .app { display:none; }
@@ -219,10 +250,19 @@ body { font-family:var(--font); background:var(--bg-primary); color:var(--text-p
   /* Grid 2 auch auf Phone single column */
   .grid-2 { grid-template-columns:1fr; }
   /* Boot screen: kleiner */
-  .boot-hud { width:200px; height:200px; }
-  .boot-logo { font-size:24px; letter-spacing:6px; }
-  .boot-text { font-size:11px; letter-spacing:2px; }
-  .boot-systems { flex-wrap:wrap; justify-content:center; gap:8px; }
+  .boot-hud { width:280px; height:280px; }
+  .boot-logo { font-size:20px; letter-spacing:4px; }
+  .boot-text { font-size:10px; letter-spacing:2px; }
+  .boot-systems { flex-wrap:wrap; justify-content:center; gap:6px; }
+  .boot-progress { width:240px; }
+  .boot-data { display:none; }
+  .boot-corner { width:30px; height:30px; }
+  .login-bg-rings { width:500px; height:500px; }
+  .login-hud-ring { width:140px; height:140px; top:-60px; }
+  .login-box { width:calc(100vw - 32px); max-width:380px; padding:36px 24px; }
+  .login-box h1 { font-size:22px; letter-spacing:6px; }
+  .login-box input { font-size:20px; padding:12px 14px; }
+  .login-ambient { display:none; }
   /* Knowledge stats */
   .grid-3 { grid-template-columns:1fr; }
   /* Chip grid: besser wrappen */
@@ -265,23 +305,28 @@ body { font-family:var(--font); background:var(--bg-primary); color:var(--text-p
   .stat-value { font-size:18px; }
   .stat-card { padding:12px; }
   .login-box { padding:28px 16px; }
-  .login-box h1 { font-size:20px; letter-spacing:3px; }
-  .login-hud-ring { width:80px; height:80px; top:-40px; }
+  .login-box h1 { font-size:18px; letter-spacing:4px; }
+  .login-hud-ring { width:100px; height:100px; top:-45px; }
+  .login-bg-rings { display:none; }
   .sidebar-logo h2 { font-size:15px; letter-spacing:3px; }
   /* Arc Reactor aus auf sehr kleinen Screens */
   .arc-reactor-bg { display:none; }
   /* Grid-Overlay aus (Performance) */
   .main-content::before { display:none; }
   /* Boot noch kleiner */
-  .boot-hud { width:160px; height:160px; }
-  .boot-logo { font-size:18px; letter-spacing:4px; }
+  .boot-hud { width:200px; height:200px; }
+  .boot-logo { font-size:16px; letter-spacing:3px; }
+  .boot-progress { width:180px; }
+  .boot-corner { display:none; }
+  .boot-scanline { display:none; }
 }
 
 /* Reduce motion for users who prefer it */
 @media (prefers-reduced-motion: reduce) {
   .arc-ring-1, .arc-ring-2, .arc-ring-3,
-  .boot-circle, .boot-ring-outer, .boot-ring-inner,
-  .login-hud-ring svg,
+  .boot-r, .boot-scanline, .boot-core-ring,
+  .login-arc-1, .login-arc-2, .login-arc-3, .login-arc-4,
+  .login-bg-r1, .login-bg-r2, .login-bg-r3,
   .sidebar::after, .main::after { animation:none !important; }
   .main-content::before { animation:none !important; }
   .stat-value { animation:none !important; }
@@ -647,28 +692,102 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 .info-box { display:flex; align-items:flex-start; gap:8px; padding:10px 14px; background:var(--blue-dim); border:1px solid rgba(59,130,246,0.2); border-radius:var(--radius-sm); margin-bottom:14px; font-size:12px; color:var(--text-secondary); line-height:1.5; word-break:break-word; overflow-wrap:break-word; min-width:0; }
 .info-box .info-icon { font-size:14px; flex-shrink:0; margin-top:1px; }
 
-/* ---- J.A.R.V.I.S. Boot Sequence ---- */
-.boot-screen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg-primary); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; }
-.boot-screen::before { content:''; position:absolute; inset:0; background:radial-gradient(circle at center, rgba(0,212,255,0.04) 0%, transparent 60%); }
-.boot-hud { position: relative; width: 280px; height: 280px; margin-bottom: 40px; }
-.boot-circle { position:absolute; inset:0; animation: bootRotate 3s linear infinite; }
-.boot-ring { fill: none; stroke: rgba(0,212,255,0.08); stroke-width: 1.5; }
-.boot-ring-fill { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 565; stroke-dashoffset: 565; stroke-linecap: round; animation: bootDraw 2s ease-out forwards; filter: drop-shadow(0 0 10px rgba(0,212,255,0.7)); }
-.boot-ring-outer { position:absolute; inset:0; animation: bootRotateReverse 6s linear infinite; }
-.boot-ring-inner { position:absolute; inset:0; animation: bootRotate 10s linear infinite; }
-.boot-logo { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 32px; font-weight: 700; color: var(--accent); opacity: 0; animation: bootFadeIn 0.6s ease 0.3s forwards; text-shadow: 0 0 40px rgba(0,212,255,0.7), 0 0 80px rgba(0,212,255,0.3), 0 0 120px rgba(0,212,255,0.1); letter-spacing: 8px; white-space:nowrap; }
-.boot-text { font-family: var(--mono); font-size: 13px; color: var(--accent); letter-spacing: 3px; min-height: 20px; text-transform: uppercase; text-shadow: 0 0 15px rgba(0,212,255,0.4); }
-.boot-systems { display: flex; gap: 12px; margin-top: 24px; }
-.boot-sys { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); opacity: 0; animation: bootFadeIn 0.3s ease forwards; }
-.boot-sys .sys-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); transition: background 0.3s, box-shadow 0.3s; }
-.boot-sys.online .sys-dot { background: var(--success); box-shadow: 0 0 8px rgba(0,230,118,0.5); }
-.boot-sys.online { color: var(--text-secondary); }
-.boot-screen.fade-out { animation: bootFadeOut 0.5s ease forwards; }
-@keyframes bootDraw { to { stroke-dashoffset: 0; } }
-@keyframes bootRotate { to { transform: rotate(360deg); } }
-@keyframes bootRotateReverse { to { transform: rotate(-360deg); } }
-@keyframes bootFadeIn { to { opacity: 1; } }
-@keyframes bootFadeOut { to { opacity: 0; pointer-events: none; } }
+/* ---- Subheading (innerhalb von Sections) ---- */
+.f-subheading { margin:16px 0 8px; font-weight:600; font-size:13px; color:var(--accent); border-bottom:1px solid rgba(0,212,255,0.1); padding-bottom:6px; }
+
+/* ---- Notification Matrix Mobile ---- */
+@media (max-width:600px) {
+  .nm-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .nm-table { min-width:420px; }
+  .nm-select { font-size:10px; padding:2px; min-width:70px; }
+  .nm-vol { width:50px; }
+}
+
+/* ---- Aria / Accessibility ---- */
+.toggle input:focus-visible + .toggle-track { outline:2px solid var(--accent); outline-offset:2px; }
+select:focus-visible, input[type="number"]:focus-visible, input[type="text"]:focus-visible, textarea:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+
+/* ---- J.A.R.V.I.S. Boot Sequence (MCU Style) ---- */
+.boot-screen { position:fixed; inset:0; background:var(--bg-primary); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:9999; overflow:hidden;
+  background-image:
+    radial-gradient(circle at center, rgba(0,212,255,0.06) 0%, transparent 50%),
+    linear-gradient(rgba(0,212,255,0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,255,0.018) 1px, transparent 1px);
+  background-size:100% 100%, 28px 28px, 28px 28px; }
+.boot-screen::before { content:''; position:absolute; inset:0; background:radial-gradient(circle at center, rgba(0,212,255,0.1) 0%, rgba(0,212,255,0.02) 30%, transparent 60%); animation:bootCorePulse 2s ease-in-out infinite; pointer-events:none; }
+/* Screen corner brackets */
+.boot-corner { position:absolute; z-index:2; opacity:0; animation:bootFadeIn 0.4s ease forwards; }
+.boot-corner::before, .boot-corner::after { content:''; position:absolute; background:rgba(0,212,255,0.5); }
+.boot-corner-tl { top:16px; left:16px; width:50px; height:50px; animation-delay:0.2s; }
+.boot-corner-tl::before { top:0; left:0; width:50px; height:1px; }
+.boot-corner-tl::after { top:0; left:0; width:1px; height:50px; }
+.boot-corner-tr { top:16px; right:16px; width:50px; height:50px; animation-delay:0.3s; }
+.boot-corner-tr::before { top:0; right:0; width:50px; height:1px; }
+.boot-corner-tr::after { top:0; right:0; width:1px; height:50px; }
+.boot-corner-bl { bottom:16px; left:16px; width:50px; height:50px; animation-delay:0.4s; }
+.boot-corner-bl::before { bottom:0; left:0; width:50px; height:1px; }
+.boot-corner-bl::after { bottom:0; left:0; width:1px; height:50px; }
+.boot-corner-br { bottom:16px; right:16px; width:50px; height:50px; animation-delay:0.5s; }
+.boot-corner-br::before { bottom:0; right:0; width:50px; height:1px; }
+.boot-corner-br::after { bottom:0; right:0; width:1px; height:50px; }
+/* Full-width scan line */
+.boot-scanline { position:absolute; left:0; right:0; height:2px; background:linear-gradient(90deg, transparent 5%, rgba(0,212,255,0.12) 15%, rgba(0,212,255,0.5) 50%, rgba(0,212,255,0.12) 85%, transparent 95%); filter:drop-shadow(0 0 10px rgba(0,212,255,0.6)); animation:bootScan 5s ease-in-out infinite; z-index:3; pointer-events:none; }
+/* Ambient data readouts */
+.boot-data { position:absolute; font-family:var(--mono); font-size:9px; color:rgba(0,212,255,0.2); letter-spacing:1px; line-height:2.2; white-space:pre; z-index:1; opacity:0; animation:bootFadeIn 1s ease 0.5s forwards; }
+.boot-data-left { left:24px; top:50%; transform:translateY(-50%); text-align:left; }
+.boot-data-right { right:24px; top:50%; transform:translateY(-50%); text-align:right; }
+/* HUD container */
+.boot-hud { position:relative; width:420px; height:420px; margin-bottom:24px; }
+/* Arc reactor core */
+.boot-core { position:absolute; top:50%; left:50%; width:10px; height:10px; transform:translate(-50%,-50%); border-radius:50%; background:var(--accent); z-index:10; opacity:0; animation:bootCoreIgnite 0.6s ease 0.1s forwards; }
+.boot-core-ring { position:absolute; top:50%; left:50%; width:28px; height:28px; transform:translate(-50%,-50%); border-radius:50%; border:1px solid rgba(0,212,255,0.4); z-index:9; opacity:0; animation:bootCorePulseRing 2s ease-out 0.3s infinite; }
+/* Ring layers — each SVG fills the container */
+.boot-r { position:absolute; inset:0; will-change:transform; opacity:0; }
+.boot-r.active { opacity:1; transition:opacity 0.4s ease; }
+.boot-r1 { animation:bootSpin 3s linear infinite; }
+.boot-r2 { animation:bootSpinR 5s linear infinite; }
+.boot-r3 { /* Main ring — no rotation, draws in */ }
+.boot-r4 { animation:bootSpinR 8s linear infinite; }
+.boot-r5 { animation:bootSpin 12s linear infinite; }
+.boot-r6 { animation:bootSpinR 18s linear infinite; }
+.boot-r7 { animation:bootSpin 25s linear infinite; }
+.boot-r8 { animation:bootSpinR 30s linear infinite; }
+.boot-ring-draw { filter:drop-shadow(0 0 8px rgba(0,212,255,0.7)); stroke-dashoffset:553; animation:bootDraw 2.5s ease-out 0.5s forwards; }
+/* Crosshair lines */
+.boot-crosshair line { opacity:0; animation:bootFadeIn 0.3s ease forwards; }
+/* Logo text */
+.boot-logo { position:absolute; top:calc(50% - 10px); left:50%; transform:translate(-50%,-50%); font-size:26px; font-weight:700; color:var(--accent); font-family:var(--mono); letter-spacing:6px; white-space:nowrap; z-index:11; text-shadow:0 0 30px rgba(0,212,255,0.8), 0 0 60px rgba(0,212,255,0.3), 0 0 100px rgba(0,212,255,0.15); opacity:0; }
+.boot-subtitle { position:absolute; top:calc(50% + 14px); left:50%; transform:translateX(-50%); font-size:8px; font-family:var(--mono); color:rgba(0,212,255,0.35); letter-spacing:4px; text-transform:uppercase; white-space:nowrap; z-index:11; opacity:0; }
+/* Progress bar */
+.boot-progress { display:flex; align-items:center; gap:12px; width:320px; margin-bottom:18px; opacity:0; animation:bootFadeIn 0.3s ease 0.8s forwards; }
+.boot-progress-track { flex:1; height:2px; background:rgba(0,212,255,0.08); border-radius:1px; overflow:hidden; position:relative; }
+.boot-progress-track::before { content:''; position:absolute; inset:0; background:linear-gradient(90deg, transparent, rgba(0,212,255,0.05), transparent); }
+.boot-progress-bar { height:100%; width:0; background:linear-gradient(90deg, rgba(0,212,255,0.5), var(--accent)); border-radius:1px; box-shadow:0 0 8px rgba(0,212,255,0.5), 0 0 20px rgba(0,212,255,0.2); transition:width 0.3s ease; }
+.boot-progress-pct { font-family:var(--mono); font-size:11px; color:var(--accent); min-width:36px; text-align:right; text-shadow:0 0 10px rgba(0,212,255,0.4); letter-spacing:1px; }
+/* Status text */
+.boot-text { font-family:var(--mono); font-size:11px; color:var(--accent); letter-spacing:3px; min-height:16px; text-transform:uppercase; text-shadow:0 0 12px rgba(0,212,255,0.4); margin-bottom:16px; }
+/* System modules */
+.boot-systems { display:flex; gap:16px; flex-wrap:wrap; justify-content:center; max-width:600px; }
+.boot-sys { display:flex; align-items:center; gap:6px; font-size:9px; font-family:var(--mono); color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; opacity:0; transition:opacity 0.3s ease; }
+.boot-sys.visible { opacity:1; }
+.boot-sys .sys-dot { width:5px; height:5px; border-radius:50%; background:var(--text-muted); transition:all 0.4s ease; flex-shrink:0; }
+.boot-sys.online .sys-dot { background:var(--success); box-shadow:0 0 6px rgba(0,230,118,0.6), 0 0 14px rgba(0,230,118,0.2); }
+.boot-sys.online { color:var(--success); }
+.boot-sys.error .sys-dot { background:var(--danger); box-shadow:0 0 6px rgba(255,61,61,0.5); }
+.boot-sys.error { color:var(--danger); }
+/* Fade out */
+.boot-screen.fade-out { animation:bootFadeOut 0.6s ease forwards; }
+/* Boot keyframes */
+@keyframes bootSpin { to { transform:rotate(360deg); } }
+@keyframes bootSpinR { to { transform:rotate(-360deg); } }
+@keyframes bootDraw { to { stroke-dashoffset:0; } }
+@keyframes bootFadeIn { to { opacity:1; } }
+@keyframes bootFadeOut { to { opacity:0; pointer-events:none; } }
+@keyframes bootCorePulse { 0%,100% { opacity:0.5; } 50% { opacity:1; } }
+@keyframes bootCoreIgnite { 0% { opacity:0; box-shadow:none; width:2px; height:2px; } 50% { opacity:1; width:14px; height:14px; box-shadow:0 0 40px rgba(0,212,255,1), 0 0 80px rgba(0,212,255,0.5); } 100% { opacity:1; width:10px; height:10px; box-shadow:0 0 20px rgba(0,212,255,0.9), 0 0 50px rgba(0,212,255,0.4), 0 0 100px rgba(0,212,255,0.2); animation:bootCoreGlow 1.5s ease-in-out infinite; } }
+@keyframes bootCoreGlow { 0%,100% { box-shadow:0 0 20px rgba(0,212,255,0.9), 0 0 50px rgba(0,212,255,0.4), 0 0 100px rgba(0,212,255,0.2); } 50% { box-shadow:0 0 30px rgba(0,212,255,1), 0 0 70px rgba(0,212,255,0.5), 0 0 120px rgba(0,212,255,0.3); } }
+@keyframes bootCorePulseRing { 0% { transform:translate(-50%,-50%) scale(1); opacity:0.5; } 100% { transform:translate(-50%,-50%) scale(3); opacity:0; } }
+@keyframes bootScan { 0%,100% { top:5%; } 50% { top:95%; } }
 
 /* ---- J.A.R.V.I.S. HUD System ---- */
 
@@ -794,13 +913,9 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
 @keyframes arcSpin2 { to { transform:rotate(-360deg); } }
 @keyframes arcSpin3 { to { transform:rotate(360deg); } }
 
-/* Login — enhanced arc reactor HUD */
-.login-hud-ring { width:140px; height:140px; top:-70px; }
-.login-box::before { content:''; position:absolute; inset:-1px; border-radius:var(--radius-lg); background:linear-gradient(135deg, rgba(0,212,255,0.1), transparent 40%, transparent 60%, rgba(0,212,255,0.05)); pointer-events:none; z-index:-1; }
-
-/* Animated border on login */
-@keyframes borderGlow { 0%,100% { border-color:rgba(0,212,255,0.2); box-shadow:var(--shadow-lg), 0 0 20px rgba(0,212,255,0.1); } 50% { border-color:rgba(0,212,255,0.35); box-shadow:var(--shadow-lg), 0 0 35px rgba(0,212,255,0.15); } }
-.login-box { animation: borderGlow 4s ease-in-out infinite; }
+/* Login — animated border glow */
+@keyframes borderGlow { 0%,100% { border-color:rgba(0,212,255,0.2); box-shadow:var(--shadow-lg), 0 0 25px rgba(0,212,255,0.08); } 50% { border-color:rgba(0,212,255,0.35); box-shadow:var(--shadow-lg), 0 0 40px rgba(0,212,255,0.15), 0 0 80px rgba(0,212,255,0.05); } }
+.login-box { animation:borderGlow 4s ease-in-out infinite; }
 
 /* Dashboard content above arc reactor */
 #page-dashboard .dash-live-bar,
@@ -837,7 +952,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
 <div id="setupScreen" class="login-screen" style="display:none;">
   <div class="login-box">
     <div class="login-icon">&#9881;</div>
-    <h1>JARVIS</h1>
+    <h1>J.A.R.V.I.S.</h1>
     <p>Ersteinrichtung — PIN festlegen</p>
     <input type="password" id="setupPin" maxlength="16" placeholder="PIN waehlen"
            onkeydown="if(event.key==='Enter')document.getElementById('setupPinConfirm').focus()">
@@ -860,23 +975,66 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
   </div>
 </div>
 
-<!-- LOGIN -->
+<!-- LOGIN (MCU JARVIS Style) -->
 <div id="loginScreen" class="login-screen" style="display:none;">
+  <!-- Background HUD rings -->
+  <svg class="login-bg-rings" viewBox="0 0 700 700">
+    <circle class="login-bg-r1" cx="350" cy="350" r="220" fill="none" stroke="rgba(0,212,255,0.03)" stroke-width="0.8" stroke-dasharray="8 5"/>
+    <circle class="login-bg-r1" cx="350" cy="350" r="225" fill="none" stroke="rgba(0,212,255,0.015)" stroke-width="3" stroke-dasharray="1 18"/>
+    <circle class="login-bg-r2" cx="350" cy="350" r="260" fill="none" stroke="rgba(0,212,255,0.025)" stroke-width="0.5" stroke-dasharray="1 6"/>
+    <circle class="login-bg-r2" cx="350" cy="350" r="265" fill="none" stroke="rgba(0,212,255,0.02)" stroke-width="0.5" stroke-dasharray="15 25 3 25"/>
+    <circle class="login-bg-r3" cx="350" cy="350" r="300" fill="none" stroke="rgba(0,212,255,0.015)" stroke-width="0.4" stroke-dasharray="2 10"/>
+    <circle class="login-bg-r3" cx="350" cy="350" r="330" fill="none" stroke="rgba(0,212,255,0.01)" stroke-width="0.3" stroke-dasharray="20 40"/>
+  </svg>
   <div class="login-box">
+    <!-- Multi-ring HUD above box -->
     <div class="login-hud-ring">
-      <svg viewBox="0 0 120 120">
-        <circle class="login-hud-arc" cx="60" cy="60" r="54" />
-        <circle class="login-hud-arc-inner" cx="60" cy="60" r="46" />
+      <svg viewBox="0 0 180 180">
+        <!-- Core dot -->
+        <circle cx="90" cy="90" r="3" fill="rgba(0,212,255,0.6)"/>
+        <circle cx="90" cy="90" r="6" fill="none" stroke="rgba(0,212,255,0.2)" stroke-width="0.5"/>
+        <!-- Ring 1: Inner ticks -->
+        <g class="login-arc-1">
+          <circle cx="90" cy="90" r="22" fill="none" stroke="rgba(0,212,255,0.3)" stroke-width="0.6" stroke-dasharray="2 5"/>
+        </g>
+        <!-- Ring 2: Main arc -->
+        <g class="login-arc-2">
+          <circle cx="90" cy="90" r="38" fill="none" stroke="rgba(0,212,255,0.5)" stroke-width="1.2" stroke-dasharray="12 6 3 6" stroke-linecap="round"/>
+          <circle cx="90" cy="90" r="42" fill="none" stroke="rgba(0,212,255,0.15)" stroke-width="0.5" stroke-dasharray="1 8"/>
+        </g>
+        <!-- Ring 3: Outer segments -->
+        <g class="login-arc-3">
+          <circle cx="90" cy="90" r="58" fill="none" stroke="rgba(0,212,255,0.2)" stroke-width="0.6" stroke-dasharray="20 10 2 10"/>
+        </g>
+        <!-- Ring 4: Outermost ticks -->
+        <g class="login-arc-4">
+          <circle cx="90" cy="90" r="75" fill="none" stroke="rgba(0,212,255,0.08)" stroke-width="0.4" stroke-dasharray="1 5"/>
+          <circle cx="90" cy="90" r="80" fill="none" stroke="rgba(0,212,255,0.04)" stroke-width="5" stroke-dasharray="1 30"/>
+        </g>
+        <!-- Crosshair -->
+        <line x1="90" y1="55" x2="90" y2="68" stroke="rgba(0,212,255,0.2)" stroke-width="0.4"/>
+        <line x1="90" y1="112" x2="90" y2="125" stroke="rgba(0,212,255,0.2)" stroke-width="0.4"/>
+        <line x1="55" y1="90" x2="68" y2="90" stroke="rgba(0,212,255,0.2)" stroke-width="0.4"/>
+        <line x1="112" y1="90" x2="125" y2="90" stroke="rgba(0,212,255,0.2)" stroke-width="0.4"/>
       </svg>
     </div>
+    <!-- Corner brackets -->
     <div class="login-corner tl"></div>
     <div class="login-corner tr"></div>
     <div class="login-corner bl"></div>
     <div class="login-corner br"></div>
+    <!-- Ambient data labels -->
+    <div class="login-ambient login-ambient-tl">SYS//v4.2</div>
+    <div class="login-ambient login-ambient-tr">SECURE.CH</div>
+    <div class="login-ambient login-ambient-bl">AES-256</div>
+    <div class="login-ambient login-ambient-br">ONLINE</div>
+    <!-- Scan line -->
     <div class="login-scan-line"></div>
-    <h1>JARVIS</h1>
-    <p>MindHome Assistant</p>
-    <input type="password" id="pinInput" maxlength="16" placeholder="PIN" autofocus
+    <h1>J.A.R.V.I.S.</h1>
+    <span class="login-version">MIND HOME ASSISTANT</span>
+    <p>Zugriff anfordern</p>
+    <div class="login-auth-label">Identitätsverifizierung erforderlich</div>
+    <input type="password" id="pinInput" maxlength="16" placeholder="PIN eingeben" autofocus
            onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">Authentifizieren</button>
     <div id="loginError" class="login-error"></div>
@@ -1435,24 +1593,84 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
 
 <div id="toast" class="toast"></div>
 
-<!-- BOOT SCREEN -->
+<!-- BOOT SCREEN (MCU JARVIS Style) -->
 <div id="bootScreen" class="boot-screen" style="display:none;">
+  <!-- Screen corner brackets -->
+  <div class="boot-corner boot-corner-tl"></div>
+  <div class="boot-corner boot-corner-tr"></div>
+  <div class="boot-corner boot-corner-bl"></div>
+  <div class="boot-corner boot-corner-br"></div>
+  <!-- Full-width scan line -->
+  <div class="boot-scanline"></div>
+  <!-- Ambient data readouts -->
+  <div class="boot-data boot-data-left" id="bootDataL"></div>
+  <div class="boot-data boot-data-right" id="bootDataR"></div>
+  <!-- Main HUD -->
   <div class="boot-hud">
-    <svg class="boot-circle" viewBox="0 0 200 200">
-      <circle class="boot-ring" cx="100" cy="100" r="90" />
-      <circle class="boot-ring-fill" cx="100" cy="100" r="90" />
+    <!-- Arc reactor core -->
+    <div class="boot-core"></div>
+    <div class="boot-core-ring"></div>
+    <!-- Ring 1: Innermost — fine ticks, fast spin -->
+    <svg class="boot-r boot-r1" viewBox="0 0 420 420">
+      <circle cx="210" cy="210" r="38" fill="none" stroke="rgba(0,212,255,0.4)" stroke-width="0.8" stroke-dasharray="2 4"/>
     </svg>
-    <svg class="boot-ring-outer" viewBox="0 0 200 200">
-      <circle cx="100" cy="100" r="96" fill="none" stroke="rgba(0,212,255,0.12)" stroke-width="0.5" />
-      <circle cx="100" cy="100" r="96" fill="none" stroke="rgba(0,212,255,0.4)" stroke-width="1" stroke-dasharray="12 8 4 8" stroke-linecap="round" />
+    <!-- Ring 2: Tick marks, counter-rotation -->
+    <svg class="boot-r boot-r2" viewBox="0 0 420 420">
+      <circle cx="210" cy="210" r="55" fill="none" stroke="rgba(0,212,255,0.2)" stroke-width="0.6" stroke-dasharray="1 7"/>
+      <circle cx="210" cy="210" r="58" fill="none" stroke="rgba(0,212,255,0.12)" stroke-width="4" stroke-dasharray="1 20"/>
     </svg>
-    <svg class="boot-ring-inner" viewBox="0 0 200 200">
-      <circle cx="100" cy="100" r="70" fill="none" stroke="rgba(0,212,255,0.3)" stroke-width="0.8" stroke-dasharray="6 14 2 14" />
-      <circle cx="100" cy="100" r="55" fill="none" stroke="rgba(0,212,255,0.15)" stroke-width="0.5" stroke-dasharray="3 20" />
+    <!-- Ring 3: Main ring — draws during boot -->
+    <svg class="boot-r boot-r3" viewBox="0 0 420 420">
+      <circle cx="210" cy="210" r="78" fill="none" stroke="rgba(0,212,255,0.06)" stroke-width="1.5"/>
+      <circle cx="210" cy="210" r="78" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="490" stroke-dashoffset="490" stroke-linecap="round" class="boot-ring-draw"/>
     </svg>
-    <div class="boot-logo">JARVIS</div>
+    <!-- Ring 4: Data segments, counter-rotation -->
+    <svg class="boot-r boot-r4" viewBox="0 0 420 420">
+      <circle cx="210" cy="210" r="98" fill="none" stroke="rgba(0,212,255,0.18)" stroke-width="0.8" stroke-dasharray="25 12 4 12" stroke-linecap="round"/>
+    </svg>
+    <!-- Ring 5: Wide tick marks -->
+    <svg class="boot-r boot-r5" viewBox="0 0 420 420">
+      <circle cx="210" cy="210" r="118" fill="none" stroke="rgba(0,212,255,0.08)" stroke-width="0.5" stroke-dasharray="1 5"/>
+      <circle cx="210" cy="210" r="120" fill="none" stroke="rgba(0,212,255,0.15)" stroke-width="6" stroke-dasharray="2 28"/>
+    </svg>
+    <!-- Ring 6: Thin scatter, counter-rotation -->
+    <svg class="boot-r boot-r6" viewBox="0 0 420 420">
+      <circle cx="210" cy="210" r="140" fill="none" stroke="rgba(0,212,255,0.1)" stroke-width="0.5" stroke-dasharray="8 20 2 20"/>
+    </svg>
+    <!-- Ring 7: Micro ticks -->
+    <svg class="boot-r boot-r7" viewBox="0 0 420 420">
+      <circle cx="210" cy="210" r="160" fill="none" stroke="rgba(0,212,255,0.06)" stroke-width="0.4" stroke-dasharray="1 4"/>
+      <circle cx="210" cy="210" r="163" fill="none" stroke="rgba(0,212,255,0.04)" stroke-width="10" stroke-dasharray="2 40"/>
+    </svg>
+    <!-- Ring 8: Outermost faint -->
+    <svg class="boot-r boot-r8" viewBox="0 0 420 420">
+      <circle cx="210" cy="210" r="185" fill="none" stroke="rgba(0,212,255,0.04)" stroke-width="0.4" stroke-dasharray="12 25"/>
+      <circle cx="210" cy="210" r="195" fill="none" stroke="rgba(0,212,255,0.025)" stroke-width="0.3" stroke-dasharray="3 15"/>
+    </svg>
+    <!-- Crosshair lines -->
+    <svg class="boot-r boot-crosshair" viewBox="0 0 420 420" style="opacity:0;">
+      <line x1="210" y1="135" x2="210" y2="165" stroke="rgba(0,212,255,0.25)" stroke-width="0.5"/>
+      <line x1="210" y1="255" x2="210" y2="285" stroke="rgba(0,212,255,0.25)" stroke-width="0.5"/>
+      <line x1="135" y1="210" x2="165" y2="210" stroke="rgba(0,212,255,0.25)" stroke-width="0.5"/>
+      <line x1="255" y1="210" x2="285" y2="210" stroke="rgba(0,212,255,0.25)" stroke-width="0.5"/>
+      <!-- Diagonal ticks -->
+      <line x1="172" y1="172" x2="182" y2="182" stroke="rgba(0,212,255,0.15)" stroke-width="0.4"/>
+      <line x1="238" y1="172" x2="248" y2="182" stroke="rgba(0,212,255,0.15)" stroke-width="0.4"/>
+      <line x1="172" y1="238" x2="182" y2="248" stroke="rgba(0,212,255,0.15)" stroke-width="0.4"/>
+      <line x1="238" y1="238" x2="248" y2="248" stroke="rgba(0,212,255,0.15)" stroke-width="0.4"/>
+    </svg>
+    <!-- Logo text -->
+    <div class="boot-logo" id="bootLogo"></div>
+    <div class="boot-subtitle" id="bootSub"></div>
   </div>
+  <!-- Progress bar -->
+  <div class="boot-progress">
+    <div class="boot-progress-track"><div class="boot-progress-bar" id="bootProgBar"></div></div>
+    <div class="boot-progress-pct" id="bootProgPct">0%</div>
+  </div>
+  <!-- Status text -->
   <div class="boot-text" id="bootText"></div>
+  <!-- System modules -->
   <div class="boot-systems" id="bootSystems"></div>
 </div>
 
