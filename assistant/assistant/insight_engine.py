@@ -552,11 +552,11 @@ class InsightEngine:
         if data.get("open_doors"):
             summary_parts.append(f"Offene Tueren: {len(data['open_doors'])}")
 
-        # Wetter
+        # Wetter (keys: condition, temp, humidity — aus _gather_data)
         weather = data.get("weather")
-        if weather:
-            w_state = weather.get("state", "")
-            w_temp = weather.get("attributes", {}).get("temperature", "?")
+        if weather and isinstance(weather, dict):
+            w_state = weather.get("condition", "")
+            w_temp = weather.get("temp", "?")
             summary_parts.append(f"Wetter: {w_state}, {w_temp}°C")
 
         # Anwesende
