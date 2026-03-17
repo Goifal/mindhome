@@ -1535,7 +1535,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             logger.debug("DialogueState Fehler: %s", _dlg_err)
 
         # Phase 7: Gute-Nacht-Intent (VOR allem anderen)
-        if self.routines.is_goodnight_intent(text):
+        if await self.routines.is_goodnight_intent(text):
             logger.info("Gute-Nacht-Intent erkannt")
             try:
                 result = await self.routines.execute_goodnight(person or "")
@@ -1571,7 +1571,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 await self._speak_and_emit(response_text, room=room)
                 return self._result(response_text, model="routine_engine", room=room, emitted=True)
 
-        if self.routines.is_guest_trigger(text):
+        if await self.routines.is_guest_trigger(text):
             logger.info("Gäste-Modus Trigger erkannt")
             response_text = self._filter_response(await self.routines.activate_guest_mode())
             self._remember_exchange(text, response_text)
@@ -1876,21 +1876,79 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 if not stream_callback:
                     await emit_speaking(response_text, tts_data=tts_data)
 
-                # TTS im Hintergrund
+                # Background: LLM-Polish (fast model, 3s Timeout) + TTS
+                # Chat-Antwort kommt sofort mit Humanizer-Text,
+                # TTS spricht die verfeinerte Version (oder Fallback).
                 # C-2: Bei Pipeline-Requests kein TTS (Pipeline macht das selbst)
-                if not getattr(self, "_request_from_pipeline", False):
-                    async def _weather_speak(
-                        _response=response_text, _room=room, _tts_data=tts_data,
-                    ):
+                _skip_tts = getattr(self, "_request_from_pipeline", False)
+
+                async def _weather_polish_and_speak(
+                    _text=text, _response=response_text, _weather_msg=weather_msg,
+                    _room=room, _tts_data=tts_data, _skip=_skip_tts,
+                ):
+                    speak_text = _response
+                    speak_tts = _tts_data
+                    if _response:
+                        try:
+                            feedback_messages = [{
+                                "role": "system",
+                                "content": (
+                                    "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
+                                    f"Souveraen, knapp, trocken. '{get_person_title(self._current_person)}' sparsam einsetzen. "
+                                    "Keine Aufzaehlungen. "
+                                    "WICHTIG: Temperatur- und Wetterwerte EXAKT uebernehmen, "
+                                    "NIEMALS aendern oder runden. "
+                                    "Beispiele: 'Draussen 14 Grad, leicht bewoelkt. Jacke wuerde ich mitnehmen.' | "
+                                    "'22 Grad und Sonne — ein guter Tag fuer draussen.'"
+                                ),
+                            }, {
+                                "role": "user",
+                                "content": f"Frage: {_text}\nAntwort-Entwurf: {_response}",
+                            }]
+                            fmt_response = await asyncio.wait_for(
+                                self.ollama.chat(
+                                    messages=feedback_messages,
+                                    model=self.model_router.model_fast,
+                                    temperature=0.4, max_tokens=150, think=False,
+                                ),
+                                timeout=3.0,
+                            )
+                            if "error" not in fmt_response:
+                                refined = self._filter_response(
+                                    fmt_response.get("message", {}).get("content", "")
+                                )
+                                if refined and len(refined) > 5:
+                                    import re as _re
+                                    # Temperaturwert-Check: Originaltemperatur muss erhalten bleiben
+                                    _temp_match = _re.search(r'(-?\d+)[.,]?\d*\s*(?:°C|Grad)', _weather_msg)
+                                    _temp_preserved = True
+                                    if _temp_match:
+                                        _orig_temp = _temp_match.group(1)
+                                        _temp_preserved = _orig_temp in refined
+                                    if _temp_preserved:
+                                        speak_text = refined
+                                        speak_tts = self.tts_enhancer.enhance(
+                                            speak_text, message_type="casual"
+                                        )
+                                        logger.info("Wetter-Shortcut LLM-verfeinert: '%s'",
+                                                    speak_text[:80])
+                                    else:
+                                        logger.warning(
+                                            "Wetter LLM-Antwort hat Temperatur veraendert, "
+                                            "nutze Humanizer. LLM='%s'", refined[:80]
+                                        )
+                        except Exception as e:
+                            logger.debug("Wetter LLM-Polish fehlgeschlagen: %s", e)
+                    if not _skip:
                         if not _room:
                             _room = await self._get_occupied_room()
                         await self.sound_manager.speak_response(
-                            _response, room=_room, tts_data=_tts_data
+                            speak_text, room=_room, tts_data=speak_tts
                         )
 
-                    self._task_registry.create_task(
-                        _weather_speak(), name="weather_speak"
-                    )
+                self._task_registry.create_task(
+                    _weather_polish_and_speak(), name="weather_polish_speak"
+                )
 
                 return self._result(response_text, actions=[{"function": "get_weather", "args": weather_args, "result": weather_result}], model="weather_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
