@@ -1233,7 +1233,29 @@ const HELP_TEXTS = {
   'assistant.name': {title:'Assistenten-Name', text:'Der Name, mit dem sich der Assistent vorstellt und auf den er reagiert.'},
   'assistant.version': {title:'Version', text:'Aktuelle Software-Version. Nur zur Anzeige.'},
   'assistant.language': {title:'Sprache', text:'In welcher Sprache der Assistent antwortet.'},
-  'autonomy.level': {title:'Autonomie-Level', text:'Wie selbststaendig darf der Assistent handeln?', detail:'<b>1 Assistent:</b> Nur auf Befehl<br><b>2 Butler:</b> Schlaegt vor, wartet auf OK<br><b>3 Mitbewohner:</b> Handelt bei Routine-Aufgaben<br><b>4 Vertrauter:</b> Proaktiv<br><b>5 Autopilot:</b> Volle Autonomie'},
+  'autonomy.level': {title:'Autonomie-Level', text:'Wie selbststaendig darf der Assistent handeln? Jede Stufe beinhaltet alle Faehigkeiten der vorherigen.', detail:
+    '<b>1 Assistent</b><br>' +
+    '&nbsp;&nbsp;Reagiert nur auf direkte Befehle<br>' +
+    '&nbsp;&nbsp;Fuehrt angeforderte Aktionen aus (Licht, Klima, Medien)<br>' +
+    '&nbsp;&nbsp;Sicherheitswarnungen werden immer gemeldet<br><br>' +
+    '<b>2 Butler</b><br>' +
+    '&nbsp;&nbsp;Morgenbriefing (Wetter, Termine, Hausstatus)<br>' +
+    '&nbsp;&nbsp;Begruessung bei Ankunft<br>' +
+    '&nbsp;&nbsp;Proaktive Hinweise &amp; Warnungen (z.B. Fenster offen bei Regen)<br>' +
+    '&nbsp;&nbsp;Anticipation-Vorschlaege: "Soll ich die Rolllaeden schliessen?"<br><br>' +
+    '<b>3 Mitbewohner</b><br>' +
+    '&nbsp;&nbsp;Licht automatisch anpassen (Tageszeit, Anwesenheit)<br>' +
+    '&nbsp;&nbsp;Rolllaeden nach gelernten Mustern steuern<br>' +
+    '&nbsp;&nbsp;Temperatur +/- 1°C selbststaendig korrigieren<br>' +
+    '&nbsp;&nbsp;Erinnerungen selbst pausieren wenn beschaeftigt<br><br>' +
+    '<b>4 Vertrauter</b><br>' +
+    '&nbsp;&nbsp;Tagesroutinen anpassen (Aufstehzeit, Szenen)<br>' +
+    '&nbsp;&nbsp;Neue Szenen vorschlagen basierend auf Verhalten<br>' +
+    '&nbsp;&nbsp;Praeferenzen aktiv lernen &amp; anwenden<br><br>' +
+    '<b>5 Autopilot</b><br>' +
+    '&nbsp;&nbsp;Neue Automationen erstellen (mit Bestaetigung)<br>' +
+    '&nbsp;&nbsp;Zeitplaene eigenstaendig anpassen<br>' +
+    '&nbsp;&nbsp;Nur manuell aktivierbar (kein Auto-Aufstieg)'},
   'models.enabled.fast': {title:'Fast-Modell', text:'Schnelles Modell für einfache Befehle (Licht an, Timer, Danke).'},
   'models.enabled.smart': {title:'Smart-Modell', text:'Standard-Modell für normale Gespräche und Anfragen.'},
   'models.enabled.deep': {title:'Deep-Modell', text:'Grosses Modell für komplexe Analysen und ausführliche Antworten.'},
