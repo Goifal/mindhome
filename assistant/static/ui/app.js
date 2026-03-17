@@ -2867,7 +2867,6 @@ function renderGeneral() {
     fNum('web_search.rate_limit_window', 'Rate-Limit Fenster (Sek)', 10, 300, 10)
   ) +
   _renderPersonsSections() +
-  // --- Geräte-Erkennung (verschoben aus Jarvis-Features) ---
   sectionWrap('&#127899;', 'Geräte-Erkennung',
     fInfo('Wörter die der Assistent zur Erkennung von Geräte-Befehlen und Status-Abfragen nutzt. Ein Wort pro Zeile.') +
     fTextarea('command_detection.device_nouns', 'Geräte-Substantive', 'z.B. "rollladen", "licht", "lampe"') +
@@ -3569,7 +3568,6 @@ function renderMood() {
     fToggle('voice_analysis.use_whisper_metadata', 'Whisper-Metadaten nutzen') +
     fRange('voice_analysis.voice_weight', 'Stimm-Gewichtung', 0, 1, 0.05, {0:'Ignorieren',0.25:'Schwach',0.5:'Mittel',0.75:'Stark',1:'Voll'})
   ) +
-  // --- Voice-Mood Integration (verschoben aus Intelligenz-Tab) ---
   sectionWrap('&#127908;', 'Voice-Mood Integration',
     fInfo('Verknüpft die erkannte Stimm-Emotion (fröhlich, traurig, ärgerlich, nervös, müde) direkt mit der Stimmungserkennung. So reagiert Jarvis nicht nur auf Worte, sondern auch auf den Tonfall.') +
     fToggle('mood.voice_mood_integration', 'Voice-Emotion in Stimmung einbeziehen') +
@@ -4029,14 +4027,12 @@ function renderRoutines() {
     fToggle('routines.guest_mode.restrictions.restrict_security', 'Sicherheitsfunktionen einschränken') +
     fToggle('routines.guest_mode.restrictions.suggest_guest_wifi', 'Gäste-WLAN vorschlagen')
   ) +
-  // --- Benannte Protokolle (verschoben aus Jarvis-Features) ---
   sectionWrap('&#128221;', 'Benannte Protokolle',
     fInfo('Multi-Step-Sequenzen per Sprache erstellen und ausführen. Z.B. "Erstelle Protokoll Filmabend: Licht 20%, Rolladen zu, TV an" — dann reicht "Filmabend" zum Ausführen.') +
     fToggle('protocols.enabled', 'Protokolle aktiv') +
     fNum('protocols.max_protocols', 'Maximale Anzahl Protokolle', 1, 50, 1) +
     fNum('protocols.max_steps', 'Maximale Schritte pro Protokoll', 1, 20, 1)
   ) +
-  // --- "Das Übliche" (verschoben aus Jarvis-Features) ---
   sectionWrap('&#128260;', '"Das Übliche" — Implizite Routinen',
     fInfo('Sage "das Übliche", "wie immer" oder "mach fertig" — Jarvis erkennt gelernte Muster für die aktuelle Tageszeit und führt sie aus. Basiert auf dem Vorausdenken-Modul (Anticipation Engine).') +
     fToggle('das_übliche.enabled', '"Das Übliche" aktiv') +
@@ -4502,7 +4498,6 @@ function renderProactive() {
     fInfo('Prioritaeten für verschiedene Event-Typen. Event-Typen mit höherer Prioritaet durchbrechen "Nicht stören". In settings.yaml unter proactive.event_handlers anpassbar.') +
     fTextarea('proactive.event_handlers', 'Event-Handler (JSON)', 'Format: {"event_name": {"priority": "critical|high|medium|low", "description": "..."}}')
   ) +
-  // --- Spontane Beobachtungen (verschoben aus Jarvis-Features) ---
   sectionWrap('&#128065;', 'Spontane Beobachtungen',
     fInfo('Jarvis macht 1-2x taeglich unaufgeforderte, interessante Bemerkungen — z.B. "Heute verbrauchen wir 20% weniger Energie als letzte Woche" oder "Die Waschmaschine lief 7 Mal diese Woche — Rekord!"') +
     fToggle('spontaneous.enabled', 'Spontane Beobachtungen aktiv') +
@@ -4604,13 +4599,11 @@ function renderNotifications() {
     fInfo('Bestimmt die Lautstärke von TTS-Durchsagen — abhaengig von Aktivität und Dringlichkeit. Nachts wird automatisch zusätzlich reduziert.') +
     volumeTable
   ) +
-  // --- Benachrichtigungskanaele (verschoben aus Sicherheit-Tab) ---
   sectionWrap('&#128276;', 'Benachrichtigungskanaele',
     fInfo('Welche Kanaele soll der Assistent für Benachrichtigungen nutzen? Kanaele können einzeln konfiguriert werden.') +
     '<div id="notifyChannelsContainer" style="color:var(--text-muted);font-size:12px;">Wird geladen...</div>' +
     '<div style="margin-top:10px;"><button class="btn btn-primary" style="font-size:12px;" onclick="saveNotifyChannels()">Kanaele speichern</button></div>'
   ) +
-  // --- Stille-Keywords (verschoben aus Haus-Status-Tab) ---
   sectionWrap('&#128164;', 'Stille-Keywords',
     fInfo('Wörter die eine Aktivität erkennen und den "Nicht stören"-Modus auslösen. Ein Wort pro Zeile.') +
     fTextarea('activity.silence_keywords.watching', 'Film/TV schauen', 'z.B. "filmabend", "netflix", "serie schauen"') +
@@ -4957,7 +4950,6 @@ function renderSecurity() {
     fTextarea('trust_levels.persons', 'Trust pro Person (JSON)', 'Format: {"max": 2, "anna": 1, "gast": 0}') +
     fTextarea('trust_levels.room_restrictions', 'Raum-Beschraenkungen (JSON)', 'Format: {"gast": ["wohnzimmer", "kueche"]} — nur diese Raeume erlaubt')
   ) +
-  // --- Besucher-Management (verschoben aus Jarvis-Features) ---
   sectionWrap('&#128682;', 'Besucher-Management',
     fInfo('Jarvis verwaltet Besucher: Bekannte Personen speichern, erwartete Besucher anlegen, "Lass ihn rein"-Workflow mit Kamera-Erkennung und automatischer Tuer-Entriegelung.') +
     fToggle('visitor_management.enabled', 'Besucher-Management aktiv') +
@@ -5532,8 +5524,6 @@ function renderAutonomie() {
     fToggle('multi_turn_tools.enabled', 'Multi-Turn Tools (mehrere Aufrufe pro Gespraech)') +
     fNum('multi_turn_tools.max_iterations', 'Max. Iterationen pro Turn', 1, 10) +
     fToggle('multi_sense_fusion.enabled', 'Multi-Sense Fusion (Kamera + Audio + Sensoren)') +
-
-    fSubheading('Fortgeschrittene Intelligenz (Sessions 4-7)') +
 
     fSubheading('Dynamic Few-Shot &amp; Prompt-Tracking') +
     fToggle('dynamic_few_shot.enabled', 'Dynamic Few-Shot aktiv') +
