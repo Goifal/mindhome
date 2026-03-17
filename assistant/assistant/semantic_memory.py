@@ -184,6 +184,13 @@ class SemanticMemory:
             old_id = contradiction.get("fact_id", "")
             if old_id:
                 await self.delete_fact(old_id)
+                # Relationship-Cache invalidieren damit stale Beziehungsdaten
+                # nicht weiter verwendet werden (z.B. Name geaendert)
+                if fact.category == "person":
+                    try:
+                        await self.refresh_relationship_cache()
+                    except Exception:
+                        pass
 
         dup_threshold = float(yaml_config.get("memory", {}).get("duplicate_threshold", 0.15))
         existing = await self.find_similar_fact(fact.content, threshold=dup_threshold)
@@ -806,6 +813,8 @@ class SemanticMemory:
             logger.error("Fehler bei Person-Fakten: %s", e)
             return []
 
+    _RELATIONSHIP_CACHE_TTL = 300.0  # 5 Minuten
+
     def _get_cached_relationship(
         self, pattern: str, keywords: list[str], known_names: set[str]
     ) -> str:
@@ -813,11 +822,14 @@ class SemanticMemory:
 
         Prueft den internen Relationship-Cache (befuellt durch
         ``_refresh_relationship_cache``) ob fuer einen Beziehungsbegriff
-        ein Name bekannt ist.
+        ein Name bekannt ist.  Cache wird nach 5 Minuten als stale betrachtet.
         """
+        import time as _time
         cache = getattr(self, "_relationship_cache", None)
-        if cache and pattern in cache:
-            return cache[pattern]
+        cache_ts = getattr(self, "_relationship_cache_ts", 0.0)
+        if cache and (_time.monotonic() - cache_ts) < self._RELATIONSHIP_CACHE_TTL:
+            if pattern in cache:
+                return cache[pattern]
         return ""
 
     async def refresh_relationship_cache(self):
@@ -872,7 +884,9 @@ class SemanticMemory:
                                 cache[rel_pattern] = name.lower()
                                 break
 
+            import time as _time
             self._relationship_cache = cache
+            self._relationship_cache_ts = _time.monotonic()
             if cache:
                 logger.debug("Relationship Cache aktualisiert: %s", cache)
         except Exception as e:

@@ -3759,6 +3759,15 @@ class FunctionExecutor:
         return curve[-1][key]
 
     @staticmethod
+    @staticmethod
+    def _parse_brightness(args: dict) -> int | None:
+        """Parst und validiert den Brightness-Parameter (1-100%). Gibt None zurueck bei Fehler."""
+        try:
+            bri = str(args.get("brightness", "")).replace("%", "").strip()
+            return max(1, min(100, int(float(bri))))
+        except (ValueError, TypeError):
+            return None
+
     def get_adaptive_brightness(room: str, entity_id: str = "") -> int:
         """Berechnet Helligkeit basierend auf Tageszeit + Raum-Profil.
 
@@ -3853,11 +3862,9 @@ class FunctionExecutor:
             service_data: dict = {"entity_id": entity_id}
             if state == "on":
                 if "brightness" in args:
-                    try:
-                        bri = str(args.get("brightness", "")).replace("%", "").strip()
-                        service_data["brightness_pct"] = max(1, min(100, int(float(bri))))
-                    except (ValueError, TypeError):
-                        pass
+                    bri_pct = self._parse_brightness(args)
+                    if bri_pct is not None:
+                        service_data["brightness_pct"] = bri_pct
                 else:
                     service_data["brightness_pct"] = self.get_adaptive_brightness(room_name, entity_id)
             await self.ha.call_service("light", service, service_data)
@@ -3943,12 +3950,9 @@ class FunctionExecutor:
         service_data = {"entity_id": entity_id}
         brightness_pct = None
         if "brightness" in args and state == "on":
-            try:
-                bri = str(args.get("brightness", "")).replace("%", "").strip()
-                brightness_pct = max(1, min(100, int(float(bri))))
+            brightness_pct = self._parse_brightness(args)
+            if brightness_pct is not None:
                 service_data["brightness_pct"] = brightness_pct
-            except (ValueError, TypeError):
-                pass
         elif state == "on" and "brightness" not in args:
             # Phase 11: Adaptive Helligkeit wenn keine explizite Angabe
             brightness_pct = self.get_adaptive_brightness(room, entity_id)
@@ -4035,11 +4039,9 @@ class FunctionExecutor:
                     service_data = {"entity_id": eid}
                     if state == "on":
                         if "brightness" in args:
-                            try:
-                                bri = str(args.get("brightness", "")).replace("%", "").strip()
-                                service_data["brightness_pct"] = max(1, min(100, int(float(bri))))
-                            except (ValueError, TypeError):
-                                pass
+                            bri_pct = self._parse_brightness(args)
+                            if bri_pct is not None:
+                                service_data["brightness_pct"] = bri_pct
                         else:
                             # Adaptive Helligkeit wenn keine explizite Angabe
                             room_name = eid.split(".", 1)[1] if "." in eid else ""

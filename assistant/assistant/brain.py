@@ -2739,22 +2739,19 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             return_exceptions=True,
         )
         _result_map = dict(zip(_mega_keys, _mega_results))
-
-        # Filter out exception values — replace with None and log
-        for _rk, _rv in _result_map.items():
-            if isinstance(_rv, BaseException):
-                logger.warning("Parallel task '%s' failed: %s", _rk, _rv)
-                _result_map[_rk] = None
+        # Exception-Handling erfolgt individuell pro Key (context, gag, etc.)
+        # und via _safe_get() fuer Subsysteme — kein generischer Filter hier,
+        # damit spezifische Fehlermeldungen (z.B. "Context Build Timeout") erhalten bleiben.
 
         # --- Context Build Ergebnis verarbeiten ---
         context = _result_map.get("context")
-        if context is None:
-            context = {"time": {"datetime": datetime.now().isoformat()}}
         if isinstance(context, asyncio.TimeoutError):
             logger.warning("Context Build Timeout (%.0fs) — Fallback auf Minimal-Kontext", ctx_timeout)
-            context = {"time": {"datetime": datetime.now().isoformat()}}
+            context = None
         elif isinstance(context, BaseException):
             logger.error("Context Build Fehler: %s — Fallback auf Minimal-Kontext", context)
+            context = None
+        if context is None:
             context = {"time": {"datetime": datetime.now().isoformat()}}
         if room:
             context["room"] = room
