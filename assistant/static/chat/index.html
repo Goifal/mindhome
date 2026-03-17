@@ -92,7 +92,7 @@ body::after {
   50% { top: 95%; opacity: 0.15; }
 }
 
-/* ========== Boot Screen ========== */
+/* ========== Boot Screen (MCU Style) ========== */
 .boot-screen {
   position: fixed;
   inset: 0;
@@ -102,129 +102,106 @@ body::after {
   align-items: center;
   justify-content: center;
   z-index: 9999;
+  overflow: hidden;
+  background-image:
+    radial-gradient(circle at center, rgba(0,212,255,0.06) 0%, transparent 50%),
+    linear-gradient(rgba(0,212,255,0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,255,0.018) 1px, transparent 1px);
+  background-size: 100% 100%, 28px 28px, 28px 28px;
 }
 
 .boot-screen::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at center, rgba(0,212,255,0.04) 0%, transparent 60%);
+  background: radial-gradient(circle at center, rgba(0,212,255,0.1) 0%, rgba(0,212,255,0.02) 30%, transparent 60%);
+  animation: bootCorePulse 2s ease-in-out infinite;
+  pointer-events: none;
 }
 
-.boot-hud {
-  position: relative;
-  width: 220px;
-  height: 220px;
-  margin-bottom: 32px;
-}
+/* Screen corner brackets */
+.boot-corner { position: absolute; z-index: 2; opacity: 0; animation: bootFadeIn 0.4s ease forwards; }
+.boot-corner::before, .boot-corner::after { content: ''; position: absolute; background: rgba(0,212,255,0.5); }
+.boot-corner-tl { top: 16px; left: 16px; width: 50px; height: 50px; animation-delay: 0.2s; }
+.boot-corner-tl::before { top: 0; left: 0; width: 50px; height: 1px; }
+.boot-corner-tl::after { top: 0; left: 0; width: 1px; height: 50px; }
+.boot-corner-tr { top: 16px; right: 16px; width: 50px; height: 50px; animation-delay: 0.3s; }
+.boot-corner-tr::before { top: 0; right: 0; width: 50px; height: 1px; }
+.boot-corner-tr::after { top: 0; right: 0; width: 1px; height: 50px; }
+.boot-corner-bl { bottom: 16px; left: 16px; width: 50px; height: 50px; animation-delay: 0.4s; }
+.boot-corner-bl::before { bottom: 0; left: 0; width: 50px; height: 1px; }
+.boot-corner-bl::after { bottom: 0; left: 0; width: 1px; height: 50px; }
+.boot-corner-br { bottom: 16px; right: 16px; width: 50px; height: 50px; animation-delay: 0.5s; }
+.boot-corner-br::before { bottom: 0; right: 0; width: 50px; height: 1px; }
+.boot-corner-br::after { bottom: 0; right: 0; width: 1px; height: 50px; }
 
-.boot-circle {
-  position: absolute;
-  inset: 0;
-  animation: bootRotate 3s linear infinite;
-}
+/* Full-width scan line */
+.boot-scanline { position: absolute; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent 5%, rgba(0,212,255,0.12) 15%, rgba(0,212,255,0.5) 50%, rgba(0,212,255,0.12) 85%, transparent 95%); filter: drop-shadow(0 0 10px rgba(0,212,255,0.6)); animation: bootScan 5s ease-in-out infinite; z-index: 3; pointer-events: none; }
 
-.boot-ring {
-  fill: none;
-  stroke: rgba(0,212,255,0.08);
-  stroke-width: 1.5;
-}
+/* Ambient data readouts */
+.boot-data { position: absolute; font-family: var(--mono); font-size: 9px; color: rgba(0,212,255,0.2); letter-spacing: 1px; line-height: 2.2; white-space: pre; z-index: 1; opacity: 0; animation: bootFadeIn 1s ease 0.5s forwards; }
+.boot-data-left { left: 24px; top: 50%; transform: translateY(-50%); text-align: left; }
+.boot-data-right { right: 24px; top: 50%; transform: translateY(-50%); text-align: right; }
 
-.boot-ring-fill {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 2;
-  stroke-dasharray: 565;
-  stroke-dashoffset: 565;
-  stroke-linecap: round;
-  animation: bootDraw 2s ease-out forwards;
-  filter: drop-shadow(0 0 10px rgba(0,212,255,0.7));
-}
+/* HUD container */
+.boot-hud { position: relative; width: 420px; height: 420px; margin-bottom: 24px; }
 
-.boot-ring-outer {
-  position: absolute;
-  inset: 0;
-  animation: bootRotateReverse 6s linear infinite;
-}
+/* Arc reactor core */
+.boot-core { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; transform: translate(-50%,-50%); border-radius: 50%; background: var(--accent); z-index: 10; opacity: 0; animation: bootCoreIgnite 0.6s ease 0.1s forwards; }
+.boot-core-ring { position: absolute; top: 50%; left: 50%; width: 28px; height: 28px; transform: translate(-50%,-50%); border-radius: 50%; border: 1px solid rgba(0,212,255,0.4); z-index: 9; opacity: 0; animation: bootCorePulseRing 2s ease-out 0.3s infinite; }
 
-.boot-ring-inner {
-  position: absolute;
-  inset: 0;
-  animation: bootRotate 10s linear infinite;
-}
+/* Ring layers */
+.boot-r { position: absolute; inset: 0; will-change: transform; opacity: 0; }
+.boot-r.active { opacity: 1; transition: opacity 0.4s ease; }
+.boot-r1 { animation: bootSpin 3s linear infinite; }
+.boot-r2 { animation: bootSpinR 5s linear infinite; }
+.boot-r3 { /* Main ring — no rotation, draws in */ }
+.boot-r4 { animation: bootSpinR 8s linear infinite; }
+.boot-r5 { animation: bootSpin 12s linear infinite; }
+.boot-r6 { animation: bootSpinR 18s linear infinite; }
+.boot-r7 { animation: bootSpin 25s linear infinite; }
+.boot-r8 { animation: bootSpinR 30s linear infinite; }
+.boot-ring-draw { filter: drop-shadow(0 0 8px rgba(0,212,255,0.7)); stroke-dashoffset: 553; animation: bootDraw 2.5s ease-out 0.5s forwards; }
 
-.boot-logo {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 26px;
-  font-weight: 700;
-  color: var(--accent);
-  opacity: 0;
-  animation: bootFadeIn 0.6s ease 0.3s forwards;
-  text-shadow: 0 0 40px rgba(0,212,255,0.7), 0 0 80px rgba(0,212,255,0.3);
-  letter-spacing: 6px;
-  white-space: nowrap;
-}
+/* Crosshair lines */
+.boot-crosshair line { opacity: 0; animation: bootFadeIn 0.3s ease forwards; }
 
-.boot-text {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--accent);
-  letter-spacing: 3px;
-  min-height: 20px;
-  text-transform: uppercase;
-  text-shadow: 0 0 15px rgba(0,212,255,0.4);
-}
+/* Logo text */
+.boot-logo { position: absolute; top: calc(50% - 10px); left: 50%; transform: translate(-50%,-50%); font-size: 26px; font-weight: 700; color: var(--accent); font-family: var(--mono); letter-spacing: 6px; white-space: nowrap; z-index: 11; text-shadow: 0 0 30px rgba(0,212,255,0.8), 0 0 60px rgba(0,212,255,0.3), 0 0 100px rgba(0,212,255,0.15); opacity: 0; }
+.boot-subtitle { position: absolute; top: calc(50% + 14px); left: 50%; transform: translateX(-50%); font-size: 8px; font-family: var(--mono); color: rgba(0,212,255,0.35); letter-spacing: 4px; text-transform: uppercase; white-space: nowrap; z-index: 11; opacity: 0; }
 
-.boot-systems {
-  display: flex;
-  gap: 12px;
-  margin-top: 20px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
+/* Progress bar */
+.boot-progress { display: flex; align-items: center; gap: 12px; width: 320px; margin-bottom: 18px; opacity: 0; animation: bootFadeIn 0.3s ease 0.8s forwards; }
+.boot-progress-track { flex: 1; height: 2px; background: rgba(0,212,255,0.08); border-radius: 1px; overflow: hidden; position: relative; }
+.boot-progress-track::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(0,212,255,0.05), transparent); }
+.boot-progress-bar { height: 100%; width: 0; background: linear-gradient(90deg, rgba(0,212,255,0.5), var(--accent)); border-radius: 1px; box-shadow: 0 0 8px rgba(0,212,255,0.5), 0 0 20px rgba(0,212,255,0.2); transition: width 0.3s ease; }
+.boot-progress-pct { font-family: var(--mono); font-size: 11px; color: var(--accent); min-width: 36px; text-align: right; text-shadow: 0 0 10px rgba(0,212,255,0.4); letter-spacing: 1px; }
 
-.boot-sys {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-  color: var(--text-muted);
-  opacity: 0;
-  animation: bootFadeIn 0.3s ease forwards;
-  font-family: var(--mono);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
+/* Status text */
+.boot-text { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 3px; min-height: 16px; text-transform: uppercase; text-shadow: 0 0 12px rgba(0,212,255,0.4); margin-bottom: 16px; }
 
-.boot-sys .sys-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  transition: background 0.3s, box-shadow 0.3s;
-}
+/* System modules */
+.boot-systems { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; max-width: 600px; }
+.boot-sys { display: flex; align-items: center; gap: 6px; font-size: 9px; font-family: var(--mono); color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; opacity: 0; transition: opacity 0.3s ease; }
+.boot-sys.visible { opacity: 1; }
+.boot-sys .sys-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--text-muted); transition: all 0.4s ease; flex-shrink: 0; }
+.boot-sys.online .sys-dot { background: var(--success); box-shadow: 0 0 6px rgba(0,230,118,0.6), 0 0 14px rgba(0,230,118,0.2); }
+.boot-sys.online { color: var(--success); }
 
-.boot-sys.online .sys-dot {
-  background: var(--success);
-  box-shadow: 0 0 8px rgba(0,230,118,0.5);
-}
+/* Fade out */
+.boot-screen.fade-out { animation: bootFadeOut 0.6s ease forwards; }
 
-.boot-sys.online {
-  color: var(--text-secondary);
-}
-
-.boot-screen.fade-out {
-  animation: bootFadeOut 0.5s ease forwards;
-}
-
+/* Boot keyframes */
+@keyframes bootSpin { to { transform: rotate(360deg); } }
+@keyframes bootSpinR { to { transform: rotate(-360deg); } }
 @keyframes bootDraw { to { stroke-dashoffset: 0; } }
-@keyframes bootRotate { to { transform: rotate(360deg); } }
-@keyframes bootRotateReverse { to { transform: rotate(-360deg); } }
 @keyframes bootFadeIn { to { opacity: 1; } }
 @keyframes bootFadeOut { to { opacity: 0; pointer-events: none; } }
+@keyframes bootCorePulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+@keyframes bootCoreIgnite { 0% { opacity: 0; box-shadow: none; width: 2px; height: 2px; } 50% { opacity: 1; width: 14px; height: 14px; box-shadow: 0 0 40px rgba(0,212,255,1), 0 0 80px rgba(0,212,255,0.5); } 100% { opacity: 1; width: 10px; height: 10px; box-shadow: 0 0 20px rgba(0,212,255,0.9), 0 0 50px rgba(0,212,255,0.4), 0 0 100px rgba(0,212,255,0.2); } }
+@keyframes bootCoreGlow { 0%,100% { box-shadow: 0 0 20px rgba(0,212,255,0.9), 0 0 50px rgba(0,212,255,0.4), 0 0 100px rgba(0,212,255,0.2); } 50% { box-shadow: 0 0 30px rgba(0,212,255,1), 0 0 70px rgba(0,212,255,0.5), 0 0 120px rgba(0,212,255,0.3); } }
+@keyframes bootCorePulseRing { 0% { transform: translate(-50%,-50%) scale(1); opacity: 0.5; } 100% { transform: translate(-50%,-50%) scale(3); opacity: 0; } }
+@keyframes bootScan { 0%,100% { top: 5%; } 50% { top: 95%; } }
 
 /* ========== Layout ========== */
 .app {
@@ -250,8 +227,8 @@ body::after {
   padding: 14px 20px;
   border-bottom: 1px solid rgba(0,212,255,0.1);
   flex-shrink: 0;
-  background: rgba(8,14,24,0.95);
-  backdrop-filter: blur(16px);
+  background: linear-gradient(135deg, rgba(8,14,24,0.97), rgba(4,8,16,0.98));
+  backdrop-filter: blur(20px);
   position: relative;
 }
 
@@ -469,6 +446,7 @@ body::after {
   font-family: var(--mono);
   text-transform: uppercase;
   letter-spacing: 1px;
+  position: relative;
 }
 
 .msg.user .msg-avatar {
@@ -481,7 +459,13 @@ body::after {
   background: var(--accent-dim);
   color: var(--accent);
   border-color: var(--border-accent);
-  box-shadow: 0 0 10px rgba(0,212,255,0.15);
+  box-shadow: 0 0 12px rgba(0,212,255,0.2), 0 0 30px rgba(0,212,255,0.05);
+  animation: avatarPulse 3s ease-in-out infinite;
+}
+
+@keyframes avatarPulse {
+  0%, 100% { box-shadow: 0 0 12px rgba(0,212,255,0.2), 0 0 30px rgba(0,212,255,0.05); }
+  50% { box-shadow: 0 0 18px rgba(0,212,255,0.35), 0 0 40px rgba(0,212,255,0.1); }
 }
 
 .msg.proactive .msg-avatar {
@@ -509,6 +493,7 @@ body::after {
   background: linear-gradient(135deg, rgba(12,21,32,0.95), rgba(8,16,24,0.98));
   border: 1px solid rgba(0, 212, 255, 0.1);
   border-top-left-radius: 2px;
+  backdrop-filter: blur(4px);
 }
 
 .msg.assistant .msg-bubble::before {
@@ -518,8 +503,24 @@ body::after {
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, rgba(0,212,255,0.3), transparent);
+  background: linear-gradient(90deg, rgba(0,212,255,0.4), rgba(0,212,255,0.1), transparent);
   border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.msg.assistant .msg-bubble::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: var(--radius-md);
+  border-top-left-radius: 2px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  box-shadow: 0 0 16px rgba(0,212,255,0.06), inset 0 0 20px rgba(0,212,255,0.02);
+}
+
+.msg.assistant .msg-bubble:hover::after {
+  opacity: 1;
 }
 
 .msg.proactive .msg-bubble {
@@ -810,26 +811,42 @@ body::after {
 
 .input-wrap textarea:focus {
   border-color: var(--border-accent);
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.08);
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.1), 0 0 40px rgba(0, 212, 255, 0.03);
 }
 
 .btn-send {
   width: 42px; height: 42px;
   border-radius: var(--radius-sm);
-  background: transparent;
+  background: linear-gradient(135deg, rgba(0,212,255,0.08), rgba(0,212,255,0.02));
   border: 1px solid var(--accent);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: all 0.25s ease;
   flex-shrink: 0;
-  box-shadow: 0 0 15px rgba(0,212,255,0.1), inset 0 0 15px rgba(0,212,255,0.05);
+  box-shadow: 0 0 15px rgba(0,212,255,0.15), inset 0 0 15px rgba(0,212,255,0.05);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-send::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(0,212,255,0.15), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.25s ease;
 }
 
 .btn-send:hover {
-  background: rgba(0,212,255,0.1);
-  box-shadow: 0 0 25px rgba(0,212,255,0.3), inset 0 0 20px rgba(0,212,255,0.1);
+  background: linear-gradient(135deg, rgba(0,212,255,0.15), rgba(0,212,255,0.05));
+  box-shadow: 0 0 30px rgba(0,212,255,0.35), inset 0 0 20px rgba(0,212,255,0.1);
+  transform: scale(1.02);
+}
+
+.btn-send:hover::before {
+  opacity: 1;
 }
 
 .btn-send:disabled {
@@ -1004,9 +1021,25 @@ body::after {
   align-items: center;
   justify-content: center;
   flex: 1;
-  gap: 16px;
+  gap: 20px;
   padding: 40px;
   text-align: center;
+  position: relative;
+}
+
+.welcome::before {
+  content: '';
+  position: absolute;
+  width: 300px; height: 300px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0,212,255,0.04) 0%, rgba(0,212,255,0.01) 40%, transparent 70%);
+  pointer-events: none;
+  animation: welcomeGlow 4s ease-in-out infinite;
+}
+
+@keyframes welcomeGlow {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.1); }
 }
 
 .welcome-logo {
@@ -1014,8 +1047,11 @@ body::after {
   font-weight: 700;
   letter-spacing: 8px;
   color: var(--accent);
-  text-shadow: 0 0 40px var(--accent-glow), 0 0 80px rgba(0,212,255,0.15);
+  text-shadow: 0 0 40px var(--accent-glow), 0 0 80px rgba(0,212,255,0.2), 0 0 120px rgba(0,212,255,0.08);
   text-transform: uppercase;
+  font-family: var(--mono);
+  position: relative;
+  z-index: 1;
 }
 
 .welcome-sub {
@@ -1023,33 +1059,54 @@ body::after {
   font-size: 14px;
   max-width: 360px;
   line-height: 1.6;
+  position: relative;
+  z-index: 1;
 }
 
 .welcome-hints {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
   justify-content: center;
-  margin-top: 12px;
+  margin-top: 16px;
+  position: relative;
+  z-index: 1;
 }
 
 .hint-chip {
   font-size: 12px;
   color: var(--text-secondary);
-  background: var(--bg-card);
+  background: linear-gradient(135deg, rgba(12,21,32,0.9), rgba(8,16,24,0.95));
   border: 1px solid rgba(0,212,255,0.1);
-  padding: 8px 14px;
-  border-radius: var(--radius-sm);
+  padding: 10px 18px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.25s ease;
   font-family: var(--mono);
+  position: relative;
+  overflow: hidden;
+}
+
+.hint-chip::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,212,255,0.2), transparent);
+  opacity: 0;
+  transition: opacity 0.25s ease;
 }
 
 .hint-chip:hover {
   border-color: var(--border-accent);
   color: var(--accent);
-  background: var(--accent-dim);
-  box-shadow: 0 0 12px rgba(0,212,255,0.1);
+  background: linear-gradient(135deg, rgba(0,212,255,0.08), rgba(0,212,255,0.02));
+  box-shadow: 0 0 20px rgba(0,212,255,0.1), 0 2px 8px rgba(0,0,0,0.3);
+  transform: translateY(-1px);
+}
+
+.hint-chip:hover::before {
+  opacity: 1;
 }
 
 /* ========== Toast ========== */
@@ -1158,24 +1215,32 @@ body::after {
   .input-area { padding: 12px 16px; }
   .welcome-logo { font-size: 28px; letter-spacing: 6px; }
   .welcome { padding: 24px; }
-  .boot-hud { width: 160px; height: 160px; }
-  .boot-logo { font-size: 20px; letter-spacing: 4px; }
-  .boot-text { font-size: 10px; letter-spacing: 2px; }
+  .boot-hud { width: 260px; height: 260px; }
+  .boot-logo { font-size: 18px; letter-spacing: 4px; }
+  .boot-subtitle { font-size: 7px; letter-spacing: 3px; }
+  .boot-text { font-size: 9px; letter-spacing: 2px; }
   .boot-systems { gap: 8px; }
+  .boot-progress { width: 240px; }
+  .boot-data { display: none; }
+  .boot-corner { width: 30px; height: 30px; }
+  .boot-corner-tl::before, .boot-corner-tr::before, .boot-corner-bl::before, .boot-corner-br::before { width: 30px; }
+  .boot-corner-tl::after, .boot-corner-tr::after, .boot-corner-bl::after, .boot-corner-br::after { height: 30px; }
   .logo { font-size: 15px; letter-spacing: 4px; }
-  .hint-chip { font-size: 11px; padding: 6px 12px; }
+  .hint-chip { font-size: 11px; padding: 8px 14px; }
 }
 
 @media (max-width: 380px) {
-  .boot-hud { width: 130px; height: 130px; }
-  .boot-logo { font-size: 16px; letter-spacing: 3px; }
+  .boot-hud { width: 200px; height: 200px; }
+  .boot-logo { font-size: 14px; letter-spacing: 3px; }
+  .boot-progress { width: 200px; }
   .welcome-logo { font-size: 22px; letter-spacing: 4px; }
 }
 
 /* ========== Reduced Motion ========== */
 @media (prefers-reduced-motion: reduce) {
-  .boot-circle, .boot-ring-outer, .boot-ring-inner,
+  .boot-r, .boot-scanline, .boot-core, .boot-core-ring,
   body::after, body::before { animation: none !important; }
+  .boot-r { opacity: 1 !important; }
   .msg { animation: none !important; }
   .typing-dots span { animation: none !important; opacity: 0.5; }
 }
@@ -1183,24 +1248,84 @@ body::after {
 </head>
 <body>
 
-<!-- BOOT SCREEN -->
+<!-- BOOT SCREEN (MCU Style) -->
 <div id="bootScreen" class="boot-screen">
+  <!-- Screen corner brackets -->
+  <div class="boot-corner boot-corner-tl"></div>
+  <div class="boot-corner boot-corner-tr"></div>
+  <div class="boot-corner boot-corner-bl"></div>
+  <div class="boot-corner boot-corner-br"></div>
+  <!-- Full-width scan line -->
+  <div class="boot-scanline"></div>
+  <!-- Ambient data readouts -->
+  <div class="boot-data boot-data-left" id="bootDataL"></div>
+  <div class="boot-data boot-data-right" id="bootDataR"></div>
+  <!-- Main HUD -->
   <div class="boot-hud">
-    <svg class="boot-circle" viewBox="0 0 200 200">
-      <circle class="boot-ring" cx="100" cy="100" r="90" />
-      <circle class="boot-ring-fill" cx="100" cy="100" r="90" />
+    <!-- Arc reactor core -->
+    <div class="boot-core"></div>
+    <div class="boot-core-ring"></div>
+    <!-- Ring 1: Innermost — fine ticks, fast spin -->
+    <svg class="boot-r boot-r1" viewBox="0 0 420 420">
+      <circle cx="210" cy="210" r="38" fill="none" stroke="rgba(0,212,255,0.4)" stroke-width="0.8" stroke-dasharray="2 4"/>
     </svg>
-    <svg class="boot-ring-outer" viewBox="0 0 200 200">
-      <circle cx="100" cy="100" r="96" fill="none" stroke="rgba(0,212,255,0.12)" stroke-width="0.5" />
-      <circle cx="100" cy="100" r="96" fill="none" stroke="rgba(0,212,255,0.4)" stroke-width="1" stroke-dasharray="12 8 4 8" stroke-linecap="round" />
+    <!-- Ring 2: Tick marks, counter-rotation -->
+    <svg class="boot-r boot-r2" viewBox="0 0 420 420">
+      <circle cx="210" cy="210" r="55" fill="none" stroke="rgba(0,212,255,0.2)" stroke-width="0.6" stroke-dasharray="1 7"/>
+      <circle cx="210" cy="210" r="58" fill="none" stroke="rgba(0,212,255,0.12)" stroke-width="4" stroke-dasharray="1 20"/>
     </svg>
-    <svg class="boot-ring-inner" viewBox="0 0 200 200">
-      <circle cx="100" cy="100" r="70" fill="none" stroke="rgba(0,212,255,0.3)" stroke-width="0.8" stroke-dasharray="6 14 2 14" />
-      <circle cx="100" cy="100" r="55" fill="none" stroke="rgba(0,212,255,0.15)" stroke-width="0.5" stroke-dasharray="3 20" />
+    <!-- Ring 3: Main ring — draws during boot -->
+    <svg class="boot-r boot-r3" viewBox="0 0 420 420">
+      <circle cx="210" cy="210" r="78" fill="none" stroke="rgba(0,212,255,0.06)" stroke-width="1.5"/>
+      <circle cx="210" cy="210" r="78" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="490" stroke-dashoffset="490" stroke-linecap="round" class="boot-ring-draw"/>
     </svg>
-    <div class="boot-logo">JARVIS</div>
+    <!-- Ring 4: Data segments, counter-rotation -->
+    <svg class="boot-r boot-r4" viewBox="0 0 420 420">
+      <circle cx="210" cy="210" r="98" fill="none" stroke="rgba(0,212,255,0.18)" stroke-width="0.8" stroke-dasharray="25 12 4 12" stroke-linecap="round"/>
+    </svg>
+    <!-- Ring 5: Wide tick marks -->
+    <svg class="boot-r boot-r5" viewBox="0 0 420 420">
+      <circle cx="210" cy="210" r="118" fill="none" stroke="rgba(0,212,255,0.08)" stroke-width="0.5" stroke-dasharray="1 5"/>
+      <circle cx="210" cy="210" r="120" fill="none" stroke="rgba(0,212,255,0.15)" stroke-width="6" stroke-dasharray="2 28"/>
+    </svg>
+    <!-- Ring 6: Thin scatter, counter-rotation -->
+    <svg class="boot-r boot-r6" viewBox="0 0 420 420">
+      <circle cx="210" cy="210" r="140" fill="none" stroke="rgba(0,212,255,0.1)" stroke-width="0.5" stroke-dasharray="8 20 2 20"/>
+    </svg>
+    <!-- Ring 7: Micro ticks -->
+    <svg class="boot-r boot-r7" viewBox="0 0 420 420">
+      <circle cx="210" cy="210" r="160" fill="none" stroke="rgba(0,212,255,0.06)" stroke-width="0.4" stroke-dasharray="1 4"/>
+      <circle cx="210" cy="210" r="163" fill="none" stroke="rgba(0,212,255,0.04)" stroke-width="10" stroke-dasharray="2 40"/>
+    </svg>
+    <!-- Ring 8: Outermost faint -->
+    <svg class="boot-r boot-r8" viewBox="0 0 420 420">
+      <circle cx="210" cy="210" r="185" fill="none" stroke="rgba(0,212,255,0.04)" stroke-width="0.4" stroke-dasharray="12 25"/>
+      <circle cx="210" cy="210" r="195" fill="none" stroke="rgba(0,212,255,0.025)" stroke-width="0.3" stroke-dasharray="3 15"/>
+    </svg>
+    <!-- Crosshair lines -->
+    <svg class="boot-r boot-crosshair" viewBox="0 0 420 420" style="opacity:0;">
+      <line x1="210" y1="135" x2="210" y2="165" stroke="rgba(0,212,255,0.25)" stroke-width="0.5"/>
+      <line x1="210" y1="255" x2="210" y2="285" stroke="rgba(0,212,255,0.25)" stroke-width="0.5"/>
+      <line x1="135" y1="210" x2="165" y2="210" stroke="rgba(0,212,255,0.25)" stroke-width="0.5"/>
+      <line x1="255" y1="210" x2="285" y2="210" stroke="rgba(0,212,255,0.25)" stroke-width="0.5"/>
+      <!-- Diagonal ticks -->
+      <line x1="172" y1="172" x2="182" y2="182" stroke="rgba(0,212,255,0.15)" stroke-width="0.4"/>
+      <line x1="238" y1="172" x2="248" y2="182" stroke="rgba(0,212,255,0.15)" stroke-width="0.4"/>
+      <line x1="172" y1="238" x2="182" y2="248" stroke="rgba(0,212,255,0.15)" stroke-width="0.4"/>
+      <line x1="238" y1="238" x2="248" y2="248" stroke="rgba(0,212,255,0.15)" stroke-width="0.4"/>
+    </svg>
+    <!-- Logo text -->
+    <div class="boot-logo" id="bootLogo"></div>
+    <div class="boot-subtitle" id="bootSub"></div>
   </div>
+  <!-- Progress bar -->
+  <div class="boot-progress">
+    <div class="boot-progress-track"><div class="boot-progress-bar" id="bootProgBar"></div></div>
+    <div class="boot-progress-pct" id="bootProgPct">0%</div>
+  </div>
+  <!-- Status text -->
   <div class="boot-text" id="bootText"></div>
+  <!-- System modules -->
   <div class="boot-systems" id="bootSystems"></div>
 </div>
 
@@ -1353,6 +1478,12 @@ const $app = document.getElementById('app');
 const $boot = document.getElementById('bootScreen');
 const $bootText = document.getElementById('bootText');
 const $bootSystems = document.getElementById('bootSystems');
+const $bootLogo = document.getElementById('bootLogo');
+const $bootSub = document.getElementById('bootSub');
+const $bootProgBar = document.getElementById('bootProgBar');
+const $bootProgPct = document.getElementById('bootProgPct');
+const $bootDataL = document.getElementById('bootDataL');
+const $bootDataR = document.getElementById('bootDataR');
 const $messages = document.getElementById('messages');
 const $welcome = document.getElementById('welcome');
 const $input = document.getElementById('input');
@@ -1431,55 +1562,111 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// ========== Boot Sequence ==========
-async function runBootSequence() {
-  const steps = [
-    'Initialisiere Systeme...',
-    'Verbinde mit Server...',
-    'Lade Sprachmodell...',
-    'Systeme bereit'
-  ];
+// ========== Boot Sequence (MCU Style) ==========
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-  const systems = [
-    { name: 'CORE', delay: 400 },
-    { name: 'MEMORY', delay: 300 },
-    { name: 'VOICE', delay: 500 },
-    { name: 'NET', delay: 200 }
-  ];
-
-  // Create system indicators
-  $bootSystems.innerHTML = systems.map((s, i) =>
-    `<div class="boot-sys" id="bootSys${i}" style="animation-delay:${0.5 + i * 0.15}s">
-      <span class="sys-dot"></span>
-      <span>${s.name}</span>
-    </div>`
-  ).join('');
-
-  // Run boot text steps
-  for (let i = 0; i < steps.length; i++) {
-    $bootText.textContent = steps[i];
-    await sleep(600);
-  }
-
-  // Activate systems one by one
-  for (let i = 0; i < systems.length; i++) {
-    await sleep(systems[i].delay);
-    const el = document.getElementById(`bootSys${i}`);
-    if (el) el.classList.add('online');
-  }
-
-  await sleep(500);
-
-  // Fade out boot screen and show app
-  $boot.classList.add('fade-out');
-  await sleep(400);
-  $boot.style.display = 'none';
-  $app.classList.add('active');
-  $input.focus();
+async function typeText(el, text, speed) {
+  el.textContent = '';
+  for (const ch of text) { el.textContent += ch; await sleep(speed); }
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+// MCU-style decode/scramble text effect
+async function decodeText(el, text, speed) {
+  const glyphs = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.:/-';
+  el.textContent = '';
+  el.style.opacity = '1';
+  let resolved = '';
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === ' ' || text[i] === '.') { resolved += text[i]; el.textContent = resolved; await sleep(speed * 0.5); continue; }
+    for (let j = 0; j < 3; j++) {
+      el.textContent = resolved + glyphs[Math.floor(Math.random() * glyphs.length)];
+      await sleep(speed * 0.3);
+    }
+    resolved += text[i];
+    el.textContent = resolved;
+  }
+}
+
+async function playBootSequence() {
+  const screen = $boot;
+  const crosshair = screen.querySelector('.boot-crosshair');
+  const rings = screen.querySelectorAll('.boot-r');
+
+  screen.style.display = 'flex';
+
+  function setProg(p) { $bootProgBar.style.width = p + '%'; $bootProgPct.textContent = p + '%'; }
+
+  // Ambient data readouts
+  $bootDataL.textContent = 'SYS.CORE v4.2.1\nPROTOCOL: INIT\nENCRYPT: AES-256\nNET.LINK: PENDING\nMEMORY: 0/\u221E';
+  $bootDataR.textContent = 'QUANTUM.BRIDGE\nNEURAL.NET: STANDBY\nLATENCY: --ms\nUPTIME: 00:00:00\nBUILD: 2025.03';
+
+  // Phase 1: Core ignition — rings activate one by one
+  await sleep(300);
+  setProg(3);
+  for (let i = 0; i < rings.length - 1; i++) { // -1 to skip crosshair
+    rings[i].classList.add('active');
+    setProg(3 + (i + 1) * 4);
+    await sleep(80 + Math.random() * 60);
+  }
+  // Crosshair fades in
+  if (crosshair) { crosshair.style.opacity = '1'; crosshair.style.transition = 'opacity 0.5s ease'; }
+  setProg(38);
+
+  // Phase 2: Logo decode
+  await sleep(200);
+  await decodeText($bootLogo, 'J.A.R.V.I.S.', 40);
+  setProg(50);
+  await sleep(150);
+  $bootSub.style.opacity = '1';
+  $bootSub.textContent = 'CHAT INTERFACE';
+  setProg(55);
+
+  // Phase 3: Status text
+  await sleep(200);
+  await typeText($bootText, 'SUBSYSTEM INITIALIZATION...', 30);
+  setProg(60);
+
+  // Phase 4: Systems come online with natural jitter
+  const systems = [
+    { label: 'LLM ENGINE', pct: 68 },
+    { label: 'HOME ASSISTANT', pct: 74 },
+    { label: 'REDIS CACHE', pct: 80 },
+    { label: 'MEMORY CORE', pct: 85 },
+    { label: 'VOICE SYNTH', pct: 90 },
+    { label: 'SECURITY', pct: 95 },
+  ];
+  $bootSystems.innerHTML = systems.map((s, i) =>
+    `<div class="boot-sys" id="bootSys${i}"><span class="sys-dot"></span>${s.label}</div>`
+  ).join('');
+
+  for (let i = 0; i < systems.length; i++) {
+    const el = document.getElementById('bootSys' + i);
+    if (el) {
+      el.classList.add('visible');
+      await sleep(120 + Math.random() * 180);
+      el.classList.add('online');
+      setProg(systems[i].pct);
+    }
+  }
+
+  // Update ambient data
+  $bootDataL.textContent = 'SYS.CORE v4.2.1\nPROTOCOL: ACTIVE\nENCRYPT: AES-256\nNET.LINK: SECURE\nMEMORY: READY';
+  $bootDataR.textContent = 'QUANTUM.BRIDGE\nNEURAL.NET: ONLINE\nLATENCY: <2ms\nUPTIME: 00:00:04\nBUILD: 2025.03';
+
+  // Phase 5: Complete
+  setProg(100);
+  await sleep(200);
+  $bootText.textContent = '';
+  await typeText($bootText, 'ALL SYSTEMS OPERATIONAL', 30);
+  await sleep(900);
+
+  // Fade out
+  screen.classList.add('fade-out');
+  await sleep(600);
+  screen.style.display = 'none';
+  screen.classList.remove('fade-out');
+  $app.classList.add('active');
+  $input.focus();
 }
 
 // ========== Greeting ==========
@@ -2230,7 +2417,7 @@ function setVoiceState(state) {
 }
 
 // ========== Init ==========
-runBootSequence();
+playBootSequence();
 connectWS();
 </script>
 </body>
