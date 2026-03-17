@@ -1,0 +1,1452 @@
+17.03., 05:20:59
+ⓘ
+System
+Boot-Sequenz: Alle Systeme online, Sir. Raumtemperatur bei 22 Grad. 4 Systeme eingeschränkt.
+17.03., 05:20:57
+ⓘ
+Home Assistant
+Dependency-Konflikt: media_player.volume_set(media_player.schlafzimmer) → Schlafenszeit → Medien runterdrehen (schlafzimmer)
+17.03., 05:20:50
+ⓘ
+System
+==================================================
+17.03., 05:20:50
+ⓘ
+System
+MindHome Assistant bereit auf 0.0.0.0:8200
+17.03., 05:20:50
+ⓘ
+System
+==================================================
+17.03., 05:20:50
+ⓘ
+System
+Autonomie: Level 2 (Butler)
+17.03., 05:20:50
+ⓘ
+System
+[!!] wellness_advisor: running
+17.03., 05:20:50
+ⓘ
+System
+[!!] energy_optimizer: active
+17.03., 05:20:50
+ⓘ
+System
+[!!] learning_observer: active
+17.03., 05:20:50
+ⓘ
+System
+[!!] threat_assessment: disabled
+17.03., 05:20:50
+ⓘ
+System
+[!!] self_optimization: {'enabled': True, 'approval_mode': 'manual', 'interval': 'weekly', 'pending_proposals': 0, 'max_proposals': 3}
+17.03., 05:20:50
+ⓘ
+System
+[!!] config_versioning: {'enabled': True, 'max_snapshots': 20, 'current_snapshots': 0, 'snapshot_on_edit': True}
+17.03., 05:20:50
+ⓘ
+System
+[!!] self_automation: active (daily: 0/5, pending: 0, templates: 12)
+17.03., 05:20:50
+ⓘ
+System
+[!!] conflict_resolver: active (0 personen, 0 konflikte gesamt)
+17.03., 05:20:50
+ⓘ
+System
+[!!] ambient_audio: active (0 sensoren)
+17.03., 05:20:50
+ⓘ
+System
+[!!] ocr: active (tesseract(deu+eng))
+17.03., 05:20:50
+ⓘ
+System
+[!!] knowledge_base: active (34 chunks)
+17.03., 05:20:50
+ⓘ
+System
+[!!] cooking_assistant: active (session: nein)
+17.03., 05:20:50
+ⓘ
+System
+[!!] diagnostics: disabled
+17.03., 05:20:50
+ⓘ
+System
+[!!] speaker_recognition: active (1 profiles, 0 devices, embeddings:on)
+17.03., 05:20:50
+ⓘ
+System
+[!!] sound_manager: disabled
+17.03., 05:20:50
+ⓘ
+System
+[!!] tts_enhancer: active (SSML: True, whisper: False)
+17.03., 05:20:50
+ⓘ
+System
+[!!] intent_tracker: running
+17.03., 05:20:50
+ⓘ
+System
+[!!] insight_engine: running
+17.03., 05:20:50
+ⓘ
+System
+[!!] anticipation: running
+17.03., 05:20:50
+ⓘ
+System
+[!!] guest_mode: inactive
+17.03., 05:20:50
+ⓘ
+System
+[!!] routine_engine: active
+17.03., 05:20:50
+ⓘ
+System
+[!!] time_awareness: running
+17.03., 05:20:50
+ⓘ
+System
+[!!] proactive: running
+17.03., 05:20:50
+ⓘ
+System
+[!!] summarizer: running
+17.03., 05:20:50
+ⓘ
+System
+[!!] activity_engine: active
+17.03., 05:20:50
+ⓘ
+System
+[!!] feedback_tracker: running
+17.03., 05:20:50
+ⓘ
+System
+[!!] action_planner: active
+17.03., 05:20:50
+ⓘ
+System
+[!!] mood_detector: active (mood: neutral)
+17.03., 05:20:50
+ⓘ
+System
+[!!] memory_extractor: active
+17.03., 05:20:50
+ⓘ
+System
+[OK] semantic_memory: connected
+17.03., 05:20:50
+ⓘ
+System
+[OK] chromadb: connected
+17.03., 05:20:50
+ⓘ
+System
+[OK] redis: connected
+17.03., 05:20:50
+ⓘ
+System
+[OK] home_assistant: connected
+17.03., 05:20:50
+ⓘ
+System
+[OK] ollama: connected
+17.03., 05:20:50
+ⓘ
+System
+Cover-Settings an Addon synchronisiert (Startup): ['wakeup_min_sun_elevation_deg', 'wind_threshold_kmh', 'frost_threshold_c', 'sun_protection_outdoor_temp_c', 'weather_protection_enabled', 'privacy_mode_enabled', 'frost_insulation_enabled', 'presence_simulation_enabled', 'manual_override_duration_min']
+17.03., 05:20:50
+ⓘ
+System
+Aktivitaetsprotokoll wiederhergestellt: 500 Eintraege
+17.03., 05:18:22
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=LearningObserver, Urgency=low
+17.03., 05:18:22
+ⓘ
+Lernen
+Learning: Muster erkannt - light.licht_obergeschoss:off um 05:15 (3x, Person: global)
+17.03., 05:18:22
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=LearningObserver, Urgency=low
+17.03., 05:18:22
+ⓘ
+Lernen
+Learning: Muster erkannt - light.licht:off um 05:15 (3x, Person: global)
+17.03., 05:18:22
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=LearningObserver, Urgency=low
+17.03., 05:18:22
+ⓘ
+Lernen
+Learning: Muster erkannt - light.licht_toilette_oben:off um 05:15 (3x, Person: global)
+17.03., 05:18:22
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=LearningObserver, Urgency=low
+17.03., 05:18:22
+ⓘ
+Lernen
+Learning: Muster erkannt - light.licht_toilette_oben:on um 05:15 (3x, Person: global)
+17.03., 05:18:22
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=LearningObserver, Urgency=low
+17.03., 05:18:22
+ⓘ
+Lernen
+Learning: Muster erkannt - light.licht_obergeschoss:on um 05:15 (6x, Person: global)
+17.03., 05:18:22
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=LearningObserver, Urgency=low
+17.03., 05:18:22
+ⓘ
+Lernen
+Learning: Muster erkannt - light.licht:on um 05:15 (6x, Person: global)
+17.03., 05:18:22
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] device_dependency_conflict (binary_sensor.bettsensor_manuel_2)
+17.03., 05:13:06
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 05:13:06
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 05:03:55
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 05:03:55
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 04:58:07
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] device_dependency_conflict (binary_sensor.bettsensor_julia_2)
+17.03., 04:54:45
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 04:54:45
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 04:46:29
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=HealthMonitor/humidity_high, Urgency=medium
+17.03., 04:45:38
+ⓘ
+Insights
+Insight [device_dependency_conflicts]: 845 Geraete-Konflikt(e): Schlafenszeit → Temperatur fuer Schlaf anpassen; Schlaf
+17.03., 04:45:38
+ⓘ
+Brain
+Insight unterdrückt (Silence Matrix): [device_dependency_conflicts] 845 Geraete-Konflikt(e): Schlafenszeit → Temperatur fuer Schlaf anpassen; Schlafenszeit → Temperatur fuer Schlaf anpassen; Schlafenszeit → Tueren abschliessen
+17.03., 04:45:38
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=Insight/device_dependency_conflicts, Urgency=high
+17.03., 04:45:35
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 04:45:35
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 04:40:11
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] device_dependency_conflict (binary_sensor.bettsensor_manuel_2)
+17.03., 04:36:24
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 04:36:24
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 04:27:14
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 04:27:14
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 04:18:03
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 04:18:03
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 04:15:38
+ⓘ
+Insights
+Insight [energy_anomaly]: Sir, Ma‘am, der Stromverbrauch heute liegt 618% über dem Durchschnitt. Läuft etw
+17.03., 04:15:38
+ⓘ
+Brain
+Insight unterdrückt (Silence Matrix): [energy_anomaly] Sir, Ma‘am, der Stromverbrauch heute liegt 618% über dem Durchschnitt. Läuft etwas, das nicht laufen sollte?
+17.03., 04:15:38
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=Insight/energy_anomaly, Urgency=low
+17.03., 04:13:33
+ⓘ
+Antizipation
+Anticipation-Vorschlag [suggest]: get_weather wird zu 71% nachts ausgefuehrt (Confidence: 100%)
+17.03., 04:13:33
+ⓘ
+Brain
+Anticipation unterdrückt (Quiet Hours): get_weather wird zu 71% nachts ausgefuehrt
+17.03., 04:09:56
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] device_dependency_conflict (switch.pc_de_07_1d_cf_d0_f3_internet_access)
+17.03., 04:08:53
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 04:08:53
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 04:05:52
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] device_dependency_conflict (binary_sensor.bettsensor_manuel_2)
+17.03., 04:00:00
+ⓘ
+Brain
+Fact Decay gestartet (täglich 04:00)
+17.03., 03:59:43
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 03:59:43
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 03:50:33
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 03:50:33
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 03:41:22
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 03:41:22
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 03:32:12
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 03:32:12
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 03:28:56
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] device_dependency_conflict (binary_sensor.bettsensor_manuel_2)
+17.03., 03:23:02
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 03:23:02
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 03:20:55
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] device_dependency_conflict (binary_sensor.turklingel_batterie)
+17.03., 03:13:52
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 03:13:52
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 03:13:32
+ⓘ
+Antizipation
+Anticipation-Vorschlag [suggest]: get_weather wird zu 71% nachts ausgefuehrt (Confidence: 100%)
+17.03., 03:13:32
+ⓘ
+Brain
+Anticipation unterdrückt (Quiet Hours): get_weather wird zu 71% nachts ausgefuehrt
+17.03., 03:04:42
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 03:04:42
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 02:55:32
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 02:55:32
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 02:54:52
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] device_dependency_conflict (binary_sensor.bettsensor_manuel_2)
+17.03., 02:46:29
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=HealthMonitor/humidity_high, Urgency=medium
+17.03., 02:46:21
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 02:46:21
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 02:37:10
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 02:37:10
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 02:28:00
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 02:28:00
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 02:18:49
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 02:18:49
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 02:15:35
+ⓘ
+Insights
+Insight [temp_drop]: Sir, Ma‘am, die Raumtemperatur fällt ungewöhnlich — 3.8 Grad in 2 Stunden, jetzt
+17.03., 02:15:35
+ⓘ
+Brain
+Insight unterdrückt (Silence Matrix): [temp_drop] Sir, Ma‘am, die Raumtemperatur fällt ungewöhnlich — 3.8 Grad in 2 Stunden, jetzt bei 17.2°C. Heizung ist aus.
+17.03., 02:15:35
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=Insight/temp_drop, Urgency=low
+17.03., 02:13:32
+ⓘ
+Antizipation
+Anticipation-Vorschlag [suggest]: get_weather wird zu 71% nachts ausgefuehrt (Confidence: 100%)
+17.03., 02:13:32
+ⓘ
+Brain
+Anticipation unterdrückt (Quiet Hours): get_weather wird zu 71% nachts ausgefuehrt
+17.03., 02:11:11
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] device_dependency_conflict (binary_sensor.bettsensor_manuel_2)
+17.03., 02:09:39
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 02:09:39
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 02:00:29
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 02:00:29
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 02:00:06
+ⓘ
+Brain
+Tages-Zusammenfassung für 2026-03-16 zum Abruf bereitgestellt
+17.03., 01:51:18
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 01:51:18
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 01:46:29
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=HealthMonitor/humidity_high, Urgency=medium
+17.03., 01:42:08
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 01:42:08
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 01:33:05
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] device_dependency_conflict (binary_sensor.bettsensor_manuel_2)
+17.03., 01:32:58
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 01:32:58
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 01:23:47
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 01:23:47
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 01:14:37
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 01:14:37
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 01:13:31
+ⓘ
+Antizipation
+Anticipation-Vorschlag [suggest]: get_weather wird zu 71% nachts ausgefuehrt (Confidence: 100%)
+17.03., 01:13:31
+ⓘ
+Brain
+Anticipation unterdrückt (Quiet Hours): get_weather wird zu 71% nachts ausgefuehrt
+17.03., 01:05:26
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 01:05:26
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 00:56:16
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 00:56:16
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 00:47:05
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 00:47:05
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 00:45:33
+ⓘ
+Insights
+Insight [device_dependency_conflicts]: 845 Geraete-Konflikt(e): Schlafenszeit → Temperatur fuer Schlaf anpassen; Schlaf
+17.03., 00:45:33
+ⓘ
+Brain
+Insight unterdrückt (Silence Matrix): [device_dependency_conflicts] 845 Geraete-Konflikt(e): Schlafenszeit → Temperatur fuer Schlaf anpassen; Schlafenszeit → Temperatur fuer Schlaf anpassen; Schlafenszeit → Tueren abschliessen
+17.03., 00:45:33
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=Insight/device_dependency_conflicts, Urgency=high
+17.03., 00:38:49
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] device_dependency_conflict (binary_sensor.bettsensor_manuel_2)
+17.03., 00:37:55
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 00:37:55
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 00:28:45
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 00:28:45
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 00:19:35
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 00:19:35
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 00:13:30
+ⓘ
+Antizipation
+Anticipation-Vorschlag [suggest]: get_weather wird zu 71% nachts ausgefuehrt (Confidence: 100%)
+17.03., 00:13:30
+ⓘ
+Brain
+Anticipation unterdrückt (Quiet Hours): get_weather wird zu 71% nachts ausgefuehrt
+17.03., 00:10:24
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 00:10:24
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+17.03., 00:03:47
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] person_arriving (sensor.apple_iphone_12_pro_max_distance)
+17.03., 00:01:14
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+17.03., 00:01:14
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+16.03., 23:52:04
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+16.03., 23:52:04
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+16.03., 23:51:48
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=LearningObserver, Urgency=low
+16.03., 23:51:48
+ⓘ
+Lernen
+Learning: Muster erkannt - switch.kuche_prasenz_ein_aus:on um 23:45 (7x, Person: global)
+16.03., 23:51:05
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=LearningObserver, Urgency=low
+16.03., 23:51:05
+ⓘ
+Lernen
+Learning: Muster erkannt - light.licht_obergeschoss:off um 23:45 (11x, Person: global)
+16.03., 23:51:05
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=LearningObserver, Urgency=low
+16.03., 23:51:05
+ⓘ
+Lernen
+Learning: Muster erkannt - light.licht_wohnzimmer_2:off um 23:45 (8x, Person: global)
+16.03., 23:51:05
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=LearningObserver, Urgency=low
+16.03., 23:51:05
+ⓘ
+Lernen
+Learning: Muster erkannt - light.licht_kuche:off um 23:45 (7x, Person: global)
+16.03., 23:48:35
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] device_dependency_conflict (binary_sensor.bettsensor_julia_2)
+16.03., 23:47:42
+ⓘ
+Proaktiv
+Power-Close: sensor.steckdose_schlafzimmer_multimedia_power unter Schwelle (11.7 W < 40 W) → 0/2 Covers geöffnet
+16.03., 23:46:29
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=HealthMonitor/humidity_high, Urgency=medium
+16.03., 23:42:52
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+16.03., 23:42:52
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+16.03., 23:38:46
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] device_dependency_conflict (binary_sensor.bettsensor_manuel_2)
+16.03., 23:33:42
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+16.03., 23:33:42
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+16.03., 23:24:32
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+16.03., 23:24:32
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+16.03., 23:17:03
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] device_dependency_conflict (binary_sensor.turklingel_batterie)
+16.03., 23:15:21
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+16.03., 23:15:21
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+16.03., 23:13:30
+ⓘ
+Antizipation
+Anticipation-Vorschlag [suggest]: get_weather wird zu 71% nachts ausgefuehrt (Confidence: 100%)
+16.03., 23:13:30
+ⓘ
+Brain
+Anticipation unterdrückt (Quiet Hours): get_weather wird zu 71% nachts ausgefuehrt
+16.03., 23:06:11
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+16.03., 23:06:11
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+16.03., 22:57:01
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+16.03., 22:57:01
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+16.03., 22:48:29
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=Wellness/hydration, Urgency=low
+16.03., 22:47:51
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+16.03., 22:47:51
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+16.03., 22:46:29
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=HealthMonitor/humidity_high, Urgency=medium
+16.03., 22:38:40
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+16.03., 22:38:40
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+16.03., 22:29:30
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+16.03., 22:29:30
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+16.03., 22:20:34
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] device_dependency_conflict (switch.pc_de_07_1d_cf_d0_f3_internet_access)
+16.03., 22:20:20
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+16.03., 22:20:20
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+16.03., 22:19:57
+ⓘ
+Proaktiv
+Meldung unterdrückt (Quiet Hours): [medium] device_dependency_conflict (binary_sensor.bettsensor_julia_2)
+16.03., 22:16:28
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=LearningObserver, Urgency=low
+16.03., 22:16:28
+ⓘ
+Lernen
+Learning: Muster erkannt - switch.schlafzimmer_bitte_nicht_storen:on um 22:15 (9x, Person: global)
+16.03., 22:15:30
+ⓘ
+Insights
+Insight [temp_drop]: Sir, Ma‘am, die Raumtemperatur fällt ungewöhnlich — 3.7 Grad in 2 Stunden, jetzt
+16.03., 22:15:30
+ⓘ
+Brain
+Insight unterdrückt (Silence Matrix): [temp_drop] Sir, Ma‘am, die Raumtemperatur fällt ungewöhnlich — 3.7 Grad in 2 Stunden, jetzt bei 17.8°C. Heizung ist aus.
+16.03., 22:15:30
+ⓘ
+Brain
+Callback unterdrückt (Quiet Hours): Quelle=Insight/temp_drop, Urgency=low
+16.03., 22:13:29
+ⓘ
+Antizipation
+Anticipation-Vorschlag [suggest]: get_weather wird zu 71% nachts ausgefuehrt (Confidence: 100%)
+16.03., 22:13:29
+ⓘ
+Brain
+Anticipation unterdrückt (Quiet Hours): get_weather wird zu 71% nachts ausgefuehrt
+16.03., 22:11:10
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+16.03., 22:11:10
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+16.03., 22:01:59
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+16.03., 22:01:59
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+16.03., 21:56:46
+ⓘ
+Brain
+Callback unterdrückt: Quelle=LearningObserver, Urgency=low, Aktivität=watching, Delivery=suppress, Trigger=media_player.tx_nr656
+16.03., 21:56:46
+ⓘ
+Lernen
+Learning: Muster erkannt - light.licht_obergeschoss:off um 21:45 (3x, Person: global)
+16.03., 21:52:49
+ⓘ
+Aktionen
+Entity-Katalog aktualisiert: 68 rooms, 31 lights, 286 switches, 15 covers, 481 sensors, 188 binary_sensors, 6 scenes
+16.03., 21:52:49
+ⓘ
+Aktionen
+MindHome Domain-Mapping geladen: 378 Geräte, 28 Räume, 21 Domains
+16.03., 21:51:49
+ⓘ
+Brain
+Callback unterdrückt: Quelle=LearningObserver, Urgency=low, Aktivität=watching, Delivery=suppress, Trigger=media_player.tx_nr656
+16.03., 21:51:49
+ⓘ
+Lernen
+Learning: Muster erkannt - light.licht_obergeschoss:on um 21:45 (3x, Person: global)
+16.03., 21:51:49
+ⓘ
+Brain
+Callback unterdrückt: Quelle=LearningObserver, Urgency=low, Aktivität=watching, Delivery=suppress, Trigger=media_player.tx_nr656
+16.03., 21:51:49
+ⓘ
+Lernen
+Learning: Muster erkannt - light.licht:on um 21:45 (3x, Person: global)
+16.03., 21:51:49
+ⓘ
+Proaktiv
+Evening Briefing geliefert: Die Innentemperatur liegt bei angenehmen 21,3 Grad, Sir; die Fensterläden in Kanal 10 und 14 sind jedoch noch geöffnet. Soll ich diese schließen? Ich werde sie sofort herunterfahren lassen.
+16.03., 21:49:29
+ⓘ
+Proaktiv
+Vacuum-PresenceMonitor: Task gestartet
+16.03., 21:48:36
+ⓘ
+Proaktiv
+D3: Meldung unterdrückt (Activity=watching): [medium] device_dependency_conflict (binary_sensor.bettsensor_julia_2)
+16.03., 21:48:09
+ⓘ
+Proaktiv
+Power-Close: sensor.steckdose_schlafzimmer_multimedia_power über Schwelle (73.9 W >= 40 W) → 0/2 Covers geschlossen
+16.03., 21:46:29
+ⓘ
+Proaktiv
+Startup-Reconciliation: Alle Cover im erwarteten Zustand
+16.03., 21:45:49
+ⓘ
+System
+anticipation Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:49
+ⓘ
+System
+insight_checks Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:49
+ⓘ
+System
+observation_loop Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:49
+ⓘ
+System
+consequence_checks Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:49
+ⓘ
+System
+next_step_hints Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:49
+ⓘ
+System
+curiosity Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:49
+ⓘ
+System
+escalating_concern Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:49
+ⓘ
+System
+running_gag_evolution Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:49
+ⓘ
+System
+memorable_interactions Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:49
+ⓘ
+System
+SeasonalInsight Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+ProactivePlanner Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+Autonomy Domain-Levels aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+PredictiveMaintenance Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+ClimateModel Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+DialogueState Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+LearningTransfer Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+Explainability Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+CalendarIntelligence Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+SpeakerRecognition Settings aktualisiert (enabled=True)
+16.03., 21:45:49
+ⓘ
+System
+Entity-Roles aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+MemoryExtractor Category-Confidence aktualisiert
+16.03., 21:45:49
+ⓘ
+Brain
+Brain: Konfigurierbare Daten neu geladen
+16.03., 21:45:49
+ⓘ
+System
+Learning global: enabled=True
+16.03., 21:45:49
+ⓘ
+System
+error_patterns Settings aktualisiert (enabled=True)
+16.03., 21:45:49
+ⓘ
+System
+correction_memory Settings aktualisiert (enabled=True)
+16.03., 21:45:49
+ⓘ
+System
+outcome_tracker Settings aktualisiert (enabled=True)
+16.03., 21:45:49
+ⓘ
+System
+self_report Settings aktualisiert (enabled=True)
+16.03., 21:45:49
+ⓘ
+System
+adaptive_thresholds Settings aktualisiert (enabled=True)
+16.03., 21:45:49
+ⓘ
+System
+response_quality Settings aktualisiert (enabled=True)
+16.03., 21:45:49
+ⓘ
+System
+DeviceHealth Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+VisitorManager Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+SelfOptimization Settings aktualisiert (enabled=True)
+16.03., 21:45:49
+ⓘ
+System
+SelfAutomation Settings aktualisiert (max_per_day=5)
+16.03., 21:45:49
+ⓘ
+System
+ProtocolEngine Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+MusicDJ Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+LearningObserver Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+MultiRoomAudio Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+ConversationMemory Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+EnergyOptimizer Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+CookingAssistant Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+OCREngine Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+CameraManager Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+AmbientAudio Settings aktualisiert (inkl. Reaktionen)
+16.03., 21:45:49
+ⓘ
+System
+ConflictResolver Settings aktualisiert (inkl. Safe-Limits)
+16.03., 21:45:49
+ⓘ
+System
+Vacuum Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+Interrupt-Queue Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:49
+ⓘ
+System
+Situation Model Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+InsightEngine Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+Health Monitor Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+Web Search Settings aktualisiert (enabled=False, engine=searxng)
+16.03., 21:45:49
+ⓘ
+System
+TTS Enhancer Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+Aktivität
+ActivityDetector Config neu geladen (media_players=12, bed_sensors=2, night=22-6)
+16.03., 21:45:49
+ⓘ
+System
+Autonomy Settings aktualisiert (inkl. Permissions + Evolution)
+16.03., 21:45:49
+ⓘ
+System
+Cover-Settings an Addon synchronisiert: ['wakeup_min_sun_elevation_deg', 'wind_threshold_kmh', 'frost_threshold_c', 'sun_protection_outdoor_temp_c', 'weather_protection_enabled', 'privacy_mode_enabled', 'frost_insulation_enabled', 'presence_simulation_enabled', 'manual_override_duration_min']
+16.03., 21:45:49
+ⓘ
+System
+Seasonal Actions Settings aktualisiert (live aus yaml_config im naechsten Zyklus)
+16.03., 21:45:49
+ⓘ
+System
+Routine Settings aktualisiert (proactive + routine_engine)
+16.03., 21:45:49
+ⓘ
+System
+Quiet Hours aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+Proactive Settings aktualisiert
+16.03., 21:45:49
+ⓘ
+System
+ActionPlanner Settings aktualisiert (max_iterations=8)
+16.03., 21:45:49
+ⓘ
+Persönlichkeit
+PersonalityEngine: Config neu geladen
+16.03., 21:45:49
+ⓘ
+Persönlichkeit
+Opinion Rules geladen: 25 Regeln
+16.03., 21:45:49
+ⓘ
+Persönlichkeit
+Easter Eggs geladen: 23 Einträge
+16.03., 21:45:49
+ⓘ
+Persönlichkeit
+Humor-Triggers geladen: 14 Situationen
+16.03., 21:45:47
+ⓘ
+System
+anticipation Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:47
+ⓘ
+System
+insight_checks Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:47
+ⓘ
+System
+observation_loop Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:47
+ⓘ
+System
+consequence_checks Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:47
+ⓘ
+System
+next_step_hints Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:47
+ⓘ
+System
+curiosity Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:47
+ⓘ
+System
+escalating_concern Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:47
+ⓘ
+System
+running_gag_evolution Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:47
+ⓘ
+System
+memorable_interactions Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:47
+ⓘ
+System
+SeasonalInsight Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+ProactivePlanner Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+Autonomy Domain-Levels aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+PredictiveMaintenance Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+ClimateModel Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+DialogueState Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+LearningTransfer Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+Explainability Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+CalendarIntelligence Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+SpeakerRecognition Settings aktualisiert (enabled=True)
+16.03., 21:45:47
+ⓘ
+System
+Entity-Roles aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+MemoryExtractor Category-Confidence aktualisiert
+16.03., 21:45:47
+ⓘ
+Brain
+Brain: Konfigurierbare Daten neu geladen
+16.03., 21:45:47
+ⓘ
+System
+Learning global: enabled=True
+16.03., 21:45:47
+ⓘ
+System
+error_patterns Settings aktualisiert (enabled=True)
+16.03., 21:45:47
+ⓘ
+System
+correction_memory Settings aktualisiert (enabled=True)
+16.03., 21:45:47
+ⓘ
+System
+outcome_tracker Settings aktualisiert (enabled=True)
+16.03., 21:45:47
+ⓘ
+System
+self_report Settings aktualisiert (enabled=True)
+16.03., 21:45:47
+ⓘ
+System
+adaptive_thresholds Settings aktualisiert (enabled=True)
+16.03., 21:45:47
+ⓘ
+System
+response_quality Settings aktualisiert (enabled=True)
+16.03., 21:45:47
+ⓘ
+System
+DeviceHealth Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+VisitorManager Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+SelfOptimization Settings aktualisiert (enabled=True)
+16.03., 21:45:47
+ⓘ
+System
+SelfAutomation Settings aktualisiert (max_per_day=5)
+16.03., 21:45:47
+ⓘ
+System
+ProtocolEngine Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+MusicDJ Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+LearningObserver Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+MultiRoomAudio Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+ConversationMemory Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+EnergyOptimizer Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+CookingAssistant Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+OCREngine Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+CameraManager Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+AmbientAudio Settings aktualisiert (inkl. Reaktionen)
+16.03., 21:45:47
+ⓘ
+System
+ConflictResolver Settings aktualisiert (inkl. Safe-Limits)
+16.03., 21:45:47
+ⓘ
+System
+Vacuum Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+Interrupt-Queue Settings aktualisiert (live aus yaml_config)
+16.03., 21:45:47
+ⓘ
+System
+Situation Model Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+InsightEngine Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+Health Monitor Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+Web Search Settings aktualisiert (enabled=False, engine=searxng)
+16.03., 21:45:47
+ⓘ
+System
+TTS Enhancer Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+Aktivität
+ActivityDetector Config neu geladen (media_players=12, bed_sensors=2, night=22-6)
+16.03., 21:45:47
+ⓘ
+System
+Autonomy Settings aktualisiert (inkl. Permissions + Evolution)
+16.03., 21:45:47
+ⓘ
+System
+Cover-Settings an Addon synchronisiert: ['wakeup_min_sun_elevation_deg', 'wind_threshold_kmh', 'frost_threshold_c', 'sun_protection_outdoor_temp_c', 'weather_protection_enabled', 'privacy_mode_enabled', 'frost_insulation_enabled', 'presence_simulation_enabled', 'manual_override_duration_min']
+16.03., 21:45:47
+ⓘ
+System
+Seasonal Actions Settings aktualisiert (live aus yaml_config im naechsten Zyklus)
+16.03., 21:45:47
+ⓘ
+System
+Routine Settings aktualisiert (proactive + routine_engine)
+16.03., 21:45:47
+ⓘ
+System
+Quiet Hours aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+Proactive Settings aktualisiert
+16.03., 21:45:47
+ⓘ
+System
+ActionPlanner Settings aktualisiert (max_iterations=8)
+16.03., 21:45:47
+ⓘ
+Persönlichkeit
+PersonalityEngine: Config neu geladen
+16.03., 21:45:47
+ⓘ
+Persönlichkeit
+Opinion Rules geladen: 25 Regeln
+16.03., 21:45:47
+ⓘ
+Persönlichkeit
+Easter Eggs geladen: 23 Einträge
+16.03., 21:45:47
+ⓘ
+Persönlichkeit
+Humor-Triggers geladen: 14 Situationen
+16.03., 21:45:29
+ⓘ
+Proaktiv
+Follow-up Loop gestartet
+16.03., 21:44:47
+ⓘ
+Brain
+Callback unterdrückt: Quelle=LearningObserver, Urgency=low, Aktivität=sleeping, Delivery=suppress
+16.03., 21:44:47
+ⓘ
+Lernen
+Learning: Muster erkannt - light.licht_wohnzimmer_2:off um 21:30 (7x, Person: global)
+16.03., 21:44:29
+ⓘ
+Proaktiv
+Batch-Loop gestartet (interval=30s)
+16.03., 21:43:59
+ⓘ
+Proaktiv
+Vacuum-SceneTrigger: Task gestartet
+16.03., 21:43:59
+ⓘ
+Proaktiv
+Vacuum-PowerTrigger: Task gestartet
+16.03., 21:43:47
+ⓘ
+System
+Boot-Sequenz: Systeme hochgefahren, Sir. Alles bereit. Raumtemperatur bei 21 Grad. 4 Systeme eingeschränkt.
+16.03., 21:43:39
+ⓘ
+System
+==================================================
+16.03., 21:43:39
+ⓘ
+System
+MindHome Assistant bereit auf 0.0.0.0:8200
