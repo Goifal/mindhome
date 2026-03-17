@@ -66,6 +66,7 @@ const _searchIndex = [
   {tab:'tab-memory', title:'Gedächtnis-Einstellungen', keywords:'memory kontext max einträge persönliche daten geburtstag', icon:'&#128218;'},
   // Räume & Speaker (tab-rooms)
   {tab:'tab-rooms', title:'Heizung', keywords:'thermostat Heizkurve Wärmepumpe temperatur', icon:'&#128293;'},
+  {tab:'tab-rooms', title:'Luftfeuchtigkeit', keywords:'feuchtigkeit humidity sensor raumklima', icon:'&#128167;'},
   {tab:'tab-rooms', title:'Räume', keywords:'raum speaker lautsprecher zuordnung', icon:'&#127968;'},
   // Sensoren (tab-sensors)
   {tab:'tab-sensors', title:'Sensoren', keywords:'sensor bettsensor bett schlaf bed occupancy präsenz', icon:'&#128225;'},
@@ -1390,6 +1391,7 @@ const HELP_TEXTS = {
   'voice_analysis.voice_weight': {title:'Stimm-Gewichtung', text:'Wie stark Stimm-Analyse die Gesamtstimmung beeinflusst (0-1).'},
   // === RAEUME ===
   'room_temperature.sensors': {title:'Temperatursensoren', text:'HA-Sensoren für Raumtemperatur.'},
+  'health_monitor.humidity_sensors': {title:'Feuchtigkeitssensoren', text:'HA-Sensoren für Luftfeuchtigkeits-Ueberwachung. Ohne Auswahl werden alle Sensoren geprueft.'},
   'multi_room.enabled': {title:'Multi-Room', text:'Erkennt in welchem Raum du bist.'},
   'multi_room.presence_timeout_minutes': {title:'Praesenz-Timeout', text:'Nach wie vielen Min ohne Bewegung der Raum leer ist.'},
   'multi_room.auto_follow': {title:'Musik folgen', text:'Musik folgt automatisch von Raum zu Raum.'},
@@ -3631,6 +3633,11 @@ function renderRooms() {
     fInfo('Welche Temperatursensoren sollen für die Raumtemperatur verwendet werden? Jarvis berechnet den Mittelwert aller Sensoren. Ohne Sensoren wird die Temperatur der Klimaanlage/Heizung genutzt.') +
     fEntityPicker('room_temperature.sensors', 'Temperatursensoren', ['sensor'], 'Nur sensor.*-Entities mit Temperaturwerten. z.B. sensor.temperatur_wohnzimmer') +
     '<div id="roomTempAverage" style="margin-top:8px;"></div>'
+  ) +
+  sectionWrap('&#128167;', 'Luftfeuchtigkeits-Sensoren',
+    fInfo('Welche Sensoren sollen für die Luftfeuchtigkeits-Ueberwachung verwendet werden? Jarvis berechnet den Mittelwert aller Sensoren. Ohne Auswahl werden alle Feuchtigkeits-Sensoren geprueft.') +
+    fEntityPicker('health_monitor.humidity_sensors', 'Feuchtigkeits-Sensoren', ['sensor'], 'Nur sensor.*-Entities mit Luftfeuchtigkeitswerten. z.B. sensor.luftfeuchtigkeit_wohnzimmer') +
+    '<div id="roomHumidityAverage" style="margin-top:8px;"></div>'
   ) +
   sectionWrap('&#127968;', 'Multi-Room',
     fInfo('Der Assistent erkennt in welchem Raum du bist und antwortet dort. Praesenz-Timeout = wie lange er dich in einem Raum "merkt".') +
