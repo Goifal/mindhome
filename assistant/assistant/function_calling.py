@@ -8306,8 +8306,7 @@ class FunctionExecutor:
 
     async def _exec_get_weather(self, args: dict) -> dict:
         """Aktuelles Wetter und Vorhersage von Home Assistant."""
-        # Vorhersage immer mitliefern — LLM entscheidet was davon relevant ist
-        include_forecast = True
+        include_forecast = args.get("include_forecast", False)
 
         states = await self.ha.get_states()
         if not states:
