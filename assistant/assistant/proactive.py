@@ -1956,7 +1956,7 @@ class ProactiveManager:
                 ],
                 model=settings.model_notify,
                 think=False,
-                max_tokens=300,
+                max_tokens=500,
             )
             text = validate_notification(
                 response.get("message", {}).get("content", "")
@@ -2616,7 +2616,7 @@ class ProactiveManager:
                 ],
                 model=settings.model_notify,
                 think=False,
-                max_tokens=100,
+                max_tokens=300,
             )
 
             text = validate_notification(
@@ -2898,7 +2898,7 @@ class ProactiveManager:
                 ],
                 model=settings.model_notify,
                 think=False,
-                max_tokens=120,
+                max_tokens=300,
             )
             return validate_notification(
                 response.get("message", {}).get("content", f"Alles ruhig, {get_person_title(person_name)}.")
@@ -3066,7 +3066,7 @@ class ProactiveManager:
                 ],
                 model=settings.model_notify,
                 think=False,
-                max_tokens=100,
+                max_tokens=300,
             )
             text = validate_notification(
                 response.get("message", {}).get("content", "").strip()
@@ -3463,7 +3463,7 @@ class ProactiveManager:
                 ],
                 model=settings.model_notify,
                 think=False,
-                max_tokens=250,
+                max_tokens=500,
             )
 
             text = validate_notification(
@@ -3728,7 +3728,7 @@ class ProactiveManager:
                     ],
                     model=settings.model_fast,
                     think=False,
-                    max_tokens=100,
+                    max_tokens=300,
                     tier="fast",
                 ),
                 timeout=3.0,
@@ -3768,7 +3768,7 @@ class ProactiveManager:
                     ],
                     model=settings.model_notify,
                     think=False,
-                    max_tokens=120,
+                    max_tokens=300,
                 ),
                 timeout=5.0,
             )
@@ -3806,7 +3806,7 @@ class ProactiveManager:
                     ],
                     model=settings.model_notify,
                     think=False,
-                    max_tokens=120,
+                    max_tokens=300,
                 ),
                 timeout=5.0,
             )

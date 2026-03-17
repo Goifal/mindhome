@@ -90,7 +90,12 @@ class SmartIntentRecognizer:
         return settings.model_fast
 
     def _is_implicit(self, text: str) -> bool:
-        """Schnell-Check: Ist der Text ein impliziter Wunsch (kein direkter Befehl)?"""
+        """Schnell-Check: Ist der Text ein impliziter Wunsch (kein direkter Befehl)?
+
+        Gelockerter Filter: Neben expliziten Markern werden auch kurze Saetze
+        ohne Device-Verben durchgelassen, da das LLM selbst 'action: none'
+        zurueckgeben kann wenn kein impliziter Wunsch vorliegt.
+        """
         text_lower = text.lower().strip()
 
         # Direkte Befehle ausschliessen
@@ -101,7 +106,15 @@ class SmartIntentRecognizer:
         if any(text_lower.startswith(v) for v in direct_verbs):
             return False
 
-        # Implizite Marker erkennen
+        # Fragen sind keine impliziten Wuensche
+        question_starts = (
+            "was ", "wer ", "wie ", "wo ", "warum ", "wann ", "welch",
+            "wie viel", "erklaer", "sag mir",
+        )
+        if any(text_lower.startswith(q) for q in question_starts):
+            return False
+
+        # Implizite Marker erkennen (hohe Konfidenz)
         implicit_markers = [
             "mir ist", "mir wird", "es ist so", "es ist zu",
             "ich kann nicht", "ich friere", "ich schwitze",
@@ -110,8 +123,32 @@ class SmartIntentRecognizer:
             "so laut", "so leise", "langweilig",
             "muede", "müde", "wach", "schlecht",
             "ich geh", "ich muss", "bin gleich",
+            # Erweiterte Marker: Zustandsbeschreibungen und Emotionen
+            "puh", "bah", "igitt", "boah", "uff",
+            "hier ist", "hier riecht", "hier stinkt",
+            "es nervt", "ich halt das nicht", "das haelt man nicht aus",
+            "es ist viel zu", "total", "echt zu", "viel zu",
+            "muffig", "stickig", "zugig",
+            "ich brauche", "ich brauch", "ich will",
+            "komme nicht zur ruhe", "kann mich nicht konzentrier",
         ]
-        return any(m in text_lower for m in implicit_markers)
+        if any(m in text_lower for m in implicit_markers):
+            return True
+
+        # Gelockerter Filter: Kurze Saetze (3-8 Woerter) ohne Device-Verben
+        # und ohne Fragewort — koennten implizite Wuensche sein.
+        # Das LLM kann mit 'action: none' filtern.
+        word_count = len(text_lower.split())
+        if 3 <= word_count <= 8:
+            # Kein Device-Verb, kein direkter Befehl → LLM entscheiden lassen
+            device_verbs_in_text = (
+                "einschalten", "ausschalten", "anschalten", "abschalten",
+                "aktivier", "deaktivier", "hochfahren", "runterfahren",
+            )
+            if not any(v in text_lower for v in device_verbs_in_text):
+                return True
+
+        return False
 
     async def recognize(self, text: str, room: str = "",
                         time_of_day: str = "") -> Optional[dict]:
@@ -265,7 +302,7 @@ class ConversationSummarizer:
                 messages=[{"role": "user", "content": prompt}],
                 model=self._get_model(),
                 temperature=0.2,
-                max_tokens=250,
+                max_tokens=500,
                 think=False,
             )
 
@@ -319,7 +356,7 @@ class ConversationSummarizer:
                 messages=[{"role": "user", "content": prompt}],
                 model=self._get_model(),
                 temperature=0.1,
-                max_tokens=150,
+                max_tokens=500,
                 think=False,
             )
 
@@ -458,7 +495,7 @@ class ProactiveSuggester:
                 messages=[{"role": "user", "content": prompt}],
                 model=self._get_model(),
                 temperature=0.5,
-                max_tokens=200,
+                max_tokens=500,
                 think=False,
             )
 
@@ -619,7 +656,7 @@ class ResponseRewriter:
                 messages=[{"role": "user", "content": prompt}],
                 model=self._get_model(),
                 temperature=0.4,
-                max_tokens=200,
+                max_tokens=500,
                 think=False,
             )
 
@@ -642,9 +679,24 @@ class ResponseRewriter:
                 return response
 
             # Fakten-Check: Zahlen aus Original muessen im Rewrite vorkommen
+            # Normalisiert Dezimalzahlen (21.5 == 21,5) fuer robusten Vergleich
             original_numbers = re.findall(r'\d+[.,]?\d*', response)
             if original_numbers:
-                missing = [n for n in original_numbers if n not in content]
+                # Normalisiere: Komma→Punkt, dann als Float-Set vergleichen
+                def _normalize_nums(nums: list[str]) -> set[str]:
+                    result = set()
+                    for n in nums:
+                        normalized = n.replace(",", ".")
+                        try:
+                            result.add(str(float(normalized)))
+                        except ValueError:
+                            result.add(n)
+                    return result
+
+                orig_set = _normalize_nums(original_numbers)
+                rewrite_numbers = re.findall(r'\d+[.,]?\d*', content)
+                rewrite_set = _normalize_nums(rewrite_numbers)
+                missing = orig_set - rewrite_set
                 if missing:
                     logger.debug("Rewrite hat Zahlen verloren: %s, behalte Original", missing)
                     return response

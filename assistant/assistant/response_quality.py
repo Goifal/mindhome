@@ -189,15 +189,30 @@ class ResponseQualityTracker:
     # --- Private Methoden ---
 
     def _detect_rephrase(self, current_text: str, previous_text: str) -> bool:
-        """Aehnlichkeitscheck: Keyword-Overlap > Threshold."""
+        """Aehnlichkeitscheck: Embedding-basierte Semantik + Keyword-Overlap Fallback.
+
+        Nutzt Sentence-Transformer Embeddings fuer semantische Aehnlichkeit.
+        Erkennt auch Rephrasings wie 'Mach das Licht an' vs 'Beleuchtung einschalten'.
+        Fallback auf Keyword-Overlap wenn Embeddings nicht verfuegbar.
+        """
         if not current_text or not previous_text:
             return False
 
-        # Einfacher Keyword-Overlap
+        # Primaer: Embedding-basierte Aehnlichkeit (semantisch)
+        try:
+            from .embeddings import get_embedding, cosine_similarity
+            emb_current = get_embedding(current_text.lower().strip())
+            emb_previous = get_embedding(previous_text.lower().strip())
+            if emb_current is not None and emb_previous is not None:
+                similarity = cosine_similarity(emb_current, emb_previous)
+                return similarity >= self._rephrase_threshold
+        except Exception:
+            pass  # Fallback auf Keyword-Overlap
+
+        # Fallback: Keyword-Overlap (wenn Embeddings nicht verfuegbar)
         current_words = set(current_text.lower().split())
         previous_words = set(previous_text.lower().split())
 
-        # Stoppwoerter ignorieren
         stopwords = {"ich", "du", "das", "die", "der", "ein", "eine", "ist", "und",
                      "oder", "aber", "ja", "nein", "bitte", "mal", "noch", "auch",
                      "nicht", "mir", "mich", "es", "den", "dem", "was", "wie", "in",

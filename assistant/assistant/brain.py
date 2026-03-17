@@ -750,6 +750,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.wellness_advisor.executor = self.executor
         self.insight_engine.set_notify_callback(self._handle_insight)
 
+        # LLM-Integration: Ollama-Client an Module weiterreichen
+        self.pre_classifier.set_ollama(self.ollama)
+        self.wellness_advisor.set_ollama(self.ollama)
+        self.energy_optimizer.set_ollama(self.ollama)
+        self.explainability.set_ollama(self.ollama)
+        self.seasonal_insight.set_ollama(self.ollama)
+        self.seasonal_insight.set_ha(self.ha)
+
         if "WellnessAdvisor" not in _degraded_modules:
             await _safe_init("WellnessAdvisor.start", self.wellness_advisor.start())
 
@@ -1216,7 +1224,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             summary = await self.ollama.generate(
                 prompt=prompt,
                 model=self.model_router.model_fast,
-                max_tokens=200,
+                max_tokens=500,
             )
             return summary.strip() if summary else None
         except Exception as e:
@@ -1799,7 +1807,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 self.ollama.chat(
                                     messages=feedback_messages,
                                     model=self.model_router.model_fast,
-                                    temperature=0.4, max_tokens=150, think=False,
+                                    temperature=0.4, max_tokens=300, think=False,
                                 ),
                                 timeout=3.0,
                             )
@@ -1909,7 +1917,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 self.ollama.chat(
                                     messages=feedback_messages,
                                     model=self.model_router.model_fast,
-                                    temperature=0.4, max_tokens=150, think=False,
+                                    temperature=0.4, max_tokens=300, think=False,
                                 ),
                                 timeout=3.0,
                             )
@@ -2625,7 +2633,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     await emit_progress("context", _prog_msg)
 
         # 0. Pre-Classification: Bestimmt welche Subsysteme gebraucht werden
-        profile = self.pre_classifier.classify(text)
+        profile = await self.pre_classifier.classify_async(text)
         logger.info("Pre-Classification: %s", profile.category)
 
         # 0b. Intent vorab bestimmen (rein pattern-basiert, kein I/O)
@@ -4673,7 +4681,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 messages=feedback_messages,
                                 model=model,
                                 temperature=0.2,
-                                max_tokens=120,
+                                max_tokens=300,
                                 think=False,
                             ),
                             timeout=15.0,
@@ -4880,7 +4888,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             try:
                 retry_resp = await self.ollama.chat(
                     messages=retry_messages, model=model, temperature=0.3,
-                    max_tokens=128, think=False,
+                    max_tokens=256, think=False,
                 )
                 retry_text = retry_resp.get("message", {}).get("content", "")
                 if retry_text:
@@ -5745,7 +5753,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     ],
                     model=settings.model_fast,
                     think=False,
-                    max_tokens=80,
+                    max_tokens=200,
                     tier="fast",
                 ),
                 timeout=3.0,
@@ -7171,7 +7179,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     ],
                     model=settings.model_fast,
                     think=False,
-                    max_tokens=80,
+                    max_tokens=200,
                     tier="fast",
                 ),
                 timeout=3.0,
@@ -11365,7 +11373,7 @@ Regeln:
                     messages=messages,
                     model=self.model_router.model_fast,
                     temperature=0.4,
-                    max_tokens=100,
+                    max_tokens=300,
                     think=False,
                 ),
                 timeout=5.0,
@@ -11422,7 +11430,7 @@ Regeln:
                 ],
                 model=self.model_router.model_fast,
                 temperature=0.5,
-                max_tokens=80,
+                max_tokens=200,
             )
             text = response.get("message", {}).get("content", "")
             return text.strip() if text.strip() else fast_response

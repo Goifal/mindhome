@@ -181,7 +181,7 @@ class MoodDetector:
                     messages=messages,
                     model=settings.model_fast,
                     temperature=0.1,
-                    max_tokens=80,
+                    max_tokens=150,
                     think=False,
                     tier="fast",
                 ),

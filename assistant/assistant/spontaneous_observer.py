@@ -254,7 +254,7 @@ class SpontaneousObserver:
                 "Nenne EINE interessante, nicht offensichtliche Beobachtung in 1-2 Saetzen auf Deutsch. "
                 "Sei spezifisch und nuetzlich. Antworte NUR mit der Beobachtung, ohne Einleitung."
             )
-            response = await self._ollama.generate(prompt, max_tokens=100)
+            response = await self._ollama.generate(prompt, max_tokens=300)
             if response and len(response.strip()) > 20:
                 return {
                     "type": "llm_observation",

@@ -28,7 +28,7 @@ from typing import Optional
 
 import redis.asyncio as aioredis
 
-from .config import yaml_config, get_person_title
+from .config import yaml_config, settings, get_person_title
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
@@ -228,6 +228,8 @@ class InsightEngine:
                 if self.enabled:
                     insights = await self._run_all_checks()
                     for insight in insights:
+                        # LLM-Rewrite: Insight-Text natuerlicher formulieren
+                        insight = await self._rewrite_insight(insight)
                         if self._notify_callback:
                             await self._notify_callback(insight)
                         logger.info(
@@ -241,6 +243,65 @@ class InsightEngine:
                 logger.error("InsightEngine Loop Fehler: %s", e)
 
             await asyncio.sleep(self.check_interval)
+
+    async def _rewrite_insight(self, insight: dict) -> dict:
+        """Formuliert Insight-Text via LLM natuerlicher — im Jarvis-Butler-Stil.
+
+        Nutzt das Fast-Modell fuer minimale Latenz. Bei Fehler oder wenn kein
+        OllamaClient vorhanden, wird der Original-Text unveraendert zurueckgegeben.
+        """
+        cfg = yaml_config.get("insights", {})
+        if not cfg.get("llm_rewrite", True) or not self._ollama:
+            return insight
+
+        original = insight.get("message", "")
+        if not original or len(original) < 15:
+            return insight
+
+        title = await self._get_title_for_home()
+        urgency = insight.get("urgency", "low")
+
+        try:
+            response = await asyncio.wait_for(
+                self._ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Du bist J.A.R.V.I.S., ein trocken-britischer Smart-Home-Butler. "
+                                "Formuliere den folgenden Hinweis in 1-2 Saetzen natuerlich um. "
+                                "Behalte ALLE Fakten exakt bei (Zahlen, Geraete, Raeume). "
+                                f"Anrede: {title}. "
+                                f"Dringlichkeit: {urgency}. "
+                                "Keine Aufzaehlungen, keine Emojis, knapp und souveraen."
+                            ),
+                        },
+                        {"role": "user", "content": original},
+                    ],
+                    model=settings.model_fast,
+                    temperature=0.4,
+                    max_tokens=500,
+                    think=False,
+                    tier="fast",
+                ),
+                timeout=4.0,
+            )
+            content = (response.get("message", {}).get("content", "") or "").strip()
+            # Think-Tags entfernen
+            if "<think>" in content:
+                think_end = content.find("</think>")
+                if think_end != -1:
+                    content = content[think_end + 8:].strip()
+
+            if content and 10 < len(content) < len(original) * 3:
+                insight["message"] = content
+                insight["_original_message"] = original
+        except asyncio.TimeoutError:
+            logger.debug("Insight-Rewrite Timeout — behalte Original")
+        except Exception as e:
+            logger.debug("Insight-Rewrite Fehler: %s", e)
+
+        return insight
 
     # ------------------------------------------------------------------
     # Daten sammeln

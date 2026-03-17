@@ -40,6 +40,7 @@ class WellnessAdvisor:
         self.activity = activity_engine
         self.mood = mood_detector
         self.executor = None  # Phase 17.4: FunctionExecutor fuer Ambient Actions
+        self._ollama = None   # LLM fuer natuerlichere Nachrichten-Varianz
         self.redis: Optional[aioredis.Redis] = None
         self._notify_callback = None
         self._task: Optional[asyncio.Task] = None
@@ -146,6 +147,10 @@ class WellnessAdvisor:
         self.hydration_interval_hours = cfg.get("hydration_interval_hours", 2)
         logger.info("WellnessAdvisor Config reloaded (enabled=%s, interval=%ds)",
                      self.enabled, self.check_interval)
+
+    def set_ollama(self, ollama_client):
+        """Setzt den OllamaClient fuer LLM-basierte Nachrichten-Varianz."""
+        self._ollama = ollama_client
 
     def set_notify_callback(self, callback):
         """Setzt den Callback fuer Wellness-Meldungen."""
@@ -739,6 +744,65 @@ class WellnessAdvisor:
         logger.info("Mood-Ambient: %d Aktionen ausgefuehrt: %s", len(executed), action_names)
 
     # ------------------------------------------------------------------
+    # LLM-Rewrite fuer Nachrichten-Varianz
+    # ------------------------------------------------------------------
+
+    async def _llm_rewrite_nudge(self, message: str, nudge_type: str) -> str:
+        """Formuliert Wellness-Nachrichten via LLM fuer mehr Varianz.
+
+        Nutzt das Fast-Modell um die statischen Template-Nachrichten natuerlicher
+        und abwechslungsreicher zu formulieren. Bei Fehler: Original zurueck.
+        """
+        cfg = yaml_config.get("wellness", {})
+        if not cfg.get("llm_rewrite", True) or not self._ollama:
+            return message
+
+        if not message or len(message) < 10:
+            return message
+
+        try:
+            from .config import settings
+            response = await asyncio.wait_for(
+                self._ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Du bist J.A.R.V.I.S., ein trocken-britischer Smart-Home-Butler. "
+                                "Formuliere den folgenden Wellness-Hinweis leicht um fuer natuerliche Varianz. "
+                                f"Typ: {nudge_type}. "
+                                "REGELN: Behalte den Kern und alle Fakten. Max 1-2 Saetze. "
+                                "Keine Aufzaehlungen. Trocken-eleganter Ton. "
+                                "Wenn die Nachricht schon gut ist, aendere nur minimal."
+                            ),
+                        },
+                        {"role": "user", "content": message},
+                    ],
+                    model=settings.model_fast,
+                    temperature=0.6,
+                    max_tokens=500,
+                    think=False,
+                    tier="fast",
+                ),
+                timeout=3.0,
+            )
+            content = (response.get("message", {}).get("content", "") or "").strip()
+            # Think-Tags entfernen
+            if "<think>" in content:
+                think_end = content.find("</think>")
+                if think_end != -1:
+                    content = content[think_end + 8:].strip()
+
+            if content and 8 < len(content) < len(message) * 2.5:
+                return content
+        except asyncio.TimeoutError:
+            pass
+        except Exception as e:
+            logger.debug("Wellness LLM-Rewrite Fehler: %s", e)
+
+        return message
+
+    # ------------------------------------------------------------------
     # Nudge senden
     # ------------------------------------------------------------------
 
@@ -754,6 +818,9 @@ class WellnessAdvisor:
         if not self._notify_callback:
             logger.debug("Wellness-Nudge ohne Callback: %s", message)
             return
+
+        # LLM-Rewrite fuer natuerlichere Varianz (optional, Fallback auf Original)
+        message = await self._llm_rewrite_nudge(message, nudge_type)
 
         # Device-Dependency-Check: Suggestion validieren
         # z.B. "Fenster oeffnen" nicht vorschlagen wenn Heizung laeuft

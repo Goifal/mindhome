@@ -43,6 +43,7 @@ class EnergyOptimizer:
     def __init__(self, ha_client: HomeAssistantClient):
         self.ha = ha_client
         self.redis: Optional[aioredis.Redis] = None
+        self._ollama = None  # LLM fuer personalisierte Empfehlungen
 
         # Konfiguration
         energy_cfg = yaml_config.get("energy", {})
@@ -73,6 +74,10 @@ class EnergyOptimizer:
             "switch.kuehlschrank", "switch.gefrierschrank", "switch.tiefkuehler",
             "switch.server", "switch.nas", "switch.aquarium",
         ]))
+
+    def set_ollama(self, ollama_client):
+        """Setzt den OllamaClient fuer LLM-basierte Empfehlungen."""
+        self._ollama = ollama_client
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert den EnergyOptimizer."""
@@ -225,7 +230,11 @@ class EnergyOptimizer:
         return alerts
 
     async def _get_recommendations(self, price, solar, consumption) -> list[str]:
-        """Generiert Empfehlungen basierend auf aktuellen Werten."""
+        """Generiert Empfehlungen basierend auf aktuellen Werten.
+
+        Nutzt optional LLM fuer personalisierte Zusammenfassung der Rohdaten.
+        Fallback auf statische Templates wenn LLM nicht verfuegbar.
+        """
         recs = []
 
         if price is not None:
@@ -270,6 +279,79 @@ class EnergyOptimizer:
                     recs.append(f"Energiehinweis: {c['hint']}{room}")
         except Exception as _dep_err:
             logger.debug("Energy Dependency-Kontext: %s", _dep_err)
+
+        # LLM-Zusammenfassung: Statische Empfehlungen natuerlicher formulieren
+        recs = await self._llm_summarize_recommendations(recs, price, solar, consumption)
+
+        return recs
+
+    async def _llm_summarize_recommendations(
+        self, recs: list[str], price, solar, consumption,
+    ) -> list[str]:
+        """Formuliert Energie-Empfehlungen via LLM natuerlicher.
+
+        Fasst mehrere Empfehlungen zu 1-2 praegnanten Saetzen zusammen.
+        Bei Fehler oder wenn kein LLM verfuegbar: Original-Liste zurueck.
+        """
+        import asyncio
+        energy_cfg = yaml_config.get("energy", {})
+        if not energy_cfg.get("llm_recommendations", True) or not self._ollama:
+            return recs
+
+        if len(recs) < 2:
+            return recs  # Einzelne Empfehlung braucht kein LLM
+
+        try:
+            from .config import settings
+            context_parts = []
+            if price is not None:
+                context_parts.append(f"Strompreis: {price:.1f} ct/kWh")
+            if solar is not None:
+                context_parts.append(f"Solar: {solar:.0f} W")
+            if consumption is not None:
+                context_parts.append(f"Verbrauch: {consumption:.0f} W")
+
+            response = await asyncio.wait_for(
+                self._ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Du bist J.A.R.V.I.S., ein Smart-Home-Butler. "
+                                "Fasse die folgenden Energie-Empfehlungen in 1-3 praegnanten "
+                                "Saetzen zusammen. Behalte ALLE Zahlen exakt bei. "
+                                "Kein Markdown, keine Aufzaehlungen. Butler-Ton."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Kontext: {', '.join(context_parts)}\n"
+                                f"Empfehlungen:\n" + "\n".join(f"- {r}" for r in recs)
+                            ),
+                        },
+                    ],
+                    model=settings.model_fast,
+                    temperature=0.3,
+                    max_tokens=500,
+                    think=False,
+                    tier="fast",
+                ),
+                timeout=3.0,
+            )
+            content = (response.get("message", {}).get("content", "") or "").strip()
+            if "<think>" in content:
+                think_end = content.find("</think>")
+                if think_end != -1:
+                    content = content[think_end + 8:].strip()
+
+            if content and len(content) > 10:
+                return [content]
+
+        except asyncio.TimeoutError:
+            pass
+        except Exception as e:
+            logger.debug("Energy LLM-Zusammenfassung Fehler: %s", e)
 
         return recs
 
