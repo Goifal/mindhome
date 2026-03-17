@@ -386,13 +386,26 @@ class ProactiveManager:
         except Exception as e:
             logger.debug("Status-LED Update fehlgeschlagen: %s", e)
 
-    def _is_quiet_hours(self) -> bool:
-        """Prüft ob gerade Quiet Hours aktiv sind (z.B. 22:00-07:00)."""
+    @staticmethod
+    def _check_quiet(start: int, end: int) -> bool:
+        """Prueft ob die aktuelle Stunde in einem Quiet-Window liegt."""
         hour = datetime.now().hour
-        if self._quiet_start > self._quiet_end:
-            # Über Mitternacht: z.B. 22-7
-            return hour >= self._quiet_start or hour < self._quiet_end
-        return self._quiet_start <= hour < self._quiet_end
+        if start > end:
+            return hour >= start or hour < end
+        return start <= hour < end
+
+    def _is_quiet_hours(self, person: str = "") -> bool:
+        """Prüft ob gerade Quiet Hours aktiv sind (z.B. 22:00-07:00).
+
+        Wenn person angegeben: Per-Person Quiet Hours bevorzugen.
+        """
+        if person:
+            from .config import get_member_config
+            member_cfg = get_member_config(person)
+            if member_cfg and "quiet_hours" in member_cfg:
+                qh = member_cfg["quiet_hours"]
+                return self._check_quiet(qh.get("start", self._quiet_start), qh.get("end", self._quiet_end))
+        return self._check_quiet(self._quiet_start, self._quiet_end)
 
     # ------------------------------------------------------------------
     # Unified Delivery: WebSocket + TTS in einer Pipeline
@@ -426,6 +439,8 @@ class ProactiveManager:
         """
         # 1. WebSocket: Proaktive Meldung an alle Clients
         await emit_proactive(text, event_type, urgency, notification_id)
+        # Feedback-Bridge: Letzten Event-Typ merken fuer Lob-Erkennung
+        self.brain._last_proactive_event_type = event_type
 
         # 2. TTS: Nur wenn delivery_method Sprache erlaubt
         if delivery_method in ("tts_loud", "tts_quiet"):
@@ -441,6 +456,105 @@ class ProactiveManager:
                 )
             except Exception as e:
                 logger.warning("Proaktive TTS fehlgeschlagen: %s", e)
+
+    async def _send_critical_with_retry(
+        self,
+        text: str,
+        event_type: str,
+        protocol: str,
+        max_retries: int = 3,
+    ):
+        """Sendet Critical Alert mit Retry und Lautstaerke-Escalation.
+
+        Wiederholt den Alert bis zu max_retries Mal mit 30s Abstand,
+        falls kein ACK empfangen wird. Volume steigt pro Versuch.
+        """
+        event_id = f"crit_{event_type}_{int(time.time())}"
+        redis = getattr(self.brain.memory, "redis", None)
+        if redis:
+            try:
+                await redis.setex(f"mha:critical:{event_id}", 300, "pending")
+            except Exception:
+                pass
+
+        for attempt in range(max_retries + 1):
+            volume = min(1.0, 0.7 + attempt * 0.1)
+
+            await emit_interrupt(text, event_type, protocol, [])
+
+            try:
+                room = await self.brain._get_occupied_room()
+                self.brain._task_registry.create_task(
+                    self.brain.sound_manager.speak_response(
+                        text, room=room, tts_data={"volume": volume},
+                    ),
+                    name=f"critical_tts_{attempt}",
+                )
+            except Exception as e:
+                logger.warning("Critical TTS (Versuch %d) fehlgeschlagen: %s", attempt, e)
+
+            if attempt < max_retries:
+                await asyncio.sleep(30)
+                # ACK pruefen
+                if redis:
+                    try:
+                        ack = await redis.get(f"mha:critical:{event_id}")
+                        if ack and ack == b"acked":
+                            logger.info("Critical Alert %s acknowledged nach %d Versuchen", event_id, attempt + 1)
+                            return
+                    except Exception:
+                        pass
+
+        logger.warning("Critical Alert %s: Kein ACK nach %d Versuchen", event_id, max_retries + 1)
+
+    async def _is_semantically_duplicate(self, message: str, window_minutes: int = 30) -> bool:
+        """Prueft ob eine semantisch aehnliche Notification kuerzlich gesendet wurde.
+
+        Nutzt Embeddings + Cosinus-Aehnlichkeit statt exakter String-Matches.
+        Rolling Buffer in Redis: mha:notification_buffer (max 10 Items).
+        """
+        try:
+            from .embeddings import get_embedding_function, compute_cosine_similarity
+
+            ef = get_embedding_function()
+            if not ef:
+                return False
+
+            redis = getattr(self.brain.memory, "redis", None)
+            if not redis:
+                return False
+
+            buffer_key = "mha:notification_buffer"
+            now = time.time()
+
+            # Neues Embedding berechnen
+            new_emb = ef([message])[0]
+
+            # Buffer lesen
+            raw_items = await redis.lrange(buffer_key, 0, 9)
+            for raw in raw_items:
+                try:
+                    item = json.loads(raw)
+                    ts = item.get("ts", 0)
+                    if (now - ts) > window_minutes * 60:
+                        continue
+                    old_emb = item.get("emb", [])
+                    if old_emb and compute_cosine_similarity(new_emb, old_emb) > 0.85:
+                        logger.info("Semantisches Duplikat erkannt: %.50s", message)
+                        return True
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+            # Neuen Eintrag in Buffer speichern
+            entry = json.dumps({"ts": now, "emb": new_emb}, ensure_ascii=False)
+            await redis.lpush(buffer_key, entry)
+            await redis.ltrim(buffer_key, 0, 9)
+            await redis.expire(buffer_key, window_minutes * 60)
+
+        except Exception as e:
+            logger.debug("Semantic Dedup Fehler: %s", e)
+
+        return False
 
     async def start(self):
         """Startet den Event Listener."""
@@ -504,7 +618,13 @@ class ProactiveManager:
         if followup_cfg.get("enabled", True):
             self._followup_task = asyncio.create_task(self._run_followup_loop())
 
-        logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal + Notfall + Threat + Ambient + Follow-up)")
+        # E: Routine-Abweichungserkennung
+        self._routine_task: Optional[asyncio.Task] = None
+        routine_cfg = yaml_config.get("routine_deviation", {})
+        if routine_cfg.get("enabled", True):
+            self._routine_task = asyncio.create_task(self._run_routine_deviation_loop())
+
+        logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal + Notfall + Threat + Ambient + Follow-up + Routine)")
 
     async def stop(self):
         """Stoppt den Event Listener."""
@@ -2250,6 +2370,38 @@ class ProactiveManager:
             except Exception as e:
                 logger.warning("D3: Activity-Check fehlgeschlagen: %s", e)
 
+        # #10: Kalender-Vorpruefung — waehrend eines Termins nur HIGH+ durchlassen
+        if urgency not in (CRITICAL, HIGH):
+            try:
+                cal = getattr(self.brain, "calendar_intelligence", None)
+                if cal:
+                    event = await cal.is_in_event()
+                    if event:
+                        detail = data.get("entity") or data.get("task") or data.get("message") or ""
+                        logger.info(
+                            "Meldung unterdrückt (Kalender: %s): [%s] %s%s",
+                            event.get("summary", "Termin"), urgency, event_type,
+                            f" ({detail})" if detail else "",
+                        )
+                        return
+            except Exception as e:
+                logger.debug("Kalender-Check fehlgeschlagen: %s", e)
+
+        # #4: Conversation-Awareness — bei aktiver Konversation LOW unterdrücken
+        if urgency == LOW:
+            try:
+                last_ts = getattr(self.brain, "_last_interaction_ts", 0)
+                if last_ts and (time.time() - last_ts) < 120:
+                    detail = data.get("entity") or data.get("task") or data.get("message") or ""
+                    logger.info(
+                        "Meldung unterdrückt (User aktiv): [%s] %s%s",
+                        urgency, event_type,
+                        f" ({detail})" if detail else "",
+                    )
+                    return
+            except Exception:
+                pass
+
         # Cooldown prüfen (mit adaptivem Cooldown aus Feedback)
         effective_cooldown = self.cooldown
         feedback = self.brain.feedback
@@ -2311,8 +2463,6 @@ class ProactiveManager:
         # CRITICAL: Interrupt-Kanal — sofort durchstellen, kein LLM-Polish nötig
         if urgency == CRITICAL:
             description = self.event_handlers.get(event_type, (CRITICAL, event_type))[1]
-            protocol = ""
-            actions_taken = []
 
             # Notfall-Protokoll Name ermitteln
             protocol_map = {
@@ -2327,22 +2477,10 @@ class ProactiveManager:
             if "camera_description" in data:
                 text += f" {data['camera_description']}"
 
-            await emit_interrupt(text, event_type, protocol, actions_taken)
-
-            # CRITICAL muss IMMER hoerbar sein — auch ohne WebSocket-Client.
-            # Volume aus ActivityEngine (0.6-1.0 je nach Aktivität).
-            try:
-                crit_result = await self.brain.activity.should_deliver("critical")
-                crit_volume = crit_result.get("volume", 0.8)
-                crit_room = await self.brain._get_occupied_room()
-                self.brain._task_registry.create_task(
-                    self.brain.sound_manager.speak_response(
-                        text, room=crit_room, tts_data={"volume": crit_volume},
-                    ),
-                    name="critical_tts",
-                )
-            except Exception as e:
-                logger.warning("Critical TTS fehlgeschlagen: %s", e)
+            # #20: Critical Alert mit Retry und Escalation
+            await self._send_critical_with_retry(
+                text, event_type, protocol, max_retries=3,
+            )
 
             await self.brain.memory.set_last_notification_time(event_type)
 
@@ -2366,8 +2504,18 @@ class ProactiveManager:
         # Notification-ID generieren (für Feedback-Tracking)
         notification_id = f"notif_{uuid.uuid4().hex[:12]}"
 
-        # Meldung generieren
+        # #18: Semantische Duplikat-Erkennung vor LLM-Polish
         description = self.event_handlers.get(event_type, (MEDIUM, event_type))[1]
+        _dedup_text = data.get("message", description)
+        if urgency not in (CRITICAL, HIGH):
+            try:
+                if await self._is_semantically_duplicate(_dedup_text):
+                    logger.info("Semantisches Duplikat unterdrückt: [%s] %s", event_type, _dedup_text[:60])
+                    return
+            except Exception:
+                pass
+
+        # Meldung generieren
 
         # Feature 3: Geräte-Persönlichkeit — narration statt LLM wenn moeglich
         narration_text = None
@@ -6848,6 +6996,60 @@ class ProactiveManager:
                 })
         except Exception as e:
             logger.debug("Threshold-Suggestion Fehler: %s", e)
+
+    # ------------------------------------------------------------------
+    # Routine-Abweichungserkennung
+    # ------------------------------------------------------------------
+
+    async def _run_routine_deviation_loop(self):
+        """Prueft periodisch ob Personen ungewoehnlich spaet abwesend sind."""
+        await asyncio.sleep(600)  # 10 Min Startup-Delay
+        logger.info("Routine-Deviation-Loop gestartet")
+
+        while self._running:
+            try:
+                hour = datetime.now().hour
+                if 17 <= hour <= 22:
+                    # Abwesende Personen ermitteln
+                    household = yaml_config.get("household", {}).get("members", [])
+                    away_persons = []
+                    for member in household:
+                        name = member.get("name", "")
+                        ha_entity = member.get("ha_entity", "")
+                        if name and ha_entity:
+                            try:
+                                state = await self.brain.ha.get_state(ha_entity)
+                                if state and state.get("state") == "not_home":
+                                    away_persons.append(name)
+                            except Exception:
+                                continue
+
+                    if away_persons:
+                        anticipation = getattr(self.brain, "anticipation", None)
+                        if anticipation:
+                            deviations = await anticipation.check_routine_deviation(away_persons)
+                            for dev in deviations:
+                                person = dev["person"]
+                                cooldown_key = f"mha:routine_deviation:{person}"
+                                redis = getattr(self.brain.memory, "redis", None)
+                                if redis:
+                                    already = await redis.get(cooldown_key)
+                                    if already:
+                                        continue
+                                    await redis.setex(cooldown_key, 86400, "1")
+
+                                await self._notify("routine_deviation", LOW, {
+                                    "message": f"{person} ist normalerweise um {dev['expected_time']} Uhr zu Hause, "
+                                               f"heute {dev['delay_minutes']} Minuten spaeter als ueblich.",
+                                    "person": person,
+                                })
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug("Routine-Deviation Fehler: %s", e)
+
+            await asyncio.sleep(1800)  # Alle 30 Minuten pruefen
 
     # ------------------------------------------------------------------
     # Konfigurations-Assistent

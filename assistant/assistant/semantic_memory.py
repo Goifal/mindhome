@@ -648,10 +648,10 @@ class SemanticMemory:
                 if updated_at:
                     try:
                         days_old = (now - datetime.fromisoformat(updated_at)).days
-                        # Max 10% Boost fuer Fakten der letzten 7 Tage,
-                        # linear abfallend ueber 90 Tage
-                        if days_old < 90:
-                            recency_boost = 0.1 * max(0.0, 1.0 - days_old / 90.0)
+                        # Staerkerer Recency-Boost: 25% fuer aktuelle Fakten,
+                        # linear abfallend ueber 60 Tage
+                        if days_old < 60:
+                            recency_boost = 0.25 * max(0.0, 1.0 - days_old / 60.0)
                     except (ValueError, TypeError):
                         pass
                 facts.append({
@@ -700,6 +700,7 @@ class SemanticMemory:
                 pipe.hgetall(f"mha:fact:{fid}")
             all_data = await pipe.execute()
 
+            now = datetime.now()
             min_confidence = float(yaml_config.get("memory", {}).get(
                 "min_confidence_for_context", 0.4
             ))
@@ -743,6 +744,17 @@ class SemanticMemory:
                 if total_score > 0:
                     # Confidence als Boost-Faktor (0.5-1.0 → 0.75-1.0)
                     conf_boost = 0.5 + confidence * 0.5
+                    # Temporal-Boost: Neuere Fakten bevorzugen (analog zu ChromaDB)
+                    _updated_at = data.get("updated_at", "")
+                    if isinstance(_updated_at, bytes):
+                        _updated_at = _updated_at.decode()
+                    if _updated_at:
+                        try:
+                            _days_old = (now - datetime.fromisoformat(_updated_at)).days
+                            if _days_old < 60:
+                                total_score += 0.25 * max(0.0, 1.0 - _days_old / 60.0)
+                        except (ValueError, TypeError):
+                            pass
                     fact_id = data.get("fact_id", "")
                     if isinstance(fact_id, bytes):
                         fact_id = fact_id.decode()

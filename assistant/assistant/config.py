@@ -394,6 +394,21 @@ def get_all_bed_sensors() -> list[str]:
     return sensors
 
 
+def get_member_config(person: str) -> dict:
+    """Gibt die Member-Config fuer eine Person zurueck.
+
+    Sucht in household.members nach name (case-insensitive).
+    Return: Dict mit allen Member-Feldern oder leeres Dict.
+    """
+    household = yaml_config.get("household") or {}
+    members = household.get("members") or []
+    person_lower = person.lower().strip()
+    for m in members:
+        if (m.get("name") or "").lower().strip() == person_lower:
+            return m
+    return {}
+
+
 def resolve_model(yaml_value: str, fallback_tier: str = "smart") -> str:
     """Validiert einen Modellnamen aus settings.yaml gegen die aktuelle Konfiguration.
 

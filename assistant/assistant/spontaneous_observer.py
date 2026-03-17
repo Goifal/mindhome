@@ -31,9 +31,10 @@ _PREFIX = "mha:spontaneous"
 class SpontaneousObserver:
     """Macht unaufgeforderte, interessante Beobachtungen."""
 
-    def __init__(self, ha_client: HomeAssistantClient, activity_engine=None):
+    def __init__(self, ha_client: HomeAssistantClient, activity_engine=None, ollama_client=None):
         self.ha = ha_client
         self.activity = activity_engine
+        self._ollama = ollama_client
         self.redis: Optional[aioredis.Redis] = None
         self._notify_callback = None
         self._task: Optional[asyncio.Task] = None
@@ -198,6 +199,70 @@ class SpontaneousObserver:
                 logger.debug("Spontaneous Check Fehler: %s", e)
                 continue
 
+        # LLM-Observation als Fallback wenn keine hardcoded Checks etwas fanden
+        if self._ollama and not await self._on_cooldown("llm_observation"):
+            try:
+                result = await self._check_llm_observation()
+                if result:
+                    await self._set_cooldown("llm_observation", 24 * 3600)
+                    return result
+            except Exception as e:
+                logger.debug("LLM Observation Fehler: %s", e)
+
+        return None
+
+    # ------------------------------------------------------------------
+    # LLM-basierte Beobachtung
+    # ------------------------------------------------------------------
+
+    def _build_sensor_snapshot(self, states: list[dict]) -> str:
+        """Baut kompakten Sensor-Snapshot fuer LLM-Prompt."""
+        lines = []
+        _RELEVANT = {"temperature", "humidity", "energy", "power", "illuminance", "co2", "battery"}
+        for s in states:
+            eid = s.get("entity_id", "")
+            state_val = s.get("state", "")
+            if state_val in ("unavailable", "unknown", ""):
+                continue
+            attrs = s.get("attributes", {})
+            device_class = attrs.get("device_class", "")
+            unit = attrs.get("unit_of_measurement", "")
+            if device_class in _RELEVANT or any(k in eid for k in ("temp", "humid", "energy", "power", "weather")):
+                name = attrs.get("friendly_name", eid)
+                lines.append(f"{name}: {state_val}{unit}")
+                if len(lines) >= 30:
+                    break
+        return "\n".join(lines)
+
+    async def _check_llm_observation(self) -> Optional[dict]:
+        """LLM analysiert Sensor-Daten und findet nicht-offensichtliche Beobachtungen."""
+        if not self._ollama:
+            return None
+
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return None
+
+            snapshot = self._build_sensor_snapshot(states)
+            if not snapshot:
+                return None
+
+            prompt = (
+                "Du bist ein Smart-Home-Assistent. Hier sind aktuelle Hausdaten:\n\n"
+                f"{snapshot}\n\n"
+                "Nenne EINE interessante, nicht offensichtliche Beobachtung in 1-2 Saetzen auf Deutsch. "
+                "Sei spezifisch und nuetzlich. Antworte NUR mit der Beobachtung, ohne Einleitung."
+            )
+            response = await self._ollama.generate(prompt, max_tokens=100)
+            if response and len(response.strip()) > 20:
+                return {
+                    "type": "llm_observation",
+                    "text": response.strip(),
+                    "category": "insight",
+                }
+        except Exception as e:
+            logger.debug("LLM Observation fehlgeschlagen: %s", e)
         return None
 
     # ------------------------------------------------------------------

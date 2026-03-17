@@ -3433,6 +3433,11 @@ class FunctionExecutor:
             prev_row = curr_row
         return prev_row[-1]
 
+    # Funktionen die nur Owner (Trust >= 2) ausfuehren darf
+    _SECURITY_FUNCTIONS = frozenset({
+        "lock_door", "arm_security_system", "set_presence_mode",
+    })
+
     async def execute(self, function_name: str, arguments: dict) -> dict:
         """
         Fuehrt eine Funktion aus.
@@ -3449,6 +3454,25 @@ class FunctionExecutor:
         handler = getattr(self, f"_exec_{function_name}", None)
         if not handler:
             return {"success": False, "message": f"Unbekannte Funktion: {function_name}"}
+
+        # Trust-Enforcement: Pruefe ob aktuelle Person die Funktion ausfuehren darf
+        try:
+            import assistant.main as _main_mod
+            _brain = _main_mod.brain
+            _person = getattr(_brain, "_current_person", "") or ""
+            if _brain and hasattr(_brain, "autonomy"):
+                trust_result = _brain.autonomy.can_person_act(
+                    _person, function_name,
+                )
+                if not trust_result.get("allowed", True):
+                    _reason = trust_result.get("reason", "Keine Berechtigung.")
+                    logger.warning(
+                        "Trust-Check BLOCKIERT: %s darf '%s' nicht ausfuehren (%s)",
+                        _person or "unknown", function_name, _reason,
+                    )
+                    return {"success": False, "message": _reason}
+        except Exception:
+            pass  # Graceful degradation — Trust-Check optional
 
         try:
             # Phase 18: Pre-Execution Consequence Check
@@ -3928,6 +3952,31 @@ class FunctionExecutor:
         elif state == "on" and "brightness" not in args:
             # Phase 11: Adaptive Helligkeit wenn keine explizite Angabe
             brightness_pct = self.get_adaptive_brightness(room, entity_id)
+            # Outcome-Learning: CorrectionMemory-Regeln koennen Brightness ueberschreiben
+            try:
+                import assistant.main as _main_mod
+                _brain = _main_mod.brain
+                if _brain and hasattr(_brain, "correction_memory"):
+                    _rules = await _brain.correction_memory.get_active_rules(
+                        action_type="set_light", person=person,
+                    )
+                    for _rule in _rules:
+                        if _rule.get("confidence", 0) > 0.6:
+                            _rule_text = _rule.get("text", "").lower()
+                            if "brightness" in _rule_text or "helligkeit" in _rule_text:
+                                import re
+                                _bri_match = re.search(r"(\d{1,3})\s*%?", _rule_text)
+                                if _bri_match:
+                                    _learned_bri = int(_bri_match.group(1))
+                                    if 1 <= _learned_bri <= 100:
+                                        logger.info(
+                                            "CorrectionMemory Brightness Override: %d%% -> %d%% (person=%s)",
+                                            brightness_pct, _learned_bri, person,
+                                        )
+                                        brightness_pct = _learned_bri
+                                        break
+            except Exception:
+                pass
             service_data["brightness_pct"] = brightness_pct
         # Phase 9: Transition-Parameter (sanftes Dimmen) — muss int/float sein
         if "transition" in args:

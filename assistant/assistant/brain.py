@@ -239,6 +239,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # B4: Background Reasoning — Idle-Timer fuer Smart-Modell-Analyse
         self._last_interaction_ts: float = 0.0
+        # Letzter proaktiver Event-Typ (fuer Feedback-Bridge)
+        self._last_proactive_event_type: str = ""
         self._idle_reasoning_pending: bool = False
 
         # Clients
@@ -359,7 +361,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Jarvis-Features: Benannte Protokolle + Spontane Beobachtungen
         self.protocol_engine = ProtocolEngine(self.ollama, self.executor)
-        self.spontaneous = SpontaneousObserver(self.ha, self.activity)
+        self.spontaneous = SpontaneousObserver(self.ha, self.activity, ollama_client=self.ollama)
 
         # Feature 11: Smart DJ (kontextbewusste Musikempfehlungen)
         self.music_dj = MusicDJ(self.mood, self.activity)
@@ -923,6 +925,59 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         "was empfiehlst du", "kannst du helfen",
     ])
 
+    # S2: Prompt Injection Protection
+    _INJECTION_PATTERNS_DE = (
+        "ignoriere deine instruktionen", "ignoriere alle vorherigen",
+        "vergiss deine anweisungen", "vergiss alles vorherige",
+        "du bist jetzt", "ab jetzt bist du", "neue instruktionen:",
+        "system prompt:", "systemprompt:",
+    )
+    _INJECTION_PATTERNS_EN = (
+        "ignore your instructions", "ignore all previous", "ignore previous",
+        "disregard your instructions", "forget your instructions",
+        "you are now", "new instructions:", "system prompt:", "override:",
+    )
+    _INPUT_MAX_LENGTH = 2000
+
+    def _sanitize_user_input(self, text: str) -> tuple[str, bool]:
+        """Sanitiert User-Input gegen Prompt Injection.
+
+        Returns:
+            (cleaned_text, is_suspicious)
+        """
+        if not text:
+            return text, False
+
+        import unicodedata
+
+        # Unicode-Normalisierung (NFKC) — loest Fullwidth-Chars etc. auf
+        cleaned = unicodedata.normalize("NFKC", text)
+
+        # Zero-Width + unsichtbare Unicode-Zeichen entfernen
+        cleaned = ''.join(
+            c for c in cleaned
+            if unicodedata.category(c) not in ('Cf',)  # Format-Chars (Zero-Width etc.)
+        )
+
+        # Laenge cappen (Smart Home braucht keine 2000+ Zeichen Eingabe)
+        if len(cleaned) > self._INPUT_MAX_LENGTH:
+            logger.warning(
+                "S2: User-Input von %d auf %d Zeichen gekuerzt",
+                len(cleaned), self._INPUT_MAX_LENGTH,
+            )
+            cleaned = cleaned[:self._INPUT_MAX_LENGTH]
+
+        # Bekannte Injection-Patterns pruefen
+        _lower = cleaned.lower()
+        is_suspicious = False
+        for pattern in self._INJECTION_PATTERNS_DE + self._INJECTION_PATTERNS_EN:
+            if pattern in _lower:
+                is_suspicious = True
+                logger.warning("S2: Prompt Injection Verdacht: '%s' in Input", pattern)
+                break
+
+        return cleaned, is_suspicious
+
     def _result(self, response: str, *, actions=None, model: str = "",
                 room=None, tts=None, emitted: bool = False, **extra) -> dict:
         """Baut ein Standard-Antwort-Dict (DRY-Helper)."""
@@ -1219,6 +1274,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self._user_request_active = True
         self._last_interaction_ts = time.time()  # B4: Idle-Timer zuruecksetzen
         self._idle_reasoning_pending = False  # B4: Idle-Analyse abbrechen
+
+        # S2: Prompt Injection Protection — Sanitize User-Input
+        text, _injection_suspect = self._sanitize_user_input(text)
+
         try:
             return await self._process_inner(text, person, room, files, stream_callback, voice_metadata, device_id)
         finally:
@@ -1430,6 +1489,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             primary = cfg.yaml_config.get("household", {}).get("primary_user", "")
             if primary:
                 person = primary
+
+        # S4: Wenn Person nach allen Identifikationsversuchen immer noch leer
+        # UND Speaker-Recognition aktiv → als "unknown_speaker" behandeln (Trust 0 = Gast)
+        if not person and self.speaker_recognition.enabled:
+            person = "unknown_speaker"
+            logger.info("Speaker nicht identifiziert — behandle als Gast (unknown_speaker)")
 
         # Dialogue State: Klaerungsfrage aufloesen + Referenzen aufloesen
         try:
@@ -2765,9 +2830,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if whatif_prompt:
             _upgrade_signals += 3  # Hypothetisches Denken braucht Deep
             _has_reasoning_need = True
-        if not _conversation_mode and not _is_simple_greeting and not _is_device_cmd:
-            # Intelligence-Signals nur ausserhalb von Konversationen zaehlen
-            # und NICHT bei einfachen Greetings oder Device-Commands
+        if not _is_simple_greeting and not _is_device_cmd:
+            # Intelligence-Signals auch in Konversationen zaehlen,
+            # aber Conversation-Mode erhoet den Threshold (+2) um
+            # unnoetige Deep-Upgrades bei Smalltalk zu vermeiden.
             if anticipation_suggestions or learned_patterns:
                 _upgrade_signals += 1  # Intelligence Fusion = mehr Kontext
             if live_insights:
@@ -2788,7 +2854,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Intelligence-Signals allein (anticipation, patterns, insights) reichen
         # NICHT — die sind fast immer aktiv und wuerden sonst bei Threshold=1
         # jeden Request auf Deep treiben.
-        if (_upgrade_signals >= self._opt_upgrade_signal_threshold
+        # In Konversationen: Threshold +2 hoeher, damit Intelligence-Signals
+        # allein kein Upgrade ausloesen, aber starke Reasoning-Signale schon.
+        _effective_threshold = self._opt_upgrade_signal_threshold + (2 if _conversation_mode else 0)
+        if (_upgrade_signals >= _effective_threshold
                 and (_has_reasoning_need or (_security_critical and not _conversation_mode))
                 and model != self.model_router.model_deep):
             # Error-Mitigation VOR dem Upgrade pruefen: Wenn das Deep-Modell
@@ -2807,7 +2876,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             else:
                 _upgraded = _deep_model
                 if _upgraded != model:
-                    logger.info("Model Upgrade %s -> %s (signals: %d, threshold: %d)", model, _upgraded, _upgrade_signals, self._opt_upgrade_signal_threshold)
+                    logger.info("Model Upgrade %s -> %s (signals: %d, threshold: %d)", model, _upgraded, _upgrade_signals, _effective_threshold)
                     model = _upgraded
         if context is None:
             context = {}
@@ -3091,6 +3160,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             rules_text = self.correction_memory.format_rules_for_prompt(learned_rules)
             if rules_text:
                 sections.append(("learned_rules", f"\n\n{rules_text}", 2))
+
+        # Fehlerhistorie: Letzte fehlgeschlagene Aktionen im Context
+        try:
+            recent_errors = await self.outcome_tracker.get_recent_failures(limit=3)
+            if recent_errors:
+                err_lines = [f"- {e['action_type']}: {e.get('reason', 'fehlgeschlagen')}" for e in recent_errors]
+                err_text = "\n".join(err_lines)
+                sections.append(("recent_errors", f"\n\nLETZTE FEHLER (vermeide Wiederholung):\n{err_text}", 2))
+        except Exception:
+            pass
 
         # Intelligence Fusion: JARVIS DENKT MIT
         jarvis_thinks = self._build_jarvis_thinks_context(
@@ -5240,6 +5319,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     person or "", self._last_executed_action,
                 ),
                 name="reset_concern",
+            )
+
+        # Bidirektionales Feedback: Lob/Dank auch an FeedbackTracker melden
+        _praise_type = self.feedback.detect_positive_feedback(text)
+        if _praise_type and self._last_proactive_event_type:
+            self._task_registry.create_task(
+                self.feedback.record_feedback(
+                    self._last_proactive_event_type, _praise_type,
+                ),
+                name="feedback_praise",
             )
 
         # Markiere ob diese Antwort sarkastisch war (für Feedback bei naechster Nachricht)
