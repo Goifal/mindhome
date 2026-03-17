@@ -470,12 +470,23 @@ class InsightEngine:
             active = [c for c in conflicts if c.get("affected_active")]
             if not active:
                 return None
-            hints = [c.get("hint", "") for c in active[:3]]
+            # Deduplizieren: gleiche hint nur einmal zaehlen
+            seen_hints: set[str] = set()
+            unique_active: list[dict] = []
+            for c in active:
+                h = c.get("hint", "")
+                if h not in seen_hints:
+                    seen_hints.add(h)
+                    unique_active.append(c)
+            if not unique_active:
+                return None
+            hints = [c.get("hint", "") for c in unique_active[:3]]
+            count = len(unique_active)
             return {
                 "check": "device_dependency_conflicts",
-                "message": f"{len(active)} Geraete-Konflikt(e): {'; '.join(hints)}",
-                "urgency": "medium" if len(active) < 3 else "high",
-                "data": {"conflicts": active[:5], "count": len(active)},
+                "message": f"{count} Geraete-Konflikt(e): {'; '.join(hints)}",
+                "urgency": "medium" if count < 3 else "high",
+                "data": {"conflicts": unique_active[:5], "count": count},
             }
         except Exception as e:
             logger.debug("Device-Dependency-Insight Fehler: %s", e)
@@ -699,9 +710,17 @@ class InsightEngine:
             if increase_pct < self.energy_anomaly_pct:
                 return None
 
+            # Dynamische Urgency: >500% = high, >200% = medium, sonst low
+            if increase_pct > 500:
+                _urgency = "high"
+            elif increase_pct > 200:
+                _urgency = "medium"
+            else:
+                _urgency = "low"
+
             return {
                 "check": "energy_anomaly",
-                "urgency": "low",
+                "urgency": _urgency,
                 "message": (
                     f"{await self._get_title_for_home()}, der Stromverbrauch heute liegt {increase_pct:.0f}% über "
                     f"dem Durchschnitt. "
@@ -817,9 +836,17 @@ class InsightEngine:
             elif any(cl.get("state") == "off" for cl in data["climate"]):
                 cause_hint = " Heizung ist aus."
 
+            # Dynamische Urgency: <16°C oder >5°C Drop = high, <18°C = medium
+            if current_avg < 16 or drop > 5:
+                _urgency = "high"
+            elif current_avg < 18:
+                _urgency = "medium"
+            else:
+                _urgency = "low"
+
             return {
                 "check": "temp_drop",
-                "urgency": "low",
+                "urgency": _urgency,
                 "message": (
                     f"{await self._get_title_for_home()}, die Raumtemperatur fällt ungewöhnlich — "
                     f"{drop:.1f} Grad in 2 Stunden, jetzt bei {current_avg:.1f}°C.{cause_hint}"

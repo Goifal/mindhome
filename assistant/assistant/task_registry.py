@@ -7,7 +7,8 @@ ueberwacht und beim Shutdown sauber beendet.
 
 import asyncio
 import logging
-from typing import Coroutine, Optional
+import time
+from typing import Callable, Coroutine, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +19,17 @@ class TaskRegistry:
     # Maximale Anzahl gleichzeitig aktiver Tasks — verhindert Resource-Exhaustion
     MAX_ACTIVE_TASKS = 200
 
+    # Watchdog: Max Restarts bevor aufgegeben wird
+    _MAX_RESTARTS = 5
+    _RESTART_BACKOFF_BASE = 2.0  # Sekunden
+
     def __init__(self):
         self._tasks: dict[str, asyncio.Task] = {}
         self._shutting_down = False
+        # Watchdog: Factories fuer persistente Tasks (auto-restart bei Crash)
+        self._persistent: dict[str, Callable[[], Coroutine]] = {}
+        self._restart_counts: dict[str, int] = {}
+        self._last_restart: dict[str, float] = {}
 
     def create_task(
         self,
@@ -72,8 +81,27 @@ class TaskRegistry:
         task.add_done_callback(lambda t: self._on_task_done(t, name))
         return task
 
+    def create_persistent_task(
+        self,
+        factory: Callable[[], Coroutine],
+        *,
+        name: str,
+    ) -> asyncio.Task:
+        """Erstellt einen persistenten Task der bei Crash automatisch neustartet.
+
+        Anders als create_task: Erhaelt eine Factory-Funktion (keine Coroutine),
+        damit bei jedem Restart eine frische Coroutine erzeugt werden kann.
+
+        Args:
+            factory: Parameterlose Funktion die eine Coroutine zurueckgibt
+            name: Eindeutiger Task-Name
+        """
+        self._persistent[name] = factory
+        self._restart_counts[name] = 0
+        return self.create_task(factory(), name=name, replace=True)
+
     def _on_task_done(self, task: asyncio.Task, name: str) -> None:
-        """Callback wenn ein Task endet — loggt Fehler."""
+        """Callback wenn ein Task endet — loggt Fehler, restartet persistente Tasks."""
         if task.cancelled():
             logger.debug("Task '%s' wurde abgebrochen", name)
             return
@@ -84,6 +112,44 @@ class TaskRegistry:
                 "Background-Task '%s' fehlgeschlagen: %s",
                 name, exc, exc_info=exc,
             )
+            # Watchdog: Persistente Tasks automatisch neustarten
+            if name in self._persistent and not self._shutting_down:
+                self._restart_counts[name] = self._restart_counts.get(name, 0) + 1
+                count = self._restart_counts[name]
+                if count <= self._MAX_RESTARTS:
+                    backoff = self._RESTART_BACKOFF_BASE ** min(count, 5)
+                    logger.warning(
+                        "Watchdog: Task '%s' wird in %.0fs neugestartet "
+                        "(Versuch %d/%d)",
+                        name, backoff, count, self._MAX_RESTARTS,
+                    )
+                    # Reset Zaehler wenn letzter Restart >5min her (transient error)
+                    last = self._last_restart.get(name, 0)
+                    if time.monotonic() - last > 300:
+                        self._restart_counts[name] = 1
+                        count = 1
+                        backoff = self._RESTART_BACKOFF_BASE
+                    self._last_restart[name] = time.monotonic()
+                    asyncio.get_event_loop().call_later(
+                        backoff,
+                        lambda n=name: asyncio.ensure_future(self._restart_persistent(n)),
+                    )
+                else:
+                    logger.error(
+                        "Watchdog: Task '%s' hat %d Restarts erreicht — aufgegeben",
+                        name, self._MAX_RESTARTS,
+                    )
+
+    async def _restart_persistent(self, name: str) -> None:
+        """Restartet einen persistenten Task."""
+        factory = self._persistent.get(name)
+        if not factory or self._shutting_down:
+            return
+        try:
+            self.create_task(factory(), name=name, replace=True)
+            logger.info("Watchdog: Task '%s' erfolgreich neugestartet", name)
+        except Exception as e:
+            logger.error("Watchdog: Restart von '%s' fehlgeschlagen: %s", name, e)
 
     def _cleanup_done_tasks(self) -> None:
         """Entfernt abgeschlossene Tasks aus dem Registry."""

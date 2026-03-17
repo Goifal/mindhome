@@ -232,3 +232,31 @@ async def emit_interrupt(
         "protocol": protocol,
         "actions_taken": actions_taken or [],
     })
+
+
+async def handle_ack_critical(event_id: str) -> bool:
+    """Verarbeitet ACK fuer Critical Alerts.
+
+    Setzt den Redis-Key auf 'acked', damit der Retry-Loop stoppt.
+
+    Args:
+        event_id: Die Event-ID aus dem Critical Alert
+
+    Returns:
+        True wenn ACK erfolgreich verarbeitet
+    """
+    try:
+        import assistant.main as main_module
+        brain = main_module.brain
+        if brain and hasattr(brain, "memory") and hasattr(brain.memory, "redis"):
+            redis = brain.memory.redis
+            if redis:
+                key = f"mha:critical:{event_id}"
+                existing = await redis.get(key)
+                if existing:
+                    await redis.setex(key, 300, "acked")
+                    logger.info("Critical Alert %s acknowledged", event_id)
+                    return True
+    except Exception as e:
+        logger.warning("ACK-Handler Fehler: %s", e)
+    return False

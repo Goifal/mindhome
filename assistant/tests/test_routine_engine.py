@@ -224,19 +224,23 @@ class TestCheckBirthday:
 
 class TestIsGoodnightIntent:
 
-    def test_gute_nacht(self, engine):
-        assert engine.is_goodnight_intent("Gute Nacht") is True
+    @pytest.mark.asyncio
+    async def test_gute_nacht(self, engine):
+        assert await engine.is_goodnight_intent("Gute Nacht") is True
 
-    def test_ich_gehe_schlafen(self, engine):
-        assert engine.is_goodnight_intent("ich gehe schlafen") is True
+    @pytest.mark.asyncio
+    async def test_ich_gehe_schlafen(self, engine):
+        assert await engine.is_goodnight_intent("ich gehe schlafen") is True
 
-    def test_weather_excludes(self, engine):
-        assert engine.is_goodnight_intent("Wie kalt wird es heute Nacht?") is False
-        assert engine.is_goodnight_intent("Wetter für die Nacht?") is False
-        assert engine.is_goodnight_intent("Temperatur heute Nacht") is False
+    @pytest.mark.asyncio
+    async def test_weather_excludes(self, engine):
+        assert await engine.is_goodnight_intent("Wie kalt wird es heute Nacht?") is False
+        assert await engine.is_goodnight_intent("Wetter für die Nacht?") is False
+        assert await engine.is_goodnight_intent("Temperatur heute Nacht") is False
 
-    def test_unrelated_text(self, engine):
-        assert engine.is_goodnight_intent("Mach das Licht an") is False
+    @pytest.mark.asyncio
+    async def test_unrelated_text(self, engine):
+        assert await engine.is_goodnight_intent("Mach das Licht an") is False
 
 
 # ── Execute Goodnight ──────────────────────────────────────────────────

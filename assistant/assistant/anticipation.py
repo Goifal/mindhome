@@ -1065,6 +1065,21 @@ class AnticipationEngine:
             try:
                 await asyncio.sleep(self.check_interval)
 
+                # Quiet Hours: Pattern-Detection komplett ueberspringen.
+                # Spart CPU und vermeidet Log-Spam (Suggestions werden eh unterdrueckt).
+                from .config import yaml_config
+                from datetime import datetime
+                quiet_cfg = yaml_config.get("ambient_presence", {})
+                quiet_start = int(quiet_cfg.get("quiet_start", 22))
+                quiet_end = int(quiet_cfg.get("quiet_end", 7))
+                hour = datetime.now().hour
+                if quiet_start > quiet_end:
+                    is_quiet = hour >= quiet_start or hour < quiet_end
+                else:
+                    is_quiet = quiet_start <= hour < quiet_end
+                if is_quiet:
+                    continue
+
                 suggestions = await self.get_suggestions()
                 for suggestion in suggestions:
                     if self._notify_callback:
@@ -1081,3 +1096,69 @@ class AnticipationEngine:
             except Exception as e:
                 logger.error("Fehler im Anticipation-Loop: %s", e)
                 await asyncio.sleep(60)
+
+    async def check_routine_deviation(self, persons_away: list[str]) -> list[dict]:
+        """Prueft ob Personen ungewoehnlich spaet abwesend sind.
+
+        Analysiert die Action-History nach 'person_arrived'-Events und berechnet
+        die durchschnittliche Ankunftszeit. Wenn eine Person >90 Min spaeter als
+        ueblich noch nicht da ist, wird eine Deviation gemeldet.
+
+        Args:
+            persons_away: Liste der aktuell abwesenden Personen
+
+        Returns:
+            Liste von Deviations: [{"person": str, "expected_time": str, "delay_minutes": int}]
+        """
+        if not self.redis or not persons_away:
+            return []
+
+        deviations = []
+        now = datetime.now()
+
+        # Nur zwischen 17:00 und 22:00 pruefen
+        if not (17 <= now.hour <= 22):
+            return []
+
+        try:
+            raw_entries = await self.redis.lrange("mha:action_log", 0, 999)
+            entries = [json.loads(e.decode() if isinstance(e, bytes) else e) for e in raw_entries]
+
+            for person in persons_away:
+                # Alle Ankunfts-Events dieser Person sammeln
+                arrival_hours = []
+                for entry in entries:
+                    if entry.get("action") == "person_arrived" and entry.get("person") == person:
+                        ts_str = entry.get("timestamp", "")
+                        if ts_str:
+                            try:
+                                ts = datetime.fromisoformat(ts_str)
+                                arrival_hours.append(ts.hour + ts.minute / 60.0)
+                            except (ValueError, TypeError):
+                                continue
+
+                if len(arrival_hours) < 3:
+                    continue  # Nicht genug Daten
+
+                avg_hour = sum(arrival_hours) / len(arrival_hours)
+                # Standardabweichung
+                variance = sum((h - avg_hour) ** 2 for h in arrival_hours) / len(arrival_hours)
+                std_dev = variance ** 0.5
+
+                # Erwartete Ankunftszeit + Toleranz (max 90 Min nach Durchschnitt)
+                expected_hour = avg_hour + max(std_dev, 0.5)  # Mindestens 30 Min Toleranz
+                current_hour = now.hour + now.minute / 60.0
+
+                delay_minutes = int((current_hour - expected_hour) * 60)
+                if delay_minutes >= 90:
+                    expected_time = f"{int(avg_hour)}:{int((avg_hour % 1) * 60):02d}"
+                    deviations.append({
+                        "person": person,
+                        "expected_time": expected_time,
+                        "delay_minutes": delay_minutes,
+                    })
+
+        except Exception as e:
+            logger.debug("Routine-Deviation Fehler: %s", e)
+
+        return deviations

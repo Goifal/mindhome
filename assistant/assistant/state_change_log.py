@@ -7999,17 +7999,19 @@ DEVICE_DEPENDENCIES = [
     # Batterie niedrig → Warnung
     {
         "role": "battery", "state": "on",
-        "affects": "lock", "same_room": False,
+        "affects": "lock", "same_room": True,
         "effect": "Batterie niedrig → Smart-Lock Batterie pruefen",
         "hint": "Batterie fast leer → Schloss-Batterie tauschen bevor es ausfaellt!",
         "severity": "high",
+        "exclude_entity_patterns": ["klingel", "doorbell", "turklingel"],
     },
     {
         "role": "battery", "state": "on",
-        "affects": "camera", "same_room": False,
+        "affects": "camera", "same_room": True,
         "effect": "Batterie niedrig → Kamera-Batterie pruefen",
         "hint": "Batterie fast leer → Kamera-Akku laden/tauschen!",
         "severity": "high",
+        "exclude_entity_patterns": ["klingel", "doorbell", "turklingel"],
     },
     # Schloss → Anwesenheit
     {

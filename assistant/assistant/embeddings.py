@@ -39,6 +39,16 @@ def cache_embedding(text: str, embedding: list) -> None:
         _embedding_cache.popitem(last=False)
 
 
+def compute_cosine_similarity(emb_a: list, emb_b: list) -> float:
+    """Berechnet Cosinus-Aehnlichkeit zwischen zwei Embedding-Vektoren."""
+    dot = sum(a * b for a, b in zip(emb_a, emb_b))
+    norm_a = sum(a * a for a in emb_a) ** 0.5
+    norm_b = sum(b * b for b in emb_b) ** 0.5
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
 def get_embedding_function():
     """Gibt die konfigurierte Embedding-Function zurueck (Singleton).
 

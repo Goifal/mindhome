@@ -70,6 +70,7 @@ from .self_automation import SelfAutomation
 from .self_optimization import SelfOptimization
 from .outcome_tracker import OutcomeTracker
 from .correction_memory import CorrectionMemory
+from .person_preferences import PersonPreferences
 from .response_quality import ResponseQualityTracker
 from .error_patterns import ErrorPatternTracker
 from .self_report import SelfReport
@@ -239,6 +240,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # B4: Background Reasoning — Idle-Timer fuer Smart-Modell-Analyse
         self._last_interaction_ts: float = 0.0
+        # Letzter proaktiver Event-Typ (fuer Feedback-Bridge)
+        self._last_proactive_event_type: str = ""
         self._idle_reasoning_pending: bool = False
 
         # Clients
@@ -359,7 +362,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Jarvis-Features: Benannte Protokolle + Spontane Beobachtungen
         self.protocol_engine = ProtocolEngine(self.ollama, self.executor)
-        self.spontaneous = SpontaneousObserver(self.ha, self.activity)
+        self.spontaneous = SpontaneousObserver(self.ha, self.activity, ollama_client=self.ollama)
 
         # Feature 11: Smart DJ (kontextbewusste Musikempfehlungen)
         self.music_dj = MusicDJ(self.mood, self.activity)
@@ -370,6 +373,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Self-Improvement: Geschlossene Feedback-Loops
         self.outcome_tracker = OutcomeTracker()
         self.correction_memory = CorrectionMemory()
+        self.person_preferences = PersonPreferences(self.memory.redis)
         self.response_quality = ResponseQualityTracker()
         self.error_patterns = ErrorPatternTracker()
         self.self_report = SelfReport()
@@ -380,6 +384,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Aktuelle Person (gesetzt in process(), nutzbar für Executor-Methoden)
         self._current_person: str = ""
+        self._speaker_confidence: float = 1.0  # G4: Confidence der Speaker-Erkennung
 
         # MCU-JARVIS: Letzter Kontext für Cross-Referenzierung
         self._last_context: dict = {}
@@ -923,6 +928,59 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         "was empfiehlst du", "kannst du helfen",
     ])
 
+    # S2: Prompt Injection Protection
+    _INJECTION_PATTERNS_DE = (
+        "ignoriere deine instruktionen", "ignoriere alle vorherigen",
+        "vergiss deine anweisungen", "vergiss alles vorherige",
+        "du bist jetzt", "ab jetzt bist du", "neue instruktionen:",
+        "system prompt:", "systemprompt:",
+    )
+    _INJECTION_PATTERNS_EN = (
+        "ignore your instructions", "ignore all previous", "ignore previous",
+        "disregard your instructions", "forget your instructions",
+        "you are now", "new instructions:", "system prompt:", "override:",
+    )
+    _INPUT_MAX_LENGTH = 2000
+
+    def _sanitize_user_input(self, text: str) -> tuple[str, bool]:
+        """Sanitiert User-Input gegen Prompt Injection.
+
+        Returns:
+            (cleaned_text, is_suspicious)
+        """
+        if not text:
+            return text, False
+
+        import unicodedata
+
+        # Unicode-Normalisierung (NFKC) — loest Fullwidth-Chars etc. auf
+        cleaned = unicodedata.normalize("NFKC", text)
+
+        # Zero-Width + unsichtbare Unicode-Zeichen entfernen
+        cleaned = ''.join(
+            c for c in cleaned
+            if unicodedata.category(c) not in ('Cf',)  # Format-Chars (Zero-Width etc.)
+        )
+
+        # Laenge cappen (Smart Home braucht keine 2000+ Zeichen Eingabe)
+        if len(cleaned) > self._INPUT_MAX_LENGTH:
+            logger.warning(
+                "S2: User-Input von %d auf %d Zeichen gekuerzt",
+                len(cleaned), self._INPUT_MAX_LENGTH,
+            )
+            cleaned = cleaned[:self._INPUT_MAX_LENGTH]
+
+        # Bekannte Injection-Patterns pruefen
+        _lower = cleaned.lower()
+        is_suspicious = False
+        for pattern in self._INJECTION_PATTERNS_DE + self._INJECTION_PATTERNS_EN:
+            if pattern in _lower:
+                is_suspicious = True
+                logger.warning("S2: Prompt Injection Verdacht: '%s' in Input", pattern)
+                break
+
+        return cleaned, is_suspicious
+
     def _result(self, response: str, *, actions=None, model: str = "",
                 room=None, tts=None, emitted: bool = False, **extra) -> dict:
         """Baut ein Standard-Antwort-Dict (DRY-Helper)."""
@@ -1219,6 +1277,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self._user_request_active = True
         self._last_interaction_ts = time.time()  # B4: Idle-Timer zuruecksetzen
         self._idle_reasoning_pending = False  # B4: Idle-Analyse abbrechen
+
+        # S2: Prompt Injection Protection — Sanitize User-Input
+        text, _injection_suspect = self._sanitize_user_input(text)
+
         try:
             return await self._process_inner(text, person, room, files, stream_callback, voice_metadata, device_id)
         finally:
@@ -1353,12 +1415,26 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Erfolgreiche Anfrage loescht den Retry-Speicher
         self._last_failed_query = None
 
-        # Silence-Trigger: Wenn User "Filmabend", "Meditation" etc. sagt,
-        # Activity-Override setzen damit proaktive Meldungen unterdrueckt werden
+        # Silence-Trigger: Wenn User "Filmabend", "Meditation", "Sei still" etc. sagt,
+        # Activity-Override setzen damit proaktive Meldungen unterdrueckt werden.
+        # D2: Optionale Dauer-Erkennung: "Sei still fuer 30 Minuten"
         silence_activity = self.activity.check_silence_trigger(text)
         if silence_activity:
-            self.activity.set_manual_override(silence_activity)
-            logger.info("Silence-Trigger: %s (aus Text: '%s')", silence_activity, text[:500])
+            _silence_duration = 120  # Default: 2 Stunden
+            _dur_match = re.search(
+                r"(?:fuer|für|nächste|naechste)\s+(\d+)\s*"
+                r"(?:min(?:uten?)?|h(?:ours?)?|stunden?)",
+                text.lower(),
+            )
+            if _dur_match:
+                _val = int(_dur_match.group(1))
+                # "h/stunde" → Minuten umrechnen
+                if any(u in _dur_match.group(0) for u in ("stunde", "hour", " h")):
+                    _val *= 60
+                _silence_duration = max(5, min(_val, 480))  # 5min..8h
+            self.activity.set_manual_override(silence_activity, duration_minutes=_silence_duration)
+            logger.info("Silence-Trigger: %s für %d min (aus Text: '%s')",
+                        silence_activity, _silence_duration, text[:500])
 
         # Phase 9: Speaker Recognition — Person ermitteln wenn nicht angegeben
         # Voice-Metadaten aufbereiten (WPM aus Text + Dauer berechnen)
@@ -1397,6 +1473,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             )
             if identified.get("person") and not identified.get("fallback"):
                 person = identified["person"]
+                self._speaker_confidence = identified.get("confidence", 0.0)
                 logger.info("Speaker erkannt: %s (Confidence: %.2f, Methode: %s)",
                             person, identified.get("confidence", 0),
                             identified.get("method", "unknown"))
@@ -1431,6 +1508,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             if primary:
                 person = primary
 
+        # S4: Wenn Person nach allen Identifikationsversuchen immer noch leer
+        # UND Speaker-Recognition aktiv → als "unknown_speaker" behandeln (Trust 0 = Gast)
+        if not person and self.speaker_recognition.enabled:
+            person = "unknown_speaker"
+            logger.info("Speaker nicht identifiziert — behandle als Gast (unknown_speaker)")
+
         # Dialogue State: Klaerungsfrage aufloesen + Referenzen aufloesen
         try:
             _clarification = self.dialogue_state.check_clarification_answer(text, person or "")
@@ -1452,7 +1535,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             logger.debug("DialogueState Fehler: %s", _dlg_err)
 
         # Phase 7: Gute-Nacht-Intent (VOR allem anderen)
-        if self.routines.is_goodnight_intent(text):
+        if await self.routines.is_goodnight_intent(text):
             logger.info("Gute-Nacht-Intent erkannt")
             try:
                 result = await self.routines.execute_goodnight(person or "")
@@ -1488,7 +1571,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 await self._speak_and_emit(response_text, room=room)
                 return self._result(response_text, model="routine_engine", room=room, emitted=True)
 
-        if self.routines.is_guest_trigger(text):
+        if await self.routines.is_guest_trigger(text):
             logger.info("Gäste-Modus Trigger erkannt")
             response_text = self._filter_response(await self.routines.activate_guest_mode())
             self._remember_exchange(text, response_text)
@@ -1793,21 +1876,79 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 if not stream_callback:
                     await emit_speaking(response_text, tts_data=tts_data)
 
-                # TTS im Hintergrund
+                # Background: LLM-Polish (fast model, 3s Timeout) + TTS
+                # Chat-Antwort kommt sofort mit Humanizer-Text,
+                # TTS spricht die verfeinerte Version (oder Fallback).
                 # C-2: Bei Pipeline-Requests kein TTS (Pipeline macht das selbst)
-                if not getattr(self, "_request_from_pipeline", False):
-                    async def _weather_speak(
-                        _response=response_text, _room=room, _tts_data=tts_data,
-                    ):
+                _skip_tts = getattr(self, "_request_from_pipeline", False)
+
+                async def _weather_polish_and_speak(
+                    _text=text, _response=response_text, _weather_msg=weather_msg,
+                    _room=room, _tts_data=tts_data, _skip=_skip_tts,
+                ):
+                    speak_text = _response
+                    speak_tts = _tts_data
+                    if _response:
+                        try:
+                            feedback_messages = [{
+                                "role": "system",
+                                "content": (
+                                    "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
+                                    f"Souveraen, knapp, trocken. '{get_person_title(self._current_person)}' sparsam einsetzen. "
+                                    "Keine Aufzaehlungen. "
+                                    "WICHTIG: Temperatur- und Wetterwerte EXAKT uebernehmen, "
+                                    "NIEMALS aendern oder runden. "
+                                    "Beispiele: 'Draussen 14 Grad, leicht bewoelkt. Jacke wuerde ich mitnehmen.' | "
+                                    "'22 Grad und Sonne — ein guter Tag fuer draussen.'"
+                                ),
+                            }, {
+                                "role": "user",
+                                "content": f"Frage: {_text}\nAntwort-Entwurf: {_response}",
+                            }]
+                            fmt_response = await asyncio.wait_for(
+                                self.ollama.chat(
+                                    messages=feedback_messages,
+                                    model=self.model_router.model_fast,
+                                    temperature=0.4, max_tokens=150, think=False,
+                                ),
+                                timeout=3.0,
+                            )
+                            if "error" not in fmt_response:
+                                refined = self._filter_response(
+                                    fmt_response.get("message", {}).get("content", "")
+                                )
+                                if refined and len(refined) > 5:
+                                    import re as _re
+                                    # Temperaturwert-Check: Originaltemperatur muss erhalten bleiben
+                                    _temp_match = _re.search(r'(-?\d+)[.,]?\d*\s*(?:°C|Grad)', _weather_msg)
+                                    _temp_preserved = True
+                                    if _temp_match:
+                                        _orig_temp = _temp_match.group(1)
+                                        _temp_preserved = _orig_temp in refined
+                                    if _temp_preserved:
+                                        speak_text = refined
+                                        speak_tts = self.tts_enhancer.enhance(
+                                            speak_text, message_type="casual"
+                                        )
+                                        logger.info("Wetter-Shortcut LLM-verfeinert: '%s'",
+                                                    speak_text[:80])
+                                    else:
+                                        logger.warning(
+                                            "Wetter LLM-Antwort hat Temperatur veraendert, "
+                                            "nutze Humanizer. LLM='%s'", refined[:80]
+                                        )
+                        except Exception as e:
+                            logger.debug("Wetter LLM-Polish fehlgeschlagen: %s", e)
+                    if not _skip:
                         if not _room:
                             _room = await self._get_occupied_room()
                         await self.sound_manager.speak_response(
-                            _response, room=_room, tts_data=_tts_data
+                            speak_text, room=_room, tts_data=speak_tts
                         )
 
-                    self._task_registry.create_task(
-                        _weather_speak(), name="weather_speak"
-                    )
+                self._task_registry.create_task(
+                    _weather_polish_and_speak(), name="weather_polish_speak"
+                )
 
                 return self._result(response_text, actions=[{"function": "get_weather", "args": weather_args, "result": weather_result}], model="weather_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
@@ -1862,6 +2003,27 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Pronomen-Aufloesung: "Mach es/das wieder aus/an" → letzte Aktion invertieren
         # Muss VOR _detect_device_command kommen, da sonst kein Raum/Geraet erkannt wird.
         device_cmd = None
+
+        # C4: Raum-Referenz: "Dort auch", "Im Bad auch", "Hier auch"
+        # Wiederholt die letzte Aktion in einem anderen Raum.
+        _room_repeat = re.match(
+            r"^(?:bitte\s+)?(?:(?:dort|da|hier|drüben)\s+auch"
+            r"|(?:im|in der|in dem|ins?)\s+(\w+)\s+auch"
+            r"|das(?:selbe)?\s+(?:im|in der|in dem)\s+(\w+))"
+            r"\s*[.!]?$",
+            text.lower().strip(),
+        )
+        if _room_repeat and self._last_executed_action and self._last_executed_action.startswith("set_"):
+            _la = self._last_executed_action
+            _la_args = dict(self._last_executed_action_args or {})
+            _target_room = _room_repeat.group(1) or _room_repeat.group(2) or (room or "")
+            if _target_room:
+                _la_args["room"] = _target_room
+            logger.info(
+                "Raum-Referenz: '%s' -> %s(%s) (letzte Aktion in anderem Raum)",
+                text, _la, _la_args,
+            )
+            device_cmd = {"function": _la, "args": _la_args}
         _pronoun_match = re.match(
             r"^(?:bitte\s+)?(?:mach|schalt|dreh|fahr)\w*\s+"
             r"(?:es|das|die|den|ihn|sie)\s+"
@@ -2635,22 +2797,19 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             return_exceptions=True,
         )
         _result_map = dict(zip(_mega_keys, _mega_results))
-
-        # Filter out exception values — replace with None and log
-        for _rk, _rv in _result_map.items():
-            if isinstance(_rv, BaseException):
-                logger.warning("Parallel task '%s' failed: %s", _rk, _rv)
-                _result_map[_rk] = None
+        # Exception-Handling erfolgt individuell pro Key (context, gag, etc.)
+        # und via _safe_get() fuer Subsysteme — kein generischer Filter hier,
+        # damit spezifische Fehlermeldungen (z.B. "Context Build Timeout") erhalten bleiben.
 
         # --- Context Build Ergebnis verarbeiten ---
         context = _result_map.get("context")
-        if context is None:
-            context = {"time": {"datetime": datetime.now().isoformat()}}
         if isinstance(context, asyncio.TimeoutError):
             logger.warning("Context Build Timeout (%.0fs) — Fallback auf Minimal-Kontext", ctx_timeout)
-            context = {"time": {"datetime": datetime.now().isoformat()}}
+            context = None
         elif isinstance(context, BaseException):
             logger.error("Context Build Fehler: %s — Fallback auf Minimal-Kontext", context)
+            context = None
+        if context is None:
             context = {"time": {"datetime": datetime.now().isoformat()}}
         if room:
             context["room"] = room
@@ -2765,9 +2924,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if whatif_prompt:
             _upgrade_signals += 3  # Hypothetisches Denken braucht Deep
             _has_reasoning_need = True
-        if not _conversation_mode and not _is_simple_greeting and not _is_device_cmd:
-            # Intelligence-Signals nur ausserhalb von Konversationen zaehlen
-            # und NICHT bei einfachen Greetings oder Device-Commands
+        if not _is_simple_greeting and not _is_device_cmd:
+            # Intelligence-Signals auch in Konversationen zaehlen,
+            # aber Conversation-Mode erhoet den Threshold (+2) um
+            # unnoetige Deep-Upgrades bei Smalltalk zu vermeiden.
             if anticipation_suggestions or learned_patterns:
                 _upgrade_signals += 1  # Intelligence Fusion = mehr Kontext
             if live_insights:
@@ -2788,7 +2948,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Intelligence-Signals allein (anticipation, patterns, insights) reichen
         # NICHT — die sind fast immer aktiv und wuerden sonst bei Threshold=1
         # jeden Request auf Deep treiben.
-        if (_upgrade_signals >= self._opt_upgrade_signal_threshold
+        # In Konversationen: Threshold +2 hoeher, damit Intelligence-Signals
+        # allein kein Upgrade ausloesen, aber starke Reasoning-Signale schon.
+        _effective_threshold = self._opt_upgrade_signal_threshold + (2 if _conversation_mode else 0)
+        if (_upgrade_signals >= _effective_threshold
                 and (_has_reasoning_need or (_security_critical and not _conversation_mode))
                 and model != self.model_router.model_deep):
             # Error-Mitigation VOR dem Upgrade pruefen: Wenn das Deep-Modell
@@ -2807,7 +2970,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             else:
                 _upgraded = _deep_model
                 if _upgraded != model:
-                    logger.info("Model Upgrade %s -> %s (signals: %d, threshold: %d)", model, _upgraded, _upgrade_signals, self._opt_upgrade_signal_threshold)
+                    logger.info("Model Upgrade %s -> %s (signals: %d, threshold: %d)", model, _upgraded, _upgrade_signals, _effective_threshold)
                     model = _upgraded
         if context is None:
             context = {}
@@ -3009,6 +3172,17 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if mood_hint:
             sections.append(("mood", f"\n\nEMOTIONALE LAGE: {mood_hint}", 1))
 
+        # H1: Per-Person Preferences als Kontext
+        if person and profile.need_house_status:
+            try:
+                _prefs_hint = await self.person_preferences.get_context_hint(person)
+                if _prefs_hint:
+                    sections.append(("person_prefs", f"\n\n{_prefs_hint}\n"
+                                     "Verwende diese Werte als Default wenn der User keine "
+                                     "expliziten Werte angibt.", 2))
+            except Exception as _pp_err:
+                logger.debug("PersonPrefs-Hint fehlgeschlagen: %s", _pp_err)
+
         if sec_score and sec_score.get("level") in ("warning", "critical"):
             details = ", ".join(sec_score.get("details", []))
             sec_text = (
@@ -3091,6 +3265,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             rules_text = self.correction_memory.format_rules_for_prompt(learned_rules)
             if rules_text:
                 sections.append(("learned_rules", f"\n\n{rules_text}", 2))
+
+        # Fehlerhistorie: Letzte fehlgeschlagene Aktionen im Context
+        try:
+            recent_errors = await self.outcome_tracker.get_recent_failures(limit=3)
+            if recent_errors:
+                err_lines = [f"- {e['action_type']}: {e.get('reason', 'fehlgeschlagen')}" for e in recent_errors]
+                err_text = "\n".join(err_lines)
+                sections.append(("recent_errors", f"\n\nLETZTE FEHLER (vermeide Wiederholung):\n{err_text}", 2))
+        except Exception:
+            pass
 
         # Intelligence Fusion: JARVIS DENKT MIT
         jarvis_thinks = self._build_jarvis_thinks_context(
@@ -3923,6 +4107,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     "args": func_args,
                                     "person": person or "",
                                     "room": room or "",
+                                    "speaker_confidence": self._speaker_confidence,
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                     "reason": validation.reason,
                                 }
@@ -5240,6 +5425,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     person or "", self._last_executed_action,
                 ),
                 name="reset_concern",
+            )
+
+        # Bidirektionales Feedback: Lob/Dank auch an FeedbackTracker melden
+        _praise_type = self.feedback.detect_positive_feedback(text)
+        if _praise_type and self._last_proactive_event_type:
+            self._task_registry.create_task(
+                self.feedback.record_feedback(
+                    self._last_proactive_event_type, _praise_type,
+                ),
+                name="feedback_praise",
             )
 
         # Markiere ob diese Antwort sarkastisch war (für Feedback bei naechster Nachricht)
@@ -6750,6 +6945,71 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         except Exception as e:
             logger.debug("Kontext-Kette Topic-Extraktion fehlgeschlagen: %s", e)
 
+        # F2: Implizite Kalender-Erkennung
+        # Erkennt Zeitangaben in User-Text wie "Schwester kommt Samstag",
+        # "Morgen gehen wir ins Kino", "Am Freitag ist Elternabend".
+        try:
+            await self._detect_implicit_calendar_event(user_text, person)
+        except Exception as e:
+            logger.debug("Implizite Kalender-Erkennung fehlgeschlagen: %s", e)
+
+    # F2: Regex fuer Zeitangaben (kompiliert)
+    _CALENDAR_PATTERNS = re.compile(
+        r"\b(?:"
+        r"(?:am |naechsten? |nächsten? |kommenden? |letzten? )?"
+        r"(?:montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)"
+        r"|(?:morgen|uebermorgen|übermorgen)"
+        r"|(?:am |den )\d{1,2}\.\s*(?:\d{1,2}\.)?"
+        r"|(?:naechste|nächste|kommende|diese)\s+woche"
+        r")\b",
+        re.IGNORECASE,
+    )
+    _CALENDAR_VERBS = re.compile(
+        r"\b(?:kommt|kommen|besucht|besuchen|gehen wir|fahren wir|treffen|"
+        r"ist (?:bei uns|eingeladen)|haben (?:termin|besuch)|feier)",
+        re.IGNORECASE,
+    )
+
+    async def _detect_implicit_calendar_event(self, text: str, person: str):
+        """F2: Erkennt implizite Kalender-Events aus natuerlicher Sprache."""
+        if len(text.split()) < 4:
+            return
+        # Braucht sowohl Zeitangabe als auch ein Event-Verb
+        if not self._CALENDAR_PATTERNS.search(text):
+            return
+        if not self._CALENDAR_VERBS.search(text):
+            return
+
+        logger.info("F2: Moegliches Kalender-Event erkannt: '%s'", text[:100])
+
+        # LLM extrahiert Event-Details
+        prompt = (
+            "Extrahiere aus diesem Satz ein Kalender-Event. "
+            "Antworte NUR im Format:\n"
+            "TITEL: <kurzer Titel>\n"
+            "WANN: <Tag und ggf. Uhrzeit>\n"
+            "Falls kein Event erkennbar: KEIN_EVENT\n\n"
+            f"Satz: {text[:300]}"
+        )
+        try:
+            result = await self.ollama.generate(
+                prompt=prompt, temperature=0.1, max_tokens=80,
+            )
+            if result and "KEIN_EVENT" not in result:
+                # Als Fakt speichern (Kategorie: intent) damit es im Kontext auftaucht
+                from .semantic_memory import SemanticFact
+                fact = SemanticFact(
+                    content=f"Geplantes Event: {result.strip()}",
+                    category="intent",
+                    person=person,
+                    confidence=0.7,
+                    source_conversation=f"Implizit aus: {text[:100]}",
+                )
+                await self.memory.semantic.store_fact(fact)
+                logger.info("F2: Kalender-Event als Fakt gespeichert: %s", result.strip()[:80])
+        except Exception as e:
+            logger.debug("F2: LLM-Extraktion fehlgeschlagen: %s", e)
+
     # Gueltige Urgency-Level in der Silence Matrix
     _VALID_URGENCIES = {"critical", "high", "medium", "low"}
 
@@ -7242,6 +7502,24 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     person, pending["person"],
                 )
                 return None  # Stille Ablehnung, weiter im normalen Flow
+
+            # G4: Speaker-Confidence-Check fuer Security-Aktionen
+            # Bei niedriger Confidence (<0.8) wird die Bestaetigung verweigert
+            # und eine verbale Identifikation verlangt.
+            _orig_confidence = pending.get("speaker_confidence", 1.0)
+            _confirm_confidence = self._speaker_confidence
+            _min_security_confidence = 0.80
+            if _orig_confidence < _min_security_confidence or _confirm_confidence < _min_security_confidence:
+                logger.warning(
+                    "Security-Confirmation abgelehnt: Speaker-Confidence zu niedrig "
+                    "(original=%.2f, confirm=%.2f, min=%.2f)",
+                    _orig_confidence, _confirm_confidence, _min_security_confidence,
+                )
+                return (
+                    f"Entschuldigung, ich bin mir nicht sicher genug wer gerade spricht "
+                    f"(Confidence: {min(_orig_confidence, _confirm_confidence):.0%}). "
+                    f"Bitte sag mir deinen Namen, damit ich die Aktion bestaetigen kann."
+                )
 
             # Ausfuehren
             func_name = pending.get("function")

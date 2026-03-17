@@ -28,8 +28,19 @@ FEEDBACK_DELTAS = {
     "dismissed": -0.10,  # Aktiv weggeklickt
     "acknowledged": 0.05,  # Zur Kenntnis genommen
     "engaged": 0.10,     # Drauf eingegangen
-    "thanked": 0.20,     # Bedankt
+    "praised": 0.15,     # Allgemeines Lob ("super", "toll", "perfekt")
+    "thanked": 0.20,     # Expliziter Dank ("danke", "vielen dank")
 }
+
+# Woerter zur Auto-Erkennung von positivem Feedback
+_THANK_WORDS = frozenset({
+    "danke", "dankeschön", "dankeschoen", "vielen dank", "thanks", "thank you",
+})
+_PRAISE_WORDS = frozenset({
+    "super", "toll", "genau richtig", "perfekt", "gut gemacht",
+    "klasse", "prima", "sehr gut", "top", "wunderbar", "großartig",
+    "grossartig", "spitze", "ausgezeichnet", "hervorragend",
+})
 
 # Standard-Score fuer neue Event-Typen
 DEFAULT_SCORE = 0.5
@@ -94,6 +105,22 @@ class FeedbackTracker:
         logger.debug(
             "Notification tracked: %s (type: %s)", notification_id, event_type
         )
+
+    @staticmethod
+    def detect_positive_feedback(text: str) -> Optional[str]:
+        """Erkennt positives Feedback in User-Text automatisch.
+
+        Returns:
+            'thanked' bei explizitem Dank, 'praised' bei Lob, None sonst.
+        """
+        if not text:
+            return None
+        _lower = text.lower()
+        if any(w in _lower for w in _THANK_WORDS):
+            return "thanked"
+        if any(w in _lower for w in _PRAISE_WORDS):
+            return "praised"
+        return None
 
     async def record_feedback(
         self, notification_id: str, feedback_type: str

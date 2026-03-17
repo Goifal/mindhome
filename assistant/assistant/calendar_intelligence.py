@@ -232,6 +232,38 @@ class CalendarIntelligence:
 
         return breaks
 
+    async def is_in_event(self) -> Optional[dict]:
+        """Prueft ob gerade ein Kalender-Event stattfindet.
+
+        Returns:
+            Dict mit in_event, summary, ends_at oder None wenn kein Event.
+        """
+        if not self.redis or not self.enabled:
+            return None
+        try:
+            raw = await self.redis.get(REDIS_KEY_EVENT_HISTORY)
+            if not raw:
+                return None
+            events = json.loads(raw)
+            now = datetime.now()
+            for ev in events:
+                start = self._parse_dt(ev.get("start", ""))
+                end = self._parse_dt(ev.get("end", ""))
+                if not start or not end or ev.get("all_day"):
+                    continue
+                # Naive-Vergleich (lokale Zeit)
+                start_naive = start.replace(tzinfo=None) if start.tzinfo else start
+                end_naive = end.replace(tzinfo=None) if end.tzinfo else end
+                if start_naive <= now <= end_naive:
+                    return {
+                        "in_event": True,
+                        "summary": ev.get("summary", "Termin"),
+                        "ends_at": end_naive.strftime("%H:%M"),
+                    }
+        except Exception as e:
+            logger.debug("is_in_event Fehler: %s", e)
+        return None
+
     def get_habits(self) -> list[dict]:
         """Gibt erkannte Gewohnheiten zurueck."""
         return self._habits

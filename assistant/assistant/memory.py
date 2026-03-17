@@ -487,29 +487,54 @@ class MemoryManager:
             total = await asyncio.to_thread(self.chroma_collection.count)
             if total == 0:
                 return []
-            # Fetch all entries so we can sort globally before paginating
-            result = await asyncio.to_thread(
+            # Nur die IDs + Metadaten holen um nach Timestamp zu sortieren,
+            # dann nur die benoetigte Seite mit Documents laden.
+            meta_result = await asyncio.to_thread(
                 self.chroma_collection.get,
-                include=["documents", "metadatas"],
+                include=["metadatas"],
                 limit=total,
             )
+            meta_ids = meta_result.get("ids", [])
+            meta_list = meta_result.get("metadatas", [])
+
+            # Index-Liste mit Timestamps aufbauen und sortieren
+            indexed = []
+            for i, doc_id in enumerate(meta_ids):
+                meta = meta_list[i] if i < len(meta_list) else {}
+                ts = meta.get("timestamp", "") if isinstance(meta, dict) else ""
+                indexed.append((ts, doc_id, meta))
+            indexed.sort(key=lambda x: x[0], reverse=True)
+
+            # Nur die benoetigte Seite extrahieren
+            page = indexed[offset:offset + limit]
+            if not page:
+                return []
+
+            # Documents nur fuer die Seite nachladen
+            page_ids = [item[1] for item in page]
+            doc_result = await asyncio.to_thread(
+                self.chroma_collection.get,
+                ids=page_ids,
+                include=["documents"],
+            )
+            doc_map = {}
+            for i, did in enumerate(doc_result.get("ids", [])):
+                docs = doc_result.get("documents", [])
+                doc_map[did] = docs[i] if i < len(docs) else ""
+
             episodes = []
-            ids = result.get("ids", [])
-            docs = result.get("documents", [])
-            metas = result.get("metadatas", [])
-            for i, doc_id in enumerate(ids):
-                meta = metas[i] if i < len(metas) else {}
+            for ts, doc_id, meta in page:
+                if not isinstance(meta, dict):
+                    meta = {}
                 episodes.append({
                     "id": doc_id,
-                    "content": docs[i] if i < len(docs) else "",
-                    "timestamp": meta.get("timestamp", "") if isinstance(meta, dict) else "",
-                    "type": meta.get("type", "") if isinstance(meta, dict) else "",
-                    "chunk_index": meta.get("chunk_index", "0") if isinstance(meta, dict) else "0",
-                    "total_chunks": meta.get("total_chunks", "1") if isinstance(meta, dict) else "1",
+                    "content": doc_map.get(doc_id, ""),
+                    "timestamp": meta.get("timestamp", ""),
+                    "type": meta.get("type", ""),
+                    "chunk_index": meta.get("chunk_index", "0"),
+                    "total_chunks": meta.get("total_chunks", "1"),
                 })
-            # Nach Timestamp sortieren (neueste zuerst), dann paginieren
-            episodes.sort(key=lambda e: e["timestamp"], reverse=True)
-            return episodes[offset:offset + limit]
+            return episodes
         except Exception as e:
             logger.error("Fehler beim Laden der Episoden: %s", e)
             return []

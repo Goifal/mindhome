@@ -198,7 +198,9 @@ class ActivityEngine:
     SILENCE_KEYWORDS = {
         WATCHING: ["filmabend", "film", "kino", "netflix", "serie schauen", "fernsehen"],
         FOCUSED: ["meditation", "meditieren", "fokus", "nicht stören", "nicht stoeren",
-                   "ruhe", "konzentration", "arbeiten", "homeoffice"],
+                   "ruhe", "konzentration", "arbeiten", "homeoffice",
+                   "sei still", "sei leise", "halt die klappe", "sei ruhig",
+                   "klappe zu", "psst", "still jetzt", "nerv nicht"],
         SLEEPING: ["gute nacht", "schlaf gut", "ich geh schlafen", "ich geh ins bett"],
     }
 

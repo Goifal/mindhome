@@ -217,6 +217,20 @@ _STATUS_NOUNS = [
 # "an" wuerde sonst "Anfang", "Antwort" etc. matchen
 _STATUS_SHORT_WORDS = re.compile(r'\b(?:an|aus)\b')
 
+# Implizite Befehle: Zustandsbeschreibungen die eine Geraete-Aktion implizieren.
+# "Mir ist kalt" → Heizung hoch, "Es ist dunkel" → Licht an, etc.
+# Werden als DEVICE_FAST klassifiziert damit das LLM die passende Aktion waehlt.
+_IMPLICIT_COMMAND_PATTERNS = re.compile(
+    r"(?:mir ist (?:kalt|warm|heiss|heiß)|ich (?:friere|schwitz|schwitze|frier)"
+    r"|(?:es |hier |das )ist (?:(?:zu |so |viel zu |echt |total |ziemlich |sehr )?"
+    r"(?:kalt|warm|heiss|heiß|dunkel|hell|laut|leise|stickig))"
+    r"|(?:es |hier )(?:zieht|stinkt|riecht)"
+    r"|(?:ich (?:seh|sehe|kann) (?:nichts|nix|kaum (?:was|etwas)))"
+    r"|(?:(?:zu |so |viel zu |echt |total |ziemlich |sehr )"
+    r"(?:kalt|warm|heiss|heiß|dunkel|hell|laut|leise|stickig) hier)"
+    r")"
+)
+
 
 class PreClassifier:
     """Klassifiziert Anfragen fuer selektive Subsystem-Aktivierung."""
@@ -283,6 +297,12 @@ class PreClassifier:
             if has_status_pattern and has_status_noun:
                 logger.debug("PreClassifier: DEVICE_QUERY (%s)", text)
                 return PROFILE_DEVICE_QUERY
+
+        # 2b. Implizite Befehle: "Mir ist kalt", "Es ist dunkel hier"
+        #     Zustandsbeschreibungen die eine Geraete-Aktion implizieren.
+        if word_count <= 10 and _IMPLICIT_COMMAND_PATTERNS.search(text_lower):
+            logger.debug("PreClassifier: DEVICE_FAST (implicit: %s)", text)
+            return PROFILE_DEVICE_FAST
 
         # 3. Memory-Fragen
         if any(kw in text_lower for kw in _MEMORY_KEYWORDS):

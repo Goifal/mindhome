@@ -3433,6 +3433,11 @@ class FunctionExecutor:
             prev_row = curr_row
         return prev_row[-1]
 
+    # Funktionen die nur Owner (Trust >= 2) ausfuehren darf
+    _SECURITY_FUNCTIONS = frozenset({
+        "lock_door", "arm_security_system", "set_presence_mode",
+    })
+
     async def execute(self, function_name: str, arguments: dict) -> dict:
         """
         Fuehrt eine Funktion aus.
@@ -3449,6 +3454,25 @@ class FunctionExecutor:
         handler = getattr(self, f"_exec_{function_name}", None)
         if not handler:
             return {"success": False, "message": f"Unbekannte Funktion: {function_name}"}
+
+        # Trust-Enforcement: Pruefe ob aktuelle Person die Funktion ausfuehren darf
+        try:
+            import assistant.main as _main_mod
+            _brain = _main_mod.brain
+            _person = getattr(_brain, "_current_person", "") or ""
+            if _brain and hasattr(_brain, "autonomy"):
+                trust_result = _brain.autonomy.can_person_act(
+                    _person, function_name,
+                )
+                if not trust_result.get("allowed", True):
+                    _reason = trust_result.get("reason", "Keine Berechtigung.")
+                    logger.warning(
+                        "Trust-Check BLOCKIERT: %s darf '%s' nicht ausfuehren (%s)",
+                        _person or "unknown", function_name, _reason,
+                    )
+                    return {"success": False, "message": _reason}
+        except Exception:
+            pass  # Graceful degradation — Trust-Check optional
 
         try:
             # Phase 18: Pre-Execution Consequence Check
@@ -3735,6 +3759,15 @@ class FunctionExecutor:
         return curve[-1][key]
 
     @staticmethod
+    @staticmethod
+    def _parse_brightness(args: dict) -> int | None:
+        """Parst und validiert den Brightness-Parameter (1-100%). Gibt None zurueck bei Fehler."""
+        try:
+            bri = str(args.get("brightness", "")).replace("%", "").strip()
+            return max(1, min(100, int(float(bri))))
+        except (ValueError, TypeError):
+            return None
+
     def get_adaptive_brightness(room: str, entity_id: str = "") -> int:
         """Berechnet Helligkeit basierend auf Tageszeit + Raum-Profil.
 
@@ -3829,11 +3862,9 @@ class FunctionExecutor:
             service_data: dict = {"entity_id": entity_id}
             if state == "on":
                 if "brightness" in args:
-                    try:
-                        bri = str(args.get("brightness", "")).replace("%", "").strip()
-                        service_data["brightness_pct"] = max(1, min(100, int(float(bri))))
-                    except (ValueError, TypeError):
-                        pass
+                    bri_pct = self._parse_brightness(args)
+                    if bri_pct is not None:
+                        service_data["brightness_pct"] = bri_pct
                 else:
                     service_data["brightness_pct"] = self.get_adaptive_brightness(room_name, entity_id)
             await self.ha.call_service("light", service, service_data)
@@ -3919,15 +3950,37 @@ class FunctionExecutor:
         service_data = {"entity_id": entity_id}
         brightness_pct = None
         if "brightness" in args and state == "on":
-            try:
-                bri = str(args.get("brightness", "")).replace("%", "").strip()
-                brightness_pct = max(1, min(100, int(float(bri))))
+            brightness_pct = self._parse_brightness(args)
+            if brightness_pct is not None:
                 service_data["brightness_pct"] = brightness_pct
-            except (ValueError, TypeError):
-                pass
         elif state == "on" and "brightness" not in args:
             # Phase 11: Adaptive Helligkeit wenn keine explizite Angabe
             brightness_pct = self.get_adaptive_brightness(room, entity_id)
+            # Outcome-Learning: CorrectionMemory-Regeln koennen Brightness ueberschreiben
+            try:
+                import assistant.main as _main_mod
+                _brain = _main_mod.brain
+                if _brain and hasattr(_brain, "correction_memory"):
+                    _rules = await _brain.correction_memory.get_active_rules(
+                        action_type="set_light", person=person,
+                    )
+                    for _rule in _rules:
+                        if _rule.get("confidence", 0) > 0.6:
+                            _rule_text = _rule.get("text", "").lower()
+                            if "brightness" in _rule_text or "helligkeit" in _rule_text:
+                                import re
+                                _bri_match = re.search(r"(\d{1,3})\s*%?", _rule_text)
+                                if _bri_match:
+                                    _learned_bri = int(_bri_match.group(1))
+                                    if 1 <= _learned_bri <= 100:
+                                        logger.info(
+                                            "CorrectionMemory Brightness Override: %d%% -> %d%% (person=%s)",
+                                            brightness_pct, _learned_bri, person,
+                                        )
+                                        brightness_pct = _learned_bri
+                                        break
+            except Exception:
+                pass
             service_data["brightness_pct"] = brightness_pct
         # Phase 9: Transition-Parameter (sanftes Dimmen) — muss int/float sein
         if "transition" in args:
@@ -3977,23 +4030,26 @@ class FunctionExecutor:
 
         service = "turn_on" if state == "on" else "turn_off"
         count = 0
-        for s in states:
-            eid = s.get("entity_id", "")
-            if eid.startswith("light.") and (s.get("state") != state or (state == "on" and "brightness" in args)):
-                service_data = {"entity_id": eid}
-                if state == "on":
-                    if "brightness" in args:
-                        try:
-                            bri = str(args.get("brightness", "")).replace("%", "").strip()
-                            service_data["brightness_pct"] = max(1, min(100, int(float(bri))))
-                        except (ValueError, TypeError):
-                            pass
-                    else:
-                        # Adaptive Helligkeit wenn keine explizite Angabe
-                        room_name = eid.split(".", 1)[1] if "." in eid else ""
-                        service_data["brightness_pct"] = self.get_adaptive_brightness(room_name, eid)
-                await self.ha.call_service("light", service, service_data)
-                count += 1
+        # Bulk-Op: Dependency-Check ueberspringen — wird bereits vom Executor geprueft
+        self.ha._skip_dep_check = True
+        try:
+            for s in states:
+                eid = s.get("entity_id", "")
+                if eid.startswith("light.") and (s.get("state") != state or (state == "on" and "brightness" in args)):
+                    service_data = {"entity_id": eid}
+                    if state == "on":
+                        if "brightness" in args:
+                            bri_pct = self._parse_brightness(args)
+                            if bri_pct is not None:
+                                service_data["brightness_pct"] = bri_pct
+                        else:
+                            # Adaptive Helligkeit wenn keine explizite Angabe
+                            room_name = eid.split(".", 1)[1] if "." in eid else ""
+                            service_data["brightness_pct"] = self.get_adaptive_brightness(room_name, eid)
+                    await self.ha.call_service("light", service, service_data)
+                    count += 1
+        finally:
+            self.ha._skip_dep_check = False
 
         return {"success": True, "message": f"Alle Lichter {state} ({count} geschaltet)"}
 
@@ -4802,21 +4858,26 @@ class FunctionExecutor:
 
         count = 0
         skipped = []
-        for s in states:
-            eid = s.get("entity_id", "")
-            if not eid.startswith("cover."):
-                continue
-            if not await self._is_safe_cover(eid, s):
-                skipped.append(s.get("attributes", {}).get("friendly_name", eid))
-                continue
-            # Typ-Filter
-            if cover_type == "rollladen" and self._is_markise(eid, s):
-                continue
-            if cover_type == "markise" and not self._is_markise(eid, s):
-                continue
-            ha_pos = self._translate_cover_position(eid, position)
-            await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
-            count += 1
+        # Bulk-Op: Dependency-Check ueberspringen — wird bereits vom Executor geprueft
+        self.ha._skip_dep_check = True
+        try:
+            for s in states:
+                eid = s.get("entity_id", "")
+                if not eid.startswith("cover."):
+                    continue
+                if not await self._is_safe_cover(eid, s):
+                    skipped.append(s.get("attributes", {}).get("friendly_name", eid))
+                    continue
+                # Typ-Filter
+                if cover_type == "rollladen" and self._is_markise(eid, s):
+                    continue
+                if cover_type == "markise" and not self._is_markise(eid, s):
+                    continue
+                ha_pos = self._translate_cover_position(eid, position)
+                await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
+                count += 1
+        finally:
+            self.ha._skip_dep_check = False
 
         msg = f"Alle Rollläden auf {position}% ({count} geschaltet)"
         if skipped:
@@ -4829,14 +4890,18 @@ class FunctionExecutor:
         if not states:
             return {"success": False, "message": "Die Geräte reagieren gerade nicht. Einen Moment."}
         count = 0
-        for s in states:
-            eid = s.get("entity_id", "")
-            if not eid.startswith("cover."):
-                continue
-            if not await self._is_safe_cover(eid, s):
-                continue
-            await self.ha.call_service("cover", service, {"entity_id": eid})
-            count += 1
+        self.ha._skip_dep_check = True
+        try:
+            for s in states:
+                eid = s.get("entity_id", "")
+                if not eid.startswith("cover."):
+                    continue
+                if not await self._is_safe_cover(eid, s):
+                    continue
+                await self.ha.call_service("cover", service, {"entity_id": eid})
+                count += 1
+        finally:
+            self.ha._skip_dep_check = False
         return {"success": True, "message": f"{count} Rollläden: {service}"}
 
     # ── Cover-Automatik Konfiguration ──────────────────────
@@ -8243,8 +8308,7 @@ class FunctionExecutor:
 
     async def _exec_get_weather(self, args: dict) -> dict:
         """Aktuelles Wetter und Vorhersage von Home Assistant."""
-        # Vorhersage immer mitliefern — LLM entscheidet was davon relevant ist
-        include_forecast = True
+        include_forecast = args.get("include_forecast", False)
 
         states = await self.ha.get_states()
         if not states:

@@ -978,8 +978,13 @@ class RoutineEngine:
     # Gute-Nacht-Routine (Feature 7.3)
     # ------------------------------------------------------------------
 
-    def is_goodnight_intent(self, text: str) -> bool:
-        """Prueft ob der Text ein Gute-Nacht-Intent ist."""
+    async def is_goodnight_intent(self, text: str) -> bool:
+        """Prueft ob der Text ein Gute-Nacht-Intent ist.
+
+        1. Wetter-Ausschluss (schnell)
+        2. Keyword-Matching gegen konfigurierte + erweiterte Trigger-Liste
+        3. LLM-Fallback (fast model, 2s Timeout) fuer natuerliche Formulierungen
+        """
         text_lower = text.lower().strip()
         # Wetter-Fragen mit "nacht" ausschliessen
         _weather_excludes = ["wie kalt", "wie warm", "temperatur", "wetter",
@@ -987,12 +992,56 @@ class RoutineEngine:
         if any(ex in text_lower for ex in _weather_excludes):
             logger.debug("Goodnight-Check: Wetter-Ausschluss fuer '%s'", text_lower)
             return False
-        matched = any(trigger in text_lower for trigger in self.goodnight_triggers)
+
+        # Erweiterte Defaults (zusaetzlich zu konfigurierten Triggern)
+        _extended_triggers = [
+            "nacht", "schlafe", "ab ins bett", "geh ins bett",
+            "gehe ins bett", "bin muede", "ich bin müde", "geh schlafen",
+            "gehe schlafen", "geh pennen", "bis morgen",
+            "feierabend", "leg mich hin", "lege mich hin",
+            "bin im bett", "ich schlaf jetzt",
+        ]
+        all_triggers = list(self.goodnight_triggers) + _extended_triggers
+
+        matched = any(trigger in text_lower for trigger in all_triggers)
         logger.debug(
-            "Goodnight-Check: text='%s', triggers=%s, enabled=%s, matched=%s",
-            text_lower, self.goodnight_triggers, self.goodnight_enabled, matched,
+            "Goodnight-Check: text='%s', enabled=%s, keyword_matched=%s",
+            text_lower, self.goodnight_enabled, matched,
         )
-        return matched
+        if matched:
+            return True
+
+        # LLM-Fallback: Nur fuer kurze Saetze (< 80 Zeichen), um Kosten zu begrenzen
+        if len(text_lower) > 80:
+            return False
+
+        try:
+            llm_result = await asyncio.wait_for(
+                self.ollama.chat(
+                    messages=[{
+                        "role": "system",
+                        "content": (
+                            "Ist der folgende Satz ein Gute-Nacht-Intent? "
+                            "Also moechte die Person schlafen gehen oder sich verabschieden fuer die Nacht? "
+                            "Antworte NUR mit 'ja' oder 'nein'."
+                        ),
+                    }, {
+                        "role": "user",
+                        "content": text,
+                    }],
+                    model=settings.model_fast,
+                    temperature=0.0, max_tokens=5, think=False,
+                ),
+                timeout=2.0,
+            )
+            answer = llm_result.get("message", {}).get("content", "").strip().lower()
+            is_goodnight = answer.startswith("ja")
+            if is_goodnight:
+                logger.info("Goodnight-Check: LLM-Classifier erkannt fuer '%s'", text_lower)
+            return is_goodnight
+        except Exception as e:
+            logger.debug("Goodnight LLM-Classifier fehlgeschlagen: %s", e)
+            return False
 
     async def execute_goodnight(self, person: str = "") -> dict:
         """
@@ -1377,10 +1426,58 @@ class RoutineEngine:
 
     _UMLAUT_MAP = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
 
-    def is_guest_trigger(self, text: str) -> bool:
-        """Prueft ob der Text den Gaeste-Modus aktiviert."""
+    async def is_guest_trigger(self, text: str) -> bool:
+        """Prueft ob der Text den Gaeste-Modus aktiviert.
+
+        1. Keyword-Matching gegen konfigurierte + erweiterte Trigger-Liste
+        2. LLM-Fallback (fast model, 2s Timeout) fuer natuerliche Formulierungen
+        """
         text_lower = text.lower().strip().translate(self._UMLAUT_MAP)
-        return any(trigger in text_lower for trigger in self.guest_triggers)
+
+        # Erweiterte Defaults (zusaetzlich zu konfigurierten Triggern)
+        _extended_triggers = [
+            "besuch kommt", "besuch da", "freunde kommen",
+            "wir bekommen besuch", "wir haben besuch", "wir kriegen besuch",
+            "gleich kommen gaeste", "gleich kommt besuch",
+            "meine eltern kommen", "familie kommt",
+            "jemand kommt vorbei", "kommt jemand vorbei",
+            "bekommen gaeste", "erwarte besuch", "erwarte gaeste",
+        ]
+        all_triggers = list(self.guest_triggers) + _extended_triggers
+
+        if any(trigger in text_lower for trigger in all_triggers):
+            return True
+
+        # LLM-Fallback: Nur fuer kurze Saetze (< 80 Zeichen)
+        if len(text_lower) > 80:
+            return False
+
+        try:
+            llm_result = await asyncio.wait_for(
+                self.ollama.chat(
+                    messages=[{
+                        "role": "system",
+                        "content": (
+                            "Kuendigt der folgende Satz an, dass Gaeste/Besuch kommen oder da sind? "
+                            "Antworte NUR mit 'ja' oder 'nein'."
+                        ),
+                    }, {
+                        "role": "user",
+                        "content": text,
+                    }],
+                    model=settings.model_fast,
+                    temperature=0.0, max_tokens=5, think=False,
+                ),
+                timeout=2.0,
+            )
+            answer = llm_result.get("message", {}).get("content", "").strip().lower()
+            is_guest = answer.startswith("ja")
+            if is_guest:
+                logger.info("Guest-Check: LLM-Classifier erkannt fuer '%s'", text_lower)
+            return is_guest
+        except Exception as e:
+            logger.debug("Guest LLM-Classifier fehlgeschlagen: %s", e)
+            return False
 
     async def activate_guest_mode(self) -> str:
         """Aktiviert den Gaeste-Modus.

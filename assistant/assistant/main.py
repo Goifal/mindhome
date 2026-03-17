@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -2987,6 +2987,9 @@ def _get_reloaded_modules(changed_settings: dict) -> list[str]:
     return reloaded
 
 
+_last_reload_ts: float = 0.0
+
+
 def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
     """F-038: Benachrichtigt alle Module deren Config sich geaendert hat.
 
@@ -2995,6 +2998,14 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
     Module die bei jedem Zugriff yaml_config lesen profitieren automatisch.
     Module die im __init__ cachen werden hier explizit aktualisiert.
     """
+    global _last_reload_ts
+    import time as _time
+    now = _time.monotonic()
+    if now - _last_reload_ts < 5.0:
+        logger.debug("_reload_all_modules: Debounce — uebersprungen (%.1fs seit letztem Reload)", now - _last_reload_ts)
+        return []
+    _last_reload_ts = now
+
     failed_modules: list[str] = []
 
     def _try_reload(name: str, fn):
@@ -3147,6 +3158,11 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             if isinstance(user_excludes, str):
                 user_excludes = [p.strip() for p in user_excludes.splitlines() if p.strip()]
             hm._exclude_patterns = [p.lower() for p in (hm._default_excludes + user_excludes)]
+            # Humidity-Sensor Allowlist neu laden
+            raw_sensors = hm_cfg.get("humidity_sensors") or []
+            if isinstance(raw_sensors, str):
+                raw_sensors = [s.strip() for s in raw_sensors.split(",") if s.strip()]
+            hm._humidity_sensors = {s.lower() for s in raw_sensors}
             # Humidor-Config neu laden
             humidor_cfg = yaml_cfg.get("humidor", {})
             hm.humidor_enabled = bool(humidor_cfg.get("enabled", False))
@@ -4171,6 +4187,138 @@ async def ui_get_available_temp_sensors(token: str = ""):
                     "name": attrs.get("friendly_name", eid),
                     "value": val,
                     "unit": unit or "°C",
+                })
+        sensors.sort(key=lambda x: x["name"])
+        return {"sensors": sensors, "total": len(sensors)}
+    except Exception as e:
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+
+
+@app.get("/api/ui/room-humidity")
+async def ui_get_room_humidity(token: str = ""):
+    """Konfigurierte Luftfeuchtigkeits-Sensoren mit aktuellem Wert und Mittelwert."""
+    await _check_token(token)
+    try:
+        import assistant.config as cfg
+        hm_cfg = cfg.yaml_config.get("health_monitor", {})
+        sensor_ids = hm_cfg.get("humidity_sensors", []) or []
+
+        states = await brain.ha.get_states()
+        state_map = {s.get("entity_id"): s for s in (states or [])}
+
+        sensors = []
+        vals = []
+        for sid in sensor_ids:
+            s = state_map.get(sid, {})
+            name = s.get("attributes", {}).get("friendly_name", sid) if s else sid
+            val = None
+            try:
+                val = float(s.get("state", ""))
+            except (ValueError, TypeError):
+                pass
+            sensors.append({
+                "entity_id": sid,
+                "name": name,
+                "value": val,
+                "unit": s.get("attributes", {}).get("unit_of_measurement", "%") if s else "%",
+                "available": s.get("state") not in (None, "unavailable", "unknown", ""),
+            })
+            if val is not None:
+                vals.append(val)
+
+        avg = round(sum(vals) / len(vals), 1) if vals else None
+
+        return {
+            "sensors": sensors,
+            "average": avg,
+            "count": len(sensors),
+            "active_count": len(vals),
+        }
+    except Exception as e:
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+
+
+@app.put("/api/ui/room-humidity")
+async def ui_set_room_humidity(req: Request, token: str = ""):
+    """Luftfeuchtigkeits-Sensoren konfigurieren. Body: {"sensors": ["sensor.x", ...]}"""
+    await _check_token(token)
+    try:
+        data = await req.json()
+        sensor_list = data.get("sensors", [])
+        if not isinstance(sensor_list, list):
+            raise HTTPException(status_code=400, detail="sensors muss eine Liste sein")
+
+        for sid in sensor_list:
+            if not isinstance(sid, str) or not sid.startswith("sensor."):
+                raise HTTPException(status_code=400, detail=f"Ungueltige Entity-ID: {sid}")
+
+        # In settings.yaml speichern
+        with open(SETTINGS_YAML_PATH) as f:
+            config = yaml.safe_load(f) or {}
+
+        if "health_monitor" not in config:
+            config["health_monitor"] = {}
+        config["health_monitor"]["humidity_sensors"] = sensor_list
+
+        with open(SETTINGS_YAML_PATH, "w") as f:
+            yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        # yaml_config im Speicher aktualisieren
+        import assistant.config as cfg
+        _new = load_yaml_config()
+        cfg.yaml_config.clear()
+        cfg.yaml_config.update(_new)
+
+        # HealthMonitor Allowlist live aktualisieren
+        if hasattr(brain, "health_monitor"):
+            brain.health_monitor._humidity_sensors = {s.lower() for s in sensor_list}
+
+        return {"success": True, "count": len(sensor_list)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+
+
+@app.get("/api/ui/room-humidity/available")
+async def ui_get_available_humidity_sensors(token: str = ""):
+    """Alle verfuegbaren Luftfeuchtigkeits-Sensoren aus Home Assistant."""
+    await _check_token(token)
+    try:
+        states = await brain.ha.get_states()
+        sensors = []
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if not eid.startswith("sensor."):
+                continue
+            attrs = s.get("attributes", {})
+            unit = attrs.get("unit_of_measurement", "")
+            device_class = attrs.get("device_class", "")
+            if device_class == "humidity" or unit == "%":
+                # Humidor-Sensoren und Batterie-Sensoren ausschliessen
+                eid_lower = eid.lower()
+                fname_lower = attrs.get("friendly_name", "").lower()
+                if any(p in eid_lower or p in fname_lower for p in (
+                    "humidor", "batterie", "battery", "signal", "cpu", "memory",
+                    "disk", "rssi", "linkquality",
+                )):
+                    continue
+                val = None
+                try:
+                    val = float(s.get("state", ""))
+                except (ValueError, TypeError):
+                    pass
+                # Nur plausible Humidity-Werte anzeigen (0-100%)
+                if val is not None and (val < 0 or val > 100):
+                    continue
+                sensors.append({
+                    "entity_id": eid,
+                    "name": attrs.get("friendly_name", eid),
+                    "value": val,
+                    "unit": unit or "%",
                 })
         sensors.sort(key=lambda x: x["name"])
         return {"sensors": sensors, "total": len(sensors)}
@@ -8210,6 +8358,76 @@ async def root():
         "docs": "/docs",
         "dashboard": "/ui/",
     }
+
+
+# ----- J2: Redis Data Backup — Runtime-Daten exportieren -----
+
+@app.get("/api/admin/redis-backup", tags=["admin"])
+async def redis_backup(token: str = Header(None, alias="X-Auth-Token")):
+    """Exportiert alle mha:* Runtime-Daten aus Redis als JSON.
+
+    Sichert gelernte Patterns, Fakten, Scores, Mood-States, Korrekturen etc.
+    PIN-geschuetzt via Auth-Token.
+    """
+    await _check_token(token)
+
+    redis = brain.memory.redis
+    if not redis:
+        raise HTTPException(status_code=503, detail="Redis nicht verfuegbar")
+
+    from datetime import datetime as _dt
+
+    backup = {
+        "backup_timestamp": _dt.now().isoformat(),
+        "version": "1.0",
+        "keys": {},
+    }
+
+    cursor = 0
+    key_count = 0
+    _MAX_KEYS = 5000  # Sicherheitslimit
+
+    while key_count < _MAX_KEYS:
+        cursor, keys = await redis.scan(cursor=cursor, match="mha:*", count=200)
+        for key in keys:
+            key_count += 1
+            if key_count > _MAX_KEYS:
+                break
+            try:
+                key_type = await redis.type(key)
+                if key_type == "string":
+                    val = await redis.get(key)
+                    backup["keys"][key] = {"type": "string", "value": val}
+                elif key_type == "list":
+                    val = await redis.lrange(key, 0, -1)
+                    backup["keys"][key] = {"type": "list", "value": val}
+                elif key_type == "hash":
+                    val = await redis.hgetall(key)
+                    backup["keys"][key] = {"type": "hash", "value": val}
+                elif key_type == "set":
+                    val = list(await redis.smembers(key))
+                    backup["keys"][key] = {"type": "set", "value": val}
+                elif key_type == "zset":
+                    val = await redis.zrange(key, 0, -1, withscores=True)
+                    backup["keys"][key] = {"type": "zset", "value": val}
+            except Exception as e:
+                backup["keys"][key] = {"type": "error", "value": str(e)}
+
+        if cursor == 0:
+            break
+
+    backup["key_count"] = key_count
+
+    _audit_log("redis_backup", {"key_count": key_count})
+    logger.info("Redis-Backup erstellt: %d Keys exportiert", key_count)
+
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content=backup,
+        headers={
+            "Content-Disposition": f'attachment; filename="redis_backup_{_dt.now().strftime("%Y%m%d_%H%M%S")}.json"',
+        },
+    )
 
 
 # ----- Kubernetes-ready Health Probes -----

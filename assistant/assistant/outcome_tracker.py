@@ -160,10 +160,19 @@ class OutcomeTracker:
 
         await self._store_outcome(action_type, outcome, person)
 
-    async def get_success_score(self, action_type: str) -> float:
-        """Rolling Score 0-1 fuer einen Aktionstyp."""
+    async def get_success_score(self, action_type: str, person: str = "") -> float:
+        """Rolling Score 0-1 fuer einen Aktionstyp.
+
+        Wenn person angegeben: Per-Person Score bevorzugen, Fallback auf global.
+        """
         if not self.redis:
             return DEFAULT_SCORE
+
+        # Per-Person Score bevorzugen
+        if person:
+            person_score = await self.get_person_score(action_type, person)
+            if person_score != DEFAULT_SCORE:
+                return person_score
 
         score = await self.redis.get(f"mha:outcome:score:{action_type}")
         if score is not None:
@@ -234,6 +243,32 @@ class OutcomeTracker:
             logger.warning("L6: Outcome stats SCAN failed: %s", e)
 
         return stats
+
+    async def get_recent_failures(self, limit: int = 3) -> list[dict]:
+        """Gibt die letzten fehlgeschlagenen Aktionen zurueck (fuer LLM-Context).
+
+        Returns:
+            Liste mit {"action_type": ..., "reason": ...} Dicts
+        """
+        if not self.redis:
+            return []
+        try:
+            raw = await self.redis.lrange("mha:outcome:results", 0, 49)
+            failures = []
+            for entry in raw:
+                data = json.loads(entry)
+                if data.get("outcome") == OUTCOME_NEGATIVE:
+                    failures.append({
+                        "action_type": data.get("action_type", "unbekannt"),
+                        "reason": data.get("room", ""),
+                        "timestamp": data.get("timestamp", ""),
+                    })
+                    if len(failures) >= limit:
+                        break
+            return failures
+        except Exception as e:
+            logger.debug("get_recent_failures: %s", e)
+            return []
 
     async def get_weekly_trends(self) -> dict:
         """Woechentliche Score-Trends fuer Self-Report / Self-Optimization."""
