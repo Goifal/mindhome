@@ -378,11 +378,23 @@ class VisitorManager:
             from .ollama_client import strip_think_tags
             title = get_person_title()
             camera_hint = f"\nKamera zeigt: {camera_desc}" if camera_desc else ""
+            from datetime import datetime as _dt
+            _hour = _dt.now().hour
+            if 22 <= _hour or _hour < 6:
+                _time_hint = f"Nacht ({_hour}:00 Uhr)"
+            elif 6 <= _hour < 12:
+                _time_hint = f"Vormittag ({_hour}:00 Uhr)"
+            elif 12 <= _hour < 18:
+                _time_hint = f"Nachmittag ({_hour}:00 Uhr)"
+            else:
+                _time_hint = f"Abend ({_hour}:00 Uhr)"
             prompt = (
                 "Du bist JARVIS, ein britischer Smart-Home-Butler. "
                 f"Melde dem Bewohner ({title}) was an der Haustuer los ist. "
                 "1-2 Saetze, Butler-Ton. Behalte alle Namen und Fakten bei. "
-                "Sei persoenlich, nicht roboterhaft.\n\n"
+                "Sei persoenlich, nicht roboterhaft. "
+                "Passe den Ton an die Uhrzeit an (nachts dringlicher).\n\n"
+                f"Uhrzeit: {_time_hint}\n"
                 f"Situation: {message}{camera_hint}\n\n"
                 "Meldung:"
             )

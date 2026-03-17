@@ -244,6 +244,7 @@ class PreClassifier:
 
     def __init__(self):
         self._ollama = None
+        self._last_category: str = ""  # Letzte Klassifikation fuer Kontext
 
     def set_ollama(self, ollama_client):
         """Setzt den OllamaClient fuer LLM-basierte Klassifikation."""
@@ -269,8 +270,10 @@ class PreClassifier:
             if cfg.get("llm_fallback", True):
                 llm_profile = await self._llm_classify(text)
                 if llm_profile:
+                    self._last_category = llm_profile.category
                     return llm_profile
 
+        self._last_category = profile.category
         return profile
 
     async def _llm_classify(self, text: str) -> Optional[RequestProfile]:
@@ -294,6 +297,9 @@ class PreClassifier:
                                 "- knowledge: Wissensfrage (Erklaerung, Rezept, Info ohne Smart-Home-Bezug)\n"
                                 "- memory: Erinnerungsfrage (was weisst du, erinnerst du dich)\n"
                                 "- general: Alles andere (Smalltalk, komplexe Anfragen)\n"
+                                + (f"Vorherige Anfrage war: {self._last_category}. "
+                                   "Beruecksichtige das bei mehrdeutigen Folge-Anfragen.\n"
+                                   if self._last_category else "")
                             ),
                         },
                         {"role": "user", "content": text[:300]},

@@ -594,12 +594,20 @@ class TimeAwareness:
         try:
             from .config import settings
             from .ollama_client import strip_think_tags
+            from datetime import datetime as _dt
+            _now = _dt.now()
+            _DAY_NAMES = {0: "Montag", 1: "Dienstag", 2: "Mittwoch", 3: "Donnerstag",
+                          4: "Freitag", 5: "Samstag", 6: "Sonntag"}
+            _is_weekend = _now.weekday() >= 5
+            _time_ctx = f"{_DAY_NAMES.get(_now.weekday(), '')} {_now.strftime('%H:%M')}"
             prompt = (
                 "Du bist JARVIS, ein britischer Smart-Home-Butler. "
                 "Formuliere diese Geraete-Warnung natuerlich um. "
                 "Trockener Butler-Ton, 1-2 Saetze. "
                 "Behalte alle Fakten (Minuten, Geraetename) exakt bei. "
-                "Variiere den Wortlaut — nicht immer gleich formulieren.\n\n"
+                "Variiere den Wortlaut — nicht immer gleich formulieren. "
+                "Beruecksichtige den Zeitkontext (nachts/Wochenende anders als werktags).\n\n"
+                f"Zeitpunkt: {_time_ctx}{' (Wochenende)' if _is_weekend else ''}\n"
                 f"Typ: {alert_type}\n"
                 f"Original: {message}\n\n"
                 "Umformulierung:"

@@ -4470,6 +4470,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
                     # Post-Action Dependency Check: Sofort neue Konflikte
                     # erkennen die durch DIESE Aktion entstanden sind
+                    # Frischer State (nach Aktion) — wird auch fuer Opinion wiederverwendet
+                    _post_states = []
                     if _success and not conflict_msg:
                         try:
                             _post_states = await self.ha.get_states() or []
@@ -4503,13 +4505,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     # Nutzt check_opinion_with_context() fuer kombinierte
                     # Opinion-Rules + Device-Dependency Bewertung
                     if not pushback_msg:
-                        try:
-                            _opinion_states = await self.ha.get_states() or []
-                        except Exception:
-                            _opinion_states = []
+                        if not _post_states:
+                            try:
+                                _post_states = await self.ha.get_states() or []
+                            except Exception:
+                                _post_states = []
                         opinion = self.personality.check_opinion_with_context(
                             func_name, final_args,
-                            ha_states=_opinion_states,
+                            ha_states=_post_states,
                         )
                         if opinion:
                             logger.info("Jarvis Meinung: '%s'", opinion)
