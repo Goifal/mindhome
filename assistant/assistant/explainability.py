@@ -22,6 +22,21 @@ logger = logging.getLogger(__name__)
 REDIS_KEY_DECISIONS = "mha:explainability:decisions"
 REDIS_KEY_LAST_ACTION = "mha:explainability:last_action"
 
+# Kontrafaktische Regeln: (domain, context_key) -> Template
+# Erklaert was OHNE Jarvis' Eingreifen passiert waere.
+_COUNTERFACTUAL_RULES: dict[tuple[str, str], str] = {
+    ("climate", "window_open"): "Ohne Eingreifen: Heizkosten von ca. {cost}€/h verschwendet.",
+    ("climate", "empty_room"): "Ohne Eingreifen: Leerer Raum waere auf {temp}°C geheizt worden.",
+    ("climate", "high_temp"): "Ohne Eingreifen: Raumtemperatur waere auf {temp}°C gestiegen.",
+    ("cover", "wind_warning"): "Ohne Eingreifen: Markise bei {wind_speed} km/h Windboeen beschaedigt.",
+    ("cover", "rain_warning"): "Ohne Eingreifen: Terrassenmoebel waeren nass geworden.",
+    ("light", "empty_room"): "Ohne Eingreifen: Unnoetiger Stromverbrauch von ~{watts}W.",
+    ("light", "daylight"): "Ohne Eingreifen: Licht haette trotz Tageslicht gebrannt.",
+    ("security", "door_unlocked"): "Ohne Eingreifen: Haustuer waere ueber Nacht unverschlossen geblieben.",
+    ("security", "alarm_triggered"): "Ohne Eingreifen: Keine sofortige Benachrichtigung.",
+    ("lock", "night_unlocked"): "Ohne Eingreifen: Schloss waere bis morgen offen geblieben.",
+}
+
 
 class ExplainabilityEngine:
     """Trackt Entscheidungen und macht sie erklaerbar."""
@@ -74,8 +89,9 @@ class ExplainabilityEngine:
         person: str = "",
         domain: str = "",
         confidence: float = 1.0,
+        alternative_outcomes: list[str] = None,
     ):
-        """Loggt eine Entscheidung mit Begruendung.
+        """Loggt eine Entscheidung mit Begruendung und kontrafaktischen Ergebnissen.
 
         Args:
             action: Was wurde gemacht (z.B. "Licht Wohnzimmer auf 50%")
@@ -85,6 +101,7 @@ class ExplainabilityEngine:
             person: Betroffene Person
             domain: Domaene (climate, light, media, etc.)
             confidence: Konfidenz der Entscheidung (0-1)
+            alternative_outcomes: Was waere ohne Eingreifen passiert (kontrafaktisch)
         """
         if not self.enabled:
             return
@@ -107,6 +124,14 @@ class ExplainabilityEngine:
                 if k in ("room", "sensor_values", "rule", "pattern", "mood",
                          "autonomy_level", "weather", "calendar_event")
             }
+
+        # Kontrafaktische Ergebnisse: explizit oder automatisch generiert
+        if alternative_outcomes:
+            decision["alternative_outcomes"] = alternative_outcomes
+        else:
+            counterfactual = self._build_counterfactual(domain, context or {})
+            if counterfactual:
+                decision["alternative_outcomes"] = [counterfactual]
 
         self._decisions.append(decision)
 
@@ -258,10 +283,74 @@ class ExplainabilityEngine:
 
         return self.format_explanation(decision)
 
+    @staticmethod
+    def _build_counterfactual(domain: str, context: dict) -> Optional[str]:
+        """Generiert kontrafaktische Erklaerung: Was waere ohne Eingreifen passiert?
+
+        Args:
+            domain: Domaene der Aktion (climate, light, cover, etc.)
+            context: Kontext-Dict mit Sensordaten und Regeln
+
+        Returns:
+            Kontrafaktische Erklaerung oder None
+        """
+        if not domain or not context:
+            return None
+
+        # Context-Keys durchgehen und passende Regel finden
+        context_keys = set()
+        rule = context.get("rule", "")
+        sensor_values = context.get("sensor_values", {})
+
+        # Context-Keys aus verschiedenen Quellen ableiten
+        if "window" in str(context).lower() or "fenster" in str(context).lower():
+            context_keys.add("window_open")
+        if context.get("room_empty") or "leer" in str(context).lower():
+            context_keys.add("empty_room")
+        if "wind" in str(context).lower() or "sturm" in str(context).lower():
+            context_keys.add("wind_warning")
+        if "regen" in str(context).lower() or "rain" in str(context).lower():
+            context_keys.add("rain_warning")
+        if "tageslicht" in str(context).lower() or "daylight" in str(context).lower():
+            context_keys.add("daylight")
+        if "nacht" in str(context).lower() or "night" in str(context).lower():
+            context_keys.add("night_unlocked")
+        if "alarm" in str(context).lower():
+            context_keys.add("alarm_triggered")
+
+        # Temperaturschwelle
+        temp = sensor_values.get("temperature", sensor_values.get("temp"))
+        if temp and domain == "climate":
+            try:
+                if float(temp) > 26:
+                    context_keys.add("high_temp")
+            except (ValueError, TypeError):
+                pass
+
+        # Beste Regel finden
+        for ctx_key in context_keys:
+            rule_key = (domain, ctx_key)
+            template = _COUNTERFACTUAL_RULES.get(rule_key)
+            if template:
+                # Template mit verfuegbaren Werten fuellen
+                format_vals = {
+                    "cost": sensor_values.get("cost", "0.50"),
+                    "temp": sensor_values.get("temperature", "25"),
+                    "wind_speed": sensor_values.get("wind_speed", "60"),
+                    "watts": sensor_values.get("power", "60"),
+                }
+                try:
+                    return template.format(**format_vals)
+                except (KeyError, ValueError):
+                    return template.split("{")[0].rstrip()
+
+        return None
+
     def get_explanation_prompt_hint(self) -> str:
         """Gibt einen Prompt-Hinweis fuer Erklaerbarkeit zurueck.
 
         Wird in den System-Prompt eingebaut wenn auto_explain aktiv ist.
+        Enthaelt jetzt auch kontrafaktische Daten.
         """
         if not self.enabled or not self.auto_explain:
             return ""
@@ -275,10 +364,17 @@ class ExplainabilityEngine:
         if age > 300:  # Aelter als 5 Min -> nicht erwaehnen
             return ""
 
-        return (
+        hint = (
             f"Letzte automatische Aktion: '{d['action']}' (Grund: {d['reason']}). "
-            "Bei Rueckfragen erklaere warum du das getan hast."
         )
+
+        # Kontrafaktische Daten hinzufuegen
+        alt_outcomes = d.get("alternative_outcomes", [])
+        if alt_outcomes:
+            hint += f"{alt_outcomes[0]} "
+
+        hint += "Bei Rueckfragen erklaere warum du das getan hast."
+        return hint
 
     def get_auto_explanation(self, action_type: str, domain: str = "") -> Optional[str]:
         """Gibt automatische Erklaerung fuer sicherheitskritische Domaenen zurueck.

@@ -176,3 +176,65 @@ class TestHydration:
             dt_mock.fromisoformat = datetime.fromisoformat
             await advisor._check_hydration()
         advisor._notify_callback.assert_not_called()
+
+
+# ------------------------------------------------------------------
+# Phase 11: Erweiterte Wellness-Features
+# ------------------------------------------------------------------
+
+
+class TestPhase11ExtendedWellness:
+
+    @pytest.fixture
+    def advisor(self, ha_mock, activity_mock, mood_mock):
+        cfg = {"wellness": {"enabled": True}}
+        with patch("assistant.wellness_advisor.yaml_config", cfg):
+            w = WellnessAdvisor(ha_mock, activity_mock, mood_mock)
+            w.redis = AsyncMock()
+            w._notify_callback = AsyncMock()
+            return w
+
+    @pytest.mark.asyncio
+    async def test_wellness_summary_default(self, advisor):
+        advisor.redis.get = AsyncMock(return_value=None)
+        result = await advisor.get_wellness_summary()
+        assert result["score"] == 100
+        assert result["hints"] == []
+
+    @pytest.mark.asyncio
+    async def test_wellness_summary_stressed(self, advisor):
+        advisor.redis.get = AsyncMock(return_value=None)
+        advisor.mood._current_mood = "stressed"
+        result = await advisor.get_wellness_summary()
+        assert result["score"] < 100
+        assert any("Stimmung" in h for h in result["hints"])
+
+    @pytest.mark.asyncio
+    async def test_suggest_micro_break_pc(self, advisor):
+        suggestion = await advisor.suggest_micro_break("pc")
+        assert suggestion is not None
+        assert len(suggestion) > 10
+
+    @pytest.mark.asyncio
+    async def test_suggest_micro_break_default(self, advisor):
+        suggestion = await advisor.suggest_micro_break()
+        assert suggestion is not None
+
+    @pytest.mark.asyncio
+    async def test_ambient_suggestion_no_mood(self, advisor):
+        advisor.mood = None
+        result = await advisor.get_ambient_suggestion()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_ambient_suggestion_stressed(self, advisor):
+        advisor.mood._current_mood = "stressed"
+        result = await advisor.get_ambient_suggestion()
+        assert result is not None
+        assert "Licht" in result["action"]
+
+    @pytest.mark.asyncio
+    async def test_ambient_suggestion_neutral(self, advisor):
+        advisor.mood._current_mood = "neutral"
+        result = await advisor.get_ambient_suggestion()
+        assert result is None

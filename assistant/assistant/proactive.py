@@ -3118,8 +3118,11 @@ class ProactiveManager:
 
                 # Wartungs-Erinnerungen (nur LOW)
                 for task in result.get("maintenance_due", []):
+                    entity_id = task.get("entity_id", "")
+                    task_name = task.get("name", "")
                     await self._notify("maintenance_due", LOW, {
-                        "task": task.get("name", ""),
+                        "entity": f"{entity_id} ({task_name})" if entity_id else task_name,
+                        "task": task_name,
                         "days_overdue": task.get("days_overdue", 0),
                         "description": task.get("description", ""),
                     })
@@ -3435,7 +3438,10 @@ class ProactiveManager:
         medium_parts = []
         low_parts = []
         for item in items:
+            entity = item.get("data", {}).get("entity", "")
             line = f"- {item['description']}"
+            if entity:
+                line += f" [{entity}]"
             if "message" in item.get("data", {}):
                 line += f" ({item['data']['message']})"
             if item.get("urgency") == MEDIUM:

@@ -7,6 +7,7 @@ Extrahiert aus brain.py zur Reduktion der Dateigroesse.
 
 import logging
 import re
+from typing import Optional
 
 from . import config as cfg
 from .config import get_person_title
@@ -500,3 +501,86 @@ class BrainHumanizersMixin:
         if len(raw) < 120:
             return raw
         return "\n".join(lines[:5])
+
+    # ------------------------------------------------------------------
+    # Phase 6C: Vergleichs- und Anomalie-Formatierung
+    # ------------------------------------------------------------------
+
+    def format_comparison(
+        self, current_value: float, previous_value: float, unit: str = ""
+    ) -> str:
+        """Formatiert einen Vergleich zwischen aktuellem und vorherigem Wert.
+
+        Gibt einen String im Stil '18°C, gestern 21°C (↓3°)' zurueck.
+        """
+        delta = current_value - previous_value
+        if delta == 0:
+            return f"{current_value}{unit}, unveraendert"
+
+        arrow = "↑" if delta > 0 else "↓"
+        abs_delta = abs(delta)
+        # Ganzzahl-Formatierung wenn kein Nachkomma noetig
+        fmt_cur = f"{current_value:.0f}" if current_value == int(current_value) else f"{current_value:.1f}"
+        fmt_prev = f"{previous_value:.0f}" if previous_value == int(previous_value) else f"{previous_value:.1f}"
+        fmt_delta = f"{abs_delta:.0f}" if abs_delta == int(abs_delta) else f"{abs_delta:.1f}"
+
+        return f"{fmt_cur}{unit}, vorher {fmt_prev}{unit} ({arrow}{fmt_delta}{unit})"
+
+    def highlight_anomaly(self, values: dict, label: str = "") -> Optional[str]:
+        """Hebt ungewoehnliche Zustaende hervor.
+
+        Erkennt wenn eine Mehrheit von Geraeten in einem unerwarteten Zustand ist
+        und gibt einen String wie '3/4 Tueren offen — ungewoehnlich' zurueck.
+
+        Args:
+            values: Dict von {name: state} wobei state True/False oder 'on'/'off'/'open'/'closed'
+            label: Bezeichnung fuer die Geraetegruppe (z.B. 'Tueren', 'Fenster')
+        """
+        if not values:
+            return None
+
+        total = len(values)
+        if total < 2:
+            return None
+
+        # Zaehle "aktive" Zustaende (on, open, True)
+        active_states = {"on", "open", "true", "offen"}
+        active_count = 0
+        for state in values.values():
+            state_str = str(state).lower()
+            if state_str in active_states or state_str == "True":
+                active_count += 1
+
+        # Anomalie: Mehr als die Haelfte aktiv
+        if active_count > total / 2 and active_count >= 2:
+            group = label or "Geraete"
+            return f"{active_count}/{total} {group} offen — ungewoehnlich"
+
+        return None
+
+    def format_delta_context(self, changes: list[dict]) -> str:
+        """Formatiert Zustandsaenderungen seit der letzten Interaktion.
+
+        Args:
+            changes: Liste von Dicts mit 'entity', 'old_state', 'new_state', optional 'room'
+
+        Returns:
+            Zusammenfassung der Aenderungen als natuerlicher Text.
+        """
+        if not changes:
+            return ""
+
+        parts = []
+        for change in changes[:5]:  # Max 5 Aenderungen anzeigen
+            entity = change.get("entity", "Unbekannt")
+            old = change.get("old_state", "?")
+            new = change.get("new_state", "?")
+            room = change.get("room", "")
+            room_suffix = f" ({room})" if room else ""
+            parts.append(f"{entity}{room_suffix}: {old} → {new}")
+
+        suffix = ""
+        if len(changes) > 5:
+            suffix = f" — und {len(changes) - 5} weitere"
+
+        return "Seit letzter Interaktion: " + ", ".join(parts) + suffix + "."

@@ -546,3 +546,118 @@ class MultiRoomAudio:
             "max_groups": self.max_groups,
             "default_volume": self.default_volume,
         }
+
+    # ------------------------------------------------------------------
+    # Phase 7: Intelligente Audio-Zustellung
+    # ------------------------------------------------------------------
+
+    async def get_best_speaker_for_person(
+        self, person: str, urgency: str = "normal"
+    ) -> Optional[str]:
+        """Findet den besten Speaker fuer eine Person basierend auf Praesenz.
+
+        Args:
+            person: Personenname
+            urgency: "low", "normal", "high", "critical"
+
+        Returns:
+            entity_id des besten Speakers oder None
+        """
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return None
+
+            # Raum mit Praesenz der Person finden
+            person_room = None
+            for s in states:
+                eid = s.get("entity_id", "")
+                if eid.startswith("person.") and person.lower() in eid.lower():
+                    person_room = s.get("state", "")
+                    break
+
+            if not person_room or person_room in ("not_home", "unavailable"):
+                return None
+
+            # Speaker in diesem Raum finden
+            room_lower = person_room.lower().replace(" ", "_")
+            for s in states:
+                eid = s.get("entity_id", "")
+                if eid.startswith("media_player.") and room_lower in eid.lower():
+                    return eid
+
+            return None
+        except Exception as e:
+            logger.debug("Best speaker lookup failed: %s", e)
+            return None
+
+    async def smart_announce(
+        self,
+        message: str,
+        person: str = "",
+        urgency: str = "normal",
+        rooms: list[str] | None = None,
+    ) -> dict:
+        """Intelligente Durchsage: Sendet Nachricht an den optimalen Speaker.
+
+        Bei "critical" → alle Speaker. Bei "normal" → nur Raum der Person.
+        Bei "low" → nur wenn Person nicht beschaeftigt.
+
+        Args:
+            message: Nachrichtentext
+            person: Zielperson
+            urgency: Dringlichkeitsstufe
+            rooms: Optionale Raumliste (ueberschreibt Auto-Routing)
+
+        Returns:
+            Ergebnis-Dict
+        """
+        try:
+            if not self.enabled:
+                return {"success": False, "message": "Multi-Room Audio deaktiviert"}
+
+            target_speakers = []
+
+            if rooms:
+                # Explizite Raumliste
+                states = await self.ha.get_states()
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    if eid.startswith("media_player."):
+                        for room in rooms:
+                            if room.lower().replace(" ", "_") in eid.lower():
+                                target_speakers.append(eid)
+            elif urgency == "critical":
+                # Alle Speaker
+                speakers = await self.discover_speakers()
+                target_speakers = [s["entity_id"] for s in speakers]
+            elif person:
+                # Bester Speaker fuer Person
+                speaker = await self.get_best_speaker_for_person(person, urgency)
+                if speaker:
+                    target_speakers = [speaker]
+
+            if not target_speakers:
+                return {"success": False, "message": "Kein passender Speaker gefunden"}
+
+            # TTS an alle Ziel-Speaker senden
+            results = []
+            for speaker in target_speakers:
+                try:
+                    await self.ha.call_service(
+                        "tts", "speak",
+                        entity_id=speaker,
+                        message=message,
+                    )
+                    results.append(speaker)
+                except Exception as tts_err:
+                    logger.debug("TTS an %s fehlgeschlagen: %s", speaker, tts_err)
+
+            return {
+                "success": len(results) > 0,
+                "message": f"Nachricht an {len(results)} Speaker gesendet",
+                "speakers": results,
+            }
+        except Exception as e:
+            logger.debug("Smart announce failed: %s", e)
+            return {"success": False, "message": str(e)}

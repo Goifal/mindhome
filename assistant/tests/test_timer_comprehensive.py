@@ -707,3 +707,98 @@ class TestRemindersStatus:
         tm.timers["r1"] = t
         result = tm.get_reminders_status()
         assert "Meeting" in result["message"]
+
+
+# ============================================================
+# Phase 5A: Scheduled Actions
+# ============================================================
+
+class TestScheduledActions:
+    """Tests fuer zeitgesteuerte Geraeteaktionen."""
+
+    @pytest.fixture
+    def tm(self):
+        from assistant.timer_manager import TimerManager
+        m = TimerManager()
+        m.redis = AsyncMock()
+        m._action_callback = AsyncMock()
+        return m
+
+    @pytest.mark.asyncio
+    async def test_create_scheduled_action(self, tm):
+        result = await tm.create_scheduled_action(
+            action="set_light",
+            action_args={"room": "kueche", "state": "on"},
+            target_time="19:00",
+        )
+        assert result["success"] is True
+        assert "id" in result
+        tm.redis.hset.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_create_invalid_action(self, tm):
+        result = await tm.create_scheduled_action(
+            action="lock_door",  # Nicht in Whitelist
+            action_args={},
+            target_time="19:00",
+        )
+        assert result["success"] is False
+
+    @pytest.mark.asyncio
+    async def test_create_invalid_time(self, tm):
+        result = await tm.create_scheduled_action(
+            action="set_light",
+            action_args={},
+            target_time="25:00",
+        )
+        assert result["success"] is False
+
+    @pytest.mark.asyncio
+    async def test_create_invalid_repeat(self, tm):
+        result = await tm.create_scheduled_action(
+            action="set_light",
+            action_args={},
+            target_time="19:00",
+            repeat="every_other_day",
+        )
+        assert result["success"] is False
+
+    @pytest.mark.asyncio
+    async def test_cancel_scheduled_action(self, tm):
+        tm.redis.hdel = AsyncMock(return_value=1)
+        result = await tm.cancel_scheduled_action("sched_123")
+        assert result["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_cancel_not_found(self, tm):
+        tm.redis.hdel = AsyncMock(return_value=0)
+        result = await tm.cancel_scheduled_action("nonexistent")
+        assert result["success"] is False
+
+    @pytest.mark.asyncio
+    async def test_list_scheduled_actions(self, tm):
+        tm.redis.hgetall = AsyncMock(return_value={
+            b"s1": json.dumps({"id": "s1", "action": "set_light", "target_time": "07:00", "active": True}).encode(),
+            b"s2": json.dumps({"id": "s2", "action": "set_climate", "target_time": "18:00", "active": True}).encode(),
+        })
+        result = await tm.list_scheduled_actions()
+        assert len(result) == 2
+        assert result[0]["target_time"] == "07:00"  # Sortiert
+
+    @pytest.mark.asyncio
+    async def test_list_empty(self, tm):
+        tm.redis.hgetall = AsyncMock(return_value={})
+        result = await tm.list_scheduled_actions()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_no_redis(self, tm):
+        tm.redis = None
+        result = await tm.create_scheduled_action("set_light", {}, "19:00")
+        assert result["success"] is False
+
+    @pytest.mark.asyncio
+    async def test_summary_no_actions(self, tm):
+        tm.redis.hgetall = AsyncMock(return_value={})
+        summary = await tm.get_scheduled_actions_summary()
+        assert summary == ""

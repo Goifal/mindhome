@@ -194,5 +194,78 @@ class TestResponseCache:
     def test_general_not_cacheable(self):
         assert "general" not in _CACHEABLE_CATEGORIES
 
-    def test_knowledge_not_cacheable(self):
-        assert "knowledge" not in _CACHEABLE_CATEGORIES
+    def test_knowledge_is_cacheable(self):
+        """Phase 1B: knowledge-Anfragen werden jetzt gecacht."""
+        assert "knowledge" in _CACHEABLE_CATEGORIES
+
+    # --- Phase 1B: Pre-Caching Tests ---
+
+    @pytest.mark.asyncio
+    async def test_pre_cache_success(self, cache):
+        """Pre-Caching sollte eine Antwort im Cache speichern."""
+        result = await cache.pre_cache(
+            text="Morgen-Briefing",
+            category="knowledge",
+            response="Guten Morgen, heute ist Dienstag...",
+            model="model_fast",
+        )
+        assert result is True
+        assert cache._pre_cache_count == 1
+        cache._redis.set.assert_called_once()
+        call_args = cache._redis.set.call_args
+        data = json.loads(call_args[0][1])
+        assert data["_pre_cached"] is True
+        assert data["response"] == "Guten Morgen, heute ist Dienstag..."
+
+    @pytest.mark.asyncio
+    async def test_pre_cache_disabled(self, cache_disabled):
+        """Pre-Caching bei deaktiviertem Cache → False."""
+        result = await cache_disabled.pre_cache("test", "knowledge", "resp", "model")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_pre_cache_uncacheable_category(self, cache):
+        """Pre-Caching mit ungueltiger Kategorie → False."""
+        result = await cache.pre_cache("test", "device_command", "resp", "model")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_pre_cache_knowledge_ttl(self, cache):
+        """knowledge-Pre-Cache sollte 24h TTL haben."""
+        await cache.pre_cache("Wetter?", "knowledge", "Sonnig", "model")
+        call_args = cache._redis.set.call_args
+        assert call_args[1]["ex"] == 86400
+
+    # --- Phase 1B: Room Invalidation Tests ---
+
+    @pytest.mark.asyncio
+    async def test_invalidate_no_redis(self):
+        """Invalidierung ohne Redis → 0."""
+        c = ResponseCache()
+        result = await c.invalidate_by_room("wohnzimmer")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_invalidate_empty_room(self, cache):
+        """Invalidierung mit leerem Room → 0."""
+        result = await cache.invalidate_by_room("")
+        assert result == 0
+
+    # --- Phase 1B: Extended Statistics ---
+
+    def test_hit_rate_includes_pre_cache_stats(self):
+        """Statistiken sollten pre_cached und category_hits enthalten."""
+        c = ResponseCache()
+        stats = c.get_hit_rate()
+        assert "pre_cached" in stats
+        assert "invalidations" in stats
+        assert "category_hits" in stats
+
+    @pytest.mark.asyncio
+    async def test_category_hits_tracked(self, cache):
+        """Cache-Hits werden pro Kategorie getrackt."""
+        cache._redis.get.return_value = json.dumps({
+            "response": "cached", "model": "m", "_ts": time.time(),
+        })
+        await cache.get("Test", "device_query")
+        assert cache._category_hits.get("device_query") == 1

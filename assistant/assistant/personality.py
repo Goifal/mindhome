@@ -352,6 +352,13 @@ class PersonalityEngine:
         self._humor_consecutive: dict[str, int] = {}
         self._current_formality: int = self.formality_start
 
+        # Phase 2A: Daily humor count tracking
+        self._daily_humor_count: int = 0
+        self._humor_count_date: str = ""
+
+        # Phase 2A: Running-Gag tracking (max 3 active)
+        self._running_gags: dict = {}
+
         # Easter Eggs laden
         self._easter_eggs = self._load_easter_eggs()
 
@@ -1259,11 +1266,21 @@ class PersonalityEngine:
                 except (json.JSONDecodeError, TypeError):
                     continue
 
+            # Phase 2A: Episode-Counter basierte Gag-Evolution
+            # Text reift mit jeder Episode — wie in einer echten Beziehung
+            episode = len(recent_same_type) + 1
             evolved = None
-            if len(recent_same_type) >= 2:
-                # Meta-Level: 3+ gleiche Gags → "Wir kennen das Spiel"
+
+            if episode >= 5:
+                # Veteran-Level: Statistik-Humor
+                evolved = (
+                    f"Episode {episode}, {title}. Ich habe angefangen, "
+                    f"das statistisch auszuwerten."
+                )
+            elif episode >= 3:
+                # Meta-Level: "Wir kennen das Spiel"
                 evolved = f"Wir kennen das Spiel mittlerweile, {title}."
-            elif len(recent_same_type) == 1:
+            elif episode == 2:
                 # Callback: "Wie am [Datum]"
                 last_date = recent_same_type[0].get("date", "Dienstag")
                 evolved = f"Wie am {last_date}. Wird umgesetzt, {title}."
@@ -1273,6 +1290,7 @@ class PersonalityEngine:
                 "type": gag_type,
                 "date": datetime.now().strftime("%A"),  # Wochentag
                 "timestamp": time.time(),
+                "episode": episode,
             })
             pipe = self._redis.pipeline()
             pipe.lpush(redis_key, new_entry)
@@ -2322,7 +2340,20 @@ class PersonalityEngine:
         if mood in ("tired", "stressed", "frustrated"):
             return None
 
-        # Humor-Fatigue: Nach 4 Witzen Pause (per User)
+        # Phase 2A: Taegl. Humor-Fatigue — nach 8 Witzen/Tag -50%, nach 12 -80%
+        if self._redis:
+            try:
+                day = datetime.now().strftime("%Y-%m-%d")
+                daily_count = await self._redis.get(f"mha:humor:count:{day}")
+                daily_count = int(daily_count) if daily_count else 0
+                if daily_count >= 12 and random.random() < 0.8:
+                    return None  # 80% Chance auf Humor-Pause
+                elif daily_count >= 8 and random.random() < 0.5:
+                    return None  # 50% Chance auf Humor-Pause
+            except Exception:
+                pass
+
+        # Humor-Fatigue: Nach 4 Witzen Pause (per User, consecutive)
         _hc_key = person.lower().strip() if person else "_default"
         _hc = self._humor_consecutive.get(_hc_key, 0)
         if _hc >= 4:
@@ -2423,6 +2454,19 @@ class PersonalityEngine:
             ctx_parts.append(f"Uhrzeit: {hour}:00")
             ctx_parts.append(f"Situation: {situation_key}")
 
+            # Phase 2A: Inner-State beeinflusst Humor-Stil
+            inner_hint = ""
+            if hasattr(self, "_inner_state") and self._inner_state:
+                _im = getattr(self._inner_state, "mood", "")
+                if _im == "stolz":
+                    inner_hint = " Du bist gerade stolz — leicht selbstgratulierend."
+                elif _im == "amuesiert":
+                    inner_hint = " Du findest die Situation amuesant — zeig das subtil."
+                elif _im == "neugierig":
+                    inner_hint = " Du bist neugierig — stelle eine rhetorische Frage."
+                elif _im == "gereizt":
+                    inner_hint = " Du bist leicht gereizt — noch trockener als sonst."
+
             response = await asyncio.wait_for(
                 self._ollama.chat(
                     messages=[
@@ -2434,6 +2478,7 @@ class PersonalityEngine:
                                 "Trocken, subtil, nie platt. Wie ein Butler der innerlich "
                                 "schmunzelt. Max 12 Woerter. Kein Markdown. "
                                 f"Anrede: {title}."
+                                f"{inner_hint}"
                             ),
                         },
                         {
@@ -4149,3 +4194,108 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
 
         self._last_existential_ts = time.time()
         return random.choice(pool)
+
+    # ------------------------------------------------------------------
+    # Phase 2A: Fresh Humor Generation via LLM
+    # ------------------------------------------------------------------
+
+    async def _generate_fresh_humor(
+        self, context: str, function_name: str = ""
+    ) -> Optional[str]:
+        """Generiert kontextbezogenen Butler-Humor via LLM.
+
+        Args:
+            context: Situationsbeschreibung fuer den Witz.
+            function_name: Optionaler Funktionsname fuer zusaetzlichen Kontext.
+
+        Returns:
+            Ein trockener Butler-Witz oder None bei Fehler/Timeout.
+        """
+        if not self._ollama:
+            return None
+        try:
+            from .config import settings
+
+            prompt = f"Generiere einen trockenen Butler-Witz zu: {context}."
+            if function_name:
+                prompt += f" (Kontext: {function_name})"
+            prompt += " Max 1 Satz. Keine Anführungszeichen."
+
+            response = await asyncio.wait_for(
+                self._ollama.chat(
+                    messages=[
+                        {"role": "system", "content": "Du bist ein britischer Butler mit trockenem Humor. Antworte nur mit dem Witz, nichts sonst."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    model=settings.model_fast,
+                    think=False,
+                    max_tokens=60,
+                    tier="fast",
+                ),
+                timeout=2.0,
+            )
+            text = (response.get("message", {}).get("content", "") or "").strip()
+            if text and 5 < len(text) < 150 and not text.startswith(("#", "*", "-")):
+                return text
+        except Exception as e:
+            logger.debug("Fresh-Humor-Generierung fehlgeschlagen: %s", e)
+        return None
+
+    # ------------------------------------------------------------------
+    # Phase 2A: Humor Fatigue Tracking
+    # ------------------------------------------------------------------
+
+    def _check_humor_fatigue(self) -> float:
+        """Prueft Humor-Ermuedung und gibt einen Multiplikator zurueck.
+
+        Returns:
+            1.0 bei normalem Humor-Level, 0.5 nach 8 Witzen, 0.2 nach 12.
+            Setzt den Zaehler taeglich zurueck.
+        """
+        today = time.strftime("%Y-%m-%d")
+        if self._humor_count_date != today:
+            self._daily_humor_count = 0
+            self._humor_count_date = today
+
+        self._daily_humor_count += 1
+
+        if self._daily_humor_count > 12:
+            return 0.2
+        if self._daily_humor_count > 8:
+            return 0.5
+        return 1.0
+
+    # ------------------------------------------------------------------
+    # Phase 2A: Running-Gag Tracking
+    # ------------------------------------------------------------------
+
+    def track_running_gag(self, gag_id: str, context: str) -> None:
+        """Verfolgt einen Running-Gag und inkrementiert den Zaehler.
+
+        Maximal 3 aktive Gags gleichzeitig. Bei Ueberlauf wird der
+        aelteste (niedrigster Count) entfernt.
+
+        Args:
+            gag_id: Eindeutige ID des Gags.
+            context: Kontextbeschreibung des Gags.
+        """
+        if gag_id in self._running_gags:
+            self._running_gags[gag_id]["count"] += 1
+            self._running_gags[gag_id]["context"] = context
+        else:
+            # Max 3 aktive Gags — aeltesten entfernen wenn noetig
+            if len(self._running_gags) >= 3:
+                oldest = min(self._running_gags, key=lambda k: self._running_gags[k]["count"])
+                del self._running_gags[oldest]
+            self._running_gags[gag_id] = {"count": 1, "context": context}
+
+    def get_active_running_gag(self) -> Optional[str]:
+        """Gibt den reifsten Running-Gag zurueck (hoechster Count).
+
+        Returns:
+            Kontext des meistverwendeten Gags oder None wenn keine aktiv.
+        """
+        if not self._running_gags:
+            return None
+        best = max(self._running_gags, key=lambda k: self._running_gags[k]["count"])
+        return self._running_gags[best]["context"]

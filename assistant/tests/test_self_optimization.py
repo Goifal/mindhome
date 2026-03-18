@@ -401,3 +401,92 @@ class TestBaseline:
         redis_m.get.return_value = None
         result = await opt.check_effectiveness("sarcasm_level")
         assert result is None
+
+
+# ------------------------------------------------------------------
+# Phase 1D: 3-Tage-Intervall, Domain-Tracking, proaktive Insights
+# ------------------------------------------------------------------
+
+
+class TestPhase1DFeatures:
+    """Tests fuer Phase 1D Erweiterungen."""
+
+    @pytest.fixture
+    def opt_3day(self, ollama, versioning, redis_m):
+        cfg = dict(YAML_CFG)
+        cfg["self_optimization"] = dict(cfg["self_optimization"])
+        cfg["self_optimization"]["analysis_interval"] = "3day"
+        cfg["self_optimization"]["proactive_insights"] = True
+        with patch("assistant.self_optimization.yaml_config", cfg):
+            opt = SelfOptimization(ollama, versioning)
+            opt._redis = redis_m
+            return opt
+
+    def test_interval_3day_supported(self, opt_3day):
+        """3-Tage-Intervall sollte unterstuetzt werden."""
+        assert opt_3day._interval == "3day"
+
+    def test_proactive_insights_flag(self, opt_3day):
+        """proactive_insights sollte aus Config geladen werden."""
+        assert opt_3day._proactive_insights is True
+
+    def test_set_notify_callback(self, opt_3day):
+        """Notify-Callback setzbar."""
+        cb = AsyncMock()
+        opt_3day.set_notify_callback(cb)
+        assert opt_3day._notify_callback is cb
+
+    @pytest.mark.asyncio
+    async def test_track_domain_correction(self, opt_3day, redis_m):
+        """Domain-Korrektur wird in Redis getrackt."""
+        await opt_3day.track_domain_correction("climate")
+        redis_m.hincrby.assert_called_once_with(
+            "mha:self_opt:domain_corrections", "climate", 1,
+        )
+
+    @pytest.mark.asyncio
+    async def test_track_domain_correction_empty(self, opt_3day, redis_m):
+        """Leere Domain wird ignoriert."""
+        await opt_3day.track_domain_correction("")
+        redis_m.hincrby.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_proactive_insight_no_data(self, opt_3day, redis_m):
+        """Insight ohne Daten → None."""
+        redis_m.hgetall.return_value = {}
+        result = await opt_3day._generate_proactive_insight()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_proactive_insight_too_few(self, opt_3day, redis_m):
+        """Insight unter 5 Korrekturen → None."""
+        redis_m.hgetall.return_value = {b"climate": b"2", b"light": b"1"}
+        result = await opt_3day._generate_proactive_insight()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_proactive_insight_significant(self, opt_3day, redis_m):
+        """Insight bei signifikanter Domain-Konzentration."""
+        redis_m.hgetall.return_value = {
+            b"climate": b"8", b"light": b"2", b"media": b"1",
+        }
+        result = await opt_3day._generate_proactive_insight()
+        assert result is not None
+        assert "Klima" in result
+        assert "%" in result
+
+    @pytest.mark.asyncio
+    async def test_proactive_insight_disabled(self, opt_3day, redis_m):
+        """Deaktiviertes Feature → None."""
+        opt_3day._proactive_insights = False
+        result = await opt_3day._generate_proactive_insight()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_proactive_insight_even_distribution(self, opt_3day, redis_m):
+        """Gleichverteilte Korrekturen (alle <30%) → None."""
+        redis_m.hgetall.return_value = {
+            b"climate": b"3", b"light": b"3", b"media": b"3", b"cover": b"3",
+        }
+        result = await opt_3day._generate_proactive_insight()
+        assert result is None

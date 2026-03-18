@@ -3,7 +3,7 @@ Tests fuer MoodDetector — Stimmungserkennung + Trend-Analyse.
 """
 
 import time
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -957,3 +957,104 @@ class TestMoodTrendStable:
             "stress": 0.0, "tiredness": 0.0, "frustration": 0,
         }
         assert detector.get_mood_trend() == "stable"
+
+
+# ------------------------------------------------------------------
+# Phase 2A: Root-Cause, Empathie, Emotional Boundaries
+# ------------------------------------------------------------------
+
+
+class TestPhase2AEmpathy:
+    """Tests fuer Empathie-Statements und Root-Cause."""
+
+    @pytest.fixture
+    def detector(self):
+        with patch("assistant.mood_detector.yaml_config", {"mood": {}}):
+            from assistant.mood_detector import MoodDetector
+            d = MoodDetector()
+            return d
+
+    def test_empathy_frustrated_device(self, detector):
+        """Empathie bei Frustration + Geraeteproblem."""
+        stmt = detector.generate_empathy_statement("frustrated", "geraeteproblem")
+        assert stmt is not None
+        assert "Diagnostik" in stmt or "Probleme" in stmt
+
+    def test_empathy_stressed_zeitdruck(self, detector):
+        """Empathie bei Stress + Zeitdruck."""
+        stmt = detector.generate_empathy_statement("stressed", "zeitdruck")
+        assert stmt is not None
+        assert "kurz" in stmt.lower()
+
+    def test_empathy_tired(self, detector):
+        """Empathie bei Muedigkeit."""
+        stmt = detector.generate_empathy_statement("tired", "muedigkeit")
+        assert stmt is not None
+        assert "Ruhe" in stmt or "goennen" in stmt
+
+    def test_empathy_neutral_none(self, detector):
+        """Keine Empathie bei neutraler Stimmung."""
+        stmt = detector.generate_empathy_statement("neutral")
+        assert stmt is None
+
+    def test_empathy_unknown_root_cause(self, detector):
+        """Empathie mit unbekannter Ursache → Fallback."""
+        stmt = detector.generate_empathy_statement("frustrated", "unbekannt")
+        assert stmt is not None
+
+    def test_get_root_cause_default(self, detector):
+        """Default Root-Cause ist 'unbekannt'."""
+        assert detector.get_root_cause() == "unbekannt"
+
+    def test_get_root_cause_from_state(self, detector):
+        """Root-Cause aus Person-State lesen."""
+        detector._person_states["_default"] = {"root_cause": "zeitdruck"}
+        assert detector.get_root_cause() == "zeitdruck"
+
+
+class TestPhase2AEmotionalBoundaries:
+    """Tests fuer emotionale Grenzen."""
+
+    @pytest.fixture
+    def detector(self):
+        with patch("assistant.mood_detector.yaml_config", {"mood": {}}):
+            from assistant.mood_detector import MoodDetector
+            d = MoodDetector()
+            d.redis = AsyncMock()
+            return d
+
+    @pytest.mark.asyncio
+    async def test_boundaries_not_frustrated(self, detector):
+        """Keine Grenzen bei neutraler Stimmung."""
+        detector._current_mood = MOOD_NEUTRAL
+        result = await detector.check_emotional_boundaries()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_boundaries_below_threshold(self, detector):
+        """Grenzen unter Schwelle (< 3 ignorierte Warnungen)."""
+        detector._current_mood = MOOD_FRUSTRATED
+        detector.redis.get = AsyncMock(return_value=b"2")
+        result = await detector.check_emotional_boundaries()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_boundaries_reached(self, detector):
+        """Grenzen erreicht (>= 3 ignorierte Warnungen + Frustration)."""
+        detector._current_mood = MOOD_FRUSTRATED
+        detector.redis.get = AsyncMock(return_value=b"3")
+        result = await detector.check_emotional_boundaries()
+        assert result == "sachlich"
+
+    @pytest.mark.asyncio
+    async def test_record_ignored_warning(self, detector):
+        """Ignorierte Warnung wird gezaehlt."""
+        await detector.record_ignored_warning()
+        detector.redis.incr.assert_called()
+        detector.redis.expire.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_store_root_cause(self, detector):
+        """Root-Cause wird in Redis gespeichert."""
+        await detector._store_root_cause("max", "zeitdruck")
+        detector.redis.setex.assert_called()

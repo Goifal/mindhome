@@ -1,21 +1,25 @@
 """
-SpontaneousObserver — Jarvis macht 1-2x taeglich unaufgeforderte, interessante Bemerkungen.
+SpontaneousObserver — Jarvis macht unaufgeforderte, interessante Bemerkungen.
 
 Feature 4: Spontane Beobachtungen — nicht reaktiv, sondern proaktiv-interessant.
-Entdeckt Trends, Rekorde, Streaks und Fun Facts aus den Haus-Daten.
+Entdeckt Trends, Rekorde, Streaks, Verhaltensaenderungen und korrelierte Insights.
 
 Architektur:
-  1. Hintergrund-Loop mit zufaelligem Intervall (2-4 Stunden)
-  2. Prueft verschiedene Observation-Checks (Energy, Streaks, Records, etc.)
-  3. Delivery via Callback → brain._handle_spontaneous → Silence Matrix → TTS
-  4. Max N pro Tag, nur waehrend aktiver Stunden
+  1. Hintergrund-Loop mit zufaelligem Intervall (1.5-3 Stunden)
+  2. Prueft verschiedene Observation-Checks (Energy, Streaks, Records, Trends, etc.)
+  3. Semantic Memory Integration: Beobachtungen beziehen sich auf gespeicherte Fakten
+  4. Delivery via Callback → brain._handle_spontaneous → Silence Matrix → TTS
+  5. Max N pro Tag mit Tageszeit-Stratifizierung, nur waehrend aktiver Stunden
+  6. Behavioral Trend Detection: Erkennt Verschiebungen ueber 3-7 Tage
+  7. Correlated Insights: Gruppiert verwandte Findings zu einer Beobachtung
 """
 
 import asyncio
 import json
 import logging
 import random
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timedelta
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -31,10 +35,20 @@ _PREFIX = "mha:spontaneous"
 class SpontaneousObserver:
     """Macht unaufgeforderte, interessante Beobachtungen."""
 
-    def __init__(self, ha_client: HomeAssistantClient, activity_engine=None, ollama_client=None):
+    # Tageszeit-Slots: (Start, End) → max Beobachtungen in diesem Slot
+    _TIME_SLOTS = {
+        "morning": (6, 10, 2),   # Morgens: max 2
+        "daytime": (10, 18, 3),  # Tagsüber: max 3
+        "evening": (18, 22, 1),  # Abends: max 1
+    }
+
+    def __init__(self, ha_client: HomeAssistantClient, activity_engine=None, ollama_client=None,
+                 semantic_memory=None, insight_engine=None):
         self.ha = ha_client
         self.activity = activity_engine
         self._ollama = ollama_client
+        self.semantic_memory = semantic_memory
+        self.insight_engine = insight_engine
         self.redis: Optional[aioredis.Redis] = None
         self._notify_callback = None
         self._task: Optional[asyncio.Task] = None
@@ -42,9 +56,10 @@ class SpontaneousObserver:
 
         cfg = yaml_config.get("spontaneous", {})
         self.enabled = cfg.get("enabled", True)
-        self.max_per_day = cfg.get("max_per_day", 2)
-        self.min_interval_hours = cfg.get("min_interval_hours", 3)
+        self.max_per_day = cfg.get("max_per_day", 5)
+        self.min_interval_hours = cfg.get("min_interval_hours", 1.5)
         self.active_hours = cfg.get("active_hours", {"start": 8, "end": 22})
+        self._trend_detection = cfg.get("trend_detection", True)
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis und startet den Beobachtungs-Loop."""
@@ -96,24 +111,30 @@ class SpontaneousObserver:
             self._task = None
 
     async def _observe_loop(self):
-        """Hintergrund-Loop mit zufaelligem Intervall."""
+        """Hintergrund-Loop mit zufaelligem Intervall und Tageszeit-Stratifizierung."""
         # Initiales Warten (30-60 Min nach Start)
         await asyncio.sleep(random.randint(1800, 3600))
 
         while self._running:
             try:
                 if not self._within_active_hours():
-                    await asyncio.sleep(1800)  # 30 Min warten
+                    await asyncio.sleep(1800)
                     continue
 
                 if await self._daily_count() >= self.max_per_day:
-                    await asyncio.sleep(3600)  # 1 Stunde warten
+                    await asyncio.sleep(3600)
+                    continue
+
+                # Tageszeit-Stratifizierung: max pro Slot pruefen
+                if await self._slot_limit_reached():
+                    await asyncio.sleep(1800)
                     continue
 
                 observation = await self._find_interesting_observation()
                 if observation and self._notify_callback:
                     await self._notify_callback(observation)
                     await self._increment_daily_count()
+                    await self._increment_slot_count()
                     logger.info(
                         "Spontane Beobachtung geliefert: %s",
                         observation.get("type", "?"),
@@ -165,6 +186,207 @@ class SpontaneousObserver:
         key = f"{_PREFIX}:cooldown:{obs_type}"
         await self.redis.setex(key, seconds, "1")
 
+    def _current_slot(self) -> Optional[str]:
+        """Gibt den aktuellen Tageszeit-Slot zurueck."""
+        hour = datetime.now().hour
+        for name, (start, end, _max) in self._TIME_SLOTS.items():
+            if start <= hour < end:
+                return name
+        return None
+
+    async def _slot_limit_reached(self) -> bool:
+        """Prueft ob das Limit fuer den aktuellen Tageszeit-Slot erreicht ist."""
+        if not self.redis:
+            return False
+        slot = self._current_slot()
+        if not slot:
+            return False
+        _, _, max_count = self._TIME_SLOTS[slot]
+        key = f"{_PREFIX}:slot_count:{datetime.now().strftime('%Y-%m-%d')}:{slot}"
+        count = await self.redis.get(key)
+        return int(count) >= max_count if count else False
+
+    async def _increment_slot_count(self):
+        """Erhoeht den Slot-Zaehler."""
+        if not self.redis:
+            return
+        slot = self._current_slot()
+        if not slot:
+            return
+        key = f"{_PREFIX}:slot_count:{datetime.now().strftime('%Y-%m-%d')}:{slot}"
+        await self.redis.incr(key)
+        await self.redis.expire(key, 48 * 3600)
+
+    # ------------------------------------------------------------------
+    # Behavioral Trend Detection
+    # ------------------------------------------------------------------
+
+    async def _check_behavioral_trends(self) -> Optional[dict]:
+        """Erkennt Verhaltens-Trends ueber 3-7 Tage aus Action-Logs.
+
+        Beispiele:
+        - 'Ihr Kaffee verschiebt sich taeglich 3 Min nach hinten'
+        - 'Sie gehen seit 4 Tagen frueher schlafen'
+        """
+        if not self.redis or not self._trend_detection:
+            return None
+
+        try:
+            # Cache pruefen (1x pro Tag analysieren)
+            cache_key = f"{_PREFIX}:trend_cache:{datetime.now().strftime('%Y-%m-%d')}"
+            cached = await self.redis.get(cache_key)
+            if cached:
+                return None  # Heute schon analysiert
+
+            # Letzte 7 Tage Action-Logs laden
+            now = datetime.now()
+            daily_actions: dict[str, list[dict]] = {}
+            for days_ago in range(7):
+                day = now - timedelta(days=days_ago)
+                day_key = f"mha:action_log:{day.strftime('%Y-%m-%d')}"
+                raw_list = await self.redis.lrange(day_key, 0, 200)
+                if raw_list:
+                    entries = []
+                    for raw in raw_list:
+                        try:
+                            entry = json.loads(raw.decode(errors="replace") if isinstance(raw, bytes) else raw)
+                            entries.append(entry)
+                        except (json.JSONDecodeError, AttributeError):
+                            continue
+                    daily_actions[day.strftime("%Y-%m-%d")] = entries
+
+            if len(daily_actions) < 3:
+                await self.redis.setex(cache_key, 48 * 3600, "no_data")
+                return None
+
+            # Suche nach Zeitverschiebungen: Gleiche Action, aber Uhrzeit verschiebt sich
+            action_times: dict[str, list[tuple[str, int]]] = defaultdict(list)
+            for date_str, entries in daily_actions.items():
+                for entry in entries:
+                    action = entry.get("action", "")
+                    hour = entry.get("hour")
+                    if action and hour is not None:
+                        action_times[action].append((date_str, int(hour)))
+
+            trends = []
+            for action, day_hours in action_times.items():
+                if len(day_hours) < 3:
+                    continue
+                # Sortiere nach Datum
+                sorted_dh = sorted(day_hours, key=lambda x: x[0])
+                hours = [h for _, h in sorted_dh]
+                # Pruefe auf monotonen Trend (steigend oder fallend)
+                diffs = [hours[i + 1] - hours[i] for i in range(len(hours) - 1)]
+                if not diffs:
+                    continue
+                avg_diff = sum(diffs) / len(diffs)
+                if abs(avg_diff) >= 0.3 and all(d * avg_diff > 0 for d in diffs[-2:]):
+                    direction = "spaeter" if avg_diff > 0 else "frueher"
+                    trends.append({
+                        "action": action,
+                        "direction": direction,
+                        "avg_shift_min": abs(avg_diff * 60),
+                        "days": len(day_hours),
+                    })
+
+            # Cache setzen
+            await self.redis.setex(cache_key, 48 * 3600, json.dumps(trends[:3]))
+
+            if trends:
+                best = trends[0]
+                title = await self._get_title_for_present()
+                action_name = best["action"].replace("_", " ").title()
+                return {
+                    "message": (
+                        f"{title}, mir ist ein Trend aufgefallen: '{action_name}' verschiebt sich "
+                        f"seit {best['days']} Tagen um ca. {best['avg_shift_min']:.0f} Minuten "
+                        f"nach {best['direction']}."
+                    ),
+                    "type": "behavioral_trend",
+                    "urgency": "low",
+                }
+
+        except Exception as e:
+            logger.debug("Behavioral trend detection failed: %s", e)
+        return None
+
+    # ------------------------------------------------------------------
+    # Correlated Insights
+    # ------------------------------------------------------------------
+
+    async def _check_correlated_insights(self) -> Optional[dict]:
+        """Gruppiert verwandte Findings zu einer zusammenhaengenden Beobachtung.
+
+        Beispiel: 'Die Heizungseffizienz im Schlafzimmer ist gesunken,
+        und gleichzeitig ist die Fenster-Dichtung undicht.'
+        """
+        if not self.insight_engine:
+            return None
+
+        try:
+            # Insight Engine nach aktuellen Findings fragen
+            findings = []
+            if hasattr(self.insight_engine, "get_recent_insights"):
+                findings = await self.insight_engine.get_recent_insights(limit=5)
+            elif hasattr(self.insight_engine, "run_checks_now"):
+                findings = await self.insight_engine.run_checks_now()
+
+            if not findings or len(findings) < 2:
+                return None
+
+            # Korrelierte Insights finden: Gleicher Raum oder gleiche Domaene
+            correlated = []
+            for i, f1 in enumerate(findings):
+                for f2 in findings[i + 1:]:
+                    room1 = f1.get("room", "")
+                    room2 = f2.get("room", "")
+                    domain1 = f1.get("domain", "")
+                    domain2 = f2.get("domain", "")
+                    if (room1 and room1 == room2) or (domain1 and domain1 == domain2):
+                        correlated.append((f1, f2))
+
+            if not correlated:
+                return None
+
+            pair = correlated[0]
+            title = await self._get_title_for_present()
+            text1 = pair[0].get("text", pair[0].get("message", ""))
+            text2 = pair[1].get("text", pair[1].get("message", ""))
+
+            return {
+                "message": (
+                    f"{title}, zwei zusammenhaengende Beobachtungen: "
+                    f"{text1} Gleichzeitig: {text2}"
+                ),
+                "type": "correlated_insight",
+                "urgency": "low",
+            }
+
+        except Exception as e:
+            logger.debug("Correlated insights check failed: %s", e)
+        return None
+
+    # ------------------------------------------------------------------
+    # Semantic Memory Enhanced Observation
+    # ------------------------------------------------------------------
+
+    async def _enrich_with_semantic_memory(self, observation_text: str) -> str:
+        """Reichert eine Beobachtung mit Fakten aus dem semantischen Gedaechtnis an."""
+        if not self.semantic_memory:
+            return observation_text
+
+        try:
+            # Relevante Fakten suchen
+            facts = await self.semantic_memory.search(observation_text, limit=2)
+            if facts:
+                fact_texts = [f.get("content", "") for f in facts if f.get("content")]
+                if fact_texts:
+                    relevant = fact_texts[0]
+                    return f"{observation_text} (Kontext: {relevant})"
+        except Exception as e:
+            logger.debug("Semantic memory enrichment failed: %s", e)
+        return observation_text
+
     async def _find_interesting_observation(self) -> Optional[dict]:
         """Sucht nach einer interessanten Beobachtung."""
         cfg = yaml_config.get("spontaneous", {})
@@ -181,6 +403,12 @@ class SpontaneousObserver:
             checks.append(self._check_device_milestone)
         if checks_cfg.get("house_efficiency", True):
             checks.append(self._check_house_efficiency)
+
+        # Behavioral Trends & Correlated Insights
+        if self._trend_detection:
+            checks.append(self._check_behavioral_trends)
+        if self.insight_engine:
+            checks.append(self._check_correlated_insights)
 
         # Deklarative Tools als zusaetzliche Checks
         decl_cfg = yaml_config.get("declarative_tools", {})
@@ -288,9 +516,10 @@ class SpontaneousObserver:
             )
             response = await self._ollama.generate(prompt, max_tokens=300)
             if response and len(response.strip()) > 20:
+                enriched_text = await self._enrich_with_semantic_memory(response.strip())
                 return {
                     "type": "llm_observation",
-                    "text": response.strip(),
+                    "text": enriched_text,
                     "category": "insight",
                 }
         except Exception as e:

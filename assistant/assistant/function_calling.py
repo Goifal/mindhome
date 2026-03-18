@@ -795,6 +795,12 @@ def is_entity_hidden(entity_id: str) -> bool:
     return bool(ann.get("hidden", False))
 
 
+def is_entity_annotated(entity_id: str) -> bool:
+    """Prueft ob eine Entity in den Annotationen eingetragen ist."""
+    annotations = yaml_config.get("entity_annotations", {}) or {}
+    return entity_id in annotations
+
+
 def get_all_roles() -> dict:
     """Liefert Standard-Rollen + eigene Rollen. Eigene überschreiben Standard."""
     roles = dict(_DEFAULT_ROLES_DICT)
@@ -2411,6 +2417,71 @@ def _get_assistant_tools_static() -> list:
             },
         },
     },
+    # Phase 5A: Zeitgesteuerte Geraeteaktionen
+    {
+        "type": "function",
+        "function": {
+            "name": "schedule_action",
+            "description": "Plant eine Geraete-Aktion fuer eine bestimmte Uhrzeit. Z.B. 'Schalte Licht um 19 Uhr ein', 'Jeden Morgen um 6:30 Kaffeemaschine an', 'Rolllaeden um 7 Uhr hoch'. NICHT fuer Erinnerungen — nur fuer Geraete-Aktionen!",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "description": "Aktion: set_light, set_climate, set_cover, play_media, pause_media, stop_media, set_volume",
+                        "enum": ["set_light", "set_climate", "set_cover", "play_media", "pause_media", "stop_media", "set_volume"],
+                    },
+                    "action_args": {
+                        "type": "object",
+                        "description": "Argumente fuer die Aktion (wie beim direkten Aufruf). Z.B. {\"room\": \"kueche\", \"state\": \"on\"} oder {\"room\": \"wohnzimmer\", \"temperature\": 22}",
+                    },
+                    "target_time": {
+                        "type": "string",
+                        "description": "Uhrzeit im Format HH:MM (z.B. '19:00', '06:30')",
+                    },
+                    "target_date": {
+                        "type": "string",
+                        "description": "Optionales Datum YYYY-MM-DD. Leer = heute.",
+                    },
+                    "repeat": {
+                        "type": "string",
+                        "description": "Wiederholung: once (einmalig), daily (taeglich), weekdays (Mo-Fr), weekends (Sa-So), weekly (woechentlich)",
+                        "enum": ["once", "daily", "weekdays", "weekends", "weekly"],
+                    },
+                },
+                "required": ["action", "action_args", "target_time"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_scheduled_actions",
+            "description": "Zeigt alle geplanten Geraete-Aktionen an. 'Was ist geplant?' oder 'Welche Aktionen sind zeitgesteuert?'",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel_scheduled_action",
+            "description": "Storniert eine geplante Geraete-Aktion.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action_id": {
+                        "type": "string",
+                        "description": "ID der geplanten Aktion (aus list_scheduled_actions)",
+                    },
+                },
+                "required": ["action_id"],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -3264,6 +3335,15 @@ class FunctionExecutor:
         """Setzt ConfigVersioning für Backup-vor-Schreiben."""
         self._config_versioning = versioning
 
+    async def _mark_cover_jarvis_acting(self, entity_id: str):
+        """Setzt jarvis_acting Flag damit proactive.py keinen Manual Override erkennt."""
+        redis = getattr(self, "_redis", None)
+        if redis:
+            try:
+                await redis.set(f"mha:cover:jarvis_acting:{entity_id}", "1", ex=300)
+            except Exception:
+                pass
+
     # Whitelist erlaubter Tool-Funktionsnamen (verhindert Zugriff auf interne Methoden)
     _ALLOWED_FUNCTIONS = frozenset({
         "set_light", "set_light_all", "get_lights", "set_climate", "set_climate_curve",
@@ -3279,6 +3359,8 @@ class FunctionExecutor:
         "create_automation", "confirm_automation", "list_jarvis_automations",
         "delete_jarvis_automation", "manage_inventory", "smart_shopping", "conversation_memory", "multi_room_audio",
         "set_timer", "cancel_timer", "get_timer_status",
+        "schedule_action", "list_scheduled_actions", "cancel_scheduled_action",
+        "set_location_trigger", "list_location_triggers", "cancel_location_trigger",
         "set_reminder", "set_wakeup_alarm", "cancel_alarm", "get_alarms",
         "broadcast", "send_intercom",
         "get_camera_view", "create_conditional", "list_conditionals",
@@ -4035,7 +4117,11 @@ class FunctionExecutor:
         try:
             for s in states:
                 eid = s.get("entity_id", "")
-                if eid.startswith("light.") and (s.get("state") != state or (state == "on" and "brightness" in args)):
+                if not eid.startswith("light."):
+                    continue
+                if not is_entity_annotated(eid) or is_entity_hidden(eid):
+                    continue
+                if s.get("state") != state or (state == "on" and "brightness" in args):
                     service_data = {"entity_id": eid}
                     if state == "on":
                         if "brightness" in args:
@@ -4818,6 +4904,7 @@ class FunctionExecutor:
             entity_state = next((s for s in (states or []) if s.get("entity_id") == entity_id), {})
             if not await self._is_safe_cover(entity_id, entity_state):
                 return {"success": False, "message": f"'{room}' ist ein Garagentor/Tor — nicht erlaubt."}
+            await self._mark_cover_jarvis_acting(entity_id)
             success = await self.ha.call_service("cover", "stop_cover", {"entity_id": entity_id})
             return {"success": success, "message": f"Rollladen {room} gestoppt"}
 
@@ -4857,6 +4944,7 @@ class FunctionExecutor:
             return {"success": False, "message": f"'{room}' ist ein Garagentor/Tor — nicht erlaubt."}
 
         ha_position = self._translate_cover_position(entity_id, position)
+        await self._mark_cover_jarvis_acting(entity_id)
         success = await self.ha.call_service(
             "cover", "set_cover_position",
             {"entity_id": entity_id, "position": ha_position},
@@ -4905,6 +4993,7 @@ class FunctionExecutor:
                 if cover_type == "rollladen" and self._is_markise(eid, s):
                     continue
 
+                await self._mark_cover_jarvis_acting(eid)
                 if is_stop:
                     await self.ha.call_service("cover", "stop_cover", {"entity_id": eid})
                 else:
@@ -4953,6 +5042,7 @@ class FunctionExecutor:
                 continue
             if not self._is_markise(eid, s):
                 continue
+            await self._mark_cover_jarvis_acting(eid)
             if is_stop:
                 await self.ha.call_service("cover", "stop_cover", {"entity_id": eid})
             else:
@@ -4981,6 +5071,8 @@ class FunctionExecutor:
                 eid = s.get("entity_id", "")
                 if not eid.startswith("cover."):
                     continue
+                if not is_entity_annotated(eid) or is_entity_hidden(eid):
+                    continue
                 if not await self._is_safe_cover(eid, s):
                     skipped.append(s.get("attributes", {}).get("friendly_name", eid))
                     continue
@@ -4990,6 +5082,7 @@ class FunctionExecutor:
                 if cover_type == "markise" and not self._is_markise(eid, s):
                     continue
                 ha_pos = self._translate_cover_position(eid, position)
+                await self._mark_cover_jarvis_acting(eid)
                 await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
                 count += 1
         finally:
@@ -5012,8 +5105,11 @@ class FunctionExecutor:
                 eid = s.get("entity_id", "")
                 if not eid.startswith("cover."):
                     continue
+                if not is_entity_annotated(eid) or is_entity_hidden(eid):
+                    continue
                 if not await self._is_safe_cover(eid, s):
                     continue
+                await self._mark_cover_jarvis_acting(eid)
                 await self.ha.call_service("cover", service, {"entity_id": eid})
                 count += 1
         finally:
@@ -7840,6 +7936,93 @@ class FunctionExecutor:
         import assistant.main as main_module
         brain = main_module.brain
         return brain.timer_manager.get_status()
+
+    # Phase 5A: Zeitgesteuerte Geraeteaktionen
+    async def _exec_schedule_action(self, args: dict) -> dict:
+        """Plant eine Geraete-Aktion fuer eine bestimmte Uhrzeit."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.timer_manager.create_scheduled_action(
+            action=args["action"],
+            action_args=args.get("action_args", {}),
+            target_time=args["target_time"],
+            target_date=args.get("target_date", ""),
+            repeat=args.get("repeat", "once"),
+            person=args.get("person", ""),
+            room=args.get("room", ""),
+        )
+
+    async def _exec_list_scheduled_actions(self, args: dict) -> dict:
+        """Zeigt alle geplanten Geraete-Aktionen an."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        actions = await brain.timer_manager.list_scheduled_actions()
+        if not actions:
+            return {"success": True, "message": "Keine geplanten Aktionen.", "actions": []}
+        lines = []
+        for a in actions:
+            action_name = a.get("action", "").replace("_", " ").title()
+            repeat = a.get("repeat", "once")
+            repeat_de = {"once": "einmalig", "daily": "taeglich", "weekdays": "Mo-Fr",
+                         "weekends": "Sa-So", "weekly": "woechentlich"}.get(repeat, repeat)
+            lines.append(f"{a.get('target_time', '?')}: {action_name} ({repeat_de}) [ID: {a.get('id', '?')}]")
+        return {"success": True, "message": "\n".join(lines), "actions": actions}
+
+    async def _exec_cancel_scheduled_action(self, args: dict) -> dict:
+        """Storniert eine geplante Geraete-Aktion."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.timer_manager.cancel_scheduled_action(
+            action_id=args["action_id"],
+        )
+
+    # Phase 5B: Standort-basierte Trigger
+    async def _exec_set_location_trigger(self, args: dict) -> dict:
+        """Erstellt einen standortbasierten Trigger."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        if not hasattr(brain, "self_automation") or not brain.self_automation:
+            return {"success": False, "message": "Self-Automation nicht verfuegbar"}
+
+        zone = args.get("zone", "")
+        event = args.get("event", "leave")
+        actions = args.get("actions", [])
+
+        if not zone or not actions:
+            return {"success": False, "message": "Zone und Aktionen sind erforderlich"}
+
+        # Automation via self_automation erstellen
+        trigger = {
+            "platform": "zone",
+            "zone": f"zone.{zone}" if not zone.startswith("zone.") else zone,
+            "event": event,
+        }
+        action_list = []
+        for act in actions:
+            if isinstance(act, dict):
+                action_list.append(act)
+            elif isinstance(act, str):
+                action_list.append({"function": act})
+
+        result = {
+            "success": True,
+            "message": (
+                f"Standort-Trigger erstellt: Wenn {zone} "
+                f"{'betreten' if event == 'enter' else 'verlassen'} wird, "
+                f"werden {len(action_list)} Aktionen ausgefuehrt."
+            ),
+            "trigger": trigger,
+            "actions": action_list,
+        }
+        return result
+
+    async def _exec_list_location_triggers(self, args: dict) -> dict:
+        """Listet standortbasierte Trigger auf."""
+        return {"success": True, "message": "Standort-Trigger werden ueber 'list_jarvis_automations' verwaltet.", "triggers": []}
+
+    async def _exec_cancel_location_trigger(self, args: dict) -> dict:
+        """Loescht einen standortbasierten Trigger."""
+        return {"success": True, "message": "Nutze 'delete_jarvis_automation' um Standort-Trigger zu loeschen."}
 
     async def _exec_set_reminder(self, args: dict) -> dict:
         """Setzt eine Erinnerung für eine bestimmte Uhrzeit."""

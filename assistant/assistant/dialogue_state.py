@@ -73,7 +73,7 @@ class DialogueState:
 
     def __init__(self):
         self.state: str = "idle"  # idle, awaiting_clarification, follow_up, multi_step
-        self.last_entities: deque[str] = deque(maxlen=5)
+        self.last_entities: deque[str] = deque(maxlen=10)
         self.last_rooms: deque[str] = deque(maxlen=3)
         self.last_actions: deque[dict] = deque(maxlen=5)
         self.last_domains: deque[str] = deque(maxlen=3)
@@ -528,3 +528,265 @@ class DialogueStateManager:
             "question": f"Welches meinst du? ({', '.join(options[:3])}{'...' if len(options) > 3 else ''})",
             "options": options,
         }
+
+    # ------------------------------------------------------------------
+    # Phase 6: Erweiterte Dialogfuehrung
+    # ------------------------------------------------------------------
+
+    def get_conversation_depth(self, person: str = "") -> int:
+        """Gibt die Gespraechstiefe (Anzahl Turns) fuer eine Person zurueck."""
+        state = self._get_state(person)
+        return state.turn_count
+
+    def get_topic_continuity(self, text: str, person: str = "") -> dict:
+        """Prueft ob der aktuelle Text thematisch zum bisherigen Gespraech passt.
+
+        Returns:
+            Dict mit is_continuation, confidence, suggested_context
+        """
+        state = self._get_state(person)
+
+        if state.turn_count == 0:
+            return {"is_continuation": False, "confidence": 0.0, "suggested_context": ""}
+
+        text_lower = text.lower()
+
+        # Explizite Topic-Wechsel-Marker
+        topic_switch_markers = [
+            "anderes thema", "etwas anderes", "uebrigens", "ach ja",
+            "mal was anderes", "andere frage", "neues thema",
+        ]
+        if any(m in text_lower for m in topic_switch_markers):
+            return {"is_continuation": False, "confidence": 0.9, "suggested_context": ""}
+
+        # Continuation-Marker
+        continuation_markers = [
+            "und", "ausserdem", "noch", "auch", "dazu",
+            "was ist mit", "wie waere es mit", "kannst du auch",
+            "und was", "und wie", "noch eine",
+        ]
+
+        is_cont = any(text_lower.startswith(m) for m in continuation_markers)
+        # Wenn Domain gleich bleibt → wahrscheinlich Continuation
+        if state.last_domains:
+            last_domain = state.last_domains[-1] if state.last_domains else ""
+            if last_domain:
+                is_cont = True
+
+        context = ""
+        if is_cont and state.last_entities:
+            context = f"Bezieht sich auf: {', '.join(list(state.last_entities)[-2:])}"
+        if is_cont and state.last_rooms:
+            room = state.last_rooms[-1]
+            context += f" (Raum: {room})" if context else f"Raum: {room}"
+
+        return {
+            "is_continuation": is_cont,
+            "confidence": 0.7 if is_cont else 0.3,
+            "suggested_context": context,
+        }
+
+    def get_implicit_context(self, person: str = "") -> str:
+        """Gibt impliziten Kontext zurueck fuer bessere Antwortgenerierung.
+
+        Z.B. wenn User nacheinander "Mach Licht an" → "Auch im Flur" sagt,
+        wird der Raum-Kontext aus der vorherigen Interaktion uebernommen.
+        """
+        state = self._get_state(person)
+        if state.is_stale(self.timeout_seconds) or state.turn_count == 0:
+            return ""
+
+        parts = []
+        if state.last_rooms:
+            rooms = list(state.last_rooms)
+            parts.append(f"Letzte Raeume: {', '.join(rooms)}")
+        if state.last_entities:
+            ents = list(state.last_entities)[-3:]
+            parts.append(f"Letzte Geraete: {', '.join(ents)}")
+        if state.last_actions:
+            last = state.last_actions[-1]
+            action_name = last.get("action", "unbekannt")
+            parts.append(f"Letzte Aktion: {action_name}")
+        if state.state == "awaiting_clarification" and state.pending_clarification:
+            parts.append(f"Offene Frage: {state.pending_clarification.get('question', '')}")
+
+        return " | ".join(parts) if parts else ""
+
+    def suggest_follow_up(self, action_result: dict, person: str = "") -> str:
+        """Schlaegt eine Follow-Up-Frage basierend auf der letzten Aktion vor.
+
+        Args:
+            action_result: Ergebnis der letzten Aktion
+            person: Person
+
+        Returns:
+            Vorgeschlagene Follow-Up-Frage oder leerer String
+        """
+        state = self._get_state(person)
+        if state.turn_count < 2:
+            return ""
+
+        # Nur bei erfolgreichen Aktionen
+        if not action_result.get("success", False):
+            return ""
+
+        last_actions = list(state.last_actions)
+        if not last_actions:
+            return ""
+
+        last = last_actions[-1]
+        action = last.get("action", "")
+
+        # Pattern-basierte Vorschlaege
+        if action == "set_light" and last.get("args", {}).get("state") == "on":
+            return "Soll ich die Helligkeit oder Farbe anpassen?"
+        if action == "set_climate":
+            return "Soll ich die Temperatur in anderen Raeumen auch anpassen?"
+        if action == "play_media":
+            return "Soll ich die Lautstaerke anpassen?"
+        if action == "set_cover" and last.get("args", {}).get("state") == "closed":
+            return "Soll ich auch das Licht anmachen?"
+
+        return ""
+
+    # ------------------------------------------------------------------
+    # Phase 6A: Ellipsis, Negation, Ambiguity Ranking, Discourse Repair
+    # ------------------------------------------------------------------
+
+    def _resolve_ellipsis(self, text: str, person: str = "") -> str:
+        """Loest elliptische Ausdruecke auf indem Kontext aus vorherigen Turns uebernommen wird.
+
+        Wenn der Text mit 'Und ', 'Auch ' oder 'Dort ' beginnt, wird der zuletzt
+        besprochene Raum bzw. die letzte Entity als Kontext ergaenzt.
+
+        Returns:
+            Angereicherter Text mit Kontext-Informationen.
+        """
+        text_stripped = text.strip()
+        text_lower = text_stripped.lower()
+        state = self._get_state(person)
+
+        prefixes = {"und ": True, "auch ": True, "dort ": True}
+        matched_prefix = None
+        for prefix in prefixes:
+            if text_lower.startswith(prefix):
+                matched_prefix = prefix
+                break
+
+        if not matched_prefix:
+            return text
+
+        context_parts = []
+        if state.last_rooms:
+            context_parts.append(f"(Raum: {state.last_rooms[0]})")
+        if state.last_entities:
+            context_parts.append(f"(Geraet: {state.last_entities[0]})")
+
+        if context_parts:
+            return f"{text_stripped} {' '.join(context_parts)}"
+        return text
+
+    def _track_negation(self, text: str, person: str = "") -> Optional[str]:
+        """Erkennt Negationsmuster und speichert die negierte Entity im State.
+
+        Erkennt Muster wie 'nicht das Licht', 'kein Licht', 'nein, nicht die Lampe'.
+
+        Returns:
+            Die negierte Entity oder None wenn keine Negation erkannt wurde.
+        """
+        text_lower = text.lower().strip()
+        state = self._get_state(person)
+
+        negation_patterns = [
+            r"(?:nicht|kein(?:e[rns]?)?|nein)\s+(?:das |die |den |der )?(\w+)",
+        ]
+
+        for pattern in negation_patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                negated_entity = match.group(1).strip()
+                if not hasattr(state, "negated_entities"):
+                    state.negated_entities = []
+                state.negated_entities = [negated_entity] + getattr(state, "negated_entities", [])
+                state.negated_entities = state.negated_entities[:5]
+                logger.debug("Negation erkannt: '%s'", negated_entity)
+                return negated_entity
+
+        return None
+
+    def _rank_ambiguity(
+        self, entities: list[str], text: str, person: str = ""
+    ) -> list[tuple[str, float]]:
+        """Rankt mehrdeutige Entities nach Relevanz.
+
+        Bewertet anhand von:
+        - Kuerzliche Nutzung (zuletzt besprochene Entities bevorzugt)
+        - Raum-Match (Entity im aktuellen Raum bevorzugt)
+        - Namens-Aehnlichkeit zum User-Text
+
+        Returns:
+            Liste von (entity, confidence_score) Tupeln, absteigend nach Score.
+        """
+        state = self._get_state(person)
+        text_lower = text.lower()
+        scored: list[tuple[str, float]] = []
+
+        recent_entities = list(state.last_entities)
+        recent_rooms = list(state.last_rooms)
+
+        for entity in entities:
+            score = 0.5  # Basis-Score
+            entity_lower = entity.lower()
+
+            # Bonus fuer kuerzliche Nutzung (absteigend nach Aktualitaet)
+            for idx, recent in enumerate(recent_entities):
+                if recent.lower() == entity_lower:
+                    score += max(0.3 - idx * 0.05, 0.05)
+                    break
+
+            # Bonus fuer Raum-Match
+            if recent_rooms:
+                current_room = recent_rooms[0]
+                if current_room in entity_lower:
+                    score += 0.2
+
+            # Bonus fuer Namens-Aehnlichkeit zum Text
+            entity_words = entity_lower.replace(".", " ").replace("_", " ").split()
+            for word in entity_words:
+                if word in text_lower and len(word) > 2:
+                    score += 0.1
+
+            scored.append((entity, min(score, 1.0)))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored
+
+    def _discourse_repair(self, text: str, person: str = "") -> Optional[dict]:
+        """Erkennt Korrektur-Muster wenn der User die vorherige Referenz korrigiert.
+
+        Erkennt Muster wie 'das ANDERE', 'nein das', 'nicht das' und gibt
+        die korrigierte Entity zurueck.
+
+        Returns:
+            Dict mit 'correction' und 'original' Keys oder None.
+        """
+        text_lower = text.lower().strip()
+        state = self._get_state(person)
+
+        repair_patterns = [
+            r"(?:das |die |den )?andere(?:s|n|r)?",
+            r"nein[\s,]+(?:das |die |den )?(\w+)",
+            r"nicht das[\s,]+(?:sondern\s+)?(?:das |die |den )?(\w+)",
+        ]
+
+        for pattern in repair_patterns:
+            if re.search(pattern, text_lower):
+                # "das andere" → naechste Entity in der Liste (nicht die letzte)
+                if len(state.last_entities) >= 2:
+                    original = state.last_entities[0]
+                    correction = state.last_entities[1]
+                    logger.debug("Discourse Repair: '%s' -> '%s'", original, correction)
+                    return {"correction": correction, "original": original}
+                break
+
+        return None

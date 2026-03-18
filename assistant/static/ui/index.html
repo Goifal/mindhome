@@ -1218,6 +1218,16 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
           </div>
           <div id="energyDashContent" class="grid grid-4"></div>
         </div>
+        <!-- Phase 9B: Jarvis Insights Widget -->
+        <div id="jarvis-insights-widget" style="margin: 16px 0; padding: 12px; background: var(--bg-card, #1e1e1e); border-radius: 8px; border-left: 3px solid #4fc3f7;">
+          <h4 style="margin: 0 0 8px; color: var(--accent, #4fc3f7); font-size: 14px;">Jarvis hat bemerkt...</h4>
+          <div id="insights-list" style="font-size: 13px; color: var(--text-primary, #e0e0e0);"></div>
+        </div>
+        <!-- Phase 9C: Autonomie & Lernfortschritt -->
+        <div id="jarvis-learning" style="margin: 16px 0; padding: 12px; background: var(--bg-card, #1e1e1e); border-radius: 8px;">
+          <span id="autonomy-level" style="font-weight: bold; color: var(--accent, #4fc3f7);">Autonomie: Level 2/5</span>
+          <div id="learning-progress" style="margin-top: 8px; font-size: 13px; color: var(--text-primary, #e0e0e0);"></div>
+        </div>
         <div class="grid grid-2 mt-md">
           <div class="card"><div class="card-header"><h3>Komponenten</h3></div><div id="compList"></div></div>
           <div class="card"><div class="card-header"><h3>Status</h3></div><div id="moodInfo"></div></div>

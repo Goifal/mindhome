@@ -274,3 +274,106 @@ class TestGetPushbackUnknownFunction:
             {"entity_id": "media.wz"},
         )
         assert result is None
+
+
+# ------------------------------------------------------------------
+# Phase 2B: Erweiterte Pushback-Regeln
+# ------------------------------------------------------------------
+
+
+class TestPhase2BSolarPushback:
+    """Tests fuer Solar-Ertrag-Verlust bei Rollladen-Schliessung."""
+
+    @pytest.fixture
+    def validator(self, ha_mock):
+        v = FunctionValidator()
+        v.set_ha_client(ha_mock)
+        return v
+
+    @pytest.mark.asyncio
+    async def test_solar_loss_warning(self, validator, ha_mock):
+        """Warnung wenn Rollladen geschlossen wird waehrend Solar produziert."""
+        ha_mock.get_states = AsyncMock(return_value=[
+            {"entity_id": "sensor.solar_power", "state": "500",
+             "attributes": {"friendly_name": "Solar Power"}},
+            {"entity_id": "weather.home", "state": "sunny",
+             "attributes": {"temperature": 20, "wind_speed": 10}},
+        ])
+        result = await validator._pushback_set_cover(
+            {"action": "close", "room": "wohnzimmer"},
+            {"solar_loss": True, "storm_warning": True},
+        )
+        if result:
+            types = [w["type"] for w in result["warnings"]]
+            assert "solar_loss" in types
+
+    @pytest.mark.asyncio
+    async def test_no_solar_warning_low_production(self, validator, ha_mock):
+        """Keine Warnung bei geringer Solar-Produktion (< 100W)."""
+        ha_mock.get_states = AsyncMock(return_value=[
+            {"entity_id": "sensor.solar_power", "state": "50",
+             "attributes": {"friendly_name": "Solar Power"}},
+            {"entity_id": "weather.home", "state": "cloudy",
+             "attributes": {"temperature": 15, "wind_speed": 5}},
+        ])
+        result = await validator._pushback_set_cover(
+            {"action": "close", "room": "wohnzimmer"},
+            {"solar_loss": True, "storm_warning": True},
+        )
+        if result:
+            types = [w["type"] for w in result["warnings"]]
+            assert "solar_loss" not in types
+
+
+class TestPhase2BPeakTariff:
+    """Tests fuer Spitzenstrom-Warnung."""
+
+    @pytest.fixture
+    def validator(self, ha_mock):
+        v = FunctionValidator()
+        v.set_ha_client(ha_mock)
+        return v
+
+    @pytest.mark.asyncio
+    async def test_peak_tariff_warning(self, validator, ha_mock):
+        """Warnung bei hohem Strompreis und hoher Heiz-Temperatur."""
+        ha_mock.get_states = AsyncMock(return_value=[
+            {"entity_id": "sensor.electricity_price", "state": "0.45",
+             "attributes": {"friendly_name": "Strompreis"}},
+            {"entity_id": "weather.home", "state": "cloudy",
+             "attributes": {"temperature": 5, "wind_speed": 10}},
+        ])
+        result = await validator._pushback_set_climate(
+            {"room": "wohnzimmer", "temperature": 24},
+            {"open_windows": False, "empty_room": False,
+             "unnecessary_heating": False, "peak_tariff": True},
+        )
+        if result:
+            types = [w["type"] for w in result["warnings"]]
+            assert "peak_tariff" in types
+
+    @pytest.mark.asyncio
+    async def test_no_peak_tariff_low_price(self, validator, ha_mock):
+        """Keine Warnung bei niedrigem Strompreis."""
+        ha_mock.get_states = AsyncMock(return_value=[
+            {"entity_id": "sensor.electricity_price", "state": "0.15",
+             "attributes": {"friendly_name": "Strompreis"}},
+        ])
+        result = await validator._pushback_set_climate(
+            {"room": "wohnzimmer", "temperature": 24},
+            {"open_windows": False, "empty_room": False,
+             "unnecessary_heating": False, "peak_tariff": True},
+        )
+        if result:
+            types = [w["type"] for w in result.get("warnings", [])]
+            assert "peak_tariff" not in types
+
+
+class TestPhase2BSeverityWeights:
+    """Tests fuer neue Severity-Gewichte."""
+
+    def test_solar_loss_severity(self):
+        assert FunctionValidator._SEVERITY_WEIGHTS.get("solar_loss") == 2
+
+    def test_peak_tariff_severity(self):
+        assert FunctionValidator._SEVERITY_WEIGHTS.get("peak_tariff") == 2

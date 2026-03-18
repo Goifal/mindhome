@@ -285,6 +285,30 @@ class FunctionValidator:
                             pass
                         break
 
+        # Phase 2B: Spitzenstrom-Warnung bei hoher Heiz-Temperatur
+        if checks.get("peak_tariff", True):
+            _target = args.get("temperature")
+            if _target:
+                try:
+                    _t = float(_target)
+                except (ValueError, TypeError):
+                    _t = 0
+                if _t >= 23:
+                    for state in states:
+                        eid = state.get("entity_id", "")
+                        if "tariff" in eid or "strompreis" in eid or "electricity_price" in eid:
+                            try:
+                                price = float(state.get("state", 0))
+                                if price > 0.30:
+                                    warnings.append({
+                                        "type": "peak_tariff",
+                                        "detail": f"Strompreis aktuell {price:.2f} EUR/kWh (Spitze)",
+                                        "alternative": f"Guenstiger in 1-2h oder {_t - 2:.0f}°C setzen",
+                                    })
+                            except (ValueError, TypeError):
+                                pass
+                            break
+
         result = {"warnings": warnings} if warnings else None
         if result:
             result["severity"] = self._calculate_severity(warnings)
@@ -394,6 +418,24 @@ class FunctionValidator:
                 "alternative": "Rollladen auf 20% — Licht rein, Isolierung bleibt",
             })
 
+        # Phase 2B: Solar-Ertrag-Verlust bei geschlossenen Rollladen
+        is_closing = not is_opening
+        if is_closing and checks.get("solar_loss", True):
+            for state in states:
+                eid = state.get("entity_id", "")
+                if "solar" in eid or "pv" in eid or "photovoltaic" in eid:
+                    try:
+                        power = float(state.get("state", 0))
+                        if power > 100:  # > 100W Solar-Produktion
+                            warnings.append({
+                                "type": "solar_loss",
+                                "detail": f"Solar produziert gerade {power:.0f}W",
+                                "alternative": "Rollladen offen lassen — Solar-Ertrag maximieren",
+                            })
+                    except (ValueError, TypeError):
+                        pass
+                    break
+
         # Markise bei Regen/Wind
         cover_type = args.get("type", "")
         is_markise = cover_type == "markise" or room == "markisen"
@@ -430,6 +472,8 @@ class FunctionValidator:
         "open_window": 2,
         "unnecessary_heating": 2,
         "cold_outside": 2,
+        "solar_loss": 2,
+        "peak_tariff": 2,
         # Stufe 3: Sorge (Sicherheit/Schaden)
         "storm_warning": 3,
         "rain_markise": 3,
@@ -489,3 +533,17 @@ class FunctionValidator:
             else:
                 lines.append(f"- {detail}")
         return "\n".join(lines)
+
+    def check_state_age(self, entity_id: str, last_changed: str, max_age_minutes: int = 10) -> bool:
+        """Prueft ob der State aktuell genug fuer Pushback ist.
+
+        Veraltete States (>10min) sollten keinen Pushback ausloesen,
+        da sich die Situation geaendert haben koennte.
+        """
+        try:
+            from datetime import datetime, timezone
+            last = datetime.fromisoformat(last_changed.replace("Z", "+00:00"))
+            age_minutes = (datetime.now(timezone.utc) - last).total_seconds() / 60
+            return age_minutes <= max_age_minutes
+        except (ValueError, TypeError):
+            return True  # Im Zweifel Pushback erlauben

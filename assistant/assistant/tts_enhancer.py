@@ -580,3 +580,88 @@ class TTSEnhancer:
             "ssml": "".join(parts),
             "total_estimated_duration_ms": total_duration,
         }
+
+    # ------------------------------------------------------------------
+    # Phase 3C: Emotionale TTS-Tiefe
+    # ------------------------------------------------------------------
+
+    # Emotion → SSML Prosody-Parameter (Jarvis' innere Stimmung)
+    _EMOTION_SSML_MAP: dict[str, dict[str, str]] = {
+        "amuesiert": {"rate": "108%", "pitch": "+8%"},
+        "zufrieden": {"rate": "100%", "pitch": "+3%"},
+        "besorgt": {"rate": "90%", "pitch": "-5%"},
+        "gereizt": {"rate": "105%", "pitch": "+3%"},
+        "stolz": {"rate": "95%", "pitch": "+2%"},
+        "neugierig": {"rate": "100%", "pitch": "+10%"},
+        "neutral": {"rate": "100%", "pitch": "0%"},
+    }
+
+    def enhance_with_emotion(
+        self, text: str, inner_mood: str = "neutral",
+        message_type: str | None = None, urgency: str = "medium",
+        activity: str = "",
+    ) -> dict:
+        """Erweitert TTS-Ausgabe mit Jarvis' emotionaler Stimmung.
+
+        Layert Emotion-SSML ueber Message-Type-SSML. Wenn inner_mood
+        gesetzt ist, wird die Prosodie an die Stimmung angepasst.
+
+        Args:
+            text: Originaltext
+            inner_mood: Jarvis' innere Stimmung (aus inner_state.py)
+            message_type: Optionaler manueller Typ
+            urgency: Dringlichkeit
+            activity: Aktuelle User-Aktivitaet
+
+        Returns:
+            Enhanced dict wie enhance(), aber mit Emotion-Anpassung
+        """
+        # Basis-Enhancement
+        result = self.enhance(text, message_type=message_type,
+                              urgency=urgency, activity=activity)
+
+        if not inner_mood or inner_mood == "neutral":
+            return result
+
+        # Emotion-SSML layern
+        emotion_params = self._EMOTION_SSML_MAP.get(inner_mood, {})
+        if emotion_params and self.ssml_enabled:
+            # Emotion-Rate/Pitch als Override anwenden
+            emotion_rate = emotion_params.get("rate", "100%")
+            emotion_pitch = emotion_params.get("pitch", "0%")
+
+            # Wenn SSML bereits generiert, ersetzen wir die Prosody-Werte
+            ssml = result.get("ssml", "")
+            if "<prosody" in ssml:
+                # Rate ersetzen
+                import re
+                ssml = re.sub(r'rate="[^"]*"', f'rate="{emotion_rate}"', ssml)
+                ssml = re.sub(r'pitch="[^"]*"', f'pitch="{emotion_pitch}"', ssml)
+                result["ssml"] = ssml
+            else:
+                # Kein bestehendes SSML → neues generieren
+                result["ssml"] = self._generate_ssml(
+                    text, result.get("message_type", "casual"),
+                    int(emotion_rate.replace("%", "")),
+                    emotion_pitch,
+                )
+
+            result["emotion"] = inner_mood
+            result["emotion_rate"] = emotion_rate
+            result["emotion_pitch"] = emotion_pitch
+
+        return result
+
+    def split_for_streaming(self, text: str) -> list[str]:
+        """Teilt Text in Saetze auf fuer Satz-Level-Streaming.
+
+        Der erste Satz kann sofort an TTS gesendet werden waehrend
+        der LLM noch den Rest generiert.
+
+        Returns:
+            Liste von Saetzen (mindestens 1 Element)
+        """
+        sentences = self._split_sentences(text)
+        if not sentences:
+            return [text] if text else []
+        return sentences

@@ -531,3 +531,85 @@ class TestGenerateSSMLCoverage:
             ssml = e._generate_ssml("Temperatur < 5°C & Warnung.", "casual", 100)
         assert "&lt;" in ssml
         assert "&amp;" in ssml
+
+
+# ============================================================
+# Phase 3C: Emotionale TTS-Tiefe
+# ============================================================
+
+class TestPhase3CEmotionSSML:
+    """Tests fuer Emotion-basierte SSML-Anpassung."""
+
+    def test_emotion_ssml_map_exists(self):
+        """Emotion-SSML-Map ist definiert."""
+        cfg = {"tts": {}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+        assert hasattr(e, "_EMOTION_SSML_MAP")
+        assert "amuesiert" in e._EMOTION_SSML_MAP
+        assert "besorgt" in e._EMOTION_SSML_MAP
+        assert "stolz" in e._EMOTION_SSML_MAP
+
+    def test_enhance_with_emotion_neutral(self):
+        """Neutral → keine Aenderung."""
+        cfg = {"tts": {}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+        result = e.enhance_with_emotion("Test", "neutral")
+        assert "emotion" not in result
+
+    def test_enhance_with_emotion_amuesiert(self):
+        """Amuesiert → schnellere Rate und hoeherer Pitch."""
+        cfg = {"tts": {"ssml_enabled": True}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+        result = e.enhance_with_emotion("Das war witzig.", "amuesiert")
+        assert result.get("emotion") == "amuesiert"
+        assert result.get("emotion_rate") == "108%"
+        assert result.get("emotion_pitch") == "+8%"
+
+    def test_enhance_with_emotion_besorgt(self):
+        """Besorgt → langsamere Rate."""
+        cfg = {"tts": {"ssml_enabled": True}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+        result = e.enhance_with_emotion("Warnung.", "besorgt")
+        assert result.get("emotion") == "besorgt"
+        assert result.get("emotion_rate") == "90%"
+
+    def test_enhance_with_emotion_no_ssml(self):
+        """Ohne SSML → Emotion wird trotzdem nicht gesetzt."""
+        cfg = {"tts": {"ssml_enabled": False}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+        result = e.enhance_with_emotion("Test", "amuesiert")
+        # Ohne SSML kein Emotion-Override
+        assert "emotion" not in result or result.get("emotion") is None
+
+
+class TestPhase3CStreaming:
+    """Tests fuer Satz-Level-Streaming."""
+
+    def test_split_for_streaming_single(self):
+        """Einzelner Satz → Liste mit einem Element."""
+        cfg = {"tts": {}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+        result = e.split_for_streaming("Guten Morgen.")
+        assert len(result) >= 1
+
+    def test_split_for_streaming_multiple(self):
+        """Mehrere Saetze → Liste pro Satz."""
+        cfg = {"tts": {}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+        result = e.split_for_streaming("Erster Satz. Zweiter Satz. Dritter Satz.")
+        assert len(result) >= 2
+
+    def test_split_for_streaming_empty(self):
+        """Leerer Text → leere Liste."""
+        cfg = {"tts": {}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+        result = e.split_for_streaming("")
+        assert result == []

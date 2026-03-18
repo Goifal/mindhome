@@ -826,3 +826,104 @@ Frage am Ende ob der Plan so umgesetzt werden soll."""},
                 logger.warning("Rollback fehlgeschlagen fuer %s: %s", step.function, e)
 
         return rollback_count
+
+    # ------------------------------------------------------------------
+    # Phase 11C: Cost Estimation, Resource Conflicts, Partial Success
+    # ------------------------------------------------------------------
+
+    def _estimate_cost(
+        self, action: str, duration_minutes: int = 30
+    ) -> Optional[dict]:
+        """Schaetzt die Kosten einer Aktion basierend auf Geraetetyp.
+
+        Args:
+            action: Funktionsname (z.B. 'set_climate', 'set_light').
+            duration_minutes: Geschaetzte Dauer in Minuten.
+
+        Returns:
+            Dict mit cost_estimate, unit, description oder None.
+        """
+        cost_per_hour = {
+            "set_climate": 0.15,
+            "set_light": 0.01,
+            "play_media": 0.02,
+            "set_cover": 0.005,
+            "set_fan": 0.03,
+        }
+
+        rate = cost_per_hour.get(action)
+        if rate is None:
+            return None
+
+        hours = duration_minutes / 60.0
+        estimate = round(rate * hours, 4)
+
+        return {
+            "cost_estimate": estimate,
+            "unit": "EUR",
+            "description": f"{action} fuer {duration_minutes}min ~ {estimate:.4f} EUR",
+        }
+
+    def _check_resource_conflicts(self, actions: list[dict]) -> list[str]:
+        """Prueft ob geplante Aktionen in Konflikt stehen.
+
+        Erkennt z.B. zwei Klima-Einstellungen fuer denselben Raum
+        oder widerspruechliche Licht-Befehle.
+
+        Args:
+            actions: Liste von Aktions-Dicts mit 'function' und 'args'.
+
+        Returns:
+            Liste von Konfliktbeschreibungen.
+        """
+        conflicts: list[str] = []
+        seen: dict[str, list[dict]] = {}
+
+        for action in actions:
+            func = action.get("function", "")
+            args = action.get("args", {})
+            entity = args.get("entity_id", "") or args.get("area", "")
+
+            if not entity:
+                continue
+
+            key = f"{func}:{entity}"
+            if key in seen:
+                prev_args = seen[key][0].get("args", {})
+                conflicts.append(
+                    f"Konflikt: {func} fuer '{entity}' wird mehrfach aufgerufen "
+                    f"(vorher: {prev_args}, jetzt: {args})"
+                )
+            seen.setdefault(key, []).append(action)
+
+        return conflicts
+
+    def _handle_partial_success(self, results: list[dict]) -> dict:
+        """Fasst Ergebnisse eines Multi-Step-Plans zusammen.
+
+        Args:
+            results: Liste von Ergebnis-Dicts mit 'success' Key.
+
+        Returns:
+            Dict mit total, succeeded, failed, summary.
+        """
+        total = len(results)
+        succeeded = sum(1 for r in results if r.get("success", False))
+        failed = total - succeeded
+
+        if failed == 0:
+            summary = f"Alle {total} Aktionen erfolgreich ausgefuehrt."
+        elif succeeded == 0:
+            summary = f"Alle {total} Aktionen fehlgeschlagen."
+        else:
+            summary = (
+                f"{succeeded} von {total} Aktionen erfolgreich, "
+                f"{failed} fehlgeschlagen."
+            )
+
+        return {
+            "total": total,
+            "succeeded": succeeded,
+            "failed": failed,
+            "summary": summary,
+        }

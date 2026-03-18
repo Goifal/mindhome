@@ -312,3 +312,99 @@ class FollowMeEngine:
             "tracked_persons": len(self._person_room),
             "profiles": list(self.profiles.keys()),
         }
+
+    # ------------------------------------------------------------------
+    # Phase 7: Praesenz-basierte Kontextanreicherung
+    # ------------------------------------------------------------------
+
+    def get_person_location(self, person: str) -> Optional[str]:
+        """Gibt den letzten bekannten Raum einer Person zurueck."""
+        return self._person_room.get(person)
+
+    def get_all_person_locations(self) -> dict[str, str]:
+        """Gibt alle bekannten Person-Raum-Zuordnungen zurueck."""
+        return dict(self._person_room)
+
+    def get_occupied_rooms(self) -> list[str]:
+        """Gibt alle aktuell belegten Raeume zurueck."""
+        return list(set(self._person_room.values()))
+
+    def is_room_occupied(self, room: str) -> bool:
+        """Prueft ob ein Raum belegt ist."""
+        room_lower = room.lower().replace(" ", "_")
+        return any(
+            r.lower().replace(" ", "_") == room_lower
+            for r in self._person_room.values()
+        )
+
+    def get_persons_in_room(self, room: str) -> list[str]:
+        """Gibt alle Personen in einem bestimmten Raum zurueck."""
+        room_lower = room.lower().replace(" ", "_")
+        return [
+            p for p, r in self._person_room.items()
+            if r.lower().replace(" ", "_") == room_lower
+        ]
+
+    async def get_context_for_person(self, person: str) -> str:
+        """Gibt Praesenz-Kontext fuer LLM-Prompt zurueck.
+
+        Returns:
+            Kontext-String z.B. "Person ist im Wohnzimmer. Auch anwesend: Partner."
+        """
+        location = self.get_person_location(person)
+        if not location:
+            return ""
+
+        others = [p for p in self.get_persons_in_room(location) if p != person]
+        context = f"Person ist im {location}."
+        if others:
+            context += f" Auch anwesend: {', '.join(others)}."
+        return context
+
+    # ------------------------------------------------------------------
+    # Rueckkehr-Erkennung & Verweildauer
+    # ------------------------------------------------------------------
+
+    def detect_return_intent(self, person: str, room: str, seconds_away: float) -> bool:
+        """Erkennt ob eine Person nur kurz weg war und zurueckkehrt.
+
+        Wenn jemand innerhalb von 10 Sekunden zurueckkehrt, war es kein
+        echter Raumwechsel — z.B. kurz zur Tuer gegangen und sofort zurueck.
+
+        Args:
+            person: Name der Person.
+            room: Raum in den die Person zurueckkehrt.
+            seconds_away: Wie lange die Person weg war (in Sekunden).
+
+        Returns:
+            True wenn es eine Rueckkehr ist (Transfer sollte NICHT stattfinden).
+        """
+        if seconds_away <= 10.0:
+            logger.debug(
+                "Rueckkehr erkannt: %s war nur %.1fs weg von %s — kein Transfer",
+                person, seconds_away, room,
+            )
+            return True
+        return False
+
+    def detect_lingering(self, person: str, room: str, seconds_present: float) -> bool:
+        """Erkennt ob eine Person sich in einem Raum niedergelassen hat.
+
+        Erst nach 180 Sekunden gilt eine Person als wirklich angekommen,
+        nicht nur durchlaufend (z.B. auf dem Weg zur Kueche durch den Flur).
+
+        Args:
+            person: Name der Person.
+            room: Aktueller Raum.
+            seconds_present: Wie lange die Person schon im Raum ist (in Sekunden).
+
+        Returns:
+            True wenn die Person sich niedergelassen hat (>= 180s).
+        """
+        if seconds_present >= 180.0:
+            logger.debug(
+                "Verweildauer erreicht: %s ist seit %.0fs in %s — angekommen",
+                person, seconds_present, room,
+            )
+            return True
+        return False

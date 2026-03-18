@@ -139,10 +139,11 @@ class TestShouldMonitor:
             eng = DiagnosticsEngine(ha_mock)
             assert eng._should_monitor("sensor.temp") is False
 
-    def test_valid_domain_monitored(self, engine):
+    def test_unannotated_entity_not_monitored(self, engine):
+        """Ohne Annotation wird eine Entity nicht ueberwacht (nur annotierte Entities)."""
         with patch("assistant.diagnostics.is_entity_hidden", return_value=False), \
              patch("assistant.diagnostics.get_entity_annotation", return_value=None):
-            assert engine._should_monitor("sensor.temperature") is True
+            assert engine._should_monitor("sensor.temperature") is False
 
     def test_excluded_domain_not_monitored(self, engine):
         with patch("assistant.diagnostics.is_entity_hidden", return_value=False), \
@@ -376,3 +377,58 @@ class TestHealthStatus:
              patch("assistant.diagnostics.get_entity_annotation", return_value=None):
             eng = DiagnosticsEngine(ha_mock)
         assert eng.health_status() == "disabled"
+
+
+# ------------------------------------------------------------------
+# Phase 8: Proaktive Diagnostik-Hinweise
+# ------------------------------------------------------------------
+
+
+class TestPhase8ProactiveDiagnostics:
+
+    @pytest.fixture
+    def engine(self, ha_mock):
+        with patch("assistant.diagnostics.yaml_config", DIAG_CONFIG), \
+             patch("assistant.diagnostics.is_entity_hidden", return_value=False), \
+             patch("assistant.diagnostics.get_entity_annotation", return_value=None):
+            return DiagnosticsEngine(ha_mock)
+
+    @pytest.mark.asyncio
+    async def test_proactive_hints_disabled(self, engine):
+        engine.enabled = False
+        hints = await engine.get_proactive_hints()
+        assert hints == []
+
+    @pytest.mark.asyncio
+    async def test_proactive_hints_no_issues(self, engine):
+        engine.check_entities = AsyncMock(return_value=[])
+        engine.check_system_resources = MagicMock(return_value={})
+        hints = await engine.get_proactive_hints()
+        assert hints == []
+
+    @pytest.mark.asyncio
+    async def test_proactive_hints_low_battery(self, engine):
+        engine.check_entities = AsyncMock(return_value=[
+            {"entity_id": "sensor.door", "friendly_name": "Tuersensor",
+             "status": "low_battery", "battery_level": 15},
+        ])
+        engine.check_system_resources = MagicMock(return_value={})
+        hints = await engine.get_proactive_hints()
+        assert len(hints) == 1
+        assert hints[0]["type"] == "battery"
+        assert "15%" in hints[0]["message"]
+
+    @pytest.mark.asyncio
+    async def test_morning_summary_empty(self, engine):
+        engine.get_proactive_hints = AsyncMock(return_value=[])
+        summary = await engine.get_morning_diagnostic_summary()
+        assert summary == ""
+
+    @pytest.mark.asyncio
+    async def test_morning_summary_with_warnings(self, engine):
+        engine.get_proactive_hints = AsyncMock(return_value=[
+            {"message": "Sensor offline", "severity": "warning", "entity_id": "s1", "type": "offline"},
+        ])
+        summary = await engine.get_morning_diagnostic_summary()
+        assert "1 Warnungen" in summary
+        assert "Sensor offline" in summary

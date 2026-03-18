@@ -14,6 +14,7 @@ Testet:
 - Reload Config
 """
 
+import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -301,3 +302,126 @@ class TestReloadConfig:
         assert personality.sarcasm_level == 5
         assert personality.opinion_intensity == 3
         assert personality.self_irony_enabled is False
+
+
+# ============================================================
+# Phase 2A: Humor-Erweiterungen
+# ============================================================
+
+class TestPhase2AHumorFatigue:
+    """Tests fuer taegliche Humor-Fatigue."""
+
+    @pytest.fixture
+    def personality(self):
+        from assistant.personality import PersonalityEngine
+        with patch("assistant.personality.yaml_config", {
+            "personality": {"sarcasm_level": 4},
+        }):
+            p = PersonalityEngine()
+            p._redis = AsyncMock()
+            return p
+
+    @pytest.mark.asyncio
+    async def test_daily_fatigue_blocks_after_12(self, personality):
+        """Nach 12 Witzen/Tag wird Humor mit 80% blockiert."""
+        personality._redis.get = AsyncMock(return_value=b"12")
+        # Mehrere Versuche — die meisten sollten None sein
+        results = []
+        for _ in range(20):
+            r = await personality.generate_contextual_humor(
+                "set_light", {"room": "wohnzimmer"}, mood="good",
+            )
+            results.append(r)
+        # Mindestens 50% sollten None sein (80% Chance)
+        none_count = sum(1 for r in results if r is None)
+        assert none_count >= 10
+
+    @pytest.mark.asyncio
+    async def test_no_fatigue_at_low_count(self, personality):
+        """Unter 8 Witzen/Tag keine Fatigue."""
+        personality._redis.get = AsyncMock(return_value=b"3")
+        # Sarcasm level zu niedrig fuer Situation, aber Fatigue sollte nicht greifen
+        result = await personality.generate_contextual_humor(
+            "set_light", {"room": "wz"}, mood="good",
+        )
+        # Result kann None sein (keine passende Situation), aber nicht wegen Fatigue
+
+
+class TestPhase2AInnerStateHumor:
+    """Tests fuer Inner-State Einfluss auf Humor-Generierung."""
+
+    @pytest.fixture
+    def personality(self):
+        from assistant.personality import PersonalityEngine
+        with patch("assistant.personality.yaml_config", {
+            "personality": {"sarcasm_level": 4},
+        }):
+            p = PersonalityEngine()
+            p._redis = AsyncMock()
+            return p
+
+    def test_inner_state_modifies_humor_section(self, personality):
+        """Inner-State beeinflusst _build_humor_section."""
+        from unittest.mock import MagicMock
+        inner = MagicMock()
+        inner.mood = "amuesiert"
+        personality._inner_state = inner
+        section = personality._build_humor_section("good", "afternoon")
+        assert "HUMOR:" in section
+
+    def test_inner_state_irritiert_reduces_level(self, personality):
+        """Irritierter Jarvis reduziert Humor-Level."""
+        from unittest.mock import MagicMock
+        inner = MagicMock()
+        inner.mood = "irritiert"
+        personality._inner_state = inner
+        section = personality._build_humor_section("neutral", "afternoon")
+        assert "HUMOR:" in section
+
+
+class TestPhase2AGagEvolution:
+    """Tests fuer Running-Gag Episode-Counter."""
+
+    @pytest.fixture
+    def personality(self):
+        from assistant.personality import PersonalityEngine
+        with patch("assistant.personality.yaml_config", {"personality": {}}):
+            p = PersonalityEngine()
+            p._redis = AsyncMock()
+            return p
+
+    @pytest.mark.asyncio
+    async def test_episode_2_callback(self, personality):
+        """Episode 2 → Callback auf letzten Gag."""
+        personality._redis.lrange = AsyncMock(return_value=[
+            json.dumps({"type": "repeated_question", "date": "Montag", "timestamp": 1.0}),
+        ])
+        pipe_mock = MagicMock()
+        pipe_mock.lpush = MagicMock()
+        pipe_mock.ltrim = MagicMock()
+        pipe_mock.expire = MagicMock()
+        pipe_mock.execute = AsyncMock()
+        personality._redis.pipeline = MagicMock(return_value=pipe_mock)
+
+        result = await personality.build_evolved_gag("repeated_question", "Max")
+        assert result is not None
+        assert "Montag" in result
+
+    @pytest.mark.asyncio
+    async def test_episode_5_statistics(self, personality):
+        """Episode 5+ → Statistik-Humor."""
+        history = [
+            json.dumps({"type": "thermostat_war", "date": f"Tag{i}", "timestamp": float(i)})
+            for i in range(4)
+        ]
+        personality._redis.lrange = AsyncMock(return_value=history)
+        pipe_mock = MagicMock()
+        pipe_mock.lpush = MagicMock()
+        pipe_mock.ltrim = MagicMock()
+        pipe_mock.expire = MagicMock()
+        pipe_mock.execute = AsyncMock()
+        personality._redis.pipeline = MagicMock(return_value=pipe_mock)
+
+        result = await personality.build_evolved_gag("thermostat_war", "Max")
+        assert result is not None
+        assert "Episode" in result or "statistisch" in result

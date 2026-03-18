@@ -66,6 +66,8 @@ class SelfOptimization:
         self._redis = None
         self._pending_proposals: list[dict] = []
         self._proposals_lock = asyncio.Lock()
+        self._notify_callback = None
+        self._proactive_insights = self._cfg.get("proactive_insights", False)
 
     async def initialize(self, redis_client):
         """Initialisiert mit Redis-Client."""
@@ -75,8 +77,78 @@ class SelfOptimization:
             self._enabled, self._approval_mode, self._interval,
         )
 
+    def set_notify_callback(self, callback):
+        """Setzt Callback fuer proaktive Insights (wie spontaneous_observer Pattern)."""
+        self._notify_callback = callback
+
     def is_enabled(self) -> bool:
         return self._enabled and self._approval_mode != "off"
+
+    async def _generate_proactive_insight(self) -> Optional[str]:
+        """Generiert proaktive Insights ueber Korrektur-Muster nach Domaene.
+
+        Analysiert welche Bereiche (Licht, Klima, Medien) die meisten
+        Korrekturen haben und teilt dies dem Benutzer mit.
+
+        Returns:
+            Insight-Text oder None
+        """
+        if not self._redis or not self._proactive_insights:
+            return None
+
+        try:
+            # Domain-Corrections aus Redis laden
+            corrections_raw = await self._redis.hgetall("mha:self_opt:domain_corrections")
+            if not corrections_raw:
+                return None
+
+            domain_counts: dict[str, int] = {}
+            total = 0
+            for domain_bytes, count_bytes in corrections_raw.items():
+                domain = domain_bytes.decode() if isinstance(domain_bytes, bytes) else domain_bytes
+                count = int(count_bytes.decode() if isinstance(count_bytes, bytes) else count_bytes)
+                domain_counts[domain] = count
+                total += count
+
+            if total < 5:  # Mindestens 5 Korrekturen noetig
+                return None
+
+            # Domain mit den meisten Korrekturen
+            worst_domain = max(domain_counts, key=domain_counts.get)
+            worst_count = domain_counts[worst_domain]
+            worst_pct = round(worst_count / total * 100)
+
+            if worst_pct < 30:  # Nur melden wenn > 30% in einer Domain
+                return None
+
+            _DOMAIN_DE = {
+                "climate": "Klima", "light": "Licht", "media": "Medien",
+                "cover": "Rolllaeden", "lock": "Schloesser", "security": "Sicherheit",
+            }
+            domain_name = _DOMAIN_DE.get(worst_domain, worst_domain.title())
+
+            return (
+                f"Mir ist aufgefallen, dass {worst_pct}% meiner Korrekturen "
+                f"den Bereich '{domain_name}' betreffen ({worst_count} von {total}). "
+                f"Ich passe meine Empfehlungen in diesem Bereich an."
+            )
+
+        except Exception as e:
+            logger.debug("Proactive insight generation failed: %s", e)
+            return None
+
+    async def track_domain_correction(self, domain: str):
+        """Trackt eine Korrektur fuer eine bestimmte Domaene.
+
+        Wird von brain.py aufgerufen wenn der User eine Jarvis-Aktion korrigiert.
+        """
+        if not self._redis or not domain:
+            return
+        try:
+            await self._redis.hincrby("mha:self_opt:domain_corrections", domain, 1)
+            await self._redis.expire("mha:self_opt:domain_corrections", 30 * 86400)
+        except Exception as e:
+            logger.debug("Domain correction tracking failed: %s", e)
 
     async def run_analysis(self, outcome_tracker=None, response_quality=None,
                            correction_memory=None) -> list[dict]:
@@ -98,7 +170,8 @@ class SelfOptimization:
             if isinstance(last_run, bytes):
                 last_run = last_run.decode()
             last_dt = datetime.fromisoformat(last_run)
-            delta = timedelta(days=7) if self._interval == "weekly" else timedelta(days=1)
+            _INTERVAL_DAYS = {"weekly": 7, "3day": 3, "daily": 1}
+            delta = timedelta(days=_INTERVAL_DAYS.get(self._interval, 7))
             if datetime.now() - last_dt < delta:
                 logger.debug("Analyse noch nicht faellig (letzte: %s)", last_run)
                 return []
@@ -136,8 +209,22 @@ class SelfOptimization:
                 ex=7 * 86400,
             )
 
-        ttl = 8 * 86400 if self._interval == "weekly" else 2 * 86400
+        _INTERVAL_TTL = {"weekly": 8, "3day": 4, "daily": 2}
+        ttl = _INTERVAL_TTL.get(self._interval, 8) * 86400
         await self._redis.setex("mha:self_opt:last_run", ttl, datetime.now().isoformat())
+
+        # Proaktive Insights generieren und ueber Callback melden
+        if self._notify_callback and self._proactive_insights:
+            insight = await self._generate_proactive_insight()
+            if insight:
+                try:
+                    await self._notify_callback({
+                        "message": insight,
+                        "type": "self_optimization_insight",
+                        "urgency": "low",
+                    })
+                except Exception as e:
+                    logger.debug("Proactive insight callback failed: %s", e)
 
         logger.info("Analyse abgeschlossen: %d Vorschlaege generiert", len(valid_proposals))
         return valid_proposals

@@ -245,3 +245,114 @@ def test_get_stats_with_data(engine):
     assert stats["total"] == 3
     assert stats["domains"]["light"] == 2
     assert stats["triggers"]["user_command"] == 2
+
+
+# ------------------------------------------------------------------
+# Phase 1C: Kontrafaktische Erklaerungen
+# ------------------------------------------------------------------
+
+
+class TestCounterfactualExplanations:
+    """Tests fuer kontrafaktische Erklaerungen (Phase 1C)."""
+
+    @pytest.fixture
+    def eng(self):
+        with patch("assistant.explainability.yaml_config", {
+            "explainability": {"enabled": True, "max_history": 50,
+                               "detail_level": "normal", "auto_explain": False}
+        }):
+            return ExplainabilityEngine()
+
+    def test_counterfactual_rules_exist(self):
+        from assistant.explainability import _COUNTERFACTUAL_RULES
+        assert len(_COUNTERFACTUAL_RULES) > 0
+        assert ("climate", "window_open") in _COUNTERFACTUAL_RULES
+        assert ("light", "empty_room") in _COUNTERFACTUAL_RULES
+        assert ("cover", "wind_warning") in _COUNTERFACTUAL_RULES
+
+    def test_build_counterfactual_climate_window(self, eng):
+        """Fenster offen + Klima → Heizkosten-Warnung."""
+        result = eng._build_counterfactual(
+            "climate",
+            {"rule": "window open check", "sensor_values": {"cost": "0.50"}},
+        )
+        assert result is not None
+        assert "Heizkosten" in result or "Eingreifen" in result
+
+    def test_build_counterfactual_light_empty_room(self, eng):
+        """Leerer Raum + Licht → Stromverbrauch-Warnung."""
+        result = eng._build_counterfactual(
+            "light",
+            {"room_empty": True, "sensor_values": {"power": "60"}},
+        )
+        assert result is not None
+        assert "Stromverbrauch" in result or "Eingreifen" in result
+
+    def test_build_counterfactual_cover_wind(self, eng):
+        """Wind-Warnung + Cover → Beschaedigungswarnung."""
+        result = eng._build_counterfactual(
+            "cover",
+            {"rule": "wind warning", "sensor_values": {"wind_speed": "80"}},
+        )
+        assert result is not None
+        assert "Eingreifen" in result
+
+    def test_build_counterfactual_no_match(self, eng):
+        """Keine passende Regel → None."""
+        result = eng._build_counterfactual("media", {})
+        assert result is None
+
+    def test_build_counterfactual_no_domain(self, eng):
+        """Leere Domain → None."""
+        result = eng._build_counterfactual("", {"rule": "test"})
+        assert result is None
+
+    def test_build_counterfactual_no_context(self, eng):
+        """Leerer Kontext → None."""
+        result = eng._build_counterfactual("climate", {})
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_log_decision_explicit_alternatives(self, eng, mock_redis):
+        """Explizite alternative_outcomes werden gespeichert."""
+        eng.redis = mock_redis
+        await eng.log_decision(
+            "Heizung gedrosselt", "Fenster offen", domain="climate",
+            alternative_outcomes=["2€ Heizkosten verschwendet"],
+        )
+        assert len(eng._decisions) == 1
+        d = eng._decisions[0]
+        assert "alternative_outcomes" in d
+        assert "2€" in d["alternative_outcomes"][0]
+
+    @pytest.mark.asyncio
+    async def test_log_decision_auto_counterfactual(self, eng, mock_redis):
+        """Ohne explizite Alternativen wird automatisch generiert."""
+        eng.redis = mock_redis
+        await eng.log_decision(
+            "Licht aus", "Raum leer", domain="light",
+            context={"room_empty": True, "sensor_values": {"power": "60"}},
+        )
+        d = eng._decisions[0]
+        assert "alternative_outcomes" in d
+
+    def test_prompt_hint_includes_counterfactual(self, eng):
+        """Prompt-Hint sollte kontrafaktische Daten enthalten."""
+        eng.auto_explain = True
+        eng._decisions.append({
+            "action": "Heizung gedrosselt", "reason": "Fenster offen",
+            "timestamp": time.time(),
+            "alternative_outcomes": ["Heizkosten verschwendet"],
+        })
+        hint = eng.get_explanation_prompt_hint()
+        assert "Heizkosten verschwendet" in hint
+
+    def test_prompt_hint_without_counterfactual(self, eng):
+        """Prompt-Hint ohne Counterfactual funktioniert trotzdem."""
+        eng.auto_explain = True
+        eng._decisions.append({
+            "action": "Licht an", "reason": "User-Befehl",
+            "timestamp": time.time(),
+        })
+        hint = eng.get_explanation_prompt_hint()
+        assert "Licht an" in hint

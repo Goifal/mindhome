@@ -309,3 +309,144 @@ class LearningTransfer:
                     "observations": top.get("count", 0),
                 }
         return summary
+
+    # ------------------------------------------------------------------
+    # Phase 6B: Erweiterte Transfer-Methoden
+    # ------------------------------------------------------------------
+
+    async def transfer_with_person_filter(
+        self, source_room: str, target_room: str, person: str = ""
+    ) -> dict:
+        """Uebertraegt nur Praeferenzen die zur angegebenen Person passen.
+
+        Args:
+            source_room: Quellraum
+            target_room: Zielraum
+            person: Person deren Praeferenzen uebertragen werden sollen
+
+        Returns:
+            Dict mit transferred (list) und skipped (int) Feldern.
+        """
+        transferred = []
+        skipped = 0
+
+        for domain in self.domains_enabled:
+            source_key = f"{source_room.lower()}:{domain}"
+            prefs = self._preferences.get(source_key, [])
+
+            for pref in prefs:
+                pref_person = pref.get("person", "")
+                if person and pref_person and pref_person.lower() != person.lower():
+                    skipped += 1
+                    continue
+                if pref.get("count", 0) < self.min_observations:
+                    continue
+
+                transferable_attrs = {
+                    k: v for k, v in pref.items()
+                    if k in TRANSFERABLE_DOMAINS.get(domain, {}).get("attributes", [])
+                }
+                if transferable_attrs:
+                    transferred.append({
+                        "domain": domain,
+                        "attributes": transferable_attrs,
+                        "person": pref_person,
+                    })
+
+        return {"transferred": transferred, "skipped": skipped}
+
+    async def transfer_with_temporal_filter(
+        self, source_room: str, target_room: str, hour: int = -1
+    ) -> dict:
+        """Uebertraegt nur Praeferenzen die zur Tageszeit passen.
+
+        Teilt den Tag in Bloecke: Morgen (5-11), Nachmittag (12-17), Abend (18-4).
+
+        Args:
+            source_room: Quellraum
+            target_room: Zielraum
+            hour: Stunde (0-23), -1 fuer aktuelle Stunde
+
+        Returns:
+            Dict mit transferred (list) und time_block (str) Feldern.
+        """
+        from datetime import datetime as _dt
+
+        if hour < 0:
+            hour = _dt.now().hour
+
+        if 5 <= hour <= 11:
+            time_block = "morning"
+        elif 12 <= hour <= 17:
+            time_block = "afternoon"
+        else:
+            time_block = "evening"
+
+        transferred = []
+        for domain in self.domains_enabled:
+            source_key = f"{source_room.lower()}:{domain}"
+            prefs = self._preferences.get(source_key, [])
+
+            for pref in prefs:
+                last_seen = pref.get("last_seen", 0)
+                if last_seen <= 0:
+                    continue
+                pref_hour = _dt.fromtimestamp(last_seen).hour
+                if 5 <= pref_hour <= 11:
+                    pref_block = "morning"
+                elif 12 <= pref_hour <= 17:
+                    pref_block = "afternoon"
+                else:
+                    pref_block = "evening"
+
+                if pref_block != time_block:
+                    continue
+                if pref.get("count", 0) < self.min_observations:
+                    continue
+
+                transferable_attrs = {
+                    k: v for k, v in pref.items()
+                    if k in TRANSFERABLE_DOMAINS.get(domain, {}).get("attributes", [])
+                }
+                if transferable_attrs:
+                    transferred.append({"domain": domain, "attributes": transferable_attrs})
+
+        return {"transferred": transferred, "time_block": time_block}
+
+    async def learn_from_failure(
+        self, room: str, domain: str, action: str, person: str = ""
+    ) -> None:
+        """Speichert inverse Regeln aus abgelehnten/fehlgeschlagenen Aktionen.
+
+        Wenn eine Aktion abgelehnt wird, wird ein negativer Eintrag gespeichert,
+        damit die Praeferenz kuenftig nicht mehr vorgeschlagen wird.
+
+        Args:
+            room: Raum
+            domain: Domaene
+            action: Die abgelehnte Aktion (z.B. "brightness=255")
+            person: Person die abgelehnt hat
+        """
+        if not self.enabled:
+            return
+
+        key = f"{room.lower()}:{domain}:failures"
+        async with self._lock:
+            if key not in self._preferences:
+                self._preferences[key] = []
+
+            self._preferences[key].append({
+                "action": action,
+                "person": person,
+                "timestamp": time.time(),
+                "count": 1,
+            })
+            # Max 10 Failure-Eintraege pro Raum+Domaene
+            self._preferences[key] = self._preferences[key][-10:]
+
+            await self._save_preferences()
+
+        logger.info(
+            "Failure gelernt: %s in %s/%s (Person: %s)",
+            action, room, domain, person or "unbekannt",
+        )

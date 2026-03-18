@@ -993,6 +993,14 @@ class RoutineEngine:
             logger.debug("Goodnight-Check: Wetter-Ausschluss fuer '%s'", text_lower)
             return False
 
+        # Gezielte Geraetebefehle sind kein Gute-Nacht-Intent
+        _device_excludes = ["rollladen", "rolladen", "licht", "lampe", "heizung",
+                            "thermostat", "markise", "jalousie", "steckdose",
+                            "schalter", "klimaanlage", "ventilator"]
+        if any(dev in text_lower for dev in _device_excludes):
+            logger.debug("Goodnight-Check: Geraete-Befehl ausgeschlossen fuer '%s'", text_lower)
+            return False
+
         # Erweiterte Defaults (zusaetzlich zu konfigurierten Triggern)
         _extended_triggers = [
             "nacht", "schlafe", "ab ins bett", "geh ins bett",
@@ -2129,3 +2137,195 @@ class RoutineEngine:
             len(plans), days,
         )
         return plans
+
+    # ------------------------------------------------------------------
+    # Phase 5C: Erweiterte Routinen
+    # ------------------------------------------------------------------
+
+    async def weather_precaution_routine(self) -> Optional[str]:
+        """Wetter-Vorsorge: 2h vor Regen → Fenster-/Markisen-Warnung.
+
+        Returns:
+            Warntext oder None
+        """
+        try:
+            if not self.redis:
+                return None
+
+            forecast_raw = await self.redis.get("mha:weather:forecast")
+            if not forecast_raw:
+                return None
+
+            import json
+            forecast = json.loads(forecast_raw)
+
+            # Naechste 2-3 Stunden pruefen
+            rain_conditions = {"rainy", "pouring", "hail", "lightning-rainy", "snowy"}
+            upcoming_rain = None
+
+            if isinstance(forecast, list):
+                for f in forecast[:3]:  # Naechste 3 Stunden
+                    condition = f.get("condition", "")
+                    if condition in rain_conditions:
+                        upcoming_rain = f
+                        break
+
+            if not upcoming_rain:
+                return None
+
+            # Cooldown (1x pro Tag)
+            cooldown_key = "mha:routine:weather_precaution_done"
+            if await self.redis.get(cooldown_key):
+                return None
+            await self.redis.setex(cooldown_key, 86400, "1")
+
+            condition = upcoming_rain.get("condition", "Regen")
+            hour = upcoming_rain.get("hour", "")
+            return (
+                f"Wetter-Vorsorge: {condition.title()} erwartet"
+                f"{f' gegen {hour} Uhr' if hour else ' in den naechsten Stunden'}. "
+                f"Sollen Fenster und Markisen geschlossen werden?"
+            )
+        except Exception as e:
+            logger.debug("Weather precaution routine failed: %s", e)
+            return None
+
+    async def calendar_health_check(self) -> Optional[str]:
+        """Kalender-Gesundheitscheck: 6h+ Meeting-Block → Pausen-Vorschlag.
+
+        Returns:
+            Vorschlag-Text oder None
+        """
+        try:
+            if not self.ha:
+                return None
+
+            states = await self.ha.get_states()
+            if not states:
+                return None
+
+            # Kalender-Events suchen
+            calendar_events = []
+            for s in states:
+                eid = s.get("entity_id", "")
+                if eid.startswith("calendar.") and s.get("state") == "on":
+                    attrs = s.get("attributes", {})
+                    start = attrs.get("start_time", "")
+                    end = attrs.get("end_time", "")
+                    if start and end:
+                        calendar_events.append({"start": start, "end": end})
+
+            if len(calendar_events) >= 3:
+                return (
+                    f"Heute stehen {len(calendar_events)} Kalender-Events an. "
+                    f"Soll ich eine Mittagspause blocken?"
+                )
+        except Exception as e:
+            logger.debug("Calendar health check failed: %s", e)
+        return None
+
+    async def energy_routine(self) -> Optional[str]:
+        """Energie-Routine: Solar-Ende in 30 Min → Waschmaschine starten?
+
+        Returns:
+            Vorschlag-Text oder None
+        """
+        try:
+            if not self.ha:
+                return None
+
+            states = await self.ha.get_states()
+            if not states:
+                return None
+
+            solar_power = 0
+            for s in states:
+                eid = s.get("entity_id", "")
+                if "solar" in eid or "pv" in eid:
+                    try:
+                        solar_power = float(s.get("state", 0))
+                    except (ValueError, TypeError):
+                        pass
+                    break
+
+            # Solar produziert, aber Sonne geht bald unter
+            from datetime import datetime
+            hour = datetime.now().hour
+            if solar_power > 200 and hour >= 16:
+                return (
+                    f"Solar produziert noch {solar_power:.0f}W, aber die Sonne geht "
+                    f"bald unter. Energieintensive Geraete jetzt starten?"
+                )
+        except Exception as e:
+            logger.debug("Energy routine failed: %s", e)
+        return None
+
+    async def incomplete_routine_recovery(self) -> Optional[str]:
+        """Prueeft ob gestrige Routinen unterbrochen wurden.
+
+        Returns:
+            Hinweis-Text oder None
+        """
+        try:
+            if not self.redis:
+                return None
+
+            import json
+            key = "mha:routine:last_goodnight"
+            raw = await self.redis.get(key)
+            if not raw:
+                return None
+
+            data = json.loads(raw)
+            if data.get("completed") is False:
+                incomplete = data.get("incomplete_steps", [])
+                if incomplete:
+                    steps = ", ".join(incomplete[:3])
+                    return (
+                        f"Die Gute-Nacht-Routine wurde gestern nicht abgeschlossen. "
+                        f"Offene Schritte: {steps}. Soll ich das nachholen?"
+                    )
+        except Exception as e:
+            logger.debug("Incomplete routine recovery failed: %s", e)
+        return None
+
+    async def habit_intervention(self) -> Optional[str]:
+        """Gewohnheits-Intervention: TV nach 23:30 → Wind-Down-Erinnerung.
+
+        Returns:
+            Hinweis-Text oder None
+        """
+        try:
+            from datetime import datetime
+            now = datetime.now()
+            if now.hour < 23 or (now.hour == 23 and now.minute < 30):
+                return None
+
+            if not self.ha:
+                return None
+
+            states = await self.ha.get_states()
+            if not states:
+                return None
+
+            tv_on = False
+            for s in states:
+                eid = s.get("entity_id", "")
+                if eid.startswith("media_player.") and s.get("state") == "playing":
+                    tv_on = True
+                    break
+
+            if tv_on:
+                if self.redis:
+                    cooldown_key = "mha:routine:habit_intervention_done"
+                    if await self.redis.get(cooldown_key):
+                        return None
+                    await self.redis.setex(cooldown_key, 86400, "1")
+
+                return (
+                    "Es ist nach 23:30 und der Fernseher laeuft noch. "
+                    "Soll ich eine Wind-Down-Erinnerung fuer morgen um 22:30 setzen?"
+                )
+        except Exception as e:
+            logger.debug("Habit intervention failed: %s", e)
+        return None

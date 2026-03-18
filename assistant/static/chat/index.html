@@ -1244,6 +1244,18 @@ body::after {
   .msg { animation: none !important; }
   .typing-dots span { animation: none !important; opacity: 0.5; }
 }
+
+/* Phase 9A: Jarvis Status Orb */
+.jarvis-orb {
+  width: 12px; height: 12px; border-radius: 50%; display: inline-block;
+  margin-right: 8px; vertical-align: middle; transition: background-color 0.5s;
+}
+.jarvis-orb.listening { background: #4fc3f7; animation: pulse 2s infinite; }
+.jarvis-orb.thinking { background: #ffb74d; animation: pulse 1s infinite; }
+.jarvis-orb.alert { background: #ef5350; animation: pulse 0.5s infinite; }
+.jarvis-orb.satisfied { background: #66bb6a; }
+.jarvis-orb.neutral { background: #90a4ae; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 </style>
 </head>
 <body>
@@ -1339,6 +1351,7 @@ body::after {
   <!-- Header -->
   <div class="header">
     <div class="header-left">
+      <span id="jarvis-orb" class="jarvis-orb neutral" title="Jarvis Status"></span>
       <div class="logo">JARVIS</div>
       <div class="status-dot" id="statusDot"></div>
     </div>
@@ -2416,9 +2429,21 @@ function setVoiceState(state) {
   }
 }
 
+// ========== Phase 9A: Jarvis Status Orb ==========
+function updateJarvisOrb() {
+  fetch('/api/jarvis/status').then(r => r.json()).then(data => {
+    const orb = document.getElementById('jarvis-orb');
+    if (!orb) return;
+    orb.className = 'jarvis-orb ' + (data.processing ? 'thinking' : (data.inner_mood || 'neutral'));
+    orb.title = 'Jarvis: ' + (data.inner_mood || 'neutral');
+  }).catch(() => {});
+}
+setInterval(updateJarvisOrb, 10000);
+
 // ========== Init ==========
 playBootSequence();
 connectWS();
+updateJarvisOrb();
 </script>
 </body>
 </html>

@@ -472,3 +472,57 @@ class TestRoutineInitialize:
         pers = MagicMock()
         engine.set_personality(pers)
         assert engine._personality is pers
+
+
+# ============================================================
+# Phase 5C: Erweiterte Routinen
+# ============================================================
+
+class TestPhase5CExtendedRoutines:
+    """Tests fuer erweiterte Routinen."""
+
+    @pytest.fixture
+    def engine(self, ha_mock, ollama_mock):
+        with patch("assistant.routine_engine.yaml_config", {"routines": {}}):
+            e = RoutineEngine(ha_client=ha_mock, ollama=ollama_mock)
+            e.redis = AsyncMock()
+            return e
+
+    @pytest.mark.asyncio
+    async def test_weather_precaution_no_redis(self, engine):
+        engine.redis = None
+        result = await engine.weather_precaution_routine()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_weather_precaution_no_forecast(self, engine):
+        engine.redis.get = AsyncMock(return_value=None)
+        result = await engine.weather_precaution_routine()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_calendar_health_no_events(self, engine, ha_mock):
+        ha_mock.get_states = AsyncMock(return_value=[])
+        result = await engine.calendar_health_check()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_energy_routine_no_solar(self, engine, ha_mock):
+        ha_mock.get_states = AsyncMock(return_value=[])
+        result = await engine.energy_routine()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_incomplete_recovery_no_data(self, engine):
+        engine.redis.get = AsyncMock(return_value=None)
+        result = await engine.incomplete_routine_recovery()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_habit_intervention_before_2330(self, engine):
+        """Vor 23:30 → keine Intervention."""
+        with patch("assistant.routine_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 3, 18, 22, 0, tzinfo=_TZ)
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = await engine.habit_intervention()
+        assert result is None
