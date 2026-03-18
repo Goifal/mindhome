@@ -184,6 +184,7 @@ class ProactiveManager:
             "shopping_reminder": (LOW, "Einkaufs-Erinnerung"),
             "window_open_cover_blocked": (LOW, "Fenster offen — Cover blockiert"),
             "cover_anomaly": (MEDIUM, "Cover-Anomalie erkannt"),
+            "entity_recovered": (LOW, "Entity wieder online"),
         }
         # Dynamische Appliance-Handler (aus YAML devices) einfuegen — ueberschreiben Defaults
         self.event_handlers.update(_dynamic_handlers)
@@ -781,6 +782,13 @@ class ProactiveManager:
 
         if new_val == old_val:
             return
+
+        # Entity-Recovery: unavailable → online erkennen
+        if old_val == "unavailable" and new_val != "unavailable":
+            try:
+                await self._on_entity_recovered(entity_id, new_val, new_state)
+            except Exception as _rec_err:
+                logger.warning("Entity-Recovery Fehler: %s", _rec_err)
 
         # State-Change-Log: Relevante Aenderungen mit Quelle protokollieren
         if any(entity_id.startswith(d) for d in _LOG_DOMAINS):
@@ -6855,6 +6863,33 @@ class ProactiveManager:
 
         self._weather_event_cache = {}
         logger.info("Wetter-Event-Subscription: %d Sensoren registriert", len(weather_sensors))
+
+    async def _on_entity_recovered(self, entity_id: str, new_val: str, new_state: dict):
+        """Wird aufgerufen wenn eine Entity von unavailable → online wechselt.
+
+        Raeumt Auto-Suppress in DiagnosticsEngine auf und benachrichtigt
+        optional den Benutzer wenn die Entity lange offline war.
+        """
+        diag = getattr(self.brain, "diagnostics", None)
+        if not diag:
+            return
+
+        result = diag.on_entity_recovered(entity_id)
+
+        # Wenn Entity auto-suppressed war → Benutzer informieren
+        if result:
+            friendly = new_state.get("attributes", {}).get("friendly_name", entity_id)
+            logger.info(
+                "Entity recovered: %s (%s) — war auto-suppressed seit %s",
+                entity_id, new_val, result.get("was_suppressed_since", "?"),
+            )
+            await self._notify("entity_recovered", LOW, {
+                "entity": entity_id,
+                "message": f"{friendly} ist wieder online (Status: {new_val})",
+                "was_offline_since": result.get("was_suppressed_since", ""),
+            })
+        else:
+            logger.debug("Entity recovered (nicht suppressed): %s → %s", entity_id, new_val)
 
     async def _handle_weather_event(self, entity_id: str, new_state: str, old_state: str):
         """Reagiert auf kritische Wetter-Changes (Wind-Spike, Regen-Start)."""

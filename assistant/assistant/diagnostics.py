@@ -69,6 +69,14 @@ class DiagnosticsEngine:
         # Cooldown-Tracking: {alert_key: last_alert_time}
         self._alert_cooldowns: dict[str, datetime] = {}
 
+        # Auto-Suppress: Entities die wiederholt offline/stale sind
+        # {entity_id: {"count": int, "first_seen": datetime, "type": str}}
+        self._offline_streak: dict[str, dict] = {}
+        # Nach N aufeinanderfolgenden Diagnostik-Zyklen → auto-suppress
+        self._suppress_after_cycles = int(diag_cfg.get("suppress_after_cycles", 3))
+        # Aktuell unterdrueckte Entities (auto-erkannt)
+        self._auto_suppressed: dict[str, dict] = {}  # {entity_id: {"since": dt, "type": str}}
+
         if self.enabled:
             logger.info(
                 "DiagnosticsEngine initialisiert (battery<%d%%, stale>%dmin, offline>%dmin)",
@@ -167,6 +175,10 @@ class DiagnosticsEngine:
 
         issues = []
         now = datetime.now(timezone.utc)
+        now_local = datetime.now()
+
+        # Entities die in diesem Zyklus als problematisch erkannt werden
+        seen_problematic: set[str] = set()
 
         for state in states:
             entity_id = state.get("entity_id", "")
@@ -186,6 +198,12 @@ class DiagnosticsEngine:
                         )
                         offline_mins = (now - changed_dt).total_seconds() / 60
                         if offline_mins >= self.offline_minutes:
+                            seen_problematic.add(entity_id)
+
+                            # Auto-suppressed? Dann nicht mehr melden
+                            if entity_id in self._auto_suppressed:
+                                continue
+
                             issue = {
                                 "entity_id": entity_id,
                                 "issue_type": "offline",
@@ -233,6 +251,12 @@ class DiagnosticsEngine:
                                 "motion", "temperature", "humidity",
                                 "battery",
                             ):
+                                seen_problematic.add(entity_id)
+
+                                # Auto-suppressed? Dann nicht mehr melden
+                                if entity_id in self._auto_suppressed:
+                                    continue
+
                                 issue = {
                                     "entity_id": entity_id,
                                     "issue_type": "stale",
@@ -245,7 +269,80 @@ class DiagnosticsEngine:
                     except (ValueError, TypeError):
                         pass
 
+        # Auto-Suppress-Logik: Streaks aktualisieren
+        self._update_offline_streaks(seen_problematic, now_local)
+
         return issues
+
+    def _update_offline_streaks(self, seen_problematic: set[str], now: datetime):
+        """Aktualisiert Offline-Streaks und auto-suppressed Entities.
+
+        Entities die in N aufeinanderfolgenden Zyklen problematisch sind
+        werden automatisch unterdrueckt. Wenn eine Entity nicht mehr in
+        der Problemliste ist (z.B. wieder online), wird der Streak zurueckgesetzt.
+        """
+        # Streaks hochzaehlen fuer problematische Entities
+        for entity_id in seen_problematic:
+            if entity_id in self._offline_streak:
+                self._offline_streak[entity_id]["count"] += 1
+            else:
+                self._offline_streak[entity_id] = {
+                    "count": 1,
+                    "first_seen": now,
+                    "type": "offline",
+                }
+
+            # Schwelle erreicht? → auto-suppress
+            streak = self._offline_streak[entity_id]
+            if streak["count"] >= self._suppress_after_cycles and entity_id not in self._auto_suppressed:
+                self._auto_suppressed[entity_id] = {
+                    "since": streak["first_seen"],
+                    "type": streak["type"],
+                    "suppressed_at": now,
+                }
+                logger.info(
+                    "Auto-Suppress: %s nach %d Zyklen als dauerhaft offline erkannt",
+                    entity_id, streak["count"],
+                )
+
+        # Streaks zuruecksetzen fuer Entities die NICHT mehr problematisch sind
+        recovered = [eid for eid in self._offline_streak if eid not in seen_problematic]
+        for entity_id in recovered:
+            del self._offline_streak[entity_id]
+
+    def on_entity_recovered(self, entity_id: str) -> Optional[dict]:
+        """Wird aufgerufen wenn eine Entity von unavailable zurueckkommt.
+
+        Returns:
+            Dict mit Suppress-Info wenn Entity auto-suppressed war, sonst None.
+        """
+        result = None
+
+        # War auto-suppressed? → aufheben und Info zurueckgeben
+        if entity_id in self._auto_suppressed:
+            info = self._auto_suppressed.pop(entity_id)
+            result = {
+                "entity_id": entity_id,
+                "was_suppressed_since": info["since"].isoformat() if hasattr(info["since"], "isoformat") else str(info["since"]),
+                "type": info["type"],
+            }
+            logger.info(
+                "Auto-Suppress aufgehoben: %s ist wieder online (war suppressed seit %s)",
+                entity_id, info.get("suppressed_at", "?"),
+            )
+
+        # Streak zuruecksetzen
+        self._offline_streak.pop(entity_id, None)
+
+        # Cooldown zuruecksetzen damit naechster Check fresh startet
+        self._alert_cooldowns.pop(f"offline:{entity_id}", None)
+        self._alert_cooldowns.pop(f"stale:{entity_id}", None)
+
+        return result
+
+    def get_suppressed_entities(self) -> dict[str, dict]:
+        """Gibt aktuell auto-unterdrueckte Entities zurueck (fuer UI/Debug)."""
+        return dict(self._auto_suppressed)
 
     async def get_system_status(self) -> dict:
         """Erstellt einen vollstaendigen System-Status-Report."""
