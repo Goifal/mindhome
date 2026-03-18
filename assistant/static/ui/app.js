@@ -4186,6 +4186,7 @@ function _getScenes() {
   for (const def of _DEFAULT_SCENES) {
     const override = saved[def.id] || {};
     const moodOvr = moodScenes[def.id] || {};
+    const defaultMood = _DEFAULT_MOOD_ACTIONS[def.id] || {};
     scenes.push({
       id: def.id,
       icon: override.icon ?? def.icon,
@@ -4195,8 +4196,8 @@ function _getScenes() {
       transition: override.transition ?? def.transition,
       triggers: override.triggers ?? def.triggers ?? [],
       device_triggers: override.device_triggers ?? def.device_triggers ?? [],
-      actions: moodOvr.actions ?? null,
-      climate_offset: moodOvr.climate_offset ?? null,
+      actions: moodOvr.actions ?? defaultMood.actions ?? null,
+      climate_offset: moodOvr.climate_offset ?? defaultMood.climate_offset ?? null,
       custom: false,
     });
   }
@@ -4283,18 +4284,34 @@ function _saveScenes(scenes) {
   }
   setPath(S, 'scenes.device_trigger_map', deviceTriggerMap);
   // 5. scenes.mood_scenes — Actions + Climate-Offset fuer Mood-Szenen
+  // Nur speichern wenn vom Default abweichend (sonst unnoetige YAML-Eintraege)
   const moodScenes = getPath(S, 'scenes.mood_scenes') || {};
   for (const sc of scenes) {
-    if (sc.actions && sc.actions.length > 0) {
+    const defMood = _DEFAULT_MOOD_ACTIONS[sc.id] || {};
+    const defActions = defMood.actions || null;
+    const defOffset = defMood.climate_offset ?? null;
+    const actionsChanged = JSON.stringify(sc.actions || null) !== JSON.stringify(defActions);
+    const offsetChanged = (sc.climate_offset ?? null) !== defOffset;
+    if (actionsChanged || offsetChanged) {
       if (!moodScenes[sc.id]) moodScenes[sc.id] = {};
-      moodScenes[sc.id].actions = sc.actions;
       moodScenes[sc.id].label = sc.label;
-      if (sc.climate_offset != null) moodScenes[sc.id].climate_offset = sc.climate_offset;
-      else delete (moodScenes[sc.id] || {}).climate_offset;
+      if (actionsChanged && sc.actions && sc.actions.length > 0) {
+        moodScenes[sc.id].actions = sc.actions;
+      } else {
+        delete moodScenes[sc.id].actions;
+      }
+      if (offsetChanged && sc.climate_offset != null) {
+        moodScenes[sc.id].climate_offset = sc.climate_offset;
+      } else {
+        delete moodScenes[sc.id].climate_offset;
+      }
+      // Leere Eintraege aufräumen
+      if (Object.keys(moodScenes[sc.id]).filter(k => k !== 'label').length === 0) {
+        delete moodScenes[sc.id];
+      }
     } else if (moodScenes[sc.id]) {
-      // Actions entfernt → mood_scene Eintrag aufräumen
-      delete moodScenes[sc.id].actions;
-      if (Object.keys(moodScenes[sc.id]).length <= 1) delete moodScenes[sc.id];
+      // Zurueck auf Default → Override entfernen
+      delete moodScenes[sc.id];
     }
   }
   setPath(S, 'scenes.mood_scenes', moodScenes);
@@ -4376,6 +4393,7 @@ function renderScenes() {
             <button class="btn btn-sm" style="padding:1px 6px;font-size:10px;" onclick="toggleSceneActions('${esc(sc.id)}')"
               title="Geraete-Aktionen dieser Szene anzeigen/bearbeiten">&#9881; Bearbeiten</button>
           </span>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${_summarizeSceneActions(sc)}</div>
           <div class="scene-actions-editor" data-scene-id="${esc(sc.id)}" style="display:none;">
             ${_renderSceneActions(sc)}
           </div>
@@ -4501,6 +4519,29 @@ const _ACTION_DOMAINS = [
   {v:'switch', l:'Schalter'},
   {v:'fan', l:'Ventilator'},
 ];
+// Default Mood-Scene Actions (Spiegel von _DEFAULT_MOOD_SCENES im Backend)
+const _DEFAULT_MOOD_ACTIONS = {
+  gemuetlich: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:30,color_temp_kelvin:2700}},{domain:'cover',service:'close_cover',data:{}}],climate_offset:1.0},
+  filmabend: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:10,color_temp_kelvin:2200}},{domain:'cover',service:'close_cover',data:{}},{domain:'media_player',service:'turn_on',data:{}}]},
+  party: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:100}},{domain:'cover',service:'close_cover',data:{}}]},
+  konzentration: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:80,color_temp_kelvin:5000}}]},
+  gute_nacht: {actions:[{domain:'light',service:'turn_off',data:{}},{domain:'cover',service:'close_cover',data:{}}],climate_offset:-2.0},
+  aufwachen: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:60,color_temp_kelvin:4000}},{domain:'cover',service:'open_cover',data:{}}],climate_offset:1.0},
+  hell: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:100,color_temp_kelvin:5000}},{domain:'cover',service:'open_cover',data:{}}]},
+  kochen: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:100,color_temp_kelvin:4500}}]},
+  essen: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:60,color_temp_kelvin:2700}}]},
+  schlafen: {actions:[{domain:'light',service:'turn_off',data:{}},{domain:'cover',service:'close_cover',data:{}}],climate_offset:-1.0},
+  lesen: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:40,color_temp_kelvin:3000}}]},
+  arbeiten: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:80,color_temp_kelvin:5000}}]},
+  meeting: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:90,color_temp_kelvin:4500}}]},
+  spielen: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:80,color_temp_kelvin:4000}}]},
+  morgens: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:100,color_temp_kelvin:5000}}],climate_offset:2.0},
+  abends: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:20,color_temp_kelvin:2200}}]},
+  romantisch: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:5,color_temp_kelvin:2200}},{domain:'cover',service:'close_cover',data:{}}]},
+  energiesparen: {actions:[{domain:'light',service:'turn_off',data:{}}],climate_offset:-3.0},
+  putzen: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:100,color_temp_kelvin:5000}},{domain:'cover',service:'open_cover',data:{}}]},
+  musik: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:40,color_temp_kelvin:2700}},{domain:'media_player',service:'turn_on',data:{}}]},
+};
 const _ACTION_SERVICES = {
   light: [{v:'turn_on',l:'Einschalten'},{v:'turn_off',l:'Ausschalten'}],
   cover: [{v:'open_cover',l:'Oeffnen'},{v:'close_cover',l:'Schliessen'},{v:'set_cover_position',l:'Position setzen'}],
@@ -4509,6 +4550,26 @@ const _ACTION_SERVICES = {
   switch: [{v:'turn_on',l:'Einschalten'},{v:'turn_off',l:'Ausschalten'}],
   fan: [{v:'turn_on',l:'Einschalten'},{v:'turn_off',l:'Ausschalten'}],
 };
+
+function _summarizeSceneActions(sc) {
+  const actions = sc.actions || [];
+  if (actions.length === 0) return '<em>Keine Aktionen definiert</em>';
+  const domLabels = {};
+  for (const d of _ACTION_DOMAINS) domLabels[d.v] = d.l;
+  const parts = actions.map(a => {
+    const dom = domLabels[a.domain] || a.domain;
+    const d = a.data || {};
+    if (a.domain === 'light' && a.service === 'turn_on' && d.brightness_pct != null) {
+      return `${dom} ${d.brightness_pct}%${d.color_temp_kelvin ? ' ' + d.color_temp_kelvin + 'K' : ''}`;
+    }
+    if (a.service === 'turn_off') return `${dom} aus`;
+    if (a.service === 'close_cover') return `${dom} zu`;
+    if (a.service === 'open_cover') return `${dom} auf`;
+    return dom;
+  });
+  const offset = sc.climate_offset != null ? `, Klima ${sc.climate_offset > 0 ? '+' : ''}${sc.climate_offset}°C` : '';
+  return parts.join(', ') + offset;
+}
 
 function _renderSceneActions(sc) {
   const actions = sc.actions || [];
