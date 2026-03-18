@@ -185,6 +185,8 @@ class ProactiveManager:
             "window_open_cover_blocked": (LOW, "Fenster offen — Cover blockiert"),
             "cover_anomaly": (MEDIUM, "Cover-Anomalie erkannt"),
             "entity_recovered": (LOW, "Entity wieder online"),
+            "scene_scheduled": (LOW, "Geplante Szene aktiviert"),
+            "scene_suggested": (LOW, "Szenen-Vorschlag"),
         }
         # Dynamische Appliance-Handler (aus YAML devices) einfuegen — ueberschreiben Defaults
         self.event_handlers.update(_dynamic_handlers)
@@ -626,7 +628,13 @@ class ProactiveManager:
         if routine_cfg.get("enabled", True):
             self._routine_task = asyncio.create_task(self._run_routine_deviation_loop())
 
-        logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal + Notfall + Threat + Ambient + Follow-up + Routine)")
+        # Szenen-Scheduler: Cron-basierte Szenen-Aktivierung
+        self._scene_schedule_task: Optional[asyncio.Task] = None
+        scenes_cfg = yaml_config.get("scenes", {})
+        if scenes_cfg.get("schedule_enabled", True):
+            self._scene_schedule_task = asyncio.create_task(self._run_scene_schedule_loop())
+
+        logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal + Notfall + Threat + Ambient + Follow-up + Routine + Szenen-Schedule)")
 
     async def stop(self):
         """Stoppt den Event Listener."""
@@ -7166,6 +7174,163 @@ class ProactiveManager:
                 logger.debug("Routine-Deviation Fehler: %s", e)
 
             await asyncio.sleep(1800)  # Alle 30 Minuten pruefen
+
+    # ------------------------------------------------------------------
+    # Szenen-Scheduler: Cron-basierte Szenen-Aktivierung
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _cron_matches_now(cron_expr: str, now: datetime) -> bool:
+        """Prueft ob ein Cron-Ausdruck auf die aktuelle Minute passt.
+
+        Format: "minute hour day_of_month month day_of_week"
+        Beispiel: "0 20 * * 5" = Freitag 20:00
+        Unterstuetzt: Zahlen, *, Kommalisten (1,3,5), Bereiche (1-5)
+        """
+        try:
+            parts = cron_expr.strip().split()
+            if len(parts) != 5:
+                return False
+
+            def _matches(field: str, value: int) -> bool:
+                if field == "*":
+                    return True
+                for part in field.split(","):
+                    if "-" in part:
+                        lo, hi = part.split("-", 1)
+                        if int(lo) <= value <= int(hi):
+                            return True
+                    elif part.startswith("*/"):
+                        step = int(part[2:])
+                        if step > 0 and value % step == 0:
+                            return True
+                    elif int(part) == value:
+                        return True
+                return False
+
+            minute, hour, dom, month, dow = parts
+            return (
+                _matches(minute, now.minute)
+                and _matches(hour, now.hour)
+                and _matches(dom, now.day)
+                and _matches(month, now.month)
+                and _matches(dow, now.isoweekday() % 7)  # 0=So, 1=Mo, ..., 6=Sa
+            )
+        except (ValueError, TypeError):
+            return False
+
+    async def _run_scene_schedule_loop(self):
+        """Prueft jede Minute ob geplante Szenen aktiviert werden muessen."""
+        await asyncio.sleep(120)  # 2 Min Startup-Delay
+        logger.info("Scene-Schedule-Loop gestartet")
+
+        while self._running:
+            try:
+                # Szenen mit aktiviertem Schedule vom Add-on laden
+                scenes = await self.brain.ha.mindhome_get("/api/scenes")
+                if not isinstance(scenes, list):
+                    await asyncio.sleep(60)
+                    continue
+
+                now = datetime.now()
+                for scene in scenes:
+                    if not scene.get("schedule_enabled"):
+                        continue
+                    cron = scene.get("schedule_cron", "")
+                    if not cron:
+                        continue
+
+                    scene_id = scene.get("id")
+                    scene_name = scene.get("name_de", f"Szene {scene_id}")
+
+                    if self._cron_matches_now(cron, now):
+                        # Cooldown: Pro Szene maximal 1x pro Stunde (verhindert Doppel-Trigger)
+                        cooldown_key = f"mha:scene_schedule:{scene_id}"
+                        redis = getattr(self.brain.memory, "redis", None)
+                        if redis:
+                            already = await redis.get(cooldown_key)
+                            if already:
+                                continue
+                            await redis.setex(cooldown_key, 3600, "1")
+
+                        # Szene aktivieren via Add-on API
+                        result = await self.brain.ha.mindhome_post(
+                            f"/api/scenes/{scene_id}/activate", {}
+                        )
+                        success = isinstance(result, dict) and result.get("success")
+                        if success:
+                            logger.info("Szene '%s' (ID %s) per Schedule aktiviert [%s]", scene_name, scene_id, cron)
+                            await self._notify("scene_scheduled", LOW, {
+                                "entity": scene_name,
+                                "message": f"Geplante Szene '{scene_name}' aktiviert",
+                                "scene_id": scene_id,
+                            })
+                        else:
+                            logger.warning("Szene '%s' (ID %s) Schedule-Aktivierung fehlgeschlagen", scene_name, scene_id)
+
+                # Proaktive Szenen-Vorschlaege: Favoriten zur passenden Zeit vorschlagen
+                # Nur alle 30 Min pruefen, und nur wenn Szene in letzten 7 Tagen
+                # zur aehnlichen Uhrzeit (+/- 30 Min) aktiviert wurde
+                if now.minute % 30 == 0:
+                    await self._check_scene_suggestions(scenes, now)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug("Scene-Schedule Fehler: %s", e)
+
+            await asyncio.sleep(60)  # Jede Minute pruefen
+
+    async def _check_scene_suggestions(self, scenes: list, now: datetime):
+        """Schlaegt Szenen vor die regelmaessig zur aktuellen Zeit aktiviert werden."""
+        try:
+            for scene in scenes:
+                if not scene.get("is_favorite") and scene.get("frequency", 0) < 3:
+                    continue  # Nur relevante Szenen (Favoriten oder haeufig genutzt)
+
+                last_activated = scene.get("last_activated")
+                if not last_activated:
+                    continue
+
+                scene_id = scene.get("id")
+                scene_name = scene.get("name_de", f"Szene {scene_id}")
+
+                # Zeitfenster-Check: Wurde die Szene regelmaessig um diese Uhrzeit genutzt?
+                try:
+                    if isinstance(last_activated, str):
+                        last_dt = datetime.fromisoformat(last_activated.replace("Z", "+00:00"))
+                    else:
+                        continue
+                    # Nur vorschlagen wenn letzte Aktivierung < 7 Tage her
+                    days_ago = (now - last_dt.replace(tzinfo=None)).days
+                    if days_ago > 7:
+                        continue
+                    # Uhrzeitvergleich: Aktivierungszeit +/- 30 Min zur aktuellen Zeit?
+                    last_minutes = last_dt.hour * 60 + last_dt.minute
+                    now_minutes = now.hour * 60 + now.minute
+                    if abs(last_minutes - now_minutes) > 30:
+                        continue
+                except (ValueError, TypeError):
+                    continue
+
+                # Cooldown: Pro Szene 1x am Tag vorschlagen
+                cooldown_key = f"mha:scene_suggest:{scene_id}"
+                redis = getattr(self.brain.memory, "redis", None)
+                if redis:
+                    already = await redis.get(cooldown_key)
+                    if already:
+                        continue
+                    await redis.setex(cooldown_key, 86400, "1")
+
+                logger.info("Szenen-Vorschlag: '%s' (zuletzt %s)", scene_name, last_activated)
+                await self._notify("scene_suggested", LOW, {
+                    "entity": scene_name,
+                    "message": f"Soll ich '{scene_name}' aktivieren? Du nutzt sie oft um diese Zeit.",
+                    "scene_id": scene_id,
+                })
+
+        except Exception as e:
+            logger.debug("Scene-Suggestion Fehler: %s", e)
 
     # ------------------------------------------------------------------
     # Konfigurations-Assistent
