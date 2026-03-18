@@ -44,7 +44,7 @@
 - Keine Blocklist bei wiederholtem Versagen (verifiziert: kein `blocklist`/`ban`/`block` in outcome_tracker.py)
 - Correction Memory nur im Prompt (`brain.py` Zeile 3499-3503), nicht in Anticipation (verifiziert per Grep)
 
-**SOLL:** Geschlossener Feedback-Loop: Outcome → Anticipation-Konfidenz, wiederholte Fehler → Soft-Block.
+**SOLL:** Geschlossener Feedback-Loop: Outcome → Anticipation-Konfidenz, wiederholte Fehler → Soft-Block, Corrections → Pattern-Unterdrückung.
 
 ### Änderungen
 
@@ -55,7 +55,12 @@
   - Score < 0.3 → Konfidenz des Patterns um 30% reduzieren
   - Score > 0.8 → Konfidenz um 10% erhöhen
 - In `get_suggestions()` (Zeile ~643): Fehlende `elif pattern["type"] == "causal_chain"` Branch hinzufügen — analog zu den bestehenden Branches für time/sequence/context
-- ~40 Zeilen
+- Neue Methode `set_correction_memory(correction_memory)` — speichert Referenz als `self._correction_memory`
+- In `get_suggestions()` und `auto_execute_ready_patterns()`: Vor Suggestion/Ausführung prüfen ob eine aktive Correction-Rule für diese action_type+args existiert
+  - `self._correction_memory.get_active_rules(action_type, person=person, room=room)` abfragen
+  - Wenn Rule existiert die dieser Aktion widerspricht → Pattern unterdrücken
+  - Beispiel: Correction "Schlafzimmer-Licht nie nach 22 Uhr" → Time-Pattern für set_light im Schlafzimmer nach 22 Uhr wird nicht vorgeschlagen
+- ~50 Zeilen (statt ~40)
 
 **Datei: `assistant/assistant/outcome_tracker.py`**
 - Neue Methode `is_soft_blocked(action_type: str, person: str) -> bool`:
@@ -65,9 +70,9 @@
 - ~25 Zeilen
 
 **Datei: `assistant/assistant/brain.py`**
-- Bei Anticipation-Init: `self.anticipation.set_outcome_tracker(self.outcome_tracker)` aufrufen
+- Bei Anticipation-Init: `self.anticipation.set_outcome_tracker(self.outcome_tracker)` und `self.anticipation.set_correction_memory(self.correction_memory)` aufrufen
 - Vor Auto-Execute in Anticipation-Flow: `outcome_tracker.is_soft_blocked()` prüfen
-- ~10 Zeilen
+- ~12 Zeilen
 
 **Datei: `assistant/assistant/adaptive_thresholds.py`**
 - Den toten Pfad reparieren: In `anticipation.py` bei Auto-Execute-Aktionen `outcome_tracker.track_action()` mit action_type `"anticipation:{original_action}"` aufrufen, damit `adaptive_thresholds` echte Daten bekommt
@@ -75,6 +80,7 @@
 **Tests:**
 - `test_anticipation.py`: Test Confidence-Modulation durch Outcome-Score
 - `test_outcome_tracker.py`: Test Soft-Block nach 3 Failures, Reset nach Erfolg
+- `test_anticipation.py`: Test dass aktive Correction-Rule ein passendes Pattern unterdrückt
 
 ---
 
@@ -120,7 +126,7 @@
 
 Plus: Duplicate `get_tier()` Bug — Zeile 242 (nimmt Model-Name) wird von Zeile 370 (nimmt Text) überschrieben. Die erste Definition mit Edge-Case-Handling für gleiche Modelle auf allen Tiers ist Dead Code (verifiziert).
 
-**SOLL:** Pre-Classifier als primäre Quelle, Model Router konsumiert dessen Ergebnis.
+**SOLL:** Pre-Classifier als primäre Quelle, Model Router und `_classify_intent()` konsumieren dessen Ergebnis statt eigene Keyword-Listen.
 
 ### Änderungen
 
@@ -136,7 +142,11 @@ Plus: Duplicate `get_tier()` Bug — Zeile 242 (nimmt Model-Name) wird von Zeile
 **Datei: `assistant/assistant/brain.py`**
 - Nach `pre_classifier.classify_async()` (Zeile ~2805): `model_router.select_model_from_profile(profile)` aufrufen statt `select_model_and_tier(text)` (Zeile ~3091)
 - Fallback bei Fehler: weiterhin `select_model_and_tier(text)` nutzen
-- ~10 Zeilen
+- `_classify_intent()` (Zeile ~10036) refactoren: Statt eigene Keyword-Listen zu pflegen, `pre_classifier.classify_async()` Ergebnis (das zu diesem Zeitpunkt bereits vorliegt) als primäre Quelle nutzen
+  - `profile.category` auf die bestehenden Intent-Kategorien mappen (knowledge → "knowledge", device_command → "action", memory → "memory", general → "general")
+  - Eigene Keyword-Listen als Fallback behalten, falls profile nicht verfügbar
+  - Eliminiert die dritte redundante Klassifikationsschicht
+- ~20 Zeilen
 
 **Tests:**
 - `test_model_router.py`: Test `get_tier_for_model()` separat von `get_tier()`
@@ -160,9 +170,19 @@ Plus: Duplicate `get_tier()` Bug — Zeile 242 (nimmt Model-Name) wird von Zeile
   - Tage mit >5 Interaktionen → Formality decayed 50% schneller (häufige Interaktion = mehr Vertrautheit)
 - ~25 Zeilen
 
+**Datei: `assistant/assistant/self_optimization.py`**
+- Konsistenz-Constraint in der Vorschlags-Logik (wo `_PARAMETER_PATHS` genutzt wird):
+  - Wenn `sarcasm_level` geändert wird → `formality_min` Vorschlag muss zur neuen Kopplung passen
+  - Wenn `formality_min` geändert wird → darf nicht im Widerspruch zum aktuellen `sarcasm_level` stehen
+  - Neue Validierungsmethode `_validate_consistency(param_name, new_value) -> bool`:
+    - Prüft Sarcasm↔Formality Kopplung (Sarcasm 4-5 → formality_min ≤ 30, Sarcasm 1-2 → formality_min ≥ 50)
+    - Lehnt widersprüchliche Vorschläge ab bevor sie dem User präsentiert werden
+- ~20 Zeilen
+
 **Tests:**
 - `test_personality.py`: Test dass Sarcasm-Level-Änderung Formality-Floor beeinflusst
 - `test_personality.py`: Test Interaction-basierter Decay-Boost
+- `test_self_optimization.py`: Test dass widersprüchliche Vorschläge (Sarcasm 5 + Formality 80) abgelehnt werden
 
 ---
 
@@ -249,18 +269,18 @@ Plus: Duplicate `get_tier()` Bug — Zeile 242 (nimmt Model-Name) wird von Zeile
 | Phase | Bereich | Aufwand | Impact | Risiko |
 |-------|---------|---------|--------|--------|
 | 1 | **7: Security Fix** (Cross-User-Leakage) | Klein (~20 LOC) | Kritisch | Niedrig |
-| 2 | **4: Latenz** (Duplicate get_tier Bug + Klassifikation) | Mittel (~40 LOC) | Hoch | Niedrig |
+| 2 | **4: Latenz** (get_tier Bug + 3-fach Klassifikation) | Mittel (~50 LOC) | Hoch | Niedrig |
 | 3 | **3: Multi-Signal** (Dead Code aktivieren) | Mittel (~30 LOC) | Hoch | Niedrig |
 | 4 | **1: Personality Integration** | Mittel (~55 LOC) | Hoch | Mittel |
-| 5 | **2: Kausales Gedächtnis** (Outcome-Loop) | Mittel (~75 LOC) | Hoch | Mittel |
+| 5 | **2: Kausales Gedächtnis** (Outcome-Loop + Correction→Anticipation) | Mittel (~90 LOC) | Hoch | Mittel |
 | 6 | **6: Erklärbarkeit** | Klein (~40 LOC) | Mittel | Niedrig |
-| 7 | **5: Langzeit-Beziehung** | Klein (~25 LOC) | Mittel | Niedrig |
+| 7 | **5: Langzeit-Beziehung** (+ Self-Optimization Konsistenz) | Klein (~45 LOC) | Mittel | Niedrig |
 | 8 | **8: Wellness Integration** | Klein (~23 LOC) | Niedrig | Niedrig |
 
 ## Geschätzte Änderungen gesamt
 
-- **~8 Dateien** modifiziert (keine neuen Module)
-- **~310 Zeilen** Produktivcode
-- **~18 neue Tests**
+- **~9 Dateien** modifiziert (keine neuen Module)
+- **~370 Zeilen** Produktivcode
+- **~21 neue Tests**
 - Alle Änderungen backward-compatible (optionale Parameter, Fallbacks)
 - Jede Phase einzeln deploybar und testbar
