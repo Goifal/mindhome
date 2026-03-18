@@ -3376,7 +3376,7 @@ class FunctionExecutor:
     # Whitelist erlaubter Tool-Funktionsnamen (verhindert Zugriff auf interne Methoden)
     _ALLOWED_FUNCTIONS = frozenset({
         "set_light", "set_light_all", "get_lights", "set_climate", "set_climate_curve",
-        "set_climate_room", "activate_scene", "set_cover", "set_cover_all",
+        "set_climate_room", "activate_scene", "deactivate_scene", "set_cover", "set_cover_all",
         "get_covers", "get_media", "get_climate", "get_switches", "set_switch",
         "call_service", "play_media", "transfer_playback", "arm_security_system",
         "lock_door", "send_notification", "send_message_to_person",
