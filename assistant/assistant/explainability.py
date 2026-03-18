@@ -280,6 +280,20 @@ class ExplainabilityEngine:
             "Bei Rueckfragen erklaere warum du das getan hast."
         )
 
+    def get_auto_explanation(self, action_type: str, domain: str = "") -> Optional[str]:
+        """Gibt automatische Erklaerung fuer sicherheitskritische Domaenen zurueck.
+
+        Bei HIGH_IMPACT_DOMAINS wird eine kurze Begruendung generiert,
+        damit der User versteht warum Jarvis autonom gehandelt hat.
+        """
+        HIGH_IMPACT_DOMAINS = {"security", "climate", "lock", "alarm"}
+        if domain in HIGH_IMPACT_DOMAINS:
+            return (
+                f"Grund: {domain}-Aktion ({action_type}) bei Autonomie-Level >= 3 "
+                f"automatisch ausgefuehrt."
+            )
+        return None
+
     def get_stats(self) -> dict:
         """Gibt Statistiken ueber geloggte Entscheidungen zurueck."""
         if not self._decisions:

@@ -239,7 +239,7 @@ class ModelRouter:
             return bool(re.search(r'\b' + re.escape(keyword) + r'\b', text))
         return keyword in text
 
-    def get_tier(self, model: str) -> str:
+    def get_tier_for_model(self, model: str) -> str:
         """Gibt den Tier-Namen fuer ein Modell zurueck.
 
         Wichtig wenn alle Tiers das gleiche Modell nutzen — dann kann
@@ -366,15 +366,6 @@ class ModelRouter:
         if self._smart_available:
             return self.model_smart
         return self.model_fast
-
-    def get_tier(self, text: str) -> str:
-        """Gibt die Tier-Bezeichnung zurueck (fast/smart/deep)."""
-        model = self.select_model(text)
-        if model == self.model_fast:
-            return "fast"
-        elif model == self.model_deep:
-            return "deep"
-        return "smart"
 
     def get_model_info(self) -> dict:
         """Gibt Info ueber die konfigurierten Modelle zurueck."""

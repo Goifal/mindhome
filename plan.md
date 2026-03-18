@@ -1,203 +1,324 @@
-# Implementierungsplan: Pre-Classifier fuer selektive Subsystem-Aktivierung
+# Verbesserungsplan: MindHome/Jarvis — Alle 8 Bereiche
 
-## Ziel
-Einen leichtgewichtigen Pre-Classifier **vor** den teuren `context_builder.build()` und `asyncio.gather()` Calls (brain.py:1066-1117) einbauen, der bestimmt welche der 10+ parallelen Subsysteme wirklich gebraucht werden. Das spart bei einfachen Befehlen ("Licht an") mehrere hundert Millisekunden Latenz.
-
----
-
-## Architektur-Uebersicht
-
-### Aktueller Ablauf (brain.py:1066-1117)
-```
-User-Input → Pre-Classification Shortcuts (Zeile 478-1049)
-           → Context Build (IMMER alles, 10s timeout)
-           → asyncio.gather (IMMER alle 10 Subsysteme)
-           → Model Selection → LLM → Response
-```
-
-### Neuer Ablauf
-```
-User-Input → Pre-Classification Shortcuts (unveraendert)
-           → RequestProfile = pre_classify(text)  ← NEU
-           → Context Build (nur benoetigte Daten)
-           → asyncio.gather (nur benoetigte Subsysteme)
-           → Model Selection → LLM → Response
-```
+> Strategie: Bestehende Module erweitern, keine neuen Module erstellen.
+> Alle Claims gegen den tatsächlichen Code verifiziert (18.03.2026).
 
 ---
 
-## Schritt 1: `RequestProfile` Dataclass + `PreClassifier` Klasse
+## Bereich 1: Personality Integration — Unified Character State
 
-**Neue Datei:** `assistant/assistant/pre_classifier.py`
+**IST:** Zwei unabhängige Streams (User-Mood via MoodDetector, Jarvis-Mood via InnerStateEngine) ohne Cross-Talk. Sarcasm, Formality, Opinion Intensity sind separate Knöpfe ohne gemeinsamen State. (`inner_state.py` hat keine Referenz zu `mood_detector.py` und umgekehrt — verifiziert per Grep.)
 
-```python
-from dataclasses import dataclass, field
+**SOLL:** Bidirektionale Beeinflussung — User-Frustration sollte Jarvis besorgt machen; Jarvis-Irritation sollte Sarkasmus dämpfen.
 
-@dataclass(frozen=True)
-class RequestProfile:
-    """Bestimmt welche Subsysteme fuer eine Anfrage aktiviert werden."""
-    category: str  # "device_command", "knowledge", "memory", "general"
+### Änderungen
 
-    # Context Builder Flags
-    need_house_status: bool = True      # HA states (fast, ~50ms)
-    need_mindhome_data: bool = True     # REST to addon (~100ms)
-    need_activity: bool = True          # Activity detection
-    need_room_profile: bool = True      # Raum-Profil
-    need_weather: bool = True           # Wetter-Warnungen
-    need_memories: bool = True          # Semantic Memory search
+**Datei: `assistant/assistant/inner_state.py`**
+- Neue Methode `on_user_mood_change(mood: str, person: str)` hinzufügen
+- Mapping: user frustrated → Jarvis concerned, user good → Jarvis satisfied (mit Decay)
+- Aufruf von `_update_mood()` nach User-Mood-Events
+- ~30 Zeilen
 
-    # Parallel Subsystem Flags (asyncio.gather)
-    need_mood: bool = True              # MoodDetector.analyze()
-    need_formality: bool = True         # PersonalityEngine.get_formality_score()
-    need_irony: bool = True             # PersonalityEngine._get_self_irony_count_today()
-    need_time_hints: bool = True        # TimeAwareness.get_context_hints()
-    need_security: bool = True          # ThreatAssessment.get_security_score()
-    need_cross_room: bool = True        # _get_cross_room_context()
-    need_guest_mode: bool = True        # RoutineEngine.is_guest_mode_active()
-    need_tutorial: bool = True          # _get_tutorial_hint()
-    need_summary: bool = True           # _get_summary_context()
-    need_rag: bool = True               # _get_rag_context()
-```
+**Datei: `assistant/assistant/personality.py`**
+- In `_build_humor_section()` (Zeile ~1883): Jarvis `inner_state.mood` in effective_level einbeziehen
+  - Jarvis irritiert → `effective_level = max(1, effective_level - 1)`
+  - Jarvis amüsiert → `effective_level = min(4, effective_level + 1)`
+- In `check_opinion()` (Zeile ~970): Bei Jarvis-Mood "concerned" ebenfalls Opinions unterdrücken
+- ~20 Zeilen
 
-### Vordefinierte Profile (Class-Methods / Konstanten):
+**Datei: `assistant/assistant/brain.py`**
+- Nach Mood-Detection (wo `self.mood.detect_mood()` aufgerufen wird): Ergebnis an `self.inner_state.on_user_mood_change()` weiterleiten
+- ~5 Zeilen
 
-| Profil | Beschreibung | Deaktivierte Subsysteme |
-|--------|-------------|------------------------|
-| `DEVICE_FAST` | "Licht an", "Rollladen hoch" | mood, rag, summary, tutorial, cross_room, security, mindhome_data, memories |
-| `KNOWLEDGE` | "Wie funktioniert X?" | security, cross_room, tutorial, activity, mindhome_data |
-| `MEMORY_QUERY` | "Erinnerst du dich..." | security, tutorial, activity, rag, summary |
-| `GENERAL` | Alles andere | Nichts deaktiviert (Status Quo) |
+**Tests:**
+- `test_inner_state.py`: Test für `on_user_mood_change()` mit verschiedenen User-Moods
+- `test_personality.py`: Test dass Jarvis-Mood die effective sarcasm/opinion beeinflusst
 
 ---
 
-## Schritt 2: `PreClassifier.classify(text)` Methode
+## Bereich 2: Kausales Gedächtnis — Outcome-Feedback-Loop
 
-Die Methode nutzt die **gleiche Logik** wie `_classify_intent()` (brain.py:3850-3930), aber wird **frueher** aufgerufen und liefert ein `RequestProfile` statt nur einen String.
+**IST:** Outcome Tracker speichert Erfolg/Misserfolg, aber:
+- Kein direkter Feedback an Anticipation (`anticipation.py` hat null Referenzen zu `outcome_tracker` — verifiziert per Grep)
+- Der indirekte Pfad über `adaptive_thresholds.py` (Zeile 211-218) ist effektiv tot: `outcome_tracker.get_success_score("anticipation")` liefert immer Default 0.5, weil kein Code Anticipation-Actions unter dem Key "anticipation" trackt
+- Keine Blocklist bei wiederholtem Versagen (verifiziert: kein `blocklist`/`ban`/`block` in outcome_tracker.py)
+- Correction Memory nur im Prompt (`brain.py` Zeile 3499-3503), nicht in Anticipation (verifiziert per Grep)
 
-**Wichtig:** `_classify_intent()` (Zeile 1276) bleibt bestehen, weil es spaeter fuer Intent-Routing (knowledge vs. delegation vs. memory) gebraucht wird. Der Pre-Classifier bestimmt nur **welche Subsysteme laufen**, nicht die LLM-Routing-Entscheidung.
+**SOLL:** Geschlossener Feedback-Loop: Outcome → Anticipation-Konfidenz, wiederholte Fehler → Soft-Block, Corrections → Pattern-Unterdrückung.
 
-Regex-basiert, kein LLM-Call:
-- Kurze Saetze (≤6 Woerter) + Device-Keywords → `DEVICE_FAST`
-- Wissensfragen-Muster ohne Smart-Home-Keywords → `KNOWLEDGE`
-- Memory-Keywords → `MEMORY_QUERY`
-- Alles andere → `GENERAL`
+### Änderungen
 
----
+**Datei: `assistant/assistant/anticipation.py`**
+- Neue Methode `set_outcome_tracker(tracker)` — speichert Referenz als `self._outcome_tracker`
+- In `_detect_time_patterns()` und `_detect_sequence_patterns()`:
+  Nach Pattern-Erkennung `self._outcome_tracker.get_success_score(action_type, person)` abfragen
+  - Score < 0.3 → Konfidenz des Patterns um 30% reduzieren
+  - Score > 0.8 → Konfidenz um 10% erhöhen
+- In `get_suggestions()` (Zeile ~643): Fehlende `elif pattern["type"] == "causal_chain"` Branch hinzufügen — analog zu den bestehenden Branches für time/sequence/context
+- Neue Methode `set_correction_memory(correction_memory)` — speichert Referenz als `self._correction_memory`
+- In `get_suggestions()` und `auto_execute_ready_patterns()`: Vor Suggestion/Ausführung prüfen ob eine aktive Correction-Rule für diese action_type+args existiert
+  - `self._correction_memory.get_active_rules(action_type, person=person, room=room)` abfragen
+  - Wenn Rule existiert die dieser Aktion widerspricht → Pattern unterdrücken
+  - Beispiel: Correction "Schlafzimmer-Licht nie nach 22 Uhr" → Time-Pattern für set_light im Schlafzimmer nach 22 Uhr wird nicht vorgeschlagen
+- ~50 Zeilen (statt ~40)
 
-## Schritt 3: Integration in `brain.py:process()`
+**Datei: `assistant/assistant/outcome_tracker.py`**
+- Neue Methode `is_soft_blocked(action_type: str, person: str) -> bool`:
+  - 3+ aufeinanderfolgende Failures für dieselbe action_type+person Kombination → True
+  - Reset bei nächstem Erfolg
+  - Redis-Key: `mha:outcome:softblock:{action_type}:{person}`
+- ~25 Zeilen
 
-### 3a. Einfuegen VOR Zeile 1066 (nach den Pre-Classification Shortcuts):
+**Datei: `assistant/assistant/brain.py`**
+- Bei Anticipation-Init: `self.anticipation.set_outcome_tracker(self.outcome_tracker)` und `self.anticipation.set_correction_memory(self.correction_memory)` aufrufen
+- Vor Auto-Execute in Anticipation-Flow: `outcome_tracker.is_soft_blocked()` prüfen
+- ~12 Zeilen
 
-```python
-# NEU: Pre-Classification fuer selektive Subsystem-Aktivierung
-profile = self.pre_classifier.classify(text)
-logger.info("Pre-Classification: %s", profile.category)
-```
+**Datei: `assistant/assistant/adaptive_thresholds.py`**
+- Den toten Pfad reparieren: In `anticipation.py` bei Auto-Execute-Aktionen `outcome_tracker.track_action()` mit action_type `"anticipation:{original_action}"` aufrufen, damit `adaptive_thresholds` echte Daten bekommt
 
-### 3b. Context Builder bedingt aufrufen (Zeile 1066-1080):
-
-Der Context Builder bekommt ein `profile`-Argument:
-```python
-context = await asyncio.wait_for(
-    self.context_builder.build(
-        trigger="voice", user_text=text, person=person or "",
-        profile=profile,  # NEU
-    ),
-    timeout=ctx_timeout,
-)
-```
-
-### 3c. asyncio.gather bedingt aufrufen (Zeile 1095-1117):
-
-Statt immer alle 10 Tasks zu starten, nur die noetig sind:
-
-```python
-# Koroutinen nur starten wenn Profil es verlangt
-gather_tasks = []
-gather_keys = []
-
-if profile.need_mood:
-    gather_tasks.append(self.mood.analyze(text, person or ""))
-    gather_keys.append("mood")
-else:
-    # Kein gather_task, Ergebnis spaeter als None/Default setzen
-    pass
-
-# ... analog fuer alle 10 Subsysteme
-
-results = await asyncio.gather(*gather_tasks)
-
-# Ergebnisse per Key zuordnen
-result_map = dict(zip(gather_keys, results))
-mood_result = result_map.get("mood")
-formality_score = result_map.get("formality", 0.5)  # Defaults
-# ... etc.
-```
+**Tests:**
+- `test_anticipation.py`: Test Confidence-Modulation durch Outcome-Score
+- `test_outcome_tracker.py`: Test Soft-Block nach 3 Failures, Reset nach Erfolg
+- `test_anticipation.py`: Test dass aktive Correction-Rule ein passendes Pattern unterdrückt
 
 ---
 
-## Schritt 4: Context Builder anpassen
+## Bereich 3: Multi-Signal Antizipation
 
-**Datei:** `assistant/assistant/context_builder.py`
+**IST:**
+- `log_action()` hat `weather_condition` Parameter, aber `brain.py` Zeile 5726-5728 übergibt nur 3 Argumente — Weather wird nie geliefert (verifiziert)
+- `get_calendar_weather_crossrefs()` existiert (Zeile 725), wird aber nirgends aufgerufen — Dead Code (verifiziert: einziger Treffer ist die Definition selbst)
+- Causal Chains fehlen in `get_suggestions()` (kein `elif pattern["type"] == "causal_chain"` Branch), werden aber in `auto_execute_ready_patterns()` korrekt verarbeitet (verifiziert)
 
-`build()` Methode bekommt optionalen `profile` Parameter:
+**SOLL:** Wetter + Kalender + Kontext fließen tatsächlich in Mustervorhersagen ein.
 
-```python
-async def build(self, trigger="voice", user_text="", person="", profile=None):
-    context = {}
-    context["time"] = ...  # IMMER (trivial, kein I/O)
+### Änderungen
 
-    if not profile or profile.need_house_status:
-        states = await self.ha.get_states()
-        ...
+**Datei: `assistant/assistant/brain.py`**
+- Bei `anticipation.log_action()` Aufruf (Zeile ~5726): Wetter-Condition aus Context/Redis-Cache mitgeben
+  ```python
+  weather = (context or {}).get("weather", {}).get("condition", "")
+  self.anticipation.log_action(action["function"], action.get("args", {}), person or "", weather_condition=weather)
+  ```
+- ~5 Zeilen
 
-    if not profile or profile.need_mindhome_data:
-        mindhome_data = await self._get_mindhome_data()
-        ...
+**Datei: `assistant/assistant/anticipation.py`**
+- `get_suggestions()`: `elif pattern["type"] == "causal_chain"` Branch ergänzen mit passender Suggestion-Formatierung (analog zu den bestehenden time/sequence/context Branches)
+- ~15 Zeilen
 
-    if not profile or profile.need_activity:
-        if self._activity_engine:
-            ...
+**Datei: `assistant/assistant/brain.py` oder `proactive.py`**
+- `get_calendar_weather_crossrefs()` in den Morgen-Briefing-Flow integrieren (z.B. in `routine_engine.py` beim Morgen-Briefing aufrufen)
+- ~10 Zeilen
 
-    # etc.
-```
-
----
-
-## Schritt 5: Brain `__init__` erweitern
-
-```python
-from .pre_classifier import PreClassifier
-# In __init__:
-self.pre_classifier = PreClassifier()
-```
+**Tests:**
+- `test_anticipation.py`: Test dass weather_condition in gespeicherten Entries erscheint und Context-Patterns beeinflusst
+- `test_anticipation.py`: Test dass causal_chain-Typ Suggestions generiert werden
 
 ---
 
-## Dateien die geaendert werden
+## Bereich 4: Latenz-Optimierung — Redundante Klassifikation eliminieren
 
-| Datei | Aenderung |
-|-------|-----------|
-| `assistant/assistant/pre_classifier.py` | **NEU** - PreClassifier + RequestProfile |
-| `assistant/assistant/brain.py` | Import + Instanziierung + profile-basierte Steuerung in `process()` |
-| `assistant/assistant/context_builder.py` | `build()` bekommt optionalen `profile` Parameter |
+**IST:** 3 unabhängige Klassifikations-Systeme:
+1. `pre_classifier.classify_async()` → `RequestProfile` mit category + Subsystem-Flags
+2. `model_router.select_model_and_tier(text)` (Zeile 254) → eigene Keyword-Listen, ignoriert Pre-Classifier-Ergebnis (verifiziert: kein Zugriff auf `profile`)
+3. `brain._classify_intent()` (Zeile 10036) → dritte unabhängige Keyword-Liste
+
+Plus: Duplicate `get_tier()` Bug — Zeile 242 (nimmt Model-Name) wird von Zeile 370 (nimmt Text) überschrieben. Die erste Definition mit Edge-Case-Handling für gleiche Modelle auf allen Tiers ist Dead Code (verifiziert).
+
+**SOLL:** Pre-Classifier als primäre Quelle, Model Router und `_classify_intent()` konsumieren dessen Ergebnis statt eigene Keyword-Listen.
+
+### Änderungen
+
+**Datei: `assistant/assistant/model_router.py`**
+- Erste `get_tier()` (Zeile 242) umbenennen zu `get_tier_for_model(model: str) -> str`
+- Zweite `get_tier()` (Zeile 370) bleibt als Fallback
+- Neue Methode `select_model_from_profile(profile) -> tuple[str, str]`:
+  - `profile.category == "device_command"` oder `profile.prefer_fast` → Fast-Tier
+  - `profile.category == "knowledge"` mit langer Query → Deep-Tier
+  - Default → Smart-Tier
+- ~30 Zeilen
+
+**Datei: `assistant/assistant/brain.py`**
+- Nach `pre_classifier.classify_async()` (Zeile ~2805): `model_router.select_model_from_profile(profile)` aufrufen statt `select_model_and_tier(text)` (Zeile ~3091)
+- Fallback bei Fehler: weiterhin `select_model_and_tier(text)` nutzen
+- `_classify_intent()` (Zeile ~10036) refactoren: Statt eigene Keyword-Listen zu pflegen, `pre_classifier.classify_async()` Ergebnis (das zu diesem Zeitpunkt bereits vorliegt) als primäre Quelle nutzen
+  - `profile.category` auf die bestehenden Intent-Kategorien mappen (knowledge → "knowledge", device_command → "action", memory → "memory", general → "general")
+  - Eigene Keyword-Listen als Fallback behalten, falls profile nicht verfügbar
+  - Eliminiert die dritte redundante Klassifikationsschicht
+- ~20 Zeilen
+
+**Tests:**
+- `test_model_router.py`: Test `get_tier_for_model()` separat von `get_tier()`
+- `test_model_router.py`: Test Profile-basierte Model-Selection
 
 ---
 
-## Risikobewertung
+## Bereich 5: Langzeit-Beziehung — Formality + Sarcasm Synchronisation
 
-- **Kein Verhaltens-Regression fuer `GENERAL`**: Das Default-Profil aktiviert ALLE Subsysteme → identisch zum aktuellen Verhalten
-- **Fallback-sicher**: Wenn `profile=None` uebergeben wird, laueft alles wie bisher
-- **Kein Breaking Change**: `_classify_intent()` bleibt unveraendert, Intent-Routing aendert sich nicht
-- **Testbar**: Jedes Profil kann unit-getestet werden (Regex-Pattern → erwartetes Profil)
+**IST:** Formality decayed zeitbasiert (personality.py Zeile 2077-2094), Sarcasm lernt über Feedback nach 20+ Samples (Zeile 2596-2653). Aber kein Cross-Signal: Sarcasm 5 + Formality 80 ist widersprüchlich (hoher Sarkasmus bei gleichzeitig sehr förmlichem Ton).
+
+**SOLL:** Konsistente Persönlichkeitsentwicklung — hoher Sarkasmus impliziert niedrigere Formalität.
+
+### Änderungen
+
+**Datei: `assistant/assistant/personality.py`**
+- In `track_sarcasm_feedback()` (Zeile ~2632/2638): Nach Sarcasm-Level-Änderung auch Formality-Bounds anpassen
+  - Sarcasm 4-5 → `formality_min` auf max 30 (informell)
+  - Sarcasm 1-2 → `formality_min` auf min 50 (förmlich)
+- In `_update_formality()`: Interaktions-basierter Decay-Boost
+  - Tage mit >5 Interaktionen → Formality decayed 50% schneller (häufige Interaktion = mehr Vertrautheit)
+- ~25 Zeilen
+
+**Datei: `assistant/assistant/self_optimization.py`**
+- Konsistenz-Constraint in der Vorschlags-Logik (wo `_PARAMETER_PATHS` genutzt wird):
+  - Wenn `sarcasm_level` geändert wird → `formality_min` Vorschlag muss zur neuen Kopplung passen
+  - Wenn `formality_min` geändert wird → darf nicht im Widerspruch zum aktuellen `sarcasm_level` stehen
+  - Neue Validierungsmethode `_validate_consistency(param_name, new_value) -> bool`:
+    - Prüft Sarcasm↔Formality Kopplung (Sarcasm 4-5 → formality_min ≤ 30, Sarcasm 1-2 → formality_min ≥ 50)
+    - Lehnt widersprüchliche Vorschläge ab bevor sie dem User präsentiert werden
+- ~20 Zeilen
+
+**Tests:**
+- `test_personality.py`: Test dass Sarcasm-Level-Änderung Formality-Floor beeinflusst
+- `test_personality.py`: Test Interaction-basierter Decay-Boost
+- `test_self_optimization.py`: Test dass widersprüchliche Vorschläge (Sarcasm 5 + Formality 80) abgelehnt werden
 
 ---
 
-## Performance-Erwartung
+## Bereich 6: Erklärbarkeit — Proaktive Transparenz
 
-| Anfrage-Typ | Vorher (Subsysteme) | Nachher | Geschaetzte Ersparnis |
-|-------------|--------------------|---------|-----------------------|
-| "Licht an" | 10 parallele + Context Build | 2-3 parallele + minimaler Context | ~200-400ms |
-| "Wie funktioniert X?" | 10 parallele + Context Build | 5-6 parallele + reduzierter Context | ~100-200ms |
-| "Erinnerst du dich..." | 10 parallele + Context Build | 5-6 parallele + reduzierter Context | ~100-200ms |
-| Komplexe Anfrage | 10 parallele + Context Build | 10 parallele + voller Context | 0ms (identisch) |
+**IST:** `explainability.py` hat `auto_explain` Config-Flag (Zeile 37, default False), macht aber nur System-Prompt-Hint via `get_explanation_prompt_hint()` (Zeile 261). Kein proaktiver Push — verifiziert: keine `notify_callback` oder Push-Logik vorhanden. Erklärungen sind rein reaktiv (User muss fragen).
+
+**SOLL:** Bei Autonomie-Level ≥3 und impactful Actions (Heizung, Schloss, Alarm): Kurze Begründung automatisch in die Antwort einfügen.
+
+### Änderungen
+
+**Datei: `assistant/assistant/explainability.py`**
+- Neue Methode `get_auto_explanation(action_type: str, domain: str) -> Optional[str]`:
+  - Nur für high-impact Domains: `security`, `climate`, `lock`, `alarm`
+  - Nur bei `auto_explain=True`
+  - Formatiert 1-Satz-Erklärung aus dem letzten `log_decision()` Eintrag für diese Domain
+  - Return: z.B. `"(Heizung reduziert: Fenster im Wohnzimmer ist offen bei 2°C Außentemperatur)"`
+- ~30 Zeilen
+
+**Datei: `assistant/assistant/brain.py`**
+- Nach erfolgreicher Aktionsausführung (wo `on_action_success` aufgerufen wird):
+  - `explanation = self.explainability.get_auto_explanation(action_type, domain)`
+  - Wenn vorhanden: An Response-Text anhängen
+- ~10 Zeilen
+
+**Tests:**
+- `test_explainability.py`: Test auto_explanation für high-impact Domain (security/climate)
+- `test_explainability.py`: Test dass low-impact Domains (light) keine Erklärung generieren
+- `test_explainability.py`: Test dass auto_explain=False keine Erklärungen liefert
+
+---
+
+## Bereich 7: Sicherheit — Verbal-Feedback Cross-User-Leakage
+
+**IST:** `_last_executed_action` in `brain.py` ist ein einzelner Instance-String (Zeile ~399, mit TODO-Kommentar: "Per Person scopen um Cross-User-Leakage im Pronomen-Shortcut zu verhindern"). Positive Feedback-Erkennung (Zeile 5780: "danke", "super" etc.) und negative Feedback (Zeile 11210-11213: Korrekturen) nutzen beide diesen globalen String. In einem Multi-User-Haushalt kann ein "Danke" von Person A die letzte Aktion von Person B positiv bewerten.
+
+**SOLL:** Per-Person Tracking der letzten Aktion.
+
+### Änderungen
+
+**Datei: `assistant/assistant/brain.py`**
+- `_last_executed_action: str` ersetzen durch `_last_executed_action: dict[str, tuple[str, float]]`
+  - Key: Person-Name, Value: (Action-Type, Timestamp)
+- Bei Aktion-Ausführung (Zeile ~2315-2316, 2371-2372): `self._last_executed_action[person] = (action_type, time.time())`
+- Bei Feedback-Detection (Zeile ~5832, 11210): `action, ts = self._last_executed_action.get(person, ("", 0))`
+  - Nur akzeptieren wenn `time.time() - ts < 300` (5 Minuten TTL)
+- Aufräumen: Einträge älter als 5 Minuten bei jedem Zugriff entfernen
+- ~20 Zeilen
+
+**Tests:**
+- `test_brain.py`: Test dass Feedback korrekt per Person zugeordnet wird
+- `test_brain.py`: Test dass TTL abgelaufene Aktionen nicht mehr zugeordnet werden
+
+---
+
+## Bereich 8: Wellness — Inner-State-Integration
+
+**IST:** Wellness Advisor nutzt `mood_detector` (User-Mood) intensiv — verifiziert: `__init__` Zeile 38 nimmt `mood_detector`, genutzt in `_check_stress_intervention()` (Zeile 330), `_check_meal_time()` (Zeile 438), `_check_mood_ambient_actions()` (Zeile 697). Aber null Referenzen zu `inner_state` — verifiziert per Grep.
+
+**SOLL:** Wenn Jarvis "besorgt" ist (z.B. wegen Security-Event), nicht-kritische Wellness-Checks pausieren. Wenn Jarvis "zufrieden", freundlichere Wellness-Nachrichten.
+
+### Änderungen
+
+**Datei: `assistant/assistant/wellness_advisor.py`**
+- Neuen optionalen Parameter `inner_state=None` im Constructor akzeptieren (backward-compatible)
+- In `_wellness_loop()`: Wenn `self._inner_state` vorhanden und `self._inner_state.mood == "concerned"`:
+  - Nur kritische Checks durchführen (Stress-Intervention, Hydration)
+  - Non-critical überspringen (PC-Pausen, Mahlzeiten-Erinnerungen)
+- In Message-Generierung: Jarvis-Mood als Kontext nutzen (zufrieden → wärmerer Ton)
+- ~20 Zeilen
+
+**Datei: `assistant/assistant/brain.py`**
+- Bei Wellness-Advisor-Init: `inner_state` Referenz übergeben
+- ~3 Zeilen
+
+**Tests:**
+- `test_wellness_advisor.py`: Test dass concerned-Mood non-critical Checks überspringt
+- `test_wellness_advisor.py`: Test dass critical Checks weiterhin laufen
+
+---
+
+## Bereich 9: Model-Routing — Neues 3-Tier-Setup (9B/35B/35B)
+
+**IST:** Modelle aktualisiert auf echtes 3-Tier-Setup:
+- Fast: Qwen3.5 9B Dense (16K ctx) — kein Think
+- Smart: Qwen3.5 35B MoE/12B aktiv (32K ctx) — Think off (`think_control: smart_off`)
+- Deep: Qwen3.5 35B MoE/12B aktiv (64K ctx) — Think on
+
+Aber der Code ist noch auf die alte "alle identisch 35B"-Konfiguration optimiert:
+1. `upgrade_signal_threshold: 5` ist zu hoch — Smart→Deep kostet nur mehr ctx (32K→64K), kein Modellwechsel und kein zusätzliches VRAM. Threshold 3 wäre angemessen
+2. `model_router.py` hat keine `num_ctx`-per-Tier Logik — die ctx-Werte aus `settings.yaml` (`num_ctx`, `num_ctx_smart`, `num_ctx_deep`) werden nur in `brain.py` beim Ollama-Call gesetzt, aber der Router berücksichtigt sie nicht bei der Tier-Entscheidung (z.B. lange Prompts sollten Deep bevorzugen wegen 64K ctx)
+3. `think_control: smart_off` deaktiviert Think für Smart — korrekt konfiguriert, aber der Deep-Tier (Think on) wird durch den hohen Threshold 5 zu selten aktiviert. Problemlösung (3 Signale) + ein Intelligence-Signal (1) = 4 → kein Upgrade trotz "erkläre warum"
+
+**SOLL:** Threshold und Routing an das neue 3-Tier-Setup anpassen, ctx-aware Routing.
+
+### Änderungen
+
+**Datei: `assistant/config/settings.yaml`**
+- `upgrade_signal_threshold: 5` → `upgrade_signal_threshold: 3`
+- Kommentar aktualisieren: Smart und Deep sind dasselbe Modell, nur ctx + think unterschiedlich
+
+**Datei: `assistant/assistant/brain.py`**
+- Threshold-Logik (Zeile ~3171): Conversation-Mode Bonus von +2 auf +1 reduzieren — bei identischem Modell (Smart=Deep) ist der Upgrade-Cost minimal
+- Kommentar bei `_upgrade_signals` aktualisieren: "Smart→Deep = gleicher 35B MoE, nur 64K ctx + Think"
+- ~5 Zeilen
+
+**Datei: `assistant/assistant/model_router.py`**
+- In `select_model_from_profile()` (neu aus Bereich 4): Prompt-Länge als Signal einbeziehen
+  - Geschätzter Token-Count > 12K → Deep bevorzugen (16K ctx von Fast reicht nicht)
+  - Geschätzter Token-Count > 24K → Deep erzwingen (32K ctx von Smart knapp)
+- ~10 Zeilen
+
+**Tests:**
+- `test_model_router.py`: Test dass lange Prompts automatisch Deep-Tier bekommen
+- `test_brain.py`: Test dass Threshold 3 Problemlösung+Intelligence-Signal auf Deep upgraded
+
+---
+
+## Umsetzungsreihenfolge
+
+| Phase | Bereich | Aufwand | Impact | Risiko |
+|-------|---------|---------|--------|--------|
+| 1 | **7: Security Fix** (Cross-User-Leakage) | Klein (~20 LOC) | Kritisch | Niedrig |
+| 2 | **9: Model-Routing** (Threshold + ctx-aware Routing für 9B/35B/35B) | Klein (~15 LOC) | Hoch | Niedrig |
+| 3 | **4: Latenz** (get_tier Bug + 3-fach Klassifikation) | Mittel (~50 LOC) | Hoch | Niedrig |
+| 4 | **3: Multi-Signal** (Dead Code aktivieren) | Mittel (~30 LOC) | Hoch | Niedrig |
+| 5 | **1: Personality Integration** | Mittel (~55 LOC) | Hoch | Mittel |
+| 6 | **2: Kausales Gedächtnis** (Outcome-Loop + Correction→Anticipation) | Mittel (~90 LOC) | Hoch | Mittel |
+| 7 | **6: Erklärbarkeit** | Klein (~40 LOC) | Mittel | Niedrig |
+| 8 | **5: Langzeit-Beziehung** (+ Self-Optimization Konsistenz) | Klein (~45 LOC) | Mittel | Niedrig |
+| 9 | **8: Wellness Integration** | Klein (~23 LOC) | Niedrig | Niedrig |
+
+## Geschätzte Änderungen gesamt
+
+- **~10 Dateien** modifiziert (keine neuen Module)
+- **~385 Zeilen** Produktivcode
+- **~23 neue Tests**
+- Alle Änderungen backward-compatible (optionale Parameter, Fallbacks)
+- Jede Phase einzeln deploybar und testbar

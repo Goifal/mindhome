@@ -2043,12 +2043,21 @@ class ProactiveManager:
             logger.debug("Personal dates check Fehler: %s", e)
 
     async def _check_night_motion_camera(self, motion_entity: str):
-        """Nacht-Motion: Wenn nachts Bewegung erkannt wird, Kamera-Snapshot analysieren."""
+        """Motion-Kamera: Nachts oder bei Abwesenheit → Kamera-Snapshot analysieren."""
         from datetime import datetime
         try:
             hour = datetime.now().hour
-            # Nur nachts (22:00 - 06:00)
-            if not (hour >= 22 or hour < 6):
+            is_night = (hour >= 22 or hour < 6)
+            # Tagsueber: Nur analysieren wenn niemand zuhause
+            _cam_cfg = yaml_config.get("cameras", {}).get("proactive_analysis", {})
+            _away_mode = _cam_cfg.get("away_mode", True)
+            is_away = False
+            if _away_mode and hasattr(self.brain, "ha"):
+                try:
+                    is_away = not await self.brain.ha.is_anyone_home()
+                except Exception:
+                    pass
+            if not is_night and not is_away:
                 return
 
             # Nur Outdoor-Motion-Sensoren (indoor-Bewegung ist normal)

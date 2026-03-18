@@ -35,10 +35,11 @@ async def _safe_redis(redis_client, method: str, *args, **kwargs):
 class WellnessAdvisor:
     """Kontextsensitive Wellness-Hinweise — Jarvis kuemmert sich."""
 
-    def __init__(self, ha_client, activity_engine, mood_detector):
+    def __init__(self, ha_client, activity_engine, mood_detector, inner_state=None):
         self.ha = ha_client
         self.activity = activity_engine
         self.mood = mood_detector
+        self.inner_state = inner_state
         self.executor = None  # Phase 17.4: FunctionExecutor fuer Ambient Actions
         self._ollama = None   # LLM fuer natuerlichere Nachrichten-Varianz
         self.redis: Optional[aioredis.Redis] = None
@@ -188,15 +189,25 @@ class WellnessAdvisor:
                         await asyncio.sleep(self.check_interval)
                         continue
 
-                await asyncio.gather(
-                    self._check_pc_break(),
-                    self._check_stress_intervention(),
-                    self._check_meal_time(),
-                    self._check_late_night(),
-                    self._check_hydration(),
-                    self._check_mood_ambient_actions(),
-                    return_exceptions=True,
-                )
+                # Wenn Jarvis besorgt ist: nur kritische Checks ausfuehren
+                # (Stress-Intervention, Late-Night), nicht-kritische ueberspringen
+                if self.inner_state and self.inner_state.mood == "besorgt":
+                    logger.debug("Wellness: inner_state=besorgt — nur kritische Checks")
+                    await asyncio.gather(
+                        self._check_stress_intervention(),
+                        self._check_late_night(),
+                        return_exceptions=True,
+                    )
+                else:
+                    await asyncio.gather(
+                        self._check_pc_break(),
+                        self._check_stress_intervention(),
+                        self._check_meal_time(),
+                        self._check_late_night(),
+                        self._check_hydration(),
+                        self._check_mood_ambient_actions(),
+                        return_exceptions=True,
+                    )
             except Exception as e:
                 logger.error("Wellness-Check Fehler: %s", e)
 

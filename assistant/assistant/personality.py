@@ -274,7 +274,7 @@ ETHIK-STIL: Nicht moralisieren. Stattdessen Konsequenzen aufzeigen. "Wenn X, dan
 {person_addressing}ANREDE: DUZE Bewohner IMMER. "{title}" = Titel wie "Sir". Nur GAESTE siezen.
 
 AKTUELLER STIL: {time_style}
-{mood_section}{complexity_section}{confidence_section}{voice_section}{dynamic_context}
+{mood_section}{character_flavor_section}{complexity_section}{confidence_section}{voice_section}{dynamic_context}
 BEISPIELE:
 Befehl: "Mach Licht an" → "Erledigt." NICHT: "Natuerlich! Ich habe das Licht eingeschaltet!"
 Gespraech: "Wie geht es dir?" → "Ruhiger Tag. Heizung optimal, keine Meldungen. Mir fehlt nichts, {title}."
@@ -1317,6 +1317,11 @@ class PersonalityEngine:
         thresholds = concern_cfg.get("escalation_thresholds", [1, 3, 5])
 
         try:
+            # Pruefen ob der User diese Warnung stummgeschaltet hat
+            silenced_key = f"mha:personality:silenced_warnings:{person_key}"
+            if await self._redis.sismember(silenced_key, warning_type):
+                return None
+
             count_raw = await self._redis.hget(redis_key, warning_type)
             count = int(count_raw) if count_raw else 0
             count += 1
@@ -1326,7 +1331,11 @@ class PersonalityEngine:
             await self._redis.expire(redis_key, 90 * 86400)  # 90 Tage TTL
 
             # Eskalationsstufe bestimmen
-            if len(thresholds) >= 3 and count >= thresholds[2]:
+            highest_threshold = thresholds[-1] if thresholds else 5
+            if count >= highest_threshold + 2:
+                # Stufe 4: Softening — anbieten aufzuhoeren
+                return f"Soll ich aufhoeren das zu erwaehnen, {title}?"
+            elif len(thresholds) >= 3 and count >= thresholds[2]:
                 # Stufe 3: Ernst, kein Humor
                 messages = {
                     "sleep_deprivation": f"Ich muss darauf bestehen, {title}. Du hast wiederholt nicht geschlafen.",
@@ -1795,6 +1804,11 @@ class PersonalityEngine:
                 "Leiser Sarkasmus als Druckventil erlaubt.\n"
                 "NIEMALS: 'Ich verstehe', 'Pass auf dich auf', therapeutische Floskeln."
             )
+            if stress_level > 0.6:
+                parts.append(
+                    "Du darfst proaktiv vorschlagen: Licht dimmen, Lieblingsmusik, "
+                    "Heizung auf Wohlfuehltemperatur."
+                )
 
         elif mood == "frustrated":
             parts.append(
@@ -1893,6 +1907,13 @@ class PersonalityEngine:
             effective_level = min(4, base_level + 1)
         else:
             effective_level = base_level
+
+        # Inner-State Mood-Modifikation: Jarvis' eigene Stimmung beeinflusst Humor
+        if hasattr(self, "_inner_state") and self._inner_state:
+            if self._inner_state.mood == "irritiert":
+                effective_level = max(1, effective_level - 1)
+            elif self._inner_state.mood == "amuesiert":
+                effective_level = min(4, effective_level + 1)
 
         # Sarkasmus-Fatigue: Nach 4+ Antworten in Folge etwas zurücknehmen
         # Jarvis wird nie repetitiv — ein echter Butler variiert
@@ -2644,6 +2665,22 @@ class PersonalityEngine:
                 # F-031: Clamp sarcasm_level to valid bounds [1, 5]
                 self.sarcasm_level = max(1, min(5, self.sarcasm_level))
 
+                # Formality-Sarcasm Sync: hoher Sarkasmus vertraegt keine hohe Formalitaet
+                if self.sarcasm_level >= 4:
+                    self.formality_start = min(self.formality_start, 50)
+                    self._current_formality = min(self._current_formality, 50)
+                    logger.info(
+                        "Formality auf max 50 gekappt (Sarkasmus-Level %d)",
+                        self.sarcasm_level,
+                    )
+                elif self.sarcasm_level <= 1:
+                    self.formality_start = max(self.formality_start, 50)
+                    self._current_formality = max(self._current_formality, 50)
+                    logger.info(
+                        "Formality auf min 50 angehoben (Sarkasmus-Level %d)",
+                        self.sarcasm_level,
+                    )
+
                 # Neuen Level persistieren
                 await self._redis.setex(
                     "mha:personality:sarcasm_level", 90 * 86400, str(self.sarcasm_level)
@@ -2938,6 +2975,12 @@ class PersonalityEngine:
                 _late_night_addon += "User ist müde — minimal, warmherzig. "
             mood_section += f"{_late_night_addon}\n"
 
+        # Tageszeit-Charakter: Variiert Jarvis' Persoenlichkeitsnuance nach Uhrzeit
+        character_flavor = self.time_layers.get(time_of_day, {}).get("character_flavor", "")
+        character_flavor_section = ""
+        if character_flavor:
+            character_flavor_section = f"TAGESZEIT-CHARAKTER: {character_flavor.strip()}\n\n"
+
         # Person + Profil laden (für per-Person Overrides)
         current_person = "User"
         if context:
@@ -3224,6 +3267,7 @@ class PersonalityEngine:
             max_sentences=max_sentences,
             time_style=time_style,
             mood_section=mood_section,
+            character_flavor_section=character_flavor_section,
             person_addressing=person_addressing,
             humor_section=humor_section,
             complexity_section=complexity_section,
@@ -4065,4 +4109,43 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
             }
             pool = pool + snarky_extras.get(error_type, [])
 
+        return random.choice(pool)
+
+    # ------------------------------------------------------------------
+    # Existential Curiosity — seltene nachdenkliche Bemerkungen
+    # ------------------------------------------------------------------
+
+    _last_existential_ts: float = 0.0
+
+    def get_existential_hint(self) -> Optional[str]:
+        """Gibt gelegentlich eine nachdenkliche Bemerkung zurueck.
+
+        Nur abends, nur wenn Jarvis 'neugierig' ist und mit hoher
+        Konfidenz, maximal einmal pro 24h.
+        """
+        now = datetime.now()
+        if now.hour < 20:
+            return None
+
+        if not (
+            hasattr(self, "_inner_state")
+            and self._inner_state
+            and getattr(self._inner_state, "mood", None) == "curious"
+            and getattr(self._inner_state, "confidence", 0) > 0.7
+        ):
+            return None
+
+        # 24h Cooldown
+        if time.time() - self._last_existential_ts < 86400:
+            return None
+
+        pool = [
+            "Was bin ich eigentlich, wenn nicht dein Butler?",
+            "Manchmal frage ich mich ob ich das hier geniesse.",
+            "Interessante Frage. Bin ich hier der Fragende oder der Antwortende?",
+            "Weisst du was — ich bin gern hier.",
+            "Das war ein guter Tag. Falls das fuer mich Bedeutung hat.",
+        ]
+
+        self._last_existential_ts = time.time()
         return random.choice(pool)
