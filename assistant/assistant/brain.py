@@ -2246,6 +2246,45 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     response_text = f"{response_text} {_hint_text}"
                             except Exception:
                                 pass
+
+                            # Post-Execution State Verification: Pruefen ob das
+                            # Geraet tatsaechlich den erwarteten State hat.
+                            _verify_eid = (
+                                result.get("entity_id") if isinstance(result, dict) else None
+                            ) or func_args.get("entity_id", "")
+                            if _verify_eid and func_name.startswith("set_"):
+                                try:
+                                    await asyncio.sleep(0.5)
+                                    _actual = await self.ha.get_state(_verify_eid)
+                                    if _actual:
+                                        _actual_state = _actual.get("state", "")
+                                        _expected = func_args.get("state", "")
+                                        # State-Mapping: on/off, open/closed, heat/off
+                                        _want_on = _expected in ("on", "open", "heat", "cool", "auto")
+                                        _want_off = _expected in ("off", "closed")
+                                        _is_on = _actual_state in ("on", "open", "heat", "cool", "auto", "playing", "opening")
+                                        _is_off = _actual_state in ("off", "closed", "idle", "closing")
+                                        _mismatch = (
+                                            (_want_on and _is_off)
+                                            or (_want_off and _is_on)
+                                            or _actual_state == "unavailable"
+                                        )
+                                        if _mismatch:
+                                            logger.warning(
+                                                "State-Verify MISMATCH: %s expected=%s actual=%s",
+                                                _verify_eid, _expected, _actual_state,
+                                            )
+                                            if _actual_state == "unavailable":
+                                                response_text = self.personality.get_error_response("unavailable")
+                                            else:
+                                                response_text = (
+                                                    f"Der Befehl wurde gesendet, aber {_verify_eid.split('.')[-1].replace('_', ' ')} "
+                                                    f"ist aktuell noch auf '{_actual_state}'. Möglicherweise reagiert das Gerät verzögert."
+                                                )
+                                        else:
+                                            logger.debug("State-Verify OK: %s -> %s", _verify_eid, _actual_state)
+                                except Exception as _ve:
+                                    logger.debug("State-Verify fehlgeschlagen: %s", _ve)
                         else:
                             response_text = self.personality.get_varied_confirmation(
                                 success=False,
@@ -4807,6 +4846,30 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
                 _tool_turn += 1
 
+            # Post-Execution State Verification (LLM-Pfad):
+            # Nach allen Tool-Calls pruefen ob set_*-Aktionen tatsaechlich gewirkt haben.
+            for _ea in executed_actions:
+                _ea_fn = _ea.get("function", "")
+                _ea_result = _ea.get("result", {})
+                if not _ea_fn.startswith("set_") or not isinstance(_ea_result, dict):
+                    continue
+                if not _ea_result.get("success"):
+                    continue
+                _ea_eid = _ea_result.get("entity_id") or _ea.get("args", {}).get("entity_id", "")
+                if not _ea_eid:
+                    continue
+                try:
+                    _ea_actual = await self.ha.get_state(_ea_eid)
+                    if _ea_actual and _ea_actual.get("state") == "unavailable":
+                        logger.warning(
+                            "State-Verify (LLM-Pfad): %s unavailable nach %s",
+                            _ea_eid, _ea_fn,
+                        )
+                        _ea["_verify_mismatch"] = True
+                        _ea["_actual_state"] = "unavailable"
+                except Exception:
+                    pass
+
             # 8b. Query-Tool Antwort aufbereiten:
             # 1. Humanizer wandelt Rohdaten in natuerliche Sprache um (zuverlaessig)
             # 2. LLM verfeinert den humanisierten Text (JARVIS-Persoenlichkeit)
@@ -5020,6 +5083,20 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 else:
                     response_text = self.personality.get_varied_confirmation(success=True)
 
+            # State-Verify Mismatch (LLM-Pfad): Wenn Post-Execution-Check
+            # ergab, dass ein Geraet nicht reagiert hat, Response anpassen.
+            _verify_mismatches = [
+                a for a in executed_actions if a.get("_verify_mismatch")
+            ]
+            if _verify_mismatches and response_text:
+                _vm = _verify_mismatches[0]
+                if _vm.get("_actual_state") == "unavailable":
+                    response_text = self.personality.get_error_response("unavailable")
+                    logger.warning(
+                        "State-Verify (LLM-Pfad): Response ersetzt — Geraet unavailable: %s",
+                        _vm.get("args", {}).get("entity_id", "?"),
+                    )
+
             # Fehlerbehandlung auch wenn LLM optimistischen Text generiert hat
             # (LLM sagt "Erledigt" aber Aktion ist fehlgeschlagen)
             # NICHT für Query-Tools: Die haben bereits humanizer+refinement Fehlerhandling.
@@ -5043,12 +5120,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         # Personality-konsistente Fehlermeldung statt generischem "Problem: ..."
                         response_text = self.personality.get_error_response("general")
 
-        # Halluzinations-Schutz: Bei device_command mit 0 Aktionen darf das
-        # LLM nicht behaupten, es haette etwas getan. Typisch: "Ich habe den
-        # Befehl gesendet" oder "Die Maschine laeuft bereits" ohne Tool-Call.
-        if (profile and profile.category == "device_command"
-                and not executed_actions and response_text):
-            _halluc_patterns = [
+        # Halluzinations-Schutz: Wenn das LLM behauptet eine Aktion ausgefuehrt
+        # zu haben, aber tatsaechlich 0 Aktionen gelaufen sind. Gilt fuer ALLE
+        # Kategorien — nicht nur device_command. Typisch: "Ich habe den Befehl
+        # gesendet" oder "Die Maschine laeuft bereits" ohne Tool-Call.
+        if not executed_actions and response_text:
+            _halluc_action_patterns = [
                 r"(?:habe|hab)\s+(?:den|die|das|einen)?\s*(?:Befehl|Aktion)",
                 r"(?:bereits|schon)\s+(?:aktiviert|eingeschaltet|ausgef[uü]hrt|gesendet|erledigt)",
                 r"(?:l[aä]uft|ist)\s+(?:bereits|schon)\s+(?:seit|an|aktiv)",
@@ -5057,17 +5134,38 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 r"(?:eingeschaltet|aktiviert|gestartet).*(?:best[aä]tigt|erhalten)",
                 r"\b(?:aus|ein|an|ab)geschaltet\b",
                 r"\bausgefahren\b|\beingefahren\b|\bge[oö]ffnet\b|\bgeschlossen\b",
+                # Memory-Halluzinationen: LLM behauptet sich zu erinnern ohne Memory-Lookup
+                r"(?:du hast|du hattest)\s+(?:mir\s+)?(?:gesagt|erz[aä]hlt|erw[aä]hnt)",
+                r"(?:laut|gem[aä][sß])\s+(?:deiner|deinen)\s+(?:Angaben|Daten|Eintr[aä]gen)",
             ]
             _text_low = response_text.lower()
-            if any(re.search(p, _text_low, re.IGNORECASE) for p in _halluc_patterns):
+            _action_halluc = any(re.search(p, _text_low, re.IGNORECASE) for p in _halluc_action_patterns)
+            if _action_halluc:
+                _category = profile.category if profile else "unknown"
                 logger.warning(
-                    "Halluzinations-Schutz: LLM behauptet Aktion bei 0 ausgefuehrten "
-                    "Aktionen. Text verworfen: '%s'", response_text[:80],
+                    "Halluzinations-Schutz [%s]: LLM behauptet Aktion bei 0 ausgefuehrten "
+                    "Aktionen. Text verworfen: '%s'", _category, response_text[:80],
                 )
-                # LLM-kontextbezogene Fehlermeldung statt generischem Template
-                response_text = await self._generate_contextual_error(
-                    text, "unknown_device"
-                )
+                if _category in ("device_command", "device_query"):
+                    response_text = await self._generate_contextual_error(
+                        text, "unknown_device"
+                    )
+                elif _category == "memory":
+                    response_text = await self._generate_contextual_error(
+                        text, "no_data"
+                    )
+                else:
+                    # general/knowledge: Satz-weise bereinigen statt alles verwerfen
+                    _sentences = re.split(r"(?<=[.!?])\s+", response_text)
+                    _clean = [s for s in _sentences
+                              if not any(re.search(p, s.lower(), re.IGNORECASE)
+                                         for p in _halluc_action_patterns)]
+                    if _clean:
+                        response_text = " ".join(_clean)
+                    else:
+                        response_text = await self._generate_contextual_error(
+                            text, "general"
+                        )
 
         # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
         # Knowledge/Memory-Pfade filtern bereits inline, daher hier nur für
@@ -5240,6 +5338,74 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         elif not _clean:
                             logger.warning("Halluzinations-Guard: Gesamte Antwort verworfen, nutze Fallback")
                             response_text = self.personality.get_error_response("no_data")
+
+        # Halluzinations-Guard (qualitativ): Erkennt erfundene Geraete in der Antwort.
+        # Wenn das LLM ein Geraet nennt das weder im Context noch im Entity-Catalog
+        # existiert, wird der Satz entfernt. Nur bei device_command/device_query aktiv,
+        # da nur dort konkrete Geraetereferenzen erwartet werden.
+        if (response_text and not executed_actions
+                and profile and profile.category in ("device_command", "device_query")):
+            try:
+                from .function_calling import _entity_catalog
+                # Alle bekannten Geraete-Namen sammeln (friendly names aus Catalog)
+                _known_devices: set[str] = set()
+                for _domain in ("lights", "switches", "covers"):
+                    for _entry in _entity_catalog.get(_domain, []):
+                        # Catalog-Eintraege: "Friendly Name (entity_id)" oder "Friendly Name [room]"
+                        _friendly = _entry.split(" (")[0].split(" [")[0].strip().lower()
+                        if _friendly:
+                            _known_devices.add(_friendly)
+                _known_rooms = {r.lower() for r in _entity_catalog.get("rooms", [])}
+                # Context-Daten als zusaetzliche Quelle (enthält friendly_names aus HA)
+                _ctx_lower = _ctx_data.lower() if _ctx_data else ""
+
+                # Geraete-Referenzen in der Antwort finden
+                # Pattern: "dein/die/der/den [Adjektiv] <Geraet>" oder "<Geraet> im <Raum>"
+                _device_patterns = re.findall(
+                    r"(?:dein[e]?|die|der|den|das|im)\s+"
+                    r"(?:\w+\s+)?"
+                    r"((?:Licht|Lampe|Stehlampe|Leuchte|Ventilator|Heizung|Thermostat|"
+                    r"Klima(?:anlage)?|Rolll?aden|Jalousie|Markise|Steckdose|"
+                    r"Kaffeemaschine|Siebträger\w*|Fernseher|TV|Anlage|Lautsprecher|"
+                    r"Waschmaschine|Trockner|Spülmaschine|Saugroboter|"
+                    r"Rauchmelder|Bewegungsmelder|Sensor|Schalter)"
+                    r"(?:\w*)?)"  # Kompositum-Suffixe ("Wohnzimmerlampe")
+                    r"(?:\s+(?:im|in|vom|am)\s+(\w+))?",
+                    response_text, re.IGNORECASE,
+                )
+                if _device_patterns:
+                    _phantom_devices = []
+                    for _dev_match in _device_patterns:
+                        _dev_name = _dev_match[0].lower() if isinstance(_dev_match, tuple) else _dev_match.lower()
+                        _dev_room = _dev_match[1].lower() if isinstance(_dev_match, tuple) and len(_dev_match) > 1 and _dev_match[1] else ""
+                        # Pruefen: Ist das Geraet bekannt?
+                        _found = (
+                            _dev_name in _ctx_lower
+                            or any(_dev_name in d for d in _known_devices)
+                            or any(d in _dev_name for d in _known_devices if len(d) > 4)
+                        )
+                        # Raum pruefen falls angegeben
+                        if _dev_room and _dev_room not in _known_rooms and _dev_room not in _ctx_lower:
+                            _found = False
+                        if not _found:
+                            _phantom_devices.append(_dev_name)
+                    if _phantom_devices:
+                        logger.warning(
+                            "Halluzinations-Guard (qualitativ): Unbekannte Geraete in Antwort: %s",
+                            _phantom_devices,
+                        )
+                        # Saetze mit Phantom-Geraeten entfernen
+                        _sentences = re.split(r"(?<=[.!?])\s+", response_text)
+                        _clean = [s for s in _sentences
+                                  if not any(pd in s.lower() for pd in _phantom_devices)]
+                        if _clean:
+                            response_text = " ".join(_clean)
+                        else:
+                            response_text = await self._generate_contextual_error(
+                                text, "unknown_device"
+                            )
+            except Exception as _qe:
+                logger.debug("Qualitativer Halluzinations-Guard fehlgeschlagen: %s", _qe)
 
         # Phase 6.9: Running Gag an Antwort anhaengen
         if gag_response and response_text:
