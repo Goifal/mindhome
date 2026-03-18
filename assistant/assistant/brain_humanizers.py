@@ -120,6 +120,18 @@ class BrainHumanizersMixin:
         else:
             result = f"{temp} Grad draussen."
 
+        # Windrichtung: HA liefert englische Abkuerzungen (N, NE, SSW etc.)
+        _wind_dir_map = {
+            "n": "Nord", "nne": "Nord-Nordost", "ne": "Nordost", "ene": "Ost-Nordost",
+            "e": "Ost", "ese": "Ost-Südost", "se": "Südost", "sse": "Süd-Südost",
+            "s": "Süd", "ssw": "Süd-Südwest", "sw": "Südwest", "wsw": "West-Südwest",
+            "w": "West", "wnw": "West-Nordwest", "nw": "Nordwest", "nnw": "Nord-Nordwest",
+            # Ausgeschriebene englische Varianten
+            "north": "Nord", "northeast": "Nordost", "east": "Ost", "southeast": "Südost",
+            "south": "Süd", "southwest": "Südwest", "west": "West", "northwest": "Nordwest",
+        }
+        if wind_dir:
+            wind_dir = _wind_dir_map.get(wind_dir.lower(), wind_dir)
         # Wind nur erwaehnen wenn spuerbar (> 10 km/h)
         if wind_speed > 10 and wind_dir:
             result += f" Wind aus {wind_dir}."
