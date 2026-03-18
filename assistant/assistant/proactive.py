@@ -3099,7 +3099,8 @@ class ProactiveManager:
                 diag = self.brain.diagnostics
                 result = await diag.check_all()
 
-                # Entity-Probleme melden
+                # Entity-Probleme gruppiert melden (statt 150x einzeln _notify)
+                issues_by_type: dict[str, list[dict]] = {}
                 for issue in result.get("issues", []):
                     issue_type = issue.get("issue_type", "unknown")
                     event_type = {
@@ -3107,24 +3108,40 @@ class ProactiveManager:
                         "low_battery": "low_battery",
                         "stale": "stale_sensor",
                     }.get(issue_type, "entity_offline")
+                    issues_by_type.setdefault(event_type, []).append(issue)
 
-                    severity = issue.get("severity", "warning")
-                    urgency = HIGH if severity == "critical" else MEDIUM if severity == "warning" else LOW
+                for event_type, issues in issues_by_type.items():
+                    # Hoechste Severity der Gruppe bestimmt Urgency
+                    has_critical = any(i.get("severity") == "critical" for i in issues)
+                    has_warning = any(i.get("severity") == "warning" for i in issues)
+                    urgency = HIGH if has_critical else MEDIUM if has_warning else LOW
+
+                    # Zusammenfassung: Anzahl + erste Entities als Detail
+                    entity_ids = [i.get("entity_id", "") for i in issues if i.get("entity_id")]
+                    preview = ", ".join(entity_ids[:5])
+                    if len(entity_ids) > 5:
+                        preview += f" (+{len(entity_ids) - 5} weitere)"
 
                     await self._notify(event_type, urgency, {
-                        "entity": issue.get("entity_id", ""),
-                        "message": issue.get("message", ""),
+                        "entity": f"{len(issues)}x {event_type}",
+                        "message": f"{len(issues)} Entities: {preview}",
+                        "count": len(issues),
+                        "entities": entity_ids,
                     })
 
-                # Wartungs-Erinnerungen (nur LOW)
-                for task in result.get("maintenance_due", []):
-                    entity_id = task.get("entity_id", "")
-                    task_name = task.get("name", "")
+                # Wartungs-Erinnerungen gruppiert (statt einzeln)
+                maintenance_tasks = result.get("maintenance_due", [])
+                if maintenance_tasks:
+                    task_names = [t.get("name", "") for t in maintenance_tasks if t.get("name")]
+                    preview = ", ".join(task_names[:5])
+                    if len(task_names) > 5:
+                        preview += f" (+{len(task_names) - 5} weitere)"
+
                     await self._notify("maintenance_due", LOW, {
-                        "entity": f"{entity_id} ({task_name})" if entity_id else task_name,
-                        "task": task_name,
-                        "days_overdue": task.get("days_overdue", 0),
-                        "description": task.get("description", ""),
+                        "entity": f"{len(maintenance_tasks)}x Wartung",
+                        "message": f"{len(maintenance_tasks)} Aufgaben: {preview}",
+                        "count": len(maintenance_tasks),
+                        "tasks": maintenance_tasks,
                     })
 
                 # Smart Shopping: Verbrauchsprognose-Check
