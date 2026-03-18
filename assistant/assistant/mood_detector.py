@@ -184,10 +184,12 @@ class MoodDetector:
                         "Beruecksichtige die Uhrzeit bei der Bewertung "
                         "(z.B. 'muede' am Morgen vs. spaet abends).\n"
                         "Antworte NUR mit einem JSON-Objekt, kein anderer Text.\n"
-                        "Format: {\"sentiment\": \"...\", \"intensity\": 0.0-1.0, \"nuance\": \"...\"}\n"
+                        "Format: {\"sentiment\": \"...\", \"intensity\": 0.0-1.0, \"nuance\": \"...\", \"root_cause\": \"...\"}\n"
                         "sentiment: gut|neutral|gestresst|frustriert|muede|aufgeregt|besorgt\n"
                         "intensity: Staerke der Emotion (0.0=kaum, 1.0=sehr stark)\n"
-                        "nuance: Ein Wort das den Unterton beschreibt (z.B. ungeduldig, entspannt, genervt, dankbar)"
+                        "nuance: Ein Wort das den Unterton beschreibt (z.B. ungeduldig, entspannt, genervt, dankbar)\n"
+                        "root_cause: Vermutete Ursache der Stimmung "
+                        "(wiederholte_fehler|zeitdruck|geraeteproblem|muedigkeit|unbekannt)"
                     ),
                 },
                 {"role": "user", "content": text[:500]},  # Limit Input
@@ -256,6 +258,118 @@ class MoodDetector:
         signals.append(f"llm_sentiment:{sentiment}")
         if nuance:
             signals.append(f"llm_nuance:{nuance}")
+
+        # Phase 2A: Root-Cause speichern wenn vorhanden
+        root_cause = llm_result.get("root_cause", "unbekannt")
+        if root_cause and root_cause != "unbekannt":
+            signals.append(f"root_cause:{root_cause}")
+
+    # ------------------------------------------------------------------
+    # Phase 2A: Empathie und emotionale Grenzen
+    # ------------------------------------------------------------------
+
+    _EMPATHY_TEMPLATES: dict[str, dict[str, str]] = {
+        "frustrated": {
+            "wiederholte_fehler": "Das ist verstaendlich frustrierend. Ich versuche es anders.",
+            "zeitdruck": "Ich merke, die Zeit draengt. Ich mache es kurz.",
+            "geraeteproblem": "Das Geraet macht Probleme, das sehe ich. Soll ich die Diagnostik starten?",
+            "muedigkeit": "Sie klingen erschoepft. Soll ich den Rest uebernehmen?",
+            "unbekannt": "Das klingt frustrierend. Wie kann ich helfen?",
+        },
+        "stressed": {
+            "wiederholte_fehler": "Ich weiss, das ist nicht ideal. Lassen Sie mich das beheben.",
+            "zeitdruck": "Alles klar, ich fasse mich kurz.",
+            "geraeteproblem": "Das Geraeteproblem habe ich notiert. Soll ich eine Alternative vorschlagen?",
+            "muedigkeit": "Klingt nach einem langen Tag. Soll ich die Abendstimmung vorbereiten?",
+            "unbekannt": "Ich bin hier um zu helfen.",
+        },
+        "tired": {
+            "muedigkeit": "Sie sollten sich etwas Ruhe goennen.",
+            "unbekannt": "Klingt nach einem langen Tag.",
+        },
+    }
+
+    def get_root_cause(self, person: str = "") -> str:
+        """Gibt die zuletzt erkannte Ursache der Stimmung zurueck."""
+        person_key = self._person_key(person)
+        state = self._person_states.get(person_key, {})
+        return state.get("root_cause", "unbekannt")
+
+    def generate_empathy_statement(self, mood: str = "", root_cause: str = "",
+                                    person: str = "") -> Optional[str]:
+        """Generiert ein einfuehlsames Statement basierend auf Stimmung und Ursache.
+
+        Args:
+            mood: Aktuelle Stimmung (frustrated, stressed, tired, etc.)
+            root_cause: Ursache (wiederholte_fehler, zeitdruck, geraeteproblem, muedigkeit)
+            person: Person-Name
+
+        Returns:
+            Empathie-Statement oder None wenn keins passt.
+        """
+        if not mood:
+            mood = self._current_mood
+        if not root_cause:
+            root_cause = self.get_root_cause(person)
+
+        templates = self._EMPATHY_TEMPLATES.get(mood, {})
+        if templates:
+            return templates.get(root_cause, templates.get("unbekannt"))
+        return None
+
+    async def check_emotional_boundaries(self, person: str = "") -> Optional[str]:
+        """Prueft ob emotionale Grenzen erreicht sind.
+
+        Nach 3x ignorierten Warnungen bei Frustration → sachlicher Modus.
+        Auto-Reset nach 30 Minuten.
+
+        Returns:
+            "sachlich" wenn Grenzen erreicht, None sonst.
+        """
+        if not self.redis:
+            return None
+
+        person_key = self._person_key(person)
+        mood = self._current_mood
+
+        if mood not in (MOOD_FRUSTRATED, MOOD_STRESSED):
+            return None
+
+        try:
+            key = f"mha:mood:ignored_warnings:{person_key}"
+            count = await self.redis.get(key)
+            count = int(count) if count else 0
+
+            if count >= 3:
+                return "sachlich"
+        except Exception as e:
+            logger.debug("Emotional boundary check failed: %s", e)
+        return None
+
+    async def record_ignored_warning(self, person: str = ""):
+        """Zaehlt eine ignorierte Warnung fuer die emotionalen Grenzen."""
+        if not self.redis:
+            return
+        person_key = self._person_key(person)
+        try:
+            key = f"mha:mood:ignored_warnings:{person_key}"
+            await self.redis.incr(key)
+            await self.redis.expire(key, 1800)  # 30 Min Reset
+        except Exception as e:
+            logger.debug("Record ignored warning failed: %s", e)
+
+    async def _store_root_cause(self, person: str, root_cause: str):
+        """Speichert die Root-Cause in Redis und im Person-State."""
+        person_key = self._person_key(person)
+        if person_key in self._person_states:
+            self._person_states[person_key]["root_cause"] = root_cause
+
+        if self.redis and root_cause and root_cause != "unbekannt":
+            try:
+                key = f"mha:mood:root_cause:{person_key}"
+                await self.redis.setex(key, 7200, root_cause)  # 2h TTL
+            except Exception as e:
+                logger.debug("Store root cause failed: %s", e)
 
     # ------------------------------------------------------------------
     # Per-Person State Management
@@ -533,6 +647,10 @@ class MoodDetector:
         llm_result = await self._llm_analyze_sentiment(text)
         if llm_result:
             self._apply_llm_sentiment(llm_result, signals)
+            # Phase 2A: Root-Cause speichern
+            root_cause = llm_result.get("root_cause", "unbekannt")
+            if root_cause and root_cause != "unbekannt":
+                await self._store_root_cause(person, root_cause)
 
         # 3. Gesamt-Stimmung bestimmen
         self._current_mood = self._determine_mood()

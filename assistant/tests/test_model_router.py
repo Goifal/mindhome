@@ -11,6 +11,7 @@ Testet isoliert (ohne Config-Import):
 """
 
 import re
+from unittest.mock import MagicMock, patch
 import pytest
 
 
@@ -296,3 +297,88 @@ class TestEdgeCases:
         """Fast deaktiviert → kein Fast-Routing."""
         result = select_model("Licht an", fast_enabled=False)
         assert result != MODEL_FAST
+
+
+# ============================================================
+# Phase 2C: Latenz-Feedback und Urgency-Override
+# ============================================================
+
+class TestPhase2CLatencyFeedback:
+    """Tests fuer Latenz-Feedback und automatische Degradation."""
+
+    @pytest.fixture
+    def router(self):
+        with patch("assistant.model_router.settings") as mock_settings, \
+             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {"latency_feedback": True}}):
+            mock_settings.model_fast = MODEL_FAST
+            mock_settings.model_smart = MODEL_SMART
+            mock_settings.model_deep = MODEL_DEEP
+            from assistant.model_router import ModelRouter
+            r = ModelRouter()
+            r._available_models = [MODEL_FAST, MODEL_SMART, MODEL_DEEP]
+            r._deep_available = True
+            r._smart_available = True
+            return r
+
+    def test_record_latency(self, router):
+        """Latenz wird aufgezeichnet."""
+        router.record_latency("deep", 5.0)
+        assert len(router._latency_history["deep"]) == 1
+
+    def test_record_latency_invalid_tier(self, router):
+        """Ungueltiger Tier wird ignoriert."""
+        router.record_latency("unknown", 5.0)
+        assert "unknown" not in router._latency_history
+
+    def test_deep_degradation(self, router):
+        """Deep-Modell wird degradiert bei hoher Latenz."""
+        for _ in range(10):
+            router.record_latency("deep", 10.0)  # 10s > 8s Schwelle
+        assert router._deep_degraded is True
+
+    def test_deep_recovery(self, router):
+        """Deep-Modell erholt sich bei niedriger Latenz."""
+        for _ in range(10):
+            router.record_latency("deep", 10.0)
+        assert router._deep_degraded is True
+        for _ in range(10):
+            router.record_latency("deep", 2.0)
+        assert router._deep_degraded is False
+
+    def test_degraded_routing_to_smart(self, router):
+        """Degradiertes Deep routet zu Smart."""
+        router._deep_degraded = True
+        model, tier = router.select_model_and_tier("Erklaere mir die Zusammenhaenge der Quantenphysik im Detail")
+        assert tier == "smart"
+
+    def test_urgency_override_frustrated(self, router):
+        """Frustration + hoher Stress → Fast."""
+        result = router.urgency_override("frustrated", 0.8)
+        assert result == "fast"
+
+    def test_urgency_override_low_stress(self, router):
+        """Frustration + niedriger Stress → kein Override."""
+        result = router.urgency_override("frustrated", 0.3)
+        assert result is None
+
+    def test_urgency_override_neutral(self, router):
+        """Neutrale Stimmung → kein Override."""
+        result = router.urgency_override("neutral", 0.5)
+        assert result is None
+
+    def test_routing_stats(self, router):
+        """Routing-Statistiken enthalten alle Tiers."""
+        router.record_latency("fast", 0.3)
+        router.record_latency("smart", 1.5)
+        stats = router.get_routing_stats()
+        assert "fast" in stats
+        assert "smart" in stats
+        assert "deep" in stats
+        assert "deep_degraded" in stats
+        assert stats["fast"]["count"] == 1
+
+    def test_model_info_includes_degradation(self, router):
+        """Model-Info enthaelt Degradation-Status."""
+        info = router.get_model_info()
+        assert "deep_degraded" in info
+        assert "latency_feedback" in info

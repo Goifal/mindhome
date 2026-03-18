@@ -191,3 +191,52 @@ class TestLatencyTracker:
 
         # Fehler wird verschluckt (debug-log)
         await tracker.flush_to_redis()
+
+
+# ------------------------------------------------------------------
+# Phase 2C: Model Router Feedback
+# ------------------------------------------------------------------
+
+
+class TestPhase2CModelRouterFeedback:
+    """Tests fuer automatisches Latenz-Feedback an Model Router."""
+
+    def test_set_model_router(self):
+        """Model Router kann gesetzt werden."""
+        tracker = LatencyTracker()
+        router_mock = MagicMock()
+        tracker.set_model_router(router_mock)
+        assert tracker._model_router is router_mock
+
+    def test_record_calls_router(self):
+        """record() leitet LLM-Latenz an Router weiter."""
+        tracker = LatencyTracker()
+        router_mock = MagicMock()
+        tracker.set_model_router(router_mock)
+
+        trace = tracker.begin()
+        trace.mark("pre_classify")
+        trace.mark("context_gather")
+        trace.mark("llm_first_token")
+        trace.mark("llm_complete")
+        tracker.record(trace)
+
+        router_mock.record_latency.assert_called_once()
+
+    def test_record_without_router(self):
+        """record() ohne Router wirft keinen Fehler."""
+        tracker = LatencyTracker()
+        trace = tracker.begin()
+        trace.mark("llm_complete")
+        tracker.record(trace)  # Kein Fehler
+
+    def test_record_router_error_ignored(self):
+        """Router-Fehler wird verschluckt."""
+        tracker = LatencyTracker()
+        router_mock = MagicMock()
+        router_mock.record_latency.side_effect = Exception("Router error")
+        tracker.set_model_router(router_mock)
+
+        trace = tracker.begin()
+        trace.mark("llm_complete")
+        tracker.record(trace)  # Kein Fehler

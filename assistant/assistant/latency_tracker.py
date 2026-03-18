@@ -70,10 +70,20 @@ class LatencyTracker:
         self._dirty = True
         self._trace_count: int = 0
         self._redis = None
+        # Phase 2C: Model Router Feedback
+        self._model_router = None
 
     def set_redis(self, redis_client) -> None:
         """Setzt den Redis-Client fuer periodisches Stats-Schreiben."""
         self._redis = redis_client
+
+    def set_model_router(self, router) -> None:
+        """Setzt den ModelRouter fuer automatisches Latenz-Feedback.
+
+        Bei jedem record() wird die LLM-Latenz automatisch an den Router
+        weitergeleitet fuer adaptives Tier-Routing.
+        """
+        self._model_router = router
 
     def begin(self, request_id: str = "") -> RequestTrace:
         """Startet einen neuen Request-Trace."""
@@ -95,6 +105,16 @@ class LatencyTracker:
             trace.request_id,
             " | ".join(f"{k}={v:.0f}ms" for k, v in durations.items()),
         )
+
+        # Phase 2C: LLM-Latenz an Model Router weiterleiten
+        if self._model_router and "llm_complete" in durations:
+            llm_ms = durations["llm_complete"]
+            tier = getattr(trace, "tier", None) or "smart"
+            try:
+                self._model_router.record_latency(tier, llm_ms / 1000.0)
+            except Exception as e:
+                logger.debug("Model Router Latenz-Feedback fehlgeschlagen: %s", e)
+
         return durations
 
     def _ensure_sorted(self) -> None:

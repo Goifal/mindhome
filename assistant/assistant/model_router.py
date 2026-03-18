@@ -17,6 +17,7 @@ Ollama installiert sind.
 
 import logging
 import re
+from collections import deque
 
 from .config import settings, yaml_config
 
@@ -50,6 +51,17 @@ class ModelRouter:
             "analysis": 0.5,      # Analyse/Diagnose: balanciert
             "default": 0.6,       # Standard
         }
+
+        # Phase 2C: Latenz-Feedback
+        self._latency_history: dict[str, deque] = {
+            "fast": deque(maxlen=50),
+            "smart": deque(maxlen=50),
+            "deep": deque(maxlen=50),
+        }
+        self._deep_degraded = False
+        _router_cfg = yaml_config.get("model_router", {})
+        self._latency_feedback_enabled = _router_cfg.get("latency_feedback", True)
+        self._deep_degradation_threshold = _router_cfg.get("deep_degradation_threshold_s", 8.0)
 
         # Keywords und Config laden
         self._load_config()
@@ -268,16 +280,24 @@ class ModelRouter:
                     logger.debug("FAST model fuer: '%s' (keyword: %s)", text, keyword)
                     return self.model_fast, "fast"
 
-        # 2. Deep-Keywords -> Deep-Modell
+        # 2. Deep-Keywords -> Deep-Modell (oder Smart wenn degradiert)
         for keyword in self.deep_keywords:
             if self._word_match(keyword, text_lower):
+                if self._deep_degraded:
+                    model = self._cap_model(self.model_smart)
+                    logger.debug("DEEP→SMART (degradiert) fuer: '%s' (keyword: %s)", text, keyword)
+                    return model, "smart"
                 model = self._cap_model(self.model_deep)
                 logger.debug("DEEP model fuer: '%s' (keyword: %s, actual: %s)",
                              text, keyword, model)
                 return model, "deep"
 
-        # 3. Sehr lange Anfragen (>15 Woerter) -> Deep
+        # 3. Sehr lange Anfragen (>15 Woerter) -> Deep (oder Smart wenn degradiert)
         if word_count >= self.deep_min_words:
+            if self._deep_degraded:
+                model = self._cap_model(self.model_smart)
+                logger.debug("DEEP→SMART (degradiert) fuer lange Anfrage: '%s'", text[:80])
+                return model, "smart"
             model = self._cap_model(self.model_deep)
             logger.debug("DEEP model fuer lange Anfrage (%d Woerter): '%s' (actual: %s)",
                          word_count, text[:80], model)
@@ -367,6 +387,77 @@ class ModelRouter:
             return self.model_smart
         return self.model_fast
 
+    # ------------------------------------------------------------------
+    # Phase 2C: Latenz-Feedback und Urgency-Override
+    # ------------------------------------------------------------------
+
+    def record_latency(self, tier: str, duration_seconds: float):
+        """Zeichnet die Latenz eines LLM-Calls auf.
+
+        Wenn Deep-Tier ueber dem Degradations-Schwellwert liegt,
+        wird automatisch auf Smart heruntergestuft fuer nicht-kritische Anfragen.
+
+        Args:
+            tier: 'fast', 'smart' oder 'deep'
+            duration_seconds: Antwortzeit in Sekunden
+        """
+        if not self._latency_feedback_enabled:
+            return
+        if tier not in self._latency_history:
+            return
+
+        self._latency_history[tier].append(duration_seconds)
+
+        # Deep-Degradation pruefen: Durchschnitt der letzten 10 Calls
+        if tier == "deep" and len(self._latency_history["deep"]) >= 10:
+            recent = list(self._latency_history["deep"])[-10:]
+            avg = sum(recent) / len(recent)
+            was_degraded = self._deep_degraded
+            self._deep_degraded = avg > self._deep_degradation_threshold
+
+            if self._deep_degraded and not was_degraded:
+                logger.warning(
+                    "Deep-Modell degradiert: Durchschnitt %.1fs > %.1fs Schwelle. "
+                    "Nicht-kritische Anfragen werden auf Smart heruntergestuft.",
+                    avg, self._deep_degradation_threshold,
+                )
+            elif not self._deep_degraded and was_degraded:
+                logger.info("Deep-Modell erholt: Durchschnitt %.1fs unter Schwelle.", avg)
+
+    def urgency_override(self, mood: str = "", stress_level: float = 0.0) -> str | None:
+        """Gibt einen Tier-Override basierend auf Dringlichkeit zurueck.
+
+        Bei hohem Stress oder Frustration → schnellstes Modell fuer sofortige Antwort.
+
+        Args:
+            mood: Aktuelle Stimmung (frustrated, stressed, etc.)
+            stress_level: Stress-Level (0.0 - 1.0)
+
+        Returns:
+            Tier-Name ('fast') oder None wenn kein Override noetig.
+        """
+        if mood in ("frustrated", "stressed") and stress_level > 0.7:
+            logger.debug("Urgency override: %s + stress=%.2f → Fast-Modell", mood, stress_level)
+            return "fast"
+        return None
+
+    def get_routing_stats(self) -> dict:
+        """Gibt Routing-Statistiken zurueck (Latenz, Degradation)."""
+        stats = {}
+        for tier, history in self._latency_history.items():
+            if history:
+                vals = list(history)
+                stats[tier] = {
+                    "count": len(vals),
+                    "avg_s": round(sum(vals) / len(vals), 2),
+                    "min_s": round(min(vals), 2),
+                    "max_s": round(max(vals), 2),
+                }
+            else:
+                stats[tier] = {"count": 0, "avg_s": 0, "min_s": 0, "max_s": 0}
+        stats["deep_degraded"] = self._deep_degraded
+        return stats
+
     def get_model_info(self) -> dict:
         """Gibt Info ueber die konfigurierten Modelle zurueck."""
         return {
@@ -386,4 +477,6 @@ class ModelRouter:
             "deep_keywords_count": len(self.deep_keywords),
             "cooking_keywords_count": len(self.cooking_keywords),
             "deep_min_words": self.deep_min_words,
+            "deep_degraded": self._deep_degraded,
+            "latency_feedback": self._latency_feedback_enabled,
         }
