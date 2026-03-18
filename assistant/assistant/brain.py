@@ -1393,6 +1393,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 return
 
             # Fakten parallel extrahieren (Fire-and-forget, max 5s Timeout)
+            _flush_person = getattr(self, "_current_person", "") or "unknown"
             _extracted = 0
             for user_t, assist_t in pairs:
                 try:
@@ -1400,7 +1401,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         self.memory_extractor.extract_and_store(
                             user_text=user_t,
                             assistant_response=assist_t,
-                            person="unknown",
+                            person=_flush_person,
                         ),
                         timeout=5.0,
                     )

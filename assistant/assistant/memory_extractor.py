@@ -347,8 +347,10 @@ class MemoryExtractor:
         # Sanitize user input against prompt injection
         safe_user = self._sanitize_for_extraction(user_text)
         safe_assistant = self._sanitize_for_extraction(assistant_response)
-        parts.append(f"{person or 'User'}: {safe_user}")
-        parts.append(f"Assistant: {safe_assistant}")
+        # Sprecherlabel: Echten Namen verwenden, sonst "Bewohner" (nicht "unknown")
+        speaker = person if (person and person.lower() not in ("unknown", "unbekannt")) else "Bewohner"
+        parts.append(f"{speaker}: {safe_user}")
+        parts.append(f"Jarvis: {safe_assistant}")
 
         conversation = "\n".join(parts)
         # Auf maximale Laenge begrenzen
