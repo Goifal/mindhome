@@ -53,6 +53,9 @@ class SpontaneousObserver:
         self._notify_callback = None
         self._task: Optional[asyncio.Task] = None
         self._running = False
+        # History der letzten Beobachtungen (fuer Dashboard-Widget)
+        from collections import deque
+        self._observation_history: deque = deque(maxlen=20)
 
         cfg = yaml_config.get("spontaneous", {})
         self.enabled = cfg.get("enabled", True)
@@ -133,6 +136,13 @@ class SpontaneousObserver:
                 observation = await self._find_interesting_observation()
                 if observation and self._notify_callback:
                     await self._notify_callback(observation)
+                    # Dashboard-History: Beobachtung fuer Widget speichern
+                    from datetime import datetime, timezone
+                    self._observation_history.append({
+                        "text": observation.get("message", ""),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "type": observation.get("type", "observation"),
+                    })
                     await self._increment_daily_count()
                     await self._increment_slot_count()
                     logger.info(

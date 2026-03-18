@@ -39,7 +39,6 @@ class TestStoreCorrection:
         )
         memory.redis.lpush.assert_called_once()
         memory.redis.ltrim.assert_called_once()
-        memory.redis.expire.assert_called()
 
     @pytest.mark.asyncio
     async def test_disabled_no_store(self, memory):

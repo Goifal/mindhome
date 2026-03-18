@@ -157,6 +157,7 @@ async def test_delete_project(memory, mock_redis):
     proj = {"id": "proj_1", "name": "Test", "status": "active"}
     mock_redis.hgetall.return_value = {"proj_1": json.dumps(proj)}
     await memory.initialize(mock_redis)
+    mock_redis.hdel.reset_mock()  # Startup-Cleanup Calls ignorieren
     result = await memory.delete_project("Test")
     assert result["success"] is True
     mock_redis.hdel.assert_called_once()
@@ -248,6 +249,7 @@ async def test_cleanup_old_questions(memory, mock_redis):
     }
     mock_redis.hgetall.return_value = questions
     await memory.initialize(mock_redis)
+    mock_redis.hdel.reset_mock()  # Startup-Cleanup Calls ignorieren
     await memory._cleanup_old_questions()
     assert mock_redis.hdel.call_count == 2
 
@@ -315,8 +317,15 @@ async def test_get_memory_context_with_data(memory, mock_redis):
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     summary = json.dumps({"date": yesterday, "summary": "Test", "topics": ["Garten"]})
 
-    # hgetall is called for both projects and questions
-    mock_redis.hgetall.side_effect = [projects, questions]
+    # hgetall is called by startup cleanup (questions, projects, followups)
+    # and then by get_memory_context (projects, questions)
+    mock_redis.hgetall.side_effect = [
+        questions,   # _cleanup_old_questions
+        projects,    # _cleanup_old_projects
+        {},          # _cleanup_old_followups
+        projects,    # get_memory_context → get_projects
+        questions,   # get_memory_context → get_open_questions
+    ]
     mock_redis.get.return_value = summary
     await memory.initialize(mock_redis)
     ctx = await memory.get_memory_context()

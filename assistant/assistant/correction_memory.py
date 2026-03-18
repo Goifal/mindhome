@@ -46,7 +46,7 @@ class CorrectionMemory:
         self.redis = None
         self.enabled = False
         self._cfg = yaml_config.get("correction_memory", {})
-        self._max_entries = self._cfg.get("max_entries", 200)
+        self._max_entries = self._cfg.get("max_entries", 500)
         self._max_context = self._cfg.get("max_context_entries", 3)
         self._rules_created_today = 0
         self._last_rules_day = ""
@@ -87,7 +87,6 @@ class CorrectionMemory:
                 json.dumps(entry, ensure_ascii=False),
             )
             await self.redis.ltrim("mha:correction_memory:entries", 0, self._max_entries - 1)
-            await self.redis.expire("mha:correction_memory:entries", 180 * 86400)
         except Exception as e:
             logger.warning("Korrektur-Speicherung fehlgeschlagen: %s", e)
             return
@@ -504,8 +503,12 @@ class CorrectionMemory:
         if not clean_meaning:
             return "Bedeutung wurde als unsicher erkannt und blockiert."
 
+        clean_phrase = _sanitize(phrase.strip(), max_len=100)
+        if not clean_phrase:
+            return "Phrase wurde als unsicher erkannt und blockiert."
+
         teaching = {
-            "phrase": phrase.strip(),
+            "phrase": clean_phrase,
             "phrase_normalized": phrase_normalized,
             "meaning": clean_meaning,
             "person": person,
@@ -575,8 +578,9 @@ class CorrectionMemory:
             logger.warning("Teaching Lesen fehlgeschlagen: %s", e)
             return None
 
-        # Usage-Counter erhoehen (fire-and-forget)
-        asyncio.create_task(self.increment_teaching_usage(matched_phrase))
+        # Usage-Counter erhoehen (fire-and-forget mit Error-Callback)
+        task = asyncio.create_task(self.increment_teaching_usage(matched_phrase))
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
         return teaching.get("meaning")
 

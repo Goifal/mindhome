@@ -38,8 +38,11 @@ Kategorien:
 Regeln:
 - Nur KONKRETE Fakten extrahieren, keine Vermutungen.
 - Jeder Fakt als eigenstaendiger Satz.
-- Person identifizieren (wer sagt/meint das?).
-- Keine Fakten über das Smart Home System selbst.
+- Person identifizieren (wer sagt/meint das?). NUR echte Bewohner/Menschen als Person.
+- NIEMALS "Jarvis", "Assistant", "System", "Bot" oder "unknown" als Person verwenden.
+  Wenn die Person der Bewohner ist, dessen Name bekannt ist, diesen verwenden.
+  Wenn nicht klar ist wer spricht, Person aus dem Kontext oben uebernehmen.
+- Keine Fakten über das Smart Home System selbst (Jarvis-Einstellungen, Systeme, Module).
 - Keine trivialen Befehle ("Licht an") als Fakten speichern.
 - NUR Fakten die langfristig relevant sind.
 - UNTERSCHEIDE momentane Zustaende von dauerhaften Praeferenzen:
@@ -71,19 +74,29 @@ Wenn der User etwas plant (Besuch, Reise, Termin, Vorhaben), extrahiere das als:
 Nur echte Plaene mit erkennbarer Zeitangabe. Keine Vermutungen."""
 
 # Defaults — werden von yaml_config überschrieben
-_DEFAULT_MIN_WORDS = 5
+_DEFAULT_MIN_WORDS = 3
 _DEFAULT_MAX_LENGTH = 2000
 
 
+# Personen-Blocklist: Diese Namen sind KEINE echten Bewohner und duerfen
+# nicht als fact_person gespeichert werden.
+_INVALID_PERSONS = frozenset({
+    "unknown", "unbekannt", "jarvis", "assistant", "assistent",
+    "system", "bot", "ki", "ai", "smart home", "mindhome",
+    "user", "nutzer", "benutzer", "niemand", "none",
+})
+
 # Confidence pro Kategorie: Gesundheit/Sicherheit höher, Smalltalk niedriger
+# Werte muessen deutlich ueber dem Kontext-Filter (0.4) liegen damit Fakten
+# nicht nach wenigen Decay-Zyklen (je 30 Tage) unsichtbar werden.
 CATEGORY_CONFIDENCE = {
-    "health": 0.9,      # Allergien, Medikamente -> sehr wichtig
-    "person": 0.85,     # Beziehungen, Namen -> wichtig
-    "preference": 0.75, # Vorlieben -> mittel-hoch
-    "habit": 0.7,       # Gewohnheiten -> mittel
-    "work": 0.7,        # Arbeit/Projekte -> mittel
-    "intent": 0.6,      # Absichten/Plaene -> kann sich ändern
-    "general": 0.5,     # Sonstiges -> niedrig
+    "health": 0.95,     # Allergien, Medikamente -> kritisch, darf nie vergessen werden
+    "person": 0.9,      # Beziehungen, Namen -> sehr wichtig
+    "preference": 0.85, # Vorlieben -> wichtig fuer Personalisierung
+    "habit": 0.8,       # Gewohnheiten -> wichtig fuer Antizipation
+    "work": 0.8,        # Arbeit/Projekte -> wichtig
+    "intent": 0.7,      # Absichten/Plaene -> kann sich aendern, aber merkenswert
+    "general": 0.7,     # Sonstiges -> immer noch vom User mitgeteilt = relevant
 }
 
 
@@ -157,6 +170,22 @@ class MemoryExtractor:
             if not content:
                 continue
 
+            # Invalide Personen filtern: Jarvis/Assistant/System sind keine Bewohner
+            _is_system_person = fact_person.lower() in _INVALID_PERSONS
+            # "unknown" ist OK als Fallback — nur echte System-Namen blocken
+            _is_only_unknown = fact_person.lower() in ("unknown", "unbekannt")
+            if _is_system_person and not _is_only_unknown:
+                # Echte System-Person (jarvis, assistant, bot) → auf Bewohner zurueckfallen
+                if person and person.lower() not in _INVALID_PERSONS:
+                    fact_person = person
+                else:
+                    logger.debug("Fakt uebersprungen (System-Person '%s'): %s",
+                                 fact_person, content[:80])
+                    continue
+            elif _is_only_unknown and person and person.lower() not in _INVALID_PERSONS:
+                # LLM hat keine Person erkannt, aber wir wissen wer spricht
+                fact_person = person
+
             # Confidence basierend auf Kategorie (Gesundheit > Smalltalk)
             initial_confidence = self._category_confidence.get(category, 0.5)
 
@@ -228,10 +257,18 @@ class MemoryExtractor:
             "vergiss nicht", "vergiss das nicht",
             "ab sofort", "von jetzt an", "ab heute",
             "ich heisse", "ich heiße", "mein name ist",
-            "meine frau", "mein mann", "mein partner",
+            "meine frau", "mein mann", "mein partner", "meine freundin", "mein freund",
             "mein geburtstag", "ich bin geboren",
-            "ich mag", "ich hasse", "ich bevorzuge",
+            "ich mag", "ich hasse", "ich bevorzuge", "ich liebe", "ich finde",
             "ich bin allergisch", "ich vertrage kein",
+            "ich arbeite", "ich bin von beruf", "mein beruf",
+            "wir haben", "wir bekommen", "wir erwarten",
+            "meine kinder", "mein sohn", "meine tochter", "mein hund", "meine katze",
+            "meine mutter", "mein vater", "meine eltern", "meine schwester", "mein bruder",
+            "ich esse kein", "ich trinke kein", "vegetarisch", "vegan",
+            "ich brauche", "ich moechte gerne", "ich möchte gerne",
+            "immer um", "jeden tag", "jeden morgen", "jeden abend", "jede woche",
+            "am liebsten", "am besten", "normalerweise",
         ]
         if any(p in text_lower for p in force_extract_patterns):
             return True  # Erzwungene Extraktion!
@@ -312,8 +349,10 @@ class MemoryExtractor:
         # Sanitize user input against prompt injection
         safe_user = self._sanitize_for_extraction(user_text)
         safe_assistant = self._sanitize_for_extraction(assistant_response)
-        parts.append(f"{person or 'User'}: {safe_user}")
-        parts.append(f"Assistant: {safe_assistant}")
+        # Sprecherlabel: Echten Namen verwenden, sonst "Bewohner" (nicht "unknown")
+        speaker = person if (person and person.lower() not in ("unknown", "unbekannt")) else "Bewohner"
+        parts.append(f"{speaker}: {safe_user}")
+        parts.append(f"Jarvis: {safe_assistant}")
 
         conversation = "\n".join(parts)
         # Auf maximale Laenge begrenzen

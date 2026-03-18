@@ -719,6 +719,16 @@ async def jarvis_status():
     return status
 
 
+@app.get("/api/jarvis/mood-history")
+async def jarvis_mood_history(days: int = 7):
+    """Jarvis Stimmungs-History der letzten X Tage."""
+    if hasattr(brain, "inner_state") and hasattr(brain.inner_state, "get_mood_history"):
+        history = await brain.inner_state.get_mood_history(days=min(days, 90))
+        summary = await brain.inner_state.get_mood_summary(days=min(days, 90))
+        return {"history": history, "summary": summary}
+    return {"history": [], "summary": ""}
+
+
 @app.get("/api/jarvis/insights")
 async def jarvis_insights():
     """Letzte proaktive Beobachtungen und Insights."""
@@ -3224,7 +3234,12 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             from .autonomy import ACTION_PERMISSIONS
             auto_cfg = yaml_cfg.get("autonomy", {})
             brain.autonomy.level = int(auto_cfg.get("level", brain.autonomy.level))
-            brain.autonomy._action_permissions = auto_cfg.get("action_permissions") or dict(ACTION_PERMISSIONS)
+            # Defaults als Basis, Config-Werte ueberschreiben einzelne Keys (wie in __init__)
+            _merged_perms = dict(ACTION_PERMISSIONS)
+            _cfg_perms = auto_cfg.get("action_permissions")
+            if _cfg_perms:
+                _merged_perms.update({k: int(v) for k, v in _cfg_perms.items()})
+            brain.autonomy._action_permissions = _merged_perms
             raw_evo = auto_cfg.get("evolution_criteria")
             if raw_evo:
                 brain.autonomy._evolution_criteria = {int(k): v for k, v in raw_evo.items()}

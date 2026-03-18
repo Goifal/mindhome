@@ -444,8 +444,8 @@ class FeedbackTracker:
 
         key = f"mha:feedback:history:{event_type}"
         await self.redis.lpush(key, entry)
-        # Nur die letzten 50 Eintraege behalten
-        await self.redis.ltrim(key, 0, 49)
+        # Nur die letzten 500 Eintraege behalten
+        await self.redis.ltrim(key, 0, 499)
         await self.redis.expire(key, REDIS_FEEDBACK_SCORE_TTL)
 
     async def _get_recent_feedback(

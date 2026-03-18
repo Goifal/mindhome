@@ -521,7 +521,8 @@ class TestFactDecay:
         conf_update = [c for c in call_args if len(c[0]) >= 3 and c[0][1] == "confidence"]
         assert len(conf_update) == 1
         new_conf = float(conf_update[0][0][2])
-        assert new_conf == pytest.approx(0.45, abs=0.01)
+        # Decay-Rate: 0.02 pro 30 Tage → 0.5 - 0.02 = 0.48
+        assert new_conf == pytest.approx(0.48, abs=0.01)
 
     @pytest.mark.asyncio
     async def test_decay_explicit_fact_slower(self, semantic, redis_mock):
@@ -562,8 +563,8 @@ class TestFactDecay:
                        if len(c[0]) >= 3 and c[0][1] == "confidence"]
         assert len(conf_update) == 1
         new_conf = float(conf_update[0][0][2])
-        # 0.05 * 0.5 = 0.025 Decay -> 0.5 - 0.025 = 0.475
-        assert new_conf == pytest.approx(0.475, abs=0.01)
+        # 0.02 * 0.25 = 0.005 Decay -> 0.5 - 0.005 = 0.495
+        assert new_conf == pytest.approx(0.495, abs=0.01)
 
     @pytest.mark.asyncio
     async def test_decay_deletes_below_threshold(self, semantic, redis_mock):

@@ -9,6 +9,7 @@ Erweitert das bestehende Memory-System um:
 Nutzt Redis fuer persistente Speicherung.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -33,7 +34,7 @@ _KEY_THREAD_INDEX = "mha:memory:thread_index"        # Hash: keyword -> thread_i
 # Defaults
 _DEFAULT_MAX_PROJECTS = 20
 _DEFAULT_MAX_QUESTIONS = 30
-_DEFAULT_SUMMARY_RETENTION_DAYS = 30
+_DEFAULT_SUMMARY_RETENTION_DAYS = 0  # 0 = unbegrenzt
 _DEFAULT_QUESTION_TTL_DAYS = 14
 
 
@@ -48,11 +49,71 @@ class ConversationMemory:
         self.max_questions = cfg.get("max_questions", _DEFAULT_MAX_QUESTIONS)
         self.summary_retention_days = cfg.get("summary_retention_days", _DEFAULT_SUMMARY_RETENTION_DAYS)
         self.question_ttl_days = cfg.get("question_ttl_days", _DEFAULT_QUESTION_TTL_DAYS)
+        self._project_lock = asyncio.Lock()
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis-Verbindung."""
         self.redis = redis_client
+        # Startup-Cleanup: Abgelaufene Eintraege entfernen
+        if self.redis and self.enabled:
+            await self._cleanup_expired_entries()
         logger.info("ConversationMemory initialisiert (enabled: %s)", self.enabled)
+
+    async def _cleanup_expired_entries(self):
+        """Entfernt beim Start abgelaufene Fragen, abgeschlossene Projekte und erledigte Followups."""
+        try:
+            await self._cleanup_old_questions()
+            await self._cleanup_old_projects()
+            await self._cleanup_old_followups()
+        except Exception as e:
+            logger.debug("ConversationMemory Startup-Cleanup fehlgeschlagen: %s", e)
+
+    async def _cleanup_old_projects(self):
+        """Entfernt abgeschlossene/abgebrochene Projekte die aelter als 30 Tage sind."""
+        if not self.redis:
+            return
+        try:
+            raw = await self.redis.hgetall(_KEY_PROJECTS)
+            cutoff = (datetime.now() - timedelta(days=30)).isoformat()
+            removed = 0
+            for key, val in raw.items():
+                key_str = key.decode() if isinstance(key, bytes) else key
+                val_str = val.decode() if isinstance(val, bytes) else val
+                p = json.loads(val_str)
+                if p.get("status") in ("completed", "cancelled", "archived"):
+                    updated = p.get("updated_at", p.get("created_at", ""))
+                    if updated and updated < cutoff:
+                        await self.redis.hdel(_KEY_PROJECTS, key_str)
+                        removed += 1
+            if removed:
+                logger.info("Projekt-Cleanup: %d abgeschlossene Projekte entfernt", removed)
+        except Exception as e:
+            logger.debug("Projekt-Cleanup fehlgeschlagen: %s", e)
+
+    async def _cleanup_old_followups(self):
+        """Entfernt erledigte/abgelaufene Followups die aelter als 14 Tage sind."""
+        if not self.redis:
+            return
+        try:
+            raw = await self.redis.hgetall(_KEY_FOLLOWUPS)
+            cutoff = (datetime.now() - timedelta(days=self.question_ttl_days)).isoformat()
+            removed = 0
+            for key, val in raw.items():
+                key_str = key.decode() if isinstance(key, bytes) else key
+                val_str = val.decode() if isinstance(val, bytes) else val
+                f = json.loads(val_str)
+                if f.get("status") in ("completed", "cancelled"):
+                    completed = f.get("completed_at", f.get("created_at", ""))
+                    if completed and completed < cutoff:
+                        await self.redis.hdel(_KEY_FOLLOWUPS, key_str)
+                        removed += 1
+                elif f.get("created_at", "") < cutoff:
+                    await self.redis.hdel(_KEY_FOLLOWUPS, key_str)
+                    removed += 1
+            if removed:
+                logger.info("Followup-Cleanup: %d abgelaufene Followups entfernt", removed)
+        except Exception as e:
+            logger.debug("Followup-Cleanup fehlgeschlagen: %s", e)
 
     # ------------------------------------------------------------------
     # Projekt-Tracking
@@ -111,6 +172,9 @@ class ConversationMemory:
                              note: str = "", milestone: str = "") -> dict:
         """Aktualisiert ein Projekt (Status, Notiz oder Meilenstein).
 
+        Lock schuetzt den Read-Modify-Write-Zyklus gegen Race Conditions
+        bei konkurrierenden Updates desselben Projekts.
+
         Args:
             name: Projektname (Suche per Teilstring)
             status: Neuer Status (active/paused/done)
@@ -120,41 +184,42 @@ class ConversationMemory:
         if not self.redis or not self.enabled:
             return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
 
-        project = await self._find_project(name)
-        if not project:
-            return {"success": False, "message": f"Projekt '{name}' nicht gefunden."}
+        async with self._project_lock:
+            project = await self._find_project(name)
+            if not project:
+                return {"success": False, "message": f"Projekt '{name}' nicht gefunden."}
 
-        changes = []
-        if status and status in ("active", "paused", "done"):
-            project["status"] = status
-            changes.append(f"Status → {status}")
-        if note:
-            project["notes"].append({
-                "text": note,
-                "date": datetime.now().isoformat(),
-            })
-            # Max 20 Notizen
-            if len(project["notes"]) > 20:
-                project["notes"] = project["notes"][-20:]
-            changes.append("Notiz hinzugefuegt")
-        if milestone:
-            project["milestones"].append({
-                "text": milestone,
-                "date": datetime.now().isoformat(),
-                "done": True,
-            })
-            changes.append(f"Meilenstein: {milestone}")
+            changes = []
+            if status and status in ("active", "paused", "done"):
+                project["status"] = status
+                changes.append(f"Status → {status}")
+            if note:
+                project["notes"].append({
+                    "text": note,
+                    "date": datetime.now().isoformat(),
+                })
+                # Max 20 Notizen
+                if len(project["notes"]) > 20:
+                    project["notes"] = project["notes"][-20:]
+                changes.append("Notiz hinzugefuegt")
+            if milestone:
+                project["milestones"].append({
+                    "text": milestone,
+                    "date": datetime.now().isoformat(),
+                    "done": True,
+                })
+                changes.append(f"Meilenstein: {milestone}")
 
-        if not changes:
-            return {"success": False, "message": "Keine Aenderung angegeben (status, note oder milestone)."}
+            if not changes:
+                return {"success": False, "message": "Keine Aenderung angegeben (status, note oder milestone)."}
 
-        project["updated_at"] = datetime.now().isoformat()
+            project["updated_at"] = datetime.now().isoformat()
 
-        try:
-            await self.redis.hset(_KEY_PROJECTS, project["id"], json.dumps(project))
-            return {"success": True, "message": f"Projekt '{project['name']}' aktualisiert: {', '.join(changes)}"}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+            try:
+                await self.redis.hset(_KEY_PROJECTS, project["id"], json.dumps(project))
+                return {"success": True, "message": f"Projekt '{project['name']}' aktualisiert: {', '.join(changes)}"}
+            except Exception as e:
+                return {"success": False, "message": str(e)}
 
     async def get_projects(self, status: str = "", person: str = "") -> list[dict]:
         """Gibt alle Projekte zurueck (optional gefiltert)."""
@@ -180,19 +245,23 @@ class ConversationMemory:
             return []
 
     async def delete_project(self, name: str) -> dict:
-        """Loescht ein Projekt."""
+        """Loescht ein Projekt.
+
+        Lock schuetzt gegen gleichzeitige Updates auf dasselbe Projekt.
+        """
         if not self.redis or not self.enabled:
             return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
 
-        project = await self._find_project(name)
-        if not project:
-            return {"success": False, "message": f"Projekt '{name}' nicht gefunden."}
+        async with self._project_lock:
+            project = await self._find_project(name)
+            if not project:
+                return {"success": False, "message": f"Projekt '{name}' nicht gefunden."}
 
-        try:
-            await self.redis.hdel(_KEY_PROJECTS, project["id"])
-            return {"success": True, "message": f"Projekt '{project['name']}' geloescht."}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+            try:
+                await self.redis.hdel(_KEY_PROJECTS, project["id"])
+                return {"success": True, "message": f"Projekt '{project['name']}' geloescht."}
+            except Exception as e:
+                return {"success": False, "message": str(e)}
 
     async def _find_project(self, name: str) -> Optional[dict]:
         """Findet ein Projekt per Name (exakt oder Teilstring)."""
@@ -377,7 +446,9 @@ class ConversationMemory:
         try:
             key = _KEY_DAILY_SUMMARY + date
             await self.redis.set(key, json.dumps(entry))
-            await self.redis.expire(key, self.summary_retention_days * 86400)
+            # TTL nur setzen wenn Retention konfiguriert (0 = unbegrenzt)
+            if self.summary_retention_days > 0:
+                await self.redis.expire(key, self.summary_retention_days * 86400)
             return {"success": True, "message": f"Zusammenfassung fuer {date} gespeichert."}
         except Exception as e:
             return {"success": False, "message": str(e)}

@@ -147,6 +147,7 @@ class SemanticMemory:
             logger.warning("Semantic Memory ChromaDB nicht verfuegbar: %s", e)
             self.chroma_collection = None
 
+
     async def store_fact(self, fact: SemanticFact) -> bool:
         # F-007: Lock um den gesamten Read-Write-Zyklus gegen TOCTOU
         lock_key = f"mha:fact_lock:{hashlib.sha256(fact.content.encode()).hexdigest()[:12]}"
@@ -190,8 +191,8 @@ class SemanticMemory:
                 if fact.category == "person":
                     try:
                         await self.refresh_relationship_cache()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Relationship-Cache Refresh fehlgeschlagen: %s", e)
 
         dup_threshold = float(yaml_config.get("memory", {}).get("duplicate_threshold", 0.15))
         existing = await self.find_similar_fact(fact.content, threshold=dup_threshold)
@@ -245,8 +246,8 @@ class SemanticMemory:
         if redis_ok and fact.category == "person":
             try:
                 await self.refresh_relationship_cache()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Relationship-Cache Refresh fehlgeschlagen: %s", e)
 
         if redis_ok:
             logger.info(
@@ -448,18 +449,21 @@ class SemanticMemory:
                 confidence = float(data.get("confidence", 0.5))
                 source = data.get("source_conversation", "")
 
-                # Explizite Fakten ("merk dir") langsamer abbauen
+                # Decay-Rate: Langsam genug damit Fakten monatelang nutzbar bleiben.
+                # Bei Confidence 0.8 und Rate 0.02 → nach 6 Monaten: ~0.68 → noch sichtbar.
+                # Erst nach ~20 Monaten (0.4) wird der Fakt unsichtbar im Kontext.
+                # Explizite Fakten ("merk dir") noch langsamer.
                 if source == "explicit":
-                    decay_rate = 0.01  # 1% pro 30-Tage-Zyklus
+                    decay_rate = 0.005  # 0.5% pro 30-Tage-Zyklus — praktisch permanent
                 else:
-                    decay_rate = 0.05  # 5% pro 30-Tage-Zyklus
+                    decay_rate = 0.02   # 2% pro 30-Tage-Zyklus — ~20 Monate bis unsichtbar
 
                 # Haeufig bestaetigte Fakten langsamer abbauen
                 times_confirmed = int(data.get("times_confirmed", 1))
                 if times_confirmed >= 5:
-                    decay_rate *= 0.5
+                    decay_rate *= 0.25  # 4x langsamer — praktisch permanent
                 elif times_confirmed >= 3:
-                    decay_rate *= 0.75
+                    decay_rate *= 0.5   # 2x langsamer
 
                 new_confidence = max(0.0, confidence - decay_rate)
 
@@ -473,10 +477,19 @@ class SemanticMemory:
                     )
                     if self.chroma_collection:
                         try:
+                            # Metadata-Keys bereinigen: bytes dekodieren, nur
+                            # erlaubte String-Felder an ChromaDB weitergeben
+                            clean_meta = {}
+                            for k, v in data.items():
+                                key = k.decode() if isinstance(k, bytes) else k
+                                val = v.decode() if isinstance(v, bytes) else v
+                                if isinstance(val, str):
+                                    clean_meta[key] = val
+                            clean_meta["confidence"] = str(round(new_confidence, 3))
                             await asyncio.to_thread(
                                 self.chroma_collection.update,
                                 ids=[fact_id],
-                                metadatas=[{**data, "confidence": str(round(new_confidence, 3))}],
+                                metadatas=[clean_meta],
                             )
                         except Exception as e:
                             logger.debug("ChromaDB update in decay failed: %s", e)
@@ -546,14 +559,15 @@ class SemanticMemory:
                                         ids=[fact_id],
                                     )
                                     reindexed += 1
-                                except Exception:
+                                except Exception as e:
+                                    logger.debug("Re-Index fehlgeschlagen fuer %s: %s", fact_id, e)
                                     orphaned_redis += 1
                         else:
                             # Fakt-ID in Index aber keine Daten → Index bereinigen
                             await self.redis.srem("mha:facts:all", fact_id)
                             orphaned_redis += 1
-                except Exception:
-                    pass  # ChromaDB-Query fehlgeschlagen, ueberspringe
+                except Exception as e:
+                    logger.debug("Konsistenz-Check fuer %s uebersprungen: %s", fact_id, e)
 
             if reindexed or orphaned_redis:
                 logger.info(
@@ -958,22 +972,23 @@ class SemanticMemory:
         F-030: Lock um den gesamten Delete-Zyklus gegen TOCTOU Race Condition.
         """
         lock_key = f"mha:fact_lock:del:{fact_id}"
+        lock_acquired = False
         if self.redis:
             try:
-                acquired = await self.redis.set(lock_key, "1", ex=10, nx=True)
-                if not acquired:
+                lock_acquired = await self.redis.set(lock_key, "1", ex=10, nx=True)
+                if not lock_acquired:
                     logger.debug("Delete-Lock nicht erhalten: %s", fact_id)
                     return False
             except Exception as e:
-                logger.debug("Unhandled: %s", e)
+                logger.debug("Redis Delete-Lock nicht verfuegbar: %s", e)
         try:
             return await self._delete_fact_inner(fact_id)
         finally:
-            if self.redis:
+            if lock_acquired and self.redis:
                 try:
                     await self.redis.delete(lock_key)
                 except Exception as e:
-                    logger.debug("Unhandled: %s", e)
+                    logger.debug("Delete-Lock Freigabe fehlgeschlagen: %s", e)
 
     async def _delete_fact_inner(self, fact_id: str) -> bool:
         """Interne Loesch-Logik (unter Lock)."""

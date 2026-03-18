@@ -361,19 +361,27 @@ class LearningTransfer:
         """Uebertraegt nur Praeferenzen die zur Tageszeit passen.
 
         Teilt den Tag in Bloecke: Morgen (5-11), Nachmittag (12-17), Abend (18-4).
+        Nutzt die konfigurierte Timezone aus settings.yaml (Default: Europe/Berlin).
 
         Args:
             source_room: Quellraum
             target_room: Zielraum
-            hour: Stunde (0-23), -1 fuer aktuelle Stunde
+            hour: Stunde (0-23), -1 fuer aktuelle Stunde (Lokalzeit)
 
         Returns:
             Dict mit transferred (list) und time_block (str) Feldern.
         """
-        from datetime import datetime as _dt
+        from datetime import datetime as _dt, timezone as _tz
+        from zoneinfo import ZoneInfo
+
+        tz_name = yaml_config.get("timezone", "Europe/Berlin")
+        try:
+            local_tz = ZoneInfo(tz_name)
+        except Exception:
+            local_tz = ZoneInfo("Europe/Berlin")
 
         if hour < 0:
-            hour = _dt.now().hour
+            hour = _dt.now(tz=local_tz).hour
 
         if 5 <= hour <= 11:
             time_block = "morning"
@@ -391,7 +399,7 @@ class LearningTransfer:
                 last_seen = pref.get("last_seen", 0)
                 if last_seen <= 0:
                     continue
-                pref_hour = _dt.fromtimestamp(last_seen).hour
+                pref_hour = _dt.fromtimestamp(last_seen, tz=local_tz).hour
                 if 5 <= pref_hour <= 11:
                     pref_block = "morning"
                 elif 12 <= pref_hour <= 17:

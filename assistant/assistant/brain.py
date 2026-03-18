@@ -1393,6 +1393,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 return
 
             # Fakten parallel extrahieren (Fire-and-forget, max 5s Timeout)
+            _flush_person = getattr(self, "_current_person", "") or "unknown"
             _extracted = 0
             for user_t, assist_t in pairs:
                 try:
@@ -1400,7 +1401,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         self.memory_extractor.extract_and_store(
                             user_text=user_t,
                             assistant_response=assist_t,
-                            person="unknown",
+                            person=_flush_person,
                         ),
                         timeout=5.0,
                     )
@@ -1800,7 +1801,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         _text_norm = text.lower().translate(_umlaut)
         guest_off_triggers = [
             "gaeste sind weg", "gaeste sind wieder weg", "gaeste sind gegangen",
+            "gaeste sind wieder gegangen", "gaeste wieder gegangen",
             "besuch ist weg", "besuch ist wieder weg", "besuch ist gegangen",
+            "besuch ist wieder gegangen", "besuch wieder gegangen",
+            "gaeste gehen", "besuch geht", "gaeste gegangen", "besuch gegangen",
             "normalbetrieb", "gaeste modus aus", "gaeste modus deaktivieren",
             "gaeste modus beenden", "gaestemodus deaktivieren", "gaestemodus aus",
             "gaestemodus beenden", "kein besuch mehr",
@@ -3561,6 +3565,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         mood_hint = self.mood.get_mood_prompt_hint(person or "") if profile.need_mood else ""
         if mood_hint:
             sections.append(("mood", f"\n\nEMOTIONALE LAGE: {mood_hint}", 1))
+
+        # Jarvis Inner-State Mood-Trend (letzte 7 Tage)
+        if hasattr(self, "inner_state") and hasattr(self.inner_state, "get_mood_summary"):
+            try:
+                mood_summary = await self.inner_state.get_mood_summary(days=7)
+                if mood_summary:
+                    sections.append(("mood_trend", f"\n\nDEINE EIGENE STIMMUNG: {mood_summary}", 5))
+            except Exception as e:
+                logger.debug("Mood-Summary fehlgeschlagen: %s", e)
 
         # Phase 4B: Stress-getriggerte Hilfsangebote
         if profile.need_mood:
@@ -11638,6 +11651,14 @@ Regeln:
         await self._speak_and_emit(formatted)
         self._remember_exchange("[proaktiv: Insight]", formatted)
         logger.info("Insight zugestellt [%s/%s]: %s", check, urgency, message[:500])
+        # Dashboard-History: Insight fuer Widget speichern
+        if hasattr(self, "spontaneous") and hasattr(self.spontaneous, "_observation_history"):
+            from datetime import datetime, timezone
+            self.spontaneous._observation_history.append({
+                "text": formatted,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "type": f"insight/{check}",
+            })
         try:
             await self.ha.log_activity(
                 "proactive", f"insight_{check}",
@@ -11671,6 +11692,20 @@ Regeln:
         await self._speak_and_emit(formatted)
         self._remember_exchange("[proaktiv: Beobachtung]", formatted)
         logger.info("Spontane Beobachtung: %s", message[:500])
+        # Dashboard-History: Formatierte Beobachtung fuer Widget aktualisieren
+        # (ersetzt die Rohversion aus dem Observer-Loop)
+        if hasattr(self.spontaneous, "_observation_history"):
+            history = self.spontaneous._observation_history
+            # Letzten Eintrag durch formatierte Version ersetzen falls vorhanden
+            if history and history[-1].get("type") == observation.get("type"):
+                history[-1]["text"] = formatted
+            else:
+                from datetime import datetime, timezone
+                history.append({
+                    "text": formatted,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "type": observation.get("type", "observation"),
+                })
 
     async def _weekly_learning_report_loop(self):
         """Feature 8: Sendet woechentlich einen Lern-Bericht (konfigurierter Tag + Uhrzeit)."""

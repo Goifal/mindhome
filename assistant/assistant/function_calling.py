@@ -4986,7 +4986,6 @@ class FunctionExecutor:
                         "room": room, "ts": _time.time(),
                     })
                     await redis.zadd("mha:scene:history", {entry: _time.time()})
-                    await redis.zremrangebyrank("mha:scene:history", 0, -201)
                 except Exception:
                     pass
 

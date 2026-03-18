@@ -24,6 +24,9 @@ from .config import yaml_config
 
 logger = logging.getLogger(__name__)
 
+# Redis Key fuer Stimmungs-History (Sorted Set, max 90 Tage)
+_KEY_MOOD_HISTORY = "mha:inner_state:mood_history"
+
 # JARVIS-Emotionszustaende
 MOOD_NEUTRAL = "neutral"
 MOOD_CONTENT = "zufrieden"       # Haus laeuft optimal
@@ -366,15 +369,112 @@ class InnerStateEngine:
     # ------------------------------------------------------------------
 
     async def _save_state(self):
-        """Speichert den Zustand in Redis."""
+        """Speichert den Zustand in Redis + History-Snapshot."""
         if not self.redis:
             return
         try:
+            now = datetime.now()
             pipe = self.redis.pipeline()
             pipe.set("mha:inner_state:mood", self._mood, ex=86400)
             pipe.set("mha:inner_state:confidence", str(round(self._confidence, 3)), ex=86400)
             pipe.set("mha:inner_state:satisfaction", str(round(self._satisfaction, 3)), ex=86400)
-            pipe.set("mha:inner_state:last_update", datetime.now().isoformat(), ex=86400)
+            pipe.set("mha:inner_state:last_update", now.isoformat(), ex=86400)
+
+            # Mood-History: Snapshot als Sorted Set (Score = Unix-Timestamp)
+            # Max 1 Eintrag pro Stunde (Deduplizierung ueber Stunden-Key),
+            # 90 Tage Retention, max 2160 Eintraege.
+            import json
+            hour_key = now.strftime("%Y-%m-%d-%H")
+            snapshot = json.dumps({
+                "mood": self._mood,
+                "confidence": round(self._confidence, 3),
+                "satisfaction": round(self._satisfaction, 3),
+                "hour": hour_key,
+            })
+            # Alten Eintrag derselben Stunde entfernen (Dedup)
+            # Dann neuen hinzufuegen mit aktuellem Timestamp als Score
+            pipe.zremrangebyscore(
+                _KEY_MOOD_HISTORY,
+                now.replace(minute=0, second=0, microsecond=0).timestamp(),
+                now.replace(minute=59, second=59, microsecond=999999).timestamp(),
+            )
+            pipe.zadd(_KEY_MOOD_HISTORY, {snapshot: now.timestamp()})
+            # Kein Cutoff — Stimmungs-History wird unbegrenzt gespeichert
+
             await pipe.execute()
         except Exception as e:
             logger.debug("Inner-State Redis-Fehler: %s", e)
+
+    async def get_mood_history(self, days: int = 7) -> list[dict]:
+        """Gibt die Stimmungs-History der letzten X Tage zurueck.
+
+        Returns:
+            Liste von {mood, confidence, satisfaction, hour, timestamp} Eintraegen,
+            sortiert nach Zeit (aelteste zuerst).
+        """
+        if not self.redis:
+            return []
+        try:
+            import json
+            now = datetime.now()
+            min_score = now.timestamp() - (days * 86400)
+            raw = await self.redis.zrangebyscore(
+                _KEY_MOOD_HISTORY, min_score, "+inf", withscores=True,
+            )
+            history = []
+            for entry, score in raw:
+                entry_str = entry.decode() if isinstance(entry, bytes) else entry
+                data = json.loads(entry_str)
+                data["timestamp"] = datetime.fromtimestamp(score).isoformat()
+                history.append(data)
+            return history
+        except Exception as e:
+            logger.debug("Mood-History Abruf fehlgeschlagen: %s", e)
+            return []
+
+    async def get_mood_summary(self, days: int = 7) -> str:
+        """Kompakte Zusammenfassung der Stimmungs-Trends fuer den LLM-Kontext.
+
+        Returns:
+            Leerer String wenn keine History vorhanden, sonst z.B.:
+            "Letzte 7 Tage: 45% zufrieden, 30% neutral, 15% besorgt, 10% irritiert.
+             Tendenz: zufriedener als vorherige Woche."
+        """
+        history = await self.get_mood_history(days)
+        if not history:
+            return ""
+
+        # Mood-Verteilung zaehlen
+        mood_counts: dict[str, int] = {}
+        for entry in history:
+            mood = entry.get("mood", MOOD_NEUTRAL)
+            mood_counts[mood] = mood_counts.get(mood, 0) + 1
+
+        total = sum(mood_counts.values())
+        if total == 0:
+            return ""
+
+        # Sortiert nach Haeufigkeit
+        sorted_moods = sorted(mood_counts.items(), key=lambda x: x[1], reverse=True)
+        parts = [f"{mood} {count * 100 // total}%" for mood, count in sorted_moods]
+
+        # Trend: Erste vs zweite Haelfte vergleichen
+        mid = len(history) // 2
+        if mid > 2:
+            first_half = history[:mid]
+            second_half = history[mid:]
+            pos_moods = {MOOD_CONTENT, MOOD_AMUSED, MOOD_PROUD}
+            pos_first = sum(1 for e in first_half if e.get("mood") in pos_moods)
+            pos_second = sum(1 for e in second_half if e.get("mood") in pos_moods)
+            ratio_first = pos_first / len(first_half) if first_half else 0
+            ratio_second = pos_second / len(second_half) if second_half else 0
+            if ratio_second > ratio_first + 0.1:
+                trend = "Tendenz: positiver."
+            elif ratio_first > ratio_second + 0.1:
+                trend = "Tendenz: angespannter."
+            else:
+                trend = "Tendenz: stabil."
+        else:
+            trend = ""
+
+        return f"Stimmung letzte {days} Tage: {', '.join(parts)}. {trend}".strip()

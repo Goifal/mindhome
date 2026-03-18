@@ -45,7 +45,7 @@ class TestInit:
         assert scl._jarvis_pending == {}
 
     def test_deque_max_len(self, scl):
-        assert scl._log.maxlen == 30
+        assert scl._log.maxlen == 200
 
 
 # =========================================================================
