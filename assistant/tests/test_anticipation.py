@@ -945,8 +945,11 @@ class TestCheckLoop:
             anticipation_with_redis._running = False
             return []
 
+        # Patch quiet hours to never-quiet range so the loop doesn't skip
+        _no_quiet = {"ambient_presence": {"quiet_start": 0, "quiet_end": 0}}
         with patch.object(anticipation_with_redis, "get_suggestions",
-                          side_effect=mock_get_suggestions):
+                          side_effect=mock_get_suggestions), \
+             patch("assistant.config.yaml_config", _no_quiet):
             anticipation_with_redis._running = True
             task = asyncio.create_task(anticipation_with_redis._check_loop())
             await asyncio.sleep(0.1)
@@ -974,12 +977,22 @@ class TestCheckLoop:
             anticipation_with_redis._running = False
             return []
 
+        # Patch quiet hours to never-quiet range so the loop doesn't skip.
+        # Also patch asyncio.sleep in error handler (60s) to avoid blocking.
+        _no_quiet = {"ambient_presence": {"quiet_start": 0, "quiet_end": 0}}
+        _original_sleep = asyncio.sleep
+
+        async def _fast_sleep(seconds):
+            await _original_sleep(min(seconds, 0.01))
+
         anticipation_with_redis.check_interval = 0.01
         with patch.object(anticipation_with_redis, "get_suggestions",
-                          side_effect=mock_get_suggestions):
+                          side_effect=mock_get_suggestions), \
+             patch("assistant.config.yaml_config", _no_quiet), \
+             patch("asyncio.sleep", side_effect=_fast_sleep):
             anticipation_with_redis._running = True
             task = asyncio.create_task(anticipation_with_redis._check_loop())
-            await asyncio.sleep(0.2)
+            await _original_sleep(0.2)
             anticipation_with_redis._running = False
             task.cancel()
             try:

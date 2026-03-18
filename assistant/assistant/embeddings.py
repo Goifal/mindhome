@@ -66,10 +66,31 @@ def get_embedding_function():
 
     try:
         from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
-        _embedding_fn = SentenceTransformerEmbeddingFunction(
-            model_name=model_name,
-        )
-        logger.info("Embedding-Modell geladen: %s", model_name)
+        try:
+            _embedding_fn = SentenceTransformerEmbeddingFunction(
+                model_name=model_name,
+            )
+        except Exception as online_err:
+            # Netzwerk nicht erreichbar → lokalen Cache nutzen
+            logger.warning(
+                "Embedding online-load fehlgeschlagen (%s), versuche lokalen Cache...",
+                online_err,
+            )
+            import os as _os
+            _prev = _os.environ.get("HF_HUB_OFFLINE")
+            _os.environ["HF_HUB_OFFLINE"] = "1"
+            try:
+                _embedding_fn = SentenceTransformerEmbeddingFunction(
+                    model_name=model_name,
+                )
+                logger.info("Embedding-Modell aus lokalem Cache geladen: %s", model_name)
+            finally:
+                if _prev is None:
+                    _os.environ.pop("HF_HUB_OFFLINE", None)
+                else:
+                    _os.environ["HF_HUB_OFFLINE"] = _prev
+        else:
+            logger.info("Embedding-Modell geladen: %s", model_name)
         return _embedding_fn
     except ImportError:
         logger.warning(
