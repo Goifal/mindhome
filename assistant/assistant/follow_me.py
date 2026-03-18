@@ -312,3 +312,51 @@ class FollowMeEngine:
             "tracked_persons": len(self._person_room),
             "profiles": list(self.profiles.keys()),
         }
+
+    # ------------------------------------------------------------------
+    # Phase 7: Praesenz-basierte Kontextanreicherung
+    # ------------------------------------------------------------------
+
+    def get_person_location(self, person: str) -> Optional[str]:
+        """Gibt den letzten bekannten Raum einer Person zurueck."""
+        return self._person_room.get(person)
+
+    def get_all_person_locations(self) -> dict[str, str]:
+        """Gibt alle bekannten Person-Raum-Zuordnungen zurueck."""
+        return dict(self._person_room)
+
+    def get_occupied_rooms(self) -> list[str]:
+        """Gibt alle aktuell belegten Raeume zurueck."""
+        return list(set(self._person_room.values()))
+
+    def is_room_occupied(self, room: str) -> bool:
+        """Prueft ob ein Raum belegt ist."""
+        room_lower = room.lower().replace(" ", "_")
+        return any(
+            r.lower().replace(" ", "_") == room_lower
+            for r in self._person_room.values()
+        )
+
+    def get_persons_in_room(self, room: str) -> list[str]:
+        """Gibt alle Personen in einem bestimmten Raum zurueck."""
+        room_lower = room.lower().replace(" ", "_")
+        return [
+            p for p, r in self._person_room.items()
+            if r.lower().replace(" ", "_") == room_lower
+        ]
+
+    async def get_context_for_person(self, person: str) -> str:
+        """Gibt Praesenz-Kontext fuer LLM-Prompt zurueck.
+
+        Returns:
+            Kontext-String z.B. "Person ist im Wohnzimmer. Auch anwesend: Partner."
+        """
+        location = self.get_person_location(person)
+        if not location:
+            return ""
+
+        others = [p for p in self.get_persons_in_room(location) if p != person]
+        context = f"Person ist im {location}."
+        if others:
+            context += f" Auch anwesend: {', '.join(others)}."
+        return context

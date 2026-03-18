@@ -862,3 +862,125 @@ class WellnessAdvisor:
             logger.info("Wellness [%s/%s]: %s", nudge_type, urgency, message)
         except Exception as e:
             logger.error("Wellness-Nudge Fehler: %s", e)
+
+    # ------------------------------------------------------------------
+    # Phase 11: Erweiterte Wellness-Features
+    # ------------------------------------------------------------------
+
+    async def get_wellness_summary(self) -> dict:
+        """Gibt eine Wellness-Zusammenfassung fuer das Morgen-Briefing zurueck.
+
+        Returns:
+            Dict mit score, hints, recommendations
+        """
+        score = 100
+        hints: list[str] = []
+        recommendations: list[str] = []
+
+        try:
+            # PC-Nutzung gestern
+            if self.redis:
+                pc_key = "mha:wellness:pc_session_start"
+                pc_raw = await self.redis.get(pc_key)
+                if pc_raw:
+                    import time
+                    pc_start = float(pc_raw)
+                    hours = (time.time() - pc_start) / 3600
+                    if hours > 8:
+                        score -= 15
+                        hints.append(f"PC-Session laeuft seit {hours:.0f}h")
+                        recommendations.append("Regelmaessige Bildschirmpausen einlegen")
+
+            # Schlafzeitpunkt pruefen
+            if self.redis:
+                late_key = "mha:wellness:late_night_count"
+                late_raw = await self.redis.get(late_key)
+                if late_raw:
+                    late_count = int(late_raw)
+                    if late_count >= 3:
+                        score -= 10
+                        hints.append(f"{late_count} spaete Naechte diese Woche")
+                        recommendations.append("Frueher ins Bett gehen")
+
+            # Stimmung beruecksichtigen
+            if self.mood:
+                current_mood = getattr(self.mood, "_current_mood", "neutral")
+                if current_mood in ("stressed", "frustrated"):
+                    score -= 10
+                    hints.append(f"Aktuelle Stimmung: {current_mood}")
+                    recommendations.append("Kurze Entspannungspause empfohlen")
+
+        except Exception as e:
+            logger.debug("Wellness summary failed: %s", e)
+
+        return {
+            "score": max(0, min(100, score)),
+            "hints": hints,
+            "recommendations": recommendations,
+        }
+
+    async def suggest_micro_break(self, activity: str = "") -> Optional[str]:
+        """Schlaegt eine passende Mikro-Pause vor.
+
+        Args:
+            activity: Aktuelle Aktivitaet (z.B. "pc", "cooking", "reading")
+
+        Returns:
+            Vorschlag-Text oder None
+        """
+        suggestions = {
+            "pc": [
+                "Steh kurz auf und strecke dich — 20-20-20 Regel: 20 Sekunden in 20 Meter Entfernung schauen.",
+                "Zeit fuer einen kurzen Gang zur Kaffeemaschine?",
+                "Schultern kreisen und tief durchatmen — nur 30 Sekunden.",
+            ],
+            "cooking": [
+                "Waehrend das kocht: kurz setzen und ein Glas Wasser trinken.",
+            ],
+            "reading": [
+                "Kurz die Augen schliessen und 10 tiefe Atemzuege nehmen.",
+            ],
+        }
+
+        import random
+        options = suggestions.get(activity, suggestions["pc"])
+        return random.choice(options)
+
+    async def get_ambient_suggestion(self) -> Optional[dict]:
+        """Gibt Ambient-Vorschlaege basierend auf Stimmung zurueck.
+
+        Returns:
+            Dict mit action, reason oder None
+        """
+        if not self.mood:
+            return None
+
+        try:
+            current_mood = getattr(self.mood, "_current_mood", "neutral")
+
+            mood_ambients = {
+                "stressed": {
+                    "action": "Licht auf warmes Dimmlevel (30%) setzen",
+                    "reason": "Warmes, gedimmtes Licht kann bei Stress helfen",
+                    "function": "set_light",
+                    "args": {"brightness": 30, "color_temp": "warm"},
+                },
+                "tired": {
+                    "action": "Licht auf helles, kuehles Licht setzen",
+                    "reason": "Kuehles Licht kann die Wachheit foerdern",
+                    "function": "set_light",
+                    "args": {"brightness": 100, "color_temp": "cool"},
+                },
+                "frustrated": {
+                    "action": "Beruhigende Musik abspielen",
+                    "reason": "Musik kann bei Frustration helfen",
+                    "function": "play_media",
+                    "args": {"query": "relaxing ambient music"},
+                },
+            }
+
+            suggestion = mood_ambients.get(current_mood)
+            return suggestion
+        except Exception as e:
+            logger.debug("Ambient suggestion failed: %s", e)
+            return None

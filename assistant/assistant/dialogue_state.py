@@ -528,3 +528,123 @@ class DialogueStateManager:
             "question": f"Welches meinst du? ({', '.join(options[:3])}{'...' if len(options) > 3 else ''})",
             "options": options,
         }
+
+    # ------------------------------------------------------------------
+    # Phase 6: Erweiterte Dialogfuehrung
+    # ------------------------------------------------------------------
+
+    def get_conversation_depth(self, person: str = "") -> int:
+        """Gibt die Gespraechstiefe (Anzahl Turns) fuer eine Person zurueck."""
+        state = self._get_state(person)
+        return state.turn_count
+
+    def get_topic_continuity(self, text: str, person: str = "") -> dict:
+        """Prueft ob der aktuelle Text thematisch zum bisherigen Gespraech passt.
+
+        Returns:
+            Dict mit is_continuation, confidence, suggested_context
+        """
+        state = self._get_state(person)
+
+        if state.turn_count == 0:
+            return {"is_continuation": False, "confidence": 0.0, "suggested_context": ""}
+
+        text_lower = text.lower()
+
+        # Explizite Topic-Wechsel-Marker
+        topic_switch_markers = [
+            "anderes thema", "etwas anderes", "uebrigens", "ach ja",
+            "mal was anderes", "andere frage", "neues thema",
+        ]
+        if any(m in text_lower for m in topic_switch_markers):
+            return {"is_continuation": False, "confidence": 0.9, "suggested_context": ""}
+
+        # Continuation-Marker
+        continuation_markers = [
+            "und", "ausserdem", "noch", "auch", "dazu",
+            "was ist mit", "wie waere es mit", "kannst du auch",
+            "und was", "und wie", "noch eine",
+        ]
+
+        is_cont = any(text_lower.startswith(m) for m in continuation_markers)
+        # Wenn Domain gleich bleibt → wahrscheinlich Continuation
+        if state.last_domains:
+            last_domain = state.last_domains[-1] if state.last_domains else ""
+            if last_domain:
+                is_cont = True
+
+        context = ""
+        if is_cont and state.last_entities:
+            context = f"Bezieht sich auf: {', '.join(list(state.last_entities)[-2:])}"
+        if is_cont and state.last_rooms:
+            room = state.last_rooms[-1]
+            context += f" (Raum: {room})" if context else f"Raum: {room}"
+
+        return {
+            "is_continuation": is_cont,
+            "confidence": 0.7 if is_cont else 0.3,
+            "suggested_context": context,
+        }
+
+    def get_implicit_context(self, person: str = "") -> str:
+        """Gibt impliziten Kontext zurueck fuer bessere Antwortgenerierung.
+
+        Z.B. wenn User nacheinander "Mach Licht an" → "Auch im Flur" sagt,
+        wird der Raum-Kontext aus der vorherigen Interaktion uebernommen.
+        """
+        state = self._get_state(person)
+        if state.is_stale(self.timeout_seconds) or state.turn_count == 0:
+            return ""
+
+        parts = []
+        if state.last_rooms:
+            rooms = list(state.last_rooms)
+            parts.append(f"Letzte Raeume: {', '.join(rooms)}")
+        if state.last_entities:
+            ents = list(state.last_entities)[-3:]
+            parts.append(f"Letzte Geraete: {', '.join(ents)}")
+        if state.last_actions:
+            last = state.last_actions[-1]
+            action_name = last.get("action", "unbekannt")
+            parts.append(f"Letzte Aktion: {action_name}")
+        if state.state == "awaiting_clarification" and state.pending_clarification:
+            parts.append(f"Offene Frage: {state.pending_clarification.get('question', '')}")
+
+        return " | ".join(parts) if parts else ""
+
+    def suggest_follow_up(self, action_result: dict, person: str = "") -> str:
+        """Schlaegt eine Follow-Up-Frage basierend auf der letzten Aktion vor.
+
+        Args:
+            action_result: Ergebnis der letzten Aktion
+            person: Person
+
+        Returns:
+            Vorgeschlagene Follow-Up-Frage oder leerer String
+        """
+        state = self._get_state(person)
+        if state.turn_count < 2:
+            return ""
+
+        # Nur bei erfolgreichen Aktionen
+        if not action_result.get("success", False):
+            return ""
+
+        last_actions = list(state.last_actions)
+        if not last_actions:
+            return ""
+
+        last = last_actions[-1]
+        action = last.get("action", "")
+
+        # Pattern-basierte Vorschlaege
+        if action == "set_light" and last.get("args", {}).get("state") == "on":
+            return "Soll ich die Helligkeit oder Farbe anpassen?"
+        if action == "set_climate":
+            return "Soll ich die Temperatur in anderen Raeumen auch anpassen?"
+        if action == "play_media":
+            return "Soll ich die Lautstaerke anpassen?"
+        if action == "set_cover" and last.get("args", {}).get("state") == "closed":
+            return "Soll ich auch das Licht anmachen?"
+
+        return ""

@@ -506,3 +506,60 @@ class TestTransferMusic:
             "wohnzimmer", "kueche", speakers, []
         )
         assert result is None
+
+
+# ------------------------------------------------------------------
+# Phase 7: Praesenz-basierte Kontextanreicherung
+# ------------------------------------------------------------------
+
+
+class TestPhase7PresenceContext:
+
+    @pytest.fixture
+    def engine(self, ha_mock):
+        with patch("assistant.follow_me.yaml_config", FOLLOW_ME_CONFIG):
+            e = FollowMeEngine(ha_mock)
+            return e
+
+    def test_get_person_location_unknown(self, engine):
+        assert engine.get_person_location("Max") is None
+
+    def test_get_person_location_known(self, engine):
+        engine._person_room["Max"] = "wohnzimmer"
+        assert engine.get_person_location("Max") == "wohnzimmer"
+
+    def test_get_all_person_locations(self, engine):
+        engine._person_room["Max"] = "wohnzimmer"
+        engine._person_room["Lisa"] = "kueche"
+        locs = engine.get_all_person_locations()
+        assert locs == {"Max": "wohnzimmer", "Lisa": "kueche"}
+
+    def test_get_occupied_rooms(self, engine):
+        engine._person_room["Max"] = "wohnzimmer"
+        engine._person_room["Lisa"] = "wohnzimmer"
+        rooms = engine.get_occupied_rooms()
+        assert rooms == ["wohnzimmer"]
+
+    def test_is_room_occupied(self, engine):
+        engine._person_room["Max"] = "wohnzimmer"
+        assert engine.is_room_occupied("wohnzimmer") is True
+        assert engine.is_room_occupied("kueche") is False
+
+    def test_get_persons_in_room(self, engine):
+        engine._person_room["Max"] = "wohnzimmer"
+        engine._person_room["Lisa"] = "wohnzimmer"
+        persons = engine.get_persons_in_room("wohnzimmer")
+        assert sorted(persons) == ["Lisa", "Max"]
+
+    @pytest.mark.asyncio
+    async def test_get_context_for_person_unknown(self, engine):
+        ctx = await engine.get_context_for_person("Max")
+        assert ctx == ""
+
+    @pytest.mark.asyncio
+    async def test_get_context_for_person_known(self, engine):
+        engine._person_room["Max"] = "wohnzimmer"
+        engine._person_room["Lisa"] = "wohnzimmer"
+        ctx = await engine.get_context_for_person("Max")
+        assert "wohnzimmer" in ctx
+        assert "Lisa" in ctx

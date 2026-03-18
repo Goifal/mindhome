@@ -637,3 +637,90 @@ class DeviceHealthMonitor:
     async def get_baseline_info(self, entity_id: str) -> Optional[dict]:
         """Gibt Baseline-Daten für ein bestimmtes Entity zurück."""
         return await self._get_baseline(entity_id)
+
+    # ------------------------------------------------------------------
+    # Phase 8: Proaktive Device-Health-Hinweise
+    # ------------------------------------------------------------------
+
+    async def get_anomaly_summary(self) -> str:
+        """Gibt eine Zusammenfassung aktueller Anomalien zurueck.
+
+        Returns:
+            Zusammenfassungstext oder leerer String
+        """
+        if not self.enabled or not self.redis:
+            return ""
+
+        try:
+            alerts = await self.check_all()
+            if not alerts:
+                return ""
+
+            anomaly_types: dict[str, int] = {}
+            for alert in alerts:
+                atype = alert.get("type", "unknown")
+                anomaly_types[atype] = anomaly_types.get(atype, 0) + 1
+
+            parts = []
+            for atype, count in anomaly_types.items():
+                type_de = {
+                    "value_anomaly": "Wert-Anomalien",
+                    "stale": "Inaktive Sensoren",
+                    "hvac_inefficiency": "HVAC-Probleme",
+                }.get(atype, atype)
+                parts.append(f"{count} {type_de}")
+
+            return f"Geraete-Gesundheit: {', '.join(parts)}"
+        except Exception as e:
+            logger.debug("Anomaly summary failed: %s", e)
+            return ""
+
+    async def get_efficiency_report(self) -> dict:
+        """Gibt einen Effizienz-Bericht fuer HVAC-Geraete zurueck.
+
+        Returns:
+            Dict mit efficiency_data, suggestions
+        """
+        if not self.enabled or not self.redis:
+            return {"efficiency_data": [], "suggestions": []}
+
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return {"efficiency_data": [], "suggestions": []}
+
+            hvac_data = []
+            suggestions = []
+
+            for s in states:
+                eid = s.get("entity_id", "")
+                if not eid.startswith("climate."):
+                    continue
+
+                attrs = s.get("attributes", {})
+                current_temp = attrs.get("current_temperature")
+                target_temp = attrs.get("temperature")
+                mode = s.get("state", "off")
+
+                if current_temp and target_temp and mode != "off":
+                    diff = abs(float(current_temp) - float(target_temp))
+                    entry = {
+                        "entity_id": eid,
+                        "name": attrs.get("friendly_name", eid),
+                        "current": current_temp,
+                        "target": target_temp,
+                        "diff": round(diff, 1),
+                        "mode": mode,
+                    }
+                    hvac_data.append(entry)
+
+                    if diff > self.hvac_tolerance:
+                        suggestions.append(
+                            f"{entry['name']}: {diff}°C Abweichung — "
+                            f"moeglicherweise Fenster offen oder Geraet ineffizient"
+                        )
+
+            return {"efficiency_data": hvac_data, "suggestions": suggestions}
+        except Exception as e:
+            logger.debug("Efficiency report failed: %s", e)
+            return {"efficiency_data": [], "suggestions": []}

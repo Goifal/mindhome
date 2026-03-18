@@ -807,3 +807,92 @@ class DiagnosticsEngine:
         if not self.enabled:
             return "disabled"
         return "active"
+
+    # ------------------------------------------------------------------
+    # Phase 8: Proaktive Diagnostik-Hinweise
+    # ------------------------------------------------------------------
+
+    async def get_proactive_hints(self) -> list[dict]:
+        """Sammelt proaktive Diagnostik-Hinweise fuer den Assistenten.
+
+        Gibt Hinweise zurueck die Jarvis beilaeufig erwaehnen kann,
+        z.B. "Uebrigens, der Bewegungsmelder im Bad meldet seit 6 Stunden nichts."
+
+        Returns:
+            Liste von {message, severity, entity_id} Dicts
+        """
+        hints: list[dict] = []
+        if not self.enabled:
+            return hints
+
+        try:
+            entities = await self.check_entities()
+            for entity in entities:
+                status = entity.get("status", "")
+                eid = entity.get("entity_id", "")
+                name = entity.get("friendly_name", eid)
+
+                if status == "low_battery":
+                    battery = entity.get("battery_level", "?")
+                    hints.append({
+                        "message": f"{name} hat nur noch {battery}% Batterie",
+                        "severity": "info",
+                        "entity_id": eid,
+                        "type": "battery",
+                    })
+                elif status == "stale":
+                    minutes = entity.get("stale_minutes", 0)
+                    hours = int(minutes / 60)
+                    hints.append({
+                        "message": f"{name} meldet seit {hours}h nichts — moeglicherweise offline",
+                        "severity": "warning" if hours > 12 else "info",
+                        "entity_id": eid,
+                        "type": "stale",
+                    })
+                elif status == "offline":
+                    hints.append({
+                        "message": f"{name} ist offline",
+                        "severity": "warning",
+                        "entity_id": eid,
+                        "type": "offline",
+                    })
+
+            # System-Ressourcen pruefen
+            sys_status = self.check_system_resources()
+            if sys_status.get("disk_usage_percent", 0) > 85:
+                hints.append({
+                    "message": f"Festplattenspeicher bei {sys_status['disk_usage_percent']}%",
+                    "severity": "warning",
+                    "entity_id": "",
+                    "type": "system",
+                })
+
+        except Exception as e:
+            logger.debug("Proaktive Diagnostik-Hints Fehler: %s", e)
+
+        return hints
+
+    async def get_morning_diagnostic_summary(self) -> str:
+        """Kurze Zusammenfassung fuer das Morgen-Briefing.
+
+        Returns:
+            Zusammenfassungstext oder leerer String
+        """
+        hints = await self.get_proactive_hints()
+        if not hints:
+            return ""
+
+        warnings = [h for h in hints if h["severity"] == "warning"]
+        infos = [h for h in hints if h["severity"] == "info"]
+
+        parts = []
+        if warnings:
+            parts.append(f"{len(warnings)} Warnungen")
+        if infos:
+            parts.append(f"{len(infos)} Hinweise")
+
+        summary = f"System-Status: {', '.join(parts)}."
+        if warnings:
+            # Wichtigste Warnung nennen
+            summary += f" Wichtigste: {warnings[0]['message']}."
+        return summary

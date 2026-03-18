@@ -307,3 +307,55 @@ class TestGetContextPromptClarification:
         prompt = dsm.get_context_prompt("Max")
         assert "OFFENE KLAERUNGSFRAGE" in prompt
         assert "Welches Licht meinst du?" in prompt
+
+
+# ------------------------------------------------------------------
+# Phase 6: Erweiterte Dialogfuehrung
+# ------------------------------------------------------------------
+
+
+class TestPhase6ExtendedDialogue:
+
+    def test_conversation_depth_initial(self, dsm):
+        assert dsm.get_conversation_depth("Max") == 0
+
+    def test_conversation_depth_after_turns(self, dsm):
+        dsm.track_turn("Hallo", person="Max")
+        dsm.track_turn("Licht an", person="Max")
+        assert dsm.get_conversation_depth("Max") == 2
+
+    def test_topic_continuity_new_conversation(self, dsm):
+        result = dsm.get_topic_continuity("Hallo", person="Max")
+        assert result["is_continuation"] is False
+
+    def test_topic_continuity_explicit_switch(self, dsm):
+        dsm.track_turn("Licht an", person="Max")
+        result = dsm.get_topic_continuity("anderes thema bitte", person="Max")
+        assert result["is_continuation"] is False
+        assert result["confidence"] > 0.5
+
+    def test_topic_continuity_continuation(self, dsm):
+        dsm.track_turn("Licht an", person="Max", domain="light")
+        result = dsm.get_topic_continuity("und auch im Flur", person="Max")
+        assert result["is_continuation"] is True
+
+    def test_implicit_context_empty(self, dsm):
+        result = dsm.get_implicit_context("Max")
+        assert result == ""
+
+    def test_implicit_context_with_history(self, dsm):
+        dsm.track_turn("Licht an", person="Max", room="Kueche",
+                        entities=["light.kueche"])
+        result = dsm.get_implicit_context("Max")
+        assert "kueche" in result.lower()
+
+    def test_suggest_follow_up_no_history(self, dsm):
+        result = dsm.suggest_follow_up({}, person="Max")
+        assert result == ""
+
+    def test_suggest_follow_up_light_on(self, dsm):
+        dsm.track_turn("Licht an", person="Max",
+                        actions=[{"action": "set_light", "args": {"state": "on"}}])
+        dsm.track_turn("ok", person="Max")
+        result = dsm.suggest_follow_up({"success": True}, person="Max")
+        assert "Helligkeit" in result or "Farbe" in result
