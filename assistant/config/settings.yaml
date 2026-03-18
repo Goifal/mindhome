@@ -2033,6 +2033,13 @@ remote:
         fernsehen: Watch TV
         musik: Listen to Music
         aus: PowerOff
+# Szenen-Konfiguration (zentral)
+scenes:
+  mood_scenes: {}              # User-Overrides fuer Mood-Szenen (merged mit Defaults)
+  room_overrides: {}           # Room-spezifische Overrides: {raum: {szene: {param: wert}}}
+  schedule_enabled: true       # Szenen-Scheduler aktiv
+  device_trigger_map: {}       # Entity → Scene Mapping: {entity_id: [scene1, scene2]}
+
 vacuum:
   enabled: true
   default_fan_speed: standard

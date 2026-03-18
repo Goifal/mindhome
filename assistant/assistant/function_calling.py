@@ -1384,13 +1384,42 @@ def _get_assistant_tools_static() -> list:
         "type": "function",
         "function": {
             "name": "activate_scene",
-            "description": "Eine Szene aktivieren (z.B. filmabend, gute_nacht, gemuetlich)",
+            "description": "Eine Szene aktivieren (z.B. filmabend, gute_nacht, gemuetlich, aufwachen, kochen, arbeiten, lesen, romantisch, putzen, musik, energiesparen). Optional mit Raum, Helligkeits- oder Temperatur-Override.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "scene": {
                         "type": "string",
                         "description": "Name der Szene",
+                    },
+                    "room": {
+                        "type": "string",
+                        "description": "Raum (optional, z.B. wohnzimmer, schlafzimmer)",
+                    },
+                    "brightness_override": {
+                        "type": "integer",
+                        "description": "Helligkeit ueberschreiben (0-100, optional)",
+                    },
+                    "temperature_override": {
+                        "type": "number",
+                        "description": "Temperatur ueberschreiben in Grad (optional)",
+                    },
+                },
+                "required": ["scene"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "deactivate_scene",
+            "description": "Eine aktive Szene beenden und vorherigen Zustand wiederherstellen (z.B. 'filmabend aus', 'szene beenden')",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scene": {
+                        "type": "string",
+                        "description": "Name der Szene zum Beenden",
                     },
                 },
                 "required": ["scene"],
@@ -4650,6 +4679,133 @@ class FunctionExecutor:
             ],
             "climate_offset": -2.0,
         },
+        "aufwachen": {
+            "label": "Aufwachen",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 60, "color_temp_kelvin": 4000}},
+                {"domain": "cover", "service": "open_cover", "data": {}},
+            ],
+            "climate_offset": 1.0,
+        },
+        "hell": {
+            "label": "Hell",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 100, "color_temp_kelvin": 5000}},
+                {"domain": "cover", "service": "open_cover", "data": {}},
+            ],
+        },
+        "kochen": {
+            "label": "Kochen",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 100, "color_temp_kelvin": 4500}},
+            ],
+        },
+        "essen": {
+            "label": "Essen",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 60, "color_temp_kelvin": 2700}},
+            ],
+        },
+        "schlafen": {
+            "label": "Schlafen",
+            "actions": [
+                {"domain": "light", "service": "turn_off", "data": {}},
+                {"domain": "cover", "service": "close_cover", "data": {}},
+            ],
+            "climate_offset": -1.0,
+        },
+        "lesen": {
+            "label": "Lesen",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 40, "color_temp_kelvin": 3000}},
+            ],
+        },
+        "arbeiten": {
+            "label": "Arbeiten",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 80, "color_temp_kelvin": 5000}},
+            ],
+        },
+        "meeting": {
+            "label": "Meeting",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 90, "color_temp_kelvin": 4500}},
+            ],
+        },
+        "spielen": {
+            "label": "Spielen",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 80, "color_temp_kelvin": 4000}},
+            ],
+        },
+        "morgens": {
+            "label": "Bad Morgens",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 100, "color_temp_kelvin": 5000}},
+            ],
+            "climate_offset": 2.0,
+        },
+        "abends": {
+            "label": "Bad Abends",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 20, "color_temp_kelvin": 2200}},
+            ],
+        },
+        "romantisch": {
+            "label": "Romantisch",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 5, "color_temp_kelvin": 2200}},
+                {"domain": "cover", "service": "close_cover", "data": {}},
+            ],
+        },
+        "energiesparen": {
+            "label": "Energiesparen",
+            "actions": [
+                {"domain": "light", "service": "turn_off", "data": {}},
+            ],
+            "climate_offset": -3.0,
+        },
+        "putzen": {
+            "label": "Putzen",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 100, "color_temp_kelvin": 5000}},
+                {"domain": "cover", "service": "open_cover", "data": {}},
+            ],
+        },
+        "musik": {
+            "label": "Musik",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 40, "color_temp_kelvin": 2700}},
+                {"domain": "media_player", "service": "turn_on", "data": {}},
+            ],
+        },
+    }
+
+    # Mood-Aliases: Natuerliche Sprache → Szenen-Key
+    _MOOD_ALIASES = {
+        "cozy": "gemuetlich", "chill": "gemuetlich", "chillen": "gemuetlich",
+        "relax": "gemuetlich", "entspannung": "gemuetlich",
+        "film": "filmabend", "kino": "filmabend", "movie": "filmabend",
+        "feiern": "party", "feier": "party",
+        "fokus": "konzentration", "focus": "konzentration",
+        "nacht": "gute_nacht", "bett": "gute_nacht",
+        # Neue Szenen-Aliases
+        "aufstehen": "aufwachen", "wecken": "aufwachen",
+        "alles_an": "hell", "voll_hell": "hell", "maximale_helligkeit": "hell",
+        "essen_machen": "kochen", "cooking": "kochen",
+        "abendessen": "essen", "dinner": "essen", "mahlzeit": "essen",
+        "ins_bett": "schlafen", "schlafenszeit": "schlafen", "pennen": "schlafen",
+        "buch": "lesen", "reading": "lesen",
+        "buero": "arbeiten", "office": "arbeiten", "work": "arbeiten",
+        "videocall": "meeting", "zoom": "meeting", "teams": "meeting",
+        "kinder": "spielen", "toben": "spielen",
+        "frueh": "morgens", "morgenroutine": "morgens",
+        "baden": "abends", "entspannen_bad": "abends",
+        "candle_light": "romantisch", "date": "romantisch", "zweisamkeit": "romantisch",
+        "romantic": "romantisch", "romantik": "romantisch",
+        "sparen": "energiesparen", "eco": "energiesparen", "strom_sparen": "energiesparen",
+        "sauber_machen": "putzen", "aufraemen": "putzen", "cleaning": "putzen",
+        "musik_hoeren": "musik", "sound": "musik", "anlage": "musik",
     }
 
     async def _exec_activate_scene(self, args: dict) -> dict:
@@ -4662,33 +4818,78 @@ class FunctionExecutor:
         mood_scenes_cfg = yaml_config.get("scenes", {}).get("mood_scenes", {})
         mood_scenes = {**self._DEFAULT_MOOD_SCENES, **mood_scenes_cfg}
 
-        # Fuzzy-Match: "gemuetlich", "cozy", "chillen" etc.
-        _mood_aliases = {
-            "cozy": "gemuetlich", "chill": "gemuetlich", "chillen": "gemuetlich",
-            "relax": "gemuetlich", "entspannung": "gemuetlich", "romantic": "gemuetlich",
-            "romantisch": "gemuetlich", "film": "filmabend", "kino": "filmabend",
-            "movie": "filmabend", "feiern": "party", "feier": "party",
-            "fokus": "konzentration", "focus": "konzentration", "arbeit": "konzentration",
-            "schlafen": "gute_nacht", "nacht": "gute_nacht", "bett": "gute_nacht",
-        }
-        mood_key = _mood_aliases.get(scene_lower, scene_lower)
+        mood_key = self._MOOD_ALIASES.get(scene_lower, scene_lower)
 
         if mood_key in mood_scenes:
+            # [3] Rate-Limiting: 30s Cooldown pro Szene
+            redis = getattr(self, "_redis", None)
+            if redis:
+                cooldown_key = f"mha:scene:cooldown:{mood_key}"
+                try:
+                    if await redis.get(cooldown_key):
+                        label = mood_scenes[mood_key].get("label", mood_key)
+                        return {"success": True, "message": f"'{label}' ist bereits aktiv."}
+                    await redis.setex(cooldown_key, 30, "1")
+                except Exception:
+                    pass
+
             mood = mood_scenes[mood_key]
             actions_done = []
+            errors = []
             room = args.get("room", "")
+
+            # [4] Transition-Dauer aus Config (z.B. filmabend=5s, gute_nacht=7s)
+            _transition = yaml_config.get("narration", {}).get("scene_transitions", {}).get(mood_key, 3)
+
+            # [5] Snapshot fuer Undo: Aktuellen Zustand betroffener Entities speichern
+            snapshot = []
+            states = await self.ha.get_states()
+
+            if states and redis:
+                for action in mood.get("actions", []):
+                    _dom = action.get("domain", "")
+                    for s in (states or []):
+                        eid = s.get("entity_id", "")
+                        if eid.startswith(f"{_dom}.") and is_entity_annotated(eid) and not is_entity_hidden(eid):
+                            snapshot.append({
+                                "entity_id": eid,
+                                "state": s.get("state", "off"),
+                                "brightness": s.get("attributes", {}).get("brightness"),
+                                "color_temp": s.get("attributes", {}).get("color_temp"),
+                                "temperature": s.get("attributes", {}).get("temperature"),
+                            })
+                try:
+                    import json as _json
+                    await redis.setex(f"mha:scene:snapshot:{mood_key}", 3600, _json.dumps(snapshot))
+                except Exception:
+                    pass
 
             for action in mood.get("actions", []):
                 domain = action["domain"]
                 service = action["service"]
                 data = dict(action.get("data", {}))
 
-                # Entities fuer diesen Domain finden
+                # [7] User-Overrides anwenden (z.B. "filmabend aber heller")
+                if domain == "light" and args.get("brightness_override") is not None:
+                    data["brightness_pct"] = max(0, min(100, int(args["brightness_override"])))
+
+                # [10] Room-spezifische Scene-Overrides
+                if room:
+                    room_overrides = yaml_config.get("scenes", {}).get("room_overrides", {})
+                    room_scene_cfg = room_overrides.get(room.lower(), {}).get(mood_key, {})
+                    if room_scene_cfg:
+                        data.update(room_scene_cfg)
+
+                # [6] Entities finden + Error-Handling pro Entity
                 try:
-                    states = await self.ha.get_states()
+                    if not states:
+                        states = await self.ha.get_states()
                     for s in (states or []):
                         eid = s.get("entity_id", "")
                         if not eid.startswith(f"{domain}."):
+                            continue
+                        # [1] Nur annotierte, nicht-versteckte Entities steuern
+                        if not is_entity_annotated(eid) or is_entity_hidden(eid):
                             continue
                         # Raum-Filter wenn angegeben
                         if room and room.lower() not in eid.lower():
@@ -4700,45 +4901,159 @@ class FunctionExecutor:
                             if not await self._is_safe_cover(eid, s):
                                 continue
                         svc_data = {**data, "entity_id": eid}
-                        await self.ha.call_service(domain, service, svc_data)
+                        # [4] Smooth transition fuer Lichter
+                        if domain == "light" and service == "turn_on" and _transition > 0:
+                            svc_data["transition"] = _transition
+                        try:
+                            await self.ha.call_service(domain, service, svc_data)
+                        except Exception as e:
+                            errors.append(f"{eid}: {e}")
+                            logger.warning("Mood-Scene Fehler bei %s: %s", eid, e)
                 except Exception as e:
-                    logger.debug("Mood-Scene %s/%s Fehler: %s", domain, service, e)
+                    errors.append(f"{domain}.{service}: {e}")
+                    logger.warning("Mood-Scene %s/%s Fehler: %s", domain, service, e)
 
                 actions_done.append(f"{domain}.{service}")
 
-            # Optionaler Klima-Offset
+            # [2] Optionaler Klima-Offset mit Bounds-Check
             if "climate_offset" in mood:
                 try:
-                    offset = float(mood["climate_offset"])
-                    states = await self.ha.get_states()
-                    for s in (states or []):
-                        eid = s.get("entity_id", "")
-                        if eid.startswith("climate."):
-                            current_temp = s.get("attributes", {}).get("temperature")
-                            if current_temp is not None:
-                                new_temp = float(current_temp) + offset
+                    # [7] Temperature-Override hat Vorrang vor Offset
+                    if args.get("temperature_override") is not None:
+                        target_temp = max(15.0, min(26.0, float(args["temperature_override"])))
+                        if not states:
+                            states = await self.ha.get_states()
+                        for s in (states or []):
+                            eid = s.get("entity_id", "")
+                            if eid.startswith("climate.") and is_entity_annotated(eid):
                                 await self.ha.call_service(
                                     "climate", "set_temperature",
-                                    {"entity_id": eid, "temperature": new_temp},
+                                    {"entity_id": eid, "temperature": target_temp},
                                 )
+                    else:
+                        offset = float(mood["climate_offset"])
+                        if not states:
+                            states = await self.ha.get_states()
+                        for s in (states or []):
+                            eid = s.get("entity_id", "")
+                            if eid.startswith("climate.") and is_entity_annotated(eid):
+                                current_temp = s.get("attributes", {}).get("temperature")
+                                if current_temp is not None:
+                                    new_temp = max(15.0, min(26.0, float(current_temp) + offset))
+                                    await self.ha.call_service(
+                                        "climate", "set_temperature",
+                                        {"entity_id": eid, "temperature": new_temp},
+                                    )
                 except Exception as e:
-                    logger.debug("Mood-Scene Klima-Offset Fehler: %s", e)
+                    logger.warning("Mood-Scene Klima-Offset Fehler: %s", e)
 
-            return {
-                "success": True,
-                "message": f"Stimmung '{mood.get('label', mood_key)}' aktiviert ({', '.join(actions_done)})",
-            }
+            # [9] Active Scene Tracking
+            if redis:
+                try:
+                    current = await redis.get("mha:scene:active")
+                    if current:
+                        current = current.decode() if isinstance(current, bytes) else current
+                        if current != mood_key:
+                            logger.info("Szenen-Wechsel: %s → %s", current, mood_key)
+                    await redis.setex("mha:scene:active", 7200, mood_key)
+                except Exception:
+                    pass
+
+            # [8] Scene History tracken
+            if redis:
+                try:
+                    import json as _json
+                    import time as _time
+                    entry = _json.dumps({
+                        "scene": mood_key, "label": mood.get("label", mood_key),
+                        "person": getattr(self, "_current_person", ""),
+                        "room": room, "ts": _time.time(),
+                    })
+                    await redis.zadd("mha:scene:history", {entry: _time.time()})
+                    await redis.zremrangebyrank("mha:scene:history", 0, -201)
+                except Exception:
+                    pass
+
+            # [15] Inner-State: Szene beeinflusst Jarvis' Stimmung
+            try:
+                inner = getattr(self, "_brain", None)
+                if inner:
+                    inner = getattr(inner, "inner_state", None)
+                if inner and hasattr(inner, "on_scene_activated"):
+                    await inner.on_scene_activated(mood_key)
+            except Exception:
+                pass
+
+            # [6] Return-Message mit Error-Info
+            msg = f"Stimmung '{mood.get('label', mood_key)}' aktiviert ({', '.join(actions_done)})"
+            if errors:
+                msg += f". {len(errors)} Fehler: {', '.join(errors[:3])}"
+            return {"success": len(errors) == 0, "message": msg}
 
         # Fallback: Standard HA-Scene aktivieren
         entity_id = await self._find_entity("scene", scene)
         if not entity_id:
-            # Versuche direkt mit scene.name
             entity_id = f"scene.{scene}"
 
         success = await self.ha.call_service(
             "scene", "turn_on", {"entity_id": entity_id}
         )
         return {"success": success, "message": f"Szene '{scene}' aktiviert"}
+
+    async def _exec_deactivate_scene(self, args: dict) -> dict:
+        """[5] Szene beenden und vorherigen Zustand wiederherstellen."""
+        scene = args.get("scene", "")
+        scene_key = scene.lower().replace(" ", "_").replace("-", "_")
+        scene_key = self._MOOD_ALIASES.get(scene_key, scene_key)
+
+        redis = getattr(self, "_redis", None)
+        if not redis:
+            return {"success": False, "message": "Kein Redis verfuegbar"}
+
+        import json as _json
+        try:
+            raw = await redis.get(f"mha:scene:snapshot:{scene_key}")
+        except Exception:
+            raw = None
+        if not raw:
+            # Kein Snapshot — versuche aktive Szene zu beenden
+            try:
+                active = await redis.get("mha:scene:active")
+                if active:
+                    active = active.decode() if isinstance(active, bytes) else active
+                    await redis.delete("mha:scene:active")
+                    return {"success": True, "message": f"'{active}' als aktive Szene entfernt (kein Snapshot vorhanden)"}
+            except Exception:
+                pass
+            return {"success": False, "message": f"Kein Snapshot fuer '{scene}' vorhanden"}
+
+        snapshot = _json.loads(raw if isinstance(raw, str) else raw.decode())
+        restored = 0
+        for item in snapshot:
+            eid = item.get("entity_id", "")
+            domain = eid.split(".")[0] if eid else ""
+            try:
+                if item.get("state") == "off":
+                    await self.ha.call_service(domain, "turn_off", {"entity_id": eid})
+                else:
+                    svc_data = {"entity_id": eid}
+                    if item.get("brightness") is not None:
+                        svc_data["brightness"] = item["brightness"]
+                    if item.get("color_temp") is not None:
+                        svc_data["color_temp"] = item["color_temp"]
+                    await self.ha.call_service(domain, "turn_on", svc_data)
+                restored += 1
+            except Exception as e:
+                logger.warning("Scene-Undo Fehler bei %s: %s", eid, e)
+
+        try:
+            await redis.delete(f"mha:scene:snapshot:{scene_key}")
+            await redis.delete("mha:scene:active")
+            await redis.delete(f"mha:scene:cooldown:{scene_key}")
+        except Exception:
+            pass
+
+        return {"success": True, "message": f"'{scene}' beendet — {restored} Geraete zurueckgesetzt"}
 
     # ── Phase 11: Cover-Steuerung (Rollladen + Markise) ──────
     # Garagentore und andere gefaehrliche Cover-Typen NIEMALS automatisch steuern

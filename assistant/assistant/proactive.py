@@ -2411,6 +2411,28 @@ class ProactiveManager:
             except Exception as e:
                 logger.warning("Error in Mood-Check: %s", e)
 
+        # Scene-Suppression: Bei aktiver Szene LOW-Energy-Meldungen unterdrücken
+        _SCENE_SUPPRESS_EVENTS = {"energy_price_high", "solar_surplus"}
+        _SCENE_SUPPRESS_SCENES = {"filmabend", "kino", "party", "gute_nacht", "schlafen",
+                                  "konzentration", "arbeiten", "meeting", "romantisch", "lesen"}
+        if urgency == LOW and event_type in _SCENE_SUPPRESS_EVENTS:
+            try:
+                _scene_redis = getattr(self.brain.memory, "redis", None)
+                if _scene_redis:
+                    _active_scene = await _scene_redis.get("mha:scene:active")
+                    if _active_scene:
+                        _active_scene = _active_scene.decode() if isinstance(_active_scene, bytes) else _active_scene
+                        if _active_scene in _SCENE_SUPPRESS_SCENES:
+                            detail = data.get("entity") or data.get("message") or ""
+                            logger.info(
+                                "Meldung unterdrückt (Scene=%s): [%s] %s%s",
+                                _active_scene, urgency, event_type,
+                                f" ({detail})" if detail else "",
+                            )
+                            return
+            except Exception:
+                pass
+
         # D3: Kontextuelles Schweigen — Activity-basierte Unterdrückung
         # Film/Gäste/Schlaf → nur HIGH+ darf durch
         if urgency not in (CRITICAL, HIGH):

@@ -5040,6 +5040,28 @@ async def ui_scenes_status(token: str = ""):
         raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
+@app.get("/api/ui/scenes/history")
+async def ui_scene_history(token: str = ""):
+    """Letzte 50 Szenen-Aktivierungen aus Redis."""
+    await _check_token(token)
+    redis = brain.memory.redis if hasattr(brain, "memory") and brain.memory else None
+    if not redis:
+        return {"history": []}
+    try:
+        raw = await redis.zrevrange("mha:scene:history", 0, 49, withscores=True)
+        history = []
+        for entry, _score in raw:
+            try:
+                data = json.loads(entry if isinstance(entry, str) else entry.decode())
+                history.append(data)
+            except Exception:
+                pass
+        return {"history": history}
+    except Exception as e:
+        logger.debug("Scene-History Fehler: %s", e)
+        return {"history": []}
+
+
 # ── Cover Schedules (lokal gespeichert) ──────────────────────────────
 
 @app.get("/api/ui/covers/schedules")

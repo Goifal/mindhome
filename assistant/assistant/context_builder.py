@@ -319,6 +319,19 @@ class ContextBuilder:
             except Exception as _dc_err:
                 logger.debug("Device-Conflict-Kontext: %s", _dc_err)
 
+            # Aktive Mood-Scene aus Redis (fuer LLM-Kontext)
+            try:
+                _redis = getattr(self, "_redis", None)
+                if not _redis and self.semantic:
+                    _redis = getattr(self.semantic, "redis", None)
+                if _redis:
+                    _active_scene = await _redis.get("mha:scene:active")
+                    if _active_scene:
+                        _active_scene = _active_scene.decode() if isinstance(_active_scene, bytes) else _active_scene
+                        context["house"]["active_mood_scene"] = _active_scene
+            except Exception:
+                pass
+
             # MCU-JARVIS: Anomalie-Kontext — ungewöhnliche Zustaende erkennen
             if yaml_config.get("mcu_intelligence", {}).get("anomaly_detection", True):
                 anomalies = self._detect_anomalies(states)
