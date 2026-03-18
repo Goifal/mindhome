@@ -881,6 +881,23 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.wellness_advisor.executor = self.executor
         self.insight_engine.set_notify_callback(self._handle_insight)
 
+        # Post-init wiring: Cross-Modul-Referenzen (Plan Phase 1-3)
+        # 1A: SpontaneousObserver ↔ SemanticMemory + InsightEngine
+        if hasattr(self.spontaneous, 'semantic_memory'):
+            self.spontaneous.semantic_memory = self.semantic_memory
+        if hasattr(self.spontaneous, 'insight_engine'):
+            self.spontaneous.insight_engine = self.insight_engine
+
+        # 2: Anticipation ↔ OutcomeTracker + CorrectionMemory
+        if hasattr(self.anticipation, 'set_outcome_tracker'):
+            self.anticipation.set_outcome_tracker(self.outcome_tracker)
+        if hasattr(self.anticipation, 'set_correction_memory'):
+            self.anticipation.set_correction_memory(self.correction_memory)
+
+        # 1D: SelfOptimization Notify-Callback
+        if hasattr(self.self_optimization, 'set_notify_callback'):
+            self.self_optimization.set_notify_callback(self._handle_self_opt_insight)
+
         # LLM-Integration: Ollama-Client an Module weiterreichen
         self.pre_classifier.set_ollama(self.ollama)
         self.wellness_advisor.set_ollama(self.ollama)
@@ -1190,6 +1207,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             durations = self.latency_tracker.record(_ltrace)
             d["_latency_ms"] = durations
             self._active_ltrace = None
+            # Wiring 2C: Model-Router Latenz-Feedback
+            _total_ms = durations.get("total", 0)
+            if _total_ms > 0 and hasattr(self, 'model_router') and hasattr(self.model_router, 'record_latency'):
+                _tier = d.get("_model_tier", "smart")
+                self.model_router.record_latency(_tier, _total_ms / 1000.0)
             # Async flush in Background (fire-and-forget)
             self._task_registry.create_task(
                 self.latency_tracker.flush_to_redis(),
@@ -3054,6 +3076,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Kontext-Kette: Relevante vergangene Gespraeche laden
         _mega_tasks.append(("conv_memory", self._get_conversation_memory(text)))
 
+        # Wiring 3B: Thread-Context aus Conversation-Memory laden
+        if hasattr(self.conversation_memory, 'get_thread_context'):
+            _mega_tasks.append(("thread_context", self.conversation_memory.get_thread_context(text)))
+
         # Alle Subsysteme die das Profil verlangt
         if profile.need_mood:
             _mega_tasks.append(("mood", self.mood.analyze(text, person or "")))
@@ -3182,6 +3208,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         mood_result = _safe_get("mood")
         formality_score = _safe_get("formality")  # None → personality nutzt formality_start
         irony_count = _safe_get("irony", 0)
+
+        # Wiring: User-Mood → Inner-State (bidirektionale Beeinflussung)
+        if mood_result and hasattr(self, 'inner_state') and hasattr(self.inner_state, 'on_user_mood_change'):
+            try:
+                _user_mood = mood_result if isinstance(mood_result, str) else mood_result.get("mood", "neutral") if isinstance(mood_result, dict) else "neutral"
+                self.inner_state.on_user_mood_change(_user_mood, person or "")
+            except Exception as _ism_err:
+                logger.debug("Inner-State Mood-Sync fehlgeschlagen: %s", _ism_err)
         time_hints = _safe_get("time_hints")
         sec_score = _safe_get("security")
         prev_context = _safe_get("cross_room")
@@ -4563,6 +4597,23 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             })
                             continue
 
+                    # Wiring 2B: Proaktive Konfliktvermeidung (logische Konflikte)
+                    if hasattr(self.conflict_resolver, 'predict_conflict'):
+                        try:
+                            _predicted = await self.conflict_resolver.predict_conflict(
+                                func_name, func_args if isinstance(func_args, dict) else {},
+                                await self.ha.get_states() if self.ha else [],
+                            )
+                            if _predicted and _predicted.get("warning"):
+                                _warn_text = _predicted["warning"]
+                                logger.info("Conflict prediction: %s", _warn_text)
+                                # Warnung als Kontext fuer LLM-Antwort merken
+                                if not hasattr(self, '_predicted_warnings'):
+                                    self._predicted_warnings = []
+                                self._predicted_warnings.append(_warn_text)
+                        except Exception as _pc_err:
+                            logger.debug("predict_conflict fehlgeschlagen: %s", _pc_err)
+
                     # Phase 16.1: Konflikt-Check (Multi-User)
                     final_args = func_args
                     conflict_msg = None
@@ -5815,6 +5866,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     ),
                     name="log_explainability",
                 )
+                # Wiring 1C/6: Auto-Explanation fuer High-Impact-Actions
+                if hasattr(self.explainability, 'get_auto_explanation'):
+                    try:
+                        _auto_expl = self.explainability.get_auto_explanation(
+                            _act["function"], _executed_domain,
+                        )
+                        if _auto_expl and _auto_expl not in response_text:
+                            response_text = f"{response_text}\n\n_{_auto_expl}_"
+                    except Exception:
+                        pass
 
         # Learning Transfer: Aktionen beobachten (Praeferenzen lernen)
         for _act in executed_actions:
@@ -5884,14 +5945,28 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 )
 
         # Phase 8: Action-Logging für Anticipation Engine + Experiential Memory
+        # Wiring 3: Weather-Condition an Anticipation weiterreichen (Multi-Signal)
+        _weather_cond = ""
+        try:
+            _weather_cond = (context or {}).get("weather", {}).get("condition", "")
+        except (AttributeError, TypeError):
+            pass
         for action in executed_actions:
             if isinstance(action.get("result"), dict) and action["result"].get("success"):
                 self._task_registry.create_task(
                     self.anticipation.log_action(
-                        action["function"], action.get("args", {}), person or ""
+                        action["function"], action.get("args", {}), person or "",
+                        weather_condition=_weather_cond,
                     ),
                     name="log_anticipation",
                 )
+                # Wiring 1B: Response-Cache für betroffenen Raum invalidieren
+                _action_room = action.get("args", {}).get("room", "") if isinstance(action.get("args"), dict) else ""
+                if _action_room and hasattr(self.response_cache, 'invalidate_by_room'):
+                    self._task_registry.create_task(
+                        self.response_cache.invalidate_by_room(_action_room),
+                        name="cache_invalidate",
+                    )
                 # Experiential Memory: Aktion + Kontext speichern für "Letztes Mal..."
                 if self.memory.redis:
                     outcome_entry = json.dumps({
@@ -6058,6 +6133,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             urgency=urgency,
             activity=current_activity,
         )
+        # Wiring 3C: Emotionale TTS-Tiefe via Inner-State
+        if hasattr(self.tts_enhancer, 'enhance_with_emotion') and hasattr(self, 'inner_state'):
+            try:
+                _inner_mood = getattr(self.inner_state, 'current_mood', 'neutral')
+                _emotion_tts = self.tts_enhancer.enhance_with_emotion(response_text, _inner_mood)
+                if _emotion_tts:
+                    tts_data.update(_emotion_tts)
+            except Exception:
+                pass  # Graceful degradation — Basis-TTS bleibt erhalten
 
         # Phase 17.4: Mood-Aware TTS — Geschwindigkeit an Stimmung anpassen
         # Muede/gestresst = langsamer und leiser sprechen (Fürsorge)
@@ -7918,6 +8002,19 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         await self._speak_and_emit(formatted)
         self._remember_exchange("[proaktiv: Wellness]", formatted)
         logger.info("Wellness [%s/%s]: %s", nudge_type, urgency, formatted)
+
+    async def _handle_self_opt_insight(self, insight: str):
+        """Callback fuer Self-Optimization — proaktive Insights melden."""
+        if not insight:
+            return
+        if not await self._callback_should_speak("low", source="SelfOpt"):
+            return
+        formatted = await self._format_callback_with_escalation(
+            insight, "low", "self_optimization",
+        )
+        await self._speak_and_emit(formatted)
+        self._remember_exchange("[proaktiv: Self-Optimization]", formatted)
+        logger.info("SelfOpt Insight: %s", formatted)
 
     # ------------------------------------------------------------------
     # Phase 14.2b: Music DJ + Visitor Callbacks (uebernommen aus Mixin)
