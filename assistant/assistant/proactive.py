@@ -1121,10 +1121,11 @@ class ProactiveManager:
             device_trigger_modes = scenes_cfg.get("device_trigger_modes", {})
 
             for scene_id in scene_ids:
-                # [A] Cooldown: 30s pro Szene (verhindert Mehrfach-Trigger bei Toggle)
+                # [A] Cooldown: Prueft den gleichen Key wie _exec_activate_scene (30s)
+                # damit Device-Trigger + Voice-Aktivierung sich gegenseitig blockieren
                 redis = getattr(self.brain, "_redis", None) or getattr(self, "_redis", None)
                 if redis:
-                    cooldown_key = f"mha:scene:dt_cooldown:{scene_id}"
+                    cooldown_key = f"mha:scene:cooldown:{scene_id}"
                     try:
                         if await redis.get(cooldown_key):
                             logger.debug("Scene Device-Trigger: Cooldown aktiv fuer '%s'", scene_id)
@@ -1155,12 +1156,7 @@ class ProactiveManager:
                             )
                             continue
 
-                # [C] Cooldown setzen (30s)
-                if redis:
-                    try:
-                        await redis.setex(cooldown_key, 30, "1")
-                    except Exception:
-                        pass
+                # Cooldown wird von _exec_activate_scene gesetzt (gleicher Key)
 
                 # [D] Szenen-Aktivitaet aus gespeicherter Config oder Defaults ableiten
                 scene_data = scenes_cfg.get(scene_id, {})
@@ -1215,18 +1211,16 @@ class ProactiveManager:
     async def _execute_scene_actions(self, scene_id: str):
         """Fuehrt die Mood-Scene-Aktionen aus (Licht, Cover, Klima etc.).
 
-        Delegiert an function_calling._exec_activate_scene wenn vorhanden,
-        sonst direkte HA-Service-Aufrufe als Fallback.
+        Delegiert an FunctionExecutor._exec_activate_scene (brain.executor).
         """
         try:
-            fc = getattr(self.brain, "function_calling", None)
-            if fc and hasattr(fc, "_exec_activate_scene"):
-                result = await fc._exec_activate_scene({"scene": scene_id})
+            executor = getattr(self.brain, "executor", None)
+            if executor and hasattr(executor, "_exec_activate_scene"):
+                result = await executor._exec_activate_scene({"scene": scene_id})
                 logger.debug("Scene-Actions fuer '%s' ausgefuehrt: %s", scene_id, result.get("message", ""))
                 return
 
-            # Fallback: Direkte Ausfuehrung wenn function_calling nicht verfuegbar
-            logger.debug("Scene-Actions Fallback fuer '%s' (function_calling nicht verfuegbar)", scene_id)
+            logger.warning("Scene-Actions: brain.executor nicht verfuegbar fuer '%s'", scene_id)
         except Exception as e:
             logger.warning("Scene-Actions Fehler fuer '%s': %s", scene_id, e)
 

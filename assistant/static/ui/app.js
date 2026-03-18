@@ -4701,8 +4701,15 @@ function sceneActionDataChanged(sceneId, idx, key, value) {
     delete sc.actions[idx].data[key];
   } else {
     sc.actions[idx].data[key] = num;
+    // Farbtemperatur und RGB sind exklusiv
+    if (key === 'color_temp_kelvin') delete sc.actions[idx].data.rgb_color;
   }
   _saveScenes(scenes);
+  // Editor neu rendern um Color-Picker zu aktualisieren
+  if (key === 'color_temp_kelvin') {
+    const el = document.querySelector(`.scene-actions-editor[data-scene-id="${sceneId}"]`);
+    if (el && el.style.display !== 'none') el.innerHTML = _renderSceneActions(sc);
+  }
 }
 
 function sceneActionColorChanged(sceneId, idx, hexColor) {
