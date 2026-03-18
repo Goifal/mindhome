@@ -795,6 +795,12 @@ def is_entity_hidden(entity_id: str) -> bool:
     return bool(ann.get("hidden", False))
 
 
+def is_entity_annotated(entity_id: str) -> bool:
+    """Prueft ob eine Entity in den Annotationen eingetragen ist."""
+    annotations = yaml_config.get("entity_annotations", {}) or {}
+    return entity_id in annotations
+
+
 def get_all_roles() -> dict:
     """Liefert Standard-Rollen + eigene Rollen. Eigene überschreiben Standard."""
     roles = dict(_DEFAULT_ROLES_DICT)
@@ -3329,6 +3335,15 @@ class FunctionExecutor:
         """Setzt ConfigVersioning für Backup-vor-Schreiben."""
         self._config_versioning = versioning
 
+    async def _mark_cover_jarvis_acting(self, entity_id: str):
+        """Setzt jarvis_acting Flag damit proactive.py keinen Manual Override erkennt."""
+        redis = getattr(self, "_redis", None)
+        if redis:
+            try:
+                await redis.set(f"mha:cover:jarvis_acting:{entity_id}", "1", ex=300)
+            except Exception:
+                pass
+
     # Whitelist erlaubter Tool-Funktionsnamen (verhindert Zugriff auf interne Methoden)
     _ALLOWED_FUNCTIONS = frozenset({
         "set_light", "set_light_all", "get_lights", "set_climate", "set_climate_curve",
@@ -4102,7 +4117,11 @@ class FunctionExecutor:
         try:
             for s in states:
                 eid = s.get("entity_id", "")
-                if eid.startswith("light.") and (s.get("state") != state or (state == "on" and "brightness" in args)):
+                if not eid.startswith("light."):
+                    continue
+                if not is_entity_annotated(eid) or is_entity_hidden(eid):
+                    continue
+                if s.get("state") != state or (state == "on" and "brightness" in args):
                     service_data = {"entity_id": eid}
                     if state == "on":
                         if "brightness" in args:
@@ -4885,6 +4904,7 @@ class FunctionExecutor:
             entity_state = next((s for s in (states or []) if s.get("entity_id") == entity_id), {})
             if not await self._is_safe_cover(entity_id, entity_state):
                 return {"success": False, "message": f"'{room}' ist ein Garagentor/Tor — nicht erlaubt."}
+            await self._mark_cover_jarvis_acting(entity_id)
             success = await self.ha.call_service("cover", "stop_cover", {"entity_id": entity_id})
             return {"success": success, "message": f"Rollladen {room} gestoppt"}
 
@@ -4924,6 +4944,7 @@ class FunctionExecutor:
             return {"success": False, "message": f"'{room}' ist ein Garagentor/Tor — nicht erlaubt."}
 
         ha_position = self._translate_cover_position(entity_id, position)
+        await self._mark_cover_jarvis_acting(entity_id)
         success = await self.ha.call_service(
             "cover", "set_cover_position",
             {"entity_id": entity_id, "position": ha_position},
@@ -4972,6 +4993,7 @@ class FunctionExecutor:
                 if cover_type == "rollladen" and self._is_markise(eid, s):
                     continue
 
+                await self._mark_cover_jarvis_acting(eid)
                 if is_stop:
                     await self.ha.call_service("cover", "stop_cover", {"entity_id": eid})
                 else:
@@ -5020,6 +5042,7 @@ class FunctionExecutor:
                 continue
             if not self._is_markise(eid, s):
                 continue
+            await self._mark_cover_jarvis_acting(eid)
             if is_stop:
                 await self.ha.call_service("cover", "stop_cover", {"entity_id": eid})
             else:
@@ -5048,6 +5071,8 @@ class FunctionExecutor:
                 eid = s.get("entity_id", "")
                 if not eid.startswith("cover."):
                     continue
+                if not is_entity_annotated(eid) or is_entity_hidden(eid):
+                    continue
                 if not await self._is_safe_cover(eid, s):
                     skipped.append(s.get("attributes", {}).get("friendly_name", eid))
                     continue
@@ -5057,6 +5082,7 @@ class FunctionExecutor:
                 if cover_type == "markise" and not self._is_markise(eid, s):
                     continue
                 ha_pos = self._translate_cover_position(eid, position)
+                await self._mark_cover_jarvis_acting(eid)
                 await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
                 count += 1
         finally:
@@ -5079,8 +5105,11 @@ class FunctionExecutor:
                 eid = s.get("entity_id", "")
                 if not eid.startswith("cover."):
                     continue
+                if not is_entity_annotated(eid) or is_entity_hidden(eid):
+                    continue
                 if not await self._is_safe_cover(eid, s):
                     continue
+                await self._mark_cover_jarvis_acting(eid)
                 await self.ha.call_service("cover", service, {"entity_id": eid})
                 count += 1
         finally:

@@ -993,6 +993,14 @@ class RoutineEngine:
             logger.debug("Goodnight-Check: Wetter-Ausschluss fuer '%s'", text_lower)
             return False
 
+        # Gezielte Geraetebefehle sind kein Gute-Nacht-Intent
+        _device_excludes = ["rollladen", "rolladen", "licht", "lampe", "heizung",
+                            "thermostat", "markise", "jalousie", "steckdose",
+                            "schalter", "klimaanlage", "ventilator"]
+        if any(dev in text_lower for dev in _device_excludes):
+            logger.debug("Goodnight-Check: Geraete-Befehl ausgeschlossen fuer '%s'", text_lower)
+            return False
+
         # Erweiterte Defaults (zusaetzlich zu konfigurierten Triggern)
         _extended_triggers = [
             "nacht", "schlafe", "ab ins bett", "geh ins bett",

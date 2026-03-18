@@ -3438,7 +3438,10 @@ class ProactiveManager:
         medium_parts = []
         low_parts = []
         for item in items:
+            entity = item.get("data", {}).get("entity", "")
             line = f"- {item['description']}"
+            if entity:
+                line += f" [{entity}]"
             if "message" in item.get("data", {}):
                 line += f" ({item['data']['message']})"
             if item.get("urgency") == MEDIUM:

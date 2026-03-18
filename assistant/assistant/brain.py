@@ -813,6 +813,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.executor._conversation_memory = self.conversation_memory
         self.executor._multi_room_audio = self.multi_room_audio
         self.executor.set_config_versioning(self.config_versioning)
+        self.executor._redis = self.memory.redis
         self.ambient_audio.set_notify_callback(self._handle_ambient_audio_event)
         self.health_monitor.set_notify_callback(self._handle_health_alert)
         self.device_health.set_notify_callback(self._handle_device_health_alert)
@@ -10103,6 +10104,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             return random.choice(_responses)
 
         # --- Danke: Kurze Quittung, LLM wuerde unnoetig ausschweifig ---
+        # Ablehnungen mit "danke" sind KEINE Smalltalk-Danksagungen
+        _rejection_indicators = ["nein", "lass", "nicht", "stopp", "abbrechen", "egal", "vergiss"]
+        if any(r in t for r in _rejection_indicators):
+            return None  # Ans LLM weiterleiten fuer kontextuelle Antwort
+
         _thanks = [
             "danke jarvis", "danke dir", "danke schoen", "danke sehr",
             "vielen dank", "dankeschoen", "dankeschön", "danke schön",

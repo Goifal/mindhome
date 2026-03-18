@@ -148,15 +148,8 @@ class DiagnosticsEngine:
         if self.monitored_entities:
             return entity_id in self.monitored_entities
 
-        # Standard-Modus: Domain-Filter + Exclude-Patterns
-        domain = entity_id.split(".")[0] if "." in entity_id else ""
-        if domain not in self.monitor_domains:
-            return False
-        entity_lower = entity_id.lower()
-        for pattern in self.exclude_patterns:
-            if pattern.lower() in entity_lower:
-                return False
-        return True
+        # Ohne Annotation: nicht ueberwachen
+        return False
 
     async def check_entities(self) -> list[dict]:
         """Prueft ueberwachte HA-Entities auf Probleme.
