@@ -2289,6 +2289,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 )
                                 self.state_change_log.mark_jarvis_action(entity_id)
 
+                        # Letzte Aktion merken (für Pronomen-Shortcut im nächsten Turn)
+                        self._last_executed_action = func_name
+                        self._last_executed_action_args = dict(func_args)
                         return self._result(response_text, actions=all_actions, model="device_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Geraete-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
@@ -2342,6 +2345,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
                     await emit_action(func_name, func_args, result)
 
+                    # Letzte Aktion merken (für Pronomen-Shortcut im nächsten Turn)
+                    self._last_executed_action = func_name
+                    self._last_executed_action_args = dict(func_args)
                     return self._result(response_text, actions=[{"function": func_name, "args": func_args, "result": result}], model="media_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Media-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
@@ -5049,6 +5055,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 r"(?:habe|hab).*(?:ausgef[uü]hrt|gesendet|eingeschaltet|aktiviert|erledigt)",
                 r"Befehl.*(?:erhalten|best[aä]tigt|gesendet|ausgef[uü]hrt)",
                 r"(?:eingeschaltet|aktiviert|gestartet).*(?:best[aä]tigt|erhalten)",
+                r"\b(?:aus|ein|an|ab)geschaltet\b",
+                r"\bausgefahren\b|\beingefahren\b|\bge[oö]ffnet\b|\bgeschlossen\b",
             ]
             _text_low = response_text.lower()
             if any(re.search(p, _text_low, re.IGNORECASE) for p in _halluc_patterns):
