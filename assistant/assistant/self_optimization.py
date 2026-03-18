@@ -295,13 +295,13 @@ class SelfOptimization:
         current = self._get_current_values()
         if param == "sarcasm_level":
             formality = current.get("formality_start", 80)
-            if value >= 4 and formality > 60:
+            if value >= 8 and formality > 75:
                 logger.warning(
                     "KONSISTENZ: sarcasm_level=%s mit formality_start=%s widerspruechlich — abgelehnt",
                     value, formality,
                 )
                 return False
-            if value <= 1 and formality < 40:
+            if value <= 1 and formality < 30:
                 logger.warning(
                     "KONSISTENZ: sarcasm_level=%s mit formality_start=%s widerspruechlich — abgelehnt",
                     value, formality,
