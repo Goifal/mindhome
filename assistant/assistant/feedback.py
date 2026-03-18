@@ -77,6 +77,7 @@ class FeedbackTracker:
         self.redis = redis_client
         self._running = True
         self._timeout_task = asyncio.create_task(self._auto_timeout_loop())
+        self._timeout_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         logger.info("FeedbackTracker initialisiert")
 
     async def stop(self):

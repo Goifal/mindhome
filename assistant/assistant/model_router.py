@@ -494,5 +494,6 @@ class ModelRouter:
                     self._ollama_available = True
                 else:
                     self._ollama_available = True
-            except Exception:
+            except Exception as e:
+                logger.debug("Ollama-Verfuegbarkeitspruefung fehlgeschlagen: %s", e)
                 self._ollama_available = False

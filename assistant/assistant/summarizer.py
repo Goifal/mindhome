@@ -69,6 +69,7 @@ class DailySummarizer:
                 pass
         self._running = True
         self._task = asyncio.create_task(self._nightly_loop())
+        self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         logger.info(
             "DailySummarizer initialisiert (Nachtlauf: %02d:%02d)",
             self.run_hour, self.run_minute,
@@ -447,8 +448,8 @@ Format: Fliesstext, kurze Saetze."""
             if conflict_summary:
                 parts.append("\nGeraete-Konflikte des Tages:")
                 parts.append(conflict_summary.replace("\n\nAKTIVE GERAETE-KONFLIKTE:\n", "").split("\nErwaehne")[0].strip())
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Zusammenfassung fehlgeschlagen: %s", e)
 
         parts.append("\nFasse zusammen: Was wurde besprochen? "
                      "Welche Aktionen? Stimmung? Besonderheiten? "

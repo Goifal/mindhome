@@ -206,8 +206,8 @@ class ResponseQualityTracker:
             if emb_current is not None and emb_previous is not None:
                 similarity = cosine_similarity(emb_current, emb_previous)
                 return similarity >= self._rephrase_threshold
-        except Exception:
-            pass  # Fallback auf Keyword-Overlap
+        except Exception as e:
+            logger.debug("Embedding-Vergleich fehlgeschlagen, Fallback auf Keyword-Overlap: %s", e)
 
         # Fallback: Keyword-Overlap (wenn Embeddings nicht verfuegbar)
         current_words = set(current_text.lower().split())

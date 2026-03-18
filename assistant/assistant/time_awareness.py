@@ -91,6 +91,7 @@ class TimeAwareness:
             return
         self._running = True
         self._task = asyncio.create_task(self._check_loop())
+        self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         logger.info("TimeAwareness gestartet (Intervall: %ds)", self.check_interval)
 
     async def stop(self):

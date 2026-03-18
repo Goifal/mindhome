@@ -72,6 +72,7 @@ class SpontaneousObserver:
         if self.enabled and self.redis:
             self._running = True
             self._task = asyncio.create_task(self._observe_loop())
+            self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         logger.info("SpontaneousObserver initialisiert (enabled: %s)", self.enabled)
 
     def set_notify_callback(self, callback):
@@ -512,8 +513,8 @@ class SpontaneousObserver:
                                    "cooking": "kocht", "watching": "schaut fern",
                                    "guests": "hat Besuch"}
                         activity_hint = f"\nAktivitaet: {_ACT_DE.get(act, act)}"
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Aktivitaetserkennung fehlgeschlagen: %s", e)
 
             prompt = (
                 "Du bist ein Smart-Home-Assistent. Hier sind aktuelle Hausdaten:\n\n"
@@ -600,8 +601,8 @@ class SpontaneousObserver:
                         ]
                         if _energy and diff_pct > 0:
                             _dep_context = f" Moeglicherweise weil: {_energy[0].get('hint', '')}."
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Energie-Abhaengigkeitskontext fehlgeschlagen: %s", e)
 
                 if diff_pct > 0:
                     message = (

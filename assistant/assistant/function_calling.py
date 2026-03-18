@@ -3370,8 +3370,8 @@ class FunctionExecutor:
         if redis:
             try:
                 await redis.set(f"mha:cover:jarvis_acting:{entity_id}", "1", ex=300)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Redis Cover-Jarvis-Acting Flag fehlgeschlagen: %s", e)
 
     # Whitelist erlaubter Tool-Funktionsnamen (verhindert Zugriff auf interne Methoden)
     _ALLOWED_FUNCTIONS = frozenset({
@@ -3582,8 +3582,8 @@ class FunctionExecutor:
                         _person or "unknown", function_name, _reason,
                     )
                     return {"success": False, "message": _reason}
-        except Exception:
-            pass  # Graceful degradation — Trust-Check optional
+        except Exception as e:
+            logger.debug("Trust-Check fehlgeschlagen (Graceful Degradation): %s", e)
 
         try:
             # Phase 18: Pre-Execution Consequence Check
@@ -3793,8 +3793,8 @@ class FunctionExecutor:
                 if dep_hints:
                     # Maximal 2 Hints um das LLM nicht zu ueberladen
                     return " | ".join(dep_hints[:2])
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Abhaengigkeitspruefung fehlgeschlagen: %s", e)
 
             return None
         except Exception as e:
@@ -4090,8 +4090,8 @@ class FunctionExecutor:
                                         )
                                         brightness_pct = _learned_bri
                                         break
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("CorrectionMemory Brightness-Lookup fehlgeschlagen: %s", e)
             service_data["brightness_pct"] = brightness_pct
         # Phase 9: Transition-Parameter (sanftes Dimmen) — muss int/float sein
         if "transition" in args:
@@ -4830,8 +4830,8 @@ class FunctionExecutor:
                         label = mood_scenes[mood_key].get("label", mood_key)
                         return {"success": True, "message": f"'{label}' ist bereits aktiv."}
                     await redis.setex(cooldown_key, 30, "1")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Redis Szenen-Cooldown fehlgeschlagen: %s", e)
 
             mood = mood_scenes[mood_key]
             actions_done = []
@@ -4861,8 +4861,8 @@ class FunctionExecutor:
                 try:
                     import json as _json
                     await redis.setex(f"mha:scene:snapshot:{mood_key}", 3600, _json.dumps(snapshot))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Redis Szenen-Snapshot Speicherung fehlgeschlagen: %s", e)
 
             for action in mood.get("actions", []):
                 domain = action["domain"]
@@ -4972,8 +4972,8 @@ class FunctionExecutor:
                         if current != mood_key:
                             logger.info("Szenen-Wechsel: %s → %s", current, mood_key)
                     await redis.setex("mha:scene:active", 7200, mood_key)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Redis aktive Szene setzen fehlgeschlagen: %s", e)
 
             # [8] Scene History tracken
             if redis:
@@ -4986,8 +4986,8 @@ class FunctionExecutor:
                         "room": room, "ts": _time.time(),
                     })
                     await redis.zadd("mha:scene:history", {entry: _time.time()})
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Scene-History Tracking fehlgeschlagen: %s", e)
 
             # [15] Inner-State: Szene beeinflusst Jarvis' Stimmung
             try:
@@ -4996,8 +4996,8 @@ class FunctionExecutor:
                     inner = getattr(inner, "inner_state", None)
                 if inner and hasattr(inner, "on_scene_activated"):
                     await inner.on_scene_activated(mood_key)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Inner-State Szenen-Update fehlgeschlagen: %s", e)
 
             # [16] Auto-Learning: Device→Scene Pattern tracken
             try:
@@ -5012,8 +5012,8 @@ class FunctionExecutor:
                         task.add_done_callback(
                             lambda t: t.exception() if not t.cancelled() else None
                         )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Auto-Learning Szenen-Beobachtung fehlgeschlagen: %s", e)
 
             # [6] Return-Message mit Error-Info
             msg = f"Stimmung '{mood.get('label', mood_key)}' aktiviert ({', '.join(actions_done)})"
@@ -5044,7 +5044,8 @@ class FunctionExecutor:
         import json as _json
         try:
             raw = await redis.get(f"mha:scene:snapshot:{scene_key}")
-        except Exception:
+        except Exception as e:
+            logger.debug("Redis Szenen-Snapshot Abruf fehlgeschlagen: %s", e)
             raw = None
         if not raw:
             # Kein Snapshot — versuche aktive Szene zu beenden
@@ -5054,8 +5055,8 @@ class FunctionExecutor:
                     active = active.decode() if isinstance(active, bytes) else active
                     await redis.delete("mha:scene:active")
                     return {"success": True, "message": f"'{active}' als aktive Szene entfernt (kein Snapshot vorhanden)"}
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Redis aktive Szene entfernen fehlgeschlagen: %s", e)
             return {"success": False, "message": f"Kein Snapshot fuer '{scene}' vorhanden"}
 
         snapshot = _json.loads(raw if isinstance(raw, str) else raw.decode())
@@ -5081,8 +5082,8 @@ class FunctionExecutor:
             await redis.delete(f"mha:scene:snapshot:{scene_key}")
             await redis.delete("mha:scene:active")
             await redis.delete(f"mha:scene:cooldown:{scene_key}")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Redis Szenen-Cleanup fehlgeschlagen: %s", e)
 
         return {"success": True, "message": f"'{scene}' beendet — {restored} Geraete zurueckgesetzt"}
 
@@ -9508,7 +9509,8 @@ class FunctionExecutor:
 
                 try:
                     entries = await redis_client.lrange(archive_key, 0, -1)
-                except Exception:
+                except Exception as e:
+                    logger.debug("Redis Archiv-Abruf fehlgeschlagen fuer %s: %s", archive_key, e)
                     continue
 
                 for entry_raw in entries:
@@ -9577,8 +9579,8 @@ class FunctionExecutor:
                             continue
                 finally:
                     await redis_client2.aclose()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Redis Aktions-History Abruf fehlgeschlagen: %s", e)
 
             if _action_matches:
                 lines.append(f"\n{len(_action_matches)} passende Aktionen:")

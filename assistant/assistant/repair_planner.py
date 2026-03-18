@@ -1191,7 +1191,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         prefix = printer_cfg.get("entity_prefix", "octoprint")
         try:
             states = await self.ha.get_states()
-        except Exception:
+        except Exception as e:
+            logger.debug("HA-Verbindung fehlgeschlagen: %s", e)
             return {"status": "error",
                     "message": "Home Assistant nicht erreichbar"}
 
@@ -1540,6 +1541,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         task = asyncio.create_task(_timer_callback())
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         return {"status": "ok", "timer_id": timer_id,
                 "minutes": minutes, "reason": reason}
 
@@ -1633,7 +1635,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         """Prüft ob ein HA-Gerät online ist."""
         try:
             states = await self.ha.get_states()
-        except Exception:
+        except Exception as e:
+            logger.debug("HA-Status Abruf fehlgeschlagen: %s", e)
             return {"entity": entity_id, "state": "ha_unavailable"}
         for s in states:
             if s.get("entity_id") == entity_id:
@@ -1648,7 +1651,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         """Liest den Stromverbrauch eines Geräts."""
         try:
             states = await self.ha.get_states()
-        except Exception:
+        except Exception as e:
+            logger.debug("HA-Status Abruf fehlgeschlagen: %s", e)
             return {"status": "error",
                     "message": "Home Assistant nicht erreichbar"}
         for s in states:
@@ -1684,7 +1688,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         # Fetch all states once instead of N sequential calls
         try:
             states = await self.ha.get_states()
-        except Exception:
+        except Exception as e:
+            logger.debug("HA-Status Abruf fehlgeschlagen: %s", e)
             return [
                 {"entity": entity, "state": "ha_unavailable", "project": title}
                 for entity, title in entity_projects
@@ -1717,7 +1722,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 "notify", "notify",
                 {"title": title, "message": message})
             return {"status": "ok"}
-        except Exception:
+        except Exception as e:
+            logger.debug("HA-Status Abruf fehlgeschlagen: %s", e)
             return {"status": "error"}
 
     # ── Intent-Erkennung ─────────────────────────────────────

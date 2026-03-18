@@ -59,6 +59,7 @@ class AnticipationEngine:
         if self.enabled and self.redis:
             self._running = True
             self._task = asyncio.create_task(self._check_loop())
+            self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
             logger.info("AnticipationEngine initialisiert (History: %d Tage)", self.history_days)
 
     def set_notify_callback(self, callback):
@@ -610,8 +611,8 @@ class AnticipationEngine:
                     )
                     if rules:  # Active correction rule exists -> suppress this pattern
                         continue
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Korrektur-Regel Pruefung fehlgeschlagen: %s", e)
 
             # Wurde dieser Vorschlag kuerzlich schon gemacht?
             import hashlib as _hl
@@ -700,8 +701,8 @@ class AnticipationEngine:
                         if _score < 0.4:
                             suggestion["confidence"] *= 0.7  # 30% Penalty
                             logger.debug("Outcome penalty fuer %s: score=%.2f", _action, _score)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Outcome-Score Abruf fehlgeschlagen: %s", e)
 
                 # Bestimme Delivery-Modus
                 conf = suggestion["confidence"]
@@ -728,8 +729,8 @@ class AnticipationEngine:
                                 suggestion["mode"] = "suggest"
                             elif suggestion["mode"] == "suggest":
                                 suggestion["mode"] = "ask"
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Feedback-Downgrade Pruefung fehlgeschlagen: %s", e)
 
                 suggestions.append(suggestion)
 
@@ -1476,8 +1477,8 @@ class AnticipationEngine:
             val = await self.redis.get(key)
             if val:
                 return max(0.3, min(0.95, float(val)))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Adaptive Schwelle aus Redis laden fehlgeschlagen: %s", e)
         return self.threshold_ask
 
     async def update_adaptive_threshold(self, pattern_hash: str, accepted: bool):

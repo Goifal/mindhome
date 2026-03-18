@@ -155,6 +155,7 @@ class IntentTracker:
         if self.enabled and self.redis:
             self._running = True
             self._task = asyncio.create_task(self._reminder_loop())
+            self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
             logger.info("IntentTracker initialisiert")
 
     def set_notify_callback(self, callback):

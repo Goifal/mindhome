@@ -216,7 +216,8 @@ class ResponseCache:
                     if not data.get("_pre_cached"):
                         await self._redis.delete(key)
                         deleted += 1
-                except Exception:
+                except Exception as e:
+                    logger.debug("Cache-Eintrag Invalidierung fehlgeschlagen: %s", e)
                     continue
 
             if deleted:

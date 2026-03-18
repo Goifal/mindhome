@@ -196,8 +196,8 @@ class LearningObserver:
                 )
                 if hints:
                     conflict_hint = hints[0]
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Abhaengigkeitspruefung fehlgeschlagen: %s", e)
 
             # Als vorgeschlagen markieren (7 Tage Cooldown)
             await self.redis.setex(suggested_key, 7 * 86400, "1")
@@ -884,8 +884,8 @@ class LearningObserver:
                 last_dt = datetime.fromisoformat(last_ask.decode() if isinstance(last_ask, bytes) else last_ask)
                 if (datetime.now() - last_dt).total_seconds() < cooldown_min * 60:
                     return
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Cooldown-Pruefung fehlgeschlagen: %s", e)
 
         title = get_person_title(person) if person else get_person_title()
 
@@ -962,7 +962,8 @@ class LearningObserver:
                             "binary_sensor.", "input_boolean.",
                         )):
                             recent_triggers.append(eid)
-                except Exception:
+                except Exception as e:
+                    logger.debug("Szenen-Trigger Analyse fehlgeschlagen: %s", e)
                     continue
 
             if not recent_triggers:

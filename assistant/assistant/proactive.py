@@ -560,6 +560,21 @@ class ProactiveManager:
 
         return False
 
+    @staticmethod
+    def _loop_done_cb(t: asyncio.Task) -> None:
+        """Callback fuer Long-Running Loop Tasks — loggt unerwartete Crashes."""
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc:
+            logger.error("Proactive Loop-Task '%s' unerwartet beendet: %s", t.get_name(), exc)
+
+    def _create_loop_task(self, coro, *, name: str = "") -> asyncio.Task:
+        """Erstellt einen Loop-Task mit Error-Callback."""
+        task = asyncio.create_task(coro, name=name or "")
+        task.add_done_callback(self._loop_done_cb)
+        return task
+
     async def start(self):
         """Startet den Event Listener."""
         if not self.enabled:
@@ -567,23 +582,23 @@ class ProactiveManager:
             return
 
         self._running = True
-        self._task = asyncio.create_task(self._listen_ha_events())
+        self._task = self._create_loop_task(self._listen_ha_events(), name="proactive_ha_events")
         # Phase 10: Periodische Diagnostik starten
         if hasattr(self.brain, "diagnostics") and self.brain.diagnostics.enabled:
-            self._diag_task = asyncio.create_task(self._run_diagnostics_loop())
+            self._diag_task = self._create_loop_task(self._run_diagnostics_loop(), name="proactive_diagnostics")
         # Phase 15.4: Batch-Loop starten
         if self.batch_enabled:
-            self._batch_task = asyncio.create_task(self._run_batch_loop())
+            self._batch_task = self._create_loop_task(self._run_batch_loop(), name="proactive_batch")
         # Phase 7.9: Saisonaler Rolladen-Loop
         seasonal_cfg = yaml_config.get("seasonal_actions", {})
         if seasonal_cfg.get("enabled", True):
-            self._seasonal_task = asyncio.create_task(self._run_seasonal_loop())
+            self._seasonal_task = self._create_loop_task(self._run_seasonal_loop(), name="proactive_seasonal")
 
         # Phase 18: Unaufgeforderte Beobachtungen
         obs_cfg = yaml_config.get("observation_loop", {})
         self._observation_task: Optional[asyncio.Task] = None
         if obs_cfg.get("enabled", True):
-            self._observation_task = asyncio.create_task(self._run_observation_loop())
+            self._observation_task = self._create_loop_task(self._run_observation_loop(), name="proactive_observation")
 
         # Phase 11: Saugroboter-Automatik
         vacuum_cfg = yaml_config.get("vacuum", {})
@@ -592,47 +607,47 @@ class ProactiveManager:
         self._vacuum_scene_task: Optional[asyncio.Task] = None
         self._vacuum_presence_task: Optional[asyncio.Task] = None
         if vacuum_cfg.get("enabled") and vacuum_cfg.get("auto_clean", {}).get("enabled"):
-            self._vacuum_task = asyncio.create_task(self._run_vacuum_automation())
+            self._vacuum_task = self._create_loop_task(self._run_vacuum_automation(), name="proactive_vacuum")
         # Steckdosen-Trigger für Saugroboter
         if vacuum_cfg.get("enabled") and vacuum_cfg.get("power_trigger", {}).get("enabled"):
-            self._vacuum_power_task = asyncio.create_task(self._run_vacuum_power_trigger())
+            self._vacuum_power_task = self._create_loop_task(self._run_vacuum_power_trigger(), name="proactive_vacuum_power")
         # Szenen-Trigger für Saugroboter
         if vacuum_cfg.get("enabled") and vacuum_cfg.get("scene_trigger", {}).get("enabled"):
-            self._vacuum_scene_task = asyncio.create_task(self._run_vacuum_scene_trigger())
+            self._vacuum_scene_task = self._create_loop_task(self._run_vacuum_scene_trigger(), name="proactive_vacuum_scene")
         # Anwesenheits-Monitor: Vacuum pausieren bei Heimkehr, fortsetzen bei Abwesenheit
         if vacuum_cfg.get("enabled") and vacuum_cfg.get("presence_guard", {}).get("enabled"):
-            self._vacuum_presence_task = asyncio.create_task(self._run_vacuum_presence_monitor())
+            self._vacuum_presence_task = self._create_loop_task(self._run_vacuum_presence_monitor(), name="proactive_vacuum_presence")
         # Emergency Protocols laden
         self._emergency_protocols = yaml_config.get("emergency_protocols", {})
 
         # Phase 17: Threat Assessment Loop
         self._threat_task: Optional[asyncio.Task] = None
         if hasattr(self.brain, "threat_assessment") and self.brain.threat_assessment.enabled:
-            self._threat_task = asyncio.create_task(self._run_threat_assessment_loop())
+            self._threat_task = self._create_loop_task(self._run_threat_assessment_loop(), name="proactive_threat")
 
         # Ambient Presence Loop (Jarvis ist immer da)
         self._ambient_task: Optional[asyncio.Task] = None
         ambient_cfg = yaml_config.get("ambient_presence", {})
         if ambient_cfg.get("enabled", False):
-            self._ambient_task = asyncio.create_task(self._run_ambient_presence_loop())
+            self._ambient_task = self._create_loop_task(self._run_ambient_presence_loop(), name="proactive_ambient")
 
         # C3: Follow-up Loop — offene Themen proaktiv aufgreifen
         self._followup_task: Optional[asyncio.Task] = None
         followup_cfg = yaml_config.get("self_followup", {})
         if followup_cfg.get("enabled", True):
-            self._followup_task = asyncio.create_task(self._run_followup_loop())
+            self._followup_task = self._create_loop_task(self._run_followup_loop(), name="proactive_followup")
 
         # E: Routine-Abweichungserkennung
         self._routine_task: Optional[asyncio.Task] = None
         routine_cfg = yaml_config.get("routine_deviation", {})
         if routine_cfg.get("enabled", True):
-            self._routine_task = asyncio.create_task(self._run_routine_deviation_loop())
+            self._routine_task = self._create_loop_task(self._run_routine_deviation_loop(), name="proactive_routine")
 
         # Szenen-Scheduler: Cron-basierte Szenen-Aktivierung
         self._scene_schedule_task: Optional[asyncio.Task] = None
         scenes_cfg = yaml_config.get("scenes", {})
         if scenes_cfg.get("schedule_enabled", True):
-            self._scene_schedule_task = asyncio.create_task(self._run_scene_schedule_loop())
+            self._scene_schedule_task = self._create_loop_task(self._run_scene_schedule_loop(), name="proactive_scene_schedule")
 
         logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal + Notfall + Threat + Ambient + Follow-up + Routine + Szenen-Schedule)")
 
@@ -874,8 +889,8 @@ class ProactiveManager:
                     "Tuerklingel betaetigt" + (f" — {camera_desc[:100]}" if camera_desc else ""),
                     arguments={"entity_id": entity_id},
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Aktivitaetslog Tuerklingel fehlgeschlagen: %s", e)
 
         # Person tracker (Phase 7: erweitert mit Abschied + Abwesenheits-Summary)
         elif entity_id.startswith("person."):
@@ -911,8 +926,8 @@ class ProactiveManager:
                         f"{name} ist angekommen",
                         arguments={"person": name},
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Aktivitaetslog Ankunft fehlgeschlagen: %s", e)
 
                 # Phase 18: Proactive Planner — Multi-Step-Plan bei Ankunft
                 if hasattr(self.brain, "proactive_planner") and self.brain.proactive_planner.enabled:
@@ -960,8 +975,8 @@ class ProactiveManager:
                         f"{name} hat das Haus verlassen",
                         arguments={"person": name},
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Aktivitaetslog Abwesenheit fehlgeschlagen: %s", e)
                 # MCU-JARVIS: Abwesenheits-Akkumulator starten
                 if yaml_config.get("return_briefing", {}).get("enabled", True):
                     await self._start_absence_accumulator(name)
@@ -1130,8 +1145,8 @@ class ProactiveManager:
                         if await redis.get(cooldown_key):
                             logger.debug("Scene Device-Trigger: Cooldown aktiv fuer '%s'", scene_id)
                             continue
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("Cooldown-Check fuer Szene '%s' fehlgeschlagen: %s", scene_id, e)
 
                 # [B] UND-Modus: Alle anderen Trigger-Entities muessen ebenfalls aktiv sein
                 trigger_mode = device_trigger_modes.get(scene_id, "or")
@@ -1340,8 +1355,8 @@ class ProactiveManager:
                 f"Geraetekonflikt: {entity_id} ({role}) → {'; '.join(hints[:2])}",
                 arguments={"entity_id": entity_id, "role": role, "conflicts": len(found_conflicts)},
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Aktivitaetslog Geraetekonflikt fehlgeschlagen: %s", e)
 
     async def _check_appliance_power(self, entity_id: str, new_val: str, old_val: str):
         """Appliance-Erkennung: Setzt idle-Marker bei Power-Drop, bestaetigt nach Wartezeit."""
@@ -1381,7 +1396,7 @@ class ProactiveManager:
 
             # Bestaetigungs-Task starten falls nicht schon laufend
             if not self._appliance_confirm_task or self._appliance_confirm_task.done():
-                self._appliance_confirm_task = asyncio.create_task(self._appliance_confirm_loop())
+                self._appliance_confirm_task = self._create_loop_task(self._appliance_confirm_loop(), name="proactive_appliance_confirm")
 
     async def _appliance_confirm_loop(self):
         """Prueft periodisch ob idle-Marker abgelaufen sind und meldet Geraete als fertig."""
@@ -1593,8 +1608,8 @@ class ProactiveManager:
                     cooldown_min = followup_cfg.get("cooldown_minutes", 60)
                     if (datetime.now() - last_dt).total_seconds() < cooldown_min * 60:
                         return
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Follow-up Cooldown-Check fehlgeschlagen: %s", e)
 
         # Aeltestes Thema zuerst
         candidates.sort(key=lambda t: t.get("age_minutes", 0), reverse=True)
@@ -1632,8 +1647,8 @@ class ProactiveManager:
                 await self.brain.memory.redis.set(
                     _cooldown_key, datetime.now().isoformat(), ex=7200,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Follow-up Cooldown-Marker setzen fehlgeschlagen: %s", e)
 
     async def _generate_followup_message(
         self, topic: str, context: str, person: str,
@@ -1701,8 +1716,8 @@ class ProactiveManager:
                     avg_hour = float(raw)
                     window_start = max(4, int(avg_hour) - 1)
                     window_end = min(12, int(avg_hour) + 2)
-            except Exception:
-                pass  # Fallback auf Config-Werte
+            except Exception as e:
+                logger.debug("Adaptive Briefing-Zeit Abruf fehlgeschlagen: %s", e)
 
         # Reset am neuen Tag — lock prevents double-trigger from concurrent motion events
         async with self._state_lock:
@@ -2126,8 +2141,8 @@ class ProactiveManager:
             if _away_mode and hasattr(self.brain, "ha"):
                 try:
                     is_away = not await self.brain.ha.is_anyone_home()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Anwesenheitspruefung fehlgeschlagen: %s", e)
             if not is_night and not is_away:
                 return
 
@@ -2251,6 +2266,7 @@ class ProactiveManager:
                     logger.debug("Bettsensor %s: off-delay %ds gestartet", entity_id, off_delay)
                     timer_key = f"_bed_off_timer_{entity_id}"
                     task = asyncio.create_task(self._delayed_bed_clear(le, entity_id, room, off_delay, timer_key))
+                    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
                     setattr(self, timer_key, task)
                 else:
                     await le.on_bed_clear(entity_id, room)
@@ -2485,8 +2501,8 @@ class ProactiveManager:
                                 f" ({detail})" if detail else "",
                             )
                             return
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Szenen-Unterdrueckungspruefung fehlgeschlagen: %s", e)
 
         # D3: Kontextuelles Schweigen — Activity-basierte Unterdrückung
         # Film/Gäste/Schlaf → nur HIGH+ darf durch
@@ -2536,8 +2552,8 @@ class ProactiveManager:
                         f" ({detail})" if detail else "",
                     )
                     return
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("User-Aktivitaetspruefung fuer Notification fehlgeschlagen: %s", e)
 
         # Cooldown prüfen (mit adaptivem Cooldown aus Feedback)
         effective_cooldown = self.cooldown
@@ -2649,8 +2665,8 @@ class ProactiveManager:
                 if await self._is_semantically_duplicate(_dedup_text):
                     logger.info("Semantisches Duplikat unterdrückt: [%s] %s", event_type, _dedup_text[:60])
                     return
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Semantische Duplikatpruefung fehlgeschlagen: %s", e)
 
         # Meldung generieren
 
@@ -3051,8 +3067,9 @@ class ProactiveManager:
                     set_active_person(primary_found)
                 # Sonst: active_person nicht ändern (brain.py setzt bei Gespräch)
             return persons
-        except Exception:
+        except Exception as e:
             # HA nicht erreichbar: active_person leeren statt veraltete Daten behalten
+            logger.debug("HA-Status fuer active_person nicht erreichbar: %s", e)
             set_active_person("")
             return []
 
@@ -3628,8 +3645,8 @@ class ProactiveManager:
                         f"Proaktive Meldung: {text[:150]}",
                         arguments={"items": len(items), "event_types": event_types[:5]},
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Aktivitaetslog Batch-Summary fehlgeschlagen: %s", e)
 
         except Exception as e:
             logger.error("Batch-Summary Fehler: %s", e)
@@ -3841,8 +3858,8 @@ class ProactiveManager:
                             f"Wind: {attrs.get('wind_speed', '?')} km/h"
                         )
                         break
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Wetterinfo-Abruf fehlgeschlagen: %s", e)
 
             response = await asyncio.wait_for(
                 self.brain.ollama.chat(
@@ -4029,7 +4046,8 @@ class ProactiveManager:
                             _redis = _redis_candidate
                             _redis_available = True
                             logger.info("Cover-Loop: Redis wieder erreichbar — Safe Mode deaktiviert")
-                    except Exception:
+                    except Exception as e:
+                        logger.debug("Redis-Verbindung fehlgeschlagen: %s", e)
                         _redis = None
                         _redis_available = False
 
@@ -4263,8 +4281,8 @@ class ProactiveManager:
                         if _age_h > 3:
                             logger.warning("Sensor-Staleness: %s (%s) seit %.1fh nicht aktualisiert",
                                            _label, _eid, _age_h)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Sensor-Staleness-Pruefung fehlgeschlagen: %s", e)
 
         return {
             "temperature": temp,
@@ -4359,7 +4377,8 @@ class ProactiveManager:
                     continue
                 try:
                     reason_data = _json.loads(reason_raw if isinstance(reason_raw, str) else reason_raw.decode())
-                except Exception:
+                except Exception as e:
+                    logger.debug("Cover-Reason JSON-Parsing fehlgeschlagen: %s", e)
                     continue
                 expected_pos = reason_data.get("position")
                 if expected_pos is None:
@@ -4631,8 +4650,8 @@ class ProactiveManager:
                         arguments={"entity_id": entity_id, "position": position},
                         result=reason,
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Cover-Aktivitaetsprotokollierung fehlgeschlagen: %s", e)
                 # Cover-Licht Koordination: LightEngine informieren
                 try:
                     if hasattr(self.brain, "light_engine") and self.brain.light_engine:
@@ -5212,7 +5231,8 @@ class ProactiveManager:
                                         if acted:
                                             _count += 1
                                         break
-                                    except Exception:
+                                    except Exception as e:
+                                        logger.debug("Benachrichtigungszustellung fehlgeschlagen (Versuch %d): %s", _attempt, e)
                                         if _attempt == 0:
                                             await asyncio.sleep(60)
                             if step_pos < 100:
@@ -5341,7 +5361,8 @@ class ProactiveManager:
                             else:
                                 var_offset = random.randint(-variation, variation)
                                 await redis_client.set("mha:cover:vac_var_offset", str(var_offset), ex=86400)
-                        except Exception:
+                        except Exception as e:
+                            logger.debug("Variations-Berechnung fehlgeschlagen: %s", e)
                             var_offset = random.randint(-variation, variation)
                     elif variation > 0:
                         var_offset = random.randint(-variation, variation)
@@ -5599,8 +5620,8 @@ class ProactiveManager:
                                 f"Heizung angepasst: {current_offset:+.1f} → {new_offset:+.1f} ({', '.join(reasons)})",
                                 arguments={"entity_id": curve_entity, "old_offset": current_offset, "new_offset": new_offset},
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Heizungs-Aktivitaetsprotokollierung fehlgeschlagen: %s", e)
                 except Exception as e:
                     logger.warning("Heizungs-Wetter-Anpassung fehlgeschlagen: %s", e)
         else:
@@ -5675,8 +5696,8 @@ class ProactiveManager:
                     f"CO2-Lueftung: {int(high_co2_rooms[0][1])} ppm — Rolllaeden geoeffnet",
                     arguments={"rooms": rooms_info},
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("CO2-Lueftungs-Aktivitaetsprotokollierung fehlgeschlagen: %s", e)
 
     # Feature 16: Privacy-Modus (Abendlicher Sichtschutz)
     async def _cover_privacy_mode(self, states, sun, cover_profiles, auto_level, redis_client, cycle_acted=None):
@@ -5921,8 +5942,8 @@ class ProactiveManager:
                     arguments={"entity_id": entity_id, "fan_speed": fan_speed, "mode": mode},
                     result=reason,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Staubsauger-Aktivitaetsprotokollierung fehlgeschlagen: %s", e)
         else:
             # Alarm zurückschalten wenn Start fehlgeschlagen
             await self._vacuum_alarm_switch("arm_away")
@@ -6011,8 +6032,8 @@ class ProactiveManager:
                             f"Staubsauger pausiert — Ankunft erkannt ({len(interrupted)} Roboter)",
                             arguments={"interrupted_floors": interrupted},
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Staubsauger-Pause-Protokollierung fehlgeschlagen: %s", e)
 
                 # Fall 2: Niemand zuhause + unterbrochene Reinigung → Fortsetzen
                 if not anyone_home and guard_cfg.get("resume_on_departure"):
@@ -6058,8 +6079,8 @@ class ProactiveManager:
                                 f"Staubsauger Reinigung fortgesetzt ({len(floors)} Roboter)",
                                 arguments={"floors": floors},
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Staubsauger-Fortsetzungs-Protokollierung fehlgeschlagen: %s", e)
 
                 # Fall 3: Alle Vacuums fertig (docked) → Alarm zurückschalten
                 if all_docked and not cleaning_robots:
@@ -6566,7 +6587,8 @@ class ProactiveManager:
             cover_cfg = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
             minutes = cover_cfg.get("sleep_lock_minutes", 30)
             return max(60, int(minutes) * 60)  # Minimum 1 Minute
-        except Exception:
+        except Exception as e:
+            logger.debug("Sleep-Lock-TTL Berechnung fehlgeschlagen: %s", e)
             return self._SLEEP_LOCK_TTL_DEFAULT
 
     async def _is_sleeping(self, states=None) -> bool:
@@ -6750,8 +6772,8 @@ class ProactiveManager:
                 arguments={"executed": executed[:20], "blocked": blocked[:10]},
                 result=f"{len(executed)} ausgefuehrt, {len(blocked)} blockiert",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Notfall-Protokoll-Protokollierung fehlgeschlagen: %s", e)
 
     # ------------------------------------------------------------------
     # Phase 17: Threat Assessment Loop
@@ -6800,8 +6822,8 @@ class ProactiveManager:
                                             await self.brain.personality.record_milestone(
                                                 "system", "Erste Krise gemeinsam gemeistert",
                                             )
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    logger.warning("Threat-Eskalations-Benachrichtigung fehlgeschlagen: %s", e)
                         except Exception as esc_err:
                             logger.warning("Threat Eskalation fehlgeschlagen: %s", esc_err)
             except Exception as e:
@@ -6882,7 +6904,8 @@ class ProactiveManager:
                 try:
                     detection = await self.brain.activity.detect_activity()
                     activity = detection.get("activity", "")
-                except Exception:
+                except Exception as e:
+                    logger.debug("Aktivitaetserkennung fehlgeschlagen: %s", e)
                     activity = ""
 
                 if activity != "relaxing":
@@ -7237,7 +7260,8 @@ class ProactiveManager:
                                 state = await self.brain.ha.get_state(ha_entity)
                                 if state and state.get("state") == "not_home":
                                     away_persons.append(name)
-                            except Exception:
+                            except Exception as e:
+                                logger.debug("Personen-Status-Abfrage fehlgeschlagen fuer %s: %s", name, e)
                                 continue
 
                     if away_persons:

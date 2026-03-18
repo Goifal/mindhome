@@ -114,6 +114,7 @@ class HealthMonitor:
             return
         self._running = True
         self._task = asyncio.create_task(self._check_loop())
+        self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         logger.info("Health Monitor gestartet")
 
     async def stop(self) -> None:

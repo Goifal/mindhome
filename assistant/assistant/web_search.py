@@ -113,7 +113,8 @@ def _is_safe_url(url: str) -> bool:
         except ValueError:
             pass  # Hostname — wird spaeter per DNS aufgeloest
         return True
-    except Exception:
+    except Exception as e:
+        logger.debug("URL-Validierung fehlgeschlagen: %s", e)
         return False
 
 

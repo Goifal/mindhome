@@ -329,8 +329,8 @@ class ContextBuilder:
                     if _active_scene:
                         _active_scene = _active_scene.decode() if isinstance(_active_scene, bytes) else _active_scene
                         context["house"]["active_mood_scene"] = _active_scene
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Aktive Szene aus Redis laden fehlgeschlagen: %s", e)
 
             # MCU-JARVIS: Anomalie-Kontext — ungewöhnliche Zustaende erkennen
             if yaml_config.get("mcu_intelligence", {}).get("anomaly_detection", True):
@@ -487,8 +487,8 @@ class ContextBuilder:
                         person_facts = self.semantic._get_cached_relationship(pattern, keywords, known_names)
                         if person_facts:
                             return person_facts
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Personen-Fakten Abruf fehlgeschlagen: %s", e)
                 break
 
         return ""
@@ -1214,7 +1214,8 @@ class ContextBuilder:
                 with os.fdopen(tmp_fd, "w") as tmp_f:
                     yaml.safe_dump(data, tmp_f, allow_unicode=True, default_flow_style=False)
                 os.replace(tmp_path, str(room_file))
-            except Exception:
+            except Exception as e:
+                logger.debug("Raum-Override Datei schreiben fehlgeschlagen: %s", e)
                 if os.path.exists(tmp_path):
                     os.unlink(tmp_path)
                 raise

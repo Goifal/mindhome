@@ -323,7 +323,8 @@ class OutcomeTracker:
                 if not current_state:
                     self._pending_count = max(0, self._pending_count - 1)
                     return
-            except Exception:
+            except Exception as e:
+                logger.debug("Geraetestatus-Abfrage fehlgeschlagen: %s", e)
                 self._pending_count = max(0, self._pending_count - 1)
                 return
 
@@ -401,8 +402,8 @@ class OutcomeTracker:
                 _hints = StateChangeLog.check_action_dependencies(action_type, {}, _states)
                 if _hints:
                     _dep_influenced = True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Abhaengigkeitspruefung fuer Outcome fehlgeschlagen: %s", e)
 
         _entry_data = {
             "action_type": action_type,

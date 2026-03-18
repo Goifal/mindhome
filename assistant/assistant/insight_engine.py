@@ -127,6 +127,7 @@ class InsightEngine:
         if self.enabled:
             self._running = True
             self._task = asyncio.create_task(self._insight_loop())
+            self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
             logger.info(
                 "InsightEngine initialisiert (Intervall: %d Min, Cooldown: %d Std)",
                 self.check_interval // 60,
@@ -217,6 +218,7 @@ class InsightEngine:
         if self.enabled and not was_enabled and not self._running:
             self._running = True
             self._task = asyncio.create_task(self._insight_loop())
+            self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
             logger.info("InsightEngine via Hot-Reload gestartet")
 
     # ------------------------------------------------------------------
@@ -1234,7 +1236,8 @@ class InsightEngine:
 
         try:
             snapshots_raw = await self.redis.lrange("mha:insight:temp_history", 0, self.max_temp_snapshots - 1)  # H5
-        except Exception:
+        except Exception as e:
+            logger.debug("Insight-Analyse fehlgeschlagen: %s", e)
             return None
 
         if len(snapshots_raw) < 3:
@@ -1619,7 +1622,8 @@ class InsightEngine:
                     "climate_issues": climate_hints,
                 },
             }
-        except Exception:
+        except Exception as e:
+            logger.debug("Insight-Analyse fehlgeschlagen: %s", e)
             return None
 
     async def _check_humidity_contradiction(self, data: dict) -> Optional[dict]:
@@ -2211,7 +2215,8 @@ class InsightEngine:
                     if cursor == 0:
                         break
                 status["active_cooldowns"] = cooldown_count
-            except Exception:
+            except Exception as e:
+                logger.debug("Cooldown-Status Abruf fehlgeschlagen: %s", e)
                 status["active_cooldowns"] = -1
 
         return status

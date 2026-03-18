@@ -1027,8 +1027,8 @@ class PersonalityEngine:
                 )
                 if hints:
                     dep_hint = hints[0]
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Dependency-Hints Abruf fehlgeschlagen: %s", e)
 
         if opinion and dep_hint:
             # Beides: Opinion + Dependency → verstaerkter Kommentar
@@ -2370,8 +2370,8 @@ class PersonalityEngine:
                     return None  # 80% Chance auf Humor-Pause
                 elif daily_count >= 8 and random.random() < 0.5:
                     return None  # 50% Chance auf Humor-Pause
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Humor-Tageszaehler aus Redis laden fehlgeschlagen: %s", e)
 
         # Humor-Fatigue: Nach 4 Witzen Pause (per User, consecutive)
         _hc_key = person.lower().strip() if person else "_default"

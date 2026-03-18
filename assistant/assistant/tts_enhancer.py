@@ -413,7 +413,8 @@ class TTSEnhancer:
             if start > end:
                 return hour >= start or hour < end
             return start <= hour < end
-        except Exception:
+        except Exception as e:
+            logger.debug("TTS-Verarbeitung fehlgeschlagen: %s", e)
             return False
 
     def _generate_ssml(self, text: str, message_type: str, speed: int,

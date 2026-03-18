@@ -295,7 +295,8 @@ class SmartShopping:
         # Aktuelle Einkaufsliste holen
         try:
             current_items = await self.ha.api_get("/api/shopping_list")
-        except Exception:
+        except Exception as e:
+            logger.debug("Einkaufsliste laden fehlgeschlagen: %s", e)
             current_items = []
 
         current_names = set()

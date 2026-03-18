@@ -77,6 +77,7 @@ class SeasonalInsightEngine:
         if self.enabled and self.redis:
             self._running = True
             self._task = asyncio.create_task(self._seasonal_loop())
+            self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
             logger.info("SeasonalInsightEngine initialisiert")
 
     async def stop(self):
@@ -146,7 +147,8 @@ class SeasonalInsightEngine:
         try:
             if await self.redis.exists(cooldown_key):
                 return None
-        except Exception:
+        except Exception as e:
+            logger.debug("Seasonal-Insight Cooldown-Pruefung fehlgeschlagen: %s", e)
             return None
 
         # Saisonwechsel erkennen
@@ -183,7 +185,8 @@ class SeasonalInsightEngine:
         try:
             if await self.redis.exists(flag_key):
                 return None
-        except Exception:
+        except Exception as e:
+            logger.debug("Saisonwechsel-Flag Pruefung fehlgeschlagen: %s", e)
             return None
 
         season_label = _SEASON_LABELS.get(current_season, current_season)
@@ -261,8 +264,8 @@ class SeasonalInsightEngine:
                         house_context += f"Heizung/Klima: {', '.join(climate_states[:5])}\n"
                     if cover_states:
                         house_context += f"Rolladen: {', '.join(cover_states[:5])}\n"
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("HA-Status fuer saisonalen Kontext fehlgeschlagen: %s", e)
 
         try:
             from .config import settings

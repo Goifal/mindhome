@@ -316,8 +316,8 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
                 "system", "boot",
                 f"System gestartet: {msg[:150]}",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Boot-Aktivitaet konnte nicht geloggt werden: %s", e)
 
     except Exception as e:
         logger.warning("Boot-Sequenz fehlgeschlagen: %s", e)
@@ -383,6 +383,7 @@ async def lifespan(app: FastAPI):
 
     # Periodischer Token-Cleanup (alle 15 Min)
     cleanup_task = asyncio.create_task(_periodic_token_cleanup())
+    cleanup_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     yield
 
@@ -1980,12 +1981,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 await asyncio.sleep(WS_KEEPALIVE_INTERVAL)
                 try:
                     await websocket.send_json({"event": "ping", "data": {}})
-                except Exception:
+                except Exception as e:
+                    logger.debug("WebSocket Keepalive fehlgeschlagen, beende Schleife: %s", e)
                     break
         except asyncio.CancelledError:
             pass
 
     keepalive_task = asyncio.create_task(_ws_keepalive())
+    keepalive_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     # F-063: WebSocket Rate-Limiting (max 30 Nachrichten pro 10 Sekunden)
     _ws_msg_times: list[float] = []
@@ -2148,6 +2151,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             result = None
                             while not _brain_task.done():
                                 _recv_task = asyncio.create_task(websocket.receive_text())
+                                _recv_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
                                 done, _ = await asyncio.wait(
                                     [_brain_task, _recv_task],
                                     return_when=asyncio.FIRST_COMPLETED,
@@ -2165,10 +2169,11 @@ async def websocket_endpoint(websocket: WebSocket):
                                                 try:
                                                     speaker = await brain.sound_manager._resolve_speaker(None)
                                                     if speaker:
-                                                        asyncio.ensure_future(brain.ha.call_service(
+                                                        _tts_stop_task = asyncio.create_task(brain.ha.call_service(
                                                             "media_player", "media_stop",
                                                             {"entity_id": speaker},
                                                         ))
+                                                        _tts_stop_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
                                                 except Exception as e:
                                                     logger.debug("Unhandled: %s", e)
                                             if stream_tokens_sent:
@@ -3392,12 +3397,14 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
                 if not pt_task or pt_task.done():
                     if vacuum_cfg.get("power_trigger", {}).get("enabled"):
                         pro._vacuum_power_task = asyncio.create_task(pro._run_vacuum_power_trigger())
+                        pro._vacuum_power_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
                         logger.info("Vacuum Power-Trigger Task (neu) gestartet")
                 # Scene-Trigger Task starten falls nicht laufend
                 st_task = getattr(pro, "_vacuum_scene_task", None)
                 if not st_task or st_task.done():
                     if vacuum_cfg.get("scene_trigger", {}).get("enabled"):
                         pro._vacuum_scene_task = asyncio.create_task(pro._run_vacuum_scene_trigger())
+                        pro._vacuum_scene_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
                         logger.info("Vacuum Scene-Trigger Task (neu) gestartet")
             logger.info("Vacuum Settings aktualisiert")
         _try_reload("vacuum", _reload_vacuum)
@@ -4199,7 +4206,8 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         speech_changed = (old_speech != new_speech)
         if speech_changed:
             _sync_speech_to_env(new_speech)
-            asyncio.create_task(_restart_speech_containers(old_speech, new_speech))
+            _speech_restart_task = asyncio.create_task(_restart_speech_containers(old_speech, new_speech))
+            _speech_restart_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
             logger.info("Speech-Container Restart im Hintergrund gestartet")
 
         # F-038: Alle weiteren Module benachrichtigen die Config bei __init__ cachen
@@ -5070,8 +5078,8 @@ async def ui_scene_history(token: str = ""):
             try:
                 data = json.loads(entry if isinstance(entry, str) else entry.decode())
                 history.append(data)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Scene-History Eintrag nicht parsebar: %s", e)
         return {"history": history}
     except Exception as e:
         logger.debug("Scene-History Fehler: %s", e)

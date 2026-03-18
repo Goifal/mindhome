@@ -194,6 +194,7 @@ class AmbientAudioClassifier:
 
         self._running = True
         self._poll_task = asyncio.create_task(self._poll_loop())
+        self._poll_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         logger.info("Ambient Audio Polling gestartet (Intervall: %ds)", self._poll_interval)
 
     async def stop(self):

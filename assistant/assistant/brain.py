@@ -570,8 +570,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         _fu = followups[0] if isinstance(followups[0], str) else followups[0].get("topic", "")
                         if _fu:
                             hints.append(f"Frage beilaeufig nach: '{_fu}'")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Follow-up-Abfrage fehlgeschlagen: %s", e)
 
             # Voller Tag morgen
             cal = context.get("calendar_tomorrow", [])
@@ -1408,7 +1408,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     _extracted += len(facts) if facts else 0
                 except asyncio.TimeoutError:
                     break  # Bei Timeout restliche Paare ueberspringen
-                except Exception:
+                except Exception as e:
+                    logger.warning("Faktenextraktion fehlgeschlagen: %s", e)
                     continue
 
             if _extracted > 0:
@@ -2388,8 +2389,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 if _post_hints:
                                     _hint_text = _post_hints[0]
                                     response_text = f"{response_text} {_hint_text}"
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.debug("Post-Execution Abhaengigkeitspruefung fehlgeschlagen: %s", e)
 
                             # Post-Execution State Verification (async Background):
                             # Prüft ob das Gerät tatsächlich den State gewechselt hat.
@@ -2621,7 +2622,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             try:
                                 ins = _json.loads(raw if isinstance(raw, str) else raw.decode())
                                 insight_texts.append(f"- {ins.get('message', '')}")
-                            except Exception:
+                            except Exception as e:
+                                logger.debug("Insight-Parsing fehlgeschlagen: %s", e)
                                 continue
                         if insight_texts:
                             catchup_parts.append("Erkenntnisse:\n" + "\n".join(insight_texts[:3]))
@@ -2914,8 +2916,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 if room:
                     try:
                         _room_state = await self._get_room_state_summary(room)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Raum-Status-Zusammenfassung fehlgeschlagen: %s", e)
                 _implicit_intent = await self.llm_enhancer.smart_intent.recognize(
                     text, room=room or "", time_of_day=_tod,
                     room_state=_room_state,
@@ -3427,14 +3429,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         ),
                         name=f"b6_milestone_{_ic}",
                     )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Interaktions-Meilenstein-Tracking fehlgeschlagen: %s", e)
 
         # D3: Aktuelle Aktivitaet fuer kontextuelles Schweigen
         try:
             _activity_result = await self.activity.detect_activity()
             self.personality._current_activity = _activity_result.get("activity", "")
-        except Exception:
+        except Exception as e:
+            logger.debug("Aktivitaetserkennung fehlgeschlagen: %s", e)
             self.personality._current_activity = ""
 
         _prompt_action, _prompt_args = self._get_last_action(person)
@@ -3716,8 +3719,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 err_lines = [f"- {e['action_type']}: {e.get('reason', 'fehlgeschlagen')}" for e in recent_errors]
                 err_text = "\n".join(err_lines)
                 sections.append(("recent_errors", f"\n\nLETZTE FEHLER (vermeide Wiederholung):\n{err_text}", 2))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Letzte Fehler laden fehlgeschlagen: %s", e)
 
         # Intelligence Fusion: JARVIS DENKT MIT
         jarvis_thinks = self._build_jarvis_thinks_context(
@@ -4843,8 +4846,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                         "assistant",
                                         ex=120,  # 2-minute ownership window
                                     )
-                                except Exception:
-                                    pass  # Non-critical
+                                except Exception as e:
+                                    logger.debug("Entity-Ownership in Redis setzen fehlgeschlagen: %s", e)
 
                         # Self-Improvement: Outcome Tracker — Wirkung der Aktion beobachten
                         self._task_registry.create_task(
@@ -4887,8 +4890,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     response_text = f"{response_text} {_dep_hint}"
                                 else:
                                     response_text = _dep_hint
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Abhaengigkeitspruefung nach Ausfuehrung fehlgeschlagen: %s", e)
 
                     if func_name in QUERY_TOOLS:
                         has_query_results = True
@@ -4911,7 +4914,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         if not _post_states:
                             try:
                                 _post_states = await self.ha.get_states() or []
-                            except Exception:
+                            except Exception as e:
+                                logger.debug("HA-States fuer Opinion-Check laden fehlgeschlagen: %s", e)
                                 _post_states = []
                         opinion = self.personality.check_opinion_with_context(
                             func_name, final_args,
@@ -5077,8 +5081,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         )
                         _ea["_verify_mismatch"] = True
                         _ea["_actual_state"] = "unavailable"
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("State-Verify fehlgeschlagen: %s", e)
 
             # 8b. Query-Tool Antwort aufbereiten:
             # 1. Humanizer wandelt Rohdaten in natuerliche Sprache um (zuverlaessig)
@@ -5888,8 +5892,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         )
                         if _auto_expl and _auto_expl not in response_text:
                             response_text = f"{response_text}\n\n_{_auto_expl}_"
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Auto-Erklaerung fehlgeschlagen: %s", e)
 
         # Learning Transfer: Aktionen beobachten (Praeferenzen lernen)
         for _act in executed_actions:
@@ -5945,8 +5949,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             ),
                             name="b6_first_correction",
                         )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Korrektur-Lernen fehlgeschlagen: %s", e)
 
         # Phase 18: Seasonal Action Logging (für Vorjahres-Vergleich)
         for action in executed_actions:
@@ -6154,8 +6158,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 _emotion_tts = self.tts_enhancer.enhance_with_emotion(response_text, _inner_mood)
                 if _emotion_tts:
                     tts_data.update(_emotion_tts)
-            except Exception:
-                pass  # Graceful degradation — Basis-TTS bleibt erhalten
+            except Exception as e:
+                logger.debug("Emotions-TTS-Anreicherung fehlgeschlagen: %s", e)
 
         # Phase 17.4: Mood-Aware TTS — Geschwindigkeit an Stimmung anpassen
         # Muede/gestresst = langsamer und leiser sprechen (Fürsorge)
@@ -6427,8 +6431,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             if not room:
                 try:
                     room = await self._get_occupied_room()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Raum-Erkennung fuer State-Verify fehlgeschlagen: %s", e)
             await self._speak_and_emit(correction, room=room, tts_data=tts_data)
         except Exception as e:
             logger.debug("State-Verify fehlgeschlagen: %s", e)
@@ -7883,8 +7887,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 f"Muster erkannt: {message[:150]}",
                 arguments={"entity_id": entity, "pattern": pattern},
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Lernmuster-Aktivitaetslog fehlgeschlagen: %s", e)
 
     async def _polish_learning_suggestion(self, message: str, alert: dict) -> str:
         """Poliert Learning-Vorschlaege mit LLM fuer natuerliche Variation."""
@@ -11600,8 +11604,8 @@ Regeln:
                     arguments={"action": action, "confidence": pct, "person": person or ""},
                     result="Erfolg" if _success else "Fehlgeschlagen",
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Antizipation-Aktivitaetslog fehlgeschlagen: %s", e)
         else:
             # Vorschlagen — LLM Enhancer fuer natuerlichere Formulierung
             # Template-Vorschlag als Fallback
@@ -11665,8 +11669,8 @@ Regeln:
                 f"Insight: {message[:150]}",
                 arguments={"check": check, "urgency": urgency},
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Insight-Aktivitaetslog fehlgeschlagen: %s", e)
 
     async def _handle_intent_reminder(self, reminder: dict):
         """Callback für Intent-Erinnerungen."""
@@ -12116,8 +12120,8 @@ Regeln:
                         for c in _last_convs
                     )
                     _context_parts.append(f"Letzte Gespraeche heute:\n{_conv_text}")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Gespraeche fuer Tagesreflexion laden fehlgeschlagen: %s", e)
 
             # HA-States (Zusammenfassung)
             try:
@@ -12139,8 +12143,8 @@ Regeln:
                         _context_parts.append(
                             f"Aktive HA-Entities:\n" + "\n".join(f"- {a}" for a in _active[:15])
                         )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("HA-States fuer Tagesreflexion laden fehlgeschlagen: %s", e)
 
             if not _context_parts:
                 return

@@ -163,6 +163,7 @@ class WellnessAdvisor:
             return
         self._running = True
         self._task = asyncio.create_task(self._wellness_loop())
+        self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     async def stop(self):
         """Stoppt den Wellness-Loop."""
@@ -244,7 +245,8 @@ class WellnessAdvisor:
                 detection = await self.activity.detect_activity()
                 activity = detection.get("activity", "")
                 user_at_pc = activity == "focused"
-            except Exception:
+            except Exception as e:
+                logger.debug("Aktivitaetserkennung fehlgeschlagen: %s", e)
                 return
 
         if not user_at_pc:
@@ -854,8 +856,8 @@ class WellnessAdvisor:
                 )
                 if climate_active:
                     message += " (Hinweis: Heizung laeuft — Fenster nur kurz oeffnen)"
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Konfliktpruefung fuer Wellness-Nudge fehlgeschlagen: %s", e)
 
         try:
             await self._notify_callback(nudge_type, message, urgency)

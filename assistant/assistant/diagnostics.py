@@ -798,7 +798,8 @@ class DiagnosticsEngine:
                 "Ich bin gerade etwas langsamer im Denken — mein Sprachmodell ist ausgelastet",
                 "warning",
             ))
-        except Exception:
+        except Exception as e:
+            logger.warning("Ollama-Erreichbarkeitspruefung fehlgeschlagen: %s", e)
             issues.append((
                 "Mein Sprachmodell ist gerade nicht erreichbar — ich arbeite mit Einschraenkungen",
                 "warning",
@@ -812,7 +813,8 @@ class DiagnosticsEngine:
                 await r.ping()
             finally:
                 await r.aclose()
-        except Exception:
+        except Exception as e:
+            logger.warning("Redis-Erreichbarkeitspruefung fehlgeschlagen: %s", e)
             issues.append((
                 "Mein Kurzzeitgedaechtnis ist gerade eingeschraenkt",
                 "warning",
@@ -826,7 +828,8 @@ class DiagnosticsEngine:
                     "Ich habe gerade keinen Zugriff auf die Haussteuerung — Home Assistant antwortet nicht",
                     "warning",
                 ))
-        except Exception:
+        except Exception as e:
+            logger.warning("Home-Assistant-Erreichbarkeitspruefung fehlgeschlagen: %s", e)
             issues.append((
                 "Ich habe gerade keinen Zugriff auf die Haussteuerung — Home Assistant antwortet nicht",
                 "warning",
@@ -846,8 +849,8 @@ class DiagnosticsEngine:
                     "Der Speicherplatz wird knapp — wir sollten bald aufraeumen",
                     "info",
                 ))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Speicherplatzpruefung fehlgeschlagen: %s", e)
 
         # --- Arbeitsspeicher pruefen ---
         try:
@@ -875,8 +878,8 @@ class DiagnosticsEngine:
                             "Der Arbeitsspeicher wird knapp — Leistung koennte eingeschraenkt sein",
                             "info",
                         ))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Arbeitsspeicherpruefung fehlgeschlagen: %s", e)
 
         # Alles gesund → None
         if not issues:

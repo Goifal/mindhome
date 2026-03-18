@@ -638,6 +638,7 @@ class CookingAssistant:
         # Hintergrund-Task für Benachrichtigung
         self._cleanup_completed_tasks()
         task = asyncio.create_task(self._timer_watcher(timer))
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         self._timer_tasks.append(task)
 
         # Timer in Redis persistieren (für Neustart-Recovery)
@@ -662,6 +663,7 @@ class CookingAssistant:
 
         self._cleanup_completed_tasks()
         task = asyncio.create_task(self._timer_watcher(timer))
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         self._timer_tasks.append(task)
 
         # Timer in Redis persistieren (für Neustart-Recovery)
@@ -995,6 +997,7 @@ class CookingAssistant:
                 if not timer.is_done:
                     self.session.timers.append(timer)
                     task = asyncio.create_task(self._timer_watcher(timer))
+                    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
                     self._timer_tasks.append(task)
                     restored_timers += 1
 

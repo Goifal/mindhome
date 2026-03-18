@@ -107,6 +107,7 @@ class DeviceHealthMonitor:
             return
         self._running = True
         self._task = asyncio.create_task(self._check_loop())
+        self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         logger.info("DeviceHealthMonitor gestartet")
 
     async def stop(self):
@@ -527,7 +528,8 @@ class DeviceHealthMonitor:
         try:
             key = f"mha:device:notified:{entity_id}"
             return await self.redis.exists(key) == 0
-        except Exception:
+        except Exception as e:
+            logger.debug("Quietmode-Pruefung fehlgeschlagen: %s", e)
             return True
 
     async def _mark_notified(self, entity_id: str):
@@ -631,7 +633,8 @@ class DeviceHealthMonitor:
                 "check_interval_min": self.check_interval,
                 "stddev_threshold": self.stddev_multiplier,
             }
-        except Exception:
+        except Exception as e:
+            logger.debug("Health-Status Zusammenfassung fehlgeschlagen: %s", e)
             return {"enabled": self.enabled, "baselines": 0}
 
     async def get_baseline_info(self, entity_id: str) -> Optional[dict]:

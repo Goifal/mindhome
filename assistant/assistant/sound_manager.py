@@ -731,6 +731,7 @@ class SoundManager:
                             except Exception as ex:
                                 logger.debug("Volume-Restore fehlgeschlagen: %s", ex)
                         task = asyncio.create_task(_restore_volume())
+                        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
                         self._restore_tasks = [t for t in self._restore_tasks if not t.done()]
                         self._restore_tasks.append(task)
                     return True
