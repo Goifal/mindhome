@@ -4440,21 +4440,18 @@ const BranchUpdateCard = ({ lang, showToast }) => {
     };
 
     // Update/Branch-Wechsel ausfuehren
-    // full=true: Docker Rebuild (Full Update), full=false: nur Restart (Quick Update)
-    const doUpdate = async (branch, full = false) => {
+    const doUpdate = async (branch) => {
         setUpdating(true);
         setUpdateLog([]);
         try {
-            const payload = { branch: branch || '' };
-            if (full) payload.full = true;
-            const r = await api.post('system/branch-update', payload);
+            const r = await api.post('system/branch-update', { branch: branch || '' });
             if (r && !r._error) {
                 setUpdateLog(r.log || []);
                 if (r.success) {
                     showToast(
                         lang === 'de'
-                            ? `${full ? 'Full' : 'Quick'} Update erfolgreich! Branch: ${r.branch || currentBranch}`
-                            : `${full ? 'Full' : 'Quick'} update successful! Branch: ${r.branch || currentBranch}`,
+                            ? `Update erfolgreich! Branch: ${r.branch || currentBranch}`
+                            : `Update successful! Branch: ${r.branch || currentBranch}`,
                         'success'
                     );
                 } else {
@@ -4584,40 +4581,16 @@ const BranchUpdateCard = ({ lang, showToast }) => {
 
             {/* Action Buttons */}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {/* Quick Update: git pull + Restart (kein Rebuild) */}
+                {/* Update aktueller Branch */}
                 <button
                     className="btn btn-sm btn-primary"
                     disabled={updating}
-                    onClick={() => doUpdate('', false)}
+                    onClick={() => doUpdate('')}
                 >
                     <span className="mdi mdi-download" style={{ marginRight: 4 }} />
                     {updating
                         ? (lang === 'de' ? 'Update läuft...' : 'Updating...')
-                        : 'Quick Update'
-                    }
-                </button>
-
-                {/* Full Update: git pull + Docker Rebuild + Restart */}
-                <button
-                    className="btn btn-sm btn-primary"
-                    disabled={updating}
-                    onClick={() => {
-                        if (confirm(lang === 'de'
-                            ? 'Full Update durchführen? Container werden komplett neu gebaut. Das kann einige Minuten dauern.'
-                            : 'Run full update? Containers will be completely rebuilt. This may take several minutes.'
-                        )) {
-                            doUpdate('', true);
-                        }
-                    }}
-                    style={{
-                        background: 'var(--accent-tertiary, #dc6317)',
-                        color: '#fff', border: 'none',
-                    }}
-                >
-                    <span className="mdi mdi-package-variant" style={{ marginRight: 4 }} />
-                    {updating
-                        ? (lang === 'de' ? 'Update läuft...' : 'Updating...')
-                        : 'Full Update'
+                        : (lang === 'de' ? 'Aktuellen Branch updaten' : 'Update Current Branch')
                     }
                 </button>
 
