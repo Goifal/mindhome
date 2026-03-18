@@ -4120,6 +4120,7 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         # Device-Trigger)
         _REPLACE_KEYS = [
             ("scenes", "device_trigger_map"),
+            ("scenes", "device_trigger_modes"),
             ("scenes", "trigger_map"),
         ]
         for section, key in _REPLACE_KEYS:
@@ -5038,6 +5039,28 @@ async def ui_scenes_status(token: str = ""):
     except Exception as e:
         logger.error("API error: %s", e)
         raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+
+
+@app.get("/api/ui/scenes/history")
+async def ui_scene_history(token: str = ""):
+    """Letzte 50 Szenen-Aktivierungen aus Redis."""
+    await _check_token(token)
+    redis = brain.memory.redis if hasattr(brain, "memory") and brain.memory else None
+    if not redis:
+        return {"history": []}
+    try:
+        raw = await redis.zrevrange("mha:scene:history", 0, 49, withscores=True)
+        history = []
+        for entry, _score in raw:
+            try:
+                data = json.loads(entry if isinstance(entry, str) else entry.decode())
+                history.append(data)
+            except Exception:
+                pass
+        return {"history": history}
+    except Exception as e:
+        logger.debug("Scene-History Fehler: %s", e)
+        return {"history": []}
 
 
 # ── Cover Schedules (lokal gespeichert) ──────────────────────────────
@@ -8330,6 +8353,7 @@ async def _docker_restart(container: str = "mindhome-assistant", timeout: int = 
 
 class BranchUpdateRequest(BaseModel):
     branch: str | None = None
+    full: bool = False
 
 
 @app.post("/api/ui/system/update")
@@ -8462,11 +8486,35 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
             except Exception as e:
                 _update_log.append(f"WARNUNG: {cfg_path.name} konnte nicht wiederhergestellt werden: {e}")
 
-        _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Code aktualisiert! Container startet neu...")
+        _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Code aktualisiert!")
 
-        # 4. Restart via Docker Engine API (Code als Volume = sofort aktiv)
-        # asyncio.ensure_future damit Response noch rausgeht bevor Restart
-        asyncio.ensure_future(_docker_restart())
+        # 4. Full Update: Docker Compose Build (Rebuild der Container-Images)
+        is_full = body.full if body else False
+        if is_full:
+            _update_log.append("Full Update: Docker-Image wird neu gebaut...")
+            rc_build, out_build = await _run_cmd(
+                ["docker", "compose", "build"],
+                cwd=str(_MHA_DIR), timeout=1200,
+            )
+            if rc_build != 0:
+                _update_log.append(f"WARNUNG: Docker build fehlgeschlagen: {out_build.strip()[:500]}")
+            else:
+                _update_log.append("Docker-Image erfolgreich gebaut")
+
+            _update_log.append("Container werden neu erstellt...")
+            rc_up, out_up = await _run_cmd(
+                ["docker", "compose", "up", "-d"],
+                cwd=str(_MHA_DIR), timeout=120,
+            )
+            if rc_up != 0:
+                _update_log.append(f"WARNUNG: Docker up fehlgeschlagen: {out_up.strip()[:500]}")
+            else:
+                _update_log.append("Container erfolgreich neu erstellt")
+        else:
+            # 5. Quick: Restart via Docker Engine API (Code als Volume = sofort aktiv)
+            _update_log.append("Container startet neu...")
+            # asyncio.ensure_future damit Response noch rausgeht bevor Restart
+            asyncio.ensure_future(_docker_restart())
 
         return {"success": True, "log": _update_log, "branch": pull_branch}
 

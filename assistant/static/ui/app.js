@@ -1886,6 +1886,7 @@ const HELP_TEXTS = {
   'diagnostics.stale_sensor_minutes': {title:'Sensor veraltet', text:'Nach wie vielen Min ohne Update veraltet.'},
   'diagnostics.offline_threshold_minutes': {title:'Geraet offline', text:'Nach wie vielen Min ein Geraet offline gilt.'},
   'diagnostics.alert_cooldown_minutes': {title:'Diagnostik-Cooldown', text:'Min. Abstand zwischen Diagnostik-Warnungen.'},
+  'diagnostics.suppress_after_cycles': {title:'Auto-Suppress nach Zyklen', text:'Nach wie vielen aufeinanderfolgenden Diagnostik-Zyklen ein dauerhaft offline/stale Gerät automatisch unterdrückt wird. Kommt es wieder online, wird die Unterdrückung sofort aufgehoben.'},
   'diagnostics.monitor_domains': {title:'Überwachte Domains', text:'Welche HA-Domains überwacht werden.'},
   'diagnostics.exclude_patterns': {title:'Ignorierte Patterns', text:'Entity-IDs die ausgeschlossen werden.'},
   'maintenance.enabled': {title:'Wartungs-Erinnerungen', text:'Automatische Erinnerungen für Geräte-Wartung.'},
@@ -4161,9 +4162,18 @@ const _DEFAULT_SCENES = [
   {id:'gäste',        icon:'&#128101;', label:'Gäste',       activity:'guests',    silence:false, transition:3,  triggers:['gäste','besuch','gäste da']},
   {id:'nicht_stören', icon:'&#128683;', label:'Nicht stören',activity:'focused',   silence:true,  transition:1,  triggers:['nicht stören','ruhe','bitte nicht stören']},
   {id:'musik',         icon:'&#127925;', label:'Musik',        activity:'relaxing',  silence:false, transition:2,  triggers:['musik','musik an','musik hoeren']},
-  {id:'arbeit',        icon:'&#128188;', label:'Arbeit',       activity:'focused',   silence:true,  transition:1,  triggers:['arbeit','arbeiten','arbeitsmodus']},
+  {id:'arbeiten',      icon:'&#128188;', label:'Arbeiten',     activity:'focused',   silence:true,  transition:1,  triggers:['arbeit','arbeiten','arbeitsmodus']},
   {id:'kochen',        icon:'&#127859;', label:'Kochen',       activity:'relaxing',  silence:false, transition:1,  triggers:['kochen','kochmodus']},
   {id:'party',         icon:'&#127881;', label:'Party',        activity:'guests',    silence:false, transition:2,  triggers:['party','feiern','partymodus']},
+  {id:'hell',          icon:'&#9728;',   label:'Hell',         activity:'relaxing',  silence:false, transition:2,  triggers:['hell','alles an','volle helligkeit']},
+  {id:'essen',         icon:'&#127869;', label:'Essen',        activity:'relaxing',  silence:false, transition:3,  triggers:['essen','abendessen','dinner','mahlzeit']},
+  {id:'lesen',         icon:'&#128214;', label:'Lesen',        activity:'focused',   silence:true,  transition:3,  triggers:['lesen','buch','reading']},
+  {id:'spielen',       icon:'&#127918;', label:'Spielen',      activity:'relaxing',  silence:false, transition:2,  triggers:['spielen','kinder','gaming']},
+  {id:'morgens',       icon:'&#127748;', label:'Bad Morgens',  activity:'relaxing',  silence:false, transition:5,  triggers:['morgens','morgenroutine']},
+  {id:'abends',        icon:'&#127749;', label:'Bad Abends',   activity:'relaxing',  silence:false, transition:5,  triggers:['abends','baden','entspannen bad']},
+  {id:'romantisch',    icon:'&#128151;', label:'Romantisch',   activity:'relaxing',  silence:true,  transition:5,  triggers:['romantisch','romantik','kerzenschein']},
+  {id:'energiesparen', icon:'&#9889;',   label:'Energiesparen',activity:'away',      silence:false, transition:1,  triggers:['energiesparen','strom sparen','eco']},
+  {id:'putzen',        icon:'&#129529;', label:'Putzen',       activity:'relaxing',  silence:false, transition:1,  triggers:['putzen','sauber machen','aufräumen']},
 ];
 
 const _ACTIVITY_OPTIONS = [
@@ -4179,10 +4189,13 @@ const _ACTIVITY_OPTIONS = [
 function _getScenes() {
   // Szenen aus settings laden, sonst Defaults verwenden
   const saved = getPath(S, 'scenes') || {};
+  const moodScenes = saved.mood_scenes || {};
   const scenes = [];
   // Defaults als Basis, Overrides anwenden
   for (const def of _DEFAULT_SCENES) {
     const override = saved[def.id] || {};
+    const moodOvr = moodScenes[def.id] || {};
+    const defaultMood = _DEFAULT_MOOD_ACTIONS[def.id] || {};
     scenes.push({
       id: def.id,
       icon: override.icon ?? def.icon,
@@ -4192,6 +4205,9 @@ function _getScenes() {
       transition: override.transition ?? def.transition,
       triggers: override.triggers ?? def.triggers ?? [],
       device_triggers: override.device_triggers ?? def.device_triggers ?? [],
+      device_trigger_mode: override.device_trigger_mode ?? 'or',
+      actions: moodOvr.actions ?? defaultMood.actions ?? null,
+      climate_offset: moodOvr.climate_offset ?? defaultMood.climate_offset ?? null,
       custom: false,
     });
   }
@@ -4199,11 +4215,15 @@ function _getScenes() {
   const defaultIds = new Set(_DEFAULT_SCENES.map(d => d.id));
   for (const [id, cfg] of Object.entries(saved)) {
     if (!defaultIds.has(id) && cfg._custom) {
+      const moodOvr = moodScenes[id] || {};
       scenes.push({
         id, icon: cfg.icon || '&#127912;', label: cfg.label || id,
         activity: cfg.activity || 'relaxing', silence: cfg.silence ?? false,
         transition: cfg.transition ?? 3, triggers: cfg.triggers ?? [],
         device_triggers: cfg.device_triggers ?? [],
+        device_trigger_mode: cfg.device_trigger_mode ?? 'or',
+        actions: moodOvr.actions ?? cfg.actions ?? null,
+        climate_offset: moodOvr.climate_offset ?? cfg.climate_offset ?? null,
         custom: true,
       });
     }
@@ -4221,7 +4241,7 @@ function _saveScenes(scenes) {
     const def = defaultMap[sc.id];
     if (sc.custom) {
       // Custom Szene: immer komplett speichern
-      data[sc.id] = {icon: sc.icon, label: sc.label, activity: sc.activity, silence: sc.silence, transition: sc.transition, triggers: sc.triggers || [], device_triggers: sc.device_triggers || [], _custom: true};
+      data[sc.id] = {icon: sc.icon, label: sc.label, activity: sc.activity, silence: sc.silence, transition: sc.transition, triggers: sc.triggers || [], device_triggers: sc.device_triggers || [], device_trigger_mode: sc.device_trigger_mode || 'or', actions: sc.actions || null, climate_offset: sc.climate_offset ?? null, _custom: true};
     } else if (def) {
       // Default Szene: nur Abweichungen
       const diff = {};
@@ -4232,12 +4252,14 @@ function _saveScenes(scenes) {
       if (sc.icon !== def.icon) diff.icon = sc.icon;
       if (JSON.stringify(sc.triggers || []) !== JSON.stringify(def.triggers || [])) diff.triggers = sc.triggers;
       if (JSON.stringify(sc.device_triggers || []) !== JSON.stringify(def.device_triggers || [])) diff.device_triggers = sc.device_triggers;
+      if (sc.device_trigger_mode !== 'or') diff.device_trigger_mode = sc.device_trigger_mode;
       // Szene hatte vorher Overrides in YAML? Dann Array-Felder immer
       // mitsenden damit deep-merge alte Werte überschreibt (nicht addiert)
       const hadOverrides = !!oldSaved[sc.id];
       if (hadOverrides) {
         diff.triggers = sc.triggers || [];
         diff.device_triggers = sc.device_triggers || [];
+        if (sc.device_trigger_mode !== 'or') diff.device_trigger_mode = sc.device_trigger_mode;
       }
       if (Object.keys(diff).length > 0) data[sc.id] = diff;
     }
@@ -4274,6 +4296,46 @@ function _saveScenes(scenes) {
     }
   }
   setPath(S, 'scenes.device_trigger_map', deviceTriggerMap);
+  // 4b. scenes.device_trigger_modes — UND/ODER Modus pro Szene
+  const deviceTriggerModes = {};
+  for (const sc of scenes) {
+    if (sc.device_trigger_mode === 'and' && sc.device_triggers && sc.device_triggers.length > 1) {
+      deviceTriggerModes[sc.id] = 'and';
+    }
+  }
+  setPath(S, 'scenes.device_trigger_modes', Object.keys(deviceTriggerModes).length > 0 ? deviceTriggerModes : {});
+  // 5. scenes.mood_scenes — Actions + Climate-Offset fuer Mood-Szenen
+  // Nur speichern wenn vom Default abweichend (sonst unnoetige YAML-Eintraege)
+  const moodScenes = getPath(S, 'scenes.mood_scenes') || {};
+  for (const sc of scenes) {
+    const defMood = _DEFAULT_MOOD_ACTIONS[sc.id] || {};
+    const defActions = defMood.actions || null;
+    const defOffset = defMood.climate_offset ?? null;
+    const actionsChanged = JSON.stringify(sc.actions || null) !== JSON.stringify(defActions);
+    const offsetChanged = (sc.climate_offset ?? null) !== defOffset;
+    if (actionsChanged || offsetChanged) {
+      if (!moodScenes[sc.id]) moodScenes[sc.id] = {};
+      moodScenes[sc.id].label = sc.label;
+      if (actionsChanged && sc.actions && sc.actions.length > 0) {
+        moodScenes[sc.id].actions = sc.actions;
+      } else {
+        delete moodScenes[sc.id].actions;
+      }
+      if (offsetChanged && sc.climate_offset != null) {
+        moodScenes[sc.id].climate_offset = sc.climate_offset;
+      } else {
+        delete moodScenes[sc.id].climate_offset;
+      }
+      // Leere Eintraege aufräumen
+      if (Object.keys(moodScenes[sc.id]).filter(k => k !== 'label').length === 0) {
+        delete moodScenes[sc.id];
+      }
+    } else if (moodScenes[sc.id]) {
+      // Zurueck auf Default → Override entfernen
+      delete moodScenes[sc.id];
+    }
+  }
+  setPath(S, 'scenes.mood_scenes', moodScenes);
 
   scheduleAutoSave();
 }
@@ -4328,7 +4390,14 @@ function renderScenes() {
             onchange="sceneTriggersChanged('${esc(sc.id)}',this.value)">
         </div>
         <div class="scene-field">
-          <span class="scene-field-label">Geräte-Trigger</span>
+          <span class="scene-field-label" style="display:flex;align-items:center;gap:8px;">Geräte-Trigger
+            <span style="display:inline-flex;align-items:center;gap:2px;font-size:10px;font-weight:normal;color:var(--text-muted);">
+              <button type="button" class="btn btn-sm scene-dt-mode" data-scene-id="${esc(sc.id)}"
+                style="padding:1px 6px;font-size:10px;font-weight:${sc.device_trigger_mode==='and'?'bold':'normal'};opacity:${sc.device_trigger_mode==='and'?'1':'0.5'};"
+                onclick="toggleDeviceTriggerMode('${esc(sc.id)}')"
+                title="ODER: Ein Geraet reicht. UND: Alle Geraete muessen aktiv sein.">${sc.device_trigger_mode === 'and' ? 'UND' : 'ODER'}</button>
+            </span>
+          </span>
           <div class="scene-device-triggers" data-scene-id="${esc(sc.id)}">
             ${(sc.device_triggers||[]).map((dt, i) => `<div class="scene-dt-row" style="display:flex;gap:4px;margin-bottom:4px;align-items:center;">
               <div class="entity-pick-wrap" style="position:relative;flex:1;">
@@ -4344,6 +4413,27 @@ function renderScenes() {
               <button type="button" class="btn btn-sm scene-dt-rm" style="padding:6px 10px;font-size:14px;min-width:36px;min-height:36px;z-index:10000;position:relative;flex-shrink:0;color:var(--danger,#ef4444);" onclick="event.stopPropagation();removeSceneDeviceTrigger('${esc(sc.id)}',${i})" ontouchend="event.preventDefault();event.stopPropagation();removeSceneDeviceTrigger('${esc(sc.id)}',${i})">&#10005;</button>
             </div>`).join('')}
             <button class="btn btn-sm" style="padding:2px 8px;font-size:11px;margin-top:2px;" onclick="addSceneDeviceTrigger('${esc(sc.id)}')">+ Geraet</button>
+          </div>
+        </div>
+        <div class="scene-field">
+          <span class="scene-field-label" style="display:flex;align-items:center;gap:6px;">
+            Aktionen
+            <button class="btn btn-sm" style="padding:1px 6px;font-size:10px;" onclick="toggleSceneActions('${esc(sc.id)}')"
+              title="Geraete-Aktionen dieser Szene anzeigen/bearbeiten">&#9881; Bearbeiten</button>
+          </span>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${_summarizeSceneActions(sc)}</div>
+          <div class="scene-actions-editor" data-scene-id="${esc(sc.id)}" style="display:none;">
+            ${_renderSceneActions(sc)}
+          </div>
+        </div>
+        <div class="scene-field">
+          <span class="scene-field-label">Klima-Offset</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="number" step="0.5" min="-5" max="5" value="${sc.climate_offset ?? ''}"
+              placeholder="z.B. -2 oder +1"
+              style="width:80px;font-size:11px;padding:2px 4px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;"
+              onchange="sceneClimateOffsetChanged('${esc(sc.id)}',this.value)">
+            <span style="font-size:10px;color:var(--text-muted);">&deg;C</span>
           </div>
         </div>
       </div>
@@ -4363,6 +4453,8 @@ function renderScenes() {
       <div style="margin-top:6px;"><strong>3. Übergangszeit</strong> — Wie lange Licht-Übergaenge dauern wenn Jarvis die Szene aktiviert.</div>
       <div style="margin-top:6px;"><strong>4. Auslöser</strong> — Komma-getrennte Begriffe die Jarvis als Trigger für diese Szene erkennt. So vermeidest du Verwechslungen zwischen ähnlichen Szenen.</div>
       <div style="margin-top:6px;"><strong>5. Geräte-Trigger</strong> — HA-Entities die diese Szene automatisch aktivieren. Z.B. wenn der TV eingeschaltet wird (media_player) oder ein Button gedrückt wird (binary_sensor). Szene wird aktiviert wenn das Geraet den Status wechselt (on/playing/etc.).</div>
+      <div style="margin-top:6px;"><strong>6. UND/ODER-Modus</strong> — Bei ODER (Standard) reicht ein einzelnes Geraet um die Szene auszulösen. Bei UND muessen <em>alle</em> konfigurierten Geraete gleichzeitig aktiv sein (z.B. TV an UND Licht gedimmt → Filmabend).</div>
+      <div style="margin-top:6px;"><strong>7. dim2warm</strong> — Bei Lampen mit Typ <em>dim2warm</em> (konfigurierbar in Räume) wird die Farbtemperatur automatisch ignoriert — die Hardware regelt das über die Helligkeit. Farbtemperatur-Werte in den Aktionen dienen dort nur als Info. Bei <em>tunable_white</em>-Lampen wird die Farbtemperatur aktiv an HA gesendet.</div>
     </div>`
   );
 }
@@ -4389,10 +4481,25 @@ function sceneTriggersChanged(sceneId, value) {
   _saveScenes(scenes);
 }
 
+function toggleDeviceTriggerMode(sceneId) {
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc) return;
+  sc.device_trigger_mode = sc.device_trigger_mode === 'and' ? 'or' : 'and';
+  _saveScenes(scenes);
+  // Button aktualisieren ohne komplett neu zu rendern
+  const btn = document.querySelector(`.scene-dt-mode[data-scene-id="${sceneId}"]`);
+  if (btn) {
+    btn.textContent = sc.device_trigger_mode === 'and' ? 'UND' : 'ODER';
+    btn.style.fontWeight = sc.device_trigger_mode === 'and' ? 'bold' : 'normal';
+    btn.style.opacity = sc.device_trigger_mode === 'and' ? '1' : '0.5';
+  }
+}
+
 function addCustomScene() {
   const id = 'szene_' + Date.now();
   const scenes = _getScenes();
-  scenes.push({id, icon: '&#127912;', label: 'Neue Szene', activity: 'relaxing', silence: false, transition: 3, triggers: [], device_triggers: [], custom: true});
+  scenes.push({id, icon: '&#127912;', label: 'Neue Szene', activity: 'relaxing', silence: false, transition: 3, triggers: [], device_triggers: [], device_trigger_mode: 'or', actions: [], climate_offset: null, custom: true});
   _saveScenes(scenes);
   renderCurrentTab();
 }
@@ -4446,6 +4553,230 @@ function removeSceneDeviceTrigger(sceneId, index) {
   sc.device_triggers.splice(index, 1);
   _saveScenes(scenes);
   renderCurrentTab();
+}
+
+// ---- [19] Mood-Scene Actions Editor ----
+const _ACTION_DOMAINS = [
+  {v:'light', l:'Licht'},
+  {v:'cover', l:'Rollladen'},
+  {v:'climate', l:'Klima'},
+  {v:'media_player', l:'Medien'},
+  {v:'switch', l:'Schalter'},
+  {v:'fan', l:'Ventilator'},
+];
+// Default Mood-Scene Actions (Spiegel von _DEFAULT_MOOD_SCENES im Backend)
+const _DEFAULT_MOOD_ACTIONS = {
+  gemuetlich: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:30,color_temp_kelvin:2700}},{domain:'cover',service:'close_cover',data:{}}],climate_offset:1.0},
+  filmabend: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:10,color_temp_kelvin:2200}},{domain:'cover',service:'close_cover',data:{}},{domain:'media_player',service:'turn_on',data:{}}]},
+  party: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:100,rgb_color:[255,100,50]}},{domain:'cover',service:'close_cover',data:{}}]},
+  konzentration: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:80,color_temp_kelvin:5000}}]},
+  gute_nacht: {actions:[{domain:'light',service:'turn_off',data:{}},{domain:'cover',service:'close_cover',data:{}}],climate_offset:-2.0},
+  aufwachen: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:60,color_temp_kelvin:4000}},{domain:'cover',service:'open_cover',data:{}}],climate_offset:1.0},
+  hell: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:100,color_temp_kelvin:5000}},{domain:'cover',service:'open_cover',data:{}}]},
+  kochen: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:100,color_temp_kelvin:4500}}]},
+  essen: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:60,color_temp_kelvin:2700}}]},
+  schlafen: {actions:[{domain:'light',service:'turn_off',data:{}},{domain:'cover',service:'close_cover',data:{}}],climate_offset:-1.0},
+  lesen: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:40,color_temp_kelvin:3000}}]},
+  arbeiten: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:80,color_temp_kelvin:5000}}]},
+  meeting: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:90,color_temp_kelvin:4500}}]},
+  spielen: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:80,color_temp_kelvin:4000}}]},
+  morgens: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:100,color_temp_kelvin:5000}}],climate_offset:2.0},
+  abends: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:20,color_temp_kelvin:2200}}]},
+  romantisch: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:5,color_temp_kelvin:2200}},{domain:'cover',service:'close_cover',data:{}}]},
+  energiesparen: {actions:[{domain:'light',service:'turn_off',data:{}}],climate_offset:-3.0},
+  putzen: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:100,color_temp_kelvin:5000}},{domain:'cover',service:'open_cover',data:{}}]},
+  musik: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:40,color_temp_kelvin:2700}},{domain:'media_player',service:'turn_on',data:{}}]},
+};
+const _ACTION_SERVICES = {
+  light: [{v:'turn_on',l:'Einschalten'},{v:'turn_off',l:'Ausschalten'}],
+  cover: [{v:'open_cover',l:'Oeffnen'},{v:'close_cover',l:'Schliessen'},{v:'set_cover_position',l:'Position setzen'}],
+  climate: [{v:'set_temperature',l:'Temperatur setzen'}],
+  media_player: [{v:'turn_on',l:'Einschalten'},{v:'turn_off',l:'Ausschalten'}],
+  switch: [{v:'turn_on',l:'Einschalten'},{v:'turn_off',l:'Ausschalten'}],
+  fan: [{v:'turn_on',l:'Einschalten'},{v:'turn_off',l:'Ausschalten'}],
+};
+
+function _summarizeSceneActions(sc) {
+  const actions = sc.actions || [];
+  if (actions.length === 0) return '<em>Keine Aktionen definiert</em>';
+  const domLabels = {};
+  for (const d of _ACTION_DOMAINS) domLabels[d.v] = d.l;
+  const parts = actions.map(a => {
+    const dom = domLabels[a.domain] || a.domain;
+    const d = a.data || {};
+    if (a.domain === 'light' && a.service === 'turn_on' && d.brightness_pct != null) {
+      let detail = `${dom} ${d.brightness_pct}%`;
+      if (d.color_temp_kelvin) detail += ` ${d.color_temp_kelvin}K`;
+      if (d.rgb_color) detail += ` RGB`;
+      return detail;
+    }
+    if (a.service === 'turn_off') return `${dom} aus`;
+    if (a.service === 'close_cover') return `${dom} zu`;
+    if (a.service === 'open_cover') return `${dom} auf`;
+    return dom;
+  });
+  const offset = sc.climate_offset != null ? `, Klima ${sc.climate_offset > 0 ? '+' : ''}${sc.climate_offset}°C` : '';
+  return parts.join(', ') + offset;
+}
+
+function _renderSceneActions(sc) {
+  const actions = sc.actions || [];
+  let html = '<div style="margin-top:4px;">';
+  for (let i = 0; i < actions.length; i++) {
+    const a = actions[i];
+    const domain = a.domain || 'light';
+    const service = a.service || 'turn_on';
+    const data = a.data || {};
+    // Domain-Dropdown
+    const domOpts = _ACTION_DOMAINS.map(d =>
+      `<option value="${d.v}" ${domain===d.v?'selected':''}>${d.l}</option>`
+    ).join('');
+    // Service-Dropdown (basierend auf Domain)
+    const svcList = _ACTION_SERVICES[domain] || [{v:service,l:service}];
+    const svcOpts = svcList.map(s =>
+      `<option value="${s.v}" ${service===s.v?'selected':''}>${s.l}</option>`
+    ).join('');
+    html += `<div class="scene-action-row" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;padding:6px;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;align-items:center;">
+      <select style="font-size:11px;padding:2px;flex:0 0 80px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;"
+        onchange="sceneActionDomainChanged('${esc(sc.id)}',${i},this.value)">${domOpts}</select>
+      <select style="font-size:11px;padding:2px;flex:0 0 110px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;"
+        onchange="sceneActionFieldChanged('${esc(sc.id)}',${i},'service',this.value)">${svcOpts}</select>`;
+    // Parameter-Inputs basierend auf Domain+Service
+    if (domain === 'light' && service === 'turn_on') {
+      html += `<input type="number" min="0" max="100" step="5" value="${data.brightness_pct ?? ''}" placeholder="Helligkeit %"
+        style="width:64px;font-size:10px;padding:2px 4px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;"
+        onchange="sceneActionDataChanged('${esc(sc.id)}',${i},'brightness_pct',this.value)">
+      <input type="number" min="2000" max="6500" step="100" value="${data.color_temp_kelvin ?? ''}" placeholder="Farbtemp K"
+        style="width:70px;font-size:10px;padding:2px 4px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;"
+        onchange="sceneActionDataChanged('${esc(sc.id)}',${i},'color_temp_kelvin',this.value)">
+      <input type="color" value="${data.rgb_color ? '#'+data.rgb_color.map(c=>(c<16?'0':'')+c.toString(16)).join('') : ''}"
+        title="Farbe (optional, ueberschreibt Farbtemperatur)"
+        style="width:28px;height:22px;padding:0;border:1px solid var(--border);border-radius:4px;cursor:pointer;${data.rgb_color ? '' : 'opacity:0.3;'}"
+        onchange="sceneActionColorChanged('${esc(sc.id)}',${i},this.value)">`;
+    } else if (domain === 'cover' && service === 'set_cover_position') {
+      html += `<input type="number" min="0" max="100" step="5" value="${data.position ?? ''}" placeholder="Position %"
+        style="width:64px;font-size:10px;padding:2px 4px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;"
+        onchange="sceneActionDataChanged('${esc(sc.id)}',${i},'position',this.value)">`;
+    } else if (domain === 'climate' && service === 'set_temperature') {
+      html += `<input type="number" min="15" max="30" step="0.5" value="${data.temperature ?? ''}" placeholder="Temp &deg;C"
+        style="width:64px;font-size:10px;padding:2px 4px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;"
+        onchange="sceneActionDataChanged('${esc(sc.id)}',${i},'temperature',this.value)">`;
+    }
+    html += `<button type="button" style="font-size:12px;padding:2px 8px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:4px;cursor:pointer;flex-shrink:0;"
+        onclick="removeSceneAction('${esc(sc.id)}',${i})">&times;</button>
+    </div>`;
+  }
+  html += `<button class="btn btn-sm" style="padding:2px 8px;font-size:11px;margin-top:4px;"
+    onclick="addSceneAction('${esc(sc.id)}')">+ Aktion</button>`;
+  html += '</div>';
+  return html;
+}
+
+function toggleSceneActions(sceneId) {
+  const el = document.querySelector(`.scene-actions-editor[data-scene-id="${sceneId}"]`);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function sceneActionDomainChanged(sceneId, idx, newDomain) {
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc || !sc.actions || !sc.actions[idx]) return;
+  sc.actions[idx].domain = newDomain;
+  // Service auf ersten verfügbaren setzen
+  const svcList = _ACTION_SERVICES[newDomain] || [];
+  sc.actions[idx].service = svcList.length > 0 ? svcList[0].v : 'turn_on';
+  sc.actions[idx].data = {};
+  _saveScenes(scenes);
+  renderCurrentTab();
+}
+
+function sceneActionFieldChanged(sceneId, idx, field, value) {
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc || !sc.actions || !sc.actions[idx]) return;
+  sc.actions[idx][field] = value;
+  if (field === 'service') sc.actions[idx].data = {};
+  _saveScenes(scenes);
+  renderCurrentTab();
+}
+
+function sceneActionDataChanged(sceneId, idx, key, value) {
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc || !sc.actions || !sc.actions[idx]) return;
+  if (!sc.actions[idx].data) sc.actions[idx].data = {};
+  const num = parseFloat(value);
+  if (value === '' || isNaN(num)) {
+    delete sc.actions[idx].data[key];
+  } else {
+    sc.actions[idx].data[key] = num;
+    // Farbtemperatur und RGB sind exklusiv
+    if (key === 'color_temp_kelvin') delete sc.actions[idx].data.rgb_color;
+  }
+  _saveScenes(scenes);
+  // Editor neu rendern um Color-Picker zu aktualisieren
+  if (key === 'color_temp_kelvin') {
+    const el = document.querySelector(`.scene-actions-editor[data-scene-id="${sceneId}"]`);
+    if (el && el.style.display !== 'none') el.innerHTML = _renderSceneActions(sc);
+  }
+}
+
+function sceneActionColorChanged(sceneId, idx, hexColor) {
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc || !sc.actions || !sc.actions[idx]) return;
+  if (!sc.actions[idx].data) sc.actions[idx].data = {};
+  if (!hexColor || hexColor === '#000000') {
+    delete sc.actions[idx].data.rgb_color;
+  } else {
+    const r = parseInt(hexColor.substr(1,2), 16);
+    const g = parseInt(hexColor.substr(3,2), 16);
+    const b = parseInt(hexColor.substr(5,2), 16);
+    sc.actions[idx].data.rgb_color = [r, g, b];
+    // RGB und Farbtemperatur sind exklusiv — Farbtemperatur entfernen
+    delete sc.actions[idx].data.color_temp_kelvin;
+  }
+  _saveScenes(scenes);
+  // Editor neu rendern um Farbtemp-Feld zu aktualisieren
+  const el = document.querySelector(`.scene-actions-editor[data-scene-id="${sceneId}"]`);
+  if (el) el.innerHTML = _renderSceneActions(sc);
+}
+
+function addSceneAction(sceneId) {
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc) return;
+  if (!sc.actions) sc.actions = [];
+  sc.actions.push({domain: 'light', service: 'turn_on', data: {brightness_pct: 80, color_temp_kelvin: 3000}});
+  _saveScenes(scenes);
+  renderCurrentTab();
+  // Editor offen halten nach Re-Render
+  setTimeout(() => {
+    const el = document.querySelector(`.scene-actions-editor[data-scene-id="${sceneId}"]`);
+    if (el) el.style.display = 'block';
+  }, 50);
+}
+
+function removeSceneAction(sceneId, idx) {
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc || !sc.actions) return;
+  sc.actions.splice(idx, 1);
+  _saveScenes(scenes);
+  renderCurrentTab();
+  setTimeout(() => {
+    const el = document.querySelector(`.scene-actions-editor[data-scene-id="${sceneId}"]`);
+    if (el) el.style.display = 'block';
+  }, 50);
+}
+
+function sceneClimateOffsetChanged(sceneId, value) {
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc) return;
+  sc.climate_offset = value === '' ? null : parseFloat(value);
+  _saveScenes(scenes);
 }
 
 // ---- Proaktiv & Vorausdenken (aus Routinen ausgelagert) ----
@@ -9868,6 +10199,7 @@ function renderDevices() {
     fRange('diagnostics.stale_sensor_minutes', 'Sensor veraltet nach', 30, 600, 30, {30:'30 Min',60:'1 Std',120:'2 Std',300:'5 Std',600:'10 Std'}) +
     fRange('diagnostics.offline_threshold_minutes', 'Geraet offline nach', 10, 120, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
     fRange('diagnostics.alert_cooldown_minutes', 'Wiederholung frühestens nach', 10, 240, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'}) +
+    fRange('diagnostics.suppress_after_cycles', 'Auto-Suppress nach Zyklen', 2, 10, 1, {2:'2',3:'3',4:'4',5:'5',6:'6',8:'8',10:'10'}) +
     fChipSelect('diagnostics.monitor_domains', 'Überwachte Domains (für nicht-annotierte Entities)', [
         {v:'sensor',l:'Sensoren'}, {v:'binary_sensor',l:'Binaer-Sensoren'},
         {v:'light',l:'Lichter'}, {v:'switch',l:'Schalter'},
@@ -9909,7 +10241,8 @@ function renderSystem() {
     fInfo('Holt neuen Code von Git und baut die Container neu. Der Assistant startet dabei kurz neu.') +
     '<div id="sysUpdateCheck" style="margin-bottom:12px;"></div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
-      '<button class="btn btn-primary" id="btnSysUpdate" onclick="doSystemUpdate()">&#128640; System-Update starten</button>' +
+      '<button class="btn btn-primary" id="btnSysQuickUpdate" onclick="doSystemUpdate(false)">&#128640; Quick Update</button>' +
+      '<button class="btn btn-primary" id="btnSysFullUpdate" onclick="doSystemUpdate(true)" style="background:var(--accent-tertiary,#dc6317);border-color:var(--accent-tertiary,#dc6317);">&#128230; Full Update</button>' +
       '<button class="btn btn-secondary" id="btnSysCheckUpdate" onclick="checkForUpdates()">&#128269; Auf Updates prüfen</button>' +
     '</div>' +
     '<div id="sysUpdateLog" style="display:none;margin-top:16px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:300px;overflow-y:auto;">' +
@@ -10050,36 +10383,45 @@ function _waitForRestart() {
   }, 3000);
 }
 
-async function doSystemUpdate() {
+async function doSystemUpdate(full) {
   if (_updating) return;
-  if (!confirm('System-Update starten?\n\nDer Assistant wird kurz neu gestartet.')) return;
+  const label = full ? 'Full Update' : 'Quick Update';
+  const confirmMsg = full
+    ? 'Full Update starten?\n\nContainer werden komplett neu gebaut. Das kann einige Minuten dauern.'
+    : 'Quick Update starten?\n\nCode wird aktualisiert und der Container kurz neu gestartet.';
+  if (!confirm(confirmMsg)) return;
   _updating = true;
-  const btn = document.getElementById('btnSysUpdate');
+  const btnQuick = document.getElementById('btnSysQuickUpdate');
+  const btnFull = document.getElementById('btnSysFullUpdate');
   const logBox = document.getElementById('sysUpdateLog');
   const logContent = document.getElementById('sysUpdateLogContent');
-  if (btn) { btn.disabled = true; btn.textContent = 'Update läuft...'; }
+  if (btnQuick) { btnQuick.disabled = true; btnQuick.textContent = 'Update läuft...'; }
+  if (btnFull) { btnFull.disabled = true; btnFull.textContent = 'Update läuft...'; }
   if (logBox) logBox.style.display = 'block';
-  if (logContent) logContent.textContent = 'Update gestartet...\n';
+  if (logContent) logContent.textContent = label + ' gestartet...\n';
 
   try {
-    const data = await api('/api/ui/system/update', 'POST');
+    const payload = full ? {full: true} : {};
+    const data = await api('/api/ui/system/update', 'POST', payload);
     if (logContent) logContent.textContent = (data.log || []).join('\n');
     if (data.success) {
-      toast('Update erfolgreich! Container startet neu...');
+      toast(label + ' erfolgreich! Container startet neu...');
       _waitForRestart();
     } else {
-      toast('Update fehlgeschlagen — siehe Log', 'error');
+      toast(label + ' fehlgeschlagen — siehe Log', 'error');
       _updating = false;
-      if (btn) { btn.disabled = false; btn.textContent = '\u{1F680} System-Update starten'; }
+      if (btnQuick) { btnQuick.disabled = false; btnQuick.textContent = '\u{1F680} Quick Update'; }
+      if (btnFull) { btnFull.disabled = false; btnFull.textContent = '\u{1F4E6} Full Update'; }
     }
   } catch(e) {
     if (logContent) logContent.textContent += '\nFehler: ' + e.message;
     if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
       _waitForRestart();
     } else {
-      toast('Update-Fehler: ' + e.message, 'error');
+      toast(label + '-Fehler: ' + e.message, 'error');
       _updating = false;
-      if (btn) { btn.disabled = false; btn.textContent = '\u{1F680} System-Update starten'; }
+      if (btnQuick) { btnQuick.disabled = false; btnQuick.textContent = '\u{1F680} Quick Update'; }
+      if (btnFull) { btnFull.disabled = false; btnFull.textContent = '\u{1F4E6} Full Update'; }
     }
   }
 }

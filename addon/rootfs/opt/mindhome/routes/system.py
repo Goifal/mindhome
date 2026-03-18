@@ -2185,10 +2185,21 @@ def api_branch_update_check():
 
 @system_bp.route("/api/system/branch-update", methods=["POST"])
 def api_branch_update():
-    """Proxy: Update/Branch-Wechsel via Assistant ausfuehren."""
+    """Proxy: Update/Branch-Wechsel via Assistant ausfuehren.
+
+    Body-Parameter:
+        branch (str): Optionaler Ziel-Branch
+        full (bool): True = Full Update mit Docker Rebuild, False = Quick (nur Restart)
+    """
     data = request.json or {}
     branch = sanitize_input(data.get("branch", ""), max_length=200)
-    return jsonify(_proxy_post("/api/ui/system/update", data={"branch": branch} if branch else {}))
+    full = bool(data.get("full", False))
+    payload = {}
+    if branch:
+        payload["branch"] = branch
+    if full:
+        payload["full"] = True
+    return jsonify(_proxy_post("/api/ui/system/update", data=payload))
 
 
 # ============================================================

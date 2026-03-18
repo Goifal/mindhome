@@ -1961,6 +1961,26 @@ class PersonalityEngine:
 
         return humor_text
 
+    # Scene → Personality Adjustments
+    _SCENE_PERSONALITY = {
+        "filmabend": {"sarcasm_mod": -1, "verbosity": "kurz", "style_hint": "Ruhig und knapp antworten. Nicht stören."},
+        "kino": {"sarcasm_mod": -1, "verbosity": "kurz", "style_hint": "Ruhig und knapp antworten. Nicht stören."},
+        "konzentration": {"sarcasm_mod": -2, "verbosity": "minimal", "style_hint": "Extrem kurz, formal, keine Witze. User arbeitet konzentriert."},
+        "arbeiten": {"sarcasm_mod": -2, "verbosity": "minimal", "style_hint": "Kurz und sachlich. User arbeitet."},
+        "meeting": {"sarcasm_mod": -2, "verbosity": "minimal", "style_hint": "Professionell, kurz. User ist im Meeting."},
+        "party": {"sarcasm_mod": 1, "verbosity": "normal", "style_hint": "Enthusiastisch, Humor erlaubt. Gaeste da."},
+        "gute_nacht": {"sarcasm_mod": -2, "verbosity": "kurz", "style_hint": "Beruhigend, leise, keine anregenden Fragen."},
+        "schlafen": {"sarcasm_mod": -2, "verbosity": "kurz", "style_hint": "Beruhigend, leise, keine anregenden Fragen."},
+        "gemuetlich": {"sarcasm_mod": 0, "verbosity": "normal", "style_hint": "Warm und entspannt antworten."},
+        "romantisch": {"sarcasm_mod": -1, "verbosity": "kurz", "style_hint": "Diskret und zurueckhaltend. Nicht stören."},
+        "lesen": {"sarcasm_mod": -1, "verbosity": "kurz", "style_hint": "Kurz antworten. User liest."},
+        "musik": {"sarcasm_mod": 0, "verbosity": "normal", "style_hint": "Entspannt antworten. Musik laeuft."},
+    }
+
+    def get_scene_adjustment(self, active_scene: str) -> dict:
+        """Gibt Persoenlichkeits-Anpassungen fuer die aktive Szene zurueck."""
+        return self._SCENE_PERSONALITY.get(active_scene, {})
+
     def track_sarcasm_streak(self, was_snarky: bool, person_id: str = "_default"):
         """Trackt aufeinanderfolgende sarkastische Antworten per User. 0ms — rein in-memory."""
         key = person_id.lower().strip() if person_id else "_default"

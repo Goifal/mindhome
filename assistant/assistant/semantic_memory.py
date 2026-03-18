@@ -40,6 +40,7 @@ FACT_CATEGORIES = [
     "intent",               # Phase 8: "Eltern kommen naechstes WE"
     "conversation_topic",   # Gespraechs-Themen fuer Kontext-Kette
     "general",              # Sonstige Fakten
+    "scene_preference",     # "Max mag Filmabend mit 15% statt 10%"
 ]
 
 

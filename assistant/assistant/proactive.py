@@ -184,6 +184,9 @@ class ProactiveManager:
             "shopping_reminder": (LOW, "Einkaufs-Erinnerung"),
             "window_open_cover_blocked": (LOW, "Fenster offen — Cover blockiert"),
             "cover_anomaly": (MEDIUM, "Cover-Anomalie erkannt"),
+            "entity_recovered": (LOW, "Entity wieder online"),
+            "scene_scheduled": (LOW, "Geplante Szene aktiviert"),
+            "scene_suggested": (LOW, "Szenen-Vorschlag"),
         }
         # Dynamische Appliance-Handler (aus YAML devices) einfuegen — ueberschreiben Defaults
         self.event_handlers.update(_dynamic_handlers)
@@ -625,7 +628,13 @@ class ProactiveManager:
         if routine_cfg.get("enabled", True):
             self._routine_task = asyncio.create_task(self._run_routine_deviation_loop())
 
-        logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal + Notfall + Threat + Ambient + Follow-up + Routine)")
+        # Szenen-Scheduler: Cron-basierte Szenen-Aktivierung
+        self._scene_schedule_task: Optional[asyncio.Task] = None
+        scenes_cfg = yaml_config.get("scenes", {})
+        if scenes_cfg.get("schedule_enabled", True):
+            self._scene_schedule_task = asyncio.create_task(self._run_scene_schedule_loop())
+
+        logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal + Notfall + Threat + Ambient + Follow-up + Routine + Szenen-Schedule)")
 
     async def stop(self):
         """Stoppt den Event Listener."""
@@ -781,6 +790,13 @@ class ProactiveManager:
 
         if new_val == old_val:
             return
+
+        # Entity-Recovery: unavailable → online erkennen
+        if old_val == "unavailable" and new_val != "unavailable":
+            try:
+                await self._on_entity_recovered(entity_id, new_val, new_state)
+            except Exception as _rec_err:
+                logger.warning("Entity-Recovery Fehler: %s", _rec_err)
 
         # State-Change-Log: Relevante Aenderungen mit Quelle protokollieren
         if any(entity_id.startswith(d) for d in _LOG_DOMAINS):
@@ -1102,13 +1118,50 @@ class ProactiveManager:
 
             # Szenen-Config laden um Aktivitaet + Transition zu ermitteln
             scenes_cfg = yaml_config.get("scenes", {})
+            device_trigger_modes = scenes_cfg.get("device_trigger_modes", {})
 
             for scene_id in scene_ids:
-                # Szenen-Aktivitaet aus gespeicherter Config oder Defaults ableiten
+                # [A] Cooldown: Prueft den gleichen Key wie _exec_activate_scene (30s)
+                # damit Device-Trigger + Voice-Aktivierung sich gegenseitig blockieren
+                redis = getattr(self.brain.memory, "redis", None) if hasattr(self.brain, "memory") else None
+                if redis:
+                    cooldown_key = f"mha:scene:cooldown:{scene_id}"
+                    try:
+                        if await redis.get(cooldown_key):
+                            logger.debug("Scene Device-Trigger: Cooldown aktiv fuer '%s'", scene_id)
+                            continue
+                    except Exception:
+                        pass
+
+                # [B] UND-Modus: Alle anderen Trigger-Entities muessen ebenfalls aktiv sein
+                trigger_mode = device_trigger_modes.get(scene_id, "or")
+                if trigger_mode == "and":
+                    all_trigger_entities = [
+                        eid for eid, sids in device_trigger_map.items()
+                        if scene_id in sids
+                    ]
+                    if len(all_trigger_entities) > 1:
+                        states = await self.brain.ha.get_states() or []
+                        state_map = {s.get("entity_id", ""): s.get("state", "").lower() for s in states}
+                        all_active = all(
+                            state_map.get(eid, "").lower() in self._ACTIVE_STATES
+                            if eid != entity_id
+                            else True
+                            for eid in all_trigger_entities
+                        )
+                        if not all_active:
+                            logger.debug(
+                                "Scene Device-Trigger UND-Modus: %s aktiv, aber nicht alle Trigger fuer '%s' erfuellt",
+                                entity_id, scene_id,
+                            )
+                            continue
+
+                # Cooldown wird von _exec_activate_scene gesetzt (gleicher Key)
+
+                # [D] Szenen-Aktivitaet aus gespeicherter Config oder Defaults ableiten
                 scene_data = scenes_cfg.get(scene_id, {})
                 activity = scene_data.get("activity")
 
-                # Defaults durchsuchen falls nicht in saved
                 if not activity:
                     _defaults = {
                         "filmabend": "watching", "kino": "watching",
@@ -1124,8 +1177,6 @@ class ProactiveManager:
 
                 transition = scene_data.get("transition", 3)
 
-                # Silence-Defaults: UI speichert nur Abweichungen, daher
-                # muessen die gleichen Defaults wie im Frontend gelten
                 _silence_defaults = {
                     "filmabend", "kino", "schlafen", "gute_nacht",
                     "meditation", "konzentration", "telefonat", "meeting",
@@ -1134,16 +1185,18 @@ class ProactiveManager:
                 silence_default = scene_id in _silence_defaults
                 silence = scene_data.get("silence", silence_default)
 
-                # Aktivitaets-Override setzen
-                duration = max(transition * 20, 60)  # Mindestens 60 Min
+                # [E] Aktivitaets-Override setzen
+                duration = max(transition * 20, 60)
                 self.brain.activity.set_manual_override(activity, duration_minutes=duration)
+
+                # [F] Szenen-Aktionen ausfuehren (Licht, Cover, Klima)
+                await self._execute_scene_actions(scene_id)
 
                 logger.info(
                     "Scene Device-Trigger: %s (%s→%s) → Szene '%s' (activity=%s, silence=%s)",
                     entity_id, old_val, new_val, scene_id, activity, silence,
                 )
 
-                # Benachrichtigung an User
                 await self._notify("scene_device_triggered", LOW, {
                     "scene_id": scene_id,
                     "entity_id": entity_id,
@@ -1154,6 +1207,22 @@ class ProactiveManager:
                 break  # Nur erste passende Szene aktivieren
         except Exception as e:
             logger.debug("Scene Device-Trigger Fehler: %s", e)
+
+    async def _execute_scene_actions(self, scene_id: str):
+        """Fuehrt die Mood-Scene-Aktionen aus (Licht, Cover, Klima etc.).
+
+        Delegiert an FunctionExecutor._exec_activate_scene (brain.executor).
+        """
+        try:
+            executor = getattr(self.brain, "executor", None)
+            if executor and hasattr(executor, "_exec_activate_scene"):
+                result = await executor._exec_activate_scene({"scene": scene_id})
+                logger.debug("Scene-Actions fuer '%s' ausgefuehrt: %s", scene_id, result.get("message", ""))
+                return
+
+            logger.warning("Scene-Actions: brain.executor nicht verfuegbar fuer '%s'", scene_id)
+        except Exception as e:
+            logger.warning("Scene-Actions Fehler fuer '%s': %s", scene_id, e)
 
     def _match_appliance(self, entity_id: str) -> Optional[str]:
         """Prueft ob entity_id ein bekanntes Geraet matched. Gibt appliance-key zurueck oder None."""
@@ -2395,6 +2464,28 @@ class ProactiveManager:
             except Exception as e:
                 logger.warning("Error in Mood-Check: %s", e)
 
+        # Scene-Suppression: Bei aktiver Szene LOW-Energy-Meldungen unterdrücken
+        _SCENE_SUPPRESS_EVENTS = {"energy_price_high", "solar_surplus"}
+        _SCENE_SUPPRESS_SCENES = {"filmabend", "kino", "party", "gute_nacht", "schlafen",
+                                  "konzentration", "arbeiten", "meeting", "romantisch", "lesen"}
+        if urgency == LOW and event_type in _SCENE_SUPPRESS_EVENTS:
+            try:
+                _scene_redis = getattr(self.brain.memory, "redis", None)
+                if _scene_redis:
+                    _active_scene = await _scene_redis.get("mha:scene:active")
+                    if _active_scene:
+                        _active_scene = _active_scene.decode() if isinstance(_active_scene, bytes) else _active_scene
+                        if _active_scene in _SCENE_SUPPRESS_SCENES:
+                            detail = data.get("entity") or data.get("message") or ""
+                            logger.info(
+                                "Meldung unterdrückt (Scene=%s): [%s] %s%s",
+                                _active_scene, urgency, event_type,
+                                f" ({detail})" if detail else "",
+                            )
+                            return
+            except Exception:
+                pass
+
         # D3: Kontextuelles Schweigen — Activity-basierte Unterdrückung
         # Film/Gäste/Schlaf → nur HIGH+ darf durch
         if urgency not in (CRITICAL, HIGH):
@@ -3099,7 +3190,8 @@ class ProactiveManager:
                 diag = self.brain.diagnostics
                 result = await diag.check_all()
 
-                # Entity-Probleme melden
+                # Entity-Probleme gruppiert melden (statt 150x einzeln _notify)
+                issues_by_type: dict[str, list[dict]] = {}
                 for issue in result.get("issues", []):
                     issue_type = issue.get("issue_type", "unknown")
                     event_type = {
@@ -3107,24 +3199,40 @@ class ProactiveManager:
                         "low_battery": "low_battery",
                         "stale": "stale_sensor",
                     }.get(issue_type, "entity_offline")
+                    issues_by_type.setdefault(event_type, []).append(issue)
 
-                    severity = issue.get("severity", "warning")
-                    urgency = HIGH if severity == "critical" else MEDIUM if severity == "warning" else LOW
+                for event_type, issues in issues_by_type.items():
+                    # Hoechste Severity der Gruppe bestimmt Urgency
+                    has_critical = any(i.get("severity") == "critical" for i in issues)
+                    has_warning = any(i.get("severity") == "warning" for i in issues)
+                    urgency = HIGH if has_critical else MEDIUM if has_warning else LOW
+
+                    # Zusammenfassung: Anzahl + erste Entities als Detail
+                    entity_ids = [i.get("entity_id", "") for i in issues if i.get("entity_id")]
+                    preview = ", ".join(entity_ids[:5])
+                    if len(entity_ids) > 5:
+                        preview += f" (+{len(entity_ids) - 5} weitere)"
 
                     await self._notify(event_type, urgency, {
-                        "entity": issue.get("entity_id", ""),
-                        "message": issue.get("message", ""),
+                        "entity": f"{len(issues)}x {event_type}",
+                        "message": f"{len(issues)} Entities: {preview}",
+                        "count": len(issues),
+                        "entities": entity_ids,
                     })
 
-                # Wartungs-Erinnerungen (nur LOW)
-                for task in result.get("maintenance_due", []):
-                    entity_id = task.get("entity_id", "")
-                    task_name = task.get("name", "")
+                # Wartungs-Erinnerungen gruppiert (statt einzeln)
+                maintenance_tasks = result.get("maintenance_due", [])
+                if maintenance_tasks:
+                    task_names = [t.get("name", "") for t in maintenance_tasks if t.get("name")]
+                    preview = ", ".join(task_names[:5])
+                    if len(task_names) > 5:
+                        preview += f" (+{len(task_names) - 5} weitere)"
+
                     await self._notify("maintenance_due", LOW, {
-                        "entity": f"{entity_id} ({task_name})" if entity_id else task_name,
-                        "task": task_name,
-                        "days_overdue": task.get("days_overdue", 0),
-                        "description": task.get("description", ""),
+                        "entity": f"{len(maintenance_tasks)}x Wartung",
+                        "message": f"{len(maintenance_tasks)} Aufgaben: {preview}",
+                        "count": len(maintenance_tasks),
+                        "tasks": maintenance_tasks,
                     })
 
                 # Smart Shopping: Verbrauchsprognose-Check
@@ -6839,6 +6947,33 @@ class ProactiveManager:
         self._weather_event_cache = {}
         logger.info("Wetter-Event-Subscription: %d Sensoren registriert", len(weather_sensors))
 
+    async def _on_entity_recovered(self, entity_id: str, new_val: str, new_state: dict):
+        """Wird aufgerufen wenn eine Entity von unavailable → online wechselt.
+
+        Raeumt Auto-Suppress in DiagnosticsEngine auf und benachrichtigt
+        optional den Benutzer wenn die Entity lange offline war.
+        """
+        diag = getattr(self.brain, "diagnostics", None)
+        if not diag:
+            return
+
+        result = diag.on_entity_recovered(entity_id)
+
+        # Wenn Entity auto-suppressed war → Benutzer informieren
+        if result:
+            friendly = new_state.get("attributes", {}).get("friendly_name", entity_id)
+            logger.info(
+                "Entity recovered: %s (%s) — war auto-suppressed seit %s",
+                entity_id, new_val, result.get("was_suppressed_since", "?"),
+            )
+            await self._notify("entity_recovered", LOW, {
+                "entity": entity_id,
+                "message": f"{friendly} ist wieder online (Status: {new_val})",
+                "was_offline_since": result.get("was_suppressed_since", ""),
+            })
+        else:
+            logger.debug("Entity recovered (nicht suppressed): %s → %s", entity_id, new_val)
+
     async def _handle_weather_event(self, entity_id: str, new_state: str, old_state: str):
         """Reagiert auf kritische Wetter-Changes (Wind-Spike, Regen-Start)."""
         from .cover_config import get_sensor_by_role
@@ -7114,6 +7249,163 @@ class ProactiveManager:
                 logger.debug("Routine-Deviation Fehler: %s", e)
 
             await asyncio.sleep(1800)  # Alle 30 Minuten pruefen
+
+    # ------------------------------------------------------------------
+    # Szenen-Scheduler: Cron-basierte Szenen-Aktivierung
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _cron_matches_now(cron_expr: str, now: datetime) -> bool:
+        """Prueft ob ein Cron-Ausdruck auf die aktuelle Minute passt.
+
+        Format: "minute hour day_of_month month day_of_week"
+        Beispiel: "0 20 * * 5" = Freitag 20:00
+        Unterstuetzt: Zahlen, *, Kommalisten (1,3,5), Bereiche (1-5)
+        """
+        try:
+            parts = cron_expr.strip().split()
+            if len(parts) != 5:
+                return False
+
+            def _matches(field: str, value: int) -> bool:
+                if field == "*":
+                    return True
+                for part in field.split(","):
+                    if "-" in part:
+                        lo, hi = part.split("-", 1)
+                        if int(lo) <= value <= int(hi):
+                            return True
+                    elif part.startswith("*/"):
+                        step = int(part[2:])
+                        if step > 0 and value % step == 0:
+                            return True
+                    elif int(part) == value:
+                        return True
+                return False
+
+            minute, hour, dom, month, dow = parts
+            return (
+                _matches(minute, now.minute)
+                and _matches(hour, now.hour)
+                and _matches(dom, now.day)
+                and _matches(month, now.month)
+                and _matches(dow, now.isoweekday() % 7)  # 0=So, 1=Mo, ..., 6=Sa
+            )
+        except (ValueError, TypeError):
+            return False
+
+    async def _run_scene_schedule_loop(self):
+        """Prueft jede Minute ob geplante Szenen aktiviert werden muessen."""
+        await asyncio.sleep(120)  # 2 Min Startup-Delay
+        logger.info("Scene-Schedule-Loop gestartet")
+
+        while self._running:
+            try:
+                # Szenen mit aktiviertem Schedule vom Add-on laden
+                scenes = await self.brain.ha.mindhome_get("/api/scenes")
+                if not isinstance(scenes, list):
+                    await asyncio.sleep(60)
+                    continue
+
+                now = datetime.now()
+                for scene in scenes:
+                    if not scene.get("schedule_enabled"):
+                        continue
+                    cron = scene.get("schedule_cron", "")
+                    if not cron:
+                        continue
+
+                    scene_id = scene.get("id")
+                    scene_name = scene.get("name_de", f"Szene {scene_id}")
+
+                    if self._cron_matches_now(cron, now):
+                        # Cooldown: Pro Szene maximal 1x pro Stunde (verhindert Doppel-Trigger)
+                        cooldown_key = f"mha:scene_schedule:{scene_id}"
+                        redis = getattr(self.brain.memory, "redis", None)
+                        if redis:
+                            already = await redis.get(cooldown_key)
+                            if already:
+                                continue
+                            await redis.setex(cooldown_key, 3600, "1")
+
+                        # Szene aktivieren via Add-on API
+                        result = await self.brain.ha.mindhome_post(
+                            f"/api/scenes/{scene_id}/activate", {}
+                        )
+                        success = isinstance(result, dict) and result.get("success")
+                        if success:
+                            logger.info("Szene '%s' (ID %s) per Schedule aktiviert [%s]", scene_name, scene_id, cron)
+                            await self._notify("scene_scheduled", LOW, {
+                                "entity": scene_name,
+                                "message": f"Geplante Szene '{scene_name}' aktiviert",
+                                "scene_id": scene_id,
+                            })
+                        else:
+                            logger.warning("Szene '%s' (ID %s) Schedule-Aktivierung fehlgeschlagen", scene_name, scene_id)
+
+                # Proaktive Szenen-Vorschlaege: Favoriten zur passenden Zeit vorschlagen
+                # Nur alle 30 Min pruefen, und nur wenn Szene in letzten 7 Tagen
+                # zur aehnlichen Uhrzeit (+/- 30 Min) aktiviert wurde
+                if now.minute % 30 == 0:
+                    await self._check_scene_suggestions(scenes, now)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug("Scene-Schedule Fehler: %s", e)
+
+            await asyncio.sleep(60)  # Jede Minute pruefen
+
+    async def _check_scene_suggestions(self, scenes: list, now: datetime):
+        """Schlaegt Szenen vor die regelmaessig zur aktuellen Zeit aktiviert werden."""
+        try:
+            for scene in scenes:
+                if not scene.get("is_favorite") and scene.get("frequency", 0) < 3:
+                    continue  # Nur relevante Szenen (Favoriten oder haeufig genutzt)
+
+                last_activated = scene.get("last_activated")
+                if not last_activated:
+                    continue
+
+                scene_id = scene.get("id")
+                scene_name = scene.get("name_de", f"Szene {scene_id}")
+
+                # Zeitfenster-Check: Wurde die Szene regelmaessig um diese Uhrzeit genutzt?
+                try:
+                    if isinstance(last_activated, str):
+                        last_dt = datetime.fromisoformat(last_activated.replace("Z", "+00:00"))
+                    else:
+                        continue
+                    # Nur vorschlagen wenn letzte Aktivierung < 7 Tage her
+                    days_ago = (now - last_dt.replace(tzinfo=None)).days
+                    if days_ago > 7:
+                        continue
+                    # Uhrzeitvergleich: Aktivierungszeit +/- 30 Min zur aktuellen Zeit?
+                    last_minutes = last_dt.hour * 60 + last_dt.minute
+                    now_minutes = now.hour * 60 + now.minute
+                    if abs(last_minutes - now_minutes) > 30:
+                        continue
+                except (ValueError, TypeError):
+                    continue
+
+                # Cooldown: Pro Szene 1x am Tag vorschlagen
+                cooldown_key = f"mha:scene_suggest:{scene_id}"
+                redis = getattr(self.brain.memory, "redis", None)
+                if redis:
+                    already = await redis.get(cooldown_key)
+                    if already:
+                        continue
+                    await redis.setex(cooldown_key, 86400, "1")
+
+                logger.info("Szenen-Vorschlag: '%s' (zuletzt %s)", scene_name, last_activated)
+                await self._notify("scene_suggested", LOW, {
+                    "entity": scene_name,
+                    "message": f"Soll ich '{scene_name}' aktivieren? Du nutzt sie oft um diese Zeit.",
+                    "scene_id": scene_id,
+                })
+
+        except Exception as e:
+            logger.debug("Scene-Suggestion Fehler: %s", e)
 
     # ------------------------------------------------------------------
     # Konfigurations-Assistent

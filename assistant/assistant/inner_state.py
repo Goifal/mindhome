@@ -236,6 +236,30 @@ class InnerStateEngine:
             self._mood = MOOD_CONTENT
             await self._save_state()
 
+    # Scene → Jarvis-Stimmung
+    _SCENE_MOOD_MAP = {
+        "gemuetlich": MOOD_CONTENT,
+        "filmabend": MOOD_CONTENT,
+        "romantisch": MOOD_CONTENT,
+        "musik": MOOD_CONTENT,
+        "party": MOOD_AMUSED,
+        "spielen": MOOD_AMUSED,
+        "gute_nacht": MOOD_NEUTRAL,
+        "schlafen": MOOD_NEUTRAL,
+        "konzentration": MOOD_NEUTRAL,
+        "arbeiten": MOOD_NEUTRAL,
+        "meeting": MOOD_NEUTRAL,
+    }
+
+    async def on_scene_activated(self, scene_name: str):
+        """Szenen-Aktivierung beeinflusst Jarvis' Stimmung."""
+        target_mood = self._SCENE_MOOD_MAP.get(scene_name)
+        if target_mood and target_mood != self._mood:
+            self._previous_mood = self._mood
+            self._mood = target_mood
+            logger.info("Inner-State: → %s (Szene '%s' aktiviert)", target_mood, scene_name)
+            await self._save_state()
+
     # ------------------------------------------------------------------
     # Mood-Berechnung
     # ------------------------------------------------------------------
