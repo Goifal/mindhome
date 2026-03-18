@@ -1118,8 +1118,34 @@ class ProactiveManager:
 
             # Szenen-Config laden um Aktivitaet + Transition zu ermitteln
             scenes_cfg = yaml_config.get("scenes", {})
+            device_trigger_modes = scenes_cfg.get("device_trigger_modes", {})
 
             for scene_id in scene_ids:
+                # UND-Modus: Alle anderen Trigger-Entities muessen ebenfalls aktiv sein
+                trigger_mode = device_trigger_modes.get(scene_id, "or")
+                if trigger_mode == "and":
+                    # Alle Entities finden die diese Szene triggern
+                    all_trigger_entities = [
+                        eid for eid, sids in device_trigger_map.items()
+                        if scene_id in sids
+                    ]
+                    if len(all_trigger_entities) > 1:
+                        # Aktuelle States von HA holen
+                        states = await self.ha.get_states() or []
+                        state_map = {s.get("entity_id", ""): s.get("state", "").lower() for s in states}
+                        all_active = all(
+                            state_map.get(eid, "").lower() in self._ACTIVE_STATES
+                            if eid != entity_id  # Das aktuelle Entity ist gerade gewechselt
+                            else True  # Dieses ist gerade aktiv geworden
+                            for eid in all_trigger_entities
+                        )
+                        if not all_active:
+                            logger.debug(
+                                "Scene Device-Trigger UND-Modus: %s aktiv, aber nicht alle Trigger fuer '%s' erfuellt",
+                                entity_id, scene_id,
+                            )
+                            continue  # Naechste Szene pruefen
+
                 # Szenen-Aktivitaet aus gespeicherter Config oder Defaults ableiten
                 scene_data = scenes_cfg.get(scene_id, {})
                 activity = scene_data.get("activity")

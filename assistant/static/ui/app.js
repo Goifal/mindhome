@@ -4196,6 +4196,7 @@ function _getScenes() {
       transition: override.transition ?? def.transition,
       triggers: override.triggers ?? def.triggers ?? [],
       device_triggers: override.device_triggers ?? def.device_triggers ?? [],
+      device_trigger_mode: override.device_trigger_mode ?? 'or',
       actions: moodOvr.actions ?? defaultMood.actions ?? null,
       climate_offset: moodOvr.climate_offset ?? defaultMood.climate_offset ?? null,
       custom: false,
@@ -4211,6 +4212,7 @@ function _getScenes() {
         activity: cfg.activity || 'relaxing', silence: cfg.silence ?? false,
         transition: cfg.transition ?? 3, triggers: cfg.triggers ?? [],
         device_triggers: cfg.device_triggers ?? [],
+        device_trigger_mode: cfg.device_trigger_mode ?? 'or',
         actions: moodOvr.actions ?? cfg.actions ?? null,
         climate_offset: moodOvr.climate_offset ?? cfg.climate_offset ?? null,
         custom: true,
@@ -4230,7 +4232,7 @@ function _saveScenes(scenes) {
     const def = defaultMap[sc.id];
     if (sc.custom) {
       // Custom Szene: immer komplett speichern
-      data[sc.id] = {icon: sc.icon, label: sc.label, activity: sc.activity, silence: sc.silence, transition: sc.transition, triggers: sc.triggers || [], device_triggers: sc.device_triggers || [], actions: sc.actions || null, climate_offset: sc.climate_offset ?? null, _custom: true};
+      data[sc.id] = {icon: sc.icon, label: sc.label, activity: sc.activity, silence: sc.silence, transition: sc.transition, triggers: sc.triggers || [], device_triggers: sc.device_triggers || [], device_trigger_mode: sc.device_trigger_mode || 'or', actions: sc.actions || null, climate_offset: sc.climate_offset ?? null, _custom: true};
     } else if (def) {
       // Default Szene: nur Abweichungen
       const diff = {};
@@ -4241,12 +4243,14 @@ function _saveScenes(scenes) {
       if (sc.icon !== def.icon) diff.icon = sc.icon;
       if (JSON.stringify(sc.triggers || []) !== JSON.stringify(def.triggers || [])) diff.triggers = sc.triggers;
       if (JSON.stringify(sc.device_triggers || []) !== JSON.stringify(def.device_triggers || [])) diff.device_triggers = sc.device_triggers;
+      if (sc.device_trigger_mode !== 'or') diff.device_trigger_mode = sc.device_trigger_mode;
       // Szene hatte vorher Overrides in YAML? Dann Array-Felder immer
       // mitsenden damit deep-merge alte Werte überschreibt (nicht addiert)
       const hadOverrides = !!oldSaved[sc.id];
       if (hadOverrides) {
         diff.triggers = sc.triggers || [];
         diff.device_triggers = sc.device_triggers || [];
+        if (sc.device_trigger_mode !== 'or') diff.device_trigger_mode = sc.device_trigger_mode;
       }
       if (Object.keys(diff).length > 0) data[sc.id] = diff;
     }
@@ -4283,6 +4287,14 @@ function _saveScenes(scenes) {
     }
   }
   setPath(S, 'scenes.device_trigger_map', deviceTriggerMap);
+  // 4b. scenes.device_trigger_modes — UND/ODER Modus pro Szene
+  const deviceTriggerModes = {};
+  for (const sc of scenes) {
+    if (sc.device_trigger_mode === 'and' && sc.device_triggers && sc.device_triggers.length > 1) {
+      deviceTriggerModes[sc.id] = 'and';
+    }
+  }
+  setPath(S, 'scenes.device_trigger_modes', Object.keys(deviceTriggerModes).length > 0 ? deviceTriggerModes : {});
   // 5. scenes.mood_scenes — Actions + Climate-Offset fuer Mood-Szenen
   // Nur speichern wenn vom Default abweichend (sonst unnoetige YAML-Eintraege)
   const moodScenes = getPath(S, 'scenes.mood_scenes') || {};
@@ -4369,7 +4381,14 @@ function renderScenes() {
             onchange="sceneTriggersChanged('${esc(sc.id)}',this.value)">
         </div>
         <div class="scene-field">
-          <span class="scene-field-label">Geräte-Trigger</span>
+          <span class="scene-field-label" style="display:flex;align-items:center;gap:8px;">Geräte-Trigger
+            <span style="display:inline-flex;align-items:center;gap:2px;font-size:10px;font-weight:normal;color:var(--text-muted);">
+              <button type="button" class="btn btn-sm scene-dt-mode" data-scene-id="${esc(sc.id)}"
+                style="padding:1px 6px;font-size:10px;font-weight:${sc.device_trigger_mode==='and'?'bold':'normal'};opacity:${sc.device_trigger_mode==='and'?'1':'0.5'};"
+                onclick="toggleDeviceTriggerMode('${esc(sc.id)}')"
+                title="ODER: Ein Geraet reicht. UND: Alle Geraete muessen aktiv sein.">${sc.device_trigger_mode === 'and' ? 'UND' : 'ODER'}</button>
+            </span>
+          </span>
           <div class="scene-device-triggers" data-scene-id="${esc(sc.id)}">
             ${(sc.device_triggers||[]).map((dt, i) => `<div class="scene-dt-row" style="display:flex;gap:4px;margin-bottom:4px;align-items:center;">
               <div class="entity-pick-wrap" style="position:relative;flex:1;">
@@ -4425,6 +4444,7 @@ function renderScenes() {
       <div style="margin-top:6px;"><strong>3. Übergangszeit</strong> — Wie lange Licht-Übergaenge dauern wenn Jarvis die Szene aktiviert.</div>
       <div style="margin-top:6px;"><strong>4. Auslöser</strong> — Komma-getrennte Begriffe die Jarvis als Trigger für diese Szene erkennt. So vermeidest du Verwechslungen zwischen ähnlichen Szenen.</div>
       <div style="margin-top:6px;"><strong>5. Geräte-Trigger</strong> — HA-Entities die diese Szene automatisch aktivieren. Z.B. wenn der TV eingeschaltet wird (media_player) oder ein Button gedrückt wird (binary_sensor). Szene wird aktiviert wenn das Geraet den Status wechselt (on/playing/etc.).</div>
+      <div style="margin-top:6px;"><strong>6. UND/ODER-Modus</strong> — Bei ODER (Standard) reicht ein einzelnes Geraet um die Szene auszulösen. Bei UND muessen <em>alle</em> konfigurierten Geraete gleichzeitig aktiv sein (z.B. TV an UND Licht gedimmt → Filmabend).</div>
     </div>`
   );
 }
@@ -4451,10 +4471,25 @@ function sceneTriggersChanged(sceneId, value) {
   _saveScenes(scenes);
 }
 
+function toggleDeviceTriggerMode(sceneId) {
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc) return;
+  sc.device_trigger_mode = sc.device_trigger_mode === 'and' ? 'or' : 'and';
+  _saveScenes(scenes);
+  // Button aktualisieren ohne komplett neu zu rendern
+  const btn = document.querySelector(`.scene-dt-mode[data-scene-id="${sceneId}"]`);
+  if (btn) {
+    btn.textContent = sc.device_trigger_mode === 'and' ? 'UND' : 'ODER';
+    btn.style.fontWeight = sc.device_trigger_mode === 'and' ? 'bold' : 'normal';
+    btn.style.opacity = sc.device_trigger_mode === 'and' ? '1' : '0.5';
+  }
+}
+
 function addCustomScene() {
   const id = 'szene_' + Date.now();
   const scenes = _getScenes();
-  scenes.push({id, icon: '&#127912;', label: 'Neue Szene', activity: 'relaxing', silence: false, transition: 3, triggers: [], device_triggers: [], actions: [], climate_offset: null, custom: true});
+  scenes.push({id, icon: '&#127912;', label: 'Neue Szene', activity: 'relaxing', silence: false, transition: 3, triggers: [], device_triggers: [], device_trigger_mode: 'or', actions: [], climate_offset: null, custom: true});
   _saveScenes(scenes);
   renderCurrentTab();
 }

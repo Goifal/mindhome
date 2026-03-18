@@ -4120,6 +4120,7 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         # Device-Trigger)
         _REPLACE_KEYS = [
             ("scenes", "device_trigger_map"),
+            ("scenes", "device_trigger_modes"),
             ("scenes", "trigger_map"),
         ]
         for section, key in _REPLACE_KEYS:
