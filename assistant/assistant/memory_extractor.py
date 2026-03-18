@@ -169,14 +169,20 @@ class MemoryExtractor:
                 continue
 
             # Invalide Personen filtern: Jarvis/Assistant/System sind keine Bewohner
-            if fact_person.lower() in _INVALID_PERSONS:
-                # Auf den uebergebenen Person-Parameter zurueckfallen
+            _is_system_person = fact_person.lower() in _INVALID_PERSONS
+            # "unknown" ist OK als Fallback — nur echte System-Namen blocken
+            _is_only_unknown = fact_person.lower() in ("unknown", "unbekannt")
+            if _is_system_person and not _is_only_unknown:
+                # Echte System-Person (jarvis, assistant, bot) → auf Bewohner zurueckfallen
                 if person and person.lower() not in _INVALID_PERSONS:
                     fact_person = person
                 else:
-                    logger.debug("Fakt uebersprungen (invalide Person '%s'): %s",
+                    logger.debug("Fakt uebersprungen (System-Person '%s'): %s",
                                  fact_person, content[:80])
                     continue
+            elif _is_only_unknown and person and person.lower() not in _INVALID_PERSONS:
+                # LLM hat keine Person erkannt, aber wir wissen wer spricht
+                fact_person = person
 
             # Confidence basierend auf Kategorie (Gesundheit > Smalltalk)
             initial_confidence = self._category_confidence.get(category, 0.5)
