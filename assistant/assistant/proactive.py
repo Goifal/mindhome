@@ -1123,7 +1123,7 @@ class ProactiveManager:
             for scene_id in scene_ids:
                 # [A] Cooldown: Prueft den gleichen Key wie _exec_activate_scene (30s)
                 # damit Device-Trigger + Voice-Aktivierung sich gegenseitig blockieren
-                redis = getattr(self.brain, "_redis", None) or getattr(self, "_redis", None)
+                redis = getattr(self.brain.memory, "redis", None) if hasattr(self.brain, "memory") else None
                 if redis:
                     cooldown_key = f"mha:scene:cooldown:{scene_id}"
                     try:
@@ -1141,7 +1141,7 @@ class ProactiveManager:
                         if scene_id in sids
                     ]
                     if len(all_trigger_entities) > 1:
-                        states = await self.ha.get_states() or []
+                        states = await self.brain.ha.get_states() or []
                         state_map = {s.get("entity_id", ""): s.get("state", "").lower() for s in states}
                         all_active = all(
                             state_map.get(eid, "").lower() in self._ACTIVE_STATES
