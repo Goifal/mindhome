@@ -396,6 +396,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self._last_context: dict = {}
 
         # Feature 5: Letzte ausgefuehrte Aktion (für emotionale Reaktionserkennung im naechsten Turn)
+        # TODO: Per Person scopen um Cross-User-Leakage im Pronomen-Shortcut zu verhindern
         self._last_executed_action: str = ""
         self._last_executed_action_args: dict = {}
 
@@ -2247,50 +2248,26 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             except Exception:
                                 pass
 
-                            # Post-Execution State Verification: Pruefen ob das
-                            # Geraet tatsaechlich den erwarteten State hat.
+                            # Post-Execution State Verification (async Background):
+                            # Prüft ob das Gerät tatsächlich den State gewechselt hat.
+                            # Läuft im Background um den Hot-Path nicht zu blockieren.
+                            # Bei Mismatch wird eine Korrektur-Nachricht gesendet.
                             _verify_eid = (
                                 result.get("entity_id") if isinstance(result, dict) else None
                             ) or func_args.get("entity_id", "")
-                            # Fallback: entity_id aus room + domain ableiten
                             if not _verify_eid and func_name.startswith("set_"):
                                 _vr = func_args.get("room", "")
                                 if _vr and func_name in ("set_light", "set_cover", "set_climate", "set_switch"):
                                     _vdomain = func_name.replace("set_", "")
                                     _verify_eid = f"{_vdomain}.{_vr.lower().replace(' ', '_')}"
                             if _verify_eid and func_name.startswith("set_"):
-                                try:
-                                    await asyncio.sleep(0.5)
-                                    _actual = await self.ha.get_state(_verify_eid)
-                                    if _actual:
-                                        _actual_state = _actual.get("state", "")
-                                        _expected = func_args.get("state", "")
-                                        # State-Mapping: on/off, open/closed, heat/off
-                                        _want_on = _expected in ("on", "open", "heat", "cool", "auto")
-                                        _want_off = _expected in ("off", "closed")
-                                        _is_on = _actual_state in ("on", "open", "heat", "cool", "auto", "playing", "opening")
-                                        _is_off = _actual_state in ("off", "closed", "idle", "closing")
-                                        _mismatch = (
-                                            (_want_on and _is_off)
-                                            or (_want_off and _is_on)
-                                            or _actual_state == "unavailable"
-                                        )
-                                        if _mismatch:
-                                            logger.warning(
-                                                "State-Verify MISMATCH: %s expected=%s actual=%s",
-                                                _verify_eid, _expected, _actual_state,
-                                            )
-                                            if _actual_state == "unavailable":
-                                                response_text = self.personality.get_error_response("unavailable")
-                                            else:
-                                                response_text = (
-                                                    f"Der Befehl wurde gesendet, aber {_verify_eid.split('.')[-1].replace('_', ' ')} "
-                                                    f"ist aktuell noch auf '{_actual_state}'. Möglicherweise reagiert das Gerät verzögert."
-                                                )
-                                        else:
-                                            logger.debug("State-Verify OK: %s -> %s", _verify_eid, _actual_state)
-                                except Exception as _ve:
-                                    logger.debug("State-Verify fehlgeschlagen: %s", _ve)
+                                self._task_registry.create_task(
+                                    self._verify_device_state(
+                                        _verify_eid, func_args.get("state", ""),
+                                        room=room,
+                                    ),
+                                    name="state_verify",
+                                )
                         else:
                             response_text = self.personality.get_varied_confirmation(
                                 success=False,
@@ -5374,6 +5351,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 and profile and profile.category in ("device_command", "device_query")):
             try:
                 from .function_calling import _entity_catalog
+                if not _entity_catalog:
+                    raise RuntimeError("Entity-Catalog noch nicht geladen")
                 # Alle bekannten Geraete-Namen sammeln (friendly names aus Catalog)
                 _known_devices: set[str] = set()
                 for _domain in ("lights", "switches", "covers"):
@@ -6136,6 +6115,60 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         return []
 
     # Humanizer-Methoden sind in brain_humanizers.py (BrainHumanizersMixin)
+
+    # Post-Execution State Verification (Background)
+    # ------------------------------------------------------------------
+
+    async def _verify_device_state(
+        self, entity_id: str, expected_state: str, *, room: str = "",
+    ) -> None:
+        """Prüft im Background ob ein Gerät den erwarteten State hat.
+
+        Wartet 1.5s (Geräte brauchen Zeit), prüft dann den aktuellen
+        State. Bei Mismatch wird eine Korrektur-Nachricht per TTS gesendet.
+        Blockiert NICHT den Hot-Path (Device-Shortcut Response ist bereits raus).
+        """
+        try:
+            await asyncio.sleep(1.5)
+            actual = await self.ha.get_state(entity_id)
+            if not actual:
+                return
+            actual_state = actual.get("state", "")
+            want_on = expected_state in ("on", "open", "heat", "cool", "auto")
+            want_off = expected_state in ("off", "closed")
+            is_on = actual_state in ("on", "open", "heat", "cool", "auto", "playing", "opening")
+            is_off = actual_state in ("off", "closed", "idle", "closing")
+            mismatch = (
+                (want_on and is_off)
+                or (want_off and is_on)
+                or actual_state == "unavailable"
+            )
+            if not mismatch:
+                logger.debug("State-Verify OK: %s -> %s", entity_id, actual_state)
+                return
+
+            logger.warning(
+                "State-Verify MISMATCH: %s expected=%s actual=%s",
+                entity_id, expected_state, actual_state,
+            )
+            # Korrektur-Nachricht per TTS senden
+            _device_name = entity_id.split(".")[-1].replace("_", " ")
+            if actual_state == "unavailable":
+                correction = f"Achtung — {_device_name} ist nicht erreichbar."
+            else:
+                correction = (
+                    f"Hmm, {_device_name} scheint nicht reagiert zu haben — "
+                    f"Status ist noch '{actual_state}'."
+                )
+            tts_data = self.tts_enhancer.enhance(correction, message_type="warning")
+            if not room:
+                try:
+                    room = await self._get_occupied_room()
+                except Exception:
+                    pass
+            await self._speak_and_emit(correction, room=room, tts_data=tts_data)
+        except Exception as e:
+            logger.debug("State-Verify fehlgeschlagen: %s", e)
 
     # LLM-kontextbezogene Fehlermeldungen
     # ------------------------------------------------------------------
