@@ -11641,6 +11641,14 @@ Regeln:
         await self._speak_and_emit(formatted)
         self._remember_exchange("[proaktiv: Insight]", formatted)
         logger.info("Insight zugestellt [%s/%s]: %s", check, urgency, message[:500])
+        # Dashboard-History: Insight fuer Widget speichern
+        if hasattr(self, "spontaneous") and hasattr(self.spontaneous, "_observation_history"):
+            from datetime import datetime, timezone
+            self.spontaneous._observation_history.append({
+                "text": formatted,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "type": f"insight/{check}",
+            })
         try:
             await self.ha.log_activity(
                 "proactive", f"insight_{check}",
@@ -11674,6 +11682,20 @@ Regeln:
         await self._speak_and_emit(formatted)
         self._remember_exchange("[proaktiv: Beobachtung]", formatted)
         logger.info("Spontane Beobachtung: %s", message[:500])
+        # Dashboard-History: Formatierte Beobachtung fuer Widget aktualisieren
+        # (ersetzt die Rohversion aus dem Observer-Loop)
+        if hasattr(self.spontaneous, "_observation_history"):
+            history = self.spontaneous._observation_history
+            # Letzten Eintrag durch formatierte Version ersetzen falls vorhanden
+            if history and history[-1].get("type") == observation.get("type"):
+                history[-1]["text"] = formatted
+            else:
+                from datetime import datetime, timezone
+                history.append({
+                    "text": formatted,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "type": observation.get("type", "observation"),
+                })
 
     async def _weekly_learning_report_loop(self):
         """Feature 8: Sendet woechentlich einen Lern-Bericht (konfigurierter Tag + Uhrzeit)."""
