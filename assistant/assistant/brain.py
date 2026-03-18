@@ -1800,7 +1800,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         _text_norm = text.lower().translate(_umlaut)
         guest_off_triggers = [
             "gaeste sind weg", "gaeste sind wieder weg", "gaeste sind gegangen",
+            "gaeste sind wieder gegangen", "gaeste wieder gegangen",
             "besuch ist weg", "besuch ist wieder weg", "besuch ist gegangen",
+            "besuch ist wieder gegangen", "besuch wieder gegangen",
+            "gaeste gehen", "besuch geht", "gaeste gegangen", "besuch gegangen",
             "normalbetrieb", "gaeste modus aus", "gaeste modus deaktivieren",
             "gaeste modus beenden", "gaestemodus deaktivieren", "gaestemodus aus",
             "gaestemodus beenden", "kein besuch mehr",

@@ -1456,6 +1456,13 @@ class RoutineEngine:
         if any(trigger in text_lower for trigger in all_triggers):
             return True
 
+        # Negative Guard: Wenn der Text signalisiert dass Gaeste GEHEN/WEG sind,
+        # darf der LLM-Fallback nicht faelschlicherweise Aktivierung erkennen.
+        _gone_signals = ["gegangen", "weg", "geht", "gehen", "verabschiedet",
+                         "abgereist", "aufgebrochen", "wieder allein"]
+        if any(s in text_lower for s in _gone_signals):
+            return False
+
         # LLM-Fallback: Nur fuer kurze Saetze (< 80 Zeichen)
         if len(text_lower) > 80:
             return False
