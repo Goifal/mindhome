@@ -15,6 +15,7 @@ aber generalisiert für beliebige Anwendungsfaelle.
 import asyncio
 import json
 import logging
+import random
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -49,6 +50,7 @@ TIMER_ACTION_WHITELIST = frozenset({
 KEY_TIMERS = "mha:timers:active"
 KEY_REMINDERS = "mha:reminders:active"
 KEY_ALARMS = "mha:alarms:active"
+KEY_SCHEDULED_ACTIONS = "mha:scheduled_actions"  # Phase 5A
 
 
 @dataclass
@@ -907,3 +909,221 @@ class TimerManager:
                     await self.redis.hdel(KEY_ALARMS, aid)
         except Exception as e:
             logger.warning("Wecker-Wiederherstellung fehlgeschlagen: %s", e)
+
+    # ------------------------------------------------------------------
+    # Phase 5A: Zeitgesteuerte Geraeteaktionen (ScheduledAction)
+    # ------------------------------------------------------------------
+
+    async def create_scheduled_action(
+        self,
+        action: str,
+        action_args: dict,
+        target_time: str,
+        target_date: str = "",
+        repeat: str = "once",
+        person: str = "",
+        room: str = "",
+    ) -> dict:
+        """Erstellt eine zeitgesteuerte Geraeteaktion.
+
+        Args:
+            action: Aktion aus TIMER_ACTION_WHITELIST (z.B. "set_light")
+            action_args: Argumente fuer die Aktion
+            target_time: Uhrzeit im Format "HH:MM"
+            target_date: Datum "YYYY-MM-DD" (leer = heute)
+            repeat: "once", "daily", "weekdays", "weekends", "weekly"
+            person: Ersteller
+            room: Raum
+
+        Returns:
+            Ergebnis-Dict mit success, id, message
+        """
+        if not self.redis:
+            return {"success": False, "message": "Redis nicht verfuegbar"}
+
+        # Sicherheit: Nur whitelisted Aktionen
+        if action not in TIMER_ACTION_WHITELIST:
+            return {"success": False, "message": f"Aktion '{action}' ist nicht erlaubt"}
+
+        # Zeitformat validieren
+        try:
+            hour, minute = target_time.split(":")
+            hour, minute = int(hour), int(minute)
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                raise ValueError("Ungueltige Uhrzeit")
+        except (ValueError, AttributeError) as e:
+            return {"success": False, "message": f"Ungueltiges Zeitformat: {e}"}
+
+        # Wiederholungstyp validieren
+        valid_repeats = {"once", "daily", "weekdays", "weekends", "weekly"}
+        if repeat not in valid_repeats:
+            return {"success": False, "message": f"Ungueltiger Wiederholungstyp: {repeat}"}
+
+        if not target_date:
+            from datetime import date
+            target_date = date.today().isoformat()
+
+        action_id = f"sched_{int(time.time())}_{random.randint(1000, 9999)}"
+
+        scheduled = {
+            "id": action_id,
+            "action": action,
+            "action_args": action_args,
+            "target_time": target_time,
+            "target_date": target_date,
+            "repeat": repeat,
+            "person": person,
+            "room": room,
+            "active": True,
+            "created_at": time.time(),
+            "last_executed": None,
+        }
+
+        try:
+            await self.redis.hset(KEY_SCHEDULED_ACTIONS, action_id, json.dumps(scheduled))
+            logger.info(
+                "Scheduled Action erstellt: %s um %s (%s) [%s]",
+                action, target_time, repeat, action_id,
+            )
+            return {
+                "success": True,
+                "id": action_id,
+                "message": f"{action} geplant fuer {target_time} ({repeat})",
+            }
+        except Exception as e:
+            logger.warning("Scheduled Action Erstellung fehlgeschlagen: %s", e)
+            return {"success": False, "message": str(e)}
+
+    async def cancel_scheduled_action(self, action_id: str) -> dict:
+        """Storniert eine geplante Aktion."""
+        if not self.redis:
+            return {"success": False, "message": "Redis nicht verfuegbar"}
+
+        try:
+            deleted = await self.redis.hdel(KEY_SCHEDULED_ACTIONS, action_id)
+            if deleted:
+                return {"success": True, "message": f"Aktion {action_id} storniert"}
+            return {"success": False, "message": f"Aktion {action_id} nicht gefunden"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    async def list_scheduled_actions(self) -> list[dict]:
+        """Listet alle geplanten Aktionen auf."""
+        if not self.redis:
+            return []
+
+        try:
+            raw = await self.redis.hgetall(KEY_SCHEDULED_ACTIONS)
+            actions = []
+            for _id, data in raw.items():
+                try:
+                    entry = json.loads(data.decode() if isinstance(data, bytes) else data)
+                    if entry.get("active", True):
+                        actions.append(entry)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+            # Sortieren nach Uhrzeit
+            actions.sort(key=lambda a: a.get("target_time", ""))
+            return actions
+        except Exception as e:
+            logger.debug("Scheduled Actions auflisten fehlgeschlagen: %s", e)
+            return []
+
+    async def check_scheduled_actions(self):
+        """Prueft ob geplante Aktionen faellig sind. Aufgerufen jede Minute.
+
+        Wird vom Hintergrund-Loop oder externem Scheduler aufgerufen.
+        """
+        if not self.redis or not self._action_callback:
+            return
+
+        try:
+            from datetime import date
+            now = datetime.now()
+            today = date.today().isoformat()
+            current_time = now.strftime("%H:%M")
+            weekday = now.weekday()  # 0=Mo, 6=So
+
+            raw = await self.redis.hgetall(KEY_SCHEDULED_ACTIONS)
+            for action_id_raw, data_raw in raw.items():
+                try:
+                    action_id = action_id_raw.decode() if isinstance(action_id_raw, bytes) else action_id_raw
+                    entry = json.loads(data_raw.decode() if isinstance(data_raw, bytes) else data_raw)
+
+                    if not entry.get("active", True):
+                        continue
+
+                    # Zeit-Match pruefen
+                    if entry.get("target_time") != current_time:
+                        continue
+
+                    repeat = entry.get("repeat", "once")
+
+                    # Datum/Wiederholungs-Check
+                    if repeat == "once":
+                        if entry.get("target_date") != today:
+                            continue
+                    elif repeat == "weekdays" and weekday >= 5:
+                        continue
+                    elif repeat == "weekends" and weekday < 5:
+                        continue
+                    elif repeat == "weekly":
+                        # Gleicher Wochentag wie Erstellung
+                        from datetime import date as dateclass
+                        try:
+                            created_date = dateclass.fromisoformat(entry.get("target_date", today))
+                            if created_date.weekday() != weekday:
+                                continue
+                        except (ValueError, TypeError):
+                            continue
+
+                    # Doppelte Ausfuehrung verhindern (1x pro Minute)
+                    last_exec = entry.get("last_executed")
+                    if last_exec and abs(time.time() - last_exec) < 90:
+                        continue
+
+                    # Aktion ausfuehren
+                    action = entry.get("action", "")
+                    args = entry.get("action_args", {})
+
+                    if action in TIMER_ACTION_WHITELIST:
+                        logger.info(
+                            "Scheduled Action ausfuehren: %s(%s) [%s]",
+                            action, args, action_id,
+                        )
+                        try:
+                            await self._action_callback(action, args)
+                        except Exception as exec_err:
+                            logger.warning("Scheduled Action Ausfuehrung fehlgeschlagen: %s", exec_err)
+
+                    # Status aktualisieren
+                    entry["last_executed"] = time.time()
+                    if repeat == "once":
+                        entry["active"] = False
+                    await self.redis.hset(KEY_SCHEDULED_ACTIONS, action_id, json.dumps(entry))
+
+                except (json.JSONDecodeError, TypeError, KeyError) as e:
+                    logger.debug("Scheduled Action Parse-Fehler: %s", e)
+
+        except Exception as e:
+            logger.debug("check_scheduled_actions Fehler: %s", e)
+
+    async def get_scheduled_actions_summary(self) -> str:
+        """Gibt eine Zusammenfassung fuer das Morgen-Briefing zurueck."""
+        actions = await self.list_scheduled_actions()
+        if not actions:
+            return ""
+
+        from datetime import date
+        today = date.today().isoformat()
+        today_actions = [a for a in actions if a.get("target_date") == today or a.get("repeat") != "once"]
+
+        if not today_actions:
+            return ""
+
+        lines = []
+        for a in today_actions[:5]:
+            action_name = a.get("action", "").replace("_", " ").title()
+            lines.append(f"{a.get('target_time', '?')}: {action_name}")
+
+        return "Heute geplant: " + ", ".join(lines)

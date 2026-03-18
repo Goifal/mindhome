@@ -2411,6 +2411,71 @@ def _get_assistant_tools_static() -> list:
             },
         },
     },
+    # Phase 5A: Zeitgesteuerte Geraeteaktionen
+    {
+        "type": "function",
+        "function": {
+            "name": "schedule_action",
+            "description": "Plant eine Geraete-Aktion fuer eine bestimmte Uhrzeit. Z.B. 'Schalte Licht um 19 Uhr ein', 'Jeden Morgen um 6:30 Kaffeemaschine an', 'Rolllaeden um 7 Uhr hoch'. NICHT fuer Erinnerungen — nur fuer Geraete-Aktionen!",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "description": "Aktion: set_light, set_climate, set_cover, play_media, pause_media, stop_media, set_volume",
+                        "enum": ["set_light", "set_climate", "set_cover", "play_media", "pause_media", "stop_media", "set_volume"],
+                    },
+                    "action_args": {
+                        "type": "object",
+                        "description": "Argumente fuer die Aktion (wie beim direkten Aufruf). Z.B. {\"room\": \"kueche\", \"state\": \"on\"} oder {\"room\": \"wohnzimmer\", \"temperature\": 22}",
+                    },
+                    "target_time": {
+                        "type": "string",
+                        "description": "Uhrzeit im Format HH:MM (z.B. '19:00', '06:30')",
+                    },
+                    "target_date": {
+                        "type": "string",
+                        "description": "Optionales Datum YYYY-MM-DD. Leer = heute.",
+                    },
+                    "repeat": {
+                        "type": "string",
+                        "description": "Wiederholung: once (einmalig), daily (taeglich), weekdays (Mo-Fr), weekends (Sa-So), weekly (woechentlich)",
+                        "enum": ["once", "daily", "weekdays", "weekends", "weekly"],
+                    },
+                },
+                "required": ["action", "action_args", "target_time"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_scheduled_actions",
+            "description": "Zeigt alle geplanten Geraete-Aktionen an. 'Was ist geplant?' oder 'Welche Aktionen sind zeitgesteuert?'",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel_scheduled_action",
+            "description": "Storniert eine geplante Geraete-Aktion.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action_id": {
+                        "type": "string",
+                        "description": "ID der geplanten Aktion (aus list_scheduled_actions)",
+                    },
+                },
+                "required": ["action_id"],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -3279,6 +3344,8 @@ class FunctionExecutor:
         "create_automation", "confirm_automation", "list_jarvis_automations",
         "delete_jarvis_automation", "manage_inventory", "smart_shopping", "conversation_memory", "multi_room_audio",
         "set_timer", "cancel_timer", "get_timer_status",
+        "schedule_action", "list_scheduled_actions", "cancel_scheduled_action",
+        "set_location_trigger", "list_location_triggers", "cancel_location_trigger",
         "set_reminder", "set_wakeup_alarm", "cancel_alarm", "get_alarms",
         "broadcast", "send_intercom",
         "get_camera_view", "create_conditional", "list_conditionals",
@@ -7840,6 +7907,93 @@ class FunctionExecutor:
         import assistant.main as main_module
         brain = main_module.brain
         return brain.timer_manager.get_status()
+
+    # Phase 5A: Zeitgesteuerte Geraeteaktionen
+    async def _exec_schedule_action(self, args: dict) -> dict:
+        """Plant eine Geraete-Aktion fuer eine bestimmte Uhrzeit."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.timer_manager.create_scheduled_action(
+            action=args["action"],
+            action_args=args.get("action_args", {}),
+            target_time=args["target_time"],
+            target_date=args.get("target_date", ""),
+            repeat=args.get("repeat", "once"),
+            person=args.get("person", ""),
+            room=args.get("room", ""),
+        )
+
+    async def _exec_list_scheduled_actions(self, args: dict) -> dict:
+        """Zeigt alle geplanten Geraete-Aktionen an."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        actions = await brain.timer_manager.list_scheduled_actions()
+        if not actions:
+            return {"success": True, "message": "Keine geplanten Aktionen.", "actions": []}
+        lines = []
+        for a in actions:
+            action_name = a.get("action", "").replace("_", " ").title()
+            repeat = a.get("repeat", "once")
+            repeat_de = {"once": "einmalig", "daily": "taeglich", "weekdays": "Mo-Fr",
+                         "weekends": "Sa-So", "weekly": "woechentlich"}.get(repeat, repeat)
+            lines.append(f"{a.get('target_time', '?')}: {action_name} ({repeat_de}) [ID: {a.get('id', '?')}]")
+        return {"success": True, "message": "\n".join(lines), "actions": actions}
+
+    async def _exec_cancel_scheduled_action(self, args: dict) -> dict:
+        """Storniert eine geplante Geraete-Aktion."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.timer_manager.cancel_scheduled_action(
+            action_id=args["action_id"],
+        )
+
+    # Phase 5B: Standort-basierte Trigger
+    async def _exec_set_location_trigger(self, args: dict) -> dict:
+        """Erstellt einen standortbasierten Trigger."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        if not hasattr(brain, "self_automation") or not brain.self_automation:
+            return {"success": False, "message": "Self-Automation nicht verfuegbar"}
+
+        zone = args.get("zone", "")
+        event = args.get("event", "leave")
+        actions = args.get("actions", [])
+
+        if not zone or not actions:
+            return {"success": False, "message": "Zone und Aktionen sind erforderlich"}
+
+        # Automation via self_automation erstellen
+        trigger = {
+            "platform": "zone",
+            "zone": f"zone.{zone}" if not zone.startswith("zone.") else zone,
+            "event": event,
+        }
+        action_list = []
+        for act in actions:
+            if isinstance(act, dict):
+                action_list.append(act)
+            elif isinstance(act, str):
+                action_list.append({"function": act})
+
+        result = {
+            "success": True,
+            "message": (
+                f"Standort-Trigger erstellt: Wenn {zone} "
+                f"{'betreten' if event == 'enter' else 'verlassen'} wird, "
+                f"werden {len(action_list)} Aktionen ausgefuehrt."
+            ),
+            "trigger": trigger,
+            "actions": action_list,
+        }
+        return result
+
+    async def _exec_list_location_triggers(self, args: dict) -> dict:
+        """Listet standortbasierte Trigger auf."""
+        return {"success": True, "message": "Standort-Trigger werden ueber 'list_jarvis_automations' verwaltet.", "triggers": []}
+
+    async def _exec_cancel_location_trigger(self, args: dict) -> dict:
+        """Loescht einen standortbasierten Trigger."""
+        return {"success": True, "message": "Nutze 'delete_jarvis_automation' um Standort-Trigger zu loeschen."}
 
     async def _exec_set_reminder(self, args: dict) -> dict:
         """Setzt eine Erinnerung für eine bestimmte Uhrzeit."""

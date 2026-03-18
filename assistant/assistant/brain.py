@@ -3527,6 +3527,31 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if mood_hint:
             sections.append(("mood", f"\n\nEMOTIONALE LAGE: {mood_hint}", 1))
 
+        # Phase 4B: Stress-getriggerte Hilfsangebote
+        if profile.need_mood:
+            try:
+                _root_cause = self.mood.get_root_cause(person or "")
+                _current_mood = self.mood._current_mood
+                if _current_mood == "frustrated" and _root_cause == "geraeteproblem":
+                    sections.append(("stress_help",
+                        "\n\nSTRESS-HILFE: Der User hat ein Geraeteproblem und ist frustriert. "
+                        "Biete proaktiv Diagnostik oder Alternativen an. "
+                        "Beispiel: 'Soll ich die Diagnostik starten?' oder 'Ich kann eine Alternative vorschlagen.'",
+                        1))
+                elif _current_mood == "stressed" and _root_cause == "zeitdruck":
+                    sections.append(("stress_help",
+                        "\n\nSTRESS-HILFE: Der User steht unter Zeitdruck. "
+                        "Antworte ULTRA-KURZ (max 1 Satz). Keine Rueckfragen. Direkt handeln.",
+                        1))
+                # Empathie-Statement als Kontext mitgeben
+                _empathy = self.mood.generate_empathy_statement(_current_mood, _root_cause, person or "")
+                if _empathy:
+                    sections.append(("empathy",
+                        f"\n\nEMPATHIE-VORSCHLAG: {_empathy}",
+                        3))
+            except Exception as _sh_err:
+                logger.debug("Stress-Hilfe fehlgeschlagen: %s", _sh_err)
+
         # H1: Per-Person Preferences als Kontext
         if person and profile.need_house_status:
             try:
