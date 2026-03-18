@@ -11,6 +11,14 @@ import random
 
 # ChromaDB Telemetrie deaktivieren (posthog capture() Fehler vermeiden)
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_ANONYMIZED_TELEMETRY"] = "False"
+# PostHog capture()-Signatur inkompatibel mit chromadb 0.5.x → Modul neutralisieren
+try:
+    import posthog  # type: ignore
+    posthog.capture = lambda *_a, **_kw: None  # noqa: E731
+    posthog.Posthog = type("_NoopPosthog", (), {"capture": staticmethod(lambda *_a, **_kw: None)})  # noqa: E731
+except ImportError:
+    pass
 import secrets
 from collections import deque
 from contextlib import asynccontextmanager
