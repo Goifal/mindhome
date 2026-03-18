@@ -4445,6 +4445,7 @@ function renderScenes() {
       <div style="margin-top:6px;"><strong>4. Auslöser</strong> — Komma-getrennte Begriffe die Jarvis als Trigger für diese Szene erkennt. So vermeidest du Verwechslungen zwischen ähnlichen Szenen.</div>
       <div style="margin-top:6px;"><strong>5. Geräte-Trigger</strong> — HA-Entities die diese Szene automatisch aktivieren. Z.B. wenn der TV eingeschaltet wird (media_player) oder ein Button gedrückt wird (binary_sensor). Szene wird aktiviert wenn das Geraet den Status wechselt (on/playing/etc.).</div>
       <div style="margin-top:6px;"><strong>6. UND/ODER-Modus</strong> — Bei ODER (Standard) reicht ein einzelnes Geraet um die Szene auszulösen. Bei UND muessen <em>alle</em> konfigurierten Geraete gleichzeitig aktiv sein (z.B. TV an UND Licht gedimmt → Filmabend).</div>
+      <div style="margin-top:6px;"><strong>7. dim2warm</strong> — Bei Lampen mit Typ <em>dim2warm</em> (konfigurierbar in Räume) wird die Farbtemperatur automatisch ignoriert — die Hardware regelt das über die Helligkeit. Farbtemperatur-Werte in den Aktionen dienen dort nur als Info. Bei <em>tunable_white</em>-Lampen wird die Farbtemperatur aktiv an HA gesendet.</div>
     </div>`
   );
 }

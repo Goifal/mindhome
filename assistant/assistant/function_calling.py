@@ -4904,6 +4904,22 @@ class FunctionExecutor:
                         # [4] Smooth transition fuer Lichter
                         if domain == "light" and service == "turn_on" and _transition > 0:
                             svc_data["transition"] = _transition
+                        # [11] dim2warm: Farbtemperatur nicht an HA senden —
+                        # Hardware regelt color_temp ueber Helligkeit.
+                        # Nur tunable_white bekommt color_temp_kelvin.
+                        if domain == "light" and ("color_temp_kelvin" in svc_data or "rgb_color" in svc_data):
+                            _room_name = _mindhome_device_rooms.get(eid, "")
+                            _profiles = _get_room_profiles()
+                            _room_cfg = _profiles.get("rooms", {}).get(_room_name, {})
+                            _lt = _room_cfg.get("light_type", "standard")
+                            if _lt == "dim2warm":
+                                # dim2warm: nur Helligkeit senden
+                                svc_data.pop("color_temp_kelvin", None)
+                                svc_data.pop("rgb_color", None)
+                            elif _lt == "standard":
+                                # Standard: kein Farbsupport
+                                svc_data.pop("color_temp_kelvin", None)
+                                svc_data.pop("rgb_color", None)
                         try:
                             await self.ha.call_service(domain, service, svc_data)
                         except Exception as e:
