@@ -1259,11 +1259,21 @@ class PersonalityEngine:
                 except (json.JSONDecodeError, TypeError):
                     continue
 
+            # Phase 2A: Episode-Counter basierte Gag-Evolution
+            # Text reift mit jeder Episode — wie in einer echten Beziehung
+            episode = len(recent_same_type) + 1
             evolved = None
-            if len(recent_same_type) >= 2:
-                # Meta-Level: 3+ gleiche Gags → "Wir kennen das Spiel"
+
+            if episode >= 5:
+                # Veteran-Level: Statistik-Humor
+                evolved = (
+                    f"Episode {episode}, {title}. Ich habe angefangen, "
+                    f"das statistisch auszuwerten."
+                )
+            elif episode >= 3:
+                # Meta-Level: "Wir kennen das Spiel"
                 evolved = f"Wir kennen das Spiel mittlerweile, {title}."
-            elif len(recent_same_type) == 1:
+            elif episode == 2:
                 # Callback: "Wie am [Datum]"
                 last_date = recent_same_type[0].get("date", "Dienstag")
                 evolved = f"Wie am {last_date}. Wird umgesetzt, {title}."
@@ -1273,6 +1283,7 @@ class PersonalityEngine:
                 "type": gag_type,
                 "date": datetime.now().strftime("%A"),  # Wochentag
                 "timestamp": time.time(),
+                "episode": episode,
             })
             pipe = self._redis.pipeline()
             pipe.lpush(redis_key, new_entry)
@@ -2322,7 +2333,20 @@ class PersonalityEngine:
         if mood in ("tired", "stressed", "frustrated"):
             return None
 
-        # Humor-Fatigue: Nach 4 Witzen Pause (per User)
+        # Phase 2A: Taegl. Humor-Fatigue — nach 8 Witzen/Tag -50%, nach 12 -80%
+        if self._redis:
+            try:
+                day = datetime.now().strftime("%Y-%m-%d")
+                daily_count = await self._redis.get(f"mha:humor:count:{day}")
+                daily_count = int(daily_count) if daily_count else 0
+                if daily_count >= 12 and random.random() < 0.8:
+                    return None  # 80% Chance auf Humor-Pause
+                elif daily_count >= 8 and random.random() < 0.5:
+                    return None  # 50% Chance auf Humor-Pause
+            except Exception:
+                pass
+
+        # Humor-Fatigue: Nach 4 Witzen Pause (per User, consecutive)
         _hc_key = person.lower().strip() if person else "_default"
         _hc = self._humor_consecutive.get(_hc_key, 0)
         if _hc >= 4:
@@ -2423,6 +2447,19 @@ class PersonalityEngine:
             ctx_parts.append(f"Uhrzeit: {hour}:00")
             ctx_parts.append(f"Situation: {situation_key}")
 
+            # Phase 2A: Inner-State beeinflusst Humor-Stil
+            inner_hint = ""
+            if hasattr(self, "_inner_state") and self._inner_state:
+                _im = getattr(self._inner_state, "mood", "")
+                if _im == "stolz":
+                    inner_hint = " Du bist gerade stolz — leicht selbstgratulierend."
+                elif _im == "amuesiert":
+                    inner_hint = " Du findest die Situation amuesant — zeig das subtil."
+                elif _im == "neugierig":
+                    inner_hint = " Du bist neugierig — stelle eine rhetorische Frage."
+                elif _im == "gereizt":
+                    inner_hint = " Du bist leicht gereizt — noch trockener als sonst."
+
             response = await asyncio.wait_for(
                 self._ollama.chat(
                     messages=[
@@ -2434,6 +2471,7 @@ class PersonalityEngine:
                                 "Trocken, subtil, nie platt. Wie ein Butler der innerlich "
                                 "schmunzelt. Max 12 Woerter. Kein Markdown. "
                                 f"Anrede: {title}."
+                                f"{inner_hint}"
                             ),
                         },
                         {
