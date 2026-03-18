@@ -372,6 +372,7 @@ class DiagnosticsEngine:
                             "priority": priority,
                             "last_done": str(last_date),
                             "description": task.get("description", ""),
+                            "entity_id": task.get("entity_id", ""),
                         })
                 except (ValueError, TypeError):
                     # Ungueltiges Datum → als faellig markieren
@@ -381,6 +382,7 @@ class DiagnosticsEngine:
                         "priority": priority,
                         "last_done": None,
                         "description": task.get("description", ""),
+                        "entity_id": task.get("entity_id", ""),
                     })
             else:
                 # Noch nie gemacht → faellig
@@ -390,6 +392,7 @@ class DiagnosticsEngine:
                     "priority": priority,
                     "last_done": None,
                     "description": task.get("description", ""),
+                    "entity_id": task.get("entity_id", ""),
                 })
 
         return due
