@@ -8471,7 +8471,7 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
             _update_log.append("Full Update: Docker-Image wird neu gebaut...")
             rc_build, out_build = await _run_cmd(
                 ["docker", "compose", "build"],
-                cwd=str(_MHA_DIR), timeout=600,
+                cwd=str(_MHA_DIR), timeout=900,
             )
             if rc_build != 0:
                 _update_log.append(f"WARNUNG: Docker build fehlgeschlagen: {out_build.strip()[:500]}")
