@@ -26,6 +26,9 @@ _KEY_PROJECTS = "mha:memory:projects"               # Hash: project_id -> JSON
 _KEY_OPEN_QUESTIONS = "mha:memory:open_questions"    # Hash: question_id -> JSON
 _KEY_DAILY_SUMMARY = "mha:memory:summary:"           # + YYYY-MM-DD -> JSON
 _KEY_FOLLOWUPS = "mha:memory:followups"              # Hash: followup_id -> JSON
+# Phase 3B: Gesprächs-Threads
+_KEY_THREADS = "mha:memory:threads"                  # Hash: thread_id -> JSON
+_KEY_THREAD_INDEX = "mha:memory:thread_index"        # Hash: keyword -> thread_id
 
 # Defaults
 _DEFAULT_MAX_PROJECTS = 20
@@ -668,4 +671,206 @@ class ConversationMemory:
         if summary and summary.get("topics"):
             parts.append(f"Gestern: {', '.join(summary['topics'][:5])}")
 
+        # Aktive Threads
+        threads = await self.get_recent_threads(limit=3)
+        if threads:
+            t_strs = [t.get("topic", "?") for t in threads]
+            parts.append(f"Aktive Themen: {', '.join(t_strs)}")
+
         return " | ".join(parts) if parts else ""
+
+    # ------------------------------------------------------------------
+    # Phase 3B: Gesprächs-Threads
+    # ------------------------------------------------------------------
+
+    async def create_thread(self, topic: str, session_id: str = "") -> dict:
+        """Erstellt einen neuen Gespraechs-Thread.
+
+        Threads verknuepfen mehrere Sessions zum gleichen Thema.
+
+        Args:
+            topic: Thema des Threads
+            session_id: Aktuelle Session-ID
+
+        Returns:
+            Thread-Dict mit id, topic, session_ids, etc.
+        """
+        if not self.redis or not topic:
+            return {}
+
+        try:
+            thread_id = f"thread_{datetime.now().strftime('%Y%m%d%H%M%S')}_{id(topic) % 10000}"
+            thread = {
+                "id": thread_id,
+                "topic": topic,
+                "session_ids": [session_id] if session_id else [],
+                "messages_count": 0,
+                "created_at": datetime.now().isoformat(),
+                "last_active": datetime.now().isoformat(),
+            }
+            await self.redis.hset(_KEY_THREADS, thread_id, json.dumps(thread))
+
+            # Keywords indexieren fuer spaeteres Matching
+            keywords = self._extract_topic_keywords(topic)
+            for kw in keywords:
+                await self.redis.hset(_KEY_THREAD_INDEX, kw, thread_id)
+
+            logger.info("Thread erstellt: '%s' (ID: %s)", topic, thread_id)
+            return thread
+        except Exception as e:
+            logger.debug("Thread-Erstellung fehlgeschlagen: %s", e)
+            return {}
+
+    async def link_session_to_thread(
+        self, session_id: str, topic_hint: str = ""
+    ) -> str | None:
+        """Verknuepft eine Session mit einem bestehenden Thread.
+
+        Sucht nach Keyword-Overlap mit existierenden Threads.
+
+        Args:
+            session_id: Aktuelle Session-ID
+            topic_hint: Themen-Hinweis aus der aktuellen Nachricht
+
+        Returns:
+            Thread-ID wenn verknuepft, None sonst
+        """
+        if not self.redis or not topic_hint:
+            return None
+
+        try:
+            keywords = self._extract_topic_keywords(topic_hint)
+            if not keywords:
+                return None
+
+            # Thread-Index durchsuchen
+            best_thread_id = None
+            best_overlap = 0
+
+            for kw in keywords:
+                tid = await self.redis.hget(_KEY_THREAD_INDEX, kw)
+                if tid:
+                    tid = tid.decode() if isinstance(tid, bytes) else tid
+                    # Overlap zaehlen
+                    thread_raw = await self.redis.hget(_KEY_THREADS, tid)
+                    if thread_raw:
+                        thread = json.loads(thread_raw)
+                        thread_keywords = self._extract_topic_keywords(thread.get("topic", ""))
+                        overlap = len(set(keywords) & set(thread_keywords))
+                        if overlap > best_overlap:
+                            best_overlap = overlap
+                            best_thread_id = tid
+
+            if best_thread_id and best_overlap >= 2:
+                # Session zum Thread hinzufuegen
+                thread_raw = await self.redis.hget(_KEY_THREADS, best_thread_id)
+                if thread_raw:
+                    thread = json.loads(thread_raw)
+                    if session_id not in thread.get("session_ids", []):
+                        thread.setdefault("session_ids", []).append(session_id)
+                        thread["last_active"] = datetime.now().isoformat()
+                        thread["messages_count"] = thread.get("messages_count", 0) + 1
+                        await self.redis.hset(_KEY_THREADS, best_thread_id, json.dumps(thread))
+                return best_thread_id
+
+        except Exception as e:
+            logger.debug("Thread-Linking fehlgeschlagen: %s", e)
+        return None
+
+    async def get_thread_context(self, topic: str, limit: int = 3) -> list[dict]:
+        """Gibt vorherige Sessions zum gleichen Thema zurueck.
+
+        Args:
+            topic: Thema oder Keywords
+            limit: Max. Anzahl Threads
+
+        Returns:
+            Liste von Thread-Dicts
+        """
+        if not self.redis or not topic:
+            return []
+
+        try:
+            keywords = self._extract_topic_keywords(topic)
+            thread_ids = set()
+
+            for kw in keywords:
+                tid = await self.redis.hget(_KEY_THREAD_INDEX, kw)
+                if tid:
+                    thread_ids.add(tid.decode() if isinstance(tid, bytes) else tid)
+
+            threads = []
+            for tid in list(thread_ids)[:limit]:
+                raw = await self.redis.hget(_KEY_THREADS, tid)
+                if raw:
+                    threads.append(json.loads(raw))
+
+            # Nach letzter Aktivitaet sortieren
+            threads.sort(key=lambda t: t.get("last_active", ""), reverse=True)
+            return threads[:limit]
+
+        except Exception as e:
+            logger.debug("Thread-Context Fehler: %s", e)
+            return []
+
+    async def get_recent_threads(self, limit: int = 5) -> list[dict]:
+        """Gibt die zuletzt aktiven Threads zurueck."""
+        if not self.redis:
+            return []
+
+        try:
+            all_raw = await self.redis.hgetall(_KEY_THREADS)
+            threads = []
+            for _tid, raw in all_raw.items():
+                try:
+                    threads.append(json.loads(raw))
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+            threads.sort(key=lambda t: t.get("last_active", ""), reverse=True)
+            return threads[:limit]
+        except Exception as e:
+            logger.debug("Recent threads Fehler: %s", e)
+            return []
+
+    async def auto_detect_thread(self, text: str, session_id: str = ""):
+        """Automatische Thread-Erkennung nach jedem Turn.
+
+        Extrahiert Keywords, versucht zu verknuepfen, erstellt ggf. neuen Thread.
+        """
+        if not self.redis or not text or len(text.split()) < 5:
+            return
+
+        try:
+            # Versuche bestehenden Thread zu verknuepfen
+            linked = await self.link_session_to_thread(session_id, text)
+            if linked:
+                return
+
+            # Kein passender Thread — ggf. neuen erstellen bei genuegend Kontext
+            if len(text.split()) >= 10:
+                topic = " ".join(text.split()[:8])  # Erste 8 Woerter als Topic
+                await self.create_thread(topic, session_id)
+        except Exception as e:
+            logger.debug("Auto-Thread-Detection Fehler: %s", e)
+
+    @staticmethod
+    def _extract_topic_keywords(text: str) -> list[str]:
+        """Extrahiert Schluesselwoerter aus einem Text fuer Thread-Matching.
+
+        Filtert Stoppwoerter und gibt relevante Woerter zurueck.
+        """
+        if not text:
+            return []
+        _STOP_WORDS = {
+            "der", "die", "das", "ein", "eine", "und", "oder", "aber", "ich",
+            "du", "er", "sie", "es", "wir", "ihr", "mein", "dein", "sein",
+            "ihr", "ist", "sind", "hat", "haben", "wird", "werden", "kann",
+            "soll", "muss", "wie", "was", "wer", "wo", "wann", "warum",
+            "mit", "von", "fuer", "bei", "nach", "vor", "ueber", "unter",
+            "in", "an", "auf", "aus", "zu", "um", "nicht", "kein", "keine",
+            "auch", "noch", "schon", "mal", "so", "ja", "nein", "bitte",
+            "the", "is", "are", "was", "has", "have", "will", "can",
+        }
+        words = text.lower().split()
+        return [w for w in words if len(w) >= 3 and w not in _STOP_WORDS][:10]

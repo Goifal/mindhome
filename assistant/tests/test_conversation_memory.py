@@ -656,3 +656,67 @@ class TestFindProjectBytesHandling:
         await memory.initialize(mock_redis)
         result = await memory._find_project("Test")
         assert result is not None
+
+
+# ============================================================
+# Phase 3B: Gesprächs-Threads
+# ============================================================
+
+class TestPhase3BThreads:
+    """Tests fuer Gespraechs-Thread-System."""
+
+    @pytest.fixture
+    def memory(self, mock_redis):
+        m = ConversationMemory()
+        m.redis = mock_redis
+        m.enabled = True
+        return m
+
+    @pytest.mark.asyncio
+    async def test_create_thread(self, memory, mock_redis):
+        result = await memory.create_thread("Heizungseffizienz", "session_1")
+        assert result.get("topic") == "Heizungseffizienz"
+        assert "session_1" in result.get("session_ids", [])
+        mock_redis.hset.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_create_thread_no_redis(self, memory):
+        memory.redis = None
+        result = await memory.create_thread("Test")
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_create_thread_empty_topic(self, memory):
+        result = await memory.create_thread("")
+        assert result == {}
+
+    def test_extract_keywords(self):
+        kw = ConversationMemory._extract_topic_keywords("Die Heizung im Schlafzimmer ist ineffizient")
+        assert "heizung" in kw
+        assert "schlafzimmer" in kw
+        assert "die" not in kw
+
+    def test_extract_keywords_empty(self):
+        assert ConversationMemory._extract_topic_keywords("") == []
+
+    @pytest.mark.asyncio
+    async def test_get_thread_context_no_redis(self, memory):
+        memory.redis = None
+        result = await memory.get_thread_context("test")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_recent_threads_empty(self, memory, mock_redis):
+        mock_redis.hgetall = AsyncMock(return_value={})
+        result = await memory.get_recent_threads()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_auto_detect_short_text(self, memory):
+        await memory.auto_detect_thread("Hi")
+        # Kein Fehler
+
+    @pytest.mark.asyncio
+    async def test_link_session_no_topic(self, memory):
+        result = await memory.link_session_to_thread("s1", "")
+        assert result is None

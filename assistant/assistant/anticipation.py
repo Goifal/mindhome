@@ -1297,3 +1297,194 @@ class AnticipationEngine:
             logger.debug("Routine-Deviation Fehler: %s", e)
 
         return deviations
+
+    # ------------------------------------------------------------------
+    # Phase 3A: Multi-Tag-Antizipation
+    # ------------------------------------------------------------------
+
+    async def predict_future_needs(self, days_ahead: int = 7) -> list[dict]:
+        """Sagt Beduerfnisse fuer die naechsten Tage voraus.
+
+        Iteriert ueber kommende Stunden/Tage und prueft welche
+        Zeitmuster feuern wuerden.
+
+        Args:
+            days_ahead: Wie viele Tage vorausschauen (max 14)
+
+        Returns:
+            Liste von {day, hour, action, confidence, description}
+        """
+        if not self.redis:
+            return []
+
+        days_ahead = min(days_ahead, 14)
+
+        try:
+            # Zeitmuster-Daten laden
+            raw_entries = await self.redis.lrange("mha:action_log", 0, 999)
+            if len(raw_entries) < 10:
+                return []
+
+            entries = []
+            for e in raw_entries:
+                try:
+                    entries.append(json.loads(e.decode() if isinstance(e, bytes) else e))
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+            # Zeitmuster pro Aktion+Wochentag+Stunde zaehlen
+            from collections import defaultdict
+            pattern_counts: dict[tuple, int] = defaultdict(int)
+            for entry in entries:
+                action = entry.get("action", "")
+                weekday = entry.get("weekday")
+                hour = entry.get("hour")
+                if action and weekday is not None and hour is not None:
+                    pattern_counts[(action, int(weekday), int(hour))] += 1
+
+            # Vorhersagen fuer die naechsten Tage
+            now = datetime.now()
+            predictions = []
+            weeks_data = max(1, len(entries) / 200)  # Grobe Schaetzung der Wochen
+
+            for day_offset in range(days_ahead):
+                target_day = now + timedelta(days=day_offset)
+                target_weekday = target_day.weekday()
+
+                for (action, weekday, hour), count in pattern_counts.items():
+                    if weekday != target_weekday:
+                        continue
+                    if count < 3:
+                        continue
+
+                    confidence = min(0.95, count / (weeks_data * 1.5))
+
+                    # Adaptive Schwelle pruefen
+                    threshold = await self._get_adaptive_threshold(
+                        f"{action}_{weekday}_{hour}"
+                    )
+                    if confidence < threshold:
+                        continue
+
+                    predictions.append({
+                        "day": target_day.strftime("%Y-%m-%d"),
+                        "weekday": target_weekday,
+                        "hour": hour,
+                        "action": action,
+                        "confidence": round(confidence, 2),
+                        "description": f"{action.replace('_', ' ').title()} um {hour}:00",
+                    })
+
+            # Sortieren: Naechste Aktion zuerst
+            predictions.sort(key=lambda p: (p["day"], p["hour"]))
+            return predictions[:20]
+
+        except Exception as e:
+            logger.debug("predict_future_needs Fehler: %s", e)
+            return []
+
+    async def _enrich_with_forecast(self, predictions: list[dict]) -> list[dict]:
+        """Reichert Vorhersagen mit Wetter-Forecast an.
+
+        Prüft ob wetter-korrelierte Muster mit der Wettervorhersage
+        zusammenpassen und fuegt Kontext hinzu.
+
+        Returns:
+            Angereicherte Predictions-Liste
+        """
+        if not self.redis or not predictions:
+            return predictions
+
+        try:
+            forecast_raw = await self.redis.get("mha:weather:forecast")
+            if not forecast_raw:
+                return predictions
+
+            forecast = json.loads(forecast_raw)
+
+            for pred in predictions:
+                day = pred.get("day", "")
+                # Wetter fuer den Tag suchen
+                day_forecast = None
+                if isinstance(forecast, list):
+                    for f in forecast:
+                        if f.get("date", "").startswith(day):
+                            day_forecast = f
+                            break
+                elif isinstance(forecast, dict):
+                    day_forecast = forecast.get(day)
+
+                if day_forecast:
+                    condition = day_forecast.get("condition", "")
+                    temp = day_forecast.get("temperature", "")
+                    pred["weather"] = condition
+                    if condition in ("rainy", "pouring"):
+                        pred["weather_hint"] = "Regen erwartet"
+                    elif condition == "sunny" and temp:
+                        try:
+                            if float(temp) > 25:
+                                pred["weather_hint"] = f"Warm ({temp}°C)"
+                        except (ValueError, TypeError):
+                            pass
+
+        except Exception as e:
+            logger.debug("Wetter-Enrichment Fehler: %s", e)
+
+        return predictions
+
+    async def get_person_predictions(
+        self, person: str, days_ahead: int = 7
+    ) -> list[dict]:
+        """Personalisierte Vorhersagen fuer eine bestimmte Person.
+
+        Filtert predict_future_needs() auf personenspezifische Muster.
+        """
+        all_preds = await self.predict_future_needs(days_ahead)
+        if not person:
+            return all_preds
+
+        # Personenspezifische Aktionen filtern
+        person_lower = person.lower().strip()
+        return [p for p in all_preds if p.get("person", "").lower() == person_lower or not p.get("person")]
+
+    async def _get_adaptive_threshold(self, pattern_hash: str) -> float:
+        """Gibt die adaptive Konfidenz-Schwelle fuer ein Muster zurueck.
+
+        Schwellen lernen aus Feedback: akzeptiert = +0.05, abgelehnt = -0.10.
+        Default: self.threshold_ask (0.6)
+        """
+        if not self.redis:
+            return self.threshold_ask
+
+        try:
+            key = f"mha:anticipation:threshold:{pattern_hash}"
+            val = await self.redis.get(key)
+            if val:
+                return max(0.3, min(0.95, float(val)))
+        except Exception:
+            pass
+        return self.threshold_ask
+
+    async def update_adaptive_threshold(self, pattern_hash: str, accepted: bool):
+        """Aktualisiert die adaptive Schwelle basierend auf User-Feedback.
+
+        Akzeptiert: Schwelle um 0.05 senken (mehr solche Vorschlaege)
+        Abgelehnt: Schwelle um 0.10 erhoehen (weniger solche Vorschlaege)
+        """
+        if not self.redis:
+            return
+
+        try:
+            current = await self._get_adaptive_threshold(pattern_hash)
+            if accepted:
+                new_threshold = max(0.3, current - 0.05)
+            else:
+                new_threshold = min(0.95, current + 0.10)
+
+            key = f"mha:anticipation:threshold:{pattern_hash}"
+            await self.redis.setex(key, 90 * 86400, str(round(new_threshold, 2)))
+            logger.debug("Adaptive Schwelle '%s': %.2f → %.2f (%s)",
+                         pattern_hash, current, new_threshold,
+                         "akzeptiert" if accepted else "abgelehnt")
+        except Exception as e:
+            logger.debug("Adaptive threshold update Fehler: %s", e)

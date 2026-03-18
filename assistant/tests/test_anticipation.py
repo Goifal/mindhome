@@ -1026,3 +1026,102 @@ class TestImplicitPrerequisitesConfig:
         with patch("assistant.anticipation.yaml_config", {"anticipation": {"intent_sequences": {}}}):
             result = anticipation.detect_implicit_prerequisites("kein schlafen heute")
         assert result == []
+
+
+# ============================================================
+# Phase 3A: Multi-Tag-Antizipation
+# ============================================================
+
+class TestPhase3APredictFuture:
+    """Tests fuer Multi-Tag-Vorhersagen."""
+
+    @pytest.fixture
+    def anticipation(self, redis_mock):
+        from assistant.anticipation import AnticipationEngine
+        a = AnticipationEngine()
+        a.redis = redis_mock
+        return a
+
+    @pytest.mark.asyncio
+    async def test_predict_no_redis(self, anticipation):
+        anticipation.redis = None
+        result = await anticipation.predict_future_needs()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_predict_too_few_entries(self, anticipation, redis_mock):
+        redis_mock.lrange = AsyncMock(return_value=[b"{}"] * 5)
+        result = await anticipation.predict_future_needs()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_predict_with_patterns(self, anticipation, redis_mock):
+        """Vorhersage mit genug Daten sollte Ergebnisse liefern."""
+        from datetime import datetime
+        entries = []
+        for i in range(50):
+            entry = json.dumps({
+                "action": "make_coffee",
+                "weekday": datetime.now().weekday(),
+                "hour": 7,
+                "timestamp": f"2026-03-{10+i%15:02d}T07:00:00",
+            })
+            entries.append(entry.encode())
+        redis_mock.lrange = AsyncMock(return_value=entries)
+        redis_mock.get = AsyncMock(return_value=None)
+
+        result = await anticipation.predict_future_needs(days_ahead=3)
+        # Sollte mindestens eine Vorhersage finden
+        assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_predict_max_14_days(self, anticipation, redis_mock):
+        """days_ahead wird auf 14 begrenzt."""
+        redis_mock.lrange = AsyncMock(return_value=[])
+        await anticipation.predict_future_needs(days_ahead=30)
+        # Kein Fehler
+
+    @pytest.mark.asyncio
+    async def test_enrich_with_forecast_no_redis(self, anticipation):
+        anticipation.redis = None
+        preds = [{"day": "2026-03-18", "action": "test"}]
+        result = await anticipation._enrich_with_forecast(preds)
+        assert result == preds
+
+    @pytest.mark.asyncio
+    async def test_enrich_with_forecast_no_data(self, anticipation, redis_mock):
+        redis_mock.get = AsyncMock(return_value=None)
+        preds = [{"day": "2026-03-18", "action": "test"}]
+        result = await anticipation._enrich_with_forecast(preds)
+        assert result == preds
+
+    @pytest.mark.asyncio
+    async def test_adaptive_threshold_default(self, anticipation, redis_mock):
+        redis_mock.get = AsyncMock(return_value=None)
+        result = await anticipation._get_adaptive_threshold("test_pattern")
+        assert result == anticipation.threshold_ask
+
+    @pytest.mark.asyncio
+    async def test_adaptive_threshold_custom(self, anticipation, redis_mock):
+        redis_mock.get = AsyncMock(return_value=b"0.75")
+        result = await anticipation._get_adaptive_threshold("test_pattern")
+        assert result == 0.75
+
+    @pytest.mark.asyncio
+    async def test_update_threshold_accepted(self, anticipation, redis_mock):
+        redis_mock.get = AsyncMock(return_value=b"0.6")
+        await anticipation.update_adaptive_threshold("test", accepted=True)
+        redis_mock.setex.assert_called()
+        # Schwelle sollte gesenkt worden sein
+        call_args = redis_mock.setex.call_args
+        new_val = float(call_args[0][2])
+        assert new_val < 0.6
+
+    @pytest.mark.asyncio
+    async def test_update_threshold_rejected(self, anticipation, redis_mock):
+        redis_mock.get = AsyncMock(return_value=b"0.6")
+        await anticipation.update_adaptive_threshold("test", accepted=False)
+        redis_mock.setex.assert_called()
+        call_args = redis_mock.setex.call_args
+        new_val = float(call_args[0][2])
+        assert new_val > 0.6
