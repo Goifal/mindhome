@@ -2013,8 +2013,10 @@ class ProactiveManager:
             prompt = (
                 f"Abend-Status-Bericht. Anrede: \"{_eb_title}\". "
                 "Fasse zusammen, JARVIS-Butler-Stil, max 3 Sätze. "
-                "Bei offenen Fenstern/Tueren/Rolllaeden: Kurz vorschlagen ob du sie schliessen sollst. "
-                "Nicht fragen ob du helfen kannst — direkt anbieten was du tun wuerdest.\n"
+                "Bei offenen Rolllaeden: Direkt fragen 'Soll ich die Rolllaeden schliessen?'. "
+                "Bei offenen Fenstern/Tueren: Kurz erwaehnen. "
+                "VERBOTEN: 'Vorschlaege einreichen', 'naechsten Schritt bestätigen', "
+                "'bitte bestätigen Sie'. Stattdessen direkt und knapp formulieren.\n"
                 + "\n".join(parts)
             )
 
@@ -3213,9 +3215,17 @@ class ProactiveManager:
                     if len(entity_ids) > 5:
                         preview += f" (+{len(entity_ids) - 5} weitere)"
 
+                    # Einzelne Entity direkt benennen, bei mehreren Anzahl + Liste
+                    if len(entity_ids) == 1:
+                        entity_label = entity_ids[0]
+                        message = f"Entity offline: {entity_ids[0]}"
+                    else:
+                        entity_label = f"{len(issues)} Entities"
+                        message = f"{len(issues)} Entities: {preview}"
+
                     await self._notify(event_type, urgency, {
-                        "entity": f"{len(issues)}x {event_type}",
-                        "message": f"{len(issues)} Entities: {preview}",
+                        "entity": entity_label,
+                        "message": message,
                         "count": len(issues),
                         "entities": entity_ids,
                     })
@@ -3546,12 +3556,19 @@ class ProactiveManager:
         medium_parts = []
         low_parts = []
         for item in items:
-            entity = item.get("data", {}).get("entity", "")
+            data = item.get("data", {})
+            entity = data.get("entity", "")
+            # Bei gruppierten Issues die Entity-IDs direkt anzeigen
+            entities_list = data.get("entities", [])
+            if entities_list:
+                entity = ", ".join(entities_list[:5])
+                if len(entities_list) > 5:
+                    entity += f" (+{len(entities_list) - 5} weitere)"
             line = f"- {item['description']}"
             if entity:
                 line += f" [{entity}]"
-            if "message" in item.get("data", {}):
-                line += f" ({item['data']['message']})"
+            if "message" in data:
+                line += f" ({data['message']})"
             if item.get("urgency") == MEDIUM:
                 medium_parts.append(line)
             else:
