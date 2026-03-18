@@ -885,7 +885,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Post-init wiring: Cross-Modul-Referenzen (Plan Phase 1-3)
         # 1A: SpontaneousObserver ↔ SemanticMemory + InsightEngine
         if hasattr(self.spontaneous, 'semantic_memory'):
-            self.spontaneous.semantic_memory = self.semantic_memory
+            self.spontaneous.semantic_memory = self.memory.semantic
         if hasattr(self.spontaneous, 'insight_engine'):
             self.spontaneous.insight_engine = self.insight_engine
 
