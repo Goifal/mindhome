@@ -1498,3 +1498,9 @@ class SemanticMemory:
                 logger.error("Fehler beim Neuerstellen der ChromaDB-Collection: %s", e)
 
         return deleted
+
+    async def expire_stale_facts(self, max_age_days: int = 90) -> int:
+        """Entfernt Fakten die seit max_age_days nicht bestaetigt wurden."""
+        # Placeholder — ChromaDB hat kein natives TTL
+        # Implementierung: Bei search() Alter pruefen und alte Fakten filtern
+        return 0

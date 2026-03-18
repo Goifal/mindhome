@@ -480,3 +480,19 @@ class ModelRouter:
             "deep_degraded": self._deep_degraded,
             "latency_feedback": self._latency_feedback_enabled,
         }
+
+    async def periodic_availability_check(self):
+        """Prueft Model-Verfuegbarkeit alle 30s im Hintergrund."""
+        import asyncio
+
+        while True:
+            try:
+                await asyncio.sleep(30)
+                # Einfacher Health-Check: Pruefe ob Ollama erreichbar
+                if hasattr(self, '_ollama') and self._ollama:
+                    await asyncio.wait_for(self._ollama.list_models(), timeout=5)
+                    self._ollama_available = True
+                else:
+                    self._ollama_available = True
+            except Exception:
+                self._ollama_available = False

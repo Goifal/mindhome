@@ -1437,3 +1437,12 @@ class ContextBuilder:
                             pass
 
         return seasonal_data
+
+    def _add_recent_facts(self, facts: list[dict], limit: int = 3) -> str:
+        """Fuegt kuerzlich extrahierte Fakten als Kontext hinzu."""
+        if not facts:
+            return ""
+        lines = []
+        for f in facts[:limit]:
+            lines.append(f"- {f.get('fact', '')} (Konfidenz: {f.get('confidence', 0):.0%})")
+        return "Kuerzlich gelernt:\n" + "\n".join(lines)

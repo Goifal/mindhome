@@ -500,3 +500,28 @@ class FeedbackTracker:
             logger.debug(
                 "Auto-Timeout: '%s' als ignored markiert", info["event_type"]
             )
+
+    def get_feedback_intensity(self, event_type: str, count: int) -> str:
+        """Gibt die Feedback-Intensitaet basierend auf Wiederholungen zurueck.
+
+        1x: "info", 2-3x: "reminder", 4-5x: "warning", 6+: "urgent"
+        """
+        if count <= 1:
+            return "info"
+        if count <= 3:
+            return "reminder"
+        if count <= 5:
+            return "warning"
+        return "urgent"
+
+    _EVENT_COOLDOWNS: dict[str, int] = {
+        "anticipation_suggestion": 1800,  # 30 min
+        "wellness_nudge": 3600,           # 1h
+        "spontaneous_observation": 5400,  # 90 min
+        "learning_suggestion": 7200,      # 2h
+        "insight": 3600,                  # 1h
+    }
+
+    def get_event_cooldown(self, event_type: str) -> int:
+        """Gibt den spezifischen Cooldown fuer einen Event-Typ zurueck."""
+        return self._EVENT_COOLDOWNS.get(event_type, 1800)  # Default 30min

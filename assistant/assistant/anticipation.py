@@ -50,6 +50,9 @@ class AnticipationEngine:
         self.threshold_suggest = thresholds.get("suggest", 0.8)
         self.threshold_auto = thresholds.get("auto", 0.90)
 
+        # Correction-Memory Integration: unterdrueckt Muster die korrigiert wurden
+        self._correction_memory = None
+
     async def initialize(self, redis_client: Optional[redis.Redis] = None):
         """Initialisiert die Engine."""
         self.redis = redis_client
@@ -597,6 +600,18 @@ class AnticipationEngine:
         for pattern in patterns:
             if pattern["confidence"] < self.min_confidence:
                 continue
+
+            # Before suggesting: Check correction memory
+            if hasattr(self, '_correction_memory') and self._correction_memory:
+                try:
+                    action_type = pattern.get("action", pattern.get("follow_action", ""))
+                    rules = await self._correction_memory.get_active_rules(
+                        action_type, person=person,
+                    )
+                    if rules:  # Active correction rule exists -> suppress this pattern
+                        continue
+                except Exception:
+                    pass
 
             # Wurde dieser Vorschlag kuerzlich schon gemacht?
             import hashlib as _hl

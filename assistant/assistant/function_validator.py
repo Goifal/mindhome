@@ -533,3 +533,17 @@ class FunctionValidator:
             else:
                 lines.append(f"- {detail}")
         return "\n".join(lines)
+
+    def check_state_age(self, entity_id: str, last_changed: str, max_age_minutes: int = 10) -> bool:
+        """Prueft ob der State aktuell genug fuer Pushback ist.
+
+        Veraltete States (>10min) sollten keinen Pushback ausloesen,
+        da sich die Situation geaendert haben koennte.
+        """
+        try:
+            from datetime import datetime, timezone
+            last = datetime.fromisoformat(last_changed.replace("Z", "+00:00"))
+            age_minutes = (datetime.now(timezone.utc) - last).total_seconds() / 60
+            return age_minutes <= max_age_minutes
+        except (ValueError, TypeError):
+            return True  # Im Zweifel Pushback erlauben

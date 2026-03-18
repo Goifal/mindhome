@@ -11441,3 +11441,34 @@ function renderDeclarativeTools() {
   ) +
   '</div>'; // Ende declBody
 }
+
+// Phase 9B: Jarvis Insights Widget
+(function() {
+  function loadInsights() {
+    fetch('/api/jarvis/insights').then(function(r) { return r.json(); }).then(function(data) {
+      var list = document.getElementById('insights-list');
+      if (!list || !data.insights) return;
+      if (data.insights.length === 0) { list.innerHTML = '<em>Keine aktuellen Beobachtungen</em>'; return; }
+      list.innerHTML = data.insights.map(function(i) { return '<div style="margin:4px 0">\u2022 ' + (i.text || '') + '</div>'; }).join('');
+    }).catch(function() {});
+  }
+  if (document.getElementById('insights-list')) { loadInsights(); setInterval(loadInsights, 30000); }
+})();
+
+// Phase 9C: Autonomie & Lernfortschritt
+(function() {
+  function loadProgress() {
+    fetch('/api/jarvis/learning-progress').then(function(r) { return r.json(); }).then(function(data) {
+      var el = document.getElementById('learning-progress');
+      if (!el) return;
+      el.innerHTML = '<strong>Patterns:</strong> ' + (data.patterns_learned || 0) +
+        ' | <strong>Korrekturen:</strong> ' + (data.corrections_applied || 0) +
+        ' | <strong>Features:</strong> ' + (data.active_features || []).length;
+    }).catch(function() {});
+  }
+  fetch('/api/jarvis/status').then(function(r) { return r.json(); }).then(function(data) {
+    var el = document.getElementById('autonomy-level');
+    if (el) el.textContent = 'Autonomie: Level ' + (data.autonomy_level || 2) + '/5';
+  }).catch(function() {});
+  if (document.getElementById('learning-progress')) { loadProgress(); setInterval(loadProgress, 60000); }
+})();
