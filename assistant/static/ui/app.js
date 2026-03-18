@@ -4167,12 +4167,12 @@ const _DEFAULT_SCENES = [
   {id:'party',         icon:'&#127881;', label:'Party',        activity:'guests',    silence:false, transition:2,  triggers:['party','feiern','partymodus']},
   {id:'hell',          icon:'&#9728;',   label:'Hell',         activity:'relaxing',  silence:false, transition:2,  triggers:['hell','alles an','volle helligkeit']},
   {id:'essen',         icon:'&#127869;', label:'Essen',        activity:'relaxing',  silence:false, transition:3,  triggers:['essen','abendessen','dinner','mahlzeit']},
-  {id:'lesen',         icon:'&#128214;', label:'Lesen',        activity:'relaxing',  silence:true,  transition:3,  triggers:['lesen','buch','reading']},
+  {id:'lesen',         icon:'&#128214;', label:'Lesen',        activity:'focused',   silence:true,  transition:3,  triggers:['lesen','buch','reading']},
   {id:'spielen',       icon:'&#127918;', label:'Spielen',      activity:'relaxing',  silence:false, transition:2,  triggers:['spielen','kinder','gaming']},
   {id:'morgens',       icon:'&#127748;', label:'Bad Morgens',  activity:'relaxing',  silence:false, transition:5,  triggers:['morgens','morgenroutine']},
   {id:'abends',        icon:'&#127749;', label:'Bad Abends',   activity:'relaxing',  silence:false, transition:5,  triggers:['abends','baden','entspannen bad']},
   {id:'romantisch',    icon:'&#128151;', label:'Romantisch',   activity:'relaxing',  silence:true,  transition:5,  triggers:['romantisch','romantik','kerzenschein']},
-  {id:'energiesparen', icon:'&#9889;',   label:'Energiesparen',activity:'relaxing',  silence:false, transition:1,  triggers:['energiesparen','strom sparen','eco']},
+  {id:'energiesparen', icon:'&#9889;',   label:'Energiesparen',activity:'away',      silence:false, transition:1,  triggers:['energiesparen','strom sparen','eco']},
   {id:'putzen',        icon:'&#129529;', label:'Putzen',       activity:'relaxing',  silence:false, transition:1,  triggers:['putzen','sauber machen','aufräumen']},
 ];
 
