@@ -437,16 +437,16 @@ autonomy:
       min_interactions: 1000
       min_acceptance: 0.85
 ollama:
-  num_ctx: 4096
-  num_ctx_smart: 8192
-  num_ctx_deep: 8192
+  num_ctx: 16384
+  num_ctx_smart: 32768
+  num_ctx_deep: 65536
   keep_alive: 5m
   # Performance-Tuning (RTX 3090 empfohlen)
   # flash_attn: true         # Flash Attention — schnellere Inferenz, weniger VRAM
   # num_gpu: 99              # Alle Layer auf GPU (99 = Maximum)
   # num_parallel: 2          # Parallele Requests (braucht ~2x VRAM pro Modell)
 models:
-  fast: qwen3.5:35b
+  fast: qwen3.5:9b
   smart: qwen3.5:35b
   deep: qwen3.5:35b
   enabled:

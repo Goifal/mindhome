@@ -29,8 +29,8 @@
 | Komponente | Detail |
 |---|---|
 | GPU | 24 GB VRAM |
-| Modelle | Qwen3.5 35B (aktuell einziges Modell — Fast/Smart/Deep zeigen alle auf 35B) |
-| Context Windows | Nicht per-Tier konfiguriert (abhaengig vom Modell, aktuell alle 35B) |
+| Modelle | Qwen3.5 9B (Fast) + Qwen3.5 35B MoE/12B aktiv (Smart + Deep) |
+| Context Windows | Fast: 16K, Smart: 32K (think off), Deep: 64K (think on) |
 | TTS | Piper (lokal, begrenzte Expressivitaet) |
 | Users | 2 Erwachsene (spaeter Kinder) |
 | Speaker Recognition | vorhanden |
@@ -77,7 +77,7 @@ main.py (FastAPI :8200)
 - **Memory:** 3-Tier (Working/Episodic/Semantic) — auto-loaded in Context
 - **Proaktiv:** Event-basiert (HA WebSocket) + Polling (15 Min / 2-4h)
 - **Autonomie:** 5 Level (Assistent→Autopilot), domain-spezifisch, person-basierte Trust-Levels
-- **Model-Routing:** Fast/Smart/Deep mit Keyword-Matching (aktuell nur 35B aktiv)
+- **Model-Routing:** Fast (9B, 16K ctx) / Smart (35B, 32K ctx, think off) / Deep (35B, 64K ctx, think on)
 - **Personality:** Dynamischer System-Prompt mit 20+ Sektionen, mood_complexity Matrix
 
 ---
@@ -383,8 +383,9 @@ class ModelRouter:
     # - model_fast: Einfache Befehle ("Licht an") — settings.model_fast
     # - model_smart: Fragen, Konversation, Standard — settings.model_smart
     # - model_deep: Komplexe Planung, Multi-Step — settings.model_deep
-    # Aktuell zeigen alle drei auf dasselbe Modell (Qwen3.5 35B).
-    # Wenn spaeter kleinere Modelle dazukommen, automatisch genutzt.
+    # Fast: Qwen3.5 9B (16K ctx) — schnelle Befehle, kein Think
+    # Smart: Qwen3.5 35B MoE (32K ctx, think off) — Konversation, Standard
+    # Deep: Qwen3.5 35B MoE (64K ctx, think on) — komplexe Planung
 
     def route(self, text: str, ...) -> str:
         # Keyword-Matching → Tier-Auswahl
