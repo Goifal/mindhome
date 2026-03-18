@@ -824,3 +824,128 @@ class ConflictResolver:
             "recent_conflicts": self.get_recent_conflicts(5),
             "monitored_domains": list(FUNCTION_DOMAIN_MAP.values()),
         }
+
+    # ------------------------------------------------------------------
+    # Phase 2B: Predictive Conflict Detection
+    # ------------------------------------------------------------------
+
+    async def predict_conflict(
+        self, action: str, args: dict, ha_states: list
+    ) -> Optional[dict]:
+        """Prueft ob eine geplante Aktion einen logischen Konflikt verursacht.
+
+        Vergleicht die Aktion gegen bekannte Konfliktregeln und den
+        aktuellen HA-State.
+
+        Args:
+            action: Name der geplanten Aktion (z.B. "set_climate").
+            args: Argumente der Aktion.
+            ha_states: Liste von HA-State-Dicts mit entity_id und state.
+
+        Returns:
+            Dict mit type, warning, severity, suggestion oder None.
+        """
+        if not self.enabled:
+            return None
+
+        # Index fuer schnellen Zugriff
+        state_map: dict[str, str] = {}
+        for s in ha_states:
+            eid = s.get("entity_id", "")
+            state_map[eid] = s.get("state", "")
+
+        for rule in _LOGICAL_CONFLICT_RULES:
+            if rule["action"] != action:
+                continue
+
+            ctx = rule["context"]
+            matched = False
+
+            if ctx == "window_open":
+                matched = any(
+                    state_map.get(eid) == "on"
+                    for eid in state_map
+                    if eid.startswith("binary_sensor.") and "window" in eid
+                )
+            elif ctx == "solar_producing":
+                for eid, val in state_map.items():
+                    if eid.startswith("sensor.") and "solar" in eid:
+                        try:
+                            if float(val) > 100:
+                                matched = True
+                                break
+                        except (ValueError, TypeError):
+                            continue
+            elif ctx == "high_lux":
+                for eid, val in state_map.items():
+                    if eid.startswith("sensor.") and "lux" in eid:
+                        try:
+                            if float(val) > 500:
+                                matched = True
+                                break
+                        except (ValueError, TypeError):
+                            continue
+            elif ctx == "nobody_home":
+                person_entities = [
+                    eid for eid in state_map if eid.startswith("person.")
+                ]
+                if person_entities and all(
+                    state_map.get(eid) == "not_home" for eid in person_entities
+                ):
+                    matched = True
+
+            if matched:
+                return {
+                    "type": ctx,
+                    "warning": rule["warning"],
+                    "severity": rule["severity"],
+                    "suggestion": self._warn_before_action(rule["warning"]),
+                }
+
+        return None
+
+    def _warn_before_action(self, warning: str) -> str:
+        """Formatiert eine Warnung als Jarvis-style Pushback.
+
+        Args:
+            warning: Die Warnmeldung.
+
+        Returns:
+            Formatierter Pushback-String im Butler-Stil.
+        """
+        return (
+            f"Sir, ein Hinweis bevor ich fortfahre: {warning}. "
+            "Soll ich trotzdem fortfahren?"
+        )
+
+
+# ------------------------------------------------------------------
+# Logical Conflict Rules — statische Regeldefinitionen
+# ------------------------------------------------------------------
+
+_LOGICAL_CONFLICT_RULES = [
+    {
+        "action": "set_climate",
+        "context": "window_open",
+        "warning": "Fenster offen — Energieverschwendung",
+        "severity": "info",
+    },
+    {
+        "action": "set_cover",
+        "context": "solar_producing",
+        "warning": "Solar produziert — Rolllaeden besser offen lassen",
+        "severity": "info",
+    },
+    {
+        "action": "set_light",
+        "context": "high_lux",
+        "warning": "Tageslicht ausreichend",
+        "severity": "low",
+    },
+    {
+        "action": "set_climate",
+        "context": "nobody_home",
+        "warning": "Niemand zuhause — Eco-Modus empfohlen",
+        "severity": "info",
+    },
+]

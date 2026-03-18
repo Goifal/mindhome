@@ -724,3 +724,75 @@ class DeviceHealthMonitor:
         except Exception as e:
             logger.debug("Efficiency report failed: %s", e)
             return {"efficiency_data": [], "suggestions": []}
+
+    # ------------------------------------------------------------------
+    # Saisonale Baselines & Degradation
+    # ------------------------------------------------------------------
+
+    def _get_seasonal_baseline(self, entity_id: str, month: int) -> Optional[dict]:
+        """Partitioniert Baselines nach Jahreszeit.
+
+        Args:
+            entity_id: Entity-ID des Sensors.
+            month: Monat (1-12).
+
+        Returns:
+            Dict mit season-Name und angepassten Parametern, oder None.
+        """
+        season_map = {
+            12: "winter", 1: "winter", 2: "winter",
+            3: "spring", 4: "spring", 5: "spring",
+            6: "summer", 7: "summer", 8: "summer",
+            9: "fall", 10: "fall", 11: "fall",
+        }
+        season = season_map.get(month)
+        if not season:
+            return None
+        return {
+            "entity_id": entity_id,
+            "season": season,
+            "baseline_key": f"mha:device:baseline:{entity_id}:{season}",
+            "months": [m for m, s in season_map.items() if s == season],
+        }
+
+    async def detect_degradation_trajectory(self, entity_id: str) -> Optional[str]:
+        """Prueft ob der Baseline-Mittelwert ueber Wochen absinkt.
+
+        Vergleicht aktuelle Baseline mit der Baseline von vor 7 Tagen.
+        Ein sinkender Trend deutet auf Geraetedegradation hin.
+
+        Args:
+            entity_id: Entity-ID des Sensors.
+
+        Returns:
+            Warnungstext oder None.
+        """
+        if not self.redis:
+            return None
+        try:
+            current = await self._get_baseline(entity_id)
+            if not current or current["samples"] < self.min_samples:
+                return None
+
+            # Vergleiche mit gespeichertem historischen Mittelwert
+            hist_key = f"mha:device:baseline_history:{entity_id}"
+            prev_raw = await self.redis.get(hist_key)
+            prev_mean = float(prev_raw.decode() if isinstance(prev_raw, bytes) else prev_raw) if prev_raw else None
+
+            # Speichere aktuellen Mittelwert fuer naechsten Vergleich
+            await self.redis.set(hist_key, str(current["mean"]), ex=30 * 86400)
+
+            if prev_mean is None:
+                return None
+
+            decline = prev_mean - current["mean"]
+            if prev_mean > 0 and decline / prev_mean > 0.05:
+                return (
+                    f"{entity_id}: Baseline sinkt — "
+                    f"vorher {prev_mean:.2f}, jetzt {current['mean']:.2f} "
+                    f"(Rueckgang {decline:.2f}). Moeglicherweise Geraetedegradation."
+                )
+            return None
+        except Exception as e:
+            logger.debug("Degradation check error [%s]: %s", entity_id, e)
+            return None

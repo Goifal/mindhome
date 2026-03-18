@@ -975,3 +975,76 @@ class SpeakerRecognition:
             logger.debug("Embeddings check failed: %s", e)
             embeds = "embeddings:error"
         return f"active ({len(self._profiles)} profiles, {len(self._device_mapping)} devices, {embeds})"
+
+    # ------------------------------------------------------------------
+    # Confidence Decay, Spoofing Protection & Cross-Device Fusion
+    # ------------------------------------------------------------------
+
+    def _apply_confidence_decay(self, confidence: float, last_seen_days: float) -> float:
+        """Reduziert Konfidenz basierend auf vergangener Zeit seit letzter Erkennung.
+
+        5% Decay pro Woche — Profile die lange nicht gehoert wurden,
+        verlieren schrittweise an Vertrauen.
+        """
+        weeks = last_seen_days / 7.0
+        decayed = confidence * (0.95 ** weeks)
+        return max(0.1, decayed)
+
+    def check_spoofing_lockout(self, person: str) -> bool:
+        """Prueft ob eine Person wegen zu vieler fehlgeschlagener Erkennungen gesperrt ist.
+
+        3 Fehlversuche → 1 Stunde Sperre. Schuetzt vor Spoofing-Angriffen.
+
+        Returns:
+            True wenn Person gesperrt ist (kein Zugriff erlaubt).
+        """
+        if not hasattr(self, "_spoofing_attempts"):
+            self._spoofing_attempts: dict[str, list[float]] = {}
+
+        now = time.time()
+        lockout_duration = 3600  # 1 Stunde
+        max_attempts = 3
+
+        attempts = self._spoofing_attempts.get(person, [])
+        # Nur Versuche innerhalb des Lockout-Fensters behalten
+        attempts = [t for t in attempts if now - t < lockout_duration]
+        self._spoofing_attempts[person] = attempts
+
+        if len(attempts) >= max_attempts:
+            logger.warning("Spoofing-Lockout aktiv fuer '%s' — %d Fehlversuche", person, len(attempts))
+            return True
+        return False
+
+    def fuse_cross_device_scores(self, scores: list[dict]) -> dict:
+        """Kombiniert Konfidenz-Scores von mehreren Geraeten.
+
+        Gewichteter Durchschnitt basierend auf Geraete-Zuverlaessigkeit.
+        Jeder Score-Eintrag: {"device": str, "person": str, "confidence": float, "reliability": float}
+
+        Returns:
+            {"person": str, "confidence": float, "device_count": int}
+        """
+        if not scores:
+            return {"person": "unknown", "confidence": 0.0, "device_count": 0}
+
+        # Gruppiere nach Person
+        person_scores: dict[str, list[tuple[float, float]]] = {}
+        for s in scores:
+            person = s.get("person", "unknown")
+            conf = float(s.get("confidence", 0.0))
+            reliability = float(s.get("reliability", 0.5))
+            person_scores.setdefault(person, []).append((conf, reliability))
+
+        # Gewichteter Durchschnitt pro Person
+        best_person = "unknown"
+        best_conf = 0.0
+        for person, vals in person_scores.items():
+            total_weight = sum(r for _, r in vals)
+            if total_weight <= 0:
+                continue
+            weighted_avg = sum(c * r for c, r in vals) / total_weight
+            if weighted_avg > best_conf:
+                best_conf = weighted_avg
+                best_person = person
+
+        return {"person": best_person, "confidence": round(best_conf, 4), "device_count": len(scores)}

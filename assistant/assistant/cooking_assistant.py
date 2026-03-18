@@ -1057,3 +1057,89 @@ class CookingAssistant:
                     "bevor du Rezepte vorschlaegst!")
 
         return ""
+
+    # ------------------------------------------------------------------
+    # Phase 11B: Recipe Progress, Resume, Parallelization
+    # ------------------------------------------------------------------
+
+    async def _persist_recipe_progress(self, recipe_id: str, step: int) -> None:
+        """Speichert den aktuellen Rezept-Fortschritt in Redis.
+
+        Args:
+            recipe_id: Eindeutige Rezept-ID.
+            step: Aktuelle Schrittnummer (0-basiert).
+        """
+        if not self.redis:
+            logger.debug("Redis nicht verfuegbar — Fortschritt nicht gespeichert")
+            return
+
+        key = f"mha:cooking:progress:{recipe_id}"
+        try:
+            data = json.dumps({"recipe_id": recipe_id, "current_step": step})
+            await self.redis.setex(key, 86400, data)  # TTL 24h
+            logger.debug("Rezept-Fortschritt gespeichert: %s Step %d", recipe_id, step)
+        except Exception as e:
+            logger.warning("Rezept-Fortschritt speichern fehlgeschlagen: %s", e)
+
+    async def _resume_recipe(self, recipe_id: str) -> Optional[dict]:
+        """Laedt gespeicherten Rezept-Fortschritt aus Redis.
+
+        Args:
+            recipe_id: Eindeutige Rezept-ID.
+
+        Returns:
+            Dict mit recipe_id, current_step, total_steps oder None.
+        """
+        if not self.redis:
+            return None
+
+        key = f"mha:cooking:progress:{recipe_id}"
+        try:
+            raw = await self.redis.get(key)
+            if not raw:
+                return None
+
+            data = json.loads(raw)
+            total_steps = 0
+            if self.session and self.session.steps:
+                total_steps = len(self.session.steps)
+
+            return {
+                "recipe_id": data.get("recipe_id", recipe_id),
+                "current_step": data.get("current_step", 0),
+                "total_steps": total_steps,
+            }
+        except Exception as e:
+            logger.warning("Rezept-Fortschritt laden fehlgeschlagen: %s", e)
+            return None
+
+    def suggest_parallelization(self, steps: list[dict]) -> list[dict]:
+        """Identifiziert Schritte die parallel ausgefuehrt werden koennen.
+
+        Einfache Heuristik: Schritte mit Wartezeiten (kochen, backen, warten)
+        koennen mit dem naechsten Schritt ueberlappt werden.
+
+        Args:
+            steps: Liste von Schritt-Dicts mit mindestens 'description' Key.
+
+        Returns:
+            Liste von Dicts mit parallel_with Hinweisen.
+        """
+        wait_keywords = ("warten", "kochen", "backen", "sieden", "ziehen lassen",
+                         "ruhen", "gehen lassen", "abkuehlen", "marinieren")
+
+        result = []
+        for i, step in enumerate(steps):
+            entry = dict(step)
+            entry["parallel_with"] = None
+            desc = step.get("description", "").lower()
+
+            if any(kw in desc for kw in wait_keywords) and i + 1 < len(steps):
+                next_desc = steps[i + 1].get("description", "")
+                entry["parallel_with"] = (
+                    f"Waehrend Schritt {i + 1} laeuft: {next_desc}"
+                )
+
+            result.append(entry)
+
+        return result

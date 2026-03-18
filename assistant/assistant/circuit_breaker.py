@@ -175,6 +175,68 @@ class CircuitBreakerRegistry:
         """Verfuegbarkeit aller Dienste."""
         return {name: cb.is_available for name, cb in self._breakers.items()}
 
+    # ------------------------------------------------------------------
+    # Phase 8C: Graduated Degradation, Error-Kategorisierung, Cascade
+    # ------------------------------------------------------------------
+
+    _STATES = ["CLOSED", "WARNING", "REDUCED", "OPEN"]
+    _GRADUATED_STATES = _STATES  # Alias fuer Rueckwaertskompatibilitaet
+
+    _CASCADE_MAP: dict[str, list[str]] = {
+        "ollama": ["response_cache"],
+        "redis": ["memory", "anticipation", "feedback"],
+        "chromadb": ["semantic_memory", "rag"],
+        "home_assistant": ["device_health", "diagnostics"],
+    }
+
+    def get_graduated_state(self, service: str) -> str:
+        """Gibt den abgestuften Zustand eines Service zurueck.
+
+        CLOSED (0-2 Fehler) → WARNING (3-5) → REDUCED (6-9) → OPEN (10+).
+        """
+        cb = self._breakers.get(service)
+        if not cb:
+            return "CLOSED"
+        count = cb._failure_count
+        if count <= 2:
+            return "CLOSED"
+        if count <= 5:
+            return "WARNING"
+        if count <= 9:
+            return "REDUCED"
+        return "OPEN"
+
+    @staticmethod
+    def categorize_error(error: Exception) -> str:
+        """Kategorisiert einen Fehler nach Typ.
+
+        Returns:
+            "timeout", "server_error", "client_error", "connection_error"
+        """
+        error_str = str(type(error).__name__).lower()
+        error_msg = str(error).lower()
+
+        if "timeout" in error_str or "timeout" in error_msg:
+            return "timeout"
+        if "connection" in error_str or "connect" in error_msg:
+            return "connection_error"
+        if any(c in error_msg for c in ("500", "502", "503", "504")):
+            return "server_error"
+        if any(c in error_msg for c in ("400", "401", "403", "404", "422")):
+            return "client_error"
+        return "server_error"
+
+    def check_cascade(self, failed_service: str) -> list[str]:
+        """Prueft welche abhaengigen Services ebenfalls degradiert werden sollten.
+
+        Args:
+            failed_service: Name des ausgefallenen Service.
+
+        Returns:
+            Liste der betroffenen abhaengigen Services.
+        """
+        return list(self._CASCADE_MAP.get(failed_service, []))
+
 
 # Globale Registry
 registry = CircuitBreakerRegistry()

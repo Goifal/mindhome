@@ -1819,9 +1819,10 @@ maintenance:
   config_file: config/maintenance.yaml
 self_optimization:
   enabled: true
-  analysis_interval: weekly
+  analysis_interval: 3day
   approval_mode: manual
   max_proposals_per_cycle: 3
+  proactive_insights: true
   model: qwen3.5:9b
   rollback:
     enabled: true
@@ -1956,8 +1957,9 @@ declarative_tools:
   max_tools: 20
 spontaneous:
   enabled: true
-  max_per_day: 2
-  min_interval_hours: 3
+  max_per_day: 5
+  min_interval_hours: 1.5
+  trend_detection: true
   active_hours:
     start: 8
     end: 22
@@ -2150,6 +2152,8 @@ response_cache:
   enabled: true
   ttl:
     device_query: 45           # Sekunden — Status-Abfragen (Temperatur, Licht-Status)
+    knowledge: 86400           # 24h — Wissensfragen (selten veraendert)
+  pre_cache_enabled: true
 # Inkrementeller LLM-Start: Bei Device-Commands kuerzerer Gather-Timeout
 incremental_llm:
   enabled: true
@@ -2182,3 +2186,7 @@ prompt_versioning:
   enabled: true
 entity_annotations: {}
 entity_roles: {}
+# ── Phase 2: Model Router Tuning ──────────────────────────────
+model_router:
+  latency_feedback: true
+  deep_degradation_threshold_s: 8

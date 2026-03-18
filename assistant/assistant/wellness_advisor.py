@@ -984,3 +984,124 @@ class WellnessAdvisor:
         except Exception as e:
             logger.debug("Ambient suggestion failed: %s", e)
             return None
+
+    # ------------------------------------------------------------------
+    # Phase 11A: Sleep Debt, Break Compliance, Stress Cascade
+    # ------------------------------------------------------------------
+
+    async def _track_sleep_debt(self) -> float:
+        """Berechnet Schlafschulden der letzten 7 Tage.
+
+        Liest Schlafenszeiten aus Redis (mha:wellness:bedtime:{date})
+        und berechnet die Abweichung vom 8h-Ideal.
+
+        Returns:
+            Schlafschulden in Stunden (positiv = zu wenig geschlafen).
+        """
+        if not self.redis:
+            return 0.0
+
+        ideal_hours = 8.0
+        total_debt = 0.0
+
+        try:
+            from datetime import timedelta
+            today = datetime.now()
+
+            for days_ago in range(1, 8):
+                date_str = (today - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+                key = f"mha:wellness:bedtime:{date_str}"
+                raw = await _safe_redis(self.redis, "get", key)
+                if raw is None:
+                    continue
+
+                try:
+                    actual_hours = float(raw)
+                except (ValueError, TypeError):
+                    continue
+
+                debt = ideal_hours - actual_hours
+                total_debt += max(0.0, debt)  # Nur Defizit zaehlen, nicht Ueberschlaf
+
+            logger.debug("Schlafschulden (7 Tage): %.1fh", total_debt)
+        except Exception as e:
+            logger.warning("Sleep debt tracking fehlgeschlagen: %s", e)
+
+        return total_debt
+
+    async def _track_break_compliance(self) -> dict:
+        """Misst wie oft PC-Pausen-Erinnerungen befolgt wurden.
+
+        Returns:
+            Dict mit sent, acknowledged, compliance_rate.
+        """
+        result = {"sent": 0, "acknowledged": 0, "compliance_rate": 0.0}
+
+        if not self.redis:
+            return result
+
+        try:
+            sent_raw = await _safe_redis(self.redis, "get", "mha:wellness:breaks_sent")
+            ack_raw = await _safe_redis(self.redis, "get", "mha:wellness:breaks_acknowledged")
+
+            sent = int(sent_raw) if sent_raw else 0
+            acknowledged = int(ack_raw) if ack_raw else 0
+
+            result["sent"] = sent
+            result["acknowledged"] = acknowledged
+            result["compliance_rate"] = (acknowledged / sent) if sent > 0 else 0.0
+        except Exception as e:
+            logger.warning("Break compliance tracking fehlgeschlagen: %s", e)
+
+        return result
+
+    async def _check_stress_cascade(self) -> Optional[str]:
+        """Prueft ob mehrere Stressfaktoren gleichzeitig aktiv sind.
+
+        Kombinationen: lange PC-Session (>4h) + gestresste Stimmung + spaete Nacht.
+        Bei 2+ Faktoren wird eine Warnung zurueckgegeben.
+
+        Returns:
+            Warnmeldung oder None.
+        """
+        factors: list[str] = []
+
+        try:
+            # Faktor 1: Lange PC-Session (>4h)
+            if self.redis:
+                pc_start_raw = await _safe_redis(
+                    self.redis, "get", "mha:wellness:pc_session_start"
+                )
+                if pc_start_raw:
+                    import time as _time
+                    try:
+                        pc_start = float(pc_start_raw)
+                        hours = (_time.time() - pc_start) / 3600
+                        if hours > 4:
+                            factors.append(f"PC-Session seit {hours:.0f}h")
+                    except (ValueError, TypeError):
+                        pass
+
+            # Faktor 2: Gestresste Stimmung
+            if self.mood:
+                mood_data = self.mood.get_current_mood()
+                current_mood = mood_data if isinstance(mood_data, str) else mood_data.get("mood", "neutral")
+                if current_mood in ("stressed", "frustrated"):
+                    factors.append(f"Stimmung: {current_mood}")
+
+            # Faktor 3: Spaete Nacht (nach 23 Uhr)
+            now = datetime.now()
+            if now.hour >= 23 or now.hour < 5:
+                factors.append(f"Spaete Stunde ({now.strftime('%H:%M')})")
+
+            if len(factors) >= 2:
+                detail = ", ".join(factors)
+                return (
+                    f"Mehrere Stressfaktoren gleichzeitig aktiv: {detail}. "
+                    "Eine Pause waere jetzt wirklich wichtig."
+                )
+
+        except Exception as e:
+            logger.warning("Stress cascade check fehlgeschlagen: %s", e)
+
+        return None

@@ -896,3 +896,142 @@ class DiagnosticsEngine:
             # Wichtigste Warnung nennen
             summary += f" Wichtigste: {warnings[0]['message']}."
         return summary
+
+    # ------------------------------------------------------------------
+    # Predictive Failure, Root-Cause-Korrelation & Repair Playbooks
+    # ------------------------------------------------------------------
+
+    async def predict_failure(self, entity_id: str) -> Optional[dict]:
+        """Prognostiziert bevorstehende Sensorausfaelle basierend auf Latenz-Trends.
+
+        Wenn die Antwortzeit eines Sensors stetig steigt, deutet das auf
+        bevorstehenden Ausfall hin (Batterie leer, Funk-Probleme, Hardware-Defekt).
+
+        Args:
+            entity_id: Die zu pruefende Entity-ID.
+
+        Returns:
+            Dict mit Vorhersage oder None wenn kein Problem erkannt.
+        """
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return None
+
+            entity_state = None
+            for s in states:
+                if s.get("entity_id") == entity_id:
+                    entity_state = s
+                    break
+
+            if not entity_state:
+                return None
+
+            attrs = entity_state.get("attributes", {})
+            last_updated = entity_state.get("last_updated", "")
+
+            # Pruefe ob der Sensor zunehmend verzoegert antwortet
+            if not last_updated:
+                return None
+
+            try:
+                last_ts = datetime.fromisoformat(last_updated.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                return None
+
+            now = datetime.now(timezone.utc)
+            staleness_hours = (now - last_ts).total_seconds() / 3600
+
+            # Heuristik: Sensor der > 6h nicht aktualisiert hat → Warnung
+            # Sensor der > 24h nicht aktualisiert hat → hohes Ausfallrisiko
+            if staleness_hours < 6:
+                return None
+
+            if staleness_hours >= 24:
+                confidence = min(0.95, 0.7 + (staleness_hours - 24) / 100)
+                days_until = 1
+                prediction = "Sensor wahrscheinlich offline oder Batterie leer"
+            else:
+                confidence = 0.4 + (staleness_hours - 6) / 36  # 0.4 bis 0.9
+                days_until = max(1, int(7 - staleness_hours / 4))
+                prediction = "Sensor zeigt Verzoegerung — moeglicher Ausfall"
+
+            return {
+                "entity_id": entity_id,
+                "prediction": prediction,
+                "confidence": round(min(confidence, 0.95), 2),
+                "days_until": days_until,
+                "staleness_hours": round(staleness_hours, 1),
+                "friendly_name": attrs.get("friendly_name", entity_id),
+            }
+        except Exception as e:
+            logger.debug("predict_failure fuer %s fehlgeschlagen: %s", entity_id, e)
+            return None
+
+    def correlate_root_cause(self, offline_entities: list[str]) -> Optional[str]:
+        """Korreliert mehrere Offline-Entities zu einer gemeinsamen Ursache.
+
+        Wenn 3+ Sensoren aus dem gleichen Bereich offline sind, liegt
+        wahrscheinlich ein Netzwerk-/WiFi-Problem in diesem Bereich vor.
+
+        Args:
+            offline_entities: Liste von Entity-IDs die offline sind.
+
+        Returns:
+            Ursachen-Beschreibung oder None.
+        """
+        if len(offline_entities) < 3:
+            return None
+
+        # Bereich aus Entity-ID extrahieren (z.B. "sensor.kueche_temp" → "kueche")
+        area_counts: dict[str, int] = {}
+        for eid in offline_entities:
+            # Entferne domain prefix
+            name_part = eid.split(".", 1)[-1] if "." in eid else eid
+            # Erster Teil vor dem letzten Unterstrich ist oft der Bereich
+            parts = name_part.split("_")
+            if parts:
+                area = parts[0]
+                area_counts[area] = area_counts.get(area, 0) + 1
+
+        # Bereich mit den meisten Ausfaellen
+        for area, count in sorted(area_counts.items(), key=lambda x: x[1], reverse=True):
+            if count >= 3:
+                return f"WiFi-Problem in {area} — {count} Sensoren betroffen"
+
+        return None
+
+    def get_repair_playbook(self, issue_type: str) -> list[str]:
+        """Gibt schrittweise Reparaturanleitung fuer einen Problemtyp zurueck.
+
+        Args:
+            issue_type: Art des Problems ("battery", "offline", "stale").
+
+        Returns:
+            Liste von Reparaturschritten.
+        """
+        playbooks: dict[str, list[str]] = {
+            "battery": [
+                "1. Batteriestand im HA-Dashboard pruefen",
+                "2. Passende Ersatzbatterie bereitlegen (meist CR2032 oder AA)",
+                "3. Geraet oeffnen und Batterie tauschen",
+                "4. Geraet neu pairen falls noetig (Zigbee: Pairing-Modus aktivieren)",
+                "5. Im HA pruefen ob Sensor wieder meldet",
+            ],
+            "offline": [
+                "1. Pruefen ob das Geraet Strom hat (LED, Display)",
+                "2. WiFi/Zigbee-Reichweite pruefen — ggf. Repeater noetig",
+                "3. Geraet neu starten (Strom trennen, 10s warten)",
+                "4. Router/Coordinator pruefen — ggf. Neustart",
+                "5. Falls Zigbee: Coordinator-Logs auf Fehler pruefen",
+                "6. Geraet neu pairen wenn nichts hilft",
+            ],
+            "stale": [
+                "1. Entity in HA pruefen — letztes Update-Datum kontrollieren",
+                "2. Batterie pruefen (haeufigste Ursache fuer stale Sensoren)",
+                "3. Funkreichweite pruefen — Sensor evtl. zu weit entfernt",
+                "4. HA-Integration neu laden (Einstellungen → Integrationen)",
+                "5. Sensor-Firmware-Update pruefen (falls OTA verfuegbar)",
+            ],
+        }
+        return playbooks.get(issue_type, [f"Kein Playbook fuer '{issue_type}' verfuegbar."])

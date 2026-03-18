@@ -543,3 +543,99 @@ class AmbientAudioClassifier:
                 "per_event": self._event_cooldowns,
             },
         }
+
+    # ------------------------------------------------------------------
+    # Event-Korrelation, False-Positive-Lernen & Zeitbasierte Dringlichkeit
+    # ------------------------------------------------------------------
+
+    def correlate_events(self, events: list[dict], window_seconds: int = 30) -> list[dict]:
+        """Gruppiert Events innerhalb eines Zeitfensters zu Incidents.
+
+        Beispiel: glass_break + alarm innerhalb von 30s = ein Incident.
+
+        Args:
+            events: Liste von Event-Dicts mit "timestamp" und "type".
+            window_seconds: Zeitfenster in Sekunden fuer Korrelation.
+
+        Returns:
+            Liste von Incident-Dicts mit allen korrelierten Events.
+        """
+        if not events:
+            return []
+
+        sorted_events = sorted(events, key=lambda e: e.get("timestamp", 0))
+        incidents: list[dict] = []
+        current_group: list[dict] = [sorted_events[0]]
+
+        for event in sorted_events[1:]:
+            group_start = current_group[0].get("timestamp", 0)
+            event_time = event.get("timestamp", 0)
+
+            if event_time - group_start <= window_seconds:
+                current_group.append(event)
+            else:
+                incidents.append(self._build_incident(current_group))
+                current_group = [event]
+
+        # Letzte Gruppe abschliessen
+        incidents.append(self._build_incident(current_group))
+        return incidents
+
+    def _build_incident(self, group: list[dict]) -> dict:
+        """Baut ein Incident-Dict aus einer Gruppe korrelierter Events."""
+        event_types = list({e.get("type", "unknown") for e in group})
+        severities = [e.get("severity", "info") for e in group]
+        severity_order = {"critical": 3, "warning": 2, "info": 1}
+        max_severity = max(severities, key=lambda s: severity_order.get(s, 0))
+        return {
+            "events": group,
+            "event_types": event_types,
+            "event_count": len(group),
+            "severity": max_severity,
+            "timestamp_start": group[0].get("timestamp", 0),
+            "timestamp_end": group[-1].get("timestamp", 0),
+        }
+
+    def learn_false_positive(self, event_id: str, is_false: bool = True):
+        """Lernt aus False Positives und reduziert Sensitivitaet bei haeufigen Fehlern.
+
+        Nach 5 False Positives fuer einen Event-Typ wird die Sensitivitaet reduziert.
+
+        Args:
+            event_id: Event-Typ-ID (z.B. "glass_break", "dog_bark").
+            is_false: True wenn es ein False Positive war.
+        """
+        if not hasattr(self, "_false_positive_counts"):
+            self._false_positive_counts: dict[str, int] = {}
+            self._sensitivity_reduced: set[str] = set()
+
+        if not is_false:
+            return
+
+        self._false_positive_counts[event_id] = self._false_positive_counts.get(event_id, 0) + 1
+        count = self._false_positive_counts[event_id]
+        logger.info("False Positive fuer '%s': %d Mal gemeldet", event_id, count)
+
+        if count >= 5 and event_id not in self._sensitivity_reduced:
+            self._sensitivity_reduced.add(event_id)
+            logger.warning(
+                "Sensitivitaet fuer '%s' reduziert — %d False Positives erreicht",
+                event_id, count,
+            )
+
+    def get_temporal_urgency(self, event_type: str, hour: int) -> str:
+        """Bestimmt Dringlichkeit basierend auf Tageszeit.
+
+        Nachts (22-6 Uhr) sind Events kritischer, da ungewoehnlicher.
+
+        Args:
+            event_type: Typ des Events.
+            hour: Aktuelle Stunde (0-23).
+
+        Returns:
+            "critical" fuer Nacht, "normal" fuer Tag.
+        """
+        is_night = hour >= 22 or hour < 6
+        if is_night:
+            return "critical"
+        return "normal"

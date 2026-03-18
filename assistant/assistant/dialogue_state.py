@@ -73,7 +73,7 @@ class DialogueState:
 
     def __init__(self):
         self.state: str = "idle"  # idle, awaiting_clarification, follow_up, multi_step
-        self.last_entities: deque[str] = deque(maxlen=5)
+        self.last_entities: deque[str] = deque(maxlen=10)
         self.last_rooms: deque[str] = deque(maxlen=3)
         self.last_actions: deque[dict] = deque(maxlen=5)
         self.last_domains: deque[str] = deque(maxlen=3)
@@ -648,3 +648,145 @@ class DialogueStateManager:
             return "Soll ich auch das Licht anmachen?"
 
         return ""
+
+    # ------------------------------------------------------------------
+    # Phase 6A: Ellipsis, Negation, Ambiguity Ranking, Discourse Repair
+    # ------------------------------------------------------------------
+
+    def _resolve_ellipsis(self, text: str, person: str = "") -> str:
+        """Loest elliptische Ausdruecke auf indem Kontext aus vorherigen Turns uebernommen wird.
+
+        Wenn der Text mit 'Und ', 'Auch ' oder 'Dort ' beginnt, wird der zuletzt
+        besprochene Raum bzw. die letzte Entity als Kontext ergaenzt.
+
+        Returns:
+            Angereicherter Text mit Kontext-Informationen.
+        """
+        text_stripped = text.strip()
+        text_lower = text_stripped.lower()
+        state = self._get_state(person)
+
+        prefixes = {"und ": True, "auch ": True, "dort ": True}
+        matched_prefix = None
+        for prefix in prefixes:
+            if text_lower.startswith(prefix):
+                matched_prefix = prefix
+                break
+
+        if not matched_prefix:
+            return text
+
+        context_parts = []
+        if state.last_rooms:
+            context_parts.append(f"(Raum: {state.last_rooms[0]})")
+        if state.last_entities:
+            context_parts.append(f"(Geraet: {state.last_entities[0]})")
+
+        if context_parts:
+            return f"{text_stripped} {' '.join(context_parts)}"
+        return text
+
+    def _track_negation(self, text: str, person: str = "") -> Optional[str]:
+        """Erkennt Negationsmuster und speichert die negierte Entity im State.
+
+        Erkennt Muster wie 'nicht das Licht', 'kein Licht', 'nein, nicht die Lampe'.
+
+        Returns:
+            Die negierte Entity oder None wenn keine Negation erkannt wurde.
+        """
+        text_lower = text.lower().strip()
+        state = self._get_state(person)
+
+        negation_patterns = [
+            r"(?:nicht|kein(?:e[rns]?)?|nein)\s+(?:das |die |den |der )?(\w+)",
+        ]
+
+        for pattern in negation_patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                negated_entity = match.group(1).strip()
+                if not hasattr(state, "negated_entities"):
+                    state.negated_entities = []
+                state.negated_entities = [negated_entity] + getattr(state, "negated_entities", [])
+                state.negated_entities = state.negated_entities[:5]
+                logger.debug("Negation erkannt: '%s'", negated_entity)
+                return negated_entity
+
+        return None
+
+    def _rank_ambiguity(
+        self, entities: list[str], text: str, person: str = ""
+    ) -> list[tuple[str, float]]:
+        """Rankt mehrdeutige Entities nach Relevanz.
+
+        Bewertet anhand von:
+        - Kuerzliche Nutzung (zuletzt besprochene Entities bevorzugt)
+        - Raum-Match (Entity im aktuellen Raum bevorzugt)
+        - Namens-Aehnlichkeit zum User-Text
+
+        Returns:
+            Liste von (entity, confidence_score) Tupeln, absteigend nach Score.
+        """
+        state = self._get_state(person)
+        text_lower = text.lower()
+        scored: list[tuple[str, float]] = []
+
+        recent_entities = list(state.last_entities)
+        recent_rooms = list(state.last_rooms)
+
+        for entity in entities:
+            score = 0.5  # Basis-Score
+            entity_lower = entity.lower()
+
+            # Bonus fuer kuerzliche Nutzung (absteigend nach Aktualitaet)
+            for idx, recent in enumerate(recent_entities):
+                if recent.lower() == entity_lower:
+                    score += max(0.3 - idx * 0.05, 0.05)
+                    break
+
+            # Bonus fuer Raum-Match
+            if recent_rooms:
+                current_room = recent_rooms[0]
+                if current_room in entity_lower:
+                    score += 0.2
+
+            # Bonus fuer Namens-Aehnlichkeit zum Text
+            entity_words = entity_lower.replace(".", " ").replace("_", " ").split()
+            for word in entity_words:
+                if word in text_lower and len(word) > 2:
+                    score += 0.1
+
+            scored.append((entity, min(score, 1.0)))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored
+
+    def _discourse_repair(self, text: str, person: str = "") -> Optional[dict]:
+        """Erkennt Korrektur-Muster wenn der User die vorherige Referenz korrigiert.
+
+        Erkennt Muster wie 'das ANDERE', 'nein das', 'nicht das' und gibt
+        die korrigierte Entity zurueck.
+
+        Returns:
+            Dict mit 'correction' und 'original' Keys oder None.
+        """
+        text_lower = text.lower().strip()
+        state = self._get_state(person)
+
+        repair_patterns = [
+            r"(?:das |die |den )?andere(?:s|n|r)?",
+            r"nein[\s,]+(?:das |die |den )?(\w+)",
+            r"nicht das[\s,]+(?:sondern\s+)?(?:das |die |den )?(\w+)",
+        ]
+
+        for pattern in repair_patterns:
+            if re.search(pattern, text_lower):
+                # "das andere" → naechste Entity in der Liste (nicht die letzte)
+                if len(state.last_entities) >= 2:
+                    original = state.last_entities[0]
+                    correction = state.last_entities[1]
+                    logger.debug("Discourse Repair: '%s' -> '%s'", original, correction)
+                    return {"correction": correction, "original": original}
+                break
+
+        return None

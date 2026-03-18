@@ -691,6 +691,82 @@ async def health():
     return await brain.health_check()
 
 
+# ------------------------------------------------------------------
+# Phase 9: Jarvis Status, Insights & Learning-Progress API
+# ------------------------------------------------------------------
+
+@app.get("/api/jarvis/status")
+async def jarvis_status():
+    """Jarvis-Gesamtstatus: Mood, State, Processing-Status."""
+    status = {
+        "mood": "neutral",
+        "inner_mood": "neutral",
+        "state": "idle",
+        "processing": False,
+        "autonomy_level": 2,
+    }
+    try:
+        if hasattr(brain, "inner_state"):
+            status["inner_mood"] = getattr(brain.inner_state, "current_mood", "neutral")
+        if hasattr(brain, "mood"):
+            _mood = brain.mood.get_current_mood()
+            status["mood"] = _mood if isinstance(_mood, str) else _mood.get("mood", "neutral")
+        if hasattr(brain, "autonomy"):
+            status["autonomy_level"] = getattr(brain.autonomy, "current_level", 2)
+        status["processing"] = getattr(brain, "_is_processing", False)
+    except Exception as e:
+        logger.debug("Jarvis status error: %s", e)
+    return status
+
+
+@app.get("/api/jarvis/insights")
+async def jarvis_insights():
+    """Letzte proaktive Beobachtungen und Insights."""
+    insights = []
+    try:
+        if hasattr(brain, "spontaneous") and hasattr(brain.spontaneous, "_observation_history"):
+            history = list(brain.spontaneous._observation_history)[-5:]
+            for obs in history:
+                insights.append({
+                    "text": obs.get("text", ""),
+                    "timestamp": obs.get("timestamp", ""),
+                    "type": obs.get("type", "observation"),
+                })
+    except Exception as e:
+        logger.debug("Jarvis insights error: %s", e)
+    return {"insights": insights}
+
+
+@app.get("/api/jarvis/learning-progress")
+async def jarvis_learning_progress():
+    """Lernfortschritt: Patterns, Konfidenz, aktive Features."""
+    progress = {
+        "patterns_learned": 0,
+        "corrections_applied": 0,
+        "anticipation_accuracy": 0.0,
+        "active_features": [],
+    }
+    try:
+        if hasattr(brain, "anticipation"):
+            patterns = getattr(brain.anticipation, "_patterns", {})
+            progress["patterns_learned"] = len(patterns)
+        if hasattr(brain, "correction_memory"):
+            rules = getattr(brain.correction_memory, "_rules", {})
+            progress["corrections_applied"] = len(rules)
+        # Aktive Features auflisten
+        _features = []
+        for attr in ["spontaneous", "anticipation", "wellness_advisor",
+                      "follow_me", "insight_engine", "self_optimization"]:
+            if hasattr(brain, attr):
+                mod = getattr(brain, attr)
+                if getattr(mod, "enabled", False):
+                    _features.append(attr)
+        progress["active_features"] = _features
+    except Exception as e:
+        logger.debug("Learning progress error: %s", e)
+    return progress
+
+
 @app.get("/api/assistant/entity_owner/{entity_id:path}")
 async def entity_owner(entity_id: str):
     """Conflict F: Check if an entity is currently owned by the assistant.
