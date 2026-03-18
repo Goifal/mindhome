@@ -2252,6 +2252,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             _verify_eid = (
                                 result.get("entity_id") if isinstance(result, dict) else None
                             ) or func_args.get("entity_id", "")
+                            # Fallback: entity_id aus room + domain ableiten
+                            if not _verify_eid and func_name.startswith("set_"):
+                                _vr = func_args.get("room", "")
+                                if _vr and func_name in ("set_light", "set_cover", "set_climate", "set_switch"):
+                                    _vdomain = func_name.replace("set_", "")
+                                    _verify_eid = f"{_vdomain}.{_vr.lower().replace(' ', '_')}"
                             if _verify_eid and func_name.startswith("set_"):
                                 try:
                                     await asyncio.sleep(0.5)
@@ -5597,11 +5603,19 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     name="extract_negative_reaction",
                 )
 
-        # Letzte ausgefuehrte Aktion merken (für naechsten Turn)
-        if executed_actions:
-            self._last_executed_action = executed_actions[-1].get("function", "")
-            self._last_executed_action_args = executed_actions[-1].get("args", {})
-        else:
+        # Letzte ERFOLGREICHE Aktion merken (für naechsten Turn / Pronomen-Shortcut).
+        # Fehlgeschlagene/blockierte Aktionen nicht speichern — sonst wiederholt
+        # der Pronomen-Shortcut einen Fehler ("Schalte sie aus" → broken device).
+        _successful_actions = [
+            a for a in executed_actions
+            if isinstance(a.get("result"), dict) and a["result"].get("success", False)
+        ]
+        if _successful_actions:
+            self._last_executed_action = _successful_actions[-1].get("function", "")
+            self._last_executed_action_args = _successful_actions[-1].get("args", {})
+        elif not executed_actions:
+            # Nur leeren wenn gar keine Aktionen liefen — bei fehlgeschlagenen
+            # Aktionen letzte gute Aktion beibehalten
             self._last_executed_action = ""
             self._last_executed_action_args = {}
 
