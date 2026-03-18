@@ -5121,27 +5121,46 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         response_text = self.personality.get_error_response("general")
 
         # Halluzinations-Schutz: Wenn das LLM behauptet eine Aktion ausgefuehrt
-        # zu haben, aber tatsaechlich 0 Aktionen gelaufen sind. Gilt fuer ALLE
-        # Kategorien — nicht nur device_command. Typisch: "Ich habe den Befehl
-        # gesendet" oder "Die Maschine laeuft bereits" ohne Tool-Call.
-        if not executed_actions and response_text:
-            _halluc_action_patterns = [
+        # zu haben, aber tatsaechlich 0 Aktionen gelaufen sind.
+        # Zwei Pattern-Gruppen:
+        # - AKTIONS-BEHAUPTUNGEN (Ich-Form): Immer Halluzination wenn 0 Aktionen
+        # - ZUSTANDS-CLAIMS: Nur bei device_command problematisch, bei device_query
+        #   sind "ist eingeschaltet" etc. legitime Status-Antworten
+        # Effektiv ausgefuehrte Aktionen: Blocked/String-Results zaehlen nicht
+        _effective_actions = [
+            a for a in executed_actions
+            if isinstance(a.get("result"), dict) and a["result"].get("success", False)
+        ]
+        if not _effective_actions and response_text:
+            _category = profile.category if profile else "unknown"
+            # Gruppe 1: Aktions-Behauptungen — immer halluziniert bei 0 Aktionen
+            _action_claim_patterns = [
                 r"(?:habe|hab)\s+(?:den|die|das|einen)?\s*(?:Befehl|Aktion)",
-                r"(?:bereits|schon)\s+(?:aktiviert|eingeschaltet|ausgef[uü]hrt|gesendet|erledigt)",
-                r"(?:l[aä]uft|ist)\s+(?:bereits|schon)\s+(?:seit|an|aktiv)",
                 r"(?:habe|hab).*(?:ausgef[uü]hrt|gesendet|eingeschaltet|aktiviert|erledigt)",
                 r"Befehl.*(?:erhalten|best[aä]tigt|gesendet|ausgef[uü]hrt)",
                 r"(?:eingeschaltet|aktiviert|gestartet).*(?:best[aä]tigt|erhalten)",
-                r"\b(?:aus|ein|an|ab)geschaltet\b",
-                r"\bausgefahren\b|\beingefahren\b|\bge[oö]ffnet\b|\bgeschlossen\b",
                 # Memory-Halluzinationen: LLM behauptet sich zu erinnern ohne Memory-Lookup
                 r"(?:du hast|du hattest)\s+(?:mir\s+)?(?:gesagt|erz[aä]hlt|erw[aä]hnt)",
                 r"(?:laut|gem[aä][sß])\s+(?:deiner|deinen)\s+(?:Angaben|Daten|Eintr[aä]gen)",
             ]
+            # Gruppe 2: Zustands-Claims — nur bei device_command Halluzination,
+            # bei device_query sind das legitime Status-Antworten
+            _state_claim_patterns = [
+                r"(?:bereits|schon)\s+(?:aktiviert|eingeschaltet|ausgef[uü]hrt|gesendet|erledigt)",
+                r"(?:l[aä]uft|ist)\s+(?:bereits|schon)\s+(?:seit|an|aktiv)",
+                r"\b(?:aus|ein|an|ab)geschaltet\b",
+                r"\bausgefahren\b|\beingefahren\b|\bge[oö]ffnet\b|\bgeschlossen\b",
+            ]
             _text_low = response_text.lower()
-            _action_halluc = any(re.search(p, _text_low, re.IGNORECASE) for p in _halluc_action_patterns)
-            if _action_halluc:
-                _category = profile.category if profile else "unknown"
+            _has_action_claim = any(re.search(p, _text_low, re.IGNORECASE) for p in _action_claim_patterns)
+            _has_state_claim = (
+                _category in ("device_command",)  # Nur bei Befehlen, nicht bei Queries
+                and any(re.search(p, _text_low, re.IGNORECASE) for p in _state_claim_patterns)
+            )
+            if _has_action_claim or _has_state_claim:
+                _all_patterns = _action_claim_patterns + (
+                    _state_claim_patterns if _has_state_claim else []
+                )
                 logger.warning(
                     "Halluzinations-Schutz [%s]: LLM behauptet Aktion bei 0 ausgefuehrten "
                     "Aktionen. Text verworfen: '%s'", _category, response_text[:80],
@@ -5159,7 +5178,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     _sentences = re.split(r"(?<=[.!?])\s+", response_text)
                     _clean = [s for s in _sentences
                               if not any(re.search(p, s.lower(), re.IGNORECASE)
-                                         for p in _halluc_action_patterns)]
+                                         for p in _all_patterns)]
                     if _clean:
                         response_text = " ".join(_clean)
                     else:
@@ -5295,6 +5314,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Halluzinations-Guard: Erkennt erfundene Messwerte in der Antwort.
         # Wenn die Antwort spezifische Temperatur- oder Prozentwerte nennt,
         # die NICHT in den Context-Daten (System-Prompt) standen, werden sie entfernt.
+        # _ctx_data wird hier definiert und von nachfolgenden Guards mitbenutzt.
+        _ctx_data = ""
         if response_text and messages:
             # Collect ALL context data: system prompt + tool results (assistant/tool messages)
             # Tool results (e.g. get_room_climate) may contain sensor values not in the system prompt.
@@ -5343,7 +5364,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Wenn das LLM ein Geraet nennt das weder im Context noch im Entity-Catalog
         # existiert, wird der Satz entfernt. Nur bei device_command/device_query aktiv,
         # da nur dort konkrete Geraetereferenzen erwartet werden.
-        if (response_text and not executed_actions
+        if (response_text and not _effective_actions
                 and profile and profile.category in ("device_command", "device_query")):
             try:
                 from .function_calling import _entity_catalog
@@ -5360,16 +5381,17 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 _ctx_lower = _ctx_data.lower() if _ctx_data else ""
 
                 # Geraete-Referenzen in der Antwort finden
-                # Pattern: "dein/die/der/den [Adjektiv] <Geraet>" oder "<Geraet> im <Raum>"
+                # Pattern: "dein/die/der/den [Prefix]<Geraet>" oder "<Geraet> im <Raum>"
+                # \w* vor dem Geraetewort fängt Komposita ("Wohnzimmerlampe", "Schlafzimmerventilator")
                 _device_patterns = re.findall(
                     r"(?:dein[e]?|die|der|den|das|im)\s+"
                     r"(?:\w+\s+)?"
-                    r"((?:Licht|Lampe|Stehlampe|Leuchte|Ventilator|Heizung|Thermostat|"
+                    r"(\w*(?:Licht|Lampe|Stehlampe|Leuchte|Ventilator|Heizung|Thermostat|"
                     r"Klima(?:anlage)?|Rolll?aden|Jalousie|Markise|Steckdose|"
                     r"Kaffeemaschine|Siebträger\w*|Fernseher|TV|Anlage|Lautsprecher|"
                     r"Waschmaschine|Trockner|Spülmaschine|Saugroboter|"
                     r"Rauchmelder|Bewegungsmelder|Sensor|Schalter)"
-                    r"(?:\w*)?)"  # Kompositum-Suffixe ("Wohnzimmerlampe")
+                    r"(?:\w*)?)"
                     r"(?:\s+(?:im|in|vom|am)\s+(\w+))?",
                     response_text, re.IGNORECASE,
                 )
