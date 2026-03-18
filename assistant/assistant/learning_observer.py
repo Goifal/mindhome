@@ -39,6 +39,11 @@ WEEKDAY_NAMES_DE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "
 KEY_ABSTRACT_CONCEPTS = "mha:learning:abstract_concepts"
 KEY_CONCEPT_OBSERVATIONS = "mha:learning:concept_observations"
 
+# [16] Auto-Learning: Device→Scene Trigger
+KEY_SCENE_ACTIVATIONS = "mha:learning:scene_activations"
+KEY_SCENE_DEVICE_PATTERNS = "mha:learning:scene_device_patterns"
+KEY_SCENE_DEVICE_SUGGESTED = "mha:learning:scene_device_suggested"
+
 
 def _parse_person_prefix(action: str) -> tuple[str, str]:
     """Extrahiert Person-Prefix aus einem Redis-Action-Key.
@@ -912,3 +917,127 @@ class LearningObserver:
                 })
             except Exception as e:
                 logger.debug("B12: Lern-Frage fehlgeschlagen: %s", e)
+
+    # ── [16] Auto-Learning: Device→Scene Trigger ─────────────────────
+
+    async def observe_scene_activation(self, scene_name: str, person: str = ""):
+        """[16] Trackt Szenen-Aktivierungen und korreliert mit vorherigen Device-Changes.
+
+        Wenn nach einem bestimmten Device-Wechsel wiederholt die gleiche Szene
+        aktiviert wird (>=3x), schlaegt Jarvis einen automatischen Trigger vor:
+        "Soll ich Filmabend automatisch starten wenn der TV angeht?"
+
+        Args:
+            scene_name: Name der aktivierten Szene (z.B. "filmabend")
+            person: Person die die Szene aktiviert hat
+        """
+        if not self.enabled or not self.redis:
+            return
+
+        scene_cfg = yaml_config.get("scenes", {})
+        if not scene_cfg.get("auto_learning", {}).get("enabled", True):
+            return
+
+        try:
+            # Letzte manuelle Device-Aenderungen der letzten 5 Minuten holen
+            raw_actions = await self.redis.lrange(KEY_MANUAL_ACTIONS, 0, 19)
+            if not raw_actions:
+                return
+
+            import time as _time
+            now = _time.time()
+            lookback_seconds = 300  # 5 Minuten
+
+            recent_triggers = []
+            for raw in raw_actions:
+                try:
+                    action = json.loads(raw if isinstance(raw, str) else raw.decode())
+                    ts = datetime.fromisoformat(action.get("timestamp", ""))
+                    age = now - ts.timestamp()
+                    if age <= lookback_seconds:
+                        eid = action.get("entity_id", "")
+                        # Nur relevante Trigger-Domains (TV, Buttons, Switches)
+                        if any(eid.startswith(d) for d in (
+                            "media_player.", "remote.", "switch.",
+                            "binary_sensor.", "input_boolean.",
+                        )):
+                            recent_triggers.append(eid)
+                except Exception:
+                    continue
+
+            if not recent_triggers:
+                return
+
+            # Fuer jeden Trigger-Candidate: Pattern zaehlen
+            for trigger_entity in recent_triggers:
+                pattern_key = (
+                    f"{KEY_SCENE_DEVICE_PATTERNS}:{trigger_entity}:{scene_name}"
+                )
+
+                pipe = self.redis.pipeline()
+                pipe.incr(pattern_key)
+                pipe.ttl(pattern_key)
+                incr_result, current_ttl = await pipe.execute()
+                count = incr_result
+
+                if current_ttl is None or current_ttl < 0:
+                    await self.redis.expire(pattern_key, 60 * 86400)  # 60 Tage
+
+                min_reps = scene_cfg.get(
+                    "auto_learning", {},
+                ).get("min_repetitions", self.min_repetitions)
+
+                if count < min_reps:
+                    continue
+
+                # Schon vorgeschlagen oder schon konfiguriert?
+                suggested_key = (
+                    f"{KEY_SCENE_DEVICE_SUGGESTED}:{trigger_entity}:{scene_name}"
+                )
+                if await self.redis.get(suggested_key):
+                    continue
+
+                # Schon in device_trigger_map konfiguriert?
+                existing_map = scene_cfg.get("device_trigger_map", {})
+                if trigger_entity in existing_map:
+                    existing_scenes = existing_map[trigger_entity]
+                    if scene_name in existing_scenes:
+                        continue
+
+                # Als vorgeschlagen markieren (14 Tage Cooldown)
+                await self.redis.setex(suggested_key, 14 * 86400, "1")
+
+                # Vorschlag generieren
+                friendly_entity = (
+                    trigger_entity.split(".", 1)[1].replace("_", " ").title()
+                )
+                scene_label = scene_name.replace("_", " ").title()
+                title = get_person_title(person) if person else get_person_title()
+
+                message = (
+                    f"{title}, mir ist aufgefallen, dass du nach dem Einschalten "
+                    f"von {friendly_entity} oft '{scene_label}' aktivierst "
+                    f"({count}x in den letzten Wochen). "
+                    f"Soll ich '{scene_label}' automatisch starten, "
+                    f"wenn {friendly_entity} eingeschaltet wird?"
+                )
+
+                logger.info(
+                    "[16] Scene-Device-Pattern erkannt: %s → %s (%dx)",
+                    trigger_entity, scene_name, count,
+                )
+
+                if self._notify_callback:
+                    await self._notify_callback({
+                        "message": message,
+                        "type": "scene_device_suggestion",
+                        "trigger_entity": trigger_entity,
+                        "scene_name": scene_name,
+                        "count": count,
+                        "person": person,
+                    })
+                # Nur einen Vorschlag pro Aktivierung
+                break
+
+        except Exception as e:
+            logger.debug("[16] Scene-Device-Learning Fehler: %s", e)

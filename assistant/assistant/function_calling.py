@@ -4984,6 +4984,22 @@ class FunctionExecutor:
             except Exception:
                 pass
 
+            # [16] Auto-Learning: Device→Scene Pattern tracken
+            try:
+                brain = getattr(self, "_brain", None)
+                if brain and hasattr(brain, "learning_observer"):
+                    observer = brain.learning_observer
+                    if hasattr(observer, "observe_scene_activation"):
+                        _person = getattr(self, "_current_person", "") or ""
+                        task = asyncio.create_task(
+                            observer.observe_scene_activation(mood_key, person=_person)
+                        )
+                        task.add_done_callback(
+                            lambda t: t.exception() if not t.cancelled() else None
+                        )
+            except Exception:
+                pass
+
             # [6] Return-Message mit Error-Info
             msg = f"Stimmung '{mood.get('label', mood_key)}' aktiviert ({', '.join(actions_done)})"
             if errors:
