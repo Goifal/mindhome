@@ -4796,7 +4796,7 @@ class FunctionExecutor:
         "abendessen": "essen", "dinner": "essen", "mahlzeit": "essen",
         "ins_bett": "schlafen", "schlafenszeit": "schlafen", "pennen": "schlafen",
         "buch": "lesen", "reading": "lesen",
-        "buero": "arbeiten", "office": "arbeiten", "work": "arbeiten",
+        "arbeit": "arbeiten", "buero": "arbeiten", "office": "arbeiten", "work": "arbeiten",
         "videocall": "meeting", "zoom": "meeting", "teams": "meeting",
         "kinder": "spielen", "toben": "spielen",
         "frueh": "morgens", "morgenroutine": "morgens",

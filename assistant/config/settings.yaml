@@ -2038,7 +2038,9 @@ scenes:
   mood_scenes: {}              # User-Overrides fuer Mood-Szenen (merged mit Defaults)
   room_overrides: {}           # Room-spezifische Overrides: {raum: {szene: {param: wert}}}
   schedule_enabled: true       # Szenen-Scheduler aktiv
+  trigger_map: {}              # Scene-ID → Trigger-Phrasen: {filmabend: ['film','kino'], ...}
   device_trigger_map: {}       # Entity → Scene Mapping: {entity_id: [scene1, scene2]}
+  device_trigger_modes: {}     # Scene-ID → "and"/"or" Modus: {filmabend: "and"} (Default: "or")
   auto_learning:               # [16] Auto-Learning: Device→Scene Trigger
     enabled: true              # Automatische Pattern-Erkennung aktiviert
     min_repetitions: 3         # Mindestwiederholungen bevor Vorschlag kommt

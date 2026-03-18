@@ -4162,9 +4162,18 @@ const _DEFAULT_SCENES = [
   {id:'gäste',        icon:'&#128101;', label:'Gäste',       activity:'guests',    silence:false, transition:3,  triggers:['gäste','besuch','gäste da']},
   {id:'nicht_stören', icon:'&#128683;', label:'Nicht stören',activity:'focused',   silence:true,  transition:1,  triggers:['nicht stören','ruhe','bitte nicht stören']},
   {id:'musik',         icon:'&#127925;', label:'Musik',        activity:'relaxing',  silence:false, transition:2,  triggers:['musik','musik an','musik hoeren']},
-  {id:'arbeit',        icon:'&#128188;', label:'Arbeit',       activity:'focused',   silence:true,  transition:1,  triggers:['arbeit','arbeiten','arbeitsmodus']},
+  {id:'arbeiten',      icon:'&#128188;', label:'Arbeiten',     activity:'focused',   silence:true,  transition:1,  triggers:['arbeit','arbeiten','arbeitsmodus']},
   {id:'kochen',        icon:'&#127859;', label:'Kochen',       activity:'relaxing',  silence:false, transition:1,  triggers:['kochen','kochmodus']},
   {id:'party',         icon:'&#127881;', label:'Party',        activity:'guests',    silence:false, transition:2,  triggers:['party','feiern','partymodus']},
+  {id:'hell',          icon:'&#9728;',   label:'Hell',         activity:'relaxing',  silence:false, transition:2,  triggers:['hell','alles an','volle helligkeit']},
+  {id:'essen',         icon:'&#127869;', label:'Essen',        activity:'relaxing',  silence:false, transition:3,  triggers:['essen','abendessen','dinner','mahlzeit']},
+  {id:'lesen',         icon:'&#128214;', label:'Lesen',        activity:'relaxing',  silence:true,  transition:3,  triggers:['lesen','buch','reading']},
+  {id:'spielen',       icon:'&#127918;', label:'Spielen',      activity:'relaxing',  silence:false, transition:2,  triggers:['spielen','kinder','gaming']},
+  {id:'morgens',       icon:'&#127748;', label:'Bad Morgens',  activity:'relaxing',  silence:false, transition:5,  triggers:['morgens','morgenroutine']},
+  {id:'abends',        icon:'&#127749;', label:'Bad Abends',   activity:'relaxing',  silence:false, transition:5,  triggers:['abends','baden','entspannen bad']},
+  {id:'romantisch',    icon:'&#128151;', label:'Romantisch',   activity:'relaxing',  silence:true,  transition:5,  triggers:['romantisch','romantik','kerzenschein']},
+  {id:'energiesparen', icon:'&#9889;',   label:'Energiesparen',activity:'relaxing',  silence:false, transition:1,  triggers:['energiesparen','strom sparen','eco']},
+  {id:'putzen',        icon:'&#129529;', label:'Putzen',       activity:'relaxing',  silence:false, transition:1,  triggers:['putzen','sauber machen','aufräumen']},
 ];
 
 const _ACTIVITY_OPTIONS = [
