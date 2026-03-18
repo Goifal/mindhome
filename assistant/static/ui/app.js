@@ -2331,6 +2331,15 @@ function entityPickSelect(item, entityId) {
     return;
   }
 
+  // Scene Action Entity: Spezifisches Gerät für eine Szenen-Aktion
+  if (input?.classList?.contains('scene-action-entity-input')) {
+    input.value = entityId;
+    const sceneId = input.dataset.sceneId;
+    const idx = parseInt(input.dataset.actionIdx);
+    if (sceneId && !isNaN(idx)) sceneActionEntityChanged(sceneId, idx, entityId);
+    return;
+  }
+
   // Cover-Profil: Entity-ID setzen + updateCoverProfile aufrufen
   if (input?.dataset?.coverIdx !== undefined) {
     input.value = entityId;
@@ -4348,31 +4357,50 @@ function renderScenes() {
   let sceneCards = '';
   for (const sc of scenes) {
     const silenceChecked = sc.silence ? 'checked' : '';
+    const isExpanded = _expandedSceneId === sc.id;
+    const expandCls = isExpanded ? ' scene-expanded' : '';
+    const summary = _summarizeSceneActions(sc);
+    const actLabel = activityLabels[sc.activity] || sc.activity;
     let actOpts = _ACTIVITY_OPTIONS.map(a =>
       `<option value="${a.v}" ${sc.activity===a.v?'selected':''}>${a.l}</option>`
     ).join('');
 
-    sceneCards += `<div class="scene-card${sc.silence?' scene-silence':''}" data-scene-id="${sc.id}">
-      <div class="scene-card-hdr">
+    // Badges for header
+    let badges = '';
+    if (sc.silence) badges += '<span class="scene-badge scene-badge-silence">Stille</span>';
+    if (sc.custom) badges += '<span class="scene-badge scene-badge-custom">Eigene</span>';
+
+    sceneCards += `<div class="scene-card${sc.silence?' scene-silence':''}${expandCls}" data-scene-id="${sc.id}">
+      <div class="scene-card-hdr" onclick="toggleSceneExpand('${esc(sc.id)}')">
         <span class="scene-icon">${sc.icon}</span>
-        <div class="scene-card-title">
-          <input type="text" class="scene-name-input" value="${esc(sc.label)}" data-field="label"
-            onchange="sceneFieldChanged('${esc(sc.id)}','label',this.value)">
-          <span class="scene-id-hint">${esc(sc.id)}</span>
+        <div class="scene-hdr-info">
+          <div class="scene-hdr-title">${esc(sc.label)} ${badges}</div>
+          <div class="scene-hdr-summary">${actLabel} · ${sc.transition}s · ${summary}</div>
         </div>
-        ${sc.custom ? '<button class="scene-rm" onclick="removeScene(\'' + esc(sc.id) + '\')" title="Szene loeschen">&#10005;</button>' : ''}
+        <div class="scene-hdr-actions" onclick="event.stopPropagation()">
+          ${sc.custom ? '<button class="btn btn-sm scene-rm" onclick="removeScene(\'' + esc(sc.id) + '\')" title="Szene löschen">&#10005;</button>' : ''}
+        </div>
+        <span class="scene-chevron">&#9660;</span>
       </div>
-      <div class="scene-card-body">
+      <div class="scene-card-body" style="padding-top:12px;">
+
+        <div class="scene-section-title">Allgemein</div>
+        <div class="scene-field">
+          <span class="scene-field-label">Name</span>
+          <input type="text" class="scene-name-input" value="${esc(sc.label)}" data-field="label"
+            onclick="event.stopPropagation()"
+            onchange="sceneFieldChanged('${esc(sc.id)}','label',this.value)">
+        </div>
         <div class="scene-field">
           <span class="scene-field-label">Aktivität</span>
           <select data-field="activity" onchange="sceneFieldChanged('${esc(sc.id)}','activity',this.value)">${actOpts}</select>
         </div>
         <div class="scene-field">
           <span class="scene-field-label">Übergang</span>
-          <div style="display:flex;align-items:center;gap:6px;">
+          <div style="display:flex;align-items:center;gap:8px;flex:1;">
             <input type="range" min="1" max="20" step="1" value="${sc.transition}" data-field="transition"
               oninput="this.nextElementSibling.textContent=this.value+'s';sceneFieldChanged('${esc(sc.id)}','transition',parseInt(this.value))">
-            <span style="font-size:11px;color:var(--text-muted);min-width:24px;">${sc.transition}s</span>
+            <span style="font-size:12px;color:var(--text-muted);min-width:28px;">${sc.transition}s</span>
           </div>
         </div>
         <div class="scene-field">
@@ -4383,80 +4411,79 @@ function renderScenes() {
           </label>
         </div>
         <div class="scene-field">
-          <span class="scene-field-label">Auslöser</span>
+          <span class="scene-field-label">Klima-Offset</span>
+          <div style="display:flex;align-items:center;gap:6px;flex:1;">
+            <input type="number" step="0.5" min="-5" max="5" value="${sc.climate_offset ?? ''}"
+              placeholder="z.B. -2"
+              style="width:80px;font-size:12px;padding:4px 6px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;"
+              onchange="sceneClimateOffsetChanged('${esc(sc.id)}',this.value)">
+            <span style="font-size:11px;color:var(--text-muted);">&deg;C</span>
+          </div>
+        </div>
+
+        <div class="scene-section-title">Auslöser</div>
+        <div class="scene-field" style="flex-direction:column;align-items:stretch;">
+          <span class="scene-field-label">Sprachbefehle</span>
           <input type="text" class="scene-triggers-input" value="${esc((sc.triggers||[]).join(', '))}"
             placeholder="z.B. filmabend, film schauen, film an"
             title="Komma-getrennte Begriffe die diese Szene auslösen"
             onchange="sceneTriggersChanged('${esc(sc.id)}',this.value)">
         </div>
-        <div class="scene-field">
-          <span class="scene-field-label" style="display:flex;align-items:center;gap:8px;">Geräte-Trigger
-            <span style="display:inline-flex;align-items:center;gap:2px;font-size:10px;font-weight:normal;color:var(--text-muted);">
-              <button type="button" class="btn btn-sm scene-dt-mode" data-scene-id="${esc(sc.id)}"
-                style="padding:1px 6px;font-size:10px;font-weight:${sc.device_trigger_mode==='and'?'bold':'normal'};opacity:${sc.device_trigger_mode==='and'?'1':'0.5'};"
-                onclick="toggleDeviceTriggerMode('${esc(sc.id)}')"
-                title="ODER: Ein Geraet reicht. UND: Alle Geraete muessen aktiv sein.">${sc.device_trigger_mode === 'and' ? 'UND' : 'ODER'}</button>
-            </span>
+        <div class="scene-field" style="flex-direction:column;align-items:stretch;">
+          <span class="scene-field-label" style="display:flex;align-items:center;gap:8px;">
+            Geräte-Trigger
+            <button type="button" class="btn btn-sm scene-dt-mode" data-scene-id="${esc(sc.id)}"
+              style="padding:2px 8px;font-size:10px;font-weight:${sc.device_trigger_mode==='and'?'bold':'normal'};opacity:${sc.device_trigger_mode==='and'?'1':'0.5'};"
+              onclick="toggleDeviceTriggerMode('${esc(sc.id)}')"
+              title="ODER: Ein Gerät reicht. UND: Alle Geräte müssen aktiv sein.">${sc.device_trigger_mode === 'and' ? 'UND' : 'ODER'}</button>
           </span>
           <div class="scene-device-triggers" data-scene-id="${esc(sc.id)}">
             ${(sc.device_triggers||[]).map((dt, i) => `<div class="scene-dt-row" style="display:flex;gap:4px;margin-bottom:4px;align-items:center;">
               <div class="entity-pick-wrap" style="position:relative;flex:1;">
                 <input type="text" class="scene-dt-input form-input entity-pick-input" value="${esc(dt)}"
-                  placeholder="z.B. media_player.tv, binary_sensor.button"
+                  placeholder="z.B. media_player.tv"
                   data-domains="media_player,binary_sensor,remote,switch,input_boolean,sensor"
                   oninput="entityPickFilter(this,'media_player,binary_sensor,remote,switch,input_boolean,sensor')"
                   onfocus="entityPickFilter(this,'media_player,binary_sensor,remote,switch,input_boolean,sensor')"
                   onchange="sceneDeviceTriggerChanged('${esc(sc.id)}')"
-                  style="font-size:11px;font-family:var(--mono);">
+                  style="font-size:12px;font-family:var(--mono);padding:5px 8px;">
                 <div class="entity-pick-dropdown" style="display:none;"></div>
               </div>
               <button type="button" class="btn btn-sm scene-dt-rm" style="padding:6px 10px;font-size:14px;min-width:36px;min-height:36px;z-index:10000;position:relative;flex-shrink:0;color:var(--danger,#ef4444);" onclick="event.stopPropagation();removeSceneDeviceTrigger('${esc(sc.id)}',${i})" ontouchend="event.preventDefault();event.stopPropagation();removeSceneDeviceTrigger('${esc(sc.id)}',${i})">&#10005;</button>
             </div>`).join('')}
-            <button class="btn btn-sm" style="padding:2px 8px;font-size:11px;margin-top:2px;" onclick="addSceneDeviceTrigger('${esc(sc.id)}')">+ Geraet</button>
+            <button class="btn btn-sm" style="padding:3px 10px;font-size:11px;margin-top:4px;" onclick="addSceneDeviceTrigger('${esc(sc.id)}')">+ Gerät</button>
           </div>
         </div>
-        <div class="scene-field">
-          <span class="scene-field-label" style="display:flex;align-items:center;gap:6px;">
-            Aktionen
-            <button class="btn btn-sm" style="padding:1px 6px;font-size:10px;" onclick="toggleSceneActions('${esc(sc.id)}')"
-              title="Geraete-Aktionen dieser Szene anzeigen/bearbeiten">&#9881; Bearbeiten</button>
-          </span>
-          <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${_summarizeSceneActions(sc)}</div>
-          <div class="scene-actions-editor" data-scene-id="${esc(sc.id)}" style="display:none;">
-            ${_renderSceneActions(sc)}
-          </div>
+
+        <div class="scene-section-title">Geräte-Aktionen</div>
+        <div class="scene-actions-editor" data-scene-id="${esc(sc.id)}" style="display:block;">
+          ${_renderSceneActions(sc)}
         </div>
-        <div class="scene-field">
-          <span class="scene-field-label">Klima-Offset</span>
-          <div style="display:flex;align-items:center;gap:6px;">
-            <input type="number" step="0.5" min="-5" max="5" value="${sc.climate_offset ?? ''}"
-              placeholder="z.B. -2 oder +1"
-              style="width:80px;font-size:11px;padding:2px 4px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;"
-              onchange="sceneClimateOffsetChanged('${esc(sc.id)}',this.value)">
-            <span style="font-size:10px;color:var(--text-muted);">&deg;C</span>
-          </div>
-        </div>
+
       </div>
     </div>`;
   }
 
   return sectionWrap('&#127916;', 'Haus-Szenen',
-    fInfo('Definiere Szenen für dein Zuhause. Jede Szene wird auf eine Aktivität gemappt (bestimmt Benachrichtigungs-Verhalten), hat eine Übergangszeit und kann als "Nicht stören" markiert werden. Szenen können per Sprache aktiviert werden: "Jarvis, Filmabend."') +
-    `<div class="scene-grid">${sceneCards}</div>
+    fInfo('Definiere Szenen für dein Zuhause. Klicke auf eine Szene um sie aufzuklappen und zu konfigurieren. Szenen können per Sprache aktiviert werden: <strong>"Jarvis, Filmabend."</strong>') +
+    `<div class="scene-list">${sceneCards}</div>
     <button class="btn btn-sm" onclick="addCustomScene()" style="margin-top:12px;">+ Eigene Szene</button>`
-  ) +
-  sectionWrap('&#128276;', 'So wirken Szenen',
-    fInfo('Szenen steuern drei Dinge gleichzeitig:') +
-    `<div style="font-size:12px;line-height:1.8;color:var(--text-secondary);padding:4px 8px;">
-      <div><strong>1. Aktivität</strong> — Jede Szene ist einer Aktivität zugeordnet (z.B. Filmabend → "TV/Film"). Die Aktivität bestimmt über die <em>Stille-Matrix</em> (Tab "Benachrichtigungen") wie Meldungen zugestellt werden.</div>
-      <div style="margin-top:6px;"><strong>2. Nicht stören</strong> — Markierte Szenen unterdrücken proaktive Meldungen komplett (ausser Sicherheit/Notfall).</div>
-      <div style="margin-top:6px;"><strong>3. Übergangszeit</strong> — Wie lange Licht-Übergaenge dauern wenn Jarvis die Szene aktiviert.</div>
-      <div style="margin-top:6px;"><strong>4. Auslöser</strong> — Komma-getrennte Begriffe die Jarvis als Trigger für diese Szene erkennt. So vermeidest du Verwechslungen zwischen ähnlichen Szenen.</div>
-      <div style="margin-top:6px;"><strong>5. Geräte-Trigger</strong> — HA-Entities die diese Szene automatisch aktivieren. Z.B. wenn der TV eingeschaltet wird (media_player) oder ein Button gedrückt wird (binary_sensor). Szene wird aktiviert wenn das Geraet den Status wechselt (on/playing/etc.).</div>
-      <div style="margin-top:6px;"><strong>6. UND/ODER-Modus</strong> — Bei ODER (Standard) reicht ein einzelnes Geraet um die Szene auszulösen. Bei UND muessen <em>alle</em> konfigurierten Geraete gleichzeitig aktiv sein (z.B. TV an UND Licht gedimmt → Filmabend).</div>
-      <div style="margin-top:6px;"><strong>7. dim2warm</strong> — Bei Lampen mit Typ <em>dim2warm</em> (konfigurierbar in Räume) wird die Farbtemperatur automatisch ignoriert — die Hardware regelt das über die Helligkeit. Farbtemperatur-Werte in den Aktionen dienen dort nur als Info. Bei <em>tunable_white</em>-Lampen wird die Farbtemperatur aktiv an HA gesendet.</div>
-    </div>`
   );
+}
+
+// Scene accordion expand/collapse
+let _expandedSceneId = null;
+function toggleSceneExpand(sceneId) {
+  _expandedSceneId = _expandedSceneId === sceneId ? null : sceneId;
+  // Toggle without full re-render to preserve input state
+  document.querySelectorAll('.scene-card').forEach(card => {
+    const id = card.dataset.sceneId;
+    if (id === _expandedSceneId) {
+      card.classList.add('scene-expanded');
+    } else {
+      card.classList.remove('scene-expanded');
+    }
+  });
 }
 
 function sceneFieldChanged(sceneId, field, value) {
@@ -4501,6 +4528,7 @@ function addCustomScene() {
   const scenes = _getScenes();
   scenes.push({id, icon: '&#127912;', label: 'Neue Szene', activity: 'relaxing', silence: false, transition: 3, triggers: [], device_triggers: [], device_trigger_mode: 'or', actions: [], climate_offset: null, custom: true});
   _saveScenes(scenes);
+  _expandedSceneId = id;  // Neue Szene direkt aufklappen
   renderCurrentTab();
 }
 
@@ -4622,52 +4650,65 @@ function _summarizeSceneActions(sc) {
 function _renderSceneActions(sc) {
   const actions = sc.actions || [];
   let html = '<div style="margin-top:4px;">';
+  if (actions.length === 0) {
+    html += '<div style="font-size:12px;color:var(--text-muted);padding:8px 0;font-style:italic;">Keine Aktionen — füge Geräte hinzu die bei dieser Szene geschaltet werden sollen.</div>';
+  }
   for (let i = 0; i < actions.length; i++) {
     const a = actions[i];
     const domain = a.domain || 'light';
     const service = a.service || 'turn_on';
     const data = a.data || {};
+    const entityId = a.entity_id || '';
     // Domain-Dropdown
     const domOpts = _ACTION_DOMAINS.map(d =>
       `<option value="${d.v}" ${domain===d.v?'selected':''}>${d.l}</option>`
     ).join('');
-    // Service-Dropdown (basierend auf Domain)
+    // Service-Dropdown
     const svcList = _ACTION_SERVICES[domain] || [{v:service,l:service}];
     const svcOpts = svcList.map(s =>
       `<option value="${s.v}" ${service===s.v?'selected':''}>${s.l}</option>`
     ).join('');
-    html += `<div class="scene-action-row" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;padding:6px;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;align-items:center;">
-      <select style="font-size:11px;padding:2px;flex:0 0 80px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;"
-        onchange="sceneActionDomainChanged('${esc(sc.id)}',${i},this.value)">${domOpts}</select>
-      <select style="font-size:11px;padding:2px;flex:0 0 110px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;"
-        onchange="sceneActionFieldChanged('${esc(sc.id)}',${i},'service',this.value)">${svcOpts}</select>`;
+    html += `<div class="scene-action-row">
+      <select style="flex:0 0 90px;" onchange="sceneActionDomainChanged('${esc(sc.id)}',${i},this.value)">${domOpts}</select>
+      <select style="flex:0 0 120px;" onchange="sceneActionFieldChanged('${esc(sc.id)}',${i},'service',this.value)">${svcOpts}</select>
+      <div class="entity-pick-wrap scene-action-entity" style="position:relative;">
+        <input type="text" class="entity-pick-input scene-action-entity-input" value="${esc(entityId)}"
+          placeholder="Gerät wählen (optional = alle)"
+          data-scene-id="${esc(sc.id)}" data-action-idx="${i}"
+          oninput="entityPickFilter(this,'${domain}')"
+          onfocus="entityPickFilter(this,'${domain}')"
+          onchange="sceneActionEntityChanged('${esc(sc.id)}',${i},this.value)"
+          style="font-size:11px;font-family:var(--mono);padding:4px 6px;width:100%;">
+        <div class="entity-pick-dropdown" style="display:none;"></div>
+      </div>`;
     // Parameter-Inputs basierend auf Domain+Service
     if (domain === 'light' && service === 'turn_on') {
-      html += `<input type="number" min="0" max="100" step="5" value="${data.brightness_pct ?? ''}" placeholder="Helligkeit %"
-        style="width:64px;font-size:10px;padding:2px 4px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;"
+      html += `<input type="number" min="0" max="100" step="5" value="${data.brightness_pct ?? ''}" placeholder="% Hell."
+        style="width:60px;" title="Helligkeit in %"
         onchange="sceneActionDataChanged('${esc(sc.id)}',${i},'brightness_pct',this.value)">
-      <input type="number" min="2000" max="6500" step="100" value="${data.color_temp_kelvin ?? ''}" placeholder="Farbtemp K"
-        style="width:70px;font-size:10px;padding:2px 4px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;"
+      <input type="number" min="2000" max="6500" step="100" value="${data.color_temp_kelvin ?? ''}" placeholder="Kelvin"
+        style="width:65px;" title="Farbtemperatur in Kelvin"
         onchange="sceneActionDataChanged('${esc(sc.id)}',${i},'color_temp_kelvin',this.value)">
       <input type="color" value="${data.rgb_color ? '#'+data.rgb_color.map(c=>(c<16?'0':'')+c.toString(16)).join('') : ''}"
-        title="Farbe (optional, ueberschreibt Farbtemperatur)"
-        style="width:28px;height:22px;padding:0;border:1px solid var(--border);border-radius:4px;cursor:pointer;${data.rgb_color ? '' : 'opacity:0.3;'}"
+        title="Farbe (optional)"
+        style="width:30px;height:26px;padding:0;border:1px solid var(--border);border-radius:6px;cursor:pointer;${data.rgb_color ? '' : 'opacity:0.3;'}"
         onchange="sceneActionColorChanged('${esc(sc.id)}',${i},this.value)">`;
     } else if (domain === 'cover' && service === 'set_cover_position') {
-      html += `<input type="number" min="0" max="100" step="5" value="${data.position ?? ''}" placeholder="Position %"
-        style="width:64px;font-size:10px;padding:2px 4px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;"
+      html += `<input type="number" min="0" max="100" step="5" value="${data.position ?? ''}" placeholder="Pos. %"
+        style="width:60px;" title="Position in %"
         onchange="sceneActionDataChanged('${esc(sc.id)}',${i},'position',this.value)">`;
     } else if (domain === 'climate' && service === 'set_temperature') {
-      html += `<input type="number" min="15" max="30" step="0.5" value="${data.temperature ?? ''}" placeholder="Temp &deg;C"
-        style="width:64px;font-size:10px;padding:2px 4px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;"
+      html += `<input type="number" min="15" max="30" step="0.5" value="${data.temperature ?? ''}" placeholder="°C"
+        style="width:60px;" title="Temperatur in °C"
         onchange="sceneActionDataChanged('${esc(sc.id)}',${i},'temperature',this.value)">`;
     }
-    html += `<button type="button" style="font-size:12px;padding:2px 8px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:4px;cursor:pointer;flex-shrink:0;"
+    html += `<button type="button" style="font-size:14px;padding:4px 10px;background:none;color:var(--danger);border:1px solid rgba(239,68,68,0.3);border-radius:6px;cursor:pointer;flex-shrink:0;transition:border-color 0.15s;"
+        onmouseover="this.style.borderColor='var(--danger)'" onmouseout="this.style.borderColor='rgba(239,68,68,0.3)'"
         onclick="removeSceneAction('${esc(sc.id)}',${i})">&times;</button>
     </div>`;
   }
-  html += `<button class="btn btn-sm" style="padding:2px 8px;font-size:11px;margin-top:4px;"
-    onclick="addSceneAction('${esc(sc.id)}')">+ Aktion</button>`;
+  html += `<button class="btn btn-sm" style="padding:4px 12px;font-size:11px;margin-top:6px;"
+    onclick="addSceneAction('${esc(sc.id)}')">+ Aktion hinzufügen</button>`;
   html += '</div>';
   return html;
 }
@@ -4687,8 +4728,11 @@ function sceneActionDomainChanged(sceneId, idx, newDomain) {
   const svcList = _ACTION_SERVICES[newDomain] || [];
   sc.actions[idx].service = svcList.length > 0 ? svcList[0].v : 'turn_on';
   sc.actions[idx].data = {};
+  // Entity-ID leeren (Domain hat gewechselt → altes Entity passt nicht)
+  delete sc.actions[idx].entity_id;
   _saveScenes(scenes);
-  renderCurrentTab();
+  const el = document.querySelector(`.scene-actions-editor[data-scene-id="${sceneId}"]`);
+  if (el) el.innerHTML = _renderSceneActions(sc);
 }
 
 function sceneActionFieldChanged(sceneId, idx, field, value) {
@@ -4698,7 +4742,8 @@ function sceneActionFieldChanged(sceneId, idx, field, value) {
   sc.actions[idx][field] = value;
   if (field === 'service') sc.actions[idx].data = {};
   _saveScenes(scenes);
-  renderCurrentTab();
+  const el = document.querySelector(`.scene-actions-editor[data-scene-id="${sceneId}"]`);
+  if (el) el.innerHTML = _renderSceneActions(sc);
 }
 
 function sceneActionDataChanged(sceneId, idx, key, value) {
@@ -4743,6 +4788,18 @@ function sceneActionColorChanged(sceneId, idx, hexColor) {
   if (el) el.innerHTML = _renderSceneActions(sc);
 }
 
+function sceneActionEntityChanged(sceneId, idx, entityId) {
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc || !sc.actions || !sc.actions[idx]) return;
+  if (entityId && entityId.trim()) {
+    sc.actions[idx].entity_id = entityId.trim();
+  } else {
+    delete sc.actions[idx].entity_id;
+  }
+  _saveScenes(scenes);
+}
+
 function addSceneAction(sceneId) {
   const scenes = _getScenes();
   const sc = scenes.find(s => s.id === sceneId);
@@ -4750,12 +4807,9 @@ function addSceneAction(sceneId) {
   if (!sc.actions) sc.actions = [];
   sc.actions.push({domain: 'light', service: 'turn_on', data: {brightness_pct: 80, color_temp_kelvin: 3000}});
   _saveScenes(scenes);
-  renderCurrentTab();
-  // Editor offen halten nach Re-Render
-  setTimeout(() => {
-    const el = document.querySelector(`.scene-actions-editor[data-scene-id="${sceneId}"]`);
-    if (el) el.style.display = 'block';
-  }, 50);
+  // Nur den Actions-Editor neu rendern (statt komplettem Re-Render)
+  const el = document.querySelector(`.scene-actions-editor[data-scene-id="${sceneId}"]`);
+  if (el) el.innerHTML = _renderSceneActions(sc);
 }
 
 function removeSceneAction(sceneId, idx) {
@@ -4764,11 +4818,9 @@ function removeSceneAction(sceneId, idx) {
   if (!sc || !sc.actions) return;
   sc.actions.splice(idx, 1);
   _saveScenes(scenes);
-  renderCurrentTab();
-  setTimeout(() => {
-    const el = document.querySelector(`.scene-actions-editor[data-scene-id="${sceneId}"]`);
-    if (el) el.style.display = 'block';
-  }, 50);
+  // Nur den Actions-Editor neu rendern
+  const el = document.querySelector(`.scene-actions-editor[data-scene-id="${sceneId}"]`);
+  if (el) el.innerHTML = _renderSceneActions(sc);
 }
 
 function sceneClimateOffsetChanged(sceneId, value) {
