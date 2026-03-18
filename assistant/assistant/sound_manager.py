@@ -22,6 +22,7 @@ Sound-Events:
 
 import asyncio
 import logging
+import re
 import time
 from datetime import datetime
 from typing import Optional
@@ -31,6 +32,86 @@ from .constants import TTS_PLAYBACK_TIMEOUT
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# TTS-Text-Normalisierung: ASCII-Umlaute → echte Umlaute + Phonetik
+# ---------------------------------------------------------------------------
+# Viele Strings im Code verwenden ASCII-Ersetzungen (ae/oe/ue statt ä/ö/ü).
+# Piper TTS spricht diese woertlich aus ("Rolllaeden" statt "Rollläden").
+# Diese Normalisierung konvertiert kontextsensitiv zurueck.
+
+# "ue" → "ü": NICHT vor "ll" (aktuell, manuell, virtuell, duell etc.)
+_RE_UE_LOWER = re.compile(r'ue(?!ll)', re.IGNORECASE)
+# "ae" → "ä"
+_RE_AE_LOWER = re.compile(r'ae', re.IGNORECASE)
+# "oe" → "ö"
+_RE_OE_LOWER = re.compile(r'oe', re.IGNORECASE)
+# Geschuetzte Woerter: Enthalten ae/oe/ue die NICHT konvertiert werden duerfen
+_PROTECTED_WORDS = re.compile(
+    r'\b(?:Israel|Michael|Rafael|Raphael|Queue|Sequel|Fondue|Rescue'
+    r'|Revue|Avenue|Continue|Venue|Residue|Blue|True|Clue)\b',
+    re.IGNORECASE,
+)
+
+
+def _replace_preserving_case(match: re.Match, umlaut_lower: str, umlaut_upper: str) -> str:
+    """Ersetzt ae/oe/ue und erhält die Gross-/Kleinschreibung."""
+    text = match.group(0)
+    if text[0].isupper() and text[1].isupper():
+        return umlaut_upper  # AE → Ä (Wort komplett gross)
+    if text[0].isupper():
+        return umlaut_upper  # Ae → Ä (Wortanfang)
+    return umlaut_lower      # ae → ä
+
+
+def _normalize_tts_umlauts(text: str) -> str:
+    """Konvertiert ASCII-Umlaut-Ersetzungen zurueck in echte Umlaute.
+
+    Kontextsensitiv: Vermeidet Fehlersetzungen bei Woertern wie
+    'aktuell', 'manuell', 'Israel', 'Queue' etc.
+    """
+    # Geschuetzte Woerter temporaer durch Placeholder ersetzen
+    protected = {}
+    for i, m in enumerate(_PROTECTED_WORDS.finditer(text)):
+        placeholder = f"\x00PW{i}\x00"
+        protected[placeholder] = m.group(0)
+    for placeholder, original in protected.items():
+        text = text.replace(original, placeholder, 1)
+
+    # Schritt 1: "ae" → "ä"
+    text = _RE_AE_LOWER.sub(lambda m: _replace_preserving_case(m, "ä", "Ä"), text)
+    # Schritt 2: "oe" → "ö"
+    text = _RE_OE_LOWER.sub(lambda m: _replace_preserving_case(m, "ö", "Ö"), text)
+    # Schritt 3: "ue" → "ü" (nicht vor "ll")
+    text = _RE_UE_LOWER.sub(lambda m: _replace_preserving_case(m, "ü", "Ü"), text)
+
+    # Geschuetzte Woerter wiederherstellen
+    for placeholder, original in protected.items():
+        text = text.replace(placeholder, original)
+
+    return text
+
+
+# Phonetische Ersetzungen: Englische Titel bei deutschem TTS
+# Piper spricht "Sir" mit deutscher Phonetik → "Sör" klingt korrekt englisch.
+_PHONETIC_REPLACEMENTS = re.compile(r"\b(Sir|Ma'am|Madam)\b", re.IGNORECASE)
+_PHONETIC_MAP = {
+    "sir": "Sör", "Sir": "Sör", "SIR": "SÖR",
+    "ma'am": "Mähm", "Ma'am": "Mähm", "MA'AM": "MÄHM",
+    "madam": "Mäddem", "Madam": "Mäddem", "MADAM": "MÄDDEM",
+}
+
+
+def normalize_tts_text(text: str) -> str:
+    """Vollstaendige TTS-Text-Normalisierung: Umlaute + Phonetik.
+
+    Wird als letzter Schritt vor dem TTS-Aufruf angewendet.
+    """
+    text = _normalize_tts_umlauts(text)
+    text = _PHONETIC_REPLACEMENTS.sub(
+        lambda m: _PHONETIC_MAP.get(m.group(0), m.group(0)), text,
+    )
+    return text
 
 # TTS-Chime-Texte als Fallback wenn keine Soundfiles vorhanden
 # Kurze, praegnante Texte die als akustisches Signal dienen
@@ -567,6 +648,9 @@ class SoundManager:
         speak_text = _re.sub(r'\s{2,}', ' ', speak_text).strip()
         if not speak_text:
             speak_text = text
+
+        # TTS-Normalisierung: ASCII-Umlaute → echte Umlaute + "Sir" → "Sör"
+        speak_text = normalize_tts_text(speak_text)
 
         # Alexa/Echo: Keine Audio-Dateien, stattdessen Alexa-eigener TTS
         if self._is_alexa_speaker(speaker_entity):
