@@ -719,6 +719,16 @@ async def jarvis_status():
     return status
 
 
+@app.get("/api/jarvis/mood-history")
+async def jarvis_mood_history(days: int = 7):
+    """Jarvis Stimmungs-History der letzten X Tage."""
+    if hasattr(brain, "inner_state") and hasattr(brain.inner_state, "get_mood_history"):
+        history = await brain.inner_state.get_mood_history(days=min(days, 90))
+        summary = await brain.inner_state.get_mood_summary(days=min(days, 90))
+        return {"history": history, "summary": summary}
+    return {"history": [], "summary": ""}
+
+
 @app.get("/api/jarvis/insights")
 async def jarvis_insights():
     """Letzte proaktive Beobachtungen und Insights."""

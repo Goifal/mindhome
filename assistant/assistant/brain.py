@@ -3566,6 +3566,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if mood_hint:
             sections.append(("mood", f"\n\nEMOTIONALE LAGE: {mood_hint}", 1))
 
+        # Jarvis Inner-State Mood-Trend (letzte 7 Tage)
+        if hasattr(self, "inner_state") and hasattr(self.inner_state, "get_mood_summary"):
+            try:
+                mood_summary = await self.inner_state.get_mood_summary(days=7)
+                if mood_summary:
+                    sections.append(("mood_trend", f"\n\nDEINE EIGENE STIMMUNG: {mood_summary}", 5))
+            except Exception as e:
+                logger.debug("Mood-Summary fehlgeschlagen: %s", e)
+
         # Phase 4B: Stress-getriggerte Hilfsangebote
         if profile.need_mood:
             try:
