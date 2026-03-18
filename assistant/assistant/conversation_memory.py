@@ -245,19 +245,23 @@ class ConversationMemory:
             return []
 
     async def delete_project(self, name: str) -> dict:
-        """Loescht ein Projekt."""
+        """Loescht ein Projekt.
+
+        Lock schuetzt gegen gleichzeitige Updates auf dasselbe Projekt.
+        """
         if not self.redis or not self.enabled:
             return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
 
-        project = await self._find_project(name)
-        if not project:
-            return {"success": False, "message": f"Projekt '{name}' nicht gefunden."}
+        async with self._project_lock:
+            project = await self._find_project(name)
+            if not project:
+                return {"success": False, "message": f"Projekt '{name}' nicht gefunden."}
 
-        try:
-            await self.redis.hdel(_KEY_PROJECTS, project["id"])
-            return {"success": True, "message": f"Projekt '{project['name']}' geloescht."}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+            try:
+                await self.redis.hdel(_KEY_PROJECTS, project["id"])
+                return {"success": True, "message": f"Projekt '{project['name']}' geloescht."}
+            except Exception as e:
+                return {"success": False, "message": str(e)}
 
     async def _find_project(self, name: str) -> Optional[dict]:
         """Findet ein Projekt per Name (exakt oder Teilstring)."""
