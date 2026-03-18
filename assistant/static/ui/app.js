@@ -1886,6 +1886,7 @@ const HELP_TEXTS = {
   'diagnostics.stale_sensor_minutes': {title:'Sensor veraltet', text:'Nach wie vielen Min ohne Update veraltet.'},
   'diagnostics.offline_threshold_minutes': {title:'Geraet offline', text:'Nach wie vielen Min ein Geraet offline gilt.'},
   'diagnostics.alert_cooldown_minutes': {title:'Diagnostik-Cooldown', text:'Min. Abstand zwischen Diagnostik-Warnungen.'},
+  'diagnostics.suppress_after_cycles': {title:'Auto-Suppress nach Zyklen', text:'Nach wie vielen aufeinanderfolgenden Diagnostik-Zyklen ein dauerhaft offline/stale Gerät automatisch unterdrückt wird. Kommt es wieder online, wird die Unterdrückung sofort aufgehoben.'},
   'diagnostics.monitor_domains': {title:'Überwachte Domains', text:'Welche HA-Domains überwacht werden.'},
   'diagnostics.exclude_patterns': {title:'Ignorierte Patterns', text:'Entity-IDs die ausgeschlossen werden.'},
   'maintenance.enabled': {title:'Wartungs-Erinnerungen', text:'Automatische Erinnerungen für Geräte-Wartung.'},
@@ -9868,6 +9869,7 @@ function renderDevices() {
     fRange('diagnostics.stale_sensor_minutes', 'Sensor veraltet nach', 30, 600, 30, {30:'30 Min',60:'1 Std',120:'2 Std',300:'5 Std',600:'10 Std'}) +
     fRange('diagnostics.offline_threshold_minutes', 'Geraet offline nach', 10, 120, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
     fRange('diagnostics.alert_cooldown_minutes', 'Wiederholung frühestens nach', 10, 240, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'}) +
+    fRange('diagnostics.suppress_after_cycles', 'Auto-Suppress nach Zyklen', 2, 10, 1, {2:'2',3:'3',4:'4',5:'5',6:'6',8:'8',10:'10'}) +
     fChipSelect('diagnostics.monitor_domains', 'Überwachte Domains (für nicht-annotierte Entities)', [
         {v:'sensor',l:'Sensoren'}, {v:'binary_sensor',l:'Binaer-Sensoren'},
         {v:'light',l:'Lichter'}, {v:'switch',l:'Schalter'},
