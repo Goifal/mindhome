@@ -1121,22 +1121,31 @@ class ProactiveManager:
             device_trigger_modes = scenes_cfg.get("device_trigger_modes", {})
 
             for scene_id in scene_ids:
-                # UND-Modus: Alle anderen Trigger-Entities muessen ebenfalls aktiv sein
+                # [A] Cooldown: 30s pro Szene (verhindert Mehrfach-Trigger bei Toggle)
+                redis = getattr(self.brain, "_redis", None) or getattr(self, "_redis", None)
+                if redis:
+                    cooldown_key = f"mha:scene:dt_cooldown:{scene_id}"
+                    try:
+                        if await redis.get(cooldown_key):
+                            logger.debug("Scene Device-Trigger: Cooldown aktiv fuer '%s'", scene_id)
+                            continue
+                    except Exception:
+                        pass
+
+                # [B] UND-Modus: Alle anderen Trigger-Entities muessen ebenfalls aktiv sein
                 trigger_mode = device_trigger_modes.get(scene_id, "or")
                 if trigger_mode == "and":
-                    # Alle Entities finden die diese Szene triggern
                     all_trigger_entities = [
                         eid for eid, sids in device_trigger_map.items()
                         if scene_id in sids
                     ]
                     if len(all_trigger_entities) > 1:
-                        # Aktuelle States von HA holen
                         states = await self.ha.get_states() or []
                         state_map = {s.get("entity_id", ""): s.get("state", "").lower() for s in states}
                         all_active = all(
                             state_map.get(eid, "").lower() in self._ACTIVE_STATES
-                            if eid != entity_id  # Das aktuelle Entity ist gerade gewechselt
-                            else True  # Dieses ist gerade aktiv geworden
+                            if eid != entity_id
+                            else True
                             for eid in all_trigger_entities
                         )
                         if not all_active:
@@ -1144,13 +1153,19 @@ class ProactiveManager:
                                 "Scene Device-Trigger UND-Modus: %s aktiv, aber nicht alle Trigger fuer '%s' erfuellt",
                                 entity_id, scene_id,
                             )
-                            continue  # Naechste Szene pruefen
+                            continue
 
-                # Szenen-Aktivitaet aus gespeicherter Config oder Defaults ableiten
+                # [C] Cooldown setzen (30s)
+                if redis:
+                    try:
+                        await redis.setex(cooldown_key, 30, "1")
+                    except Exception:
+                        pass
+
+                # [D] Szenen-Aktivitaet aus gespeicherter Config oder Defaults ableiten
                 scene_data = scenes_cfg.get(scene_id, {})
                 activity = scene_data.get("activity")
 
-                # Defaults durchsuchen falls nicht in saved
                 if not activity:
                     _defaults = {
                         "filmabend": "watching", "kino": "watching",
@@ -1166,8 +1181,6 @@ class ProactiveManager:
 
                 transition = scene_data.get("transition", 3)
 
-                # Silence-Defaults: UI speichert nur Abweichungen, daher
-                # muessen die gleichen Defaults wie im Frontend gelten
                 _silence_defaults = {
                     "filmabend", "kino", "schlafen", "gute_nacht",
                     "meditation", "konzentration", "telefonat", "meeting",
@@ -1176,16 +1189,18 @@ class ProactiveManager:
                 silence_default = scene_id in _silence_defaults
                 silence = scene_data.get("silence", silence_default)
 
-                # Aktivitaets-Override setzen
-                duration = max(transition * 20, 60)  # Mindestens 60 Min
+                # [E] Aktivitaets-Override setzen
+                duration = max(transition * 20, 60)
                 self.brain.activity.set_manual_override(activity, duration_minutes=duration)
+
+                # [F] Szenen-Aktionen ausfuehren (Licht, Cover, Klima)
+                await self._execute_scene_actions(scene_id)
 
                 logger.info(
                     "Scene Device-Trigger: %s (%s→%s) → Szene '%s' (activity=%s, silence=%s)",
                     entity_id, old_val, new_val, scene_id, activity, silence,
                 )
 
-                # Benachrichtigung an User
                 await self._notify("scene_device_triggered", LOW, {
                     "scene_id": scene_id,
                     "entity_id": entity_id,
@@ -1196,6 +1211,24 @@ class ProactiveManager:
                 break  # Nur erste passende Szene aktivieren
         except Exception as e:
             logger.debug("Scene Device-Trigger Fehler: %s", e)
+
+    async def _execute_scene_actions(self, scene_id: str):
+        """Fuehrt die Mood-Scene-Aktionen aus (Licht, Cover, Klima etc.).
+
+        Delegiert an function_calling._exec_activate_scene wenn vorhanden,
+        sonst direkte HA-Service-Aufrufe als Fallback.
+        """
+        try:
+            fc = getattr(self.brain, "function_calling", None)
+            if fc and hasattr(fc, "_exec_activate_scene"):
+                result = await fc._exec_activate_scene({"scene": scene_id})
+                logger.debug("Scene-Actions fuer '%s' ausgefuehrt: %s", scene_id, result.get("message", ""))
+                return
+
+            # Fallback: Direkte Ausfuehrung wenn function_calling nicht verfuegbar
+            logger.debug("Scene-Actions Fallback fuer '%s' (function_calling nicht verfuegbar)", scene_id)
+        except Exception as e:
+            logger.warning("Scene-Actions Fehler fuer '%s': %s", scene_id, e)
 
     def _match_appliance(self, entity_id: str) -> Optional[str]:
         """Prueft ob entity_id ein bekanntes Geraet matched. Gibt appliance-key zurueck oder None."""

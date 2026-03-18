@@ -4558,7 +4558,7 @@ const _ACTION_DOMAINS = [
 const _DEFAULT_MOOD_ACTIONS = {
   gemuetlich: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:30,color_temp_kelvin:2700}},{domain:'cover',service:'close_cover',data:{}}],climate_offset:1.0},
   filmabend: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:10,color_temp_kelvin:2200}},{domain:'cover',service:'close_cover',data:{}},{domain:'media_player',service:'turn_on',data:{}}]},
-  party: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:100}},{domain:'cover',service:'close_cover',data:{}}]},
+  party: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:100,rgb_color:[255,100,50]}},{domain:'cover',service:'close_cover',data:{}}]},
   konzentration: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:80,color_temp_kelvin:5000}}]},
   gute_nacht: {actions:[{domain:'light',service:'turn_off',data:{}},{domain:'cover',service:'close_cover',data:{}}],climate_offset:-2.0},
   aufwachen: {actions:[{domain:'light',service:'turn_on',data:{brightness_pct:60,color_temp_kelvin:4000}},{domain:'cover',service:'open_cover',data:{}}],climate_offset:1.0},
@@ -4595,7 +4595,10 @@ function _summarizeSceneActions(sc) {
     const dom = domLabels[a.domain] || a.domain;
     const d = a.data || {};
     if (a.domain === 'light' && a.service === 'turn_on' && d.brightness_pct != null) {
-      return `${dom} ${d.brightness_pct}%${d.color_temp_kelvin ? ' ' + d.color_temp_kelvin + 'K' : ''}`;
+      let detail = `${dom} ${d.brightness_pct}%`;
+      if (d.color_temp_kelvin) detail += ` ${d.color_temp_kelvin}K`;
+      if (d.rgb_color) detail += ` RGB`;
+      return detail;
     }
     if (a.service === 'turn_off') return `${dom} aus`;
     if (a.service === 'close_cover') return `${dom} zu`;
@@ -4635,7 +4638,11 @@ function _renderSceneActions(sc) {
         onchange="sceneActionDataChanged('${esc(sc.id)}',${i},'brightness_pct',this.value)">
       <input type="number" min="2000" max="6500" step="100" value="${data.color_temp_kelvin ?? ''}" placeholder="Farbtemp K"
         style="width:70px;font-size:10px;padding:2px 4px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;"
-        onchange="sceneActionDataChanged('${esc(sc.id)}',${i},'color_temp_kelvin',this.value)">`;
+        onchange="sceneActionDataChanged('${esc(sc.id)}',${i},'color_temp_kelvin',this.value)">
+      <input type="color" value="${data.rgb_color ? '#'+data.rgb_color.map(c=>(c<16?'0':'')+c.toString(16)).join('') : ''}"
+        title="Farbe (optional, ueberschreibt Farbtemperatur)"
+        style="width:28px;height:22px;padding:0;border:1px solid var(--border);border-radius:4px;cursor:pointer;${data.rgb_color ? '' : 'opacity:0.3;'}"
+        onchange="sceneActionColorChanged('${esc(sc.id)}',${i},this.value)">`;
     } else if (domain === 'cover' && service === 'set_cover_position') {
       html += `<input type="number" min="0" max="100" step="5" value="${data.position ?? ''}" placeholder="Position %"
         style="width:64px;font-size:10px;padding:2px 4px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;"
@@ -4696,6 +4703,27 @@ function sceneActionDataChanged(sceneId, idx, key, value) {
     sc.actions[idx].data[key] = num;
   }
   _saveScenes(scenes);
+}
+
+function sceneActionColorChanged(sceneId, idx, hexColor) {
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc || !sc.actions || !sc.actions[idx]) return;
+  if (!sc.actions[idx].data) sc.actions[idx].data = {};
+  if (!hexColor || hexColor === '#000000') {
+    delete sc.actions[idx].data.rgb_color;
+  } else {
+    const r = parseInt(hexColor.substr(1,2), 16);
+    const g = parseInt(hexColor.substr(3,2), 16);
+    const b = parseInt(hexColor.substr(5,2), 16);
+    sc.actions[idx].data.rgb_color = [r, g, b];
+    // RGB und Farbtemperatur sind exklusiv — Farbtemperatur entfernen
+    delete sc.actions[idx].data.color_temp_kelvin;
+  }
+  _saveScenes(scenes);
+  // Editor neu rendern um Farbtemp-Feld zu aktualisieren
+  const el = document.querySelector(`.scene-actions-editor[data-scene-id="${sceneId}"]`);
+  if (el) el.innerHTML = _renderSceneActions(sc);
 }
 
 function addSceneAction(sceneId) {
