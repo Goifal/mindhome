@@ -83,12 +83,35 @@ MOOD_PROMPT_HINTS = {
     ),
 }
 
-# Prompt-Einfluss auf Confidence
+# Prompt-Einfluss auf Confidence — mit konkreten Phrasen
 CONFIDENCE_HINTS = {
-    (0.0, 0.3): "SELBSTSICHERHEIT: Niedrig — vorsichtiger formulieren, mehr qualifizieren.",
+    (0.0, 0.3): (
+        "SELBSTSICHERHEIT: Niedrig.\n"
+        "VERWENDE EINE: 'Ich bin mir nicht sicher, aber...', "
+        "'Das uebersteigt meine aktuelle Datenlage.', "
+        "'Ohne Gewaehr...', 'Wenn ich raten muesste...'"
+    ),
     (0.3, 0.6): "",  # Normal, kein Hint noetig
-    (0.6, 0.8): "SELBSTSICHERHEIT: Hoch — bestimmt und praezise.",
-    (0.8, 1.01): "SELBSTSICHERHEIT: Sehr hoch — souveraen, kurz, keine Unsicherheitsmarker.",
+    (0.6, 0.8): (
+        "SELBSTSICHERHEIT: Hoch.\n"
+        "VERWENDE EINE: 'Soweit ich das beurteilen kann...', "
+        "'Wenn ich richtig liege...', 'Mit hoher Wahrscheinlichkeit...'"
+    ),
+    (0.8, 1.01): (
+        "SELBSTSICHERHEIT: Sehr hoch.\n"
+        "VERWENDE EINE: 'Definitiv.', 'Da bin ich mir sicher.', "
+        "'Ganz klar.', 'Ohne Frage.'"
+    ),
+}
+
+# Mood-Transitions: (von, nach) -> Kommentar
+MOOD_TRANSITIONS = {
+    (MOOD_IRRITATED, MOOD_CONTENT): "Deutlich besser als vorhin.",
+    (MOOD_IRRITATED, MOOD_NEUTRAL): "Na also.",
+    (MOOD_CONCERNED, MOOD_NEUTRAL): "Problem scheint geloest.",
+    (MOOD_CONCERNED, MOOD_CONTENT): "Das beruhigt mich.",
+    (MOOD_NEUTRAL, MOOD_PROUD): "Darf ich anmerken — das lief gut.",
+    (MOOD_NEUTRAL, MOOD_AMUSED): "Das hat mich gerade ueberrascht.",
 }
 
 
@@ -98,6 +121,7 @@ class InnerStateEngine:
     def __init__(self):
         self.redis: Optional[aioredis.Redis] = None
         self._mood: str = MOOD_NEUTRAL
+        self._previous_mood: str = MOOD_NEUTRAL
         self._confidence: float = 0.6  # Start: Solide Basis
         self._satisfaction: float = 0.5
         self._last_update: float = time.time()
@@ -182,6 +206,23 @@ class InnerStateEngine:
         self._confidence = min(1.0, self._confidence + 0.05)
         await self._update_mood()
 
+    async def on_user_mood_change(self, mood: str, person: str = ""):
+        """Reagiert auf Stimmungsaenderung des Users.
+
+        Jarvis passt seinen eigenen Zustand empathisch an:
+        - frustrated/stressed → besorgt
+        - good → leicht zufriedener
+        """
+        if mood in ("frustrated", "stressed"):
+            self._previous_mood = self._mood
+            self._mood = MOOD_CONCERNED
+            logger.info("Inner-State: → %s (User '%s' ist %s)", MOOD_CONCERNED, person or "?", mood)
+            await self._save_state()
+        elif mood == "good":
+            self._satisfaction = min(1.0, self._satisfaction + 0.1)
+            logger.info("Inner-State: satisfaction +0.1 (User '%s' gut gelaunt)", person or "?")
+            await self._save_state()
+
     async def on_security_event(self):
         """Sicherheitsrelevantes Event erkannt."""
         self._mood = MOOD_CONCERNED
@@ -217,6 +258,7 @@ class InnerStateEngine:
 
         if new_mood != self._mood:
             logger.info("Inner-State: %s → %s", self._mood, new_mood)
+            self._previous_mood = self._mood
             self._mood = new_mood
 
         await self._save_state()
@@ -254,7 +296,23 @@ class InnerStateEngine:
                 parts.append(hint)
                 break
 
+        # Mood-Transition-Kommentar
+        transition = self.get_transition_comment()
+        if transition:
+            parts.append(f"STIMMUNGSWECHSEL: Erwaehne beilaeufig: '{transition}'")
+
         return "\n".join(parts) + "\n" if parts else ""
+
+    def get_transition_comment(self) -> Optional[str]:
+        """Kommentar bei Stimmungswechsel (einmal pro Transition)."""
+        if not hasattr(self, "_previous_mood") or self._previous_mood == self._mood:
+            return None
+        comment = MOOD_TRANSITIONS.get((self._previous_mood, self._mood))
+        if comment:
+            # Nur einmal pro Transition
+            self._previous_mood = self._mood
+            return comment
+        return None
 
     @property
     def mood(self) -> str:

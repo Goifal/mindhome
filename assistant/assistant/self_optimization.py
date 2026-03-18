@@ -291,6 +291,23 @@ class SelfOptimization:
                 logger.warning("Vorschlag ueber Maximum: %s=%s (max=%s)", param, value, bounds["max"])
                 return False
 
+        # 5. KONSISTENZ: Sarkasmus-Formalitaet Sync
+        current = self._get_current_values()
+        if param == "sarcasm_level":
+            formality = current.get("formality_start", 80)
+            if value >= 4 and formality > 60:
+                logger.warning(
+                    "KONSISTENZ: sarcasm_level=%s mit formality_start=%s widerspruechlich — abgelehnt",
+                    value, formality,
+                )
+                return False
+            if value <= 1 and formality < 40:
+                logger.warning(
+                    "KONSISTENZ: sarcasm_level=%s mit formality_start=%s widerspruechlich — abgelehnt",
+                    value, formality,
+                )
+                return False
+
         return True
 
     async def _generate_proposals(self, corrections: list, feedback_stats: dict,

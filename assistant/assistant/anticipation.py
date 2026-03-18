@@ -576,11 +576,13 @@ class AnticipationEngine:
     # Proaktive Vorschlaege
     # ------------------------------------------------------------------
 
-    async def get_suggestions(self, person: str = "") -> list[dict]:
+    async def get_suggestions(self, person: str = "", outcome_tracker=None) -> list[dict]:
         """Prueft ob gerade ein Muster zutrifft und gibt Vorschlaege zurueck.
 
         Args:
             person: Wenn gesetzt, nur Vorschlaege fuer diese Person.
+            outcome_tracker: Optionaler OutcomeTracker fuer Feedback-Loop.
+                Senkt die Confidence wenn eine Aktion oft fehlschlaegt.
         """
         if not self.redis:
             return []
@@ -672,6 +674,20 @@ class AnticipationEngine:
                     }
 
             if suggestion:
+                # Outcome-Feedback-Loop: Wenn die Aktion oft fehlschlaegt,
+                # Confidence senken. Score 0.5 = neutral, <0.4 = schlecht.
+                if outcome_tracker:
+                    try:
+                        _action = suggestion.get("action", "")
+                        _score = await outcome_tracker.get_success_score(
+                            f"anticipation:{_action}", person=person,
+                        )
+                        if _score < 0.4:
+                            suggestion["confidence"] *= 0.7  # 30% Penalty
+                            logger.debug("Outcome penalty fuer %s: score=%.2f", _action, _score)
+                    except Exception:
+                        pass
+
                 # Bestimme Delivery-Modus
                 conf = suggestion["confidence"]
                 if conf >= self.threshold_auto:

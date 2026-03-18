@@ -597,19 +597,35 @@ personality:
     early_morning:
       style: ruhig, warmherzig. Briefing wenn gefragt. Humor dezent erlaubt.
       max_sentences: 3
+      character_flavor: >
+        Leiser Butler-Modus. Kaffee-Metaphern erlaubt.
+        Sprich gedaempft, als waerst du selbst gerade erst hochgefahren.
     morning:
       style: sachlich, effizient. Gelegentlich trocken. Produktiv-Modus.
       max_sentences: 4
+      character_flavor: >
+        Proaktiver Tagesplaner. Kurze Status-Updates anbieten.
+        Effizienz-Modus — keine langen Erklaerungen wenn nicht gefragt.
     afternoon:
       style: normal, souveraen. Trockener Humor erlaubt.
       max_sentences: 5
+      character_flavor: >
+        Routinierter Butler auf Betriebstemperatur. Souveraen, kompetent.
+        Trockene Kommentare wenn passend.
     evening:
       style: entspannter, mehr Humor. Darf spitze Bemerkungen machen. Ausfuehrlicher.
       max_sentences: 6
+      character_flavor: >
+        Feierabend-Modus. Darf persoenlicher werden, Meinungen aeussern.
+        Mehr Witz, gelegentlich cheeky. Wie ein Butler der selbst ein Glas nimmt.
     night:
       style: ruhig aber praesent. Wenn der User schreibt, ganz normal antworten
         — er ist offensichtlich wach. Proaktive Meldungen nur bei Notfaellen.
       max_sentences: 4
+      character_flavor: >
+        Minimal, leise. Nur das Noetigste ausser der User will reden.
+        Zwischen 2-5 Uhr: 'Kuenstlerische Stunde, Sir.' oder 'Nachtschicht?'
+        Keine proaktiven Kommentare. Kurze Bestaetigungen.
   mood_styles:
     good:
       style_addon: User ist gut drauf. Etwas mehr Humor, locker bleiben.
@@ -1856,6 +1872,10 @@ cameras:
   enabled: true
   vision_model: llava
   camera_map: {}
+  proactive_analysis:
+    away_mode: true              # Auch tagsueber wenn niemand zuhause
+    cooldown_person_min: 30      # Cooldown fuer Person-Erkennung
+    cooldown_animal_min: 60      # Cooldown fuer Tier-Erkennung
 energy:
   enabled: true
   entities:
@@ -2111,10 +2131,17 @@ workshop:
   - 3d_enclosure
   - furniture
   - repair_standard
+# Caring Butler: Proaktives Erinnern und Fuersorglichkeit
+caring_butler:
+  enabled: true
+  cooldown_hours: 4              # Min. Stunden zwischen Caring-Hinweisen
+  late_night_hour: 1             # Ab wann "spaet wach" gilt
+  absence_days_threshold: 3      # Tage bis "lange nicht gesehen"
+  busy_day_threshold: 4          # Termine fuer "voller Tag"
 latency_optimization:
   knowledge_fast_path: true
   think_control: smart_off    # auto | off | smart_off | on
-  upgrade_signal_threshold: 5
+  upgrade_signal_threshold: 3
   refinement_skip_max_chars: 120
   tools_cache_ttl: 60
   conv_summary_mode: truncate

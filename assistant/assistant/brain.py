@@ -396,9 +396,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self._last_context: dict = {}
 
         # Feature 5: Letzte ausgefuehrte Aktion (für emotionale Reaktionserkennung im naechsten Turn)
-        # TODO: Per Person scopen um Cross-User-Leakage im Pronomen-Shortcut zu verhindern
-        self._last_executed_action: str = ""
-        self._last_executed_action_args: dict = {}
+        # Per-Person Scoping um Cross-User-Leakage im Pronomen-Shortcut zu verhindern
+        # Dict: person -> (action_name, action_args, timestamp)
+        self._last_executed_actions: dict[str, tuple[str, dict, float]] = {}
+
+        self._LAST_ACTION_TTL = 300  # 5 Minuten TTL für Per-Person-Action-Tracking
 
         # Pipeline-/Konversations-Flags (getattr-frei)
         self._request_from_pipeline: bool = False
@@ -514,6 +516,119 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         """Hot-Reload aller konfigurierbaren Brain-Daten (nach UI-Aenderung)."""
         self._load_configurable_data()
         logger.info("Brain: Konfigurierbare Daten neu geladen")
+
+    # --- Per-Person Last-Action Tracking (Cross-User-Leakage Fix) ---
+
+    def _get_last_action(self, person: str = "") -> tuple[str, dict]:
+        """Letzte Aktion einer Person abrufen (mit 5-Min-TTL)."""
+        import time
+        key = (person or "user").lower()
+        entry = self._last_executed_actions.get(key)
+        if not entry:
+            return "", {}
+        action, args, ts = entry
+        if (time.monotonic() - ts) > self._LAST_ACTION_TTL:
+            del self._last_executed_actions[key]
+            return "", {}
+        return action, args
+
+    def _set_last_action(self, action: str, args: dict, person: str = "") -> None:
+        """Letzte Aktion einer Person setzen."""
+        import time
+        key = (person or "user").lower()
+        if action:
+            self._last_executed_actions[key] = (action, dict(args), time.monotonic())
+        elif key in self._last_executed_actions:
+            del self._last_executed_actions[key]
+
+    async def _get_caring_context(self, person: str, context: dict) -> str:
+        """Caring-Butler: Prueft ob ein fuersorglicher Hinweis passt.
+
+        Max 1 Hinweis pro Person pro 4 Stunden. Quellen:
+        - Follow-Ups aus conversation_memory
+        - Voller Kalender-Tag morgen
+        - Spaete Stunde
+        """
+        _cfg = cfg.yaml_config.get("caring_butler", {})
+        if not _cfg.get("enabled", True) or not person:
+            return ""
+        try:
+            # Cooldown pruefen
+            cooldown_h = _cfg.get("cooldown_hours", 4)
+            if self.memory and self.memory.redis:
+                _ck = f"mha:caring:cooldown:{person.lower()}"
+                if await self.memory.redis.get(_ck):
+                    return ""
+
+            hints = []
+
+            # Follow-Ups aus conversation_memory
+            if self.conversation_memory:
+                try:
+                    followups = await self.conversation_memory.get_pending_followups(person)
+                    if followups:
+                        _fu = followups[0] if isinstance(followups[0], str) else followups[0].get("topic", "")
+                        if _fu:
+                            hints.append(f"Frage beilaeufig nach: '{_fu}'")
+                except Exception:
+                    pass
+
+            # Voller Tag morgen
+            cal = context.get("calendar_tomorrow", [])
+            _threshold = _cfg.get("busy_day_threshold", 4)
+            if isinstance(cal, list) and len(cal) >= _threshold:
+                hints.append(f"Voller Tag morgen ({len(cal)} Termine). Frage ob Vorbereitung noetig.")
+
+            # Spaete Stunde
+            from datetime import datetime
+            _hour = datetime.now().hour
+            _late = _cfg.get("late_night_hour", 1)
+            if _late <= _hour < 5:
+                hints.append("Es ist sehr spaet. Erwaehne beilaeufig die Uhrzeit.")
+
+            if not hints:
+                return ""
+
+            # Cooldown setzen
+            if self.memory and self.memory.redis:
+                await self.memory.redis.setex(_ck, cooldown_h * 3600, "1")
+
+            return f"BUTLER-INSTINKT: {hints[0]} Nur wenn es natuerlich passt, nicht erzwingen.\n"
+        except Exception as e:
+            logger.debug("_get_caring_context fehlgeschlagen: %s", e)
+            return ""
+
+    async def _get_pending_asides(self, max_items: int = 2) -> list[str]:
+        """Holt pending LOW/MEDIUM Items aus der Proactive-Batch-Queue.
+
+        Items die >= 5 Minuten alt sind werden als beilaeufige Anmerkung
+        in die aktuelle Antwort eingewebt statt als separater TTS-Burst.
+        """
+        if not self.proactive or not hasattr(self.proactive, "_batch_queue"):
+            return []
+        asides = []
+        try:
+            import time as _time
+            from datetime import datetime as _dt
+            async with self.proactive._state_lock:
+                consumed_indices = []
+                now = _dt.now()
+                for i, item in enumerate(self.proactive._batch_queue):
+                    if len(asides) >= max_items:
+                        break
+                    item_time = _dt.fromisoformat(item["time"])
+                    age_minutes = (now - item_time).total_seconds() / 60
+                    if age_minutes >= 5:
+                        desc = item.get("description", "")
+                        if desc:
+                            asides.append(desc)
+                            consumed_indices.append(i)
+                # Consumed items entfernen (rueckwaerts um Indices nicht zu verschieben)
+                for idx in reversed(consumed_indices):
+                    self.proactive._batch_queue.pop(idx)
+        except Exception as e:
+            logger.debug("_get_pending_asides fehlgeschlagen: %s", e)
+        return asides
 
     async def get_states_cached(self) -> list:
         """Cached get_states() — vermeidet 8x API-Call pro Request (P1)."""
@@ -2117,9 +2232,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             r"\s*[.!]?$",
             text.lower().strip(),
         )
-        if _room_repeat and self._last_executed_action and self._last_executed_action.startswith("set_"):
-            _la = self._last_executed_action
-            _la_args = dict(self._last_executed_action_args or {})
+        _la_person, _la_args_person = self._get_last_action(person)
+        if _room_repeat and _la_person and _la_person.startswith("set_"):
+            _la = _la_person
+            _la_args = dict(_la_args_person or {})
             _target_room = _room_repeat.group(1) or _room_repeat.group(2) or (room or "")
             if _target_room:
                 _la_args["room"] = _target_room
@@ -2135,10 +2251,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             r"(aus|an|ein|auf|zu|hoch|runter)\b",
             text.lower().strip(),
         )
-        if _pronoun_match and self._last_executed_action:
+        if _pronoun_match and _la_person:
             _target_state = _pronoun_match.group(1)
-            _la = self._last_executed_action
-            _la_args = dict(self._last_executed_action_args or {})
+            _la = _la_person
+            _la_args = dict(_la_args_person or {})
             # Nur für Geraete-Aktionen (set_light, set_cover, set_climate)
             if _la.startswith("set_"):
                 if _target_state in ("aus", "zu", "runter"):
@@ -2312,8 +2428,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 self.state_change_log.mark_jarvis_action(entity_id)
 
                         # Letzte Aktion merken (für Pronomen-Shortcut im nächsten Turn)
-                        self._last_executed_action = func_name
-                        self._last_executed_action_args = dict(func_args)
+                        self._set_last_action(func_name, func_args, person)
                         return self._result(response_text, actions=all_actions, model="device_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Geraete-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
@@ -2368,8 +2483,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     await emit_action(func_name, func_args, result)
 
                     # Letzte Aktion merken (für Pronomen-Shortcut im nächsten Turn)
-                    self._last_executed_action = func_name
-                    self._last_executed_action_args = dict(func_args)
+                    self._set_last_action(func_name, func_args, person)
                     return self._result(response_text, actions=[{"function": func_name, "args": func_args, "result": result}], model="media_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Media-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
@@ -2824,8 +2938,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 room=room, tts=_cached_tts, emitted=bool(_cached_tts),
             )
 
-        # 0b. Intent vorab bestimmen (rein pattern-basiert, kein I/O)
-        intent_type = self._classify_intent(text)
+        # 0b. Intent vorab bestimmen — Pre-Classifier-Ergebnis als Shortcut nutzen
+        intent_type = self._classify_intent(text, profile=profile)
 
         # ----------------------------------------------------------------
         # FAST-PATH: Wissensfragen ohne Smart-Home-Bezug brauchen keinen
@@ -2967,7 +3081,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # um CPU/Redis I/O zu sparen — diese Daten sind dort nicht relevant.
         if profile.category not in ("device_command", "device_query"):
             _mega_tasks.append(("problem_solving", self._build_problem_solving_context(text)))
-            _mega_tasks.append(("anticipation", self.anticipation.get_suggestions(person=person or "")))
+            _mega_tasks.append(("anticipation", self.anticipation.get_suggestions(
+                person=person or "", outcome_tracker=self.outcome_tracker,
+            )))
             _mega_tasks.append(("learned_patterns", self.learning_observer.get_learned_patterns(person=person or "")))
             _mega_tasks.append(("insights_now", self.insight_engine.run_checks_now()))
             _mega_tasks.append(("experiential", self._get_experiential_hints(text)))
@@ -2980,9 +3096,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             _mega_tasks.append(("conv_memory_extended", self.conversation_memory.get_memory_context()))
 
         # B10: Emotionale Kontinuitaet — vergangene negative Reaktionen beruecksichtigen
-        if self.memory_extractor and self._last_executed_action:
+        _emo_action, _ = self._get_last_action(person)
+        if self.memory_extractor and _emo_action:
             _mega_tasks.append(("emotional_ctx", MemoryExtractor.get_emotional_context(
-                action_type=self._last_executed_action,
+                action_type=_emo_action,
                 person=person or "user",
                 redis_client=self.memory.redis,
             )))
@@ -3166,9 +3283,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Intelligence-Signals allein (anticipation, patterns, insights) reichen
         # NICHT — die sind fast immer aktiv und wuerden sonst bei Threshold=1
         # jeden Request auf Deep treiben.
-        # In Konversationen: Threshold +2 hoeher, damit Intelligence-Signals
+        # In Konversationen: Threshold +1 hoeher, damit Intelligence-Signals
         # allein kein Upgrade ausloesen, aber starke Reasoning-Signale schon.
-        _effective_threshold = self._opt_upgrade_signal_threshold + (2 if _conversation_mode else 0)
+        _effective_threshold = self._opt_upgrade_signal_threshold + (1 if _conversation_mode else 0)
         if (_upgrade_signals >= _effective_threshold
                 and (_has_reasoning_need or (_security_critical and not _conversation_mode))
                 and model != self.model_router.model_deep):
@@ -3281,12 +3398,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         except Exception:
             self.personality._current_activity = ""
 
+        _prompt_action, _prompt_args = self._get_last_action(person)
         system_prompt = self.personality.build_system_prompt(
             context, formality_score=formality_score,
             irony_count_today=irony_count,
             user_text=text,
-            last_action=self._last_executed_action,
-            last_args=self._last_executed_action_args if self._last_executed_action else None,
+            last_action=_prompt_action,
+            last_args=_prompt_args if _prompt_action else None,
             memory_callback_section=memory_callback_section,
         )
 
@@ -3369,10 +3487,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Letzte ausgefuehrte Aktion im Kontext — wichtig für Korrekturen
         # ("Nein, ich meinte das Schlafzimmer" → LLM weiss was zu korrigieren)
-        if self._last_executed_action:
-            _args_str = ", ".join(f"{k}={v}" for k, v in self._last_executed_action_args.items()) if self._last_executed_action_args else ""
+        _ctx_action, _ctx_args = self._get_last_action(person)
+        if _ctx_action:
+            _args_str = ", ".join(f"{k}={v}" for k, v in _ctx_args.items()) if _ctx_args else ""
             _action_text = (
-                f"\n\nLETZTE AKTION: {self._last_executed_action}({_args_str})\n"
+                f"\n\nLETZTE AKTION: {_ctx_action}({_args_str})\n"
                 f"Wenn der User 'es/das wieder aus/an' sagt oder korrigiert "
                 f"('Nein, ich meinte...'), bezieht sich das auf DIESE Aktion. "
                 f"Fuehre die passende Aktion aus (gleiche Funktion, gleicher Raum, anderer State)."
@@ -3491,6 +3610,21 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Feature A: Kreative Problemloesung — Haus-Daten für Loesungsvorschlaege
         if problem_solving_ctx:
             sections.append(("problem_solving", problem_solving_ctx, 2))
+
+        # Caring Butler: Fuersorgliche Hinweise einweben
+        _caring = await self._get_caring_context(person or "", context)
+        if _caring:
+            sections.append(("caring_butler", _caring, 3))
+
+        # Fliessende Proaktivitaet: Pending Observations beilaeufig einweben
+        _asides = await self._get_pending_asides(max_items=2)
+        if _asides:
+            _aside_list = " / ".join(_asides[:2])
+            sections.append(("asides", (
+                f"\nBEILAEUFIG ERWAEHNEN: {_aside_list}\n"
+                "Webe EINE dieser Beobachtungen natuerlich in deine Antwort ein, "
+                "als haettest du es gerade bemerkt. Nicht als separaten Punkt."
+            ), 3))
 
         # Self-Improvement: Korrektur-Kontext (Feature 2)
         if correction_ctx:
@@ -4089,9 +4223,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 _think_mode = False
             elif self._opt_think_control == "always_on":
                 _think_mode = True
-            else:  # "auto"
+            else:  # "auto" / "smart_off"
                 _force_think = bool(problem_solving_ctx or whatif_prompt)
-                if _force_think:
+                # Reasoning-Fragen ("warum/wieso/weshalb/erklaere") brauchen Think-Mode
+                _reasoning_kw = ("warum ", "wieso ", "weshalb ", "erklaer", "erklaere")
+                _needs_reasoning = any(kw in text.lower() for kw in _reasoning_kw)
+                if _force_think or _needs_reasoning:
                     _think_mode = True
                 elif profile.category in ("device_command", "device_query"):
                     _think_mode = False
@@ -5567,14 +5704,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # d.h. der User reagiert auf eine VORHERIGE Aktion (z.B. "Nein, lass das").
         # Wenn im aktuellen Turn Aktionen ausgefuehrt wurden, ist der negative Text
         # Teil des Befehls (z.B. "Nein, mach das Licht aus") und keine Reaktion.
-        if (self.memory_extractor and not executed_actions and person
-                and hasattr(self, "_last_executed_action")):
+        _react_action, _ = self._get_last_action(person)
+        if self.memory_extractor and not executed_actions and person and _react_action:
             is_negative = self.memory_extractor.detect_negative_reaction(text)
-            if is_negative and self._last_executed_action:
+            if is_negative:
                 self._task_registry.create_task(
                     self.memory_extractor.extract_reaction(
                         user_text=text,
-                        action_performed=self._last_executed_action,
+                        action_performed=_react_action,
                         accepted=False,
                         person=person,
                         redis_client=self.memory.redis,
@@ -5590,13 +5727,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             if isinstance(a.get("result"), dict) and a["result"].get("success", False)
         ]
         if _successful_actions:
-            self._last_executed_action = _successful_actions[-1].get("function", "")
-            self._last_executed_action_args = _successful_actions[-1].get("args", {})
+            self._set_last_action(
+                _successful_actions[-1].get("function", ""),
+                _successful_actions[-1].get("args", {}),
+                person,
+            )
         elif not executed_actions:
             # Nur leeren wenn gar keine Aktionen liefen — bei fehlgeschlagenen
             # Aktionen letzte gute Aktion beibehalten
-            self._last_executed_action = ""
-            self._last_executed_action_args = {}
+            self._set_last_action("", {}, person)
 
         # Phase 17: Situation Snapshot speichern (für Delta beim naechsten Gespraech)
         self._task_registry.create_task(
@@ -5829,17 +5968,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             )
 
         # Self-Improvement: Outcome Tracker — "Danke" = POSITIVE
-        if _is_thanked and self._last_executed_action:
+        _thanks_action, _ = self._get_last_action(person)
+        if _is_thanked and _thanks_action:
             self._task_registry.create_task(
                 self.outcome_tracker.record_verbal_feedback(
-                    "positive", action_type=self._last_executed_action, person=person or "",
+                    "positive", action_type=_thanks_action, person=person or "",
                 ),
                 name="outcome_thanks",
             )
             # Phase 18: Concern-Counter zuruecksetzen bei positiver Reaktion
             self._task_registry.create_task(
                 self.personality.reset_concern_counter(
-                    person or "", self._last_executed_action,
+                    person or "", _thanks_action,
                 ),
                 name="reset_concern",
             )
@@ -10033,22 +10173,30 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         return None
 
-    def _classify_intent(self, text: str) -> str:
+    def _classify_intent(self, text: str, profile=None) -> str:
         """
         Klassifiziert den Intent einer Anfrage.
         Returns: 'delegation', 'memory', 'knowledge', 'general'
 
-        Hybrid-Fragen (Wissen + Smart-Home) gehen als 'general' ans LLM
-        mit Tools, damit die Frage mit echten Geraetedaten beantwortet wird.
+        Nutzt Pre-Classifier-Profile als Shortcut fuer device_command/device_query
+        und memory Kategorien. Hybrid-Fragen (Wissen + Smart-Home) gehen als
+        'general' ans LLM mit Tools.
         """
         text_lower = text.lower().strip()
+
+        # Pre-Classifier Shortcut: device_command/device_query → general (braucht Tools)
+        if profile and profile.category in ("device_command", "device_query"):
+            return "general"
+        # Pre-Classifier Shortcut: memory → memory
+        if profile and profile.category == "memory":
+            return "memory"
 
         # Phase 10: Delegations-Intent erkennen (vorkompilierte Regex)
         for pattern in self._DELEGATION_PATTERNS:
             if pattern.search(text_lower):
                 return "delegation"
 
-        # Memory-Fragen
+        # Memory-Fragen (Fallback wenn kein Pre-Classifier Profile)
         memory_keywords = [
             "erinnerst du dich", "weisst du noch", "was weisst du",
             "habe ich dir", "hab ich gesagt", "was war",
@@ -11200,16 +11348,17 @@ Regeln:
                 logger.info("Korrektur-Lernen: '%s' gespeichert (Person: %s)", fact_text, person)
 
                 # Self-Improvement: Correction Memory — strukturiert speichern
+                _corr_action, _corr_args = self._get_last_action(person)
                 await self.correction_memory.store_correction(
-                    original_action=self._last_executed_action,
-                    original_args=self._last_executed_action_args,
+                    original_action=_corr_action,
+                    original_args=_corr_args,
                     correction_text=fact_text,
                     person=person,
                 )
 
                 # Self-Improvement: Outcome Tracker — Korrektur = NEGATIVE
                 await self.outcome_tracker.record_verbal_feedback(
-                    "negative", action_type=self._last_executed_action, person=person,
+                    "negative", action_type=_corr_action, person=person,
                 )
         except Exception as e:
             logger.debug("Fehler bei Korrektur-Lernen: %s", e)
