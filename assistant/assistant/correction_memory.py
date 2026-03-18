@@ -503,8 +503,12 @@ class CorrectionMemory:
         if not clean_meaning:
             return "Bedeutung wurde als unsicher erkannt und blockiert."
 
+        clean_phrase = _sanitize(phrase.strip(), max_len=100)
+        if not clean_phrase:
+            return "Phrase wurde als unsicher erkannt und blockiert."
+
         teaching = {
-            "phrase": phrase.strip(),
+            "phrase": clean_phrase,
             "phrase_normalized": phrase_normalized,
             "meaning": clean_meaning,
             "person": person,
@@ -574,8 +578,9 @@ class CorrectionMemory:
             logger.warning("Teaching Lesen fehlgeschlagen: %s", e)
             return None
 
-        # Usage-Counter erhoehen (fire-and-forget)
-        asyncio.create_task(self.increment_teaching_usage(matched_phrase))
+        # Usage-Counter erhoehen (fire-and-forget mit Error-Callback)
+        task = asyncio.create_task(self.increment_teaching_usage(matched_phrase))
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
         return teaching.get("meaning")
 

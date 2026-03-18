@@ -477,10 +477,19 @@ class SemanticMemory:
                     )
                     if self.chroma_collection:
                         try:
+                            # Metadata-Keys bereinigen: bytes dekodieren, nur
+                            # erlaubte String-Felder an ChromaDB weitergeben
+                            clean_meta = {}
+                            for k, v in data.items():
+                                key = k.decode() if isinstance(k, bytes) else k
+                                val = v.decode() if isinstance(v, bytes) else v
+                                if isinstance(val, str):
+                                    clean_meta[key] = val
+                            clean_meta["confidence"] = str(round(new_confidence, 3))
                             await asyncio.to_thread(
                                 self.chroma_collection.update,
                                 ids=[fact_id],
-                                metadatas=[{**data, "confidence": str(round(new_confidence, 3))}],
+                                metadatas=[clean_meta],
                             )
                         except Exception as e:
                             logger.debug("ChromaDB update in decay failed: %s", e)
@@ -550,14 +559,15 @@ class SemanticMemory:
                                         ids=[fact_id],
                                     )
                                     reindexed += 1
-                                except Exception:
+                                except Exception as e:
+                                    logger.debug("Re-Index fehlgeschlagen fuer %s: %s", fact_id, e)
                                     orphaned_redis += 1
                         else:
                             # Fakt-ID in Index aber keine Daten → Index bereinigen
                             await self.redis.srem("mha:facts:all", fact_id)
                             orphaned_redis += 1
-                except Exception:
-                    pass  # ChromaDB-Query fehlgeschlagen, ueberspringe
+                except Exception as e:
+                    logger.debug("Konsistenz-Check fuer %s uebersprungen: %s", fact_id, e)
 
             if reindexed or orphaned_redis:
                 logger.info(
@@ -962,22 +972,23 @@ class SemanticMemory:
         F-030: Lock um den gesamten Delete-Zyklus gegen TOCTOU Race Condition.
         """
         lock_key = f"mha:fact_lock:del:{fact_id}"
+        lock_acquired = False
         if self.redis:
             try:
-                acquired = await self.redis.set(lock_key, "1", ex=10, nx=True)
-                if not acquired:
+                lock_acquired = await self.redis.set(lock_key, "1", ex=10, nx=True)
+                if not lock_acquired:
                     logger.debug("Delete-Lock nicht erhalten: %s", fact_id)
                     return False
             except Exception as e:
-                logger.debug("Unhandled: %s", e)
+                logger.debug("Redis Delete-Lock nicht verfuegbar: %s", e)
         try:
             return await self._delete_fact_inner(fact_id)
         finally:
-            if self.redis:
+            if lock_acquired and self.redis:
                 try:
                     await self.redis.delete(lock_key)
                 except Exception as e:
-                    logger.debug("Unhandled: %s", e)
+                    logger.debug("Delete-Lock Freigabe fehlgeschlagen: %s", e)
 
     async def _delete_fact_inner(self, fact_id: str) -> bool:
         """Interne Loesch-Logik (unter Lock)."""

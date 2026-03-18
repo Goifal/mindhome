@@ -9,6 +9,7 @@ Erweitert das bestehende Memory-System um:
 Nutzt Redis fuer persistente Speicherung.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -48,6 +49,7 @@ class ConversationMemory:
         self.max_questions = cfg.get("max_questions", _DEFAULT_MAX_QUESTIONS)
         self.summary_retention_days = cfg.get("summary_retention_days", _DEFAULT_SUMMARY_RETENTION_DAYS)
         self.question_ttl_days = cfg.get("question_ttl_days", _DEFAULT_QUESTION_TTL_DAYS)
+        self._project_lock = asyncio.Lock()
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis-Verbindung."""
@@ -170,6 +172,9 @@ class ConversationMemory:
                              note: str = "", milestone: str = "") -> dict:
         """Aktualisiert ein Projekt (Status, Notiz oder Meilenstein).
 
+        Lock schuetzt den Read-Modify-Write-Zyklus gegen Race Conditions
+        bei konkurrierenden Updates desselben Projekts.
+
         Args:
             name: Projektname (Suche per Teilstring)
             status: Neuer Status (active/paused/done)
@@ -179,41 +184,42 @@ class ConversationMemory:
         if not self.redis or not self.enabled:
             return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
 
-        project = await self._find_project(name)
-        if not project:
-            return {"success": False, "message": f"Projekt '{name}' nicht gefunden."}
+        async with self._project_lock:
+            project = await self._find_project(name)
+            if not project:
+                return {"success": False, "message": f"Projekt '{name}' nicht gefunden."}
 
-        changes = []
-        if status and status in ("active", "paused", "done"):
-            project["status"] = status
-            changes.append(f"Status → {status}")
-        if note:
-            project["notes"].append({
-                "text": note,
-                "date": datetime.now().isoformat(),
-            })
-            # Max 20 Notizen
-            if len(project["notes"]) > 20:
-                project["notes"] = project["notes"][-20:]
-            changes.append("Notiz hinzugefuegt")
-        if milestone:
-            project["milestones"].append({
-                "text": milestone,
-                "date": datetime.now().isoformat(),
-                "done": True,
-            })
-            changes.append(f"Meilenstein: {milestone}")
+            changes = []
+            if status and status in ("active", "paused", "done"):
+                project["status"] = status
+                changes.append(f"Status → {status}")
+            if note:
+                project["notes"].append({
+                    "text": note,
+                    "date": datetime.now().isoformat(),
+                })
+                # Max 20 Notizen
+                if len(project["notes"]) > 20:
+                    project["notes"] = project["notes"][-20:]
+                changes.append("Notiz hinzugefuegt")
+            if milestone:
+                project["milestones"].append({
+                    "text": milestone,
+                    "date": datetime.now().isoformat(),
+                    "done": True,
+                })
+                changes.append(f"Meilenstein: {milestone}")
 
-        if not changes:
-            return {"success": False, "message": "Keine Aenderung angegeben (status, note oder milestone)."}
+            if not changes:
+                return {"success": False, "message": "Keine Aenderung angegeben (status, note oder milestone)."}
 
-        project["updated_at"] = datetime.now().isoformat()
+            project["updated_at"] = datetime.now().isoformat()
 
-        try:
-            await self.redis.hset(_KEY_PROJECTS, project["id"], json.dumps(project))
-            return {"success": True, "message": f"Projekt '{project['name']}' aktualisiert: {', '.join(changes)}"}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+            try:
+                await self.redis.hset(_KEY_PROJECTS, project["id"], json.dumps(project))
+                return {"success": True, "message": f"Projekt '{project['name']}' aktualisiert: {', '.join(changes)}"}
+            except Exception as e:
+                return {"success": False, "message": str(e)}
 
     async def get_projects(self, status: str = "", person: str = "") -> list[dict]:
         """Gibt alle Projekte zurueck (optional gefiltert)."""

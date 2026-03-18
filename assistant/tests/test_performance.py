@@ -278,7 +278,7 @@ class TestAnticipationPipeline:
         # 5 Befehle in einer Pipeline: lpush, ltrim, expire, lpush(day), expire(day)
         pipe_mock.execute.assert_called_once()
         assert pipe_mock.lpush.call_count == 2
-        pipe_mock.ltrim.assert_called_once_with("mha:action_log", 0, 999)
+        pipe_mock.ltrim.assert_called_once_with("mha:action_log", 0, 4999)
         assert pipe_mock.expire.call_count == 2
 
     @pytest.mark.asyncio
