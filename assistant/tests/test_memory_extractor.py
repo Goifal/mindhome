@@ -97,7 +97,7 @@ class TestFormatConversation:
         )
         assert "Person: Max" in result
         assert "Max: Ich mag 21 Grad" in result
-        assert "Assistant: Notiert." in result
+        assert "Jarvis: Notiert." in result
 
     def test_format_with_context(self, extractor):
         result = extractor._format_conversation(
@@ -223,7 +223,7 @@ class TestExtractAndStore:
         # Pruefen dass Confidence korrekt gesetzt ist
         stored_facts = [call[0][0] for call in semantic_mock.store_fact.call_args_list]
         pref_fact = [f for f in stored_facts if f.category == "preference"][0]
-        assert pref_fact.confidence == CATEGORY_CONFIDENCE["preference"]
+        assert pref_fact.confidence == CATEGORY_CONFIDENCE["preference"]  # 0.85
 
     @pytest.mark.asyncio
     async def test_extract_skips_short_text(self, extractor, ollama_mock):
