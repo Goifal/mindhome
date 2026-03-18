@@ -420,7 +420,9 @@ class ContextBuilder:
                         memories["relevant_facts"].append(sanitized)
 
             # Allgemeine Fakten über den fragenden User (Praeferenzen)
-            if person:
+            # "unknown" nicht abfragen — das wuerde gemischte Fakten verschiedener
+            # Personen ohne Sprechererkennung zurueckgeben.
+            if person and person.lower() not in ("unknown", "unbekannt"):
                 person_facts = await self.semantic.get_facts_by_person(person)
                 memories["person_facts"] = [
                     sanitized for f in person_facts[:max_person]
