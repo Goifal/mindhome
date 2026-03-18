@@ -147,29 +147,6 @@ class SemanticMemory:
             logger.warning("Semantic Memory ChromaDB nicht verfuegbar: %s", e)
             self.chroma_collection = None
 
-        # Startup-Cleanup: Fakten fuer invalide Personen entfernen
-        await self._cleanup_invalid_person_facts()
-
-    async def _cleanup_invalid_person_facts(self):
-        """Entfernt beim Start alle Fakten die fuer System-/Bot-Personen gespeichert wurden."""
-        from .memory_extractor import _INVALID_PERSONS
-        if not self.redis:
-            return
-        total_deleted = 0
-        try:
-            for invalid_person in _INVALID_PERSONS:
-                key = f"mha:facts:person:{invalid_person}"
-                fact_ids = await self.redis.smembers(key)
-                if not fact_ids:
-                    continue
-                for fid_raw in fact_ids:
-                    fid = fid_raw.decode() if isinstance(fid_raw, bytes) else str(fid_raw)
-                    await self.delete_fact(fid)
-                    total_deleted += 1
-            if total_deleted:
-                logger.info("Startup-Cleanup: %d Fakten fuer invalide Personen entfernt", total_deleted)
-        except Exception as e:
-            logger.warning("Startup-Cleanup fuer invalide Personen fehlgeschlagen: %s", e)
 
     async def store_fact(self, fact: SemanticFact) -> bool:
         # F-007: Lock um den gesamten Read-Write-Zyklus gegen TOCTOU
