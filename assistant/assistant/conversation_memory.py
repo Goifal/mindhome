@@ -52,7 +52,66 @@ class ConversationMemory:
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis-Verbindung."""
         self.redis = redis_client
+        # Startup-Cleanup: Abgelaufene Eintraege entfernen
+        if self.redis and self.enabled:
+            await self._cleanup_expired_entries()
         logger.info("ConversationMemory initialisiert (enabled: %s)", self.enabled)
+
+    async def _cleanup_expired_entries(self):
+        """Entfernt beim Start abgelaufene Fragen, abgeschlossene Projekte und erledigte Followups."""
+        try:
+            await self._cleanup_old_questions()
+            await self._cleanup_old_projects()
+            await self._cleanup_old_followups()
+        except Exception as e:
+            logger.debug("ConversationMemory Startup-Cleanup fehlgeschlagen: %s", e)
+
+    async def _cleanup_old_projects(self):
+        """Entfernt abgeschlossene/abgebrochene Projekte die aelter als 30 Tage sind."""
+        if not self.redis:
+            return
+        try:
+            raw = await self.redis.hgetall(_KEY_PROJECTS)
+            cutoff = (datetime.now() - timedelta(days=30)).isoformat()
+            removed = 0
+            for key, val in raw.items():
+                key_str = key.decode() if isinstance(key, bytes) else key
+                val_str = val.decode() if isinstance(val, bytes) else val
+                p = json.loads(val_str)
+                if p.get("status") in ("completed", "cancelled", "archived"):
+                    updated = p.get("updated_at", p.get("created_at", ""))
+                    if updated and updated < cutoff:
+                        await self.redis.hdel(_KEY_PROJECTS, key_str)
+                        removed += 1
+            if removed:
+                logger.info("Projekt-Cleanup: %d abgeschlossene Projekte entfernt", removed)
+        except Exception as e:
+            logger.debug("Projekt-Cleanup fehlgeschlagen: %s", e)
+
+    async def _cleanup_old_followups(self):
+        """Entfernt erledigte/abgelaufene Followups die aelter als 14 Tage sind."""
+        if not self.redis:
+            return
+        try:
+            raw = await self.redis.hgetall(_KEY_FOLLOWUPS)
+            cutoff = (datetime.now() - timedelta(days=self.question_ttl_days)).isoformat()
+            removed = 0
+            for key, val in raw.items():
+                key_str = key.decode() if isinstance(key, bytes) else key
+                val_str = val.decode() if isinstance(val, bytes) else val
+                f = json.loads(val_str)
+                if f.get("status") in ("completed", "cancelled"):
+                    completed = f.get("completed_at", f.get("created_at", ""))
+                    if completed and completed < cutoff:
+                        await self.redis.hdel(_KEY_FOLLOWUPS, key_str)
+                        removed += 1
+                elif f.get("created_at", "") < cutoff:
+                    await self.redis.hdel(_KEY_FOLLOWUPS, key_str)
+                    removed += 1
+            if removed:
+                logger.info("Followup-Cleanup: %d abgelaufene Followups entfernt", removed)
+        except Exception as e:
+            logger.debug("Followup-Cleanup fehlgeschlagen: %s", e)
 
     # ------------------------------------------------------------------
     # Projekt-Tracking

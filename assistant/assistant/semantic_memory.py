@@ -191,8 +191,8 @@ class SemanticMemory:
                 if fact.category == "person":
                     try:
                         await self.refresh_relationship_cache()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Relationship-Cache Refresh fehlgeschlagen: %s", e)
 
         dup_threshold = float(yaml_config.get("memory", {}).get("duplicate_threshold", 0.15))
         existing = await self.find_similar_fact(fact.content, threshold=dup_threshold)
@@ -246,8 +246,8 @@ class SemanticMemory:
         if redis_ok and fact.category == "person":
             try:
                 await self.refresh_relationship_cache()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Relationship-Cache Refresh fehlgeschlagen: %s", e)
 
         if redis_ok:
             logger.info(
