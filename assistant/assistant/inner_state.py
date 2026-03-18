@@ -399,9 +399,7 @@ class InnerStateEngine:
                 now.replace(minute=59, second=59, microsecond=999999).timestamp(),
             )
             pipe.zadd(_KEY_MOOD_HISTORY, {snapshot: now.timestamp()})
-            # Alte Eintraege entfernen (>90 Tage)
-            cutoff = (now.timestamp()) - (90 * 86400)
-            pipe.zremrangebyscore(_KEY_MOOD_HISTORY, 0, cutoff)
+            # Kein Cutoff — Stimmungs-History wird unbegrenzt gespeichert
 
             await pipe.execute()
         except Exception as e:

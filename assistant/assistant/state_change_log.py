@@ -22,8 +22,8 @@ import redis.asyncio as aioredis
 logger = logging.getLogger(__name__)
 
 REDIS_KEY_LOG = "mha:state_change_log"
-MAX_LOG_ENTRIES = 30
-LOG_TTL_SECONDS = 6 * 3600  # 6 Stunden
+MAX_LOG_ENTRIES = 200
+LOG_TTL_SECONDS = 24 * 3600  # 24 Stunden
 
 # =========================================================================
 # DEVICE DEPENDENCIES — Rollen-basiertes Matching via Entity Annotations

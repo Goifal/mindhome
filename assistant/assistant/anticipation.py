@@ -106,10 +106,10 @@ class AnticipationEngine:
             day_key = f"mha:action_log:{now.strftime('%Y-%m-%d')}"
             pipe = self.redis.pipeline()
             pipe.lpush("mha:action_log", entry_json)
-            pipe.ltrim("mha:action_log", 0, 999)
-            pipe.expire("mha:action_log", 30 * 86400)
+            pipe.ltrim("mha:action_log", 0, 4999)
+            pipe.expire("mha:action_log", 365 * 86400)
             pipe.lpush(day_key, entry_json)
-            pipe.expire(day_key, self.history_days * 86400)
+            pipe.expire(day_key, 365 * 86400)
             await pipe.execute()
 
         except Exception as e:

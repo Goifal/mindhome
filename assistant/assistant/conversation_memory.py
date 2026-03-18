@@ -33,7 +33,7 @@ _KEY_THREAD_INDEX = "mha:memory:thread_index"        # Hash: keyword -> thread_i
 # Defaults
 _DEFAULT_MAX_PROJECTS = 20
 _DEFAULT_MAX_QUESTIONS = 30
-_DEFAULT_SUMMARY_RETENTION_DAYS = 30
+_DEFAULT_SUMMARY_RETENTION_DAYS = 0  # 0 = unbegrenzt
 _DEFAULT_QUESTION_TTL_DAYS = 14
 
 
@@ -436,7 +436,9 @@ class ConversationMemory:
         try:
             key = _KEY_DAILY_SUMMARY + date
             await self.redis.set(key, json.dumps(entry))
-            await self.redis.expire(key, self.summary_retention_days * 86400)
+            # TTL nur setzen wenn Retention konfiguriert (0 = unbegrenzt)
+            if self.summary_retention_days > 0:
+                await self.redis.expire(key, self.summary_retention_days * 86400)
             return {"success": True, "message": f"Zusammenfassung fuer {date} gespeichert."}
         except Exception as e:
             return {"success": False, "message": str(e)}

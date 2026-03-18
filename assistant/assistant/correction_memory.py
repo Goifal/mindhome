@@ -46,7 +46,7 @@ class CorrectionMemory:
         self.redis = None
         self.enabled = False
         self._cfg = yaml_config.get("correction_memory", {})
-        self._max_entries = self._cfg.get("max_entries", 200)
+        self._max_entries = self._cfg.get("max_entries", 500)
         self._max_context = self._cfg.get("max_context_entries", 3)
         self._rules_created_today = 0
         self._last_rules_day = ""
@@ -87,7 +87,6 @@ class CorrectionMemory:
                 json.dumps(entry, ensure_ascii=False),
             )
             await self.redis.ltrim("mha:correction_memory:entries", 0, self._max_entries - 1)
-            await self.redis.expire("mha:correction_memory:entries", 180 * 86400)
         except Exception as e:
             logger.warning("Korrektur-Speicherung fehlgeschlagen: %s", e)
             return
