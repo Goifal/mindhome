@@ -87,14 +87,16 @@ _INVALID_PERSONS = frozenset({
 })
 
 # Confidence pro Kategorie: Gesundheit/Sicherheit höher, Smalltalk niedriger
+# Werte muessen deutlich ueber dem Kontext-Filter (0.4) liegen damit Fakten
+# nicht nach wenigen Decay-Zyklen (je 30 Tage) unsichtbar werden.
 CATEGORY_CONFIDENCE = {
-    "health": 0.9,      # Allergien, Medikamente -> sehr wichtig
-    "person": 0.85,     # Beziehungen, Namen -> wichtig
-    "preference": 0.75, # Vorlieben -> mittel-hoch
-    "habit": 0.7,       # Gewohnheiten -> mittel
-    "work": 0.7,        # Arbeit/Projekte -> mittel
-    "intent": 0.6,      # Absichten/Plaene -> kann sich ändern
-    "general": 0.5,     # Sonstiges -> niedrig
+    "health": 0.95,     # Allergien, Medikamente -> kritisch, darf nie vergessen werden
+    "person": 0.9,      # Beziehungen, Namen -> sehr wichtig
+    "preference": 0.85, # Vorlieben -> wichtig fuer Personalisierung
+    "habit": 0.8,       # Gewohnheiten -> wichtig fuer Antizipation
+    "work": 0.8,        # Arbeit/Projekte -> wichtig
+    "intent": 0.7,      # Absichten/Plaene -> kann sich aendern, aber merkenswert
+    "general": 0.7,     # Sonstiges -> immer noch vom User mitgeteilt = relevant
 }
 
 

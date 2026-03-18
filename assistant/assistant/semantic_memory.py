@@ -449,18 +449,21 @@ class SemanticMemory:
                 confidence = float(data.get("confidence", 0.5))
                 source = data.get("source_conversation", "")
 
-                # Explizite Fakten ("merk dir") langsamer abbauen
+                # Decay-Rate: Langsam genug damit Fakten monatelang nutzbar bleiben.
+                # Bei Confidence 0.8 und Rate 0.02 → nach 6 Monaten: ~0.68 → noch sichtbar.
+                # Erst nach ~20 Monaten (0.4) wird der Fakt unsichtbar im Kontext.
+                # Explizite Fakten ("merk dir") noch langsamer.
                 if source == "explicit":
-                    decay_rate = 0.01  # 1% pro 30-Tage-Zyklus
+                    decay_rate = 0.005  # 0.5% pro 30-Tage-Zyklus — praktisch permanent
                 else:
-                    decay_rate = 0.05  # 5% pro 30-Tage-Zyklus
+                    decay_rate = 0.02   # 2% pro 30-Tage-Zyklus — ~20 Monate bis unsichtbar
 
                 # Haeufig bestaetigte Fakten langsamer abbauen
                 times_confirmed = int(data.get("times_confirmed", 1))
                 if times_confirmed >= 5:
-                    decay_rate *= 0.5
+                    decay_rate *= 0.25  # 4x langsamer — praktisch permanent
                 elif times_confirmed >= 3:
-                    decay_rate *= 0.75
+                    decay_rate *= 0.5   # 2x langsamer
 
                 new_confidence = max(0.0, confidence - decay_rate)
 
