@@ -9909,7 +9909,8 @@ function renderSystem() {
     fInfo('Holt neuen Code von Git und baut die Container neu. Der Assistant startet dabei kurz neu.') +
     '<div id="sysUpdateCheck" style="margin-bottom:12px;"></div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
-      '<button class="btn btn-primary" id="btnSysUpdate" onclick="doSystemUpdate()">&#128640; System-Update starten</button>' +
+      '<button class="btn btn-primary" id="btnSysQuickUpdate" onclick="doSystemUpdate(false)">&#128640; Quick Update</button>' +
+      '<button class="btn btn-primary" id="btnSysFullUpdate" onclick="doSystemUpdate(true)" style="background:var(--accent-tertiary,#dc6317);border-color:var(--accent-tertiary,#dc6317);">&#128230; Full Update</button>' +
       '<button class="btn btn-secondary" id="btnSysCheckUpdate" onclick="checkForUpdates()">&#128269; Auf Updates prüfen</button>' +
     '</div>' +
     '<div id="sysUpdateLog" style="display:none;margin-top:16px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:300px;overflow-y:auto;">' +
@@ -10050,36 +10051,45 @@ function _waitForRestart() {
   }, 3000);
 }
 
-async function doSystemUpdate() {
+async function doSystemUpdate(full) {
   if (_updating) return;
-  if (!confirm('System-Update starten?\n\nDer Assistant wird kurz neu gestartet.')) return;
+  const label = full ? 'Full Update' : 'Quick Update';
+  const confirmMsg = full
+    ? 'Full Update starten?\n\nContainer werden komplett neu gebaut. Das kann einige Minuten dauern.'
+    : 'Quick Update starten?\n\nCode wird aktualisiert und der Container kurz neu gestartet.';
+  if (!confirm(confirmMsg)) return;
   _updating = true;
-  const btn = document.getElementById('btnSysUpdate');
+  const btnQuick = document.getElementById('btnSysQuickUpdate');
+  const btnFull = document.getElementById('btnSysFullUpdate');
   const logBox = document.getElementById('sysUpdateLog');
   const logContent = document.getElementById('sysUpdateLogContent');
-  if (btn) { btn.disabled = true; btn.textContent = 'Update läuft...'; }
+  if (btnQuick) { btnQuick.disabled = true; btnQuick.textContent = 'Update läuft...'; }
+  if (btnFull) { btnFull.disabled = true; btnFull.textContent = 'Update läuft...'; }
   if (logBox) logBox.style.display = 'block';
-  if (logContent) logContent.textContent = 'Update gestartet...\n';
+  if (logContent) logContent.textContent = label + ' gestartet...\n';
 
   try {
-    const data = await api('/api/ui/system/update', 'POST');
+    const payload = full ? {full: true} : {};
+    const data = await api('/api/ui/system/update', 'POST', payload);
     if (logContent) logContent.textContent = (data.log || []).join('\n');
     if (data.success) {
-      toast('Update erfolgreich! Container startet neu...');
+      toast(label + ' erfolgreich! Container startet neu...');
       _waitForRestart();
     } else {
-      toast('Update fehlgeschlagen — siehe Log', 'error');
+      toast(label + ' fehlgeschlagen — siehe Log', 'error');
       _updating = false;
-      if (btn) { btn.disabled = false; btn.textContent = '\u{1F680} System-Update starten'; }
+      if (btnQuick) { btnQuick.disabled = false; btnQuick.textContent = '\u{1F680} Quick Update'; }
+      if (btnFull) { btnFull.disabled = false; btnFull.textContent = '\u{1F4E6} Full Update'; }
     }
   } catch(e) {
     if (logContent) logContent.textContent += '\nFehler: ' + e.message;
     if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
       _waitForRestart();
     } else {
-      toast('Update-Fehler: ' + e.message, 'error');
+      toast(label + '-Fehler: ' + e.message, 'error');
       _updating = false;
-      if (btn) { btn.disabled = false; btn.textContent = '\u{1F680} System-Update starten'; }
+      if (btnQuick) { btnQuick.disabled = false; btnQuick.textContent = '\u{1F680} Quick Update'; }
+      if (btnFull) { btnFull.disabled = false; btnFull.textContent = '\u{1F4E6} Full Update'; }
     }
   }
 }
