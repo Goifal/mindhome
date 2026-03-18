@@ -139,10 +139,11 @@ class TestShouldMonitor:
             eng = DiagnosticsEngine(ha_mock)
             assert eng._should_monitor("sensor.temp") is False
 
-    def test_valid_domain_monitored(self, engine):
+    def test_unannotated_entity_not_monitored(self, engine):
+        """Ohne Annotation wird eine Entity nicht ueberwacht (nur annotierte Entities)."""
         with patch("assistant.diagnostics.is_entity_hidden", return_value=False), \
              patch("assistant.diagnostics.get_entity_annotation", return_value=None):
-            assert engine._should_monitor("sensor.temperature") is True
+            assert engine._should_monitor("sensor.temperature") is False
 
     def test_excluded_domain_not_monitored(self, engine):
         with patch("assistant.diagnostics.is_entity_hidden", return_value=False), \
