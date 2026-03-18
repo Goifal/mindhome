@@ -264,23 +264,61 @@ Plus: Duplicate `get_tier()` Bug — Zeile 242 (nimmt Model-Name) wird von Zeile
 
 ---
 
+## Bereich 9: Model-Routing — Neues 3-Tier-Setup (9B/35B/35B)
+
+**IST:** Modelle aktualisiert auf echtes 3-Tier-Setup:
+- Fast: Qwen3.5 9B Dense (16K ctx) — kein Think
+- Smart: Qwen3.5 35B MoE/12B aktiv (32K ctx) — Think off (`think_control: smart_off`)
+- Deep: Qwen3.5 35B MoE/12B aktiv (64K ctx) — Think on
+
+Aber der Code ist noch auf die alte "alle identisch 35B"-Konfiguration optimiert:
+1. `upgrade_signal_threshold: 5` ist zu hoch — Smart→Deep kostet nur mehr ctx (32K→64K), kein Modellwechsel und kein zusätzliches VRAM. Threshold 3 wäre angemessen
+2. `model_router.py` hat keine `num_ctx`-per-Tier Logik — die ctx-Werte aus `settings.yaml` (`num_ctx`, `num_ctx_smart`, `num_ctx_deep`) werden nur in `brain.py` beim Ollama-Call gesetzt, aber der Router berücksichtigt sie nicht bei der Tier-Entscheidung (z.B. lange Prompts sollten Deep bevorzugen wegen 64K ctx)
+3. `think_control: smart_off` deaktiviert Think für Smart — korrekt konfiguriert, aber der Deep-Tier (Think on) wird durch den hohen Threshold 5 zu selten aktiviert. Problemlösung (3 Signale) + ein Intelligence-Signal (1) = 4 → kein Upgrade trotz "erkläre warum"
+
+**SOLL:** Threshold und Routing an das neue 3-Tier-Setup anpassen, ctx-aware Routing.
+
+### Änderungen
+
+**Datei: `assistant/config/settings.yaml`**
+- `upgrade_signal_threshold: 5` → `upgrade_signal_threshold: 3`
+- Kommentar aktualisieren: Smart und Deep sind dasselbe Modell, nur ctx + think unterschiedlich
+
+**Datei: `assistant/assistant/brain.py`**
+- Threshold-Logik (Zeile ~3171): Conversation-Mode Bonus von +2 auf +1 reduzieren — bei identischem Modell (Smart=Deep) ist der Upgrade-Cost minimal
+- Kommentar bei `_upgrade_signals` aktualisieren: "Smart→Deep = gleicher 35B MoE, nur 64K ctx + Think"
+- ~5 Zeilen
+
+**Datei: `assistant/assistant/model_router.py`**
+- In `select_model_from_profile()` (neu aus Bereich 4): Prompt-Länge als Signal einbeziehen
+  - Geschätzter Token-Count > 12K → Deep bevorzugen (16K ctx von Fast reicht nicht)
+  - Geschätzter Token-Count > 24K → Deep erzwingen (32K ctx von Smart knapp)
+- ~10 Zeilen
+
+**Tests:**
+- `test_model_router.py`: Test dass lange Prompts automatisch Deep-Tier bekommen
+- `test_brain.py`: Test dass Threshold 3 Problemlösung+Intelligence-Signal auf Deep upgraded
+
+---
+
 ## Umsetzungsreihenfolge
 
 | Phase | Bereich | Aufwand | Impact | Risiko |
 |-------|---------|---------|--------|--------|
 | 1 | **7: Security Fix** (Cross-User-Leakage) | Klein (~20 LOC) | Kritisch | Niedrig |
-| 2 | **4: Latenz** (get_tier Bug + 3-fach Klassifikation) | Mittel (~50 LOC) | Hoch | Niedrig |
-| 3 | **3: Multi-Signal** (Dead Code aktivieren) | Mittel (~30 LOC) | Hoch | Niedrig |
-| 4 | **1: Personality Integration** | Mittel (~55 LOC) | Hoch | Mittel |
-| 5 | **2: Kausales Gedächtnis** (Outcome-Loop + Correction→Anticipation) | Mittel (~90 LOC) | Hoch | Mittel |
-| 6 | **6: Erklärbarkeit** | Klein (~40 LOC) | Mittel | Niedrig |
-| 7 | **5: Langzeit-Beziehung** (+ Self-Optimization Konsistenz) | Klein (~45 LOC) | Mittel | Niedrig |
-| 8 | **8: Wellness Integration** | Klein (~23 LOC) | Niedrig | Niedrig |
+| 2 | **9: Model-Routing** (Threshold + ctx-aware Routing für 9B/35B/35B) | Klein (~15 LOC) | Hoch | Niedrig |
+| 3 | **4: Latenz** (get_tier Bug + 3-fach Klassifikation) | Mittel (~50 LOC) | Hoch | Niedrig |
+| 4 | **3: Multi-Signal** (Dead Code aktivieren) | Mittel (~30 LOC) | Hoch | Niedrig |
+| 5 | **1: Personality Integration** | Mittel (~55 LOC) | Hoch | Mittel |
+| 6 | **2: Kausales Gedächtnis** (Outcome-Loop + Correction→Anticipation) | Mittel (~90 LOC) | Hoch | Mittel |
+| 7 | **6: Erklärbarkeit** | Klein (~40 LOC) | Mittel | Niedrig |
+| 8 | **5: Langzeit-Beziehung** (+ Self-Optimization Konsistenz) | Klein (~45 LOC) | Mittel | Niedrig |
+| 9 | **8: Wellness Integration** | Klein (~23 LOC) | Niedrig | Niedrig |
 
 ## Geschätzte Änderungen gesamt
 
-- **~9 Dateien** modifiziert (keine neuen Module)
-- **~370 Zeilen** Produktivcode
-- **~21 neue Tests**
+- **~10 Dateien** modifiziert (keine neuen Module)
+- **~385 Zeilen** Produktivcode
+- **~23 neue Tests**
 - Alle Änderungen backward-compatible (optionale Parameter, Fallbacks)
 - Jede Phase einzeln deploybar und testbar
