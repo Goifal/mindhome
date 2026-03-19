@@ -32,6 +32,8 @@ from .config import yaml_config, settings, get_person_title
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Redis-Key-Prefix
 _PREFIX = "mha:insight"
@@ -1576,7 +1578,7 @@ class InsightEngine:
         if not self.activity:
             return None
 
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
         if hour < 18:  # Erst abends relevant
             return None
 

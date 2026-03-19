@@ -34,6 +34,8 @@ from .config import yaml_config
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
 # Standard-Reaktionen pro Event-Typ
@@ -452,7 +454,7 @@ class AmbientAudioClassifier:
 
     def _is_night(self) -> bool:
         """Prueft ob Nachtmodus aktiv ist."""
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
         if self._night_start > self._night_end:
             return hour >= self._night_start or hour < self._night_end
         return self._night_start <= hour < self._night_end

@@ -985,7 +985,7 @@ class PersonalityEngine:
         if effective_mood in ("stressed", "frustrated"):
             return None
 
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
 
         for rule in self._opinion_rules:
             if not self._match_rule(rule, action, args, hour):
@@ -1062,7 +1062,7 @@ class PersonalityEngine:
         if not pushback_cfg.get("enabled", True):
             return None
 
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
 
         for rule in self._opinion_rules:
             pushback_level = rule.get("pushback_level", 0)
@@ -1415,7 +1415,7 @@ class PersonalityEngine:
 
         house = context.get("house", {})
         open_windows = house.get("open_windows", [])
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
 
         hints = []
 
@@ -1547,7 +1547,7 @@ class PersonalityEngine:
         if random.random() > 0.75:
             return ""
 
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
         room_short = (room or "").split("_")[0].title() if room else ""
 
         # Aktions-spezifische Bestätigungen — immer im Jarvis-Ton
@@ -2427,7 +2427,7 @@ class PersonalityEngine:
         template = random.choice(templates)
         humor_text = template.format(
             temp=situation.get("temp", "?"),
-            hour=situation.get("hour", datetime.now(timezone.utc).hour),
+            hour=situation.get("hour", datetime.now(_LOCAL_TZ).hour),
             count=situation.get("count", "?"),
             weather=situation.get("weather", "?"),
             room=situation.get("room", ""),
@@ -2473,7 +2473,7 @@ class PersonalityEngine:
             from .config import settings
             title = get_person_title()
             situation_key = situation.get("key", "")
-            hour = situation.get("hour", datetime.now(timezone.utc).hour)
+            hour = situation.get("hour", datetime.now(_LOCAL_TZ).hour)
             temp = situation.get("temp", "")
             weather = situation.get("weather", "")
             room = situation.get("room", "")
@@ -2547,7 +2547,7 @@ class PersonalityEngine:
         Returns:
             Dict mit 'key' und Kontext-Daten oder None.
         """
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
         room = (args.get("room") or "").lower()
 
         # Frühaufsteher (5-6 Uhr)
@@ -3047,7 +3047,7 @@ class PersonalityEngine:
             mood_section = f"STIMMUNG: {mood_config['style_addon']}\n"
 
         # Phase 17.4: Late-Night Fürsorge — zwischen 0-4 Uhr sanfter Ton
-        _hour = datetime.now(timezone.utc).hour
+        _hour = datetime.now(_LOCAL_TZ).hour
         if _hour < 5 and time_of_day in ("night", "early_morning"):
             _late_night_addon = (
                 "NACHTMODUS: Es ist sehr spät. Antworte leiser, kürzer, wärmer. "
@@ -3794,7 +3794,7 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
         }
 
         # Fürsorge-Hint: Was Jarvis beiläufig erwähnen koennte
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
         if mood == "frustrated":
             result["care_hint"] = "Kurz und direkt. Wenn wiederholte Frustration, beiläufig Hilfe anbieten."
         elif mood == "stressed":

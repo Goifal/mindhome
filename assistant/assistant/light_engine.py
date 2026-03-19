@@ -33,6 +33,8 @@ from .ha_client import HomeAssistantClient
 from .function_calling import FunctionExecutor
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
 async def _safe_redis(redis_client, method: str, *args, **kwargs):
@@ -913,7 +915,7 @@ class LightEngine:
         """Prueft ob aktuell Nacht ist (konfigurierbar)."""
         if pc is None:
             pc = yaml_config.get("lighting", {}).get("presence_control", {})
-        now_h = datetime.now(timezone.utc).hour
+        now_h = datetime.now(_LOCAL_TZ).hour
         start = pc.get("night_start_hour", 22)
         end = pc.get("night_end_hour", 6)
         if start > end:
@@ -923,7 +925,7 @@ class LightEngine:
     def _is_morning_window(self) -> bool:
         """Prueft ob aktuell Morgen-Fenster (Aufwach-Zeit)."""
         bed_cfg = yaml_config.get("lighting", {}).get("bed_sensors", {})
-        now_h = datetime.now(timezone.utc).hour
+        now_h = datetime.now(_LOCAL_TZ).hour
         start = bed_cfg.get("wakeup_window_start", 5)
         end = bed_cfg.get("wakeup_window_end", 9)
         return start <= now_h < end

@@ -19,6 +19,8 @@ from .config import yaml_config
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
 class FollowMeEngine:
@@ -222,7 +224,7 @@ class FollowMeEngine:
                 # Per-Lampe Helligkeit aus room_profiles (Tag/Nacht)
                 per_light = new_room_cfg.get("light_brightness", {}).get(entity_id)
                 if per_light:
-                    hour = datetime.now(timezone.utc).hour
+                    hour = datetime.now(_LOCAL_TZ).hour
                     if 7 <= hour < 21:
                         bri = per_light.get("day", brightness)
                     else:

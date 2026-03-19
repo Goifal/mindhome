@@ -113,8 +113,9 @@ class ContextBuilder:
             tz_name = self.ha.get_timezone()
             tz = zoneinfo.ZoneInfo(tz_name)
             now = datetime.now(tz)
-        except ImportError:
-            now = datetime.now(timezone.utc)
+        except (ImportError, Exception):
+            from zoneinfo import ZoneInfo
+            now = datetime.now(ZoneInfo("Europe/Berlin"))
         hour = now.hour
 
         _morning_start = int(get_setting("core.time_slots.morning_start", "5") or "5")

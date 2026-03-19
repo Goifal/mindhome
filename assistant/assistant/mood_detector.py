@@ -26,6 +26,8 @@ import redis.asyncio as redis
 from .config import yaml_config, settings
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Stimmungs-Zustände
 MOOD_GOOD = "good"
@@ -163,7 +165,7 @@ class MoodDetector:
 
         try:
             # Tageszeit als Kontext — "bin muede" um 7 Uhr vs 23 Uhr
-            _hour = datetime.now(timezone.utc).hour
+            _hour = datetime.now(_LOCAL_TZ).hour
             if 5 <= _hour < 10:
                 _time_hint = "Fruehmorgens"
             elif 10 <= _hour < 13:
@@ -614,7 +616,7 @@ class MoodDetector:
             signals.append("frustrated_prefix")
 
         # Sehr kurze Nachrichten spaet abends = muede
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
         if self.tired_hour_start > self.tired_hour_end:
             is_late = hour >= self.tired_hour_start or hour < self.tired_hour_end
         else:
@@ -824,7 +826,7 @@ class MoodDetector:
                 priority: str - low/medium/high
         """
         suggestions = []
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
 
         if self._current_mood == MOOD_STRESSED:
             suggestions.append({

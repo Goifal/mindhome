@@ -28,6 +28,8 @@ from .autonomy import AutonomyManager, TRUST_LEVEL_NAMES
 from .ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
 # Welche Funktionen zu welcher Konflikt-Domain gehoeren
@@ -614,7 +616,7 @@ class ConflictResolver:
             )
 
         # Tageszeit bestimmen
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
         if 5 <= hour < 12:
             time_of_day = "Morgen"
         elif 12 <= hour < 18:

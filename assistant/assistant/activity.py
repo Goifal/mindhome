@@ -31,6 +31,8 @@ from .config import yaml_config, get_all_bed_sensors
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
 # Erkannte Aktivitaeten
@@ -467,7 +469,7 @@ class ActivityEngine:
         base_volume = activity_row.get(urgency, 0.7)
 
         # Tageszeit-Faktor: Abends/Nachts leiser
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
         # Nacht-Erkennung (funktioniert auch bei Mitternachts-Uebergang, z.B. 22-7)
         if self.night_start > self.night_end:
             is_night = hour >= self.night_start or hour < self.night_end

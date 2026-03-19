@@ -336,7 +336,8 @@ class SuggestionGenerator:
                 from helpers import local_now
                 now = local_now()
             except ImportError:
-                now = datetime.now(timezone.utc)
+                from zoneinfo import ZoneInfo
+                now = datetime.now(ZoneInfo("Europe/Berlin"))
             if now.hour >= 22 or now.hour < 6:
                 context["night"] = True
                 context["active_contexts"].append("night")
@@ -1008,7 +1009,8 @@ class AutomationExecutor:
                 from helpers import local_now
                 now = local_now()
             except ImportError:
-                now = datetime.now(timezone.utc)
+                from zoneinfo import ZoneInfo
+                now = datetime.now(ZoneInfo("Europe/Berlin"))
             if now.hour >= 22 or now.hour < 6:
                 context["night"] = True
 

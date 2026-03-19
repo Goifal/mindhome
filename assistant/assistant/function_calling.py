@@ -40,7 +40,10 @@ _EDITABLE_CONFIGS = {
     "room_profiles": _CONFIG_DIR / "room_profiles.yaml",
 }
 
+from zoneinfo import ZoneInfo
+
 logger = logging.getLogger(__name__)
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Room-Profiles: zentraler Cache aus config.py
 _get_room_profiles = get_room_profiles
@@ -3656,7 +3659,7 @@ class FunctionExecutor:
 
         try:
             from .state_change_log import StateChangeLog
-            hour = datetime.now(timezone.utc).hour
+            hour = datetime.now(_LOCAL_TZ).hour
             states_raw = None  # Lazy-Load
 
             async def _get_states():

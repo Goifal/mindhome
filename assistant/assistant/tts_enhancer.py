@@ -25,6 +25,8 @@ from xml.sax.saxutils import escape as xml_escape  # P-2: Modul-Ebene statt pro 
 from .config import yaml_config
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # P-3: Vorcompilierte Regex-Patterns für Warn-Wörter (statt re.compile pro Aufruf)
 _EMPHASIS_WORDS = [
@@ -343,7 +345,7 @@ class TTSEnhancer:
                 return vol_sleeping
 
             # Tageszeit-basiert — evening check before night check
-            hour = datetime.now(timezone.utc).hour
+            hour = datetime.now(_LOCAL_TZ).hour
 
             # Evening: between evening_start and night_start
             is_evening = False
@@ -407,7 +409,7 @@ class TTSEnhancer:
             vol_cfg = yaml_config.get("volume", {})
             if not tts_cfg.get("auto_night_whisper", False):
                 return False
-            hour = datetime.now(timezone.utc).hour
+            hour = datetime.now(_LOCAL_TZ).hour
             start = int(vol_cfg.get("auto_whisper_start", 23))
             end = int(vol_cfg.get("auto_whisper_end", 6))
             if start > end:

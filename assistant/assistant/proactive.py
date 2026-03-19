@@ -2143,7 +2143,7 @@ class ProactiveManager:
         """Motion-Kamera: Nachts oder bei Abwesenheit → Kamera-Snapshot analysieren."""
         from datetime import datetime
         try:
-            hour = datetime.now(timezone.utc).hour
+            hour = datetime.now(_LOCAL_TZ).hour
             is_night = (hour >= 22 or hour < 6)
             # Tagsueber: Nur analysieren wenn niemand zuhause
             _cam_cfg = yaml_config.get("cameras", {}).get("proactive_analysis", {})
@@ -5011,7 +5011,7 @@ class ProactiveManager:
     ):
         """Kaelte nachts → runter (Isolierung). Mit konfigurierbaren Nacht-Zeiten (Bug 5)."""
         temp = weather.get("temperature", 10)
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
         frost_temp = cover_cfg.get("frost_protection_temp", 3)
         night_insulation = cover_cfg.get("night_insulation", True)
         # Bug 5: Konfigurierbare Nacht-Stunden
@@ -7427,7 +7427,7 @@ class ProactiveManager:
 
         while self._running:
             try:
-                hour = datetime.now(timezone.utc).hour
+                hour = datetime.now(_LOCAL_TZ).hour
                 if 17 <= hour <= 22:
                     # Abwesende Personen ermitteln
                     household = yaml_config.get("household", {}).get("members", [])

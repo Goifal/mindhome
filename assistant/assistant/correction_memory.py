@@ -19,6 +19,8 @@ from typing import Optional
 from .config import yaml_config
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Injection-Schutz: Gleiches Pattern wie context_builder.py
 _INJECTION_PATTERN = re.compile(
@@ -78,7 +80,7 @@ class CorrectionMemory:
             "person": person,
             "room": room,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "hour": datetime.now(timezone.utc).hour,
+            "hour": datetime.now(_LOCAL_TZ).hour,
         }
 
         try:
@@ -126,7 +128,7 @@ class CorrectionMemory:
                 score += 1.0
 
             # Tageszeit-Aehnlichkeit (mit Mitternachts-Wrap)
-            current_hour = datetime.now(timezone.utc).hour
+            current_hour = datetime.now(_LOCAL_TZ).hour
             entry_hour = entry.get("hour", 12)
             hour_diff = min(abs(current_hour - entry_hour), 24 - abs(current_hour - entry_hour))
             if hour_diff <= 2:

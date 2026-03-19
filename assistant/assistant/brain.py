@@ -114,6 +114,8 @@ from .predictive_maintenance import PredictiveMaintenance
 from .websocket import emit_thinking, emit_speaking, emit_action, emit_proactive, emit_progress, emit_workshop
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(cfg.yaml_config.get("timezone", "Europe/Berlin"))
 
 
 # Audit-Log (gleicher Pfad wie main.py, für Chat-basierte Sicherheitsevents)
@@ -583,7 +585,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
             # Spaete Stunde
             from datetime import datetime
-            _hour = datetime.now(timezone.utc).hour
+            _hour = datetime.now(_LOCAL_TZ).hour
             _late = _cfg.get("late_night_hour", 1)
             if _late <= _hour < 5:
                 hints.append("Es ist sehr spaet. Erwaehne beilaeufig die Uhrzeit.")
@@ -2904,7 +2906,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         _implicit_intent = None
         if self.llm_enhancer.enabled and self.llm_enhancer.smart_intent.enabled:
             try:
-                _hour = datetime.now(timezone.utc).hour
+                _hour = datetime.now(_LOCAL_TZ).hour
                 if 5 <= _hour < 12:
                     _tod = "Morgen"
                 elif 12 <= _hour < 17:
@@ -4975,7 +4977,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     if isinstance(result, dict) and result.get("success"):
                         try:
                             curiosity = await self.personality.check_curiosity(
-                                func_name, final_args, person or "", datetime.now(timezone.utc).hour,
+                                func_name, final_args, person or "", datetime.now(_LOCAL_TZ).hour,
                             )
                             if curiosity:
                                 if response_text:

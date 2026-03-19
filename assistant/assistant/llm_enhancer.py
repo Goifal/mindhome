@@ -18,6 +18,8 @@ from .config import settings, yaml_config, get_person_title
 from .ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Injection-Schutz
 _INJECTION_PATTERN = re.compile(
@@ -170,7 +172,7 @@ class SmartIntentRecognizer:
             return None
 
         if not time_of_day:
-            hour = datetime.now(timezone.utc).hour
+            hour = datetime.now(_LOCAL_TZ).hour
             if 5 <= hour < 12:
                 time_of_day = "Morgen"
             elif 12 <= hour < 17:
