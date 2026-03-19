@@ -3,7 +3,7 @@ Tests fuer Follow-Me Engine - Raum-Tracking und Transfer-Logik.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock, AsyncMock
 
 from assistant.follow_me import FollowMeEngine
@@ -124,9 +124,9 @@ class TestFindSpeaker:
 class TestCleanupStaleTracking:
     def test_removes_stale_entries(self, engine):
         engine._person_room["alice"] = "wohnzimmer"
-        engine._last_transfer["alice"] = datetime.now() - timedelta(hours=10)
+        engine._last_transfer["alice"] = datetime.now(timezone.utc) - timedelta(hours=10)
         engine._person_room["bob"] = "kueche"
-        engine._last_transfer["bob"] = datetime.now() - timedelta(hours=10)
+        engine._last_transfer["bob"] = datetime.now(timezone.utc) - timedelta(hours=10)
 
         engine.cleanup_stale_tracking(max_age_hours=8)
 
@@ -136,7 +136,7 @@ class TestCleanupStaleTracking:
 
     def test_keeps_recent_entries(self, engine):
         engine._person_room["alice"] = "wohnzimmer"
-        engine._last_transfer["alice"] = datetime.now() - timedelta(hours=2)
+        engine._last_transfer["alice"] = datetime.now(timezone.utc) - timedelta(hours=2)
 
         engine.cleanup_stale_tracking(max_age_hours=8)
 
@@ -145,9 +145,9 @@ class TestCleanupStaleTracking:
 
     def test_mixed_stale_and_recent(self, engine):
         engine._person_room["alice"] = "wohnzimmer"
-        engine._last_transfer["alice"] = datetime.now() - timedelta(hours=10)
+        engine._last_transfer["alice"] = datetime.now(timezone.utc) - timedelta(hours=10)
         engine._person_room["bob"] = "kueche"
-        engine._last_transfer["bob"] = datetime.now() - timedelta(hours=1)
+        engine._last_transfer["bob"] = datetime.now(timezone.utc) - timedelta(hours=1)
 
         engine.cleanup_stale_tracking(max_age_hours=8)
 
@@ -224,7 +224,7 @@ class TestHandleMotion:
     async def test_cooldown_prevents_transfer(self, engine, ha_mock):
         """Transfer within cooldown should be blocked."""
         engine._person_room["alice"] = "wohnzimmer"
-        engine._last_transfer["alice"] = datetime.now()  # just now
+        engine._last_transfer["alice"] = datetime.now(timezone.utc)  # just now
 
         with patch("assistant.follow_me.yaml_config", FOLLOW_ME_CONFIG):
             result = await engine.handle_motion(
@@ -236,7 +236,7 @@ class TestHandleMotion:
     async def test_room_change_triggers_transfer(self, engine, ha_mock):
         """Room change after cooldown should trigger transfer with music."""
         engine._person_room["alice"] = "wohnzimmer"
-        engine._last_transfer["alice"] = datetime.now() - timedelta(seconds=120)
+        engine._last_transfer["alice"] = datetime.now(timezone.utc) - timedelta(seconds=120)
 
         ha_mock.get_state = AsyncMock(return_value={"state": "playing"})
 
@@ -266,7 +266,7 @@ class TestHandleMotion:
         """When others remain in old room, old speaker should NOT be paused."""
         engine._person_room["alice"] = "wohnzimmer"
         engine._person_room["bob"] = "wohnzimmer"
-        engine._last_transfer["alice"] = datetime.now() - timedelta(seconds=120)
+        engine._last_transfer["alice"] = datetime.now(timezone.utc) - timedelta(seconds=120)
 
         ha_mock.get_state = AsyncMock(return_value={"state": "playing"})
 
@@ -384,7 +384,7 @@ class TestTransferLights:
         with patch("assistant.follow_me.yaml_config", {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}}), \
              patch("assistant.config.get_room_profiles", return_value=room_profiles), \
              patch("assistant.follow_me.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0)  # 2 PM (daytime)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0, tzinfo=timezone.utc)  # 2 PM (daytime)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             result = await engine._transfer_lights(
                 "wohnzimmer", "schlafzimmer", profile, []
@@ -415,7 +415,7 @@ class TestTransferLights:
         with patch("assistant.follow_me.yaml_config", {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}}), \
              patch("assistant.config.get_room_profiles", return_value=room_profiles), \
              patch("assistant.follow_me.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 0)  # 11 PM (nighttime)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 0, tzinfo=timezone.utc)  # 11 PM (nighttime)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             result = await engine._transfer_lights(
                 "wohnzimmer", "schlafzimmer", profile, []

@@ -3,7 +3,7 @@ Tests fuer WellnessAdvisor — Wellness-Checks, Ambient Actions, Pattern Learnin
 """
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -85,7 +85,7 @@ class TestStressIntervention:
         mood_mock.get_current_mood.return_value = {"mood": "stressed", "stress_level": 0.5}
         mood_mock.get_mood_trend.return_value = "declining"
         # Last nudge was 20 min ago — within 30 min cooldown but outside 15 min
-        twenty_min_ago = (datetime.now() - timedelta(minutes=20)).isoformat()
+        twenty_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
         redis_mock.get = AsyncMock(return_value=twenty_min_ago)
         await advisor._check_stress_intervention()
         # Mit declining Trend: 15 Min Cooldown → 20 Min her → SOLLTE feuern
@@ -114,8 +114,8 @@ class TestLateNightPattern:
 
     @pytest.mark.asyncio
     async def test_track_consecutive_nights(self, advisor, redis_mock):
-        today = datetime.now().date().isoformat()
-        yesterday = (datetime.now().date() - timedelta(days=1)).isoformat()
+        today = datetime.now(timezone.utc).date().isoformat()
+        yesterday = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
 
         async def sismember_side_effect(key, date_str):
             return date_str in (today, yesterday)
@@ -159,7 +159,7 @@ class TestMoodAmbientActions:
         mood_mock.get_current_mood.return_value = {"mood": "stressed"}
         advisor.executor = AsyncMock()
         # Last action 10 min ago — within 30 min cooldown
-        recent = (datetime.now() - timedelta(minutes=10)).isoformat()
+        recent = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
         redis_mock.get = AsyncMock(return_value=recent)
         await advisor._check_mood_ambient_actions()
         mood_mock.execute_suggested_actions.assert_not_called()
@@ -172,7 +172,7 @@ class TestHydration:
     @pytest.mark.asyncio
     async def test_no_reminder_at_night(self, advisor):
         with patch("assistant.wellness_advisor.datetime") as dt_mock:
-            dt_mock.now.return_value = datetime(2026, 3, 3, 3, 0)
+            dt_mock.now.return_value = datetime(2026, 3, 3, 3, 0, tzinfo=timezone.utc)
             dt_mock.fromisoformat = datetime.fromisoformat
             await advisor._check_hydration()
         advisor._notify_callback.assert_not_called()
