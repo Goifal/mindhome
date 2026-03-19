@@ -13,12 +13,14 @@ import json
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from .config import yaml_config
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Injection-Schutz: Gleiches Pattern wie context_builder.py
 _INJECTION_PATTERN = re.compile(
@@ -77,8 +79,8 @@ class CorrectionMemory:
             "corrected_args": corrected_args or {},
             "person": person,
             "room": room,
-            "timestamp": datetime.now().isoformat(),
-            "hour": datetime.now().hour,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "hour": datetime.now(_LOCAL_TZ).hour,
         }
 
         try:
@@ -126,7 +128,7 @@ class CorrectionMemory:
                 score += 1.0
 
             # Tageszeit-Aehnlichkeit (mit Mitternachts-Wrap)
-            current_hour = datetime.now().hour
+            current_hour = datetime.now(_LOCAL_TZ).hour
             entry_hour = entry.get("hour", 12)
             hour_diff = min(abs(current_hour - entry_hour), 24 - abs(current_hour - entry_hour))
             if hour_diff <= 2:
@@ -380,7 +382,7 @@ class CorrectionMemory:
             return
 
         # Rate Limit: Max N Regeln pro Tag — lock prevents concurrent overcount
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         async with self._rules_lock:
             if self._last_rules_day != today:
                 self._rules_created_today = 0
@@ -512,7 +514,7 @@ class CorrectionMemory:
             "phrase_normalized": phrase_normalized,
             "meaning": clean_meaning,
             "person": person,
-            "taught_at": datetime.now().isoformat(),
+            "taught_at": datetime.now(timezone.utc).isoformat(),
             "times_used": 0,
         }
 

@@ -13,7 +13,7 @@ egal welches Autonomie-Level.
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -21,6 +21,8 @@ import redis.asyncio as aioredis
 from .config import yaml_config, get_person_title
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Redis-Key-Prefix
 _PREFIX = "mha:proactive_planner"
@@ -110,7 +112,7 @@ class ProactiveSequencePlanner:
     async def _plan_arrival_sequence(self, person: str, context: dict) -> Optional[dict]:
         """Person kommt nach Hause: Licht → Klima → Willkommen."""
         title = get_person_title(person)
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
 
         actions = []
 
@@ -191,7 +193,7 @@ class ProactiveSequencePlanner:
         title = get_person_title()
 
         actions = []
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
 
         # Angenehme Beleuchtung
         if hour >= 16 or hour < 8:

@@ -2,7 +2,7 @@
 Tests fuer DiagnosticsEngine — Sensor-Watchdog, Wartungs-Assistent, Self-Diagnostik.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
@@ -106,7 +106,7 @@ class TestCheckCooldown:
     def test_expired_cooldown_returns_true(self, engine):
         engine._check_cooldown("test:key")
         # Manually expire the cooldown
-        engine._alert_cooldowns["test:key"] = datetime.now() - timedelta(minutes=241)
+        engine._alert_cooldowns["test:key"] = datetime.now(timezone.utc) - timedelta(minutes=241)
         assert engine._check_cooldown("test:key") is True
 
 
@@ -189,7 +189,7 @@ class TestCheckMaintenance:
         return eng
 
     def test_overdue_task(self, ha_mock):
-        old_date = (datetime.now() - timedelta(days=40)).strftime("%Y-%m-%d")
+        old_date = (datetime.now(timezone.utc) - timedelta(days=40)).strftime("%Y-%m-%d")
         tasks = [{"name": "Filter wechseln", "interval_days": 30, "last_done": old_date, "priority": "medium"}]
         eng = self._make_engine(tasks, ha_mock)
         due = eng.check_maintenance()
@@ -198,7 +198,7 @@ class TestCheckMaintenance:
         assert due[0]["days_overdue"] >= 10
 
     def test_task_not_yet_due(self, ha_mock):
-        recent_date = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d")
+        recent_date = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%d")
         tasks = [{"name": "Filter wechseln", "interval_days": 30, "last_done": recent_date, "priority": "low"}]
         eng = self._make_engine(tasks, ha_mock)
         due = eng.check_maintenance()
@@ -256,7 +256,7 @@ class TestCompleteTask:
         assert result is True
         engine._save_maintenance_tasks.assert_called_once()
         saved = engine._save_maintenance_tasks.call_args[0][0]
-        assert saved[0]["last_done"] == datetime.now().strftime("%Y-%m-%d")
+        assert saved[0]["last_done"] == datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     def test_complete_nonexistent_task(self, engine):
         engine._load_maintenance_tasks = MagicMock(return_value=[])

@@ -6,7 +6,7 @@ Working Memory (Redis) + Episodic Memory (ChromaDB) + Semantic Memory (Fakten).
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -84,12 +84,12 @@ class MemoryManager:
         entry = {
             "role": role,
             "content": content,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         entry_json = json.dumps(entry)
 
         # P-5: Redis Pipeline — 5 Roundtrips auf 1 reduziert (~80-150ms gespart)
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         archive_key = f"mha:archive:{today}"
         try:
             pipe = self.redis.pipeline()
@@ -189,9 +189,9 @@ class MemoryManager:
                 logger.debug("Dedup-Check fehlgeschlagen: %s", e)
 
             meta = dict(metadata) if metadata else {}
-            meta["timestamp"] = datetime.now().isoformat()
+            meta["timestamp"] = datetime.now(timezone.utc).isoformat()
             meta["type"] = "conversation"
-            base_id = f"conv_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+            base_id = f"conv_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}"
 
             chunks = self._split_conversation(conversation)
 
@@ -380,7 +380,7 @@ class MemoryManager:
                 "topic": topic,
                 "context": context,
                 "person": person,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
             await self.redis.hset("mha:pending_topics", topic, entry)
             # 24h TTL auf das gesamte Hash
@@ -397,7 +397,7 @@ class MemoryManager:
         try:
             all_topics = await self.redis.hgetall("mha:pending_topics")
             pending = []
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
 
             for topic_key, entry_json in all_topics.items():
                 try:
@@ -446,7 +446,7 @@ class MemoryManager:
         await self.redis.setex(
             f"mha:notify:{event_type}",
             3600,  # 1 Stunde TTL
-            datetime.now().isoformat(),
+            datetime.now(timezone.utc).isoformat(),
         )
 
     # ----- Feedback Scores -----

@@ -4,7 +4,7 @@ Widerspruchs-Erkennung, Decay und explizites Notizbuch.
 """
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -502,7 +502,7 @@ class TestFactDecay:
 
     @pytest.mark.asyncio
     async def test_decay_old_fact(self, semantic, redis_mock):
-        old_date = (datetime.now() - timedelta(days=35)).isoformat()
+        old_date = (datetime.now(timezone.utc) - timedelta(days=35)).isoformat()
         redis_mock.smembers = AsyncMock(return_value={"fact_1"})
         redis_mock.hgetall = AsyncMock(return_value={
             "fact_id": "fact_1",
@@ -526,7 +526,7 @@ class TestFactDecay:
 
     @pytest.mark.asyncio
     async def test_decay_explicit_fact_slower(self, semantic, redis_mock):
-        old_date = (datetime.now() - timedelta(days=35)).isoformat()
+        old_date = (datetime.now(timezone.utc) - timedelta(days=35)).isoformat()
         redis_mock.smembers = AsyncMock(return_value={"fact_2"})
         redis_mock.hgetall = AsyncMock(return_value={
             "fact_id": "fact_2",
@@ -547,7 +547,7 @@ class TestFactDecay:
 
     @pytest.mark.asyncio
     async def test_decay_frequently_confirmed_slower(self, semantic, redis_mock):
-        old_date = (datetime.now() - timedelta(days=35)).isoformat()
+        old_date = (datetime.now(timezone.utc) - timedelta(days=35)).isoformat()
         redis_mock.smembers = AsyncMock(return_value={"fact_3"})
         redis_mock.hgetall = AsyncMock(return_value={
             "fact_id": "fact_3",
@@ -568,7 +568,7 @@ class TestFactDecay:
 
     @pytest.mark.asyncio
     async def test_decay_deletes_below_threshold(self, semantic, redis_mock):
-        old_date = (datetime.now() - timedelta(days=35)).isoformat()
+        old_date = (datetime.now(timezone.utc) - timedelta(days=35)).isoformat()
         redis_mock.smembers = AsyncMock(return_value={"fact_weak"})
         redis_mock.hgetall = AsyncMock(return_value={
             "fact_id": "fact_weak",
@@ -588,7 +588,7 @@ class TestFactDecay:
 
     @pytest.mark.asyncio
     async def test_decay_skips_recent_facts(self, semantic, redis_mock):
-        recent_date = (datetime.now() - timedelta(days=10)).isoformat()
+        recent_date = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
         redis_mock.smembers = AsyncMock(return_value={"fact_new"})
         redis_mock.hgetall = AsyncMock(return_value={
             "fact_id": "fact_new",
@@ -947,7 +947,7 @@ class TestUtilities:
 
     @pytest.mark.asyncio
     async def test_get_todays_learnings(self, semantic, redis_mock):
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         redis_mock.smembers = AsyncMock(return_value={"f1", "f2"})
 
         async def hgetall_side(key):

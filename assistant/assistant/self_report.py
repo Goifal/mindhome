@@ -10,7 +10,7 @@ Sicherheit: Rein lesend + aggregierend. Keine Schreibzugriffe. User sieht alles.
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from .config import settings, yaml_config
@@ -47,15 +47,15 @@ class SelfReport:
             return {"error": "SelfReport nicht aktiv"}
 
         # Rate Limit: Max 1 Report pro Tag
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         # On restart, try to recover last report day from Redis
         if not self._last_report_day and self.redis:
             try:
                 _cached_day = await self.redis.get("mha:self_report:last_day")
                 if _cached_day:
                     self._last_report_day = _cached_day.decode() if isinstance(_cached_day, bytes) else _cached_day
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Self-Report Tagescache aus Redis laden fehlgeschlagen: %s", e)
         if self._last_report_day == today:
             cached = await self.get_latest_report()
             if cached:
@@ -118,7 +118,7 @@ class SelfReport:
             summary = self._format_fallback(data)
 
         report = {
-            "generated_at": datetime.now().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "summary": summary,
             "data": data,
         }
@@ -133,9 +133,9 @@ class SelfReport:
         self._last_report_day = today
         try:
             await self.redis.setex("mha:self_report:last_day", 86400, today)
-        except Exception:
-            pass
-        logger.info("Self-Report generiert (%d Zeichen)", len(summary))
+        except Exception as e:
+            logger.debug("Self-Report Tag in Redis speichern fehlgeschlagen: %s", e)
+        logger.info("Self-Report generiert (%d Zeilen)", len(summary))
 
         return report
 

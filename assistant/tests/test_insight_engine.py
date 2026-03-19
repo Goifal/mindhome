@@ -16,7 +16,7 @@ Testet die regel-basierten Checks:
 
 import json
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from assistant.insight_engine import InsightEngine, _RAIN_CONDITIONS, _STORM_CONDITIONS
@@ -93,7 +93,7 @@ class TestWeatherWindowsCheck:
     async def test_rain_forecast_with_open_windows(self, insight_engine):
         data = {
             "open_windows": ["Kueche Fenster"],
-            "forecast": [{"condition": "rainy", "datetime": (datetime.now() + timedelta(hours=1)).isoformat()}],
+            "forecast": [{"condition": "rainy", "datetime": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()}],
             "states": [{"entity_id": "person.test", "state": "home", "attributes": {"friendly_name": "Test"}}],
         }
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
@@ -107,7 +107,7 @@ class TestWeatherWindowsCheck:
     async def test_storm_is_high_urgency(self, insight_engine):
         data = {
             "open_windows": ["Fenster 1"],
-            "forecast": [{"condition": "lightning-rainy", "datetime": datetime.now().isoformat()}],
+            "forecast": [{"condition": "lightning-rainy", "datetime": datetime.now(timezone.utc).isoformat()}],
             "states": [],
         }
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
@@ -292,7 +292,7 @@ class TestEnergyAnomalyCheck:
 
         with patch.object(engine, "_get_title_for_home", return_value="Sir"):
             with patch("assistant.insight_engine.datetime") as mock_dt:
-                mock_dt.now.return_value = datetime(2025, 6, 15, 12, 0)
+                mock_dt.now.return_value = datetime(2025, 6, 15, 12, 0, tzinfo=timezone.utc)
                 mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
                 result = await engine._check_energy_anomaly({})
         # At noon, projected = 8000/12*24 = 16000, avg = 5000, increase = 220%
@@ -317,7 +317,7 @@ class TestEnergyAnomalyCheck:
         engine.redis.mget = AsyncMock(side_effect=fake_mget)
 
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 12, 0)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 12, 0, tzinfo=timezone.utc)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             result = await engine._check_energy_anomaly({})
         # Projected: 2000/12*24 = 4000, avg: 5000 → -20% → no anomaly
@@ -338,7 +338,7 @@ class TestAwayDevicesCheck:
     @pytest.mark.asyncio
     async def test_away_with_lights_on(self, insight_with_redis):
         engine = insight_with_redis
-        engine.redis.get = AsyncMock(return_value=(datetime.now() - timedelta(hours=3)).isoformat())
+        engine.redis.get = AsyncMock(return_value=(datetime.now(timezone.utc) - timedelta(hours=3)).isoformat())
         engine.redis.exists = AsyncMock(return_value=0)
 
         data = {
@@ -426,7 +426,7 @@ class TestCalendarWeatherCross:
 
     @pytest.mark.asyncio
     async def test_event_plus_rain(self, insight_engine):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=3)
         data = {
             "calendar_events": [{"summary": "Meeting", "start": event_time.isoformat()}],
@@ -441,7 +441,7 @@ class TestCalendarWeatherCross:
 
     @pytest.mark.asyncio
     async def test_event_plus_storm(self, insight_engine):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=2)
         data = {
             "calendar_events": [{"summary": "Termin", "start": event_time.isoformat()}],
@@ -454,7 +454,7 @@ class TestCalendarWeatherCross:
 
     @pytest.mark.asyncio
     async def test_event_sunny_no_alert(self, insight_engine):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=3)
         data = {
             "calendar_events": [{"summary": "Termin", "start": event_time.isoformat()}],
@@ -466,7 +466,7 @@ class TestCalendarWeatherCross:
 
     @pytest.mark.asyncio
     async def test_event_too_far_away(self, insight_engine):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=20)
         data = {
             "calendar_events": [{"summary": "Termin", "start": event_time.isoformat()}],
@@ -529,7 +529,7 @@ class TestGuestPreparation:
 
     @pytest.mark.asyncio
     async def test_guest_event_alarm_armed(self, insight_engine):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=2)
         data = {
             "calendar_events": [{"summary": "Dinner Party", "start": event_time.isoformat()}],
@@ -546,7 +546,7 @@ class TestGuestPreparation:
 
     @pytest.mark.asyncio
     async def test_guest_event_lights_off(self, insight_engine):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=1)
         data = {
             "calendar_events": [{"summary": "Gaeste zum Brunch", "start": event_time.isoformat()}],
@@ -562,7 +562,7 @@ class TestGuestPreparation:
 
     @pytest.mark.asyncio
     async def test_no_guest_keywords(self, insight_engine):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=2)
         data = {
             "calendar_events": [{"summary": "Arzttermin", "start": event_time.isoformat()}],
@@ -573,7 +573,7 @@ class TestGuestPreparation:
 
     @pytest.mark.asyncio
     async def test_guest_event_too_far(self, insight_engine):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=6)
         data = {
             "calendar_events": [{"summary": "Dinner", "start": event_time.isoformat()}],
@@ -584,7 +584,7 @@ class TestGuestPreparation:
 
     @pytest.mark.asyncio
     async def test_guest_event_all_ok(self, insight_engine):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=2)
         data = {
             "calendar_events": [{"summary": "Party", "start": event_time.isoformat()}],
@@ -601,7 +601,7 @@ class TestGuestPreparation:
     @pytest.mark.asyncio
     async def test_guest_event_too_cold(self, insight_engine):
         """Gaeste kommen, aber Raum ist zu kalt."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=2)
         data = {
             "calendar_events": [{"summary": "Besuch kommt", "start": event_time.isoformat()}],
@@ -620,7 +620,7 @@ class TestGuestPreparation:
     @pytest.mark.asyncio
     async def test_guest_event_open_doors(self, insight_engine):
         """Gaeste kommen, aber Tueren stehen offen."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=1)
         data = {
             "calendar_events": [{"summary": "Einladung Abendessen", "start": event_time.isoformat()}],
@@ -768,7 +768,7 @@ class TestHealthWorkPattern:
         insight_engine.activity = activity_mock
 
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 20, 0)  # 20 Uhr
+            mock_dt.now.return_value = datetime(2025, 6, 15, 20, 0, tzinfo=timezone.utc)  # 20 Uhr
             with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
                 result = await insight_engine._check_health_work_pattern({})
 
@@ -792,7 +792,7 @@ class TestHealthWorkPattern:
         }
 
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 21, 0)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 21, 0, tzinfo=timezone.utc)
             with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
                 result = await insight_engine._check_health_work_pattern(data)
 
@@ -815,7 +815,7 @@ class TestHealthWorkPattern:
         }
 
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 21, 0)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 21, 0, tzinfo=timezone.utc)
             with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
                 result = await insight_engine._check_health_work_pattern(data)
 
@@ -831,7 +831,7 @@ class TestHealthWorkPattern:
         insight_engine.activity = activity_mock
 
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0)  # 14 Uhr
+            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0, tzinfo=timezone.utc)  # 14 Uhr
             result = await insight_engine._check_health_work_pattern({})
 
         assert result is None
@@ -844,7 +844,7 @@ class TestHealthWorkPattern:
         insight_engine.activity = activity_mock
 
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 20, 0)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 20, 0, tzinfo=timezone.utc)
             result = await insight_engine._check_health_work_pattern({})
 
         assert result is None
@@ -857,7 +857,7 @@ class TestHealthWorkPattern:
         insight_engine.activity = activity_mock
 
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 20, 0)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 20, 0, tzinfo=timezone.utc)
             result = await insight_engine._check_health_work_pattern({})
 
         assert result is None
@@ -1001,7 +1001,7 @@ class TestNightSecurity:
             "states": [],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 30)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 30, tzinfo=timezone.utc)
             with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
                 result = await insight_engine._check_night_security(data)
         assert result is not None
@@ -1023,7 +1023,7 @@ class TestNightSecurity:
             "states": [],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 0, 15)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 0, 15, tzinfo=timezone.utc)
             with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
                 result = await insight_engine._check_night_security(data)
         assert result is not None
@@ -1042,7 +1042,7 @@ class TestNightSecurity:
             "states": [],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 22, 0)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 22, 0, tzinfo=timezone.utc)
             result = await insight_engine._check_night_security(data)
         assert result is None
 
@@ -1058,7 +1058,7 @@ class TestNightSecurity:
             "states": [],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 30)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 30, tzinfo=timezone.utc)
             result = await insight_engine._check_night_security(data)
         assert result is None
 
@@ -1074,7 +1074,7 @@ class TestNightSecurity:
             "states": [],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 30)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 30, tzinfo=timezone.utc)
             result = await insight_engine._check_night_security(data)
         assert result is None
 
@@ -1090,7 +1090,7 @@ class TestNightSecurity:
             "states": [],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 30)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 30, tzinfo=timezone.utc)
             result = await insight_engine._check_night_security(data)
         assert result is None
 
@@ -1107,7 +1107,7 @@ class TestNightSecurity:
             "states": [],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 3, 0)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 3, 0, tzinfo=timezone.utc)
             with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
                 result = await insight_engine._check_night_security(data)
         assert result is not None
@@ -1125,7 +1125,7 @@ class TestNightSecurity:
             "states": [],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 45)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 45, tzinfo=timezone.utc)
             with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
                 result = await insight_engine._check_night_security(data)
         assert result is not None
@@ -1265,7 +1265,7 @@ class TestForgottenDevices:
             ],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0, tzinfo=timezone.utc)
             with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
                 result = await insight_engine._check_forgotten_devices(data)
         assert result is not None
@@ -1287,7 +1287,7 @@ class TestForgottenDevices:
             ],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0, tzinfo=timezone.utc)
             with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
                 result = await insight_engine._check_forgotten_devices(data)
         assert result is not None
@@ -1304,7 +1304,7 @@ class TestForgottenDevices:
             ],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 2, 30)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 2, 30, tzinfo=timezone.utc)
             with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
                 result = await insight_engine._check_forgotten_devices(data)
         assert result is not None
@@ -1323,7 +1323,7 @@ class TestForgottenDevices:
             ],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 20, 0)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 20, 0, tzinfo=timezone.utc)
             result = await insight_engine._check_forgotten_devices(data)
         assert result is None
 
@@ -1338,7 +1338,7 @@ class TestForgottenDevices:
             ],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0, tzinfo=timezone.utc)
             result = await insight_engine._check_forgotten_devices(data)
         assert result is None
 
@@ -1354,7 +1354,7 @@ class TestForgottenDevices:
             ],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0, tzinfo=timezone.utc)
             result = await insight_engine._check_forgotten_devices(data)
         assert result is None
 
@@ -1372,7 +1372,7 @@ class TestForgottenDevices:
             ],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0)
+            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0, tzinfo=timezone.utc)
             with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
                 result = await insight_engine._check_forgotten_devices(data)
         assert result is not None

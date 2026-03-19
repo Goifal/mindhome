@@ -13,7 +13,7 @@ So kann der Assistant Fragen wie "War der letzte Winter teuer?" beantworten.
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as redis
@@ -69,6 +69,7 @@ class DailySummarizer:
                 pass
         self._running = True
         self._task = asyncio.create_task(self._nightly_loop())
+        self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         logger.info(
             "DailySummarizer initialisiert (Nachtlauf: %02d:%02d)",
             self.run_hour, self.run_minute,
@@ -94,7 +95,7 @@ class DailySummarizer:
         """Wartet bis zur konfigurierten Uhrzeit und erstellt Zusammenfassungen."""
         while self._running:
             try:
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 target = now.replace(
                     hour=self.run_hour, minute=self.run_minute, second=0, microsecond=0
                 )
@@ -110,7 +111,7 @@ class DailySummarizer:
                 await asyncio.sleep(wait_seconds)
 
                 # Tages-Summary fuer gestern
-                yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+                yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
                 daily_summary = await self.summarize_day(yesterday)
 
                 # Callback: Zusammenfassung proaktiv melden
@@ -125,11 +126,11 @@ class DailySummarizer:
                         logger.error("Summary-Notify Fehler: %s", e)
 
                 # Wochen-Summary jeden Montag
-                if datetime.now().weekday() == 0:
+                if datetime.now(timezone.utc).weekday() == 0:
                     await self.summarize_week()
 
                 # Monats-Summary am 1. des Monats
-                if datetime.now().day == 1:
+                if datetime.now(timezone.utc).day == 1:
                     await self.summarize_month()
                     # Phase 8: Personality-Evolution Summary
                     await self._store_personality_snapshot()
@@ -184,7 +185,7 @@ class DailySummarizer:
             end_date: Letzter Tag der Woche (default: gestern)
         """
         if not end_date:
-            end_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            end_date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
 
         end_dt = datetime.strptime(end_date, "%Y-%m-%d")
         start_dt = end_dt - timedelta(days=6)
@@ -227,7 +228,7 @@ class DailySummarizer:
             month: Monat im Format "YYYY-MM" (default: letzter Monat)
         """
         if not month:
-            last_month = datetime.now().replace(day=1) - timedelta(days=1)
+            last_month = datetime.now(timezone.utc).replace(day=1) - timedelta(days=1)
             month = last_month.strftime("%Y-%m")
 
         # Pruefen ob schon existiert
@@ -407,7 +408,7 @@ class DailySummarizer:
                     metadatas=[{
                         "date": date,
                         "type": summary_type,
-                        "created_at": datetime.now().isoformat(),
+                        "created_at": datetime.now(timezone.utc).isoformat(),
                     }],
                     ids=[doc_id],
                 )
@@ -447,8 +448,8 @@ Format: Fliesstext, kurze Saetze."""
             if conflict_summary:
                 parts.append("\nGeraete-Konflikte des Tages:")
                 parts.append(conflict_summary.replace("\n\nAKTIVE GERAETE-KONFLIKTE:\n", "").split("\nErwaehne")[0].strip())
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Zusammenfassung fehlgeschlagen: %s", e)
 
         parts.append("\nFasse zusammen: Was wurde besprochen? "
                      "Welche Aktionen? Stimmung? Besonderheiten? "
@@ -491,7 +492,7 @@ Format: Fliesstext, kurze Saetze."""
             return
 
         try:
-            month = (datetime.now() - timedelta(days=1)).strftime("%Y-%m")
+            month = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m")
 
             # Personality-Daten sammeln
             _total_raw = await self.redis.get("mha:personality:total_interactions")

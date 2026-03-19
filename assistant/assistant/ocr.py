@@ -327,7 +327,8 @@ class OCREngine:
                 return None
 
             # Check file size
-            size_mb = image_path.stat().st_size / (1024 * 1024)
+            stat_result = await asyncio.to_thread(image_path.stat)
+            size_mb = stat_result.st_size / (1024 * 1024)
             if size_mb > self.max_image_size_mb:
                 logger.warning(
                     "Bild zu gross fuer Vision-LLM: %.1f MB (max: %d MB)",

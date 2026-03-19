@@ -16,7 +16,7 @@ Nutzt bestehende Module:
 import asyncio
 import logging
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -297,8 +297,8 @@ class RoutineEngine:
                         topic = item.get("topic", "")
                         if topic:
                             parts.append(f"Offenes Thema: {topic}")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Offenes Thema parsen fehlgeschlagen: %s", e)
         except Exception as e:
             logger.debug("Personal Memory Briefing fehlgeschlagen: %s", e)
 
@@ -943,8 +943,8 @@ class RoutineEngine:
                 )
                 if hints:
                     logger.info("Wakeup coffee: Dependency-Warnung: %s", hints[0])
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Wakeup coffee Dependency-Pruefung fehlgeschlagen: %s", e)
             await self.ha.call_service(
                 "homeassistant", "turn_on", {"entity_id": entity},
             )
@@ -1399,7 +1399,8 @@ class RoutineEngine:
                 system_prompt = self._personality.build_routine_prompt(
                     routine_type="goodnight",
                 )
-            except Exception:
+            except Exception as e:
+                logger.debug("Goodnight Personality-Prompt fehlgeschlagen: %s", e)
                 title = get_person_title(person)
                 system_prompt = (
                     f"Du bist {settings.assistant_name}. Butler-Stil, kurz, trocken. Deutsch. "
@@ -1718,6 +1719,7 @@ class RoutineEngine:
 
         await self.redis.setex(KEY_VACATION_SIM, 30 * 86400, "active")
         self._vacation_task = asyncio.create_task(self._run_vacation_simulation())
+        self._vacation_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         logger.info("Abwesenheits-Simulation gestartet")
         return f"Das Haus wird bewohnt wirken, {get_person_title()}. Alles Weitere übernehme ich."
 
@@ -1909,7 +1911,8 @@ class RoutineEngine:
             already_done = await self.redis.get(flag_key)
             if already_done:
                 return 0
-        except Exception:
+        except Exception as e:
+            logger.debug("Redis-Pruefung fuer Geburtstags-Migration fehlgeschlagen: %s", e)
             return 0
 
         persons_cfg = yaml_config.get("persons", {})
@@ -2257,7 +2260,7 @@ class RoutineEngine:
 
             # Solar produziert, aber Sonne geht bald unter
             from datetime import datetime
-            hour = datetime.now().hour
+            hour = datetime.now(_TZ).hour
             if solar_power > 200 and hour >= 16:
                 return (
                     f"Solar produziert noch {solar_power:.0f}W, aber die Sonne geht "
@@ -2304,7 +2307,7 @@ class RoutineEngine:
         """
         try:
             from datetime import datetime
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             if now.hour < 23 or (now.hour == 23 and now.minute < 30):
                 return None
 

@@ -10,7 +10,6 @@ Konfigurierbar in der Jarvis Assistant UI unter "Intelligenz".
 """
 
 import logging
-import math
 from typing import Optional
 
 from .config import yaml_config

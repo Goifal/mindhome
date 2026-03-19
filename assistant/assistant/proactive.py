@@ -18,11 +18,13 @@ import collections
 import json
 import logging
 import random
+import threading
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import aiohttp
 import yaml
@@ -41,6 +43,8 @@ from .constants import (
 )
 from .ollama_client import validate_notification
 from .websocket import emit_proactive, emit_interrupt
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +191,8 @@ class ProactiveManager:
             "entity_recovered": (LOW, "Entity wieder online"),
             "scene_scheduled": (LOW, "Geplante Szene aktiviert"),
             "scene_suggested": (LOW, "Szenen-Vorschlag"),
+            "observation": (LOW, "Spontane Beobachtung"),
+            "ambient_status": (LOW, "Ambient-Status"),
         }
         # Dynamische Appliance-Handler (aus YAML devices) einfuegen — ueberschreiben Defaults
         self.event_handlers.update(_dynamic_handlers)
@@ -203,6 +209,7 @@ class ProactiveManager:
         self._notification_timestamps: collections.deque[float] = collections.deque(maxlen=200)
         # Ignorierte Events pro Typ: zaehlt wie oft User aehnliche Events ignoriert hat
         self._dismissed_event_types: collections.Counter = collections.Counter()
+        self._salience_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Attention / Salience Scoring
@@ -253,7 +260,7 @@ class ProactiveManager:
         base_score = self._SEVERITY_SCORES.get(urgency, 0.3)
 
         # 2. Tageszeit-Modifikator: nachts (22-7) sind LOW/MEDIUM weniger salient
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
         time_modifier = 1.0
         if self._quiet_start > self._quiet_end:
             is_night = hour >= self._quiet_start or hour < self._quiet_end
@@ -266,7 +273,8 @@ class ProactiveManager:
         fatigue = self._notification_fatigue_score()
 
         # 4. Ignorier-Abzug: Wenn der User diesen Event-Typ oft ignoriert hat
-        dismiss_count = self._dismissed_event_types.get(event_type, 0)
+        with self._salience_lock:
+            dismiss_count = self._dismissed_event_types.get(event_type, 0)
         # Jedes Ignorieren reduziert Salienz um 5%, max 40% Reduktion
         dismiss_penalty = max(0.6, 1.0 - dismiss_count * 0.05)
 
@@ -304,7 +312,8 @@ class ProactiveManager:
         one_hour_ago = now - 3600
 
         # Zaehle Notifications der letzten Stunde
-        recent_count = sum(1 for ts in self._notification_timestamps if ts > one_hour_ago)
+        with self._salience_lock:
+            recent_count = sum(1 for ts in self._notification_timestamps if ts > one_hour_ago)
 
         if recent_count <= 2:
             return 1.0    # Keine Ermuedung
@@ -324,7 +333,8 @@ class ProactiveManager:
         Args:
             event_type: Event-Typ (fuer zukuenftige Event-spezifische Fatigue)
         """
-        self._notification_timestamps.append(time.time())
+        with self._salience_lock:
+            self._notification_timestamps.append(time.time())
 
     def record_notification_dismissed(self, event_type: str):
         """Registriert dass der User eine Notification ignoriert/dismissed hat.
@@ -334,7 +344,8 @@ class ProactiveManager:
         Args:
             event_type: Der Event-Typ der ignoriert wurde
         """
-        self._dismissed_event_types[event_type] += 1
+        with self._salience_lock:
+            self._dismissed_event_types[event_type] += 1
 
     # ------------------------------------------------------------------
     # LED Status-Indikator: Systemzustand als Lichtfarbe
@@ -393,7 +404,7 @@ class ProactiveManager:
     @staticmethod
     def _check_quiet(start: int, end: int) -> bool:
         """Prueft ob die aktuelle Stunde in einem Quiet-Window liegt."""
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
         if start > end:
             return hour >= start or hour < end
         return start <= hour < end
@@ -560,6 +571,21 @@ class ProactiveManager:
 
         return False
 
+    @staticmethod
+    def _loop_done_cb(t: asyncio.Task) -> None:
+        """Callback fuer Long-Running Loop Tasks — loggt unerwartete Crashes."""
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc:
+            logger.error("Proactive Loop-Task '%s' unerwartet beendet: %s", t.get_name(), exc)
+
+    def _create_loop_task(self, coro, *, name: str = "") -> asyncio.Task:
+        """Erstellt einen Loop-Task mit Error-Callback."""
+        task = asyncio.create_task(coro, name=name or "")
+        task.add_done_callback(self._loop_done_cb)
+        return task
+
     async def start(self):
         """Startet den Event Listener."""
         if not self.enabled:
@@ -567,23 +593,23 @@ class ProactiveManager:
             return
 
         self._running = True
-        self._task = asyncio.create_task(self._listen_ha_events())
+        self._task = self._create_loop_task(self._listen_ha_events(), name="proactive_ha_events")
         # Phase 10: Periodische Diagnostik starten
         if hasattr(self.brain, "diagnostics") and self.brain.diagnostics.enabled:
-            self._diag_task = asyncio.create_task(self._run_diagnostics_loop())
+            self._diag_task = self._create_loop_task(self._run_diagnostics_loop(), name="proactive_diagnostics")
         # Phase 15.4: Batch-Loop starten
         if self.batch_enabled:
-            self._batch_task = asyncio.create_task(self._run_batch_loop())
+            self._batch_task = self._create_loop_task(self._run_batch_loop(), name="proactive_batch")
         # Phase 7.9: Saisonaler Rolladen-Loop
         seasonal_cfg = yaml_config.get("seasonal_actions", {})
         if seasonal_cfg.get("enabled", True):
-            self._seasonal_task = asyncio.create_task(self._run_seasonal_loop())
+            self._seasonal_task = self._create_loop_task(self._run_seasonal_loop(), name="proactive_seasonal")
 
         # Phase 18: Unaufgeforderte Beobachtungen
         obs_cfg = yaml_config.get("observation_loop", {})
         self._observation_task: Optional[asyncio.Task] = None
         if obs_cfg.get("enabled", True):
-            self._observation_task = asyncio.create_task(self._run_observation_loop())
+            self._observation_task = self._create_loop_task(self._run_observation_loop(), name="proactive_observation")
 
         # Phase 11: Saugroboter-Automatik
         vacuum_cfg = yaml_config.get("vacuum", {})
@@ -592,47 +618,47 @@ class ProactiveManager:
         self._vacuum_scene_task: Optional[asyncio.Task] = None
         self._vacuum_presence_task: Optional[asyncio.Task] = None
         if vacuum_cfg.get("enabled") and vacuum_cfg.get("auto_clean", {}).get("enabled"):
-            self._vacuum_task = asyncio.create_task(self._run_vacuum_automation())
+            self._vacuum_task = self._create_loop_task(self._run_vacuum_automation(), name="proactive_vacuum")
         # Steckdosen-Trigger für Saugroboter
         if vacuum_cfg.get("enabled") and vacuum_cfg.get("power_trigger", {}).get("enabled"):
-            self._vacuum_power_task = asyncio.create_task(self._run_vacuum_power_trigger())
+            self._vacuum_power_task = self._create_loop_task(self._run_vacuum_power_trigger(), name="proactive_vacuum_power")
         # Szenen-Trigger für Saugroboter
         if vacuum_cfg.get("enabled") and vacuum_cfg.get("scene_trigger", {}).get("enabled"):
-            self._vacuum_scene_task = asyncio.create_task(self._run_vacuum_scene_trigger())
+            self._vacuum_scene_task = self._create_loop_task(self._run_vacuum_scene_trigger(), name="proactive_vacuum_scene")
         # Anwesenheits-Monitor: Vacuum pausieren bei Heimkehr, fortsetzen bei Abwesenheit
         if vacuum_cfg.get("enabled") and vacuum_cfg.get("presence_guard", {}).get("enabled"):
-            self._vacuum_presence_task = asyncio.create_task(self._run_vacuum_presence_monitor())
+            self._vacuum_presence_task = self._create_loop_task(self._run_vacuum_presence_monitor(), name="proactive_vacuum_presence")
         # Emergency Protocols laden
         self._emergency_protocols = yaml_config.get("emergency_protocols", {})
 
         # Phase 17: Threat Assessment Loop
         self._threat_task: Optional[asyncio.Task] = None
         if hasattr(self.brain, "threat_assessment") and self.brain.threat_assessment.enabled:
-            self._threat_task = asyncio.create_task(self._run_threat_assessment_loop())
+            self._threat_task = self._create_loop_task(self._run_threat_assessment_loop(), name="proactive_threat")
 
         # Ambient Presence Loop (Jarvis ist immer da)
         self._ambient_task: Optional[asyncio.Task] = None
         ambient_cfg = yaml_config.get("ambient_presence", {})
         if ambient_cfg.get("enabled", False):
-            self._ambient_task = asyncio.create_task(self._run_ambient_presence_loop())
+            self._ambient_task = self._create_loop_task(self._run_ambient_presence_loop(), name="proactive_ambient")
 
         # C3: Follow-up Loop — offene Themen proaktiv aufgreifen
         self._followup_task: Optional[asyncio.Task] = None
         followup_cfg = yaml_config.get("self_followup", {})
         if followup_cfg.get("enabled", True):
-            self._followup_task = asyncio.create_task(self._run_followup_loop())
+            self._followup_task = self._create_loop_task(self._run_followup_loop(), name="proactive_followup")
 
         # E: Routine-Abweichungserkennung
         self._routine_task: Optional[asyncio.Task] = None
         routine_cfg = yaml_config.get("routine_deviation", {})
         if routine_cfg.get("enabled", True):
-            self._routine_task = asyncio.create_task(self._run_routine_deviation_loop())
+            self._routine_task = self._create_loop_task(self._run_routine_deviation_loop(), name="proactive_routine")
 
         # Szenen-Scheduler: Cron-basierte Szenen-Aktivierung
         self._scene_schedule_task: Optional[asyncio.Task] = None
         scenes_cfg = yaml_config.get("scenes", {})
         if scenes_cfg.get("schedule_enabled", True):
-            self._scene_schedule_task = asyncio.create_task(self._run_scene_schedule_loop())
+            self._scene_schedule_task = self._create_loop_task(self._run_scene_schedule_loop(), name="proactive_scene_schedule")
 
         logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal + Notfall + Threat + Ambient + Follow-up + Routine + Szenen-Schedule)")
 
@@ -874,8 +900,8 @@ class ProactiveManager:
                     "Tuerklingel betaetigt" + (f" — {camera_desc[:100]}" if camera_desc else ""),
                     arguments={"entity_id": entity_id},
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Aktivitaetslog Tuerklingel fehlgeschlagen: %s", e)
 
         # Person tracker (Phase 7: erweitert mit Abschied + Abwesenheits-Summary)
         elif entity_id.startswith("person."):
@@ -911,8 +937,8 @@ class ProactiveManager:
                         f"{name} ist angekommen",
                         arguments={"person": name},
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Aktivitaetslog Ankunft fehlgeschlagen: %s", e)
 
                 # Phase 18: Proactive Planner — Multi-Step-Plan bei Ankunft
                 if hasattr(self.brain, "proactive_planner") and self.brain.proactive_planner.enabled:
@@ -960,8 +986,8 @@ class ProactiveManager:
                         f"{name} hat das Haus verlassen",
                         arguments={"person": name},
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Aktivitaetslog Abwesenheit fehlgeschlagen: %s", e)
                 # MCU-JARVIS: Abwesenheits-Akkumulator starten
                 if yaml_config.get("return_briefing", {}).get("enabled", True):
                     await self._start_absence_accumulator(name)
@@ -1130,8 +1156,8 @@ class ProactiveManager:
                         if await redis.get(cooldown_key):
                             logger.debug("Scene Device-Trigger: Cooldown aktiv fuer '%s'", scene_id)
                             continue
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("Cooldown-Check fuer Szene '%s' fehlgeschlagen: %s", scene_id, e)
 
                 # [B] UND-Modus: Alle anderen Trigger-Entities muessen ebenfalls aktiv sein
                 trigger_mode = device_trigger_modes.get(scene_id, "or")
@@ -1340,8 +1366,8 @@ class ProactiveManager:
                 f"Geraetekonflikt: {entity_id} ({role}) → {'; '.join(hints[:2])}",
                 arguments={"entity_id": entity_id, "role": role, "conflicts": len(found_conflicts)},
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Aktivitaetslog Geraetekonflikt fehlgeschlagen: %s", e)
 
     async def _check_appliance_power(self, entity_id: str, new_val: str, old_val: str):
         """Appliance-Erkennung: Setzt idle-Marker bei Power-Drop, bestaetigt nach Wartezeit."""
@@ -1381,7 +1407,7 @@ class ProactiveManager:
 
             # Bestaetigungs-Task starten falls nicht schon laufend
             if not self._appliance_confirm_task or self._appliance_confirm_task.done():
-                self._appliance_confirm_task = asyncio.create_task(self._appliance_confirm_loop())
+                self._appliance_confirm_task = self._create_loop_task(self._appliance_confirm_loop(), name="proactive_appliance_confirm")
 
     async def _appliance_confirm_loop(self):
         """Prueft periodisch ob idle-Marker abgelaufen sind und meldet Geraete als fertig."""
@@ -1591,10 +1617,10 @@ class ProactiveManager:
                 if last:
                     last_dt = datetime.fromisoformat(last)
                     cooldown_min = followup_cfg.get("cooldown_minutes", 60)
-                    if (datetime.now() - last_dt).total_seconds() < cooldown_min * 60:
+                    if (datetime.now(timezone.utc) - last_dt).total_seconds() < cooldown_min * 60:
                         return
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Follow-up Cooldown-Check fehlgeschlagen: %s", e)
 
         # Aeltestes Thema zuerst
         candidates.sort(key=lambda t: t.get("age_minutes", 0), reverse=True)
@@ -1630,10 +1656,10 @@ class ProactiveManager:
         if delivered > 0 and self.brain.memory.redis:
             try:
                 await self.brain.memory.redis.set(
-                    _cooldown_key, datetime.now().isoformat(), ex=7200,
+                    _cooldown_key, datetime.now(timezone.utc).isoformat(), ex=7200,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Follow-up Cooldown-Marker setzen fehlgeschlagen: %s", e)
 
     async def _generate_followup_message(
         self, topic: str, context: str, person: str,
@@ -1688,7 +1714,7 @@ class ProactiveManager:
         if not self._mb_enabled:
             return
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         today = now.strftime("%Y-%m-%d")
 
         # D1: Adaptives Zeitfenster aus gelernter Aufwach-Zeit
@@ -1701,8 +1727,8 @@ class ProactiveManager:
                     avg_hour = float(raw)
                     window_start = max(4, int(avg_hour) - 1)
                     window_end = min(12, int(avg_hour) + 2)
-            except Exception:
-                pass  # Fallback auf Config-Werte
+            except Exception as e:
+                logger.debug("Adaptive Briefing-Zeit Abruf fehlgeschlagen: %s", e)
 
         # Reset am neuen Tag — lock prevents double-trigger from concurrent motion events
         async with self._state_lock:
@@ -1835,7 +1861,7 @@ class ProactiveManager:
         if not self._eb_enabled:
             return
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         today = now.strftime("%Y-%m-%d")
 
         # Reset am neuen Tag — lock prevents double-trigger from concurrent events
@@ -2054,7 +2080,7 @@ class ProactiveManager:
         if not redis_client:
             return
 
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
         flag_key = f"mha:personal_dates_checked:{today}"
 
         try:
@@ -2071,7 +2097,7 @@ class ProactiveManager:
                 await redis_client.setex(flag_key, 86400, "1")
                 return
 
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             for entry in upcoming:
                 days = entry["days_until"]
                 name = entry["person"].capitalize()
@@ -2117,7 +2143,7 @@ class ProactiveManager:
         """Motion-Kamera: Nachts oder bei Abwesenheit → Kamera-Snapshot analysieren."""
         from datetime import datetime
         try:
-            hour = datetime.now().hour
+            hour = datetime.now(_LOCAL_TZ).hour
             is_night = (hour >= 22 or hour < 6)
             # Tagsueber: Nur analysieren wenn niemand zuhause
             _cam_cfg = yaml_config.get("cameras", {}).get("proactive_analysis", {})
@@ -2126,8 +2152,8 @@ class ProactiveManager:
             if _away_mode and hasattr(self.brain, "ha"):
                 try:
                     is_away = not await self.brain.ha.is_anyone_home()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Anwesenheitspruefung fehlgeschlagen: %s", e)
             if not is_night and not is_away:
                 return
 
@@ -2251,6 +2277,7 @@ class ProactiveManager:
                     logger.debug("Bettsensor %s: off-delay %ds gestartet", entity_id, off_delay)
                     timer_key = f"_bed_off_timer_{entity_id}"
                     task = asyncio.create_task(self._delayed_bed_clear(le, entity_id, room, off_delay, timer_key))
+                    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
                     setattr(self, timer_key, task)
                 else:
                     await le.on_bed_clear(entity_id, room)
@@ -2338,7 +2365,7 @@ class ProactiveManager:
             last_time = await self.brain.memory.get_last_notification_time(cooldown_key)
             if last_time:
                 last_dt = datetime.fromisoformat(last_time)
-                if datetime.now() - last_dt < timedelta(minutes=5):
+                if datetime.now(timezone.utc) - last_dt < timedelta(minutes=5):
                     return
 
             # Phase 10.1: Auto-Follow bei hohem Autonomie-Level
@@ -2398,7 +2425,7 @@ class ProactiveManager:
             last = await self.brain.memory.get_last_notification_time(cooldown_key)
             if last:
                 last_dt = datetime.fromisoformat(last)
-                if datetime.now() - last_dt < timedelta(minutes=GEO_APPROACHING_COOLDOWN_MIN):
+                if datetime.now(timezone.utc) - last_dt < timedelta(minutes=GEO_APPROACHING_COOLDOWN_MIN):
                     return
             await self.brain.memory.set_last_notification_time(cooldown_key)
             await self._notify("person_approaching", LOW, {
@@ -2413,7 +2440,7 @@ class ProactiveManager:
             last = await self.brain.memory.get_last_notification_time(cooldown_key)
             if last:
                 last_dt = datetime.fromisoformat(last)
-                if datetime.now() - last_dt < timedelta(minutes=GEO_ARRIVING_COOLDOWN_MIN):
+                if datetime.now(timezone.utc) - last_dt < timedelta(minutes=GEO_ARRIVING_COOLDOWN_MIN):
                     return
             await self.brain.memory.set_last_notification_time(cooldown_key)
             await self._notify("person_arriving", MEDIUM, {
@@ -2485,8 +2512,8 @@ class ProactiveManager:
                                 f" ({detail})" if detail else "",
                             )
                             return
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Szenen-Unterdrueckungspruefung fehlgeschlagen: %s", e)
 
         # D3: Kontextuelles Schweigen — Activity-basierte Unterdrückung
         # Film/Gäste/Schlaf → nur HIGH+ darf durch
@@ -2536,8 +2563,8 @@ class ProactiveManager:
                         f" ({detail})" if detail else "",
                     )
                     return
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("User-Aktivitaetspruefung fuer Notification fehlgeschlagen: %s", e)
 
         # Cooldown prüfen (mit adaptivem Cooldown aus Feedback)
         effective_cooldown = self.cooldown
@@ -2563,7 +2590,13 @@ class ProactiveManager:
                     last_dt = datetime.fromisoformat(last_time)
                 except (ValueError, TypeError):
                     last_dt = None
-                if last_dt and datetime.now() - last_dt < timedelta(seconds=effective_cooldown):
+                if last_dt and datetime.now(timezone.utc) - last_dt < timedelta(seconds=effective_cooldown):
+                    detail = data.get("entity") or data.get("message", "")
+                    logger.info(
+                        "Meldung unterdrueckt (Cooldown %ds): [%s] %s",
+                        effective_cooldown, event_type,
+                        (detail[:80] if isinstance(detail, str) else "") if detail else "",
+                    )
                     return
 
         # Phase 15.4+: LOW und MEDIUM-Meldungen batchen statt sofort senden
@@ -2579,7 +2612,7 @@ class ProactiveManager:
                     "urgency": urgency,
                     "description": description,
                     "data": data,
-                    "time": datetime.now().isoformat(),
+                    "time": datetime.now(timezone.utc).isoformat(),
                 })
 
                 medium_items = sum(1 for b in self._batch_queue if b.get("urgency") == MEDIUM)
@@ -2649,8 +2682,8 @@ class ProactiveManager:
                 if await self._is_semantically_duplicate(_dedup_text):
                     logger.info("Semantisches Duplikat unterdrückt: [%s] %s", event_type, _dedup_text[:60])
                     return
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Semantische Duplikatpruefung fehlgeschlagen: %s", e)
 
         # Meldung generieren
 
@@ -2855,7 +2888,7 @@ class ProactiveManager:
             key = self._RETURN_BRIEFING_KEY.format(person=person_name.lower())
             # Initialer Eintrag mit Abgangszeit
             initial = json.dumps({
-                "departed": datetime.now().isoformat(),
+                "departed": datetime.now(timezone.utc).isoformat(),
                 "events": [],
             })
             await self.brain.memory.redis.setex(key, ttl, initial)
@@ -2887,7 +2920,7 @@ class ProactiveManager:
                 "type": event_type,
                 "urgency": urgency,
                 "summary": self.event_handlers.get(event_type, (MEDIUM, event_type))[1],
-                "time": datetime.now().strftime("%H:%M"),
+                "time": datetime.now(_LOCAL_TZ).strftime("%H:%M"),
                 "detail": data.get("person", data.get("entity", "")),
             }
 
@@ -2972,7 +3005,7 @@ class ProactiveManager:
             if departed:
                 try:
                     dep_dt = datetime.fromisoformat(departed)
-                    diff = datetime.now() - dep_dt
+                    diff = datetime.now(timezone.utc) - dep_dt
                     hours = diff.total_seconds() / 3600
                     if hours >= 1:
                         duration_str = f" (Abwesend: {int(hours)}h {int(diff.total_seconds() % 3600 / 60)}min)"
@@ -3051,8 +3084,9 @@ class ProactiveManager:
                     set_active_person(primary_found)
                 # Sonst: active_person nicht ändern (brain.py setzt bei Gespräch)
             return persons
-        except Exception:
+        except Exception as e:
             # HA nicht erreichbar: active_person leeren statt veraltete Daten behalten
+            logger.debug("HA-Status fuer active_person nicht erreichbar: %s", e)
             set_active_person("")
             return []
 
@@ -3439,7 +3473,22 @@ class ProactiveManager:
                 f"Beispiel Stale: '{_title}, [Sensor] hat sich seit [X] Minuten nicht gemeldet.'"
             )
 
+        # Observation: Bereits polierter/generierter Text
+        if event_type == "observation" and data.get("message"):
+            msg = data["message"]
+            return (
+                f"Formuliere diese Beobachtung im JARVIS-Butler-Stil um.\n"
+                f"Max 2 Saetze. Deutsch. Trocken-britisch.\n"
+                f"Wenn ein [INSIDER-KONTEXT] angegeben ist, baue eine beilaeufige "
+                f"Rueck-Referenz ein (z.B. 'wie letzten Dienstag', 'das hatten wir schon mal').\n\n"
+                f"{msg}"
+            )
+
         parts.append(f"Dringlichkeit: {urgency}")
+
+        # data["message"] als Details einfuegen (generischer Fix)
+        if "message" in data:
+            parts.append(f"Details: {data['message']}")
 
         # Wer ist gerade zuhause?
         parts.append("Formuliere eine kurze Meldung. Sprich die Bewohner mit Namen an wenn passend.")
@@ -3628,8 +3677,8 @@ class ProactiveManager:
                         f"Proaktive Meldung: {text[:150]}",
                         arguments={"items": len(items), "event_types": event_types[:5]},
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Aktivitaetslog Batch-Summary fehlgeschlagen: %s", e)
 
         except Exception as e:
             logger.error("Batch-Summary Fehler: %s", e)
@@ -3674,7 +3723,7 @@ class ProactiveManager:
 
                 # Cooldown prüfen: max 1 pro Tag
                 if _redis:
-                    today = datetime.now().strftime("%Y-%m-%d")
+                    today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
                     cooldown_key = f"mha:proactive:observation:{today}"
                     count = await _redis.get(cooldown_key)
                     if count and int(count) >= max_daily:
@@ -3695,7 +3744,7 @@ class ProactiveManager:
                     )
                     # Cooldown setzen
                     if _redis:
-                        today = datetime.now().strftime("%Y-%m-%d")
+                        today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
                         cooldown_key = f"mha:proactive:observation:{today}"
                         await _redis.incr(cooldown_key)
                         await _redis.expire(cooldown_key, 86400)
@@ -3703,7 +3752,7 @@ class ProactiveManager:
             except asyncio.CancelledError:
                 return
             except Exception as e:
-                logger.debug("Observation-Loop Fehler: %s", e)
+                logger.warning("Observation-Loop Fehler: %s", e)
 
             await asyncio.sleep(interval_h * 3600)
 
@@ -3739,7 +3788,7 @@ class ProactiveManager:
                         pass
 
             # Check 2: Heizung läuft nachts auf hoher Temperatur
-            hour = datetime.now().hour
+            hour = datetime.now(_LOCAL_TZ).hour
             if 23 <= hour or hour < 5:
                 for s in states:
                     eid = s.get("entity_id", "")
@@ -3814,7 +3863,7 @@ class ProactiveManager:
                     logger.warning("Unhandled: %s", e)
             return None
         except Exception as e:
-            logger.debug("Observation-Generierung fehlgeschlagen: %s", e)
+            logger.warning("Observation-Generierung fehlgeschlagen: %s", e)
             return None
 
     async def _contextualize_threat(self, threat: dict) -> str:
@@ -3829,7 +3878,7 @@ class ProactiveManager:
         try:
             # Kontext sammeln: Uhrzeit, Wetter
             from datetime import datetime
-            hour = datetime.now().hour
+            hour = datetime.now(_LOCAL_TZ).hour
             weather_info = ""
             try:
                 states = await self.brain.ha.get_states()
@@ -3841,8 +3890,8 @@ class ProactiveManager:
                             f"Wind: {attrs.get('wind_speed', '?')} km/h"
                         )
                         break
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Wetterinfo-Abruf fehlgeschlagen: %s", e)
 
             response = await asyncio.wait_for(
                 self.brain.ollama.chat(
@@ -3939,7 +3988,9 @@ class ProactiveManager:
                             "content": (
                                 "Formuliere diese Beobachtung um — kurz, trocken, JARVIS-Butler-Stil. "
                                 "Max 2 Saetze. Behalte die Fakten exakt bei, "
-                                "aendere nur den Ton (trockener Humor, britischer Butler):\n\n"
+                                "aendere nur den Ton (trockener Humor, britischer Butler). "
+                                "Wenn ein [INSIDER-KONTEXT] vorhanden ist, baue eine beilaeufige "
+                                "Referenz darauf ein — wie ein Butler der sich an fruehere Vorfaelle erinnert.\n\n"
                                 + raw_text
                             ),
                         },
@@ -3954,7 +4005,7 @@ class ProactiveManager:
             if polished and len(polished) > 10:
                 return polished
         except Exception as e:
-            logger.debug("Observation-LLM-Polish fehlgeschlagen: %s", e)
+            logger.warning("Observation-LLM-Polish fehlgeschlagen: %s", e)
         return raw_text
 
     async def _run_seasonal_loop(self):
@@ -4008,7 +4059,7 @@ class ProactiveManager:
         # und es ist nach der typischen Morgens-Öffnungszeit, defensiv "open" annehmen
         # um doppelte Morgens-Öffnung zu vermeiden
         if not last_schedule_action and not last_action_date:
-            _now = datetime.now()
+            _now = datetime.now(timezone.utc)
             if _now.hour >= 10:  # Nach 10 Uhr: Morgens-Öffnung war vermutlich schon
                 last_schedule_action = "open"
                 last_action_date = _now.strftime("%Y-%m-%d")
@@ -4029,7 +4080,8 @@ class ProactiveManager:
                             _redis = _redis_candidate
                             _redis_available = True
                             logger.info("Cover-Loop: Redis wieder erreichbar — Safe Mode deaktiviert")
-                    except Exception:
+                    except Exception as e:
+                        logger.debug("Redis-Verbindung fehlgeschlagen: %s", e)
                         _redis = None
                         _redis_available = False
 
@@ -4039,7 +4091,7 @@ class ProactiveManager:
                 auto_level = seasonal_cfg.get("auto_execute_level", 3)
                 cover_cfg = seasonal_cfg.get("cover_automation", {})
 
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 today = now.strftime("%Y-%m-%d")
 
                 if last_action_date != today:
@@ -4248,7 +4300,6 @@ class ProactiveManager:
             lux = 0.0
 
         # Sensor-Staleness: Warnung wenn Sensor seit >3h nicht aktualisiert
-        from datetime import timezone
         for _eid, _label in [
             (get_sensor_by_role("wind_sensor"), "Wind"),
             (get_sensor_by_role("temp_outdoor"), "Temperatur"),
@@ -4263,8 +4314,8 @@ class ProactiveManager:
                         if _age_h > 3:
                             logger.warning("Sensor-Staleness: %s (%s) seit %.1fh nicht aktualisiert",
                                            _label, _eid, _age_h)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Sensor-Staleness-Pruefung fehlgeschlagen: %s", e)
 
         return {
             "temperature": temp,
@@ -4359,7 +4410,8 @@ class ProactiveManager:
                     continue
                 try:
                     reason_data = _json.loads(reason_raw if isinstance(reason_raw, str) else reason_raw.decode())
-                except Exception:
+                except Exception as e:
+                    logger.debug("Cover-Reason JSON-Parsing fehlgeschlagen: %s", e)
                     continue
                 expected_pos = reason_data.get("position")
                 if expected_pos is None:
@@ -4425,7 +4477,7 @@ class ProactiveManager:
             reason_data = _json.dumps({
                 "position": position,
                 "reason": reason,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
             await redis_client.set(f"mha:cover:reason:{entity_id}", reason_data, ex=86400)
         except Exception as e:
@@ -4631,8 +4683,8 @@ class ProactiveManager:
                         arguments={"entity_id": entity_id, "position": position},
                         result=reason,
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Cover-Aktivitaetsprotokollierung fehlgeschlagen: %s", e)
                 # Cover-Licht Koordination: LightEngine informieren
                 try:
                     if hasattr(self.brain, "light_engine") and self.brain.light_engine:
@@ -4959,7 +5011,7 @@ class ProactiveManager:
     ):
         """Kaelte nachts → runter (Isolierung). Mit konfigurierbaren Nacht-Zeiten (Bug 5)."""
         temp = weather.get("temperature", 10)
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
         frost_temp = cover_cfg.get("frost_protection_temp", 3)
         night_insulation = cover_cfg.get("night_insulation", True)
         # Bug 5: Konfigurierbare Nacht-Stunden
@@ -4995,7 +5047,7 @@ class ProactiveManager:
         if not schedules:
             return
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         current_minutes = now.hour * 60 + now.minute
         weekday = now.weekday()  # 0=Mo, 6=So
         tolerance = 10  # +/- 10 Minuten Toleranz (> 15 Min Check-Intervall/2)
@@ -5092,7 +5144,7 @@ class ProactiveManager:
         Feature 7: Wellenfoermiges Oeffnen (Ost→Sued→West).
         Feature 13: Bettsensor respektieren.
         """
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         current_minutes = now.hour * 60 + now.minute
         open_time = timing.get("open_time", "07:30")
         close_time = timing.get("close_time", "19:00")
@@ -5212,7 +5264,8 @@ class ProactiveManager:
                                         if acted:
                                             _count += 1
                                         break
-                                    except Exception:
+                                    except Exception as e:
+                                        logger.debug("Benachrichtigungszustellung fehlgeschlagen (Versuch %d): %s", _attempt, e)
                                         if _attempt == 0:
                                             await asyncio.sleep(60)
                             if step_pos < 100:
@@ -5341,7 +5394,8 @@ class ProactiveManager:
                             else:
                                 var_offset = random.randint(-variation, variation)
                                 await redis_client.set("mha:cover:vac_var_offset", str(var_offset), ex=86400)
-                        except Exception:
+                        except Exception as e:
+                            logger.debug("Variations-Berechnung fehlgeschlagen: %s", e)
                             var_offset = random.randint(-variation, variation)
                     elif variation > 0:
                         var_offset = random.randint(-variation, variation)
@@ -5464,12 +5518,19 @@ class ProactiveManager:
                     sun_on_window = start <= azimuth <= end
                 else:
                     sun_on_window = azimuth >= start or azimuth <= end
-                if not sun_on_window and elevation > 0:
+                # Nachts (elevation <= 0): ALLE Fenster schliessen fuer Waermedaemmung
+                # Tags: nur nicht-sonnenbeschienene Fenster schliessen
+                should_close = elevation <= 0 or not sun_on_window
+                if should_close:
                     if cycle_acted is not None and entity_id in cycle_acted:
                         continue
+                    reason = f"Heizungs-Isolierung ({temp}°C, Heizung läuft"
+                    if elevation <= 0:
+                        reason += ", Nacht"
+                    reason += ")"
                     acted = await self._auto_cover_action(
                         entity_id, 0,
-                        f"Heizungs-Isolierung ({temp}°C, Heizung läuft)",
+                        reason,
                         auto_level, redis_client,
                     )
                     if acted and cycle_acted is not None:
@@ -5599,8 +5660,8 @@ class ProactiveManager:
                                 f"Heizung angepasst: {current_offset:+.1f} → {new_offset:+.1f} ({', '.join(reasons)})",
                                 arguments={"entity_id": curve_entity, "old_offset": current_offset, "new_offset": new_offset},
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Heizungs-Aktivitaetsprotokollierung fehlgeschlagen: %s", e)
                 except Exception as e:
                     logger.warning("Heizungs-Wetter-Anpassung fehlgeschlagen: %s", e)
         else:
@@ -5675,8 +5736,8 @@ class ProactiveManager:
                     f"CO2-Lueftung: {int(high_co2_rooms[0][1])} ppm — Rolllaeden geoeffnet",
                     arguments={"rooms": rooms_info},
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("CO2-Lueftungs-Aktivitaetsprotokollierung fehlgeschlagen: %s", e)
 
     # Feature 16: Privacy-Modus (Abendlicher Sichtschutz)
     async def _cover_privacy_mode(self, states, sun, cover_profiles, auto_level, redis_client, cycle_acted=None):
@@ -5690,7 +5751,7 @@ class ProactiveManager:
         if elevation > 0:
             return  # Nur nach Sonnenuntergang
 
-        current_hour = _dt.now().hour
+        current_hour = _dt.now(timezone.utc).hour
         cover_cfg = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
         global_close_hour = cover_cfg.get("privacy_close_hour", None)
 
@@ -5804,16 +5865,24 @@ class ProactiveManager:
         alarm_entity = guard_cfg.get("alarm_entity", "")
         if not alarm_entity:
             # Automatisch erste Alarmanlage finden
-            states = await self.brain.ha.get_states()
-            for s in (states or []):
-                if s.get("entity_id", "").startswith("alarm_control_panel."):
-                    alarm_entity = s["entity_id"]
-                    break
+            try:
+                states = await self.brain.ha.get_states()
+                for s in (states or []):
+                    if s.get("entity_id", "").startswith("alarm_control_panel."):
+                        alarm_entity = s["entity_id"]
+                        break
+            except Exception as e:
+                logger.error("Vacuum-Alarm: Alarmanlage suchen fehlgeschlagen: %s", e)
+                return False
         if not alarm_entity:
             return True  # Keine Alarmanlage vorhanden
 
         # Aktuellen Alarm-Status prüfen
-        state = await self.brain.ha.get_state(alarm_entity)
+        try:
+            state = await self.brain.ha.get_state(alarm_entity)
+        except Exception as e:
+            logger.error("Vacuum-Alarm: Status von %s nicht abrufbar: %s", alarm_entity, e)
+            return False
         current = state.get("state", "") if state else ""
 
         service_map = {
@@ -5824,33 +5893,63 @@ class ProactiveManager:
         if not service:
             return False
 
-        # Nur umschalten wenn nötig
-        if mode == "arm_home" and current == "armed_away":
-            logger.info("Vacuum-Alarm: %s → arm_home (Saugroboter startet)", alarm_entity)
-            success = await self.brain.ha.call_service(
-                "alarm_control_panel", service, {"entity_id": alarm_entity}
-            )
+        # Redis-Client holen (einmal, statt doppelt)
+        _memory = getattr(self.brain, "memory", None)
+        _redis = getattr(_memory, "redis", None) if _memory else None
+
+        # Nur umschalten wenn noetig
+        # armed_away UND armed_night benoetigen Umschaltung auf arm_home
+        if mode == "arm_home" and current in ("armed_away", "armed_night"):
+            logger.info("Vacuum-Alarm: %s (%s) → arm_home (Saugroboter startet)", alarm_entity, current)
+            try:
+                success = await self.brain.ha.call_service(
+                    "alarm_control_panel", service, {"entity_id": alarm_entity}
+                )
+            except Exception as e:
+                logger.error("Vacuum-Alarm: arm_home Service-Aufruf fehlgeschlagen: %s", e)
+                return False
             if success:
-                # Merken dass wir den Alarm umgeschaltet haben
-                _redis = getattr(self.brain, "memory", None)
-                _redis = getattr(_redis, "redis", None) if _redis else None
+                # Merken dass wir den Alarm umgeschaltet haben + vorherigen Zustand
                 if _redis:
-                    await _redis.set("mha:vacuum:alarm_switched", "1", ex=7200)
+                    try:
+                        await _redis.set("mha:vacuum:alarm_switched", current, ex=7200)
+                    except Exception as e:
+                        logger.warning("Vacuum-Alarm: Redis-Flag setzen fehlgeschlagen: %s", e)
+            else:
+                logger.error("Vacuum-Alarm: Umschalten auf arm_home fehlgeschlagen fuer %s", alarm_entity)
             return success
         elif mode == "arm_away" and current == "armed_home":
-            # Nur zurückschalten wenn WIR den Alarm umgeschaltet haben
-            _redis = getattr(self.brain, "memory", None)
-            _redis = getattr(_redis, "redis", None) if _redis else None
+            # Nur zurueckschalten wenn WIR den Alarm umgeschaltet haben
+            previous_state = None
             if _redis:
-                was_switched = await _redis.get("mha:vacuum:alarm_switched")
-                if not was_switched:
-                    return True  # Wir haben nicht umgeschaltet → nichts tun
-                await _redis.delete("mha:vacuum:alarm_switched")
-            logger.info("Vacuum-Alarm: %s → arm_away (Reinigung beendet)", alarm_entity)
-            return await self.brain.ha.call_service(
-                "alarm_control_panel", service, {"entity_id": alarm_entity}
-            )
-        return True  # Kein Umschalten nötig
+                try:
+                    was_switched = await _redis.get("mha:vacuum:alarm_switched")
+                    if not was_switched:
+                        return True  # Wir haben nicht umgeschaltet → nichts tun
+                    # Vorherigen Zustand auslesen (armed_away oder armed_night)
+                    previous_state = was_switched if isinstance(was_switched, str) else was_switched.decode()
+                    await _redis.delete("mha:vacuum:alarm_switched")
+                except Exception as e:
+                    logger.warning("Vacuum-Alarm: Redis-Flag lesen/loeschen fehlgeschlagen: %s — schalte trotzdem zurueck", e)
+            else:
+                logger.warning("Vacuum-Alarm: Redis nicht verfuegbar — schalte trotzdem zurueck")
+
+            # Zum vorherigen Zustand zurueckschalten (armed_away oder armed_night)
+            restore_service = "alarm_arm_away"
+            if previous_state == "armed_night":
+                restore_service = "alarm_arm_night"
+            logger.info("Vacuum-Alarm: %s → %s (Reinigung beendet)", alarm_entity, restore_service)
+            try:
+                success = await self.brain.ha.call_service(
+                    "alarm_control_panel", restore_service, {"entity_id": alarm_entity}
+                )
+                if not success:
+                    logger.error("Vacuum-Alarm: Zurueckschalten auf %s fehlgeschlagen fuer %s", restore_service, alarm_entity)
+                return success
+            except Exception as e:
+                logger.error("Vacuum-Alarm: Service-Aufruf %s fehlgeschlagen: %s", restore_service, e)
+                return False
+        return True  # Kein Umschalten noetig
 
     async def _vacuum_can_start(self) -> tuple[bool, str]:
         """Prüft ob der Vacuum starten darf (Anwesenheits-Guard).
@@ -5905,7 +6004,10 @@ class ProactiveManager:
             return False
 
         # Alarm umschalten BEVOR Vacuum startet
-        await self._vacuum_alarm_switch("arm_home")
+        alarm_ok = await self._vacuum_alarm_switch("arm_home")
+        if not alarm_ok:
+            logger.error("Vacuum: Alarm konnte nicht umgeschaltet werden — %s wird NICHT gestartet", nickname)
+            return False
 
         # Saugstaerke und Modus setzen
         if fan_speed or mode:
@@ -5921,8 +6023,8 @@ class ProactiveManager:
                     arguments={"entity_id": entity_id, "fan_speed": fan_speed, "mode": mode},
                     result=reason,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Staubsauger-Aktivitaetsprotokollierung fehlgeschlagen: %s", e)
         else:
             # Alarm zurückschalten wenn Start fehlgeschlagen
             await self._vacuum_alarm_switch("arm_away")
@@ -5965,15 +6067,32 @@ class ProactiveManager:
                     eid = robot.get("entity_id")
                     if not eid:
                         continue
+                    entity_found = False
                     for s in (states or []):
                         if s.get("entity_id") == eid:
+                            entity_found = True
                             vac_state = s.get("state", "")
                             if vac_state == "cleaning":
                                 cleaning_robots.append((floor, eid, robot))
                                 all_docked = False
+                            elif vac_state == "returning":
+                                # Auf dem Weg zur Ladestation — noch nicht fertig
+                                all_docked = False
+                            elif vac_state == "paused":
+                                # Pausiert (manuell oder automatisch) — nicht fertig
+                                all_docked = False
+                            elif vac_state == "unavailable":
+                                # Offline — nicht als docked werten (Sicherheit)
+                                all_docked = False
+                                logger.warning("Vacuum-PresenceMonitor: %s ist unavailable", eid)
                             elif vac_state not in ("docked", "idle"):
+                                # Unbekannter Zustand (error etc.) — nicht als docked werten
                                 all_docked = False
                             break
+                    if not entity_found:
+                        # Entity nicht in HA-States — nicht als docked werten
+                        all_docked = False
+                        logger.warning("Vacuum-PresenceMonitor: %s nicht in HA-States gefunden", eid)
 
                 # Fall 1: Jemand kommt heim + Vacuum saugt → Pausieren + Dock
                 # Guard: Nur wenn nicht schon pausiert (verhindert doppelte Befehle)
@@ -6011,8 +6130,8 @@ class ProactiveManager:
                             f"Staubsauger pausiert — Ankunft erkannt ({len(interrupted)} Roboter)",
                             arguments={"interrupted_floors": interrupted},
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Staubsauger-Pause-Protokollierung fehlgeschlagen: %s", e)
 
                 # Fall 2: Niemand zuhause + unterbrochene Reinigung → Fortsetzen
                 if not anyone_home and guard_cfg.get("resume_on_departure"):
@@ -6031,13 +6150,12 @@ class ProactiveManager:
                             continue
 
                         floors = interrupted_str.split(",")
-                        _interrupted_local = None
-                        if _redis:
-                            await _redis.delete("mha:vacuum:interrupted")
 
                         # Alarm umschalten
                         await self._vacuum_alarm_switch("arm_home")
 
+                        # Erst alle Robots starten, DANN interrupted-State loeschen
+                        resumed_floors = []
                         for floor in floors:
                             robot = robots.get(floor)
                             if not robot:
@@ -6046,8 +6164,23 @@ class ProactiveManager:
                             if not eid:
                                 continue
                             nickname = robot.get("nickname", f"Saugroboter {floor.upper()}")
-                            await self.brain.ha.call_service("vacuum", "start", {"entity_id": eid})
-                            logger.info("Vacuum-PresenceMonitor: %s Reinigung fortgesetzt", nickname)
+                            success = await self.brain.ha.call_service("vacuum", "start", {"entity_id": eid})
+                            if success:
+                                resumed_floors.append(floor)
+                                logger.info("Vacuum-PresenceMonitor: %s Reinigung fortgesetzt", nickname)
+                            else:
+                                logger.warning("Vacuum-PresenceMonitor: %s Fortsetzung fehlgeschlagen", nickname)
+
+                        # Nur loeschen wenn mindestens ein Robot erfolgreich gestartet
+                        if resumed_floors:
+                            _interrupted_local = None
+                            if _redis:
+                                try:
+                                    await _redis.delete("mha:vacuum:interrupted")
+                                except Exception as e:
+                                    logger.warning("Vacuum-PresenceMonitor: Redis-Delete fehlgeschlagen: %s", e)
+                        else:
+                            logger.warning("Vacuum-PresenceMonitor: Kein Robot konnte fortgesetzt werden — State behalten")
 
                         await self._notify("vacuum_resumed", LOW, {
                             "message": "Saugroboter setzt Reinigung fort — alle sind wieder weg",
@@ -6058,15 +6191,46 @@ class ProactiveManager:
                                 f"Staubsauger Reinigung fortgesetzt ({len(floors)} Roboter)",
                                 arguments={"floors": floors},
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Staubsauger-Fortsetzungs-Protokollierung fehlgeschlagen: %s", e)
 
-                # Fall 3: Alle Vacuums fertig (docked) → Alarm zurückschalten
+                # Fall 3: Alle Vacuums fertig (docked) → Alarm zurueckschalten
                 if all_docked and not cleaning_robots:
+                    should_restore = False
                     if _redis:
-                        was_switched = await _redis.get("mha:vacuum:alarm_switched")
-                        if was_switched:
-                            await self._vacuum_alarm_switch("arm_away")
+                        try:
+                            was_switched = await _redis.get("mha:vacuum:alarm_switched")
+                            if was_switched:
+                                should_restore = True
+                        except Exception as e:
+                            logger.warning("Vacuum-PresenceMonitor: Redis-Check fehlgeschlagen: %s — pruefe Alarm-Status direkt", e)
+                            # Fallback: Alarm-Status direkt pruefen
+                            try:
+                                import assistant.config as _cfg3
+                                _guard3 = _cfg3.yaml_config.get("vacuum", {}).get("presence_guard", {})
+                                if _guard3.get("switch_alarm_for_cleaning"):
+                                    alarm_eid3 = _guard3.get("alarm_entity", "")
+                                    if alarm_eid3:
+                                        _astate3 = await self.brain.ha.get_state(alarm_eid3)
+                                        if _astate3 and _astate3.get("state") == "armed_home":
+                                            should_restore = True
+                            except Exception as e2:
+                                logger.warning("Vacuum-PresenceMonitor: Alarm-Fallback-Check fehlgeschlagen: %s", e2)
+                    else:
+                        # Kein Redis: Alarm-Status direkt pruefen als Fallback
+                        try:
+                            import assistant.config as _cfg2
+                            _guard = _cfg2.yaml_config.get("vacuum", {}).get("presence_guard", {})
+                            if _guard.get("switch_alarm_for_cleaning"):
+                                alarm_eid = _guard.get("alarm_entity", "")
+                                if alarm_eid:
+                                    _astate = await self.brain.ha.get_state(alarm_eid)
+                                    if _astate and _astate.get("state") == "armed_home":
+                                        should_restore = True
+                        except Exception as e:
+                            logger.warning("Vacuum-PresenceMonitor: Alarm-Fallback-Check fehlgeschlagen: %s", e)
+                    if should_restore:
+                        await self._vacuum_alarm_switch("arm_away")
 
             except Exception as e:
                 logger.error("Vacuum-PresenceMonitor Fehler: %s", e)
@@ -6095,7 +6259,13 @@ class ProactiveManager:
                     continue
 
                 mode = auto_cfg.get("mode", "smart")
-                now = datetime.now()
+                # Lokalzeit verwenden — schedule_time/preferred_time sind in Benutzer-Lokalzeit
+                try:
+                    from zoneinfo import ZoneInfo
+                    _tz_name = vacuum_cfg.get("timezone") or cfg.yaml_config.get("timezone", "Europe/Berlin")
+                    now = datetime.now(ZoneInfo(_tz_name))
+                except Exception:
+                    now = datetime.now(timezone.utc)
                 hour = now.hour
 
                 # ── Wochenplan-Trigger ──
@@ -6153,15 +6323,18 @@ class ProactiveManager:
                         continue
 
                     if _redis:
-                        last_key = f"mha:vacuum:{floor}:last_auto_clean"
-                        last = await _redis.get(last_key)
-                        if last:
-                            try:
-                                hours_since = (time.time() - float(last)) / 3600
-                                if hours_since < min_hours:
-                                    continue
-                            except (ValueError, TypeError):
-                                pass
+                        try:
+                            last_key = f"mha:vacuum:{floor}:last_auto_clean"
+                            last = await _redis.get(last_key)
+                            if last:
+                                try:
+                                    hours_since = (time.time() - float(last)) / 3600
+                                    if hours_since < min_hours:
+                                        continue
+                                except (ValueError, TypeError):
+                                    logger.warning("Vacuum-Auto: Ungueltige Zeitangabe fuer %s: %s", last_key, last)
+                        except Exception as e:
+                            logger.warning("Vacuum-Auto: Redis-Cooldown-Check fehlgeschlagen fuer %s: %s", floor, e)
 
                     # Saugstaerke + Modus für Auto-Clean
                     auto_fan = auto_cfg.get("auto_fan_speed", "") or vacuum_cfg.get("default_fan_speed", "")
@@ -6174,7 +6347,10 @@ class ProactiveManager:
                     )
                     if success:
                         if _redis:
-                            await _redis.set(f"mha:vacuum:{floor}:last_auto_clean", str(time.time()))
+                            try:
+                                await _redis.set(f"mha:vacuum:{floor}:last_auto_clean", str(time.time()))
+                            except Exception as e:
+                                logger.warning("Vacuum-Auto: Redis-Timestamp setzen fehlgeschlagen: %s", e)
                         await self._notify("vacuum_auto_start", LOW, {
                             "message": f"{nickname} startet automatisch ({trigger_reason})",
                         })
@@ -6218,7 +6394,11 @@ class ProactiveManager:
             return False
 
         # Alarm umschalten (abwesend → anwesend)
-        await self._vacuum_alarm_switch("arm_home")
+        alarm_ok = await self._vacuum_alarm_switch("arm_home")
+        if not alarm_ok:
+            logger.error("Vacuum-Trigger: Alarm konnte nicht umgeschaltet werden — %s wird NICHT gestartet",
+                         robot.get("nickname", "Saugroboter"))
+            return False
 
         nickname = robot.get("nickname", "Saugroboter")
         success = False
@@ -6288,6 +6468,12 @@ class ProactiveManager:
                 delay_min = pt_cfg.get("delay_minutes", 5)
                 cooldown_h = pt_cfg.get("cooldown_hours", 12)
 
+                # Cleanup: Entfernte Entities aus Tracking-Dict loeschen
+                active_entities = {t.get("power_entity") for t in triggers if t.get("power_entity")}
+                for old_key in list(was_above.keys()):
+                    if old_key not in active_entities:
+                        del was_above[old_key]
+
                 if not triggers:
                     logger.debug("Vacuum-PowerTrigger: Keine Trigger konfiguriert")
                     await asyncio.sleep(60)
@@ -6327,16 +6513,19 @@ class ProactiveManager:
                     if prev_above and not above:
                         # Cooldown prüfen
                         if _redis:
-                            cd_key = f"mha:vacuum:pt:{entity}"
-                            last = await _redis.get(cd_key)
-                            if last:
-                                try:
-                                    hours_since = (time.time() - float(last)) / 3600
-                                    if hours_since < cooldown_h:
-                                        logger.info("Vacuum-PowerTrigger: %s Cooldown aktiv (%.1fh von %sh)", entity, hours_since, cooldown_h)
-                                        continue
-                                except (ValueError, TypeError):
-                                    pass
+                            try:
+                                cd_key = f"mha:vacuum:pt:{entity}"
+                                last = await _redis.get(cd_key)
+                                if last:
+                                    try:
+                                        hours_since = (time.time() - float(last)) / 3600
+                                        if hours_since < cooldown_h:
+                                            logger.info("Vacuum-PowerTrigger: %s Cooldown aktiv (%.1fh von %sh)", entity, hours_since, cooldown_h)
+                                            continue
+                                    except (ValueError, TypeError):
+                                        logger.warning("Vacuum-PowerTrigger: Ungueltige Cooldown-Daten fuer %s", entity)
+                            except Exception as e:
+                                logger.warning("Vacuum-PowerTrigger: Redis-Cooldown-Check fehlgeschlagen: %s", e)
 
                         # Verzoegerung abwarten
                         logger.info("Vacuum-PowerTrigger: %s unter %sW — warte %d Min", entity, threshold, delay_min)
@@ -6409,6 +6598,12 @@ class ProactiveManager:
                     await asyncio.sleep(60)
                     continue
 
+                # Cleanup: Entfernte Entities aus Tracking-Dict loeschen
+                active_scene_entities = {t.get("entity") for t in triggers if t.get("entity")}
+                for old_key in list(last_seen.keys()):
+                    if old_key not in active_scene_entities:
+                        del last_seen[old_key]
+
                 for trigger in triggers:
                     entity = trigger.get("entity", "")
                     room = trigger.get("room", "")
@@ -6436,16 +6631,19 @@ class ProactiveManager:
 
                         # Cooldown prüfen
                         if _redis:
-                            cd_key = f"mha:vacuum:st:{entity}"
-                            last = await _redis.get(cd_key)
-                            if last:
-                                try:
-                                    hours_since = (time.time() - float(last)) / 3600
-                                    if hours_since < cooldown_h:
-                                        logger.info("Vacuum-SceneTrigger: %s Cooldown aktiv (%.1fh von %sh)", entity, hours_since, cooldown_h)
-                                        continue
-                                except (ValueError, TypeError):
-                                    pass
+                            try:
+                                cd_key = f"mha:vacuum:st:{entity}"
+                                last = await _redis.get(cd_key)
+                                if last:
+                                    try:
+                                        hours_since = (time.time() - float(last)) / 3600
+                                        if hours_since < cooldown_h:
+                                            logger.info("Vacuum-SceneTrigger: %s Cooldown aktiv (%.1fh von %sh)", entity, hours_since, cooldown_h)
+                                            continue
+                                    except (ValueError, TypeError):
+                                        logger.warning("Vacuum-SceneTrigger: Ungueltige Cooldown-Daten fuer %s", entity)
+                            except Exception as e:
+                                logger.warning("Vacuum-SceneTrigger: Redis-Cooldown-Check fehlgeschlagen: %s", e)
 
                         # Verzoegerung
                         scene_name = entity.replace("scene.", "").replace("_", " ").title()
@@ -6514,11 +6712,14 @@ class ProactiveManager:
 
                 # Dedup: Nur 1x pro Tag pro Teil warnen
                 if redis_client:
-                    dedup_key = f"mha:vacuum:maint:{floor}:{part}"
-                    already = await redis_client.get(dedup_key)
-                    if already:
-                        continue
-                    await redis_client.set(dedup_key, "1", ex=86400)
+                    try:
+                        dedup_key = f"mha:vacuum:maint:{floor}:{part}"
+                        already = await redis_client.get(dedup_key)
+                        if already:
+                            continue
+                        await redis_client.set(dedup_key, "1", ex=86400)
+                    except Exception as e:
+                        logger.warning("Vacuum-Wartung: Redis-Dedup fehlgeschlagen (%s): %s", part, e)
 
                 await self._notify("vacuum_maintenance", MEDIUM, {
                     "message": f"{nickname}: {part} bei {remaining}% — Wechsel empfohlen",
@@ -6566,7 +6767,8 @@ class ProactiveManager:
             cover_cfg = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
             minutes = cover_cfg.get("sleep_lock_minutes", 30)
             return max(60, int(minutes) * 60)  # Minimum 1 Minute
-        except Exception:
+        except Exception as e:
+            logger.debug("Sleep-Lock-TTL Berechnung fehlgeschlagen: %s", e)
             return self._SLEEP_LOCK_TTL_DEFAULT
 
     async def _is_sleeping(self, states=None) -> bool:
@@ -6750,8 +6952,8 @@ class ProactiveManager:
                 arguments={"executed": executed[:20], "blocked": blocked[:10]},
                 result=f"{len(executed)} ausgefuehrt, {len(blocked)} blockiert",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Notfall-Protokoll-Protokollierung fehlgeschlagen: %s", e)
 
     # ------------------------------------------------------------------
     # Phase 17: Threat Assessment Loop
@@ -6800,8 +7002,8 @@ class ProactiveManager:
                                             await self.brain.personality.record_milestone(
                                                 "system", "Erste Krise gemeinsam gemeistert",
                                             )
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    logger.warning("Threat-Eskalations-Benachrichtigung fehlgeschlagen: %s", e)
                         except Exception as esc_err:
                             logger.warning("Threat Eskalation fehlgeschlagen: %s", esc_err)
             except Exception as e:
@@ -6838,7 +7040,7 @@ class ProactiveManager:
                     if self.brain.memory and self.brain.memory.redis:
                         tracked_key = "mha:energy:daily_tracked"
                         from datetime import datetime as _dt
-                        today = _dt.now().strftime("%Y-%m-%d")
+                        today = _dt.now(timezone.utc).strftime("%Y-%m-%d")
                         last_tracked = await self.brain.memory.redis.get(tracked_key)
                         if isinstance(last_tracked, bytes):
                             last_tracked = last_tracked.decode("utf-8", errors="ignore")
@@ -6871,7 +7073,7 @@ class ProactiveManager:
 
         while self._running:
             try:
-                hour = datetime.now().hour
+                hour = datetime.now(_LOCAL_TZ).hour
 
                 # Quiet Hours respektieren
                 if self._is_quiet_hours():
@@ -6882,7 +7084,8 @@ class ProactiveManager:
                 try:
                     detection = await self.brain.activity.detect_activity()
                     activity = detection.get("activity", "")
-                except Exception:
+                except Exception as e:
+                    logger.debug("Aktivitaetserkennung fehlgeschlagen: %s", e)
                     activity = ""
 
                 if activity != "relaxing":
@@ -7049,13 +7252,13 @@ class ProactiveManager:
         def __init__(self, entity_id: str):
             self.entity_id = entity_id
             self.state = self.IDLE
-            self.since = datetime.now()
+            self.since = datetime.now(timezone.utc)
             self.history: list[tuple[str, str, str]] = []  # (timestamp, from, to)
 
         def transition(self, new_state: str, reason: str = ""):
             if new_state != self.state:
                 self.history.append((
-                    datetime.now().isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                     self.state,
                     new_state,
                 ))
@@ -7065,7 +7268,7 @@ class ProactiveManager:
                 logger.debug("CoverState %s: %s → %s (%s)",
                              self.entity_id, self.state, new_state, reason)
                 self.state = new_state
-                self.since = datetime.now()
+                self.since = datetime.now(timezone.utc)
 
         def to_dict(self) -> dict:
             return {
@@ -7224,7 +7427,7 @@ class ProactiveManager:
 
         while self._running:
             try:
-                hour = datetime.now().hour
+                hour = datetime.now(_LOCAL_TZ).hour
                 if 17 <= hour <= 22:
                     # Abwesende Personen ermitteln
                     household = yaml_config.get("household", {}).get("members", [])
@@ -7237,7 +7440,8 @@ class ProactiveManager:
                                 state = await self.brain.ha.get_state(ha_entity)
                                 if state and state.get("state") == "not_home":
                                     away_persons.append(name)
-                            except Exception:
+                            except Exception as e:
+                                logger.debug("Personen-Status-Abfrage fehlgeschlagen fuer %s: %s", name, e)
                                 continue
 
                     if away_persons:
@@ -7324,7 +7528,7 @@ class ProactiveManager:
                     await asyncio.sleep(60)
                     continue
 
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 for scene in scenes:
                     if not scene.get("schedule_enabled"):
                         continue

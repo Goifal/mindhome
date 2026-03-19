@@ -316,8 +316,8 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
                 "system", "boot",
                 f"System gestartet: {msg[:150]}",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Boot-Aktivitaet konnte nicht geloggt werden: %s", e)
 
     except Exception as e:
         logger.warning("Boot-Sequenz fehlgeschlagen: %s", e)
@@ -383,6 +383,7 @@ async def lifespan(app: FastAPI):
 
     # Periodischer Token-Cleanup (alle 15 Min)
     cleanup_task = asyncio.create_task(_periodic_token_cleanup())
+    cleanup_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     yield
 
@@ -1382,13 +1383,17 @@ async def _wyoming_tts(text: str) -> bytes:
         pcm = b"".join(audio_chunks)
         import io
         import wave
-        wav_buf = io.BytesIO()
-        with wave.open(wav_buf, "wb") as wf:
-            wf.setnchannels(channels)
-            wf.setsampwidth(sample_width)
-            wf.setframerate(sample_rate)
-            wf.writeframes(pcm)
-        return wav_buf.getvalue()
+
+        def _pcm_to_wav() -> bytes:
+            wav_buf = io.BytesIO()
+            with wave.open(wav_buf, "wb") as wf:
+                wf.setnchannels(channels)
+                wf.setsampwidth(sample_width)
+                wf.setframerate(sample_rate)
+                wf.writeframes(pcm)
+            return wav_buf.getvalue()
+
+        return await asyncio.to_thread(_pcm_to_wav)
 
     finally:
         writer.close()
@@ -1490,13 +1495,16 @@ async def stt_transcribe(audio: UploadFile = File(...)):
         if "wav" in content_type or audio_bytes[:4] == b"RIFF":
             # WAV: PCM-Daten extrahieren
             import io, wave
-            with wave.open(io.BytesIO(audio_bytes), "rb") as wf:
-                sample_rate = wf.getframerate()
-                pcm_data = wf.readframes(wf.getnframes())
-                # Resample zu 16kHz mono wenn noetig
-                if wf.getnchannels() > 1 or sample_rate != 16000 or wf.getsampwidth() != 2:
-                    pcm_data = await _convert_audio_to_16k_mono(audio_bytes)
-                    sample_rate = 16000
+
+            def _read_wav():
+                with wave.open(io.BytesIO(audio_bytes), "rb") as wf:
+                    return wf.getframerate(), wf.readframes(wf.getnframes()), wf.getnchannels(), wf.getsampwidth()
+
+            sample_rate, pcm_data, _nch, _sw = await asyncio.to_thread(_read_wav)
+            # Resample zu 16kHz mono wenn noetig
+            if _nch > 1 or sample_rate != 16000 or _sw != 2:
+                pcm_data = await _convert_audio_to_16k_mono(audio_bytes)
+                sample_rate = 16000
         else:
             # WebM/OGG/MP3: ffmpeg konvertieren
             pcm_data = await _convert_audio_to_16k_mono(audio_bytes)
@@ -1569,11 +1577,14 @@ async def voice_chat(
         # 1. Audio zu PCM konvertieren
         if "wav" in content_type or audio_bytes[:4] == b"RIFF":
             import io, wave
-            with wave.open(io.BytesIO(audio_bytes), "rb") as wf:
-                pcm_data = wf.readframes(wf.getnframes())
-                sr = wf.getframerate()
-                if wf.getnchannels() > 1 or sr != 16000 or wf.getsampwidth() != 2:
-                    pcm_data = await _convert_audio_to_16k_mono(audio_bytes)
+
+            def _read_wav_vc():
+                with wave.open(io.BytesIO(audio_bytes), "rb") as wf:
+                    return wf.readframes(wf.getnframes()), wf.getframerate(), wf.getnchannels(), wf.getsampwidth()
+
+            pcm_data, sr, _nch, _sw = await asyncio.to_thread(_read_wav_vc)
+            if _nch > 1 or sr != 16000 or _sw != 2:
+                pcm_data = await _convert_audio_to_16k_mono(audio_bytes)
         else:
             pcm_data = await _convert_audio_to_16k_mono(audio_bytes)
 
@@ -1709,7 +1720,7 @@ async def complete_maintenance(task_name: str, token: str = ""):
     success = brain.diagnostics.complete_task(task_name)
     if not success:
         raise HTTPException(status_code=404, detail=f"Aufgabe '{task_name}' nicht gefunden")
-    return {"completed": task_name, "date": __import__("datetime").datetime.now().strftime("%Y-%m-%d")}
+    return {"completed": task_name, "date": __import__("datetime").datetime.now(timezone.utc).strftime("%Y-%m-%d")}
 
 
 # ----- Phase 14.3: Ambient Audio Endpoints -----
@@ -1980,12 +1991,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 await asyncio.sleep(WS_KEEPALIVE_INTERVAL)
                 try:
                     await websocket.send_json({"event": "ping", "data": {}})
-                except Exception:
+                except Exception as e:
+                    logger.debug("WebSocket Keepalive fehlgeschlagen, beende Schleife: %s", e)
                     break
         except asyncio.CancelledError:
             pass
 
     keepalive_task = asyncio.create_task(_ws_keepalive())
+    keepalive_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     # F-063: WebSocket Rate-Limiting (max 30 Nachrichten pro 10 Sekunden)
     _ws_msg_times: list[float] = []
@@ -2148,6 +2161,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             result = None
                             while not _brain_task.done():
                                 _recv_task = asyncio.create_task(websocket.receive_text())
+                                _recv_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
                                 done, _ = await asyncio.wait(
                                     [_brain_task, _recv_task],
                                     return_when=asyncio.FIRST_COMPLETED,
@@ -2165,10 +2179,11 @@ async def websocket_endpoint(websocket: WebSocket):
                                                 try:
                                                     speaker = await brain.sound_manager._resolve_speaker(None)
                                                     if speaker:
-                                                        asyncio.ensure_future(brain.ha.call_service(
+                                                        _tts_stop_task = asyncio.create_task(brain.ha.call_service(
                                                             "media_player", "media_stop",
                                                             {"entity_id": speaker},
                                                         ))
+                                                        _tts_stop_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
                                                 except Exception as e:
                                                     logger.debug("Unhandled: %s", e)
                                             if stream_tokens_sent:
@@ -2539,7 +2554,7 @@ async def ui_auth(req: PinRequest, request: Request):
         except Exception as e:
             logger.warning("PIN-Hash Migration fehlgeschlagen: %s", e)
 
-    token = hashlib.sha256(f"{req.pin}{datetime.now().isoformat()}{secrets.token_hex(8)}".encode()).hexdigest()[:32]
+    token = hashlib.sha256(f"{req.pin}{datetime.now(timezone.utc).isoformat()}{secrets.token_hex(8)}".encode()).hexdigest()[:32]
     async with _token_lock:
         _active_tokens[token] = datetime.now(timezone.utc).timestamp()
         # Abgelaufene Tokens aufraumen
@@ -2678,11 +2693,13 @@ async def ui_regenerate_api_key(token: str = ""):
     _assistant_api_key = secrets.token_urlsafe(32)
 
     try:
-        with open(SETTINGS_YAML_PATH) as f:
-            cfg = yaml.safe_load(f) or {}
-        cfg.setdefault("security", {})["api_key"] = _assistant_api_key
-        with open(SETTINGS_YAML_PATH, "w") as f:
-            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        def _do_io():
+            with open(SETTINGS_YAML_PATH) as f:
+                cfg = yaml.safe_load(f) or {}
+            cfg.setdefault("security", {})["api_key"] = _assistant_api_key
+            with open(SETTINGS_YAML_PATH, "w") as f:
+                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_do_io)
         _audit_log("api_key_regenerated", {})
         return {"api_key": _assistant_api_key, "message": "Neuer API Key generiert. Addon und HA-Integration muessen aktualisiert werden."}
     except Exception as e:
@@ -2698,11 +2715,13 @@ async def ui_regenerate_recovery_key(token: str = ""):
     recovery_hash = _hash_value(new_recovery_key)
 
     try:
-        with open(SETTINGS_YAML_PATH) as f:
-            cfg = yaml.safe_load(f) or {}
-        cfg.setdefault("dashboard", {})["recovery_key_hash"] = recovery_hash
-        with open(SETTINGS_YAML_PATH, "w") as f:
-            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        def _do_io():
+            with open(SETTINGS_YAML_PATH) as f:
+                cfg = yaml.safe_load(f) or {}
+            cfg.setdefault("dashboard", {})["recovery_key_hash"] = recovery_hash
+            with open(SETTINGS_YAML_PATH, "w") as f:
+                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_do_io)
         _audit_log("recovery_key_regenerated", {})
         return {"recovery_key": new_recovery_key, "message": "Neuer Recovery-Key generiert. Bitte sicher aufbewahren!"}
     except Exception as e:
@@ -2734,11 +2753,13 @@ async def ui_set_api_key_enforcement(req: ApiKeyEnforcementRequest, token: str =
     _api_key_required = req.enabled
 
     try:
-        with open(SETTINGS_YAML_PATH) as f:
-            cfg = yaml.safe_load(f) or {}
-        cfg.setdefault("security", {})["api_key_required"] = req.enabled
-        with open(SETTINGS_YAML_PATH, "w") as f:
-            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        def _do_io():
+            with open(SETTINGS_YAML_PATH) as f:
+                cfg = yaml.safe_load(f) or {}
+            cfg.setdefault("security", {})["api_key_required"] = req.enabled
+            with open(SETTINGS_YAML_PATH, "w") as f:
+                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_do_io)
         _audit_log("api_key_enforcement_changed", {"enabled": req.enabled})
         status = "aktiviert" if req.enabled else "deaktiviert"
         logger.info("API Key Enforcement %s", status)
@@ -2804,8 +2825,10 @@ async def ui_get_settings(token: str = ""):
     """Alle Settings aus settings.yaml als JSON."""
     await _check_token(token)
     try:
-        with open(SETTINGS_YAML_PATH) as f:
-            config = yaml.safe_load(f) or {}
+        def _read():
+            with open(SETTINGS_YAML_PATH) as f:
+                return yaml.safe_load(f) or {}
+        config = await asyncio.to_thread(_read)
         return config
     except Exception as e:
         logger.error("API error: %s", e)
@@ -3392,12 +3415,14 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
                 if not pt_task or pt_task.done():
                     if vacuum_cfg.get("power_trigger", {}).get("enabled"):
                         pro._vacuum_power_task = asyncio.create_task(pro._run_vacuum_power_trigger())
+                        pro._vacuum_power_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
                         logger.info("Vacuum Power-Trigger Task (neu) gestartet")
                 # Scene-Trigger Task starten falls nicht laufend
                 st_task = getattr(pro, "_vacuum_scene_task", None)
                 if not st_task or st_task.done():
                     if vacuum_cfg.get("scene_trigger", {}).get("enabled"):
                         pro._vacuum_scene_task = asyncio.create_task(pro._run_vacuum_scene_trigger())
+                        pro._vacuum_scene_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
                         logger.info("Vacuum Scene-Trigger Task (neu) gestartet")
             logger.info("Vacuum Settings aktualisiert")
         _try_reload("vacuum", _reload_vacuum)
@@ -4199,7 +4224,8 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         speech_changed = (old_speech != new_speech)
         if speech_changed:
             _sync_speech_to_env(new_speech)
-            asyncio.create_task(_restart_speech_containers(old_speech, new_speech))
+            _speech_restart_task = asyncio.create_task(_restart_speech_containers(old_speech, new_speech))
+            _speech_restart_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
             logger.info("Speech-Container Restart im Hintergrund gestartet")
 
         # F-038: Alle weiteren Module benachrichtigen die Config bei __init__ cachen
@@ -4388,15 +4414,15 @@ async def ui_set_room_temperature(req: Request, token: str = ""):
                 raise HTTPException(status_code=400, detail=f"Ungueltige Entity-ID: {sid}")
 
         # In settings.yaml speichern
-        with open(SETTINGS_YAML_PATH) as f:
-            config = yaml.safe_load(f) or {}
-
-        if "room_temperature" not in config:
-            config["room_temperature"] = {}
-        config["room_temperature"]["sensors"] = sensor_list
-
-        with open(SETTINGS_YAML_PATH, "w") as f:
-            yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        def _do_io():
+            with open(SETTINGS_YAML_PATH) as f:
+                config = yaml.safe_load(f) or {}
+            if "room_temperature" not in config:
+                config["room_temperature"] = {}
+            config["room_temperature"]["sensors"] = sensor_list
+            with open(SETTINGS_YAML_PATH, "w") as f:
+                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_do_io)
 
         # yaml_config im Speicher aktualisieren
         import assistant.config as cfg
@@ -4506,15 +4532,15 @@ async def ui_set_room_humidity(req: Request, token: str = ""):
                 raise HTTPException(status_code=400, detail=f"Ungueltige Entity-ID: {sid}")
 
         # In settings.yaml speichern
-        with open(SETTINGS_YAML_PATH) as f:
-            config = yaml.safe_load(f) or {}
-
-        if "health_monitor" not in config:
-            config["health_monitor"] = {}
-        config["health_monitor"]["humidity_sensors"] = sensor_list
-
-        with open(SETTINGS_YAML_PATH, "w") as f:
-            yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        def _do_io():
+            with open(SETTINGS_YAML_PATH) as f:
+                config = yaml.safe_load(f) or {}
+            if "health_monitor" not in config:
+                config["health_monitor"] = {}
+            config["health_monitor"]["humidity_sensors"] = sensor_list
+            with open(SETTINGS_YAML_PATH, "w") as f:
+                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_do_io)
 
         # yaml_config im Speicher aktualisieren
         import assistant.config as cfg
@@ -5013,7 +5039,7 @@ async def ui_scenes_status(token: str = ""):
         # 3. HA-Szenen mit letztem Aktivierungszeitpunkt
         states = await brain.ha.get_states()
         ha_scenes = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         for s in (states or []):
             eid = s.get("entity_id", "")
             if not eid.startswith("scene."):
@@ -5070,8 +5096,8 @@ async def ui_scene_history(token: str = ""):
             try:
                 data = json.loads(entry if isinstance(entry, str) else entry.decode())
                 history.append(data)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Scene-History Eintrag nicht parsebar: %s", e)
         return {"history": history}
     except Exception as e:
         logger.debug("Scene-History Fehler: %s", e)
@@ -5626,8 +5652,10 @@ async def ui_get_room_profiles(token: str = ""):
     """Room-Profiles aus room_profiles.yaml als JSON."""
     await _check_token(token)
     try:
-        with open(ROOM_PROFILES_YAML_PATH) as f:
-            data = yaml.safe_load(f) or {}
+        def _read():
+            with open(ROOM_PROFILES_YAML_PATH) as f:
+                return yaml.safe_load(f) or {}
+        data = await asyncio.to_thread(_read)
         return data
     except Exception as e:
         logger.error("API error: %s", e)
@@ -5644,19 +5672,17 @@ async def ui_update_room_profiles(request: Request, token: str = ""):
         if not updates:
             return {"success": True, "message": "Keine Aenderungen"}
 
-        # Aktuelle Config laden
-        with open(ROOM_PROFILES_YAML_PATH) as f:
-            config = yaml.safe_load(f) or {}
-
-        # Deep Merge
-        _deep_merge(config, updates)
-
-        # Zurueckschreiben
-        with open(ROOM_PROFILES_YAML_PATH, "w") as f:
-            yaml.safe_dump(
-                config, f, allow_unicode=True,
-                default_flow_style=False, sort_keys=False,
-            )
+        # Aktuelle Config laden, mergen, zurueckschreiben (non-blocking)
+        def _do_io():
+            with open(ROOM_PROFILES_YAML_PATH) as f:
+                config = yaml.safe_load(f) or {}
+            _deep_merge(config, updates)
+            with open(ROOM_PROFILES_YAML_PATH, "w") as f:
+                yaml.safe_dump(
+                    config, f, allow_unicode=True,
+                    default_flow_style=False, sort_keys=False,
+                )
+        await asyncio.to_thread(_do_io)
 
         # Zentralen Room-Profiles-Cache invalidieren (config.py)
         import assistant.config as cfg_mod
@@ -5735,7 +5761,7 @@ async def ui_live_status(token: str = ""):
         whisper = brain.tts_enhancer.is_whisper_mode
 
         return {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "system_health": health,
             "mood": mood,
             "room_health": health_status,
@@ -5858,15 +5884,18 @@ async def ui_update_notification_channels(
     # In settings.yaml speichern
     try:
         config_path = Path(__file__).parent.parent / "config" / "settings.yaml"
-        if config_path.exists():
-            with open(config_path) as f:
-                cfg = yaml.safe_load(f) or {}
-        else:
-            cfg = {}
+        channels = req.channels
 
-        cfg.setdefault("notifications", {})["channels"] = req.channels
-        with open(config_path, "w") as f:
-            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        def _do_io():
+            if config_path.exists():
+                with open(config_path) as f:
+                    cfg = yaml.safe_load(f) or {}
+            else:
+                cfg = {}
+            cfg.setdefault("notifications", {})["channels"] = channels
+            with open(config_path, "w") as f:
+                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_do_io)
 
         # In-memory config aktualisieren
         import assistant.config as _cfg
@@ -5907,7 +5936,7 @@ async def ui_health_trends(token: str = "", hours: int = 24):
     trends = {"co2": [], "temperature": [], "humidity": []}
     if brain.memory.redis:
         try:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             for h in range(hours):
                 ts = now - timedelta(hours=h)
                 key = f"mha:health:snapshot:{ts.strftime('%Y-%m-%d:%H')}"
@@ -6297,18 +6326,20 @@ async def ui_get_logs(token: str = "", limit: int = 50):
 async def ui_get_audit(token: str = "", limit: int = 50):
     """Audit-Log: Letzte Dashboard-Aenderungen und Auth-Events."""
     await _check_token(token)
-    entries = []
-    if _AUDIT_LOG_PATH.exists():
-        with open(_AUDIT_LOG_PATH) as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    try:
-                        entries.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        pass
-    # Neueste zuerst, limitiert
-    entries.reverse()
+    def _read():
+        entries = []
+        if _AUDIT_LOG_PATH.exists():
+            with open(_AUDIT_LOG_PATH) as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            entries.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            pass
+        entries.reverse()
+        return entries
+    entries = await asyncio.to_thread(_read)
     return {"entries": entries[:min(limit, 200)], "total": len(entries)}
 
 
@@ -6893,12 +6924,15 @@ async def workshop_update_settings(request: Request):
 
     try:
         config_path = Path(__file__).parent.parent / "config" / "settings.yaml"
-        with open(config_path) as f:
-            cfg = yaml.safe_load(f) or {}
-        ws = cfg.setdefault("workshop", {})
-        ws[key] = value
-        with open(config_path, "w") as f:
-            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        def _do_io():
+            with open(config_path) as f:
+                cfg = yaml.safe_load(f) or {}
+            ws = cfg.setdefault("workshop", {})
+            ws[key] = value
+            with open(config_path, "w") as f:
+                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_do_io)
 
         # Auch im laufenden yaml_config aktualisieren
         ws_live = yaml_config.setdefault("workshop", {})
@@ -6983,7 +7017,7 @@ async def workshop_add_inventory(request: Request):
         "unit": data.get("unit", "Stueck"),
         "location": data.get("location", ""),
         "min_quantity": str(data.get("min_quantity", 0)),
-        "added": datetime.now().isoformat(),
+        "added": datetime.now(timezone.utc).isoformat(),
     })
     return {"success": True, "name": name}
 
@@ -7760,8 +7794,10 @@ async def ui_get_easter_eggs(token: str = ""):
     """Alle Easter Eggs aus easter_eggs.yaml."""
     await _check_token(token)
     try:
-        with open(EASTER_EGGS_PATH) as f:
-            data = yaml.safe_load(f) or {}
+        def _read():
+            with open(EASTER_EGGS_PATH) as f:
+                return yaml.safe_load(f) or {}
+        data = await asyncio.to_thread(_read)
         return {"easter_eggs": data.get("easter_eggs", [])}
     except Exception as e:
         logger.error("API error: %s", e)
@@ -7778,8 +7814,11 @@ async def ui_update_easter_eggs(req: EasterEggUpdate, token: str = ""):
     await _check_token(token)
     try:
         data = {"easter_eggs": req.easter_eggs}
-        with open(EASTER_EGGS_PATH, "w") as f:
-            yaml.safe_dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        def _write():
+            with open(EASTER_EGGS_PATH, "w") as f:
+                yaml.safe_dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_write)
 
         # Personality-Engine neu laden
         if hasattr(brain, "personality") and brain.personality:
@@ -7827,8 +7866,10 @@ async def ui_rollback(req: RollbackRequest, token: str = ""):
     try:
         # Aktuelle Security-Sections sichern BEVOR Rollback
         try:
-            with open(SETTINGS_YAML_PATH) as f:
-                pre_rollback = yaml.safe_load(f) or {}
+            def _read_pre():
+                with open(SETTINGS_YAML_PATH) as f:
+                    return yaml.safe_load(f) or {}
+            pre_rollback = await asyncio.to_thread(_read_pre)
         except Exception as e:
             logger.debug("Pre-rollback settings read failed: %s", e)
             pre_rollback = {}
@@ -7838,17 +7879,21 @@ async def ui_rollback(req: RollbackRequest, token: str = ""):
             # Post-Rollback: Kritische Security-Sections wiederherstellen
             _sections_to_preserve = ("dashboard", "security", "trust_levels")
             try:
-                with open(SETTINGS_YAML_PATH) as f:
-                    restored = yaml.safe_load(f) or {}
-                patched = False
-                for section in _sections_to_preserve:
-                    if section in pre_rollback:
-                        restored[section] = pre_rollback[section]
-                        patched = True
+                def _patch_security():
+                    with open(SETTINGS_YAML_PATH) as f:
+                        restored = yaml.safe_load(f) or {}
+                    patched = False
+                    for section in _sections_to_preserve:
+                        if section in pre_rollback:
+                            restored[section] = pre_rollback[section]
+                            patched = True
+                    if patched:
+                        with open(SETTINGS_YAML_PATH, "w") as f:
+                            yaml.safe_dump(restored, f, allow_unicode=True,
+                                           default_flow_style=False, sort_keys=False)
+                    return patched
+                patched = await asyncio.to_thread(_patch_security)
                 if patched:
-                    with open(SETTINGS_YAML_PATH, "w") as f:
-                        yaml.safe_dump(restored, f, allow_unicode=True,
-                                       default_flow_style=False, sort_keys=False)
                     logger.info("Rollback: Security-Sections aus Pre-Rollback beibehalten: %s",
                                 _sections_to_preserve)
             except Exception as e:
@@ -8155,66 +8200,69 @@ async def ui_system_status(token: str = ""):
         ollama_models = "\n".join(["NAME                           SIZE"] + lines)
 
     # Disk — alle physischen Partitionen erkennen (inkl. zweite SSD)
-    disk_info = {}
-    disk_path = _REPO_DIR if _REPO_DIR.exists() else Path("/app")
-    total, used, free = shutil.disk_usage(str(disk_path))
-    disk_info["system"] = {
-        "total_gb": round(total / (1024**3), 1),
-        "used_gb": round(used / (1024**3), 1),
-        "free_gb": round(free / (1024**3), 1),
-    }
-    # Weitere Partitionen aus /proc/mounts lesen
-    try:
-        seen_devs = set()
-        with open("/proc/mounts") as f:
-            for line in f:
-                parts_m = line.split()
-                if len(parts_m) < 2:
-                    continue
-                dev, mount = parts_m[0], parts_m[1]
-                if not dev.startswith("/dev/") or dev in seen_devs:
-                    continue
-                # Nur echte Block-Devices (sd*, nvme*, vd*), keine loop/ram
-                base = dev.split("/")[-1]
-                if not any(base.startswith(p) for p in ("sd", "nvme", "vd", "hd")):
-                    continue
-                seen_devs.add(dev)
-                try:
-                    t, u, fr = shutil.disk_usage(mount)
-                    total_gb = round(t / (1024**3), 1)
-                    # Ueberspringe wenn es dasselbe wie system ist
-                    if total_gb == disk_info["system"]["total_gb"]:
+    def _read_disk_and_ram():
+        disk_info = {}
+        disk_path = _REPO_DIR if _REPO_DIR.exists() else Path("/app")
+        total, used, free = shutil.disk_usage(str(disk_path))
+        disk_info["system"] = {
+            "total_gb": round(total / (1024**3), 1),
+            "used_gb": round(used / (1024**3), 1),
+            "free_gb": round(free / (1024**3), 1),
+        }
+        # Weitere Partitionen aus /proc/mounts lesen
+        try:
+            seen_devs = set()
+            with open("/proc/mounts") as f:
+                for line in f:
+                    parts_m = line.split()
+                    if len(parts_m) < 2:
                         continue
-                    disk_info[mount] = {
-                        "total_gb": total_gb,
-                        "used_gb": round(u / (1024**3), 1),
-                        "free_gb": round(fr / (1024**3), 1),
-                        "device": dev,
-                    }
-                except Exception as e:
-                    logger.debug("Unhandled: %s", e)
-    except Exception as e:
-        logger.debug("Unhandled: %s", e)
-    # RAM (via /proc/meminfo)
-    ram_info = {}
-    try:
-        with open("/proc/meminfo") as f:
-            meminfo = {}
-            for line in f:
-                parts = line.split(":")
-                if len(parts) == 2:
-                    meminfo[parts[0].strip()] = int(parts[1].strip().split()[0])
-            total_kb = meminfo.get("MemTotal", 0)
-            avail_kb = meminfo.get("MemAvailable", 0)
-            used_kb = total_kb - avail_kb
-            ram_info = {
-                "total_gb": round(total_kb / (1024**2), 1),
-                "used_gb": round(used_kb / (1024**2), 1),
-                "free_gb": round(avail_kb / (1024**2), 1),
-                "percent": round(used_kb / total_kb * 100, 1) if total_kb else 0,
-            }
-    except Exception as e:
-        logger.debug("Unhandled: %s", e)
+                    dev, mount = parts_m[0], parts_m[1]
+                    if not dev.startswith("/dev/") or dev in seen_devs:
+                        continue
+                    # Nur echte Block-Devices (sd*, nvme*, vd*), keine loop/ram
+                    base = dev.split("/")[-1]
+                    if not any(base.startswith(p) for p in ("sd", "nvme", "vd", "hd")):
+                        continue
+                    seen_devs.add(dev)
+                    try:
+                        t, u, fr = shutil.disk_usage(mount)
+                        total_gb = round(t / (1024**3), 1)
+                        # Ueberspringe wenn es dasselbe wie system ist
+                        if total_gb == disk_info["system"]["total_gb"]:
+                            continue
+                        disk_info[mount] = {
+                            "total_gb": total_gb,
+                            "used_gb": round(u / (1024**3), 1),
+                            "free_gb": round(fr / (1024**3), 1),
+                            "device": dev,
+                        }
+                    except Exception as e:
+                        logger.debug("Unhandled: %s", e)
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
+        # RAM (via /proc/meminfo)
+        ram_info = {}
+        try:
+            with open("/proc/meminfo") as f:
+                meminfo = {}
+                for line in f:
+                    parts = line.split(":")
+                    if len(parts) == 2:
+                        meminfo[parts[0].strip()] = int(parts[1].strip().split()[0])
+                total_kb = meminfo.get("MemTotal", 0)
+                avail_kb = meminfo.get("MemAvailable", 0)
+                used_kb = total_kb - avail_kb
+                ram_info = {
+                    "total_gb": round(total_kb / (1024**2), 1),
+                    "used_gb": round(used_kb / (1024**2), 1),
+                    "free_gb": round(avail_kb / (1024**2), 1),
+                    "percent": round(used_kb / total_kb * 100, 1) if total_kb else 0,
+                }
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
+        return disk_info, ram_info
+    disk_info, ram_info = await asyncio.to_thread(_read_disk_and_ram)
     # CPU Load
     cpu_info = {}
     try:
@@ -8233,16 +8281,19 @@ async def ui_system_status(token: str = ""):
     gpu_info = {}
     _gpu_status_file = Path("/var/lib/mindhome/gpu_status.json")
     try:
-        if _gpu_status_file.exists():
-            data = json.loads(_gpu_status_file.read_text())
-            if data.get("available") and data.get("name"):
-                gpu_info = {
-                    "name": data["name"],
-                    "memory_used_mb": int(data["memory_used_mb"]),
-                    "memory_total_mb": int(data["memory_total_mb"]),
-                    "utilization_percent": int(data["utilization_percent"]),
-                    "temperature_c": int(data["temperature_c"]),
-                }
+        def _read_gpu_status():
+            if _gpu_status_file.exists():
+                data = json.loads(_gpu_status_file.read_text())
+                if data.get("available") and data.get("name"):
+                    return {
+                        "name": data["name"],
+                        "memory_used_mb": int(data["memory_used_mb"]),
+                        "memory_total_mb": int(data["memory_total_mb"]),
+                        "utilization_percent": int(data["utilization_percent"]),
+                        "temperature_c": int(data["temperature_c"]),
+                    }
+            return {}
+        gpu_info = await asyncio.to_thread(_read_gpu_status)
     except Exception as e:
         logger.debug("Unhandled: %s", e)
     # Fallback 1: direktes nvidia-smi (falls Container GPU-Zugriff hat)
@@ -8390,7 +8441,7 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
 
     async with _update_lock:
         _update_log.clear()
-        _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Update gestartet...")
+        _update_log.append(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] Update gestartet...")
 
         # Aktuellen Branch merken (fuer Rollback bei Fehler)
         _, current_branch_raw = await _run_cmd(
@@ -8501,7 +8552,7 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
             except Exception as e:
                 _update_log.append(f"WARNUNG: {cfg_path.name} konnte nicht wiederhergestellt werden: {e}")
 
-        _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Code aktualisiert!")
+        _update_log.append(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] Code aktualisiert!")
 
         # 4. Full Update: Docker Compose Build (Rebuild der Container-Images)
         is_full = body.full if body else False
@@ -8678,10 +8729,10 @@ async def redis_backup(token: str = Header(None, alias="X-Auth-Token")):
     if not redis:
         raise HTTPException(status_code=503, detail="Redis nicht verfuegbar")
 
-    from datetime import datetime as _dt
+    from datetime import datetime as _dt, timezone as _tz_utc
 
     backup = {
-        "backup_timestamp": _dt.now().isoformat(),
+        "backup_timestamp": _dt.now(tz=_tz_utc.utc).isoformat(),
         "version": "1.0",
         "keys": {},
     }
@@ -8728,7 +8779,7 @@ async def redis_backup(token: str = Header(None, alias="X-Auth-Token")):
     return JSONResponse(
         content=backup,
         headers={
-            "Content-Disposition": f'attachment; filename="redis_backup_{_dt.now().strftime("%Y%m%d_%H%M%S")}.json"',
+            "Content-Disposition": f'attachment; filename="redis_backup_{_dt.now(tz=_tz_utc.utc).strftime("%Y%m%d_%H%M%S")}.json"',
         },
     )
 

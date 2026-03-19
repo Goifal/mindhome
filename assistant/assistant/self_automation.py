@@ -16,7 +16,7 @@ import json
 import logging
 import re
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -228,7 +228,7 @@ class SelfAutomation:
                 "automation": automation,
                 "description": description,
                 "person": person,
-                "created": datetime.now().isoformat(),
+                "created": datetime.now(timezone.utc).isoformat(),
                 "method": generation_method,
             }
 
@@ -386,7 +386,7 @@ class SelfAutomation:
                     "automation": automation,
                     "description": description,
                     "person": person,
-                    "created": datetime.now().isoformat(),
+                    "created": datetime.now(timezone.utc).isoformat(),
                     "method": "procedure_llm",
                 }
 
@@ -434,7 +434,7 @@ class SelfAutomation:
         person = pending["person"]
 
         # HA Automation-ID generieren
-        automation_id = f"jarvis_{pending_id}_{datetime.now().strftime('%Y%m%d')}"
+        automation_id = f"jarvis_{pending_id}_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
 
         # Via HA REST API erstellen
         try:
@@ -574,7 +574,7 @@ class SelfAutomation:
 
     def _cleanup_expired_pending(self):
         """Entfernt abgelaufene Pending-Automationen (TTL ueberschritten)."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         expired = [
             pid for pid, data in self._pending.items()
             if (now - datetime.fromisoformat(data["created"])).total_seconds()
@@ -1237,7 +1237,7 @@ REGELN:
     def _check_rate_limit(self) -> bool:
         """Prueft ob das Tageslimit erreicht ist."""
         with self._pending_lock:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             if self._daily_reset is None or now.date() > self._daily_reset.date():
                 self._daily_count = 0
                 self._daily_reset = now
@@ -1276,7 +1276,7 @@ REGELN:
     ):
         """Protokolliert eine Automation-Aktion im Audit-Log."""
         entry = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "action": action,
             "description": description,
             "person": person,

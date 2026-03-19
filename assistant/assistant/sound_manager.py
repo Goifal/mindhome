@@ -24,7 +24,7 @@ import asyncio
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from .config import yaml_config
@@ -32,6 +32,8 @@ from .constants import TTS_PLAYBACK_TIMEOUT
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # ---------------------------------------------------------------------------
 # TTS-Text-Normalisierung: ASCII-Umlaute → echte Umlaute + Phonetik
@@ -403,7 +405,7 @@ class SoundManager:
         F-060: Beruecksichtigt Activity-State (sleeping, in_call, focused).
         Wetter-Adaptiv: Bei Regen/Sturm Lautstaerke erhoehen (Umgebungsgeraeusch).
         """
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
         is_night = hour >= self.evening_start or hour < self.morning_start
 
         # Basis-Volume pro Event-Typ
@@ -731,6 +733,7 @@ class SoundManager:
                             except Exception as ex:
                                 logger.debug("Volume-Restore fehlgeschlagen: %s", ex)
                         task = asyncio.create_task(_restore_volume())
+                        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
                         self._restore_tasks = [t for t in self._restore_tasks if not t.done()]
                         self._restore_tasks.append(task)
                     return True

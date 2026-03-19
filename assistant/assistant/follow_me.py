@@ -12,13 +12,15 @@ Cooldown verhindert Ping-Pong bei schnellen Raumwechseln.
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from .config import yaml_config
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
 class FollowMeEngine:
@@ -92,12 +94,12 @@ class FollowMeEngine:
 
             # Cooldown pruefen
             last = self._last_transfer.get(person_key)
-            if last and datetime.now() - last < timedelta(seconds=self.cooldown_seconds):
+            if last and datetime.now(timezone.utc) - last < timedelta(seconds=self.cooldown_seconds):
                 return None
 
             # Raumwechsel registrieren
             self._person_room[person_key] = new_room
-            self._last_transfer[person_key] = datetime.now()
+            self._last_transfer[person_key] = datetime.now(timezone.utc)
 
             if not old_room:
                 # Erster bekannter Aufenthaltsort → kein Transfer noetig
@@ -222,7 +224,7 @@ class FollowMeEngine:
                 # Per-Lampe Helligkeit aus room_profiles (Tag/Nacht)
                 per_light = new_room_cfg.get("light_brightness", {}).get(entity_id)
                 if per_light:
-                    hour = datetime.now().hour
+                    hour = datetime.now(_LOCAL_TZ).hour
                     if 7 <= hour < 21:
                         bri = per_light.get("day", brightness)
                     else:
@@ -290,7 +292,7 @@ class FollowMeEngine:
 
     def cleanup_stale_tracking(self, max_age_hours: int = 8):
         """Raeumt veraltete Person-Room-Eintraege auf."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         stale = [
             p for p, t in self._last_transfer.items()
             if now - t > timedelta(hours=max_age_hours)

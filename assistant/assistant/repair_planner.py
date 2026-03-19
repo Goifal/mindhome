@@ -19,7 +19,7 @@ import re
 import time
 import uuid as uuid_mod
 from dataclasses import dataclass, field, asdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -279,7 +279,7 @@ class RepairPlanner:
             "priority": priority,   # niedrig|normal|hoch|dringend
             "status": "erstellt",   # erstellt|diagnose|teile_bestellt|in_arbeit|pausiert|fertig
             "slug": slug,
-            "created": datetime.now().isoformat(),
+            "created": datetime.now(timezone.utc).isoformat(),
             "parts": "[]",
             "tools": "[]",
             "notes": "[]",
@@ -377,7 +377,7 @@ class RepairPlanner:
         """Schliesst ein Projekt ab."""
         await self.update_project(
             project_id, status="fertig",
-            completed=datetime.now().isoformat())
+            completed=datetime.now(timezone.utc).isoformat())
         if notes:
             await self.add_project_note(project_id, notes)
         # Auto-Dokumentation generieren
@@ -397,7 +397,7 @@ class RepairPlanner:
         if not project:
             return {"status": "error", "message": "Projekt nicht gefunden"}
         notes = project.get("notes", [])
-        notes.append({"text": note, "timestamp": datetime.now().isoformat()})
+        notes.append({"text": note, "timestamp": datetime.now(timezone.utc).isoformat()})
         await self.redis.hset(
             f"mha:repair:project:{project_id}", "notes", json.dumps(notes))
         return {"status": "ok", "note_count": len(notes)}
@@ -497,7 +497,7 @@ class RepairPlanner:
                 title=project["title"],
                 category="reparatur",
                 steps=steps,
-                started_at=datetime.now().isoformat(),
+                started_at=datetime.now(timezone.utc).isoformat(),
             )
             await self._save_session()
 
@@ -923,15 +923,19 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 snapshot = result.get("snapshot")
                 if snapshot and isinstance(snapshot, bytes):
                     import tempfile, pathlib
-                    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-                        f.write(snapshot)
-                        tmp_path = pathlib.Path(f.name)
-                    try:
-                        ocr_text = self.ocr_engine.extract_text(tmp_path)
-                        if ocr_text:
-                            scan_result["ocr_text"] = ocr_text
-                    finally:
-                        tmp_path.unlink(missing_ok=True)
+
+                    def _write_and_ocr():
+                        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+                            f.write(snapshot)
+                            tmp_path = pathlib.Path(f.name)
+                        try:
+                            return self.ocr_engine.extract_text(tmp_path)
+                        finally:
+                            tmp_path.unlink(missing_ok=True)
+
+                    ocr_text = await asyncio.to_thread(_write_and_ocr)
+                    if ocr_text:
+                        scan_result["ocr_text"] = ocr_text
             return scan_result
 
         # Fall 2: Bild-Daten direkt → Vision-LLM Analyse
@@ -991,7 +995,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         item = {
             "name": name, "quantity": str(quantity),
             "category": category, "location": location,
-            "added": datetime.now().isoformat(),
+            "added": datetime.now(timezone.utc).isoformat(),
         }
         await self.redis.hset(
             f"mha:repair:workshop:{item_id}", mapping=item)
@@ -1032,7 +1036,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         await self.redis.hset(key, mapping={
             "tool": tool_name,
             "interval_days": str(interval_days),
-            "last_done": last_done or datetime.now().isoformat(),
+            "last_done": last_done or datetime.now(timezone.utc).isoformat(),
         })
         return {"status": "ok"}
 
@@ -1059,7 +1063,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 last = datetime.fromisoformat(
                     data.get("last_done", "2000-01-01T00:00:00"))
                 interval = int(data.get("interval_days", 90))
-                if (datetime.now() - last).days >= interval:
+                if (datetime.now(timezone.utc) - last).days >= interval:
                     due.append(data)
             except (ValueError, TypeError) as e:
                 logger.debug("S6: Maintenance check skipped: %s", e)
@@ -1083,7 +1087,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         expenses = project.get("expenses", [])
         expenses.append({
             "item": item, "cost": float(cost),
-            "date": datetime.now().isoformat(),
+            "date": datetime.now(timezone.utc).isoformat(),
         })
         await self.redis.hset(
             f"mha:repair:project:{project_id}",
@@ -1148,7 +1152,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         key = f"mha:repair:lent:{tool_name.lower().replace(' ', '_')}"
         await self.redis.hset(key, mapping={
             "tool": tool_name, "person": person,
-            "since": datetime.now().isoformat(),
+            "since": datetime.now(timezone.utc).isoformat(),
         })
         return {"status": "ok",
                 "message": f"{tool_name} an {person} verliehen"}
@@ -1191,7 +1195,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         prefix = printer_cfg.get("entity_prefix", "octoprint")
         try:
             states = await self.ha.get_states()
-        except Exception:
+        except Exception as e:
+            logger.debug("HA-Verbindung fehlgeschlagen: %s", e)
             return {"status": "error",
                     "message": "Home Assistant nicht erreichbar"}
 
@@ -1540,6 +1545,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         task = asyncio.create_task(_timer_callback())
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         return {"status": "ok", "timer_id": timer_id,
                 "minutes": minutes, "reason": reason}
 
@@ -1549,10 +1555,10 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         """Holt Journal-Einträge."""
         if not self.redis:
             return {"date": "", "entries": []}
-        key = f"mha:repair:journal:{datetime.now().strftime('%Y-%m-%d')}"
+        key = f"mha:repair:journal:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
         entries = await self.redis.lrange(key, 0, -1)
         return {
-            "date": datetime.now().strftime('%Y-%m-%d'),
+            "date": datetime.now(timezone.utc).strftime('%Y-%m-%d'),
             "entries": [json.loads(e.decode() if isinstance(e, bytes) else e) for e in entries],
         }
 
@@ -1560,8 +1566,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         """Fuegt einen Journal-Eintrag hinzu."""
         if not self.redis:
             return {"status": "error", "message": "Redis nicht verfügbar"}
-        key = f"mha:repair:journal:{datetime.now().strftime('%Y-%m-%d')}"
-        entry = {"text": note, "time": datetime.now().strftime('%H:%M')}
+        key = f"mha:repair:journal:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+        entry = {"text": note, "time": datetime.now(timezone.utc).strftime('%H:%M')}
         await self.redis.rpush(key, json.dumps(entry))
         await self.redis.expire(key, 90 * 86400)  # 90 Tage
         return {"status": "ok"}
@@ -1577,7 +1583,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         await self.redis.hset(key, mapping={
             "name": name, "code": code, "language": language,
             "tags": json.dumps(tags or []),
-            "created": datetime.now().isoformat(),
+            "created": datetime.now(timezone.utc).isoformat(),
         })
         return {"status": "ok"}
 
@@ -1604,7 +1610,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
             project_id=project_id,
             title=project.get("title", ""),
             category=project.get("category", "maker"),
-            started_at=datetime.now().isoformat(),
+            started_at=datetime.now(timezone.utc).isoformat(),
         )
         await self._save_session()
         return {"status": "ok",
@@ -1633,7 +1639,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         """Prüft ob ein HA-Gerät online ist."""
         try:
             states = await self.ha.get_states()
-        except Exception:
+        except Exception as e:
+            logger.debug("HA-Status Abruf fehlgeschlagen: %s", e)
             return {"entity": entity_id, "state": "ha_unavailable"}
         for s in states:
             if s.get("entity_id") == entity_id:
@@ -1648,7 +1655,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         """Liest den Stromverbrauch eines Geräts."""
         try:
             states = await self.ha.get_states()
-        except Exception:
+        except Exception as e:
+            logger.debug("HA-Status Abruf fehlgeschlagen: %s", e)
             return {"status": "error",
                     "message": "Home Assistant nicht erreichbar"}
         for s in states:
@@ -1684,7 +1692,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         # Fetch all states once instead of N sequential calls
         try:
             states = await self.ha.get_states()
-        except Exception:
+        except Exception as e:
+            logger.debug("HA-Status Abruf fehlgeschlagen: %s", e)
             return [
                 {"entity": entity, "state": "ha_unavailable", "project": title}
                 for entity, title in entity_projects
@@ -1717,7 +1726,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 "notify", "notify",
                 {"title": title, "message": message})
             return {"status": "ok"}
-        except Exception:
+        except Exception as e:
+            logger.debug("HA-Status Abruf fehlgeschlagen: %s", e)
             return {"status": "error"}
 
     # ── Intent-Erkennung ─────────────────────────────────────

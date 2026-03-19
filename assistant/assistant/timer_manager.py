@@ -21,7 +21,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from .config import get_person_title
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -32,7 +32,7 @@ _TZ = ZoneInfo("Europe/Berlin")
 
 
 def _now() -> datetime:
-    """Timezone-aware datetime.now() für Europe/Berlin."""
+    """Timezone-aware datetime.now(timezone.utc) für Europe/Berlin."""
     return datetime.now(_TZ)
 
 logger = logging.getLogger(__name__)
@@ -201,6 +201,7 @@ class TimerManager:
 
         # Hintergrund-Task für Benachrichtigung
         task = asyncio.create_task(self._timer_watcher(timer))
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         self._tasks[timer_id] = task
 
         # Zeitformatierung
@@ -395,6 +396,7 @@ class TimerManager:
                 if timer.remaining_seconds > 0.0 and not timer.finished:
                     self.timers[timer.id] = timer
                     task = asyncio.create_task(self._timer_watcher(timer))
+                    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
                     self._tasks[timer.id] = task
                     logger.info("Timer wiederhergestellt: '%s' (noch %s)",
                                 timer.label, timer.format_remaining())
@@ -473,6 +475,7 @@ class TimerManager:
 
         # Watcher-Task starten
         task = asyncio.create_task(self._reminder_watcher(timer, target))
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         self._tasks[reminder_id] = task
 
         # Menschenlesbare Zeitangabe
@@ -562,6 +565,7 @@ class TimerManager:
                     timer = GeneralTimer.from_dict(info)
                     self.timers[timer.id] = timer
                     task = asyncio.create_task(self._reminder_watcher(timer, target))
+                    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
                     self._tasks[timer.id] = task
                     logger.info("Erinnerung wiederhergestellt: '%s' um %s",
                                 timer.label, target.strftime("%H:%M"))
@@ -661,6 +665,7 @@ class TimerManager:
         )
         self.timers[alarm_id] = timer
         task = asyncio.create_task(self._alarm_watcher(alarm_id, alarm_data))
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         self._tasks[alarm_id] = task
 
         repeat_text = {
@@ -857,6 +862,7 @@ class TimerManager:
             )
             self.timers[alarm_id] = timer
             task = asyncio.create_task(self._alarm_watcher(alarm_id, alarm_data))
+            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
             self._tasks[alarm_id] = task
 
             logger.info("Naechster Wecker: %s um %s", alarm_data["label"],
@@ -898,6 +904,7 @@ class TimerManager:
                     )
                     self.timers[aid] = timer
                     task = asyncio.create_task(self._alarm_watcher(aid, alarm_data))
+                    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
                     self._tasks[aid] = task
                     logger.info("Wecker wiederhergestellt: '%s' um %s",
                                 alarm_data["label"], alarm_data["time"])
@@ -1039,7 +1046,7 @@ class TimerManager:
 
         try:
             from datetime import date
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             today = date.today().isoformat()
             current_time = now.strftime("%H:%M")
             weekday = now.weekday()  # 0=Mo, 6=So

@@ -8,7 +8,7 @@ Erinnerung an Trinkwasser (Hydration-Reminder).
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as redis
@@ -114,6 +114,7 @@ class HealthMonitor:
             return
         self._running = True
         self._task = asyncio.create_task(self._check_loop())
+        self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         logger.info("Health Monitor gestartet")
 
     async def stop(self) -> None:
@@ -133,11 +134,11 @@ class HealthMonitor:
         """
         await asyncio.sleep(HEALTH_MONITOR_STARTUP_DELAY)
 
-        _last_check_time = datetime.now()
+        _last_check_time = datetime.now(timezone.utc)
         while self._running:
             try:
                 # F-058: Zeitsprung-Erkennung (NTP-Ausfall)
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 elapsed = (now - _last_check_time).total_seconds()
                 expected = self.check_interval * 60
                 if elapsed > expected * 3:
@@ -205,7 +206,7 @@ class HealthMonitor:
             snapshot["score"] = status.get("score", 0)
 
             # In Redis mit Stunden-Key speichern
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             key = f"mha:health:snapshot:{now.strftime('%Y-%m-%d:%H')}"
             await self.redis.set(key, json.dumps(snapshot))
             await self.redis.expire(key, REDIS_HEALTH_SNAPSHOT_TTL)
@@ -359,10 +360,10 @@ class HealthMonitor:
         """Erstellt einen Alert wenn Cooldown abgelaufen."""
         cooldown_key = f"{entity_id}:{alert_type}"
         last = self._alert_cooldowns.get(cooldown_key)
-        if last and datetime.now() - last < timedelta(minutes=self._alert_cooldown_minutes):
+        if last and datetime.now(timezone.utc) - last < timedelta(minutes=self._alert_cooldown_minutes):
             return None
 
-        self._alert_cooldowns[cooldown_key] = datetime.now()
+        self._alert_cooldowns[cooldown_key] = datetime.now(timezone.utc)
         return {
             "entity_id": entity_id,
             "alert_type": alert_type,
@@ -373,7 +374,7 @@ class HealthMonitor:
 
     async def _check_hydration(self) -> Optional[dict]:
         """Prueft ob ein Trink-Reminder faellig ist."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         hour = now.hour
 
         if hour < self.hydration_start or hour >= self.hydration_end:
@@ -515,7 +516,7 @@ class HealthMonitor:
 
         try:
             import json
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             status = await self.get_status()
             if not status.get("sensors"):
                 return None

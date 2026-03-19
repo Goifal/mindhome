@@ -19,14 +19,17 @@ import asyncio
 import json
 import logging
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as redis
 
+from zoneinfo import ZoneInfo
+
 from .config import yaml_config
 
 logger = logging.getLogger(__name__)
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
 class AnticipationEngine:
@@ -59,6 +62,7 @@ class AnticipationEngine:
         if self.enabled and self.redis:
             self._running = True
             self._task = asyncio.create_task(self._check_loop())
+            self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
             logger.info("AnticipationEngine initialisiert (History: %d Tage)", self.history_days)
 
     def set_notify_callback(self, callback):
@@ -90,7 +94,7 @@ class AnticipationEngine:
             return
 
         try:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             entry = {
                 "action": action,
                 "args": json.dumps(args),
@@ -191,7 +195,7 @@ class AnticipationEngine:
 
         # Muster: Wenn eine Aktion an einem bestimmten Wochentag/Stunde
         # in > 60% der Wochen vorkommt
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         weeks_in_data = max(1, len(entries) / 50)  # Grobe Schaetzung
 
         for key, group in time_groups.items():
@@ -594,7 +598,7 @@ class AnticipationEngine:
         if not patterns:
             return []
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         suggestions = []
 
         for pattern in patterns:
@@ -610,8 +614,8 @@ class AnticipationEngine:
                     )
                     if rules:  # Active correction rule exists -> suppress this pattern
                         continue
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Korrektur-Regel Pruefung fehlgeschlagen: %s", e)
 
             # Wurde dieser Vorschlag kuerzlich schon gemacht?
             import hashlib as _hl
@@ -700,8 +704,8 @@ class AnticipationEngine:
                         if _score < 0.4:
                             suggestion["confidence"] *= 0.7  # 30% Penalty
                             logger.debug("Outcome penalty fuer %s: score=%.2f", _action, _score)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Outcome-Score Abruf fehlgeschlagen: %s", e)
 
                 # Bestimme Delivery-Modus
                 conf = suggestion["confidence"]
@@ -728,8 +732,8 @@ class AnticipationEngine:
                                 suggestion["mode"] = "suggest"
                             elif suggestion["mode"] == "suggest":
                                 suggestion["mode"] = "ask"
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Feedback-Downgrade Pruefung fehlgeschlagen: %s", e)
 
                 suggestions.append(suggestion)
 
@@ -773,7 +777,7 @@ class AnticipationEngine:
             return []
 
         crossrefs = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         try:
             # Kalender-Events aus Redis Cache holen
@@ -940,7 +944,7 @@ class AnticipationEngine:
         if not patterns:
             return
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         current_weather = await self._get_current_weather()
 
         # Abgelaufene Cooldowns entfernen (aelter als 30 Min)
@@ -1068,7 +1072,7 @@ class AnticipationEngine:
             return []
 
         try:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             # Alle Eintraege laden
             raw_entries = await self.redis.lrange("mha:action_log", 0, 999)
             if len(raw_entries) < 10:
@@ -1218,11 +1222,10 @@ class AnticipationEngine:
                 # Quiet Hours: Pattern-Detection komplett ueberspringen.
                 # Spart CPU und vermeidet Log-Spam (Suggestions werden eh unterdrueckt).
                 from .config import yaml_config
-                from datetime import datetime
                 quiet_cfg = yaml_config.get("ambient_presence", {})
                 quiet_start = int(quiet_cfg.get("quiet_start", 22))
                 quiet_end = int(quiet_cfg.get("quiet_end", 7))
-                hour = datetime.now().hour
+                hour = datetime.now(_LOCAL_TZ).hour
                 if quiet_start > quiet_end:
                     is_quiet = hour >= quiet_start or hour < quiet_end
                 else:
@@ -1264,7 +1267,7 @@ class AnticipationEngine:
             return []
 
         deviations = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         # Nur zwischen 17:00 und 22:00 pruefen
         if not (17 <= now.hour <= 22):
@@ -1358,7 +1361,7 @@ class AnticipationEngine:
                     pattern_counts[(action, int(weekday), int(hour))] += 1
 
             # Vorhersagen fuer die naechsten Tage
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             predictions = []
             weeks_data = max(1, len(entries) / 200)  # Grobe Schaetzung der Wochen
 
@@ -1476,8 +1479,8 @@ class AnticipationEngine:
             val = await self.redis.get(key)
             if val:
                 return max(0.3, min(0.95, float(val)))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Adaptive Schwelle aus Redis laden fehlgeschlagen: %s", e)
         return self.threshold_ask
 
     async def update_adaptive_threshold(self, pattern_hash: str, accepted: bool):

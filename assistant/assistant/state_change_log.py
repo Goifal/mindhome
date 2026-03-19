@@ -9276,8 +9276,8 @@ class StateChangeLog:
             ann = get_entity_annotation(entity_id)
             if ann and ann.get("role"):
                 return ann["role"]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Entity-Rolle Abfrage fehlgeschlagen fuer %s: %s", entity_id, e)
         # Fallback: HA-Domain als Pseudo-Rolle (z.B. "light", "climate")
         return entity_id.split(".")[0] if "." in entity_id else ""
 
@@ -9295,8 +9295,8 @@ class StateChangeLog:
             # Fallback: MindHome Device-Room-Mapping
             if _mindhome_device_rooms and entity_id in _mindhome_device_rooms:
                 return _mindhome_device_rooms[entity_id].lower()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Entity-Raum Abfrage fehlgeschlagen fuer %s: %s", entity_id, e)
         return ""
 
     def detect_conflicts(self, states: dict) -> list[dict]:

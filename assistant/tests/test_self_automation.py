@@ -1,7 +1,7 @@
 """Tests for assistant.self_automation module."""
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -249,13 +249,13 @@ class TestCheckRateLimit:
     def test_over_limit(self):
         sa = _make_sa(AsyncMock(), AsyncMock())
         sa._daily_count = sa._max_per_day
-        sa._daily_reset = datetime.now()
+        sa._daily_reset = datetime.now(timezone.utc)
         assert sa._check_rate_limit() is False
 
     def test_reset_on_new_day(self):
         sa = _make_sa(AsyncMock(), AsyncMock())
         sa._daily_count = sa._max_per_day
-        sa._daily_reset = datetime.now() - timedelta(days=1)
+        sa._daily_reset = datetime.now(timezone.utc) - timedelta(days=1)
         assert sa._check_rate_limit() is True
         assert sa._daily_count == 0
 
@@ -290,7 +290,7 @@ class TestGenerateAutomation:
     async def test_rate_limit_exceeded(self):
         sa = _make_sa(AsyncMock(), AsyncMock())
         sa._daily_count = sa._max_per_day
-        sa._daily_reset = datetime.now()
+        sa._daily_reset = datetime.now(timezone.utc)
         result = await sa.generate_automation("Turn light on at sunset")
         assert result["success"] is False
         assert "Tageslimit" in result["message"]
@@ -321,7 +321,7 @@ class TestConfirmAutomation:
             },
             "description": "test",
             "person": "Max",
-            "created": datetime.now().isoformat(),
+            "created": datetime.now(timezone.utc).isoformat(),
             "method": "template",
         }
         result = await sa.confirm_automation("abc123")
@@ -360,7 +360,7 @@ class TestPendingCleanup:
 
     def test_cleanup_expired(self):
         sa = _make_sa(AsyncMock(), AsyncMock())
-        past = (datetime.now() - timedelta(seconds=600)).isoformat()
+        past = (datetime.now(timezone.utc) - timedelta(seconds=600)).isoformat()
         sa._pending["old"] = {"created": past, "description": "old"}
         sa._cleanup_expired_pending()
         assert "old" not in sa._pending
@@ -883,7 +883,7 @@ class TestConfirmAutomationExtended:
             "automation": {"alias": "Test", "trigger": [], "action": []},
             "description": "test",
             "person": "Max",
-            "created": datetime.now().isoformat(),
+            "created": datetime.now(timezone.utc).isoformat(),
             "method": "llm",
         }
         result = await sa.confirm_automation("abc123")
@@ -899,7 +899,7 @@ class TestConfirmAutomationExtended:
             "automation": {"alias": "Test", "trigger": [], "action": []},
             "description": "test",
             "person": "Max",
-            "created": datetime.now().isoformat(),
+            "created": datetime.now(timezone.utc).isoformat(),
             "method": "llm",
         }
         result = await sa.confirm_automation("abc123")

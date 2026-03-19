@@ -2,7 +2,7 @@
 Tests fuer ActivityEngine — Aktivitaetserkennung + Silence/Volume Matrix.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -343,7 +343,7 @@ class TestManualOverride:
     @pytest.mark.asyncio
     async def test_override_expires(self, engine, ha_mock):
         engine.set_manual_override(WATCHING, duration_minutes=1)
-        engine._override_until = datetime.now() - timedelta(minutes=5)  # Abgelaufen
+        engine._override_until = datetime.now(timezone.utc) - timedelta(minutes=5)  # Abgelaufen
         ha_mock.get_states = AsyncMock(return_value=[
             {"entity_id": "person.max", "state": "home"},
         ])

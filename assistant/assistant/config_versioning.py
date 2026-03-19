@@ -14,7 +14,7 @@ import json
 import logging
 import re
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -65,11 +65,11 @@ class ConfigVersioning:
         if not self.is_enabled():
             return None
 
-        if not yaml_path.exists():
+        if not await asyncio.to_thread(yaml_path.exists):
             return None
 
         try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             snapshot_id = f"{config_file}_{timestamp}"
             snapshot_path = _SNAPSHOT_DIR / f"{snapshot_id}.yaml"
 
@@ -82,7 +82,7 @@ class ConfigVersioning:
                 "snapshot_path": str(snapshot_path),
                 "reason": reason,
                 "changed_by": changed_by,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
             key = f"mha:config_snapshots:{config_file}"
@@ -152,7 +152,7 @@ class ConfigVersioning:
         snapshot_path = Path(target["snapshot_path"])
         original_path = Path(target["original_path"])
 
-        if not snapshot_path.exists():
+        if not await asyncio.to_thread(snapshot_path.exists):
             return {"success": False, "message": f"Snapshot-Datei fehlt: {snapshot_path}"}
 
         try:
@@ -246,14 +246,14 @@ class ConfigVersioning:
         """
         try:
             config_path = _CONFIG_DIR / "settings.yaml"
-            if not config_path.exists():
+            if not await asyncio.to_thread(config_path.exists):
                 return {"success": False, "message": "settings.yaml nicht gefunden"}
 
             # Snapshot vor Reload
             await self.create_snapshot("settings", config_path, reason="pre_reload")
 
             # Neu laden
-            new_config = load_yaml_config()
+            new_config = await asyncio.to_thread(load_yaml_config)
 
             # Aenderungen erkennen
             changed = []

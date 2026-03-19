@@ -20,14 +20,16 @@ import asyncio
 import logging
 import time
 from collections import defaultdict
-from datetime import datetime
-from typing import Optional, Callable, Awaitable
+from datetime import datetime, timezone
+from typing import Optional
 
 from .config import settings, yaml_config
 from .autonomy import AutonomyManager, TRUST_LEVEL_NAMES
 from .ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
 # Welche Funktionen zu welcher Konflikt-Domain gehoeren
@@ -207,7 +209,7 @@ class ConflictResolver:
             "args": function_args,
             "room": room,
             "timestamp": time.time(),
-            "datetime": datetime.now().isoformat(),
+            "datetime": datetime.now(timezone.utc).isoformat(),
         }
 
         person_key = person.lower()
@@ -459,7 +461,7 @@ class ConflictResolver:
             "person_b_trust": trust_b,
             "conflict_detail": conflict_detail,
             "strategy": strategy,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         # Dependency-Hinweise an Resolution anfuegen
@@ -614,7 +616,7 @@ class ConflictResolver:
             )
 
         # Tageszeit bestimmen
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
         if 5 <= hour < 12:
             time_of_day = "Morgen"
         elif 12 <= hour < 18:
@@ -644,7 +646,7 @@ class ConflictResolver:
             lower_trust_level=lower_trust,
             conflict_description=desc,
             room=room or "unbekannter Raum",
-            time=datetime.now().strftime("%H:%M"),
+            time=datetime.now(_LOCAL_TZ).strftime("%H:%M"),
             time_of_day=time_of_day,
         )
 
@@ -722,7 +724,7 @@ class ConflictResolver:
             return f"die Musik auf {action}" if action else "die Musik entsprechend"
         elif domain == "cover":
             position = args.get("position")
-            return f"die Rolladen auf {position}%" if position else "die Rolladen entsprechend"
+            return f"die Rolladen auf {position}%" if position is not None else "die Rolladen entsprechend"
         return "es entsprechend"
 
     def _resolve_by_room_presence(

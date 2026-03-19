@@ -94,7 +94,6 @@ from .brain_humanizers import BrainHumanizersMixin
 from .pre_classifier import PreClassifier
 from .response_cache import ResponseCache
 from .latency_tracker import latency_tracker
-from .circuit_breaker import registry as cb_registry, ollama_breaker, ha_breaker
 from .constants import REDIS_SECURITY_CONFIRM_KEY, REDIS_SECURITY_CONFIRM_TTL, ENTITY_CATALOG_REFRESH_INTERVAL, ERROR_BACKOFF_LONG, ERROR_BACKOFF_SHORT
 from .task_registry import TaskRegistry
 from .protocol_engine import ProtocolEngine
@@ -115,6 +114,8 @@ from .predictive_maintenance import PredictiveMaintenance
 from .websocket import emit_thinking, emit_speaking, emit_action, emit_proactive, emit_progress, emit_workshop
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(cfg.yaml_config.get("timezone", "Europe/Berlin"))
 
 
 # Audit-Log (gleicher Pfad wie main.py, für Chat-basierte Sicherheitsevents)
@@ -399,6 +400,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Per-Person Scoping um Cross-User-Leakage im Pronomen-Shortcut zu verhindern
         # Dict: person -> (action_name, action_args, timestamp)
         self._last_executed_actions: dict[str, tuple[str, dict, float]] = {}
+        self._last_actions_lock = asyncio.Lock()
 
         self._LAST_ACTION_TTL = 300  # 5 Minuten TTL für Per-Person-Action-Tracking
 
@@ -519,27 +521,29 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
     # --- Per-Person Last-Action Tracking (Cross-User-Leakage Fix) ---
 
-    def _get_last_action(self, person: str = "") -> tuple[str, dict]:
+    async def _get_last_action(self, person: str = "") -> tuple[str, dict]:
         """Letzte Aktion einer Person abrufen (mit 5-Min-TTL)."""
         import time
         key = (person or "user").lower()
-        entry = self._last_executed_actions.get(key)
-        if not entry:
-            return "", {}
-        action, args, ts = entry
-        if (time.monotonic() - ts) > self._LAST_ACTION_TTL:
-            del self._last_executed_actions[key]
-            return "", {}
-        return action, args
+        async with self._last_actions_lock:
+            entry = self._last_executed_actions.get(key)
+            if not entry:
+                return "", {}
+            action, args, ts = entry
+            if (time.monotonic() - ts) > self._LAST_ACTION_TTL:
+                del self._last_executed_actions[key]
+                return "", {}
+            return action, args
 
-    def _set_last_action(self, action: str, args: dict, person: str = "") -> None:
+    async def _set_last_action(self, action: str, args: dict, person: str = "") -> None:
         """Letzte Aktion einer Person setzen."""
         import time
         key = (person or "user").lower()
-        if action:
-            self._last_executed_actions[key] = (action, dict(args), time.monotonic())
-        elif key in self._last_executed_actions:
-            del self._last_executed_actions[key]
+        async with self._last_actions_lock:
+            if action:
+                self._last_executed_actions[key] = (action, dict(args), time.monotonic())
+            elif key in self._last_executed_actions:
+                del self._last_executed_actions[key]
 
     async def _get_caring_context(self, person: str, context: dict) -> str:
         """Caring-Butler: Prueft ob ein fuersorglicher Hinweis passt.
@@ -570,8 +574,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         _fu = followups[0] if isinstance(followups[0], str) else followups[0].get("topic", "")
                         if _fu:
                             hints.append(f"Frage beilaeufig nach: '{_fu}'")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Follow-up-Abfrage fehlgeschlagen: %s", e)
 
             # Voller Tag morgen
             cal = context.get("calendar_tomorrow", [])
@@ -581,7 +585,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
             # Spaete Stunde
             from datetime import datetime
-            _hour = datetime.now().hour
+            _hour = datetime.now(_LOCAL_TZ).hour
             _late = _cfg.get("late_night_hour", 1)
             if _late <= _hour < 5:
                 hints.append("Es ist sehr spaet. Erwaehne beilaeufig die Uhrzeit.")
@@ -612,7 +616,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             from datetime import datetime as _dt
             async with self.proactive._state_lock:
                 consumed_indices = []
-                now = _dt.now()
+                now = _dt.now(timezone.utc)
                 for i, item in enumerate(self.proactive._batch_queue):
                     if len(asides) >= max_items:
                         break
@@ -1408,7 +1412,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     _extracted += len(facts) if facts else 0
                 except asyncio.TimeoutError:
                     break  # Bei Timeout restliche Paare ueberspringen
-                except Exception:
+                except Exception as e:
+                    logger.warning("Faktenextraktion fehlgeschlagen: %s", e)
                     continue
 
             if _extracted > 0:
@@ -2259,7 +2264,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             r"\s*[.!]?$",
             text.lower().strip(),
         )
-        _la_person, _la_args_person = self._get_last_action(person)
+        _la_person, _la_args_person = await self._get_last_action(person)
         if _room_repeat and _la_person and _la_person.startswith("set_"):
             _la = _la_person
             _la_args = dict(_la_args_person or {})
@@ -2388,8 +2393,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 if _post_hints:
                                     _hint_text = _post_hints[0]
                                     response_text = f"{response_text} {_hint_text}"
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.debug("Post-Execution Abhaengigkeitspruefung fehlgeschlagen: %s", e)
 
                             # Post-Execution State Verification (async Background):
                             # Prüft ob das Gerät tatsächlich den State gewechselt hat.
@@ -2455,7 +2460,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 self.state_change_log.mark_jarvis_action(entity_id)
 
                         # Letzte Aktion merken (für Pronomen-Shortcut im nächsten Turn)
-                        self._set_last_action(func_name, func_args, person)
+                        await self._set_last_action(func_name, func_args, person)
                         return self._result(response_text, actions=all_actions, model="device_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Geraete-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
@@ -2510,7 +2515,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     await emit_action(func_name, func_args, result)
 
                     # Letzte Aktion merken (für Pronomen-Shortcut im nächsten Turn)
-                    self._set_last_action(func_name, func_args, person)
+                    await self._set_last_action(func_name, func_args, person)
                     return self._result(response_text, actions=[{"function": func_name, "args": func_args, "result": result}], model="media_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Media-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
@@ -2621,7 +2626,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             try:
                                 ins = _json.loads(raw if isinstance(raw, str) else raw.decode())
                                 insight_texts.append(f"- {ins.get('message', '')}")
-                            except Exception:
+                            except Exception as e:
+                                logger.debug("Insight-Parsing fehlgeschlagen: %s", e)
                                 continue
                         if insight_texts:
                             catchup_parts.append("Erkenntnisse:\n" + "\n".join(insight_texts[:3]))
@@ -2900,7 +2906,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         _implicit_intent = None
         if self.llm_enhancer.enabled and self.llm_enhancer.smart_intent.enabled:
             try:
-                _hour = datetime.now().hour
+                _hour = datetime.now(_LOCAL_TZ).hour
                 if 5 <= _hour < 12:
                     _tod = "Morgen"
                 elif 12 <= _hour < 17:
@@ -2914,8 +2920,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 if room:
                     try:
                         _room_state = await self._get_room_state_summary(room)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Raum-Status-Zusammenfassung fehlgeschlagen: %s", e)
                 _implicit_intent = await self.llm_enhancer.smart_intent.recognize(
                     text, room=room or "", time_of_day=_tod,
                     room_state=_room_state,
@@ -3127,7 +3133,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             _mega_tasks.append(("conv_memory_extended", self.conversation_memory.get_memory_context()))
 
         # B10: Emotionale Kontinuitaet — vergangene negative Reaktionen beruecksichtigen
-        _emo_action, _ = self._get_last_action(person)
+        _emo_action, _ = await self._get_last_action(person)
         if self.memory_extractor and _emo_action:
             _mega_tasks.append(("emotional_ctx", MemoryExtractor.get_emotional_context(
                 action_type=_emo_action,
@@ -3175,7 +3181,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             logger.error("Context Build Fehler: %s — Fallback auf Minimal-Kontext", context)
             context = None
         if context is None:
-            context = {"time": {"datetime": datetime.now().isoformat()}}
+            context = {"time": {"datetime": datetime.now(timezone.utc).isoformat()}}
         if room:
             context["room"] = room
         if person:
@@ -3260,7 +3266,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             if _cm_msgs:
                 _cm_ts = _cm_msgs[-1].get("timestamp", "")
                 if _cm_ts:
-                    _cm_age = (datetime.now() - datetime.fromisoformat(_cm_ts)).total_seconds()
+                    _cm_age = (datetime.now(timezone.utc) - datetime.fromisoformat(_cm_ts)).total_seconds()
                     if _cm_age < _cm_timeout:
                         _conversation_mode = True
                         # Topic-Continuity: Roh-Text aus letzten Nachrichten
@@ -3427,17 +3433,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         ),
                         name=f"b6_milestone_{_ic}",
                     )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Interaktions-Meilenstein-Tracking fehlgeschlagen: %s", e)
 
         # D3: Aktuelle Aktivitaet fuer kontextuelles Schweigen
         try:
             _activity_result = await self.activity.detect_activity()
             self.personality._current_activity = _activity_result.get("activity", "")
-        except Exception:
+        except Exception as e:
+            logger.debug("Aktivitaetserkennung fehlgeschlagen: %s", e)
             self.personality._current_activity = ""
 
-        _prompt_action, _prompt_args = self._get_last_action(person)
+        _prompt_action, _prompt_args = await self._get_last_action(person)
         system_prompt = self.personality.build_system_prompt(
             context, formality_score=formality_score,
             irony_count_today=irony_count,
@@ -3526,7 +3533,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Letzte ausgefuehrte Aktion im Kontext — wichtig für Korrekturen
         # ("Nein, ich meinte das Schlafzimmer" → LLM weiss was zu korrigieren)
-        _ctx_action, _ctx_args = self._get_last_action(person)
+        _ctx_action, _ctx_args = await self._get_last_action(person)
         if _ctx_action:
             _args_str = ", ".join(f"{k}={v}" for k, v in _ctx_args.items()) if _ctx_args else ""
             _action_text = (
@@ -3716,8 +3723,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 err_lines = [f"- {e['action_type']}: {e.get('reason', 'fehlgeschlagen')}" for e in recent_errors]
                 err_text = "\n".join(err_lines)
                 sections.append(("recent_errors", f"\n\nLETZTE FEHLER (vermeide Wiederholung):\n{err_text}", 2))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Letzte Fehler laden fehlgeschlagen: %s", e)
 
         # Intelligence Fusion: JARVIS DENKT MIT
         jarvis_thinks = self._build_jarvis_thinks_context(
@@ -4843,8 +4850,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                         "assistant",
                                         ex=120,  # 2-minute ownership window
                                     )
-                                except Exception:
-                                    pass  # Non-critical
+                                except Exception as e:
+                                    logger.debug("Entity-Ownership in Redis setzen fehlgeschlagen: %s", e)
 
                         # Self-Improvement: Outcome Tracker — Wirkung der Aktion beobachten
                         self._task_registry.create_task(
@@ -4887,8 +4894,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     response_text = f"{response_text} {_dep_hint}"
                                 else:
                                     response_text = _dep_hint
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Abhaengigkeitspruefung nach Ausfuehrung fehlgeschlagen: %s", e)
 
                     if func_name in QUERY_TOOLS:
                         has_query_results = True
@@ -4911,7 +4918,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         if not _post_states:
                             try:
                                 _post_states = await self.ha.get_states() or []
-                            except Exception:
+                            except Exception as e:
+                                logger.debug("HA-States fuer Opinion-Check laden fehlgeschlagen: %s", e)
                                 _post_states = []
                         opinion = self.personality.check_opinion_with_context(
                             func_name, final_args,
@@ -4969,7 +4977,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     if isinstance(result, dict) and result.get("success"):
                         try:
                             curiosity = await self.personality.check_curiosity(
-                                func_name, final_args, person or "", datetime.now().hour,
+                                func_name, final_args, person or "", datetime.now(_LOCAL_TZ).hour,
                             )
                             if curiosity:
                                 if response_text:
@@ -5077,8 +5085,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         )
                         _ea["_verify_mismatch"] = True
                         _ea["_actual_state"] = "unavailable"
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("State-Verify fehlgeschlagen: %s", e)
 
             # 8b. Query-Tool Antwort aufbereiten:
             # 1. Humanizer wandelt Rohdaten in natuerliche Sprache um (zuverlaessig)
@@ -5794,7 +5802,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # d.h. der User reagiert auf eine VORHERIGE Aktion (z.B. "Nein, lass das").
         # Wenn im aktuellen Turn Aktionen ausgefuehrt wurden, ist der negative Text
         # Teil des Befehls (z.B. "Nein, mach das Licht aus") und keine Reaktion.
-        _react_action, _ = self._get_last_action(person)
+        _react_action, _ = await self._get_last_action(person)
         if self.memory_extractor and not executed_actions and person and _react_action:
             is_negative = self.memory_extractor.detect_negative_reaction(text)
             if is_negative:
@@ -5817,7 +5825,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             if isinstance(a.get("result"), dict) and a["result"].get("success", False)
         ]
         if _successful_actions:
-            self._set_last_action(
+            await self._set_last_action(
                 _successful_actions[-1].get("function", ""),
                 _successful_actions[-1].get("args", {}),
                 person,
@@ -5825,7 +5833,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         elif not executed_actions:
             # Nur leeren wenn gar keine Aktionen liefen — bei fehlgeschlagenen
             # Aktionen letzte gute Aktion beibehalten
-            self._set_last_action("", {}, person)
+            await self._set_last_action("", {}, person)
 
         # Phase 17: Situation Snapshot speichern (für Delta beim naechsten Gespraech)
         self._task_registry.create_task(
@@ -5888,8 +5896,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         )
                         if _auto_expl and _auto_expl not in response_text:
                             response_text = f"{response_text}\n\n_{_auto_expl}_"
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Auto-Erklaerung fehlgeschlagen: %s", e)
 
         # Learning Transfer: Aktionen beobachten (Praeferenzen lernen)
         for _act in executed_actions:
@@ -5945,8 +5953,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             ),
                             name="b6_first_correction",
                         )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Korrektur-Lernen fehlgeschlagen: %s", e)
 
         # Phase 18: Seasonal Action Logging (für Vorjahres-Vergleich)
         for action in executed_actions:
@@ -5986,7 +5994,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     outcome_entry = json.dumps({
                         "action": action["function"],
                         "args": action.get("args", {}),
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                         "person": person or "",
                         "context_hint": situation_delta or "",
                     })
@@ -6082,7 +6090,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             )
 
         # Self-Improvement: Outcome Tracker — "Danke" = POSITIVE
-        _thanks_action, _ = self._get_last_action(person)
+        _thanks_action, _ = await self._get_last_action(person)
         if _is_thanked and _thanks_action:
             self._task_registry.create_task(
                 self.outcome_tracker.record_verbal_feedback(
@@ -6154,8 +6162,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 _emotion_tts = self.tts_enhancer.enhance_with_emotion(response_text, _inner_mood)
                 if _emotion_tts:
                     tts_data.update(_emotion_tts)
-            except Exception:
-                pass  # Graceful degradation — Basis-TTS bleibt erhalten
+            except Exception as e:
+                logger.debug("Emotions-TTS-Anreicherung fehlgeschlagen: %s", e)
 
         # Phase 17.4: Mood-Aware TTS — Geschwindigkeit an Stimmung anpassen
         # Muede/gestresst = langsamer und leiser sprechen (Fürsorge)
@@ -6427,8 +6435,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             if not room:
                 try:
                     room = await self._get_occupied_room()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Raum-Erkennung fuer State-Verify fehlgeschlagen: %s", e)
             await self._speak_and_emit(correction, room=room, tts_data=tts_data)
         except Exception as e:
             logger.debug("State-Verify fehlgeschlagen: %s", e)
@@ -7424,7 +7432,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             return ""
         try:
             dt = datetime.fromisoformat(iso_str)
-            days_ago = (datetime.now() - dt).days
+            days_ago = (datetime.now(timezone.utc) - dt).days
             if days_ago == 0:
                 return "Heute"
             elif days_ago == 1:
@@ -7444,7 +7452,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             Tuple (start_date, end_date) als ISO-Strings oder None.
         """
         text_lower = text.lower()
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         # "gestern"
         if "gestern" in text_lower:
@@ -7673,7 +7681,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         if _eid and self.memory.redis:
                             await self.memory.redis.hset(
                                 f"mha:fact:{_eid}", "updated_at",
-                                datetime.now().isoformat(),
+                                datetime.now(timezone.utc).isoformat(),
                             )
                         logger.debug("Topic-Dedup: '%s' existiert bereits als '%s'",
                                      topic_text[:40], existing.get("content", "")[:40])
@@ -7883,8 +7891,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 f"Muster erkannt: {message[:150]}",
                 arguments={"entity_id": entity, "pattern": pattern},
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Lernmuster-Aktivitaetslog fehlgeschlagen: %s", e)
 
     async def _polish_learning_suggestion(self, message: str, alert: dict) -> str:
         """Poliert Learning-Vorschlaege mit LLM fuer natuerliche Variation."""
@@ -10636,7 +10644,7 @@ Regeln:
                 recent_audio = self.ambient_audio.get_recent_events(limit=5)
                 if recent_audio:
                     from datetime import datetime, timedelta
-                    now = datetime.now()
+                    now = datetime.now(timezone.utc)
                     recent = []
                     for ev in recent_audio:
                         ts_str = ev.get("timestamp", "")
@@ -10936,18 +10944,18 @@ Regeln:
                 from datetime import datetime
                 last_dt = datetime.fromisoformat(last)
                 cooldown_min = _b12_cfg.get("cooldown_minutes", 30)
-                if (datetime.now() - last_dt).total_seconds() < cooldown_min * 60:
+                if (datetime.now(timezone.utc) - last_dt).total_seconds() < cooldown_min * 60:
                     return
 
             # Lern-Notiz speichern
             gap_entry = json.dumps({
                 "question": user_text[:200],
                 "person": person,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }, ensure_ascii=False)
             await self.memory.redis.lpush("mha:self_learning:gaps", gap_entry)
             await self.memory.redis.ltrim("mha:self_learning:gaps", 0, 19)
-            await self.memory.redis.set(cooldown_key, datetime.now().isoformat(), ex=7200)
+            await self.memory.redis.set(cooldown_key, datetime.now(timezone.utc).isoformat(), ex=7200)
             logger.info("B12: Wissensluecke erkannt: %s", user_text[:500])
         except Exception as e:
             logger.debug("B12 Knowledge Gap Check Fehler: %s", e)
@@ -11023,7 +11031,7 @@ Regeln:
             if entry.get("action") in target_actions:
                 try:
                     ts = datetime.fromisoformat(entry["timestamp"])
-                    delta = datetime.now() - ts
+                    delta = datetime.now(timezone.utc) - ts
                     if 1 <= delta.days <= 30:  # Mindestens 1 Tag alt, max 30
                         relevant.append((delta, entry))
                 except (KeyError, ValueError):
@@ -11035,7 +11043,7 @@ Regeln:
         # Aelteste relevante Erfahrung nehmen (nicht die juengste — die ist trivial)
         relevant.sort(key=lambda x: x[0], reverse=True)
         _, best = relevant[0]
-        days_ago = (datetime.now() - datetime.fromisoformat(best["timestamp"])).days
+        days_ago = (datetime.now(timezone.utc) - datetime.fromisoformat(best["timestamp"])).days
 
         time_ref = "gestern" if days_ago == 1 else f"vor {days_ago} Tagen"
         hint = best.get("context_hint", "")
@@ -11231,7 +11239,7 @@ Regeln:
             lights = house.get("lights", [])
             presence = house.get("presence", {})
             weather = house.get("weather", {})
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             hour = now.hour
 
             # --- 1. Niemand zuhause aber Lichter an ---
@@ -11489,7 +11497,7 @@ Regeln:
                 logger.info("Korrektur-Lernen: '%s' gespeichert (Person: %s)", fact_text, person)
 
                 # Self-Improvement: Correction Memory — strukturiert speichern
-                _corr_action, _corr_args = self._get_last_action(person)
+                _corr_action, _corr_args = await self._get_last_action(person)
                 await self.correction_memory.store_correction(
                     original_action=_corr_action,
                     original_args=_corr_args,
@@ -11600,8 +11608,8 @@ Regeln:
                     arguments={"action": action, "confidence": pct, "person": person or ""},
                     result="Erfolg" if _success else "Fehlgeschlagen",
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Antizipation-Aktivitaetslog fehlgeschlagen: %s", e)
         else:
             # Vorschlagen — LLM Enhancer fuer natuerlichere Formulierung
             # Template-Vorschlag als Fallback
@@ -11665,8 +11673,8 @@ Regeln:
                 f"Insight: {message[:150]}",
                 arguments={"check": check, "urgency": urgency},
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Insight-Aktivitaetslog fehlgeschlagen: %s", e)
 
     async def _handle_intent_reminder(self, reminder: dict):
         """Callback für Intent-Erinnerungen."""
@@ -11715,7 +11723,7 @@ Regeln:
                 target_day = int(weekly_cfg.get("day", 6))  # 0=Montag, 6=Sonntag
                 target_hour = int(weekly_cfg.get("hour", 19))
 
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 days_ahead = target_day - now.weekday()
                 if days_ahead < 0 or (days_ahead == 0 and now.hour >= target_hour):
                     days_ahead += 7
@@ -11866,7 +11874,7 @@ Regeln:
         """Fuehrt einmal taeglich den Fact Decay aus (04:00 Uhr)."""
         while True:
             try:
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 # Naechste 04:00 berechnen
                 target = now.replace(hour=4, minute=0, second=0, microsecond=0)
                 if now >= target:
@@ -11899,7 +11907,7 @@ Regeln:
         """Prueft woechentlich ob ein Autonomy-Level-Aufstieg moeglich ist (Sonntag 05:00)."""
         while True:
             try:
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 # Naechsten Sonntag 05:00 berechnen
                 days_until_sunday = (6 - now.weekday()) % 7
                 if days_until_sunday == 0 and now.hour >= 5:
@@ -12070,7 +12078,7 @@ Regeln:
                     await self.memory.redis.setex(
                         "mha:idle_reasoning:last_run",
                         _cooldown_minutes * 60,
-                        datetime.now().isoformat(),
+                        datetime.now(timezone.utc).isoformat(),
                     )
 
             except asyncio.CancelledError:
@@ -12100,7 +12108,7 @@ Regeln:
             _context_parts = []
 
             # Aktuelle Uhrzeit + Wochentag
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             _context_parts.append(
                 f"Aktuelle Zeit: {now.strftime('%A %d.%m.%Y %H:%M')} Uhr"
             )
@@ -12116,8 +12124,8 @@ Regeln:
                         for c in _last_convs
                     )
                     _context_parts.append(f"Letzte Gespraeche heute:\n{_conv_text}")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Gespraeche fuer Tagesreflexion laden fehlgeschlagen: %s", e)
 
             # HA-States (Zusammenfassung)
             try:
@@ -12139,8 +12147,8 @@ Regeln:
                         _context_parts.append(
                             f"Aktive HA-Entities:\n" + "\n".join(f"- {a}" for a in _active[:15])
                         )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("HA-States fuer Tagesreflexion laden fehlgeschlagen: %s", e)
 
             if not _context_parts:
                 return
@@ -12601,7 +12609,7 @@ Regeln:
                         break
 
                 if calendar_entity:
-                    now = datetime.now()
+                    now = datetime.now(timezone.utc)
                     end = now + timedelta(minutes=lookahead)
                     result = await self.ha.call_service_with_response(
                         "calendar", "get_events",

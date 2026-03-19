@@ -630,7 +630,8 @@ class CoverControlManager:
             from helpers import local_now
             local = local_now()
         except Exception:
-            local = datetime.now(timezone.utc)
+            from zoneinfo import ZoneInfo
+            local = datetime.now(ZoneInfo("Europe/Berlin"))
 
         current_time = local.strftime("%H:%M")
         prev_minute = (local - timedelta(minutes=1)).strftime("%H:%M")
@@ -694,7 +695,8 @@ class CoverControlManager:
             from helpers import local_now
             local = local_now()
         except Exception:
-            local = datetime.now(timezone.utc)
+            from zoneinfo import ZoneInfo
+            local = datetime.now(ZoneInfo("Europe/Berlin"))
 
         hour = local.hour
         start = config.get("simulation_start_hour", 17)

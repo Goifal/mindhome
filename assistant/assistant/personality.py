@@ -17,16 +17,19 @@ import logging
 import random
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 import yaml
 
+from zoneinfo import ZoneInfo
+
 from .config import settings, yaml_config, get_person_title, get_active_person
 from .core_identity import IDENTITY_BLOCK
 
 logger = logging.getLogger(__name__)
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Stimmungsabhängige Stil-Anpassungen
 MOOD_STYLES = {
@@ -331,6 +334,7 @@ class PersonalityEngine:
 
         # State
         self.__mood_formality_lock = threading.Lock()
+        self._tracking_lock = threading.Lock()  # Schuetzt _last_confirmations, _sarcasm_streak, _humor_consecutive, _last_interaction_times
         self._current_mood: str = "neutral"
         self._mood_detector = None
         self._inner_state = None  # B5: JARVIS-eigene Emotionen
@@ -519,7 +523,7 @@ class PersonalityEngine:
             pipe.hincrbyfloat(_key, "total_score", quality_score)
             pipe.hincrby(_key, "count", 1)
             pipe.hset(_key, "last_category", category)
-            pipe.hset(_key, "last_seen", datetime.now().isoformat())
+            pipe.hset(_key, "last_seen", datetime.now(timezone.utc).isoformat())
             pipe.expire(_key, 90 * 86400)
             await pipe.execute()
 
@@ -809,7 +813,7 @@ class PersonalityEngine:
             return
         person_key = person.lower().strip()
         key = f"mha:relationship:jokes:{person_key}"
-        entry = json.dumps({"joke": joke[:150], "date": datetime.now().strftime("%Y-%m-%d")})
+        entry = json.dumps({"joke": joke[:150], "date": datetime.now(timezone.utc).strftime("%Y-%m-%d")})
         try:
             await self._redis.zadd(key, {entry: time.time()})
             count = await self._redis.zcard(key)
@@ -839,7 +843,7 @@ class PersonalityEngine:
         key = f"mha:relationship:milestones:{person_key}"
         entry = json.dumps({
             "event": event[:200],
-            "date": datetime.now().strftime("%Y-%m-%d"),
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         })
         try:
             await self._redis.lpush(key, entry)
@@ -981,7 +985,7 @@ class PersonalityEngine:
         if effective_mood in ("stressed", "frustrated"):
             return None
 
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
 
         for rule in self._opinion_rules:
             if not self._match_rule(rule, action, args, hour):
@@ -1027,8 +1031,8 @@ class PersonalityEngine:
                 )
                 if hints:
                     dep_hint = hints[0]
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Dependency-Hints Abruf fehlgeschlagen: %s", e)
 
         if opinion and dep_hint:
             # Beides: Opinion + Dependency → verstaerkter Kommentar
@@ -1058,7 +1062,7 @@ class PersonalityEngine:
         if not pushback_cfg.get("enabled", True):
             return None
 
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
 
         for rule in self._opinion_rules:
             pushback_level = rule.get("pushback_level", 0)
@@ -1101,7 +1105,7 @@ class PersonalityEngine:
         title = get_person_title()
 
         # Tages-Reset
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if self._curiosity_last_date != today:
             self._curiosity_count_today = {}
             self._curiosity_last_date = today
@@ -1217,7 +1221,7 @@ class PersonalityEngine:
         entry = json.dumps({
             "type": interaction_type,
             "summary": summary[:120],
-            "date": datetime.now().strftime("%Y-%m-%d"),
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         })
 
         try:
@@ -1288,7 +1292,7 @@ class PersonalityEngine:
             # Aktuellen Gag loggen
             new_entry = json.dumps({
                 "type": gag_type,
-                "date": datetime.now().strftime("%A"),  # Wochentag
+                "date": datetime.now(timezone.utc).strftime("%A"),  # Wochentag
                 "timestamp": time.time(),
                 "episode": episode,
             })
@@ -1411,7 +1415,7 @@ class PersonalityEngine:
 
         house = context.get("house", {})
         open_windows = house.get("open_windows", [])
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
 
         hints = []
 
@@ -1474,7 +1478,9 @@ class PersonalityEngine:
 
         # F-021: Per-User History statt globaler Liste
         user_key = person or "_default"
-        user_history = self._last_confirmations.get(user_key, [])
+
+        with self._tracking_lock:
+            user_history = list(self._last_confirmations.get(user_key, []))
 
         # Bei Stress/Muedigkeit: Ultra-kurze Bestätigungen bevorzugen
         if effective_mood in ("stressed", "tired") and success and not partial:
@@ -1483,11 +1489,12 @@ class PersonalityEngine:
             if available:
                 chosen = random.choice(available)
                 user_history.append(chosen)
-                self._last_confirmations[user_key] = user_history[-10:]
-                # F-021: Begrenze Anzahl getrackter User (Speicherleck vermeiden)
-                if len(self._last_confirmations) > 50:
-                    oldest_key = next(iter(self._last_confirmations))
-                    del self._last_confirmations[oldest_key]
+                with self._tracking_lock:
+                    self._last_confirmations[user_key] = user_history[-10:]
+                    # F-021: Begrenze Anzahl getrackter User (Speicherleck vermeiden)
+                    if len(self._last_confirmations) > 50:
+                        oldest_key = next(iter(self._last_confirmations))
+                        del self._last_confirmations[oldest_key]
                 return chosen
 
         # Kontextbezogene Bestätigung versuchen
@@ -1497,7 +1504,8 @@ class PersonalityEngine:
                 user_history.append(contextual)
                 if len(user_history) > 10:
                     user_history = user_history[-10:]
-                self._last_confirmations[user_key] = user_history
+                with self._tracking_lock:
+                    self._last_confirmations[user_key] = user_history
                 return contextual
 
         if partial:
@@ -1521,12 +1529,13 @@ class PersonalityEngine:
         user_history.append(chosen)
         if len(user_history) > 10:
             user_history = user_history[-10:]
-        self._last_confirmations[user_key] = user_history
 
-        # F-021: Begrenze Anzahl getrackter User (Speicherleck vermeiden)
-        if len(self._last_confirmations) > 50:
-            oldest_key = next(iter(self._last_confirmations))
-            del self._last_confirmations[oldest_key]
+        with self._tracking_lock:
+            self._last_confirmations[user_key] = user_history
+            # F-021: Begrenze Anzahl getrackter User (Speicherleck vermeiden)
+            if len(self._last_confirmations) > 50:
+                oldest_key = next(iter(self._last_confirmations))
+                del self._last_confirmations[oldest_key]
 
         return chosen
 
@@ -1538,7 +1547,7 @@ class PersonalityEngine:
         if random.random() > 0.75:
             return ""
 
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
         room_short = (room or "").split("_")[0].title() if room else ""
 
         # Aktions-spezifische Bestätigungen — immer im Jarvis-Ton
@@ -1609,7 +1618,7 @@ class PersonalityEngine:
     def get_time_of_day(self, hour: Optional[int] = None) -> str:
         """Bestimmt die aktuelle Tageszeit-Kategorie."""
         if hour is None:
-            hour = datetime.now().hour
+            hour = datetime.now(_LOCAL_TZ).hour
 
         if 5 <= hour < 8:
             return "early_morning"
@@ -1936,7 +1945,8 @@ class PersonalityEngine:
         # Sarkasmus-Fatigue: Nach 4+ Antworten in Folge etwas zurücknehmen
         # Jarvis wird nie repetitiv — ein echter Butler variiert
         user_key = person.lower().strip() if person else "_default"
-        streak = self._sarcasm_streak.get(user_key, 0)
+        with self._tracking_lock:
+            streak = self._sarcasm_streak.get(user_key, 0)
         if streak >= 6 and effective_level >= 3:
             effective_level = max(2, effective_level - 2)
         elif streak >= 4 and effective_level >= 3:
@@ -1984,20 +1994,21 @@ class PersonalityEngine:
     def track_sarcasm_streak(self, was_snarky: bool, person_id: str = "_default"):
         """Trackt aufeinanderfolgende sarkastische Antworten per User. 0ms — rein in-memory."""
         key = person_id.lower().strip() if person_id else "_default"
-        if was_snarky:
-            self._sarcasm_streak[key] = self._sarcasm_streak.get(key, 0) + 1
-        else:
-            self._sarcasm_streak[key] = 0
-        # Memory-Leak-Schutz: Max 30 User tracken
-        if len(self._sarcasm_streak) > 30:
-            oldest = next(iter(self._sarcasm_streak))
-            del self._sarcasm_streak[oldest]
-        if len(self._humor_consecutive) > 30:
-            oldest = next(iter(self._humor_consecutive))
-            del self._humor_consecutive[oldest]
-        if len(self._last_interaction_times) > 30:
-            oldest_key = min(self._last_interaction_times, key=self._last_interaction_times.get)
-            del self._last_interaction_times[oldest_key]
+        with self._tracking_lock:
+            if was_snarky:
+                self._sarcasm_streak[key] = self._sarcasm_streak.get(key, 0) + 1
+            else:
+                self._sarcasm_streak[key] = 0
+            # Memory-Leak-Schutz: Max 30 User tracken
+            if len(self._sarcasm_streak) > 30:
+                oldest = next(iter(self._sarcasm_streak))
+                del self._sarcasm_streak[oldest]
+            if len(self._humor_consecutive) > 30:
+                oldest = next(iter(self._humor_consecutive))
+                del self._humor_consecutive[oldest]
+            if len(self._last_interaction_times) > 30:
+                oldest_key = min(self._last_interaction_times, key=self._last_interaction_times.get)
+                del self._last_interaction_times[oldest_key]
 
     # ------------------------------------------------------------------
     # Adaptive Komplexitaet (Phase 6.8)
@@ -2010,14 +2021,14 @@ class PersonalityEngine:
         """
         now = time.time()
         user_key = person or "_default"
-        last_time = self._last_interaction_times.get(user_key, 0.0)
-        time_since_last = now - last_time if last_time else 999
-        self._last_interaction_times[user_key] = now
-
-        # F-022: Begrenze Anzahl getrackter User
-        if len(self._last_interaction_times) > 30:
-            oldest_key = min(self._last_interaction_times, key=self._last_interaction_times.get)
-            del self._last_interaction_times[oldest_key]
+        with self._tracking_lock:
+            last_time = self._last_interaction_times.get(user_key, 0.0)
+            time_since_last = now - last_time if last_time else 999
+            self._last_interaction_times[user_key] = now
+            # F-022: Begrenze Anzahl getrackter User
+            if len(self._last_interaction_times) > 30:
+                oldest_key = min(self._last_interaction_times, key=self._last_interaction_times.get)
+                del self._last_interaction_times[oldest_key]
 
         # Schnelle Befehle hintereinander = Kurz-Modus
         if time_since_last < 5.0:
@@ -2045,7 +2056,7 @@ class PersonalityEngine:
         if not self._redis:
             return 0
         try:
-            key = f"mha:irony:count:{datetime.now().strftime('%Y-%m-%d')}"
+            key = f"mha:irony:count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
             count = await self._redis.get(key)
             return int(count) if count else 0
         except Exception:
@@ -2065,7 +2076,7 @@ class PersonalityEngine:
         if not self._redis:
             return True  # No Redis = no quota enforcement
         try:
-            key = f"mha:irony:count:{datetime.now().strftime('%Y-%m-%d')}"
+            key = f"mha:irony:count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
             new_count = await self._redis.incr(key)
             await self._redis.expire(key, 86400)  # 24h TTL
             if new_count > self.self_irony_max_per_day:
@@ -2086,7 +2097,7 @@ class PersonalityEngine:
         if not self._redis:
             return
         try:
-            key = f"mha:irony:count:{datetime.now().strftime('%Y-%m-%d')}"
+            key = f"mha:irony:count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
             await self._redis.incr(key)
             await self._redis.expire(key, 86400)  # 24h TTL
         except Exception as e:
@@ -2297,7 +2308,7 @@ class PersonalityEngine:
     async def _check_short_memory_gag(self, text: str) -> Optional[str]:
         """Erkennt wenn User innerhalb von 30 Sekunden das gleiche fragt."""
         key = "mha:gag:last_questions"
-        now = datetime.now().timestamp()
+        now = datetime.now(timezone.utc).timestamp()
 
         # Letzte Fragen holen
         try:
@@ -2363,28 +2374,34 @@ class PersonalityEngine:
         # Phase 2A: Taegl. Humor-Fatigue — nach 8 Witzen/Tag -50%, nach 12 -80%
         if self._redis:
             try:
-                day = datetime.now().strftime("%Y-%m-%d")
+                day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
                 daily_count = await self._redis.get(f"mha:humor:count:{day}")
                 daily_count = int(daily_count) if daily_count else 0
                 if daily_count >= 12 and random.random() < 0.8:
                     return None  # 80% Chance auf Humor-Pause
                 elif daily_count >= 8 and random.random() < 0.5:
                     return None  # 50% Chance auf Humor-Pause
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Humor-Tageszaehler aus Redis laden fehlgeschlagen: %s", e)
 
         # Humor-Fatigue: Nach 4 Witzen Pause (per User, consecutive)
         _hc_key = person.lower().strip() if person else "_default"
-        _hc = self._humor_consecutive.get(_hc_key, 0)
-        if _hc >= 4:
-            self._humor_consecutive[_hc_key] = 0
+        with self._tracking_lock:
+            _hc = self._humor_consecutive.get(_hc_key, 0)
+            if _hc >= 4:
+                self._humor_consecutive[_hc_key] = 0
+                _hc_exceeded = True
+            else:
+                _hc_exceeded = False
+        if _hc_exceeded:
             return None
 
         # Situation erkennen
         situation = self._detect_humor_situation(func_name, func_args, context)
         if not situation:
             # Kein Humor nötig — Reset
-            self._humor_consecutive[_hc_key] = 0
+            with self._tracking_lock:
+                self._humor_consecutive[_hc_key] = 0
             return None
 
         # Templates holen
@@ -2410,7 +2427,7 @@ class PersonalityEngine:
         template = random.choice(templates)
         humor_text = template.format(
             temp=situation.get("temp", "?"),
-            hour=situation.get("hour", datetime.now().hour),
+            hour=situation.get("hour", datetime.now(_LOCAL_TZ).hour),
             count=situation.get("count", "?"),
             weather=situation.get("weather", "?"),
             room=situation.get("room", ""),
@@ -2426,12 +2443,13 @@ class PersonalityEngine:
             humor_text = llm_humor
 
         # Fatigue tracken (per User)
-        self._humor_consecutive[_hc_key] = self._humor_consecutive.get(_hc_key, 0) + 1
+        with self._tracking_lock:
+            self._humor_consecutive[_hc_key] = self._humor_consecutive.get(_hc_key, 0) + 1
 
         # Erfolg tracken (async, fire-and-forget)
         if self._redis:
             try:
-                day = datetime.now().strftime("%Y-%m-%d")
+                day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
                 await self._redis.incr(f"mha:humor:count:{day}")
                 await self._redis.expire(f"mha:humor:count:{day}", 7 * 86400)
             except Exception:
@@ -2455,7 +2473,7 @@ class PersonalityEngine:
             from .config import settings
             title = get_person_title()
             situation_key = situation.get("key", "")
-            hour = situation.get("hour", datetime.now().hour)
+            hour = situation.get("hour", datetime.now(_LOCAL_TZ).hour)
             temp = situation.get("temp", "")
             weather = situation.get("weather", "")
             room = situation.get("room", "")
@@ -2529,7 +2547,7 @@ class PersonalityEngine:
         Returns:
             Dict mit 'key' und Kontext-Daten oder None.
         """
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
         room = (args.get("room") or "").lower()
 
         # Frühaufsteher (5-6 Uhr)
@@ -2541,7 +2559,7 @@ class PersonalityEngine:
             return {"key": "late_night_command", "hour": hour, "room": room}
 
         # Wochenende morgens
-        weekday = datetime.now().weekday()
+        weekday = datetime.now(timezone.utc).weekday()
         if weekday >= 5 and 6 <= hour < 9:
             return {"key": "weekend_morning", "hour": hour, "room": room}
 
@@ -2774,7 +2792,7 @@ class PersonalityEngine:
             return
 
         try:
-            today = datetime.now().strftime("%Y-%m-%d")
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
             # Gesamt-Interaktionen inkrementieren
             await self._redis.incr("mha:personality:total_interactions")
@@ -3029,7 +3047,7 @@ class PersonalityEngine:
             mood_section = f"STIMMUNG: {mood_config['style_addon']}\n"
 
         # Phase 17.4: Late-Night Fürsorge — zwischen 0-4 Uhr sanfter Ton
-        _hour = datetime.now().hour
+        _hour = datetime.now(_LOCAL_TZ).hour
         if _hour < 5 and time_of_day in ("night", "early_morning"):
             _late_night_addon = (
                 "NACHTMODUS: Es ist sehr spät. Antworte leiser, kürzer, wärmer. "
@@ -3776,7 +3794,7 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
         }
 
         # Fürsorge-Hint: Was Jarvis beiläufig erwähnen koennte
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
         if mood == "frustrated":
             result["care_hint"] = "Kurz und direkt. Wenn wiederholte Frustration, beiläufig Hilfe anbieten."
         elif mood == "stressed":
@@ -3852,7 +3870,7 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
         _pp_section = ""
         if _pp_cfg.get("enabled", True):
             from datetime import datetime as _dt
-            _now = _dt.now()
+            _now = _dt.now(_LOCAL_TZ)
             _hour = _now.hour
             _weekday = _now.weekday()  # 0=Mo, 6=So
 
@@ -4188,7 +4206,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         Nur abends, nur wenn Jarvis 'neugierig' ist und mit hoher
         Konfidenz, maximal einmal pro 24h.
         """
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         if now.hour < 20:
             return None
 

@@ -27,13 +27,15 @@ Jedes erkannte Event wird:
 import asyncio
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Callable, Awaitable
 
 from .config import yaml_config
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
 # Standard-Reaktionen pro Event-Typ
@@ -194,6 +196,7 @@ class AmbientAudioClassifier:
 
         self._running = True
         self._poll_task = asyncio.create_task(self._poll_loop())
+        self._poll_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         logger.info("Ambient Audio Polling gestartet (Intervall: %ds)", self._poll_interval)
 
     async def stop(self):
@@ -291,7 +294,7 @@ class AmbientAudioClassifier:
             "message": message,
             "sound_event": reaction.get("sound_event"),
             "actions": reaction.get("actions", []),
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "is_night": self._is_night(),
         }
 
@@ -451,7 +454,7 @@ class AmbientAudioClassifier:
 
     def _is_night(self) -> bool:
         """Prueft ob Nachtmodus aktiv ist."""
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
         if self._night_start > self._night_end:
             return hour >= self._night_start or hour < self._night_end
         return self._night_start <= hour < self._night_end

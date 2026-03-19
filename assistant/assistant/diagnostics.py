@@ -175,7 +175,7 @@ class DiagnosticsEngine:
 
         issues = []
         now = datetime.now(timezone.utc)
-        now_local = datetime.now()
+        now_local = datetime.now(timezone.utc)
 
         # Entities die in diesem Zyklus als problematisch erkannt werden
         seen_problematic: set[str] = set()
@@ -408,7 +408,7 @@ class DiagnosticsEngine:
 
     def _check_cooldown(self, alert_key: str) -> bool:
         """Prueft ob ein Alert gesendet werden darf (Cooldown)."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         last = self._alert_cooldowns.get(alert_key)
         if last and (now - last) < timedelta(minutes=self.alert_cooldown):
             return False
@@ -436,7 +436,7 @@ class DiagnosticsEngine:
 
         tasks = self._load_maintenance_tasks()
         due = []
-        today = datetime.now().date()
+        today = datetime.now(timezone.utc).date()
 
         for task in tasks:
             name = task.get("name", "")
@@ -501,7 +501,7 @@ class DiagnosticsEngine:
 
         for task in tasks:
             if task.get("name", "").lower() == task_name.lower():
-                today = datetime.now().strftime("%Y-%m-%d")
+                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
                 # Completion-History fuehren (max 10 Eintraege)
                 history = task.get("history", [])
                 history.append(today)
@@ -585,8 +585,10 @@ class DiagnosticsEngine:
 
         # Memory via /proc/meminfo (Linux)
         try:
-            meminfo_path = Path("/proc/meminfo")
-            if meminfo_path.exists():
+            def _read_meminfo():
+                meminfo_path = Path("/proc/meminfo")
+                if not meminfo_path.exists():
+                    return None
                 meminfo = {}
                 with open(meminfo_path) as f:
                     for line in f:
@@ -595,7 +597,10 @@ class DiagnosticsEngine:
                             key = parts[0].strip()
                             val = parts[1].strip().split()[0]  # kB-Wert
                             meminfo[key] = int(val)
+                return meminfo
 
+            meminfo = _read_meminfo()
+            if meminfo:
                 total_mb = meminfo.get("MemTotal", 0) / 1024
                 available_mb = meminfo.get("MemAvailable", 0) / 1024
                 used_mb = total_mb - available_mb
@@ -703,7 +708,7 @@ class DiagnosticsEngine:
             Umfassender Report aller Diagnose-Ergebnisse
         """
         report = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "entities": {},
             "system": {},
             "connectivity": {},
@@ -798,7 +803,8 @@ class DiagnosticsEngine:
                 "Ich bin gerade etwas langsamer im Denken — mein Sprachmodell ist ausgelastet",
                 "warning",
             ))
-        except Exception:
+        except Exception as e:
+            logger.warning("Ollama-Erreichbarkeitspruefung fehlgeschlagen: %s", e)
             issues.append((
                 "Mein Sprachmodell ist gerade nicht erreichbar — ich arbeite mit Einschraenkungen",
                 "warning",
@@ -812,7 +818,8 @@ class DiagnosticsEngine:
                 await r.ping()
             finally:
                 await r.aclose()
-        except Exception:
+        except Exception as e:
+            logger.warning("Redis-Erreichbarkeitspruefung fehlgeschlagen: %s", e)
             issues.append((
                 "Mein Kurzzeitgedaechtnis ist gerade eingeschraenkt",
                 "warning",
@@ -826,7 +833,8 @@ class DiagnosticsEngine:
                     "Ich habe gerade keinen Zugriff auf die Haussteuerung — Home Assistant antwortet nicht",
                     "warning",
                 ))
-        except Exception:
+        except Exception as e:
+            logger.warning("Home-Assistant-Erreichbarkeitspruefung fehlgeschlagen: %s", e)
             issues.append((
                 "Ich habe gerade keinen Zugriff auf die Haussteuerung — Home Assistant antwortet nicht",
                 "warning",
@@ -846,13 +854,15 @@ class DiagnosticsEngine:
                     "Der Speicherplatz wird knapp — wir sollten bald aufraeumen",
                     "info",
                 ))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Speicherplatzpruefung fehlgeschlagen: %s", e)
 
         # --- Arbeitsspeicher pruefen ---
         try:
-            meminfo_path = Path("/proc/meminfo")
-            if meminfo_path.exists():
+            def _read_meminfo_status():
+                meminfo_path = Path("/proc/meminfo")
+                if not meminfo_path.exists():
+                    return None
                 meminfo = {}
                 with open(meminfo_path) as f:
                     for line in f:
@@ -861,6 +871,10 @@ class DiagnosticsEngine:
                             key = parts[0].strip()
                             val = parts[1].strip().split()[0]
                             meminfo[key] = int(val)
+                return meminfo
+
+            meminfo = await asyncio.to_thread(_read_meminfo_status)
+            if meminfo:
                 total = meminfo.get("MemTotal", 0)
                 available = meminfo.get("MemAvailable", 0)
                 if total > 0:
@@ -875,8 +889,8 @@ class DiagnosticsEngine:
                             "Der Arbeitsspeicher wird knapp — Leistung koennte eingeschraenkt sein",
                             "info",
                         ))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Arbeitsspeicherpruefung fehlgeschlagen: %s", e)
 
         # Alles gesund → None
         if not issues:

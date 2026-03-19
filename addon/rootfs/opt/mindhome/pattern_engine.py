@@ -113,8 +113,9 @@ class ContextBuilder:
             tz_name = self.ha.get_timezone()
             tz = zoneinfo.ZoneInfo(tz_name)
             now = datetime.now(tz)
-        except Exception:
-            now = datetime.now()
+        except (ImportError, Exception):
+            from zoneinfo import ZoneInfo
+            now = datetime.now(ZoneInfo("Europe/Berlin"))
         hour = now.hour
 
         _morning_start = int(get_setting("core.time_slots.morning_start", "5") or "5")
@@ -356,7 +357,7 @@ class StateLogger:
             # Motion sensor debounce (on + off)
             device_class = attributes.get("device_class", "")
             if ha_domain == "binary_sensor" and device_class in ("motion", "occupancy"):
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 if new_state == "on":
                     last_on = self._motion_last_on.get(entity_id)
                     if last_on and (now - last_on).total_seconds() < _get_motion_debounce():
@@ -860,7 +861,7 @@ class PatternDetector:
             self._apply_domain_scoring(session)
 
             # B.9: Seasonal tagging
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             month = now.month
             season = "spring" if month in (3,4,5) else "summer" if month in (6,7,8) else "autumn" if month in (9,10,11) else "winter"
             for p in session.query(LearnedPattern).filter(

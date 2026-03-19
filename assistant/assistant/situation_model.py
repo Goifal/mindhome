@@ -11,7 +11,7 @@ Gespeichert wird ein kompakter Snapshot in Redis (TTL: 24h).
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -58,7 +58,7 @@ class SituationModel:
             )
             await self.redis.setex(
                 KEY_LAST_INTERACTION, SNAPSHOT_TTL,
-                datetime.now().isoformat(),
+                datetime.now(timezone.utc).isoformat(),
             )
         except Exception as e:
             logger.debug("Snapshot speichern fehlgeschlagen: %s", e)
@@ -95,7 +95,7 @@ class SituationModel:
                 # Ensure both are naive for consistent subtraction
                 if last_dt.tzinfo is not None:
                     last_dt = last_dt.replace(tzinfo=None)
-                diff = datetime.now() - last_dt
+                diff = datetime.now(timezone.utc) - last_dt
                 minutes = int(diff.total_seconds() / 60)
                 if minutes < self.min_pause_minutes:
                     return None  # Zu kurz her, kein Delta noetig
@@ -130,7 +130,7 @@ class SituationModel:
     def _build_snapshot(self, states: list[dict]) -> dict:
         """Baut einen kompakten Snapshot aus HA-States."""
         snapshot = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "temperatures": {},
             "open_windows": [],
             "open_doors": [],
@@ -276,7 +276,7 @@ class SituationModel:
         if old_ts:
             try:
                 old_dt = datetime.fromisoformat(old_ts)
-                hours_elapsed = (datetime.now() - old_dt).total_seconds() / 3600
+                hours_elapsed = (datetime.now(timezone.utc) - old_dt).total_seconds() / 3600
                 if hours_elapsed >= 1.0:
                     for name in set(old_temps) & set(new_temps):
                         if name in temp_drops or name in temp_rises:

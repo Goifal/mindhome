@@ -12,7 +12,7 @@ Phase 11.1: Wissensdatenbank
 import asyncio
 import hashlib
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
@@ -96,7 +96,7 @@ class KnowledgeBase:
             await self.ingest_all()
 
         # Aktuelle Datei-Zeitstempel merken fuer Watch
-        self._snapshot_file_mtimes()
+        await asyncio.to_thread(self._snapshot_file_mtimes)
 
         # Auto-Watch starten: Prueeft regelmaessig auf neue/geaenderte Dateien
         watch_interval = kb_config.get("watch_interval_seconds", 120)
@@ -104,6 +104,9 @@ class KnowledgeBase:
             self._watch_running = True
             self._watch_task = asyncio.create_task(
                 self._watch_loop(watch_interval)
+            )
+            self._watch_task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
             )
             logger.info(
                 "Knowledge Base Auto-Watch aktiv (alle %ds)", watch_interval
@@ -142,18 +145,23 @@ class KnowledgeBase:
                 new_or_changed = []
                 current_files: dict[str, float] = {}
 
-                for ext in SUPPORTED_EXTENSIONS:
-                    for filepath in self._knowledge_dir.rglob(f"*{ext}"):
-                        try:
-                            mtime = filepath.stat().st_mtime
-                        except OSError:
-                            continue
-                        fpath = str(filepath)
-                        current_files[fpath] = mtime
+                def _scan_files():
+                    _new = []
+                    _current: dict[str, float] = {}
+                    for ext in SUPPORTED_EXTENSIONS:
+                        for fp in self._knowledge_dir.rglob(f"*{ext}"):
+                            try:
+                                mt = fp.stat().st_mtime
+                            except OSError:
+                                continue
+                            fp_str = str(fp)
+                            _current[fp_str] = mt
+                            old_mt = self._file_mtimes.get(fp_str)
+                            if old_mt is None or mt > old_mt:
+                                _new.append(fp)
+                    return _new, _current
 
-                        old_mtime = self._file_mtimes.get(fpath)
-                        if old_mtime is None or mtime > old_mtime:
-                            new_or_changed.append(filepath)
+                new_or_changed, current_files = await asyncio.to_thread(_scan_files)
 
                 if new_or_changed:
                     total = 0
@@ -200,10 +208,14 @@ class KnowledgeBase:
         if not self._knowledge_dir or not self.chroma_collection:
             return 0
 
-        filepaths = []
-        for ext in SUPPORTED_EXTENSIONS:
-            # Rekursiv suchen (** statt nur direkte Dateien)
-            filepaths.extend(self._knowledge_dir.rglob(f"*{ext}"))
+        def _collect_filepaths():
+            result = []
+            for ext in SUPPORTED_EXTENSIONS:
+                # Rekursiv suchen (** statt nur direkte Dateien)
+                result.extend(self._knowledge_dir.rglob(f"*{ext}"))
+            return result
+
+        filepaths = await asyncio.to_thread(_collect_filepaths)
 
         if not filepaths:
             return 0
@@ -262,7 +274,7 @@ class KnowledgeBase:
                 "chunk_index": str(i),
                 "total_chunks": str(len(chunks)),
                 "content_hash": content_hash,
-                "ingested_at": datetime.now().isoformat(),
+                "ingested_at": datetime.now(timezone.utc).isoformat(),
             }
 
             try:
@@ -301,13 +313,13 @@ class KnowledgeBase:
             if content_hash in self._ingested_hashes:
                 continue
 
-            chunk_id = f"kb_{source}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{i}"
+            chunk_id = f"kb_{source}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{i}"
             metadata = {
                 "source_file": source,
                 "chunk_index": str(i),
                 "total_chunks": str(len(chunks)),
                 "content_hash": content_hash,
-                "ingested_at": datetime.now().isoformat(),
+                "ingested_at": datetime.now(timezone.utc).isoformat(),
             }
 
             try:
@@ -553,13 +565,15 @@ class KnowledgeBase:
             return 0
 
         # Datei finden (auch in Unterordnern)
-        filepath = None
-        for f in self._knowledge_dir.rglob(filename):
-            if f.is_file():
-                filepath = f
-                break
+        def _find_file():
+            for f in self._knowledge_dir.rglob(filename):
+                if f.is_file():
+                    return f
+            return None
 
-        if not filepath or not filepath.exists():
+        filepath = await asyncio.to_thread(_find_file)
+
+        if not filepath:
             logger.warning("Knowledge Base: Datei '%s' nicht gefunden", filename)
             return 0
 

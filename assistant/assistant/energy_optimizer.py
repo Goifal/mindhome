@@ -13,7 +13,7 @@ Nutzt bestehende HA energy/solar/price Sensoren.
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -304,7 +304,8 @@ class EnergyOptimizer:
         try:
             from .config import settings
             from datetime import datetime as _dt
-            _now = _dt.now()
+            from zoneinfo import ZoneInfo as _ZI
+            _now = _dt.now(tz=_ZI("Europe/Berlin"))
             _hour = _now.hour
             _DAY_NAMES = {0: "Montag", 1: "Dienstag", 2: "Mittwoch", 3: "Donnerstag",
                           4: "Freitag", 5: "Samstag", 6: "Sonntag"}
@@ -420,7 +421,7 @@ class EnergyOptimizer:
         avg_price = await self._get_avg_price(current_price)
 
         schedule: list[dict] = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         for device_key, load_info in self.flexible_loads.items():
             estimated_kwh = load_info["kwh"]
@@ -593,7 +594,7 @@ class EnergyOptimizer:
         if consumption is None:
             return
 
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         key = f"{KEY_DAILY_ENERGY}{today}"
 
         try:
@@ -601,7 +602,7 @@ class EnergyOptimizer:
             data = json.dumps({
                 "consumption_wh": consumption,
                 "avg_price_cent": price or 0,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
             await self.redis.setex(key, 90 * 86400, data)  # 90 Tage aufheben
             logger.info("Tagesverbrauch gespeichert: %.1f Wh, %.1f ct/kWh", consumption, price or 0)
@@ -619,7 +620,7 @@ class EnergyOptimizer:
 
         try:
             # Letzte 7 Tage per mget laden
-            days = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
+            days = [(datetime.now(timezone.utc) - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
             keys = [f"{KEY_DAILY_ENERGY}{day}" for day in days]
             raw_results = await self.redis.mget(keys)
             values = []
@@ -663,7 +664,7 @@ class EnergyOptimizer:
         try:
             this_week = []
             last_week = []
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
 
             # Alle 14 Tage per mget laden (7 diese Woche + 7 letzte Woche)
             all_keys = []

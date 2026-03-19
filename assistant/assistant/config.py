@@ -3,7 +3,6 @@ Zentrale Konfiguration - liest .env und settings.yaml
 """
 
 import logging
-import os
 import threading
 import time
 from dataclasses import dataclass, field, fields

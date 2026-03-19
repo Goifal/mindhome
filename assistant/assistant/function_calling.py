@@ -10,7 +10,7 @@ import copy
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -40,7 +40,10 @@ _EDITABLE_CONFIGS = {
     "room_profiles": _CONFIG_DIR / "room_profiles.yaml",
 }
 
+from zoneinfo import ZoneInfo
+
 logger = logging.getLogger(__name__)
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Room-Profiles: zentraler Cache aus config.py
 _get_room_profiles = get_room_profiles
@@ -1164,8 +1167,9 @@ async def _refresh_entity_catalog_inner(ha: HomeAssistantClient) -> None:
 
 def _get_room_names() -> list[str]:
     """Liefert aktuelle Raumnamen (aus Cache oder Config-Fallback)."""
-    if _entity_catalog.get("rooms"):
-        return _entity_catalog["rooms"]
+    catalog = _entity_catalog  # Snapshot-Referenz gegen Mid-Refresh-Reads
+    if catalog.get("rooms"):
+        return catalog["rooms"]
     return _get_config_rooms()
 
 
@@ -1202,9 +1206,10 @@ def _inject_entity_hints(tool: dict) -> dict:
     }
     # get_entity_state bekommt Sensoren + Binary-Sensoren kombiniert
     # Priorisierung: Manuell annotierte und relevante Rollen (Power, Energy, Climate) zuerst
+    catalog = _entity_catalog  # Snapshot-Referenz gegen Mid-Refresh-Reads
     if fname == "get_entity_state":
-        combined = (_entity_catalog.get("sensors", []) +
-                    _entity_catalog.get("binary_sensors", []))
+        combined = (catalog.get("sensors", []) +
+                    catalog.get("binary_sensors", []))
         if combined:
             # Prioritaets-Rollen: Diese sind am häufigsten abgefragt
             _priority_roles = ("Strommesser", "Energie", "Innentemperatur",
@@ -1215,8 +1220,8 @@ def _inject_entity_hints(tool: dict) -> dict:
             entity_hint = ", ".join(ordered[:30])
             needs_copy = True
     # elif statt if — verhindert dass get_entity_state-Hint überschrieben wird
-    elif (catalog_key := _ENTITY_MAP.get(fname)) and _entity_catalog.get(catalog_key):
-        entities = _entity_catalog[catalog_key]
+    elif (catalog_key := _ENTITY_MAP.get(fname)) and catalog.get(catalog_key):
+        entities = catalog[catalog_key]
         if entities:
             entity_hint = ", ".join(entities[:30])  # Max 30 um Token zu sparen
             needs_copy = True
@@ -3370,8 +3375,8 @@ class FunctionExecutor:
         if redis:
             try:
                 await redis.set(f"mha:cover:jarvis_acting:{entity_id}", "1", ex=300)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Redis Cover-Jarvis-Acting Flag fehlgeschlagen: %s", e)
 
     # Whitelist erlaubter Tool-Funktionsnamen (verhindert Zugriff auf interne Methoden)
     _ALLOWED_FUNCTIONS = frozenset({
@@ -3582,8 +3587,8 @@ class FunctionExecutor:
                         _person or "unknown", function_name, _reason,
                     )
                     return {"success": False, "message": _reason}
-        except Exception:
-            pass  # Graceful degradation — Trust-Check optional
+        except Exception as e:
+            logger.debug("Trust-Check fehlgeschlagen (Graceful Degradation): %s", e)
 
         try:
             # Phase 18: Pre-Execution Consequence Check
@@ -3654,7 +3659,7 @@ class FunctionExecutor:
 
         try:
             from .state_change_log import StateChangeLog
-            hour = datetime.now().hour
+            hour = datetime.now(_LOCAL_TZ).hour
             states_raw = None  # Lazy-Load
 
             async def _get_states():
@@ -3793,8 +3798,8 @@ class FunctionExecutor:
                 if dep_hints:
                     # Maximal 2 Hints um das LLM nicht zu ueberladen
                     return " | ".join(dep_hints[:2])
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Abhaengigkeitspruefung fehlgeschlagen: %s", e)
 
             return None
         except Exception as e:
@@ -3891,7 +3896,7 @@ class FunctionExecutor:
         dim2warm-Lampen regeln Farbtemperatur über die Helligkeit
         in Hardware — je dunkler, desto waermer.
         """
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         minutes = now.hour * 60 + now.minute
         profiles = _get_room_profiles()
         room_cfg = profiles.get("rooms", {}).get(room, {})
@@ -4090,8 +4095,8 @@ class FunctionExecutor:
                                         )
                                         brightness_pct = _learned_bri
                                         break
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("CorrectionMemory Brightness-Lookup fehlgeschlagen: %s", e)
             service_data["brightness_pct"] = brightness_pct
         # Phase 9: Transition-Parameter (sanftes Dimmen) — muss int/float sein
         if "transition" in args:
@@ -4830,8 +4835,8 @@ class FunctionExecutor:
                         label = mood_scenes[mood_key].get("label", mood_key)
                         return {"success": True, "message": f"'{label}' ist bereits aktiv."}
                     await redis.setex(cooldown_key, 30, "1")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Redis Szenen-Cooldown fehlgeschlagen: %s", e)
 
             mood = mood_scenes[mood_key]
             actions_done = []
@@ -4861,8 +4866,8 @@ class FunctionExecutor:
                 try:
                     import json as _json
                     await redis.setex(f"mha:scene:snapshot:{mood_key}", 3600, _json.dumps(snapshot))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Redis Szenen-Snapshot Speicherung fehlgeschlagen: %s", e)
 
             for action in mood.get("actions", []):
                 domain = action["domain"]
@@ -4972,8 +4977,8 @@ class FunctionExecutor:
                         if current != mood_key:
                             logger.info("Szenen-Wechsel: %s → %s", current, mood_key)
                     await redis.setex("mha:scene:active", 7200, mood_key)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Redis aktive Szene setzen fehlgeschlagen: %s", e)
 
             # [8] Scene History tracken
             if redis:
@@ -4986,8 +4991,8 @@ class FunctionExecutor:
                         "room": room, "ts": _time.time(),
                     })
                     await redis.zadd("mha:scene:history", {entry: _time.time()})
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Scene-History Tracking fehlgeschlagen: %s", e)
 
             # [15] Inner-State: Szene beeinflusst Jarvis' Stimmung
             try:
@@ -4996,8 +5001,8 @@ class FunctionExecutor:
                     inner = getattr(inner, "inner_state", None)
                 if inner and hasattr(inner, "on_scene_activated"):
                     await inner.on_scene_activated(mood_key)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Inner-State Szenen-Update fehlgeschlagen: %s", e)
 
             # [16] Auto-Learning: Device→Scene Pattern tracken
             try:
@@ -5012,8 +5017,8 @@ class FunctionExecutor:
                         task.add_done_callback(
                             lambda t: t.exception() if not t.cancelled() else None
                         )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Auto-Learning Szenen-Beobachtung fehlgeschlagen: %s", e)
 
             # [6] Return-Message mit Error-Info
             msg = f"Stimmung '{mood.get('label', mood_key)}' aktiviert ({', '.join(actions_done)})"
@@ -5044,7 +5049,8 @@ class FunctionExecutor:
         import json as _json
         try:
             raw = await redis.get(f"mha:scene:snapshot:{scene_key}")
-        except Exception:
+        except Exception as e:
+            logger.debug("Redis Szenen-Snapshot Abruf fehlgeschlagen: %s", e)
             raw = None
         if not raw:
             # Kein Snapshot — versuche aktive Szene zu beenden
@@ -5054,8 +5060,8 @@ class FunctionExecutor:
                     active = active.decode() if isinstance(active, bytes) else active
                     await redis.delete("mha:scene:active")
                     return {"success": True, "message": f"'{active}' als aktive Szene entfernt (kein Snapshot vorhanden)"}
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Redis aktive Szene entfernen fehlgeschlagen: %s", e)
             return {"success": False, "message": f"Kein Snapshot fuer '{scene}' vorhanden"}
 
         snapshot = _json.loads(raw if isinstance(raw, str) else raw.decode())
@@ -5081,8 +5087,8 @@ class FunctionExecutor:
             await redis.delete(f"mha:scene:snapshot:{scene_key}")
             await redis.delete("mha:scene:active")
             await redis.delete(f"mha:scene:cooldown:{scene_key}")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Redis Szenen-Cleanup fehlgeschlagen: %s", e)
 
         return {"success": True, "message": f"'{scene}' beendet — {restored} Geraete zurueckgesetzt"}
 
@@ -5099,7 +5105,7 @@ class FunctionExecutor:
         eid_lower = entity_id.lower()
         if "garage" in eid_lower or "gate" in eid_lower:
             return False
-        if re.search(r'(?:^|[_.\s])tor(?:$|[_.\s])', eid_lower):
+        if re.search(r'(?:^|[_.\-\s])tor(?:$|[_.\-\s])', eid_lower):
             return False
         try:
             from .cover_config import load_cover_configs
@@ -5117,9 +5123,13 @@ class FunctionExecutor:
         return True
 
     def _is_markise(self, entity_id: str, state: dict) -> bool:
-        """Prueft ob ein Cover eine Markise ist (entity_id oder cover_profiles)."""
+        """Prueft ob ein Cover eine Markise ist (entity_id, device_class oder cover_profiles)."""
         eid_lower = entity_id.lower()
         if "markise" in eid_lower or "awning" in eid_lower:
+            return True
+        # HA device_class pruefen
+        attrs = state.get("attributes", {}) if isinstance(state, dict) else {}
+        if attrs.get("device_class") == "awning":
             return True
         profiles = _get_room_profiles()
         for c in profiles.get("cover_profiles", {}).get("covers", []):
@@ -5145,9 +5155,10 @@ class FunctionExecutor:
                 conf = configs.get(entity_id, {})
                 if "inverted" in conf:
                     return bool(conf["inverted"])
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
-            if isinstance(e, asyncio.CancelledError): raise
-            pass
+            logger.debug("Cover-Inversions-Check fehlgeschlagen: %s", e)
 
         # 2. Per-Cover in room_profiles.yaml
         profiles = _get_room_profiles()
@@ -5322,6 +5333,7 @@ class FunctionExecutor:
             return {"success": False, "message": "Die Geräte reagieren gerade nicht. Einen Moment."}
 
         count = 0
+        last_pos = position  # Track actual position for message
         for room_name in floor_rooms:
             for s in states:
                 eid = s.get("entity_id", "")
@@ -5342,13 +5354,35 @@ class FunctionExecutor:
                 await self._mark_cover_jarvis_acting(eid)
                 if is_stop:
                     await self.ha.call_service("cover", "stop_cover", {"entity_id": eid})
+                elif adjust in ("up", "down"):
+                    # Relative Anpassung pro Cover
+                    current_position = 50
+                    try:
+                        ha_pos = int(s.get("attributes", {}).get("current_position", 50))
+                        current_position = self._translate_cover_position_from_ha(eid, ha_pos)
+                    except (ValueError, TypeError):
+                        current_position = 50
+                    step = 20
+                    final_pos = current_position + step if adjust == "up" else current_position - step
+                    final_pos = max(0, min(100, final_pos))
+                    last_pos = final_pos
+                    ha_pos = self._translate_cover_position(eid, final_pos)
+                    await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
                 else:
                     final_pos = position if position is not None else 0
+                    last_pos = final_pos
                     ha_pos = self._translate_cover_position(eid, final_pos)
                     await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
                 count += 1
 
-        action_str = "gestoppt" if is_stop else f"auf {position}%"
+        if is_stop:
+            action_str = "gestoppt"
+        elif adjust == "up":
+            action_str = "hoch angepasst"
+        elif adjust == "down":
+            action_str = "runter angepasst"
+        else:
+            action_str = f"auf {last_pos}%"
         return {"success": count > 0, "message": f"{count} Rollläden im {floor.upper()} {action_str}"}
 
     async def _exec_set_cover_markisen(self, args: dict) -> dict:
@@ -5360,7 +5394,9 @@ class FunctionExecutor:
         position, adjust, is_stop = self._resolve_cover_position(args)
 
         # Sicherheits-Check: Bei Wind/Regen Markisen nicht ausfahren
-        if position is not None and position > 0 and not is_stop:
+        # Gilt auch bei adjust="up" (oeffnet Markise weiter)
+        wants_open = (position is not None and position > 0) or adjust == "up"
+        if wants_open and not is_stop:
             profiles = _get_room_profiles()
             markise_cfg = profiles.get("markisen", {})
             wind_limit = markise_cfg.get("wind_retract_speed", 40)
@@ -5382,6 +5418,7 @@ class FunctionExecutor:
                     break
 
         count = 0
+        last_pos = position  # Track actual position for message
         for s in states:
             eid = s.get("entity_id", "")
             if not eid.startswith("cover."):
@@ -5391,15 +5428,37 @@ class FunctionExecutor:
             await self._mark_cover_jarvis_acting(eid)
             if is_stop:
                 await self.ha.call_service("cover", "stop_cover", {"entity_id": eid})
+            elif adjust in ("up", "down"):
+                # Relative Anpassung pro Markise
+                current_position = 50
+                try:
+                    ha_pos = int(s.get("attributes", {}).get("current_position", 50))
+                    current_position = self._translate_cover_position_from_ha(eid, ha_pos)
+                except (ValueError, TypeError):
+                    current_position = 50
+                step = 20
+                final_pos = current_position + step if adjust == "up" else current_position - step
+                final_pos = max(0, min(100, final_pos))
+                last_pos = final_pos
+                ha_pos = self._translate_cover_position(eid, final_pos)
+                await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
             else:
                 final_pos = position if position is not None else 0
+                last_pos = final_pos
                 ha_pos = self._translate_cover_position(eid, final_pos)
                 await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
             count += 1
 
         if count == 0:
             return {"success": False, "message": "Keine Markisen gefunden"}
-        action_str = "gestoppt" if is_stop else f"auf {position}%"
+        if is_stop:
+            action_str = "gestoppt"
+        elif adjust == "up":
+            action_str = "hoch angepasst"
+        elif adjust == "down":
+            action_str = "runter angepasst"
+        else:
+            action_str = f"auf {last_pos}%"
         return {"success": True, "message": f"{count} Markise(n) {action_str}"}
 
     async def _exec_set_cover_all(self, position: int, cover_type: str = None) -> dict:
@@ -5555,22 +5614,28 @@ class FunctionExecutor:
 
         try:
             import fcntl
-            with open(SETTINGS_PATH, 'r+') as f:
-                fcntl.flock(f, fcntl.LOCK_EX)
-                f.seek(0)
-                config = _yaml.safe_load(f.read()) or {}
-                if "seasonal_actions" not in config:
-                    config["seasonal_actions"] = {}
-                if "cover_automation" not in config["seasonal_actions"]:
-                    config["seasonal_actions"]["cover_automation"] = {}
 
-                for k, v in changes.items():
-                    config["seasonal_actions"]["cover_automation"][k] = v
+            def _locked_yaml_update():
+                with open(SETTINGS_PATH, 'r+') as f:
+                    fcntl.flock(f, fcntl.LOCK_EX)
+                    try:
+                        f.seek(0)
+                        config = _yaml.safe_load(f.read()) or {}
+                        if "seasonal_actions" not in config:
+                            config["seasonal_actions"] = {}
+                        if "cover_automation" not in config["seasonal_actions"]:
+                            config["seasonal_actions"]["cover_automation"] = {}
 
-                f.seek(0)
-                f.truncate()
-                _yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-                fcntl.flock(f, fcntl.LOCK_UN)
+                        for k, v in changes.items():
+                            config["seasonal_actions"]["cover_automation"][k] = v
+
+                        f.seek(0)
+                        f.truncate()
+                        _yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                    finally:
+                        fcntl.flock(f, fcntl.LOCK_UN)
+
+            await asyncio.to_thread(_locked_yaml_update)
 
             # In-Memory Config aktualisieren
             import assistant.config as _cfg
@@ -5693,6 +5758,9 @@ class FunctionExecutor:
 
     async def _set_vacuum_fan_speed(self, entity_id: str, fan_speed: str) -> bool:
         """Setzt die Saugstaerke vor dem Start."""
+        if not fan_speed or fan_speed.lower() not in self._FAN_SPEED_MAP:
+            logger.warning("Unbekannte fan_speed '%s', ueberspringe", fan_speed)
+            return False
         resolved = self._FAN_SPEED_MAP.get(fan_speed.lower(), fan_speed)
         return await self.ha.call_service("vacuum", "set_fan_speed", {
             "entity_id": entity_id,
@@ -5701,6 +5769,9 @@ class FunctionExecutor:
 
     async def _set_vacuum_mode(self, entity_id: str, mode: str) -> bool:
         """Setzt den Reinigungsmodus (saugen/wischen/beides) via select-Entity."""
+        if not mode or mode.lower() not in self._CLEAN_MODE_MAP:
+            logger.warning("Unbekannter Reinigungsmodus '%s', ueberspringe", mode)
+            return False
         resolved = self._CLEAN_MODE_MAP.get(mode.lower(), mode)
         # Offizielle Dreame-Integration: select.{name}_cleaning_mode
         # Entity-ID aus vacuum entity ableiten
@@ -5733,9 +5804,10 @@ class FunctionExecutor:
             if room:
                 key = f"mha:vacuum:{floor}:room:{room}:last_clean"
             await redis.set(key, str(int(_time.time())), ex=86400 * 7)  # 7 Tage TTL
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
-            if isinstance(e, asyncio.CancelledError): raise
-            pass
+            logger.warning("Vacuum cleanup tracking fehlgeschlagen: %s", e)
 
     async def _exec_set_vacuum(self, args: dict) -> dict:
         """Saugroboter steuern — waehlt automatisch EG/OG-Roboter.
@@ -5750,13 +5822,20 @@ class FunctionExecutor:
         room = self._clean_room(args.get("room"))
         fan_speed = args.get("fan_speed", "")
         mode = args.get("mode", "")
-        repeat = min(max(args.get("repeat", 1), 1), 3)
+        try:
+            repeat = int(min(max(int(args.get("repeat", 1)), 1), 3))
+        except (ValueError, TypeError):
+            repeat = 1
         vacuum_cfg = yaml_config.get("vacuum", {})
         if not vacuum_cfg.get("enabled", True):
             return {"success": False, "message": "Saugroboter-Steuerung ist deaktiviert"}
         robots = vacuum_cfg.get("robots", {})
         if not robots:
             return {"success": False, "message": "Keine Saugroboter konfiguriert (settings.yaml → vacuum.robots)"}
+
+        _VALID_ACTIONS = {"start", "stop", "pause", "dock", "clean_room"}
+        if action not in _VALID_ACTIONS:
+            return {"success": False, "message": f"Unbekannte Aktion '{action}'. Erlaubt: {', '.join(sorted(_VALID_ACTIONS))}"}
 
         # Stop/Pause/Dock → alle Roboter (kein fan_speed/mode noetig)
         if action in ("stop", "pause", "dock"):
@@ -5768,6 +5847,8 @@ class FunctionExecutor:
                 if eid:
                     success = await self.ha.call_service("vacuum", service, {"entity_id": eid})
                     results.append(success)
+            if not results:
+                return {"success": False, "message": "Keine Saugroboter mit entity_id konfiguriert"}
             action_de = {"stop": "gestoppt", "pause": "pausiert", "dock": "zur Ladestation"}
             return {"success": any(results), "message": f"Saugroboter {action_de.get(action, action)}"}
 
@@ -5791,6 +5872,11 @@ class FunctionExecutor:
             nickname = robot.get("nickname", "der Kleine")
 
             if segment_id is not None:
+                # Segment-ID als int sicherstellen (Dreame/Roborock erwarten int)
+                try:
+                    segment_id = int(segment_id)
+                except (ValueError, TypeError):
+                    return {"success": False, "message": f"Segment-ID '{segment_id}' ist keine gueltige Zahl"}
                 await _prepare_robot(entity_id)
                 # Offizielle Dreame-Integration: vacuum.send_command
                 # Tasshack-Fallback: dreame_vacuum.vacuum_clean_segment
@@ -5857,6 +5943,8 @@ class FunctionExecutor:
                 names.append(robot.get("nickname", f"Roboter {floor.upper()}"))
                 if success:
                     await self._track_vacuum_clean(floor)
+        if not results:
+            return {"success": False, "message": "Keine Saugroboter mit entity_id konfiguriert"}
         return {"success": any(results), "message": f"{', '.join(names)} gestartet"}
 
     async def _exec_get_vacuum(self, args: dict) -> dict:
@@ -5873,7 +5961,7 @@ class FunctionExecutor:
             redis = getattr(_mem, "redis", None) if _mem else None
         except Exception as e:
             if isinstance(e, asyncio.CancelledError): raise
-            pass
+            logger.warning("Vacuum-Status: Redis-Zugriff fehlgeschlagen: %s", e)
 
         status_list = []
         for floor, robot in robots.items():
@@ -5928,9 +6016,13 @@ class FunctionExecutor:
                 ]:
                     val = attrs.get(key)
                     if val is not None and label not in maint:
-                        maint[label] = f"{val}%"
-                        if int(val) < 15:
-                            maint[label] += " ⚠ WECHSELN"
+                        try:
+                            val_int = int(val)
+                            maint[label] = f"{val_int}%"
+                            if val_int < 15:
+                                maint[label] += " ⚠ WECHSELN"
+                        except (ValueError, TypeError):
+                            maint[label] = str(val)
                 if maint:
                     entry["wartung"] = maint
 
@@ -5961,9 +6053,10 @@ class FunctionExecutor:
                                     room_history[rname] = f"vor {ago // 86400}d"
                         if room_history:
                             entry["raum_verlauf"] = room_history
+                    except asyncio.CancelledError:
+                        raise
                     except Exception as e:
-                        if isinstance(e, asyncio.CancelledError): raise
-                        pass
+                        logger.warning("Vacuum-Raumverlauf Fehler: %s", e)
 
                 status_list.append(entry)
             else:
@@ -7176,12 +7269,14 @@ class FunctionExecutor:
                     changed_by="jarvis",
                 )
 
-            # Config laden
-            if yaml_path.exists():
-                with open(yaml_path) as f:
-                    config = yaml.safe_load(f) or {}
-            else:
-                config = {}
+            # Config laden (blocking I/O in thread)
+            def _read_yaml():
+                if yaml_path.exists():
+                    with open(yaml_path) as f:
+                        return yaml.safe_load(f) or {}
+                return {}
+
+            config = await asyncio.to_thread(_read_yaml)
 
             # Aktion ausführen
             if action == "add":
@@ -7207,9 +7302,12 @@ class FunctionExecutor:
             else:
                 return {"success": False, "message": f"Unbekannte Aktion: {action}"}
 
-            # Zurückschreiben
-            with open(yaml_path, "w") as f:
-                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            # Zurückschreiben (blocking I/O in thread)
+            def _write_yaml():
+                with open(yaml_path, "w") as f:
+                    yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+            await asyncio.to_thread(_write_yaml)
 
             # Cache invalidieren damit Änderungen sofort wirken
             if config_file == "room_profiles":
@@ -8664,7 +8762,7 @@ class FunctionExecutor:
             if not intents:
                 return {"success": True, "message": "Keine anstehenden Vorhaben gemerkt."}
             # Abgelaufene Intents filtern
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             active = []
             for intent in intents:
                 deadline = intent.get("deadline", "")
@@ -8719,7 +8817,7 @@ class FunctionExecutor:
                     from datetime import datetime
                     try:
                         start_dt = datetime.fromisoformat(pc_start)
-                        minutes = (datetime.now() - start_dt).total_seconds() / 60
+                        minutes = (datetime.now(timezone.utc) - start_dt).total_seconds() / 60
                         status["pc_minutes"] = round(minutes)
                     except (ValueError, TypeError):
                         pass
@@ -9503,12 +9601,13 @@ class FunctionExecutor:
             matches = []
 
             for day_offset in range(days_back):
-                date = (datetime.now() - timedelta(days=day_offset)).strftime("%Y-%m-%d")
+                date = (datetime.now(timezone.utc) - timedelta(days=day_offset)).strftime("%Y-%m-%d")
                 archive_key = f"mha:archive:{date}"
 
                 try:
                     entries = await redis_client.lrange(archive_key, 0, -1)
-                except Exception:
+                except Exception as e:
+                    logger.debug("Redis Archiv-Abruf fehlgeschlagen fuer %s: %s", archive_key, e)
                     continue
 
                 for entry_raw in entries:
@@ -9577,8 +9676,8 @@ class FunctionExecutor:
                             continue
                 finally:
                     await redis_client2.aclose()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Redis Aktions-History Abruf fehlgeschlagen: %s", e)
 
             if _action_matches:
                 lines.append(f"\n{len(_action_matches)} passende Aktionen:")

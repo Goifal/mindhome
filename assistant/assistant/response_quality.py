@@ -12,7 +12,7 @@ Sicherheit: Rein beobachtend. Kein Schreibzugriff auf Config/HA. Bounded Scores 
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from .config import yaml_config
@@ -120,7 +120,7 @@ class ResponseQualityTracker:
             "category": category,
             "quality": quality,
             "person": person,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }, ensure_ascii=False)
         await self.redis.lpush("mha:response_quality:history", entry)
         await self.redis.ltrim("mha:response_quality:history", 0, 299)
@@ -206,8 +206,8 @@ class ResponseQualityTracker:
             if emb_current is not None and emb_previous is not None:
                 similarity = cosine_similarity(emb_current, emb_previous)
                 return similarity >= self._rephrase_threshold
-        except Exception:
-            pass  # Fallback auf Keyword-Overlap
+        except Exception as e:
+            logger.debug("Embedding-Vergleich fehlgeschlagen, Fallback auf Keyword-Overlap: %s", e)
 
         # Fallback: Keyword-Overlap (wenn Embeddings nicht verfuegbar)
         current_words = set(current_text.lower().split())
@@ -313,7 +313,7 @@ class ResponseQualityTracker:
                 "response_text": response_text[:300],
                 "category": category,
                 "person": person,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }, ensure_ascii=False)
 
             await self.redis.lpush(_key, entry)

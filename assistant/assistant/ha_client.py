@@ -219,8 +219,8 @@ class HomeAssistantClient:
                         "Geraet nicht erreichbar: %s (state=unavailable), Aktion %s.%s wird trotzdem versucht",
                         _eid, domain, service,
                     )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Geraetezustand-Pruefung fehlgeschlagen fuer %s: %s", _eid, e)
 
         # ── Zentrale Device-Dependency Pruefung ──────────────────
         # Nur fuer physische Geraete-Domains, rate-limited pro Entity.
@@ -323,9 +323,9 @@ class HomeAssistantClient:
                     "Dependency-Konflikt: %s.%s(%s) → %s",
                     domain, service, entity_id, hints[0],
                 )
-        except Exception:
+        except Exception as e:
             # Dependency-Check darf NIEMALS die Aktion verhindern
-            pass
+            logger.warning("Dependency-Check fehlgeschlagen: %s", e)
 
     async def fire_event(
         self, event_type: str, event_data: Optional[dict] = None
@@ -350,7 +350,8 @@ class HomeAssistantClient:
         try:
             result = await self._get_ha("/api/")
             return result is not None and "message" in (result or {})
-        except Exception:
+        except Exception as e:
+            logger.warning("HA-Erreichbarkeitspruefung fehlgeschlagen: %s", e)
             return False
 
     # ----- MindHome API -----

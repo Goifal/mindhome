@@ -8,7 +8,7 @@ import asyncio
 import hashlib
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import redis.asyncio as redis
@@ -57,13 +57,13 @@ class SemanticFact:
         fact_id: Optional[str] = None,
         date_meta: Optional[dict] = None,
     ):
-        self.fact_id = fact_id or f"fact_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+        self.fact_id = fact_id or f"fact_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}"
         self.content = content
         self.category = category if category in FACT_CATEGORIES else "general"
         self.person = person
         self.confidence = confidence
         self.source_conversation = source_conversation
-        self.created_at = datetime.now().isoformat()
+        self.created_at = datetime.now(timezone.utc).isoformat()
         self.updated_at = self.created_at
         self.times_confirmed = 1
         # Optionale Metadaten fuer personal_date Fakten
@@ -275,7 +275,7 @@ class SemanticMemory:
         if not fact_id:
             return False
 
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         times_confirmed = int(existing.get("times_confirmed", 1)) + 1
         new_confidence = min(1.0, float(existing.get("confidence", 0.8)) + 0.05)
 
@@ -418,7 +418,7 @@ class SemanticMemory:
 
         try:
             fact_ids = await self.redis.smembers("mha:facts:all")
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             decayed = 0
             deleted = 0
 
@@ -645,7 +645,7 @@ class SemanticMemory:
         min_confidence = float(yaml_config.get("memory", {}).get(
             "min_confidence_for_context", 0.4
         ))
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         facts = []
         if results and results.get("documents"):
             for i, doc in enumerate(results["documents"][0]):
@@ -716,7 +716,7 @@ class SemanticMemory:
                 pipe.hgetall(f"mha:fact:{fid}")
             all_data = await pipe.execute()
 
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             min_confidence = float(yaml_config.get("memory", {}).get(
                 "min_confidence_for_context", 0.4
             ))
@@ -1114,7 +1114,7 @@ class SemanticMemory:
             if created:
                 try:
                     from datetime import datetime
-                    age_days = (datetime.now() - datetime.fromisoformat(created)).days
+                    age_days = (datetime.now(timezone.utc) - datetime.fromisoformat(created)).days
                     # Juengere Gespraeche bevorzugen (Bonus bis 1.5x fuer heute)
                     age_bonus = max(0.5, 1.5 - age_days * 0.1)
                 except (ValueError, TypeError):
@@ -1209,7 +1209,7 @@ class SemanticMemory:
 
     async def get_todays_learnings(self) -> list[dict]:
         """Gibt alle heute gelernten Fakten zurueck."""
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         if not self.redis:
             return []
@@ -1321,7 +1321,7 @@ class SemanticMemory:
             if not fact_ids:
                 return []
 
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             today_mm_dd = now.strftime("%m-%d")
             current_year = now.year
             results = []

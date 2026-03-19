@@ -13,7 +13,7 @@ Alle Daten in Redis mit TTL (max 2 Jahre).
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -77,6 +77,7 @@ class SeasonalInsightEngine:
         if self.enabled and self.redis:
             self._running = True
             self._task = asyncio.create_task(self._seasonal_loop())
+            self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
             logger.info("SeasonalInsightEngine initialisiert")
 
     async def stop(self):
@@ -98,7 +99,7 @@ class SeasonalInsightEngine:
         if not self.redis or not self.enabled:
             return
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         month_key = now.strftime("%Y-%m")
         redis_key = f"{_PREFIX}:monthly:{month_key}"
 
@@ -136,7 +137,7 @@ class SeasonalInsightEngine:
         if not self.redis:
             return None
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         current_month = now.month
         current_season = _SEASONS.get(current_month, "unbekannt")
         title = get_person_title()
@@ -146,7 +147,8 @@ class SeasonalInsightEngine:
         try:
             if await self.redis.exists(cooldown_key):
                 return None
-        except Exception:
+        except Exception as e:
+            logger.debug("Seasonal-Insight Cooldown-Pruefung fehlgeschlagen: %s", e)
             return None
 
         # Saisonwechsel erkennen
@@ -183,7 +185,8 @@ class SeasonalInsightEngine:
         try:
             if await self.redis.exists(flag_key):
                 return None
-        except Exception:
+        except Exception as e:
+            logger.debug("Saisonwechsel-Flag Pruefung fehlgeschlagen: %s", e)
             return None
 
         season_label = _SEASON_LABELS.get(current_season, current_season)
@@ -261,8 +264,8 @@ class SeasonalInsightEngine:
                         house_context += f"Heizung/Klima: {', '.join(climate_states[:5])}\n"
                     if cover_states:
                         house_context += f"Rolladen: {', '.join(cover_states[:5])}\n"
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("HA-Status fuer saisonalen Kontext fehlgeschlagen: %s", e)
 
         try:
             from .config import settings
@@ -316,7 +319,7 @@ class SeasonalInsightEngine:
         if not self.redis:
             return None
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         current_key = f"{_PREFIX}:monthly:{now.strftime('%Y-%m')}"
         last_year_key = f"{_PREFIX}:monthly:{now.year - 1}-{now.month:02d}"
 

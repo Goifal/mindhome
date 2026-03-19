@@ -405,7 +405,9 @@ class TestInitialize:
     async def test_chromadb_exception(self, mock_settings):
         mock_settings.chroma_url = "http://localhost:8000"
         s = RecipeStore()
-        with patch("chromadb.HttpClient", side_effect=RuntimeError("connection refused")):
+        mock_chromadb = MagicMock()
+        mock_chromadb.HttpClient.side_effect = RuntimeError("connection refused")
+        with patch.dict("sys.modules", {"chromadb": mock_chromadb}):
             await s.initialize()
         assert s.chroma_collection is None
 
@@ -420,8 +422,11 @@ class TestInitialize:
         mock_client = MagicMock()
         mock_client.get_or_create_collection.return_value = mock_collection
 
+        mock_chromadb = MagicMock()
+        mock_chromadb.HttpClient.return_value = mock_client
+
         s = RecipeStore()
-        with patch("chromadb.HttpClient", return_value=mock_client), \
+        with patch.dict("sys.modules", {"chromadb": mock_chromadb}), \
              patch("assistant.embeddings.get_embedding_function", return_value=None), \
              patch.object(Path, "mkdir"):
             # Override _recipes_dir to a temp dir with no files

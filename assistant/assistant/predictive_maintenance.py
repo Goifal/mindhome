@@ -14,7 +14,7 @@ import json
 import logging
 import time
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -155,7 +155,7 @@ class PredictiveMaintenance:
             return
 
         entry = self._get_or_create(entity_id)
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         entry.battery_history.append({
             "level": battery_level,
@@ -177,7 +177,7 @@ class PredictiveMaintenance:
         entry = self._get_or_create(entity_id)
         entry.total_offline_hours += offline_duration_hours
         entry.failure_count += 1
-        entry.last_failure_date = datetime.now().isoformat()
+        entry.last_failure_date = datetime.now(timezone.utc).isoformat()
 
         # Health-Score reduzieren
         entry.health_score = max(0, entry.health_score - min(10, offline_duration_hours))
@@ -291,7 +291,7 @@ class PredictiveMaintenance:
         if entry.installed_date:
             try:
                 installed = datetime.fromisoformat(entry.installed_date)
-                age_days = (datetime.now() - installed).days
+                age_days = (datetime.now(timezone.utc) - installed).days
                 lifespan = self._lifespans.get(entry.device_type, self._lifespans["default"])
                 age_ratio = age_days / lifespan
                 age_penalty = min(40, age_ratio * 40)  # Max 40 Punkte Abzug
@@ -403,7 +403,7 @@ class PredictiveMaintenance:
             if entry.installed_date:
                 try:
                     installed = datetime.fromisoformat(entry.installed_date)
-                    age_days = (datetime.now() - installed).days
+                    age_days = (datetime.now(timezone.utc) - installed).days
                     lifespan = self._lifespans.get(entry.device_type, self._lifespans["default"])
                     if age_days >= lifespan * 0.9:
                         suggestions.append({

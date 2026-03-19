@@ -191,6 +191,11 @@ class DomainManager:
             for name, plugin in self._all_plugins.items()
         }
 
+    @property
+    def plugins(self) -> Dict[str, DomainPlugin]:
+        """Public accessor for active plugins (used by routes/system.py)."""
+        return self._active_plugins
+
     def is_domain_active(self, domain_name: str) -> bool:
         """Check if a domain is currently active."""
         return domain_name in self._active_plugins

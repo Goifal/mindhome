@@ -4,7 +4,7 @@ Conversation Continuity und Notification Tracking.
 """
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -114,7 +114,7 @@ class TestWorkingMemory:
 
         # Code nutzt Pipeline fuer Tages-Archiv
         pipe = redis_mock._pipeline
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         archive_key = f"mha:archive:{today}"
         pipe.rpush.assert_called_once()
         assert pipe.rpush.call_args[0][0] == archive_key
@@ -389,7 +389,7 @@ class TestConversationContinuity:
 
     @pytest.mark.asyncio
     async def test_get_pending_conversations_filters_by_age(self, memory, redis_mock):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         # Thema: 30 Min alt -> sollte zurueckgegeben werden
         valid_entry = json.dumps({

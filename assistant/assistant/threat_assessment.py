@@ -13,7 +13,7 @@ Wird periodisch von proactive.py aufgerufen.
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -288,7 +288,7 @@ class ThreatAssessment:
 
         weather_ctx = self._get_weather_context(states)
         threats = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         is_night = now.hour >= self.night_start or now.hour < self.night_end
 
         # 1. Nächtliche Bewegung wenn alle schlafen
@@ -693,7 +693,7 @@ class ThreatAssessment:
             details.append("Wasserleck erkannt!")
 
         # Nachtzeit + niemand zuhause
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         is_night = now.hour >= self.night_start or now.hour < self.night_end
         anyone_home = any(
             s.get("entity_id", "").startswith("person.") and s.get("state") == "home"
@@ -778,14 +778,15 @@ class ThreatAssessment:
         ):
             try:
                 states = await self.ha.get_states()
+                covers_closed = 0
                 for s in (states or []):
                     eid = s.get("entity_id", "")
                     # Rollaeden schliessen (sicher, reversibel)
                     if eid.startswith("cover.") and s.get("state") == "open":
                         await self.ha.call_service("cover", "close_cover", {"entity_id": eid})
-                if any(s.get("entity_id", "").startswith("cover.") and s.get("state") == "open"
-                       for s in (states or [])):
-                    actions_taken.append("Alle Rollaeden geschlossen")
+                        covers_closed += 1
+                if covers_closed > 0:
+                    actions_taken.append(f"{covers_closed} Rollaeden geschlossen")
             except Exception as e:
                 logger.warning("Eskalation Covers fehlgeschlagen: %s", e)
 
@@ -861,7 +862,7 @@ class ThreatAssessment:
 
         self._running_playbooks.add(scenario)
         executed_steps: list[dict] = []
-        start_time = datetime.now()
+        start_time = datetime.now(timezone.utc)
 
         logger.warning(
             "=== NOTFALL-PLAYBOOK GESTARTET: %s (%s) === Auslöser: %s",
@@ -882,7 +883,7 @@ class ThreatAssessment:
                 "step": step_num,
                 "action": action_name,
                 "description": description,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "success": False,
                 "details": [],
             }
@@ -982,7 +983,7 @@ class ThreatAssessment:
             executed_steps.append(step_result)
 
         # Playbook abgeschlossen
-        duration = (datetime.now() - start_time).total_seconds()
+        duration = (datetime.now(timezone.utc) - start_time).total_seconds()
         self._running_playbooks.discard(scenario)
 
         succeeded = sum(1 for s in executed_steps if s.get("success"))

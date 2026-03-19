@@ -13,7 +13,7 @@ Phase 13.4: Kontrollierte Prompt-Selbstoptimierung.
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -172,7 +172,7 @@ class SelfOptimization:
             last_dt = datetime.fromisoformat(last_run)
             _INTERVAL_DAYS = {"weekly": 7, "3day": 3, "daily": 1}
             delta = timedelta(days=_INTERVAL_DAYS.get(self._interval, 7))
-            if datetime.now() - last_dt < delta:
+            if datetime.now(timezone.utc) - last_dt < delta:
                 logger.debug("Analyse noch nicht faellig (letzte: %s)", last_run)
                 return []
 
@@ -211,7 +211,7 @@ class SelfOptimization:
 
         _INTERVAL_TTL = {"weekly": 8, "3day": 4, "daily": 2}
         ttl = _INTERVAL_TTL.get(self._interval, 8) * 86400
-        await self._redis.setex("mha:self_opt:last_run", ttl, datetime.now().isoformat())
+        await self._redis.setex("mha:self_opt:last_run", ttl, datetime.now(timezone.utc).isoformat())
 
         # Proaktive Insights generieren und ueber Callback melden
         if self._notify_callback and self._proactive_insights:
@@ -289,7 +289,7 @@ class SelfOptimization:
                     "mha:self_opt:history",
                     json.dumps({
                         **proposal,
-                        "applied_at": datetime.now().isoformat(),
+                        "applied_at": datetime.now(timezone.utc).isoformat(),
                         "snapshot_id": snapshot_id,
                     }),
                 )
@@ -321,7 +321,7 @@ class SelfOptimization:
 
             await self._redis.lpush(
                 "mha:self_opt:rejected",
-                json.dumps({**rejected, "rejected_at": datetime.now().isoformat()}),
+                json.dumps({**rejected, "rejected_at": datetime.now(timezone.utc).isoformat()}),
             )
             await self._redis.ltrim("mha:self_opt:rejected", 0, 29)
             await self._redis.expire("mha:self_opt:rejected", 90 * 86400)
@@ -582,7 +582,7 @@ Wenn keine Aenderung noetig: []"""
         """Speichert Baseline-Metriken vor einer Aenderung (Feature 9b)."""
         if not self._redis:
             return
-        baseline = {"timestamp": datetime.now().isoformat()}
+        baseline = {"timestamp": datetime.now(timezone.utc).isoformat()}
         if outcome_tracker:
             try:
                 baseline["outcome_stats"] = await outcome_tracker.get_stats()
@@ -695,7 +695,7 @@ Wenn keine Aenderung noetig: []"""
                 import json
                 log_key = "mha:self_opt:character_break_log"
                 entry = json.dumps({"type": break_type, "detail": detail[:100],
-                                    "ts": datetime.now().isoformat()})
+                                    "ts": datetime.now(timezone.utc).isoformat()})
                 await self._redis.lpush(log_key, entry)
                 await self._redis.ltrim(log_key, 0, 49)
                 await self._redis.expire(log_key, 30 * 86400)

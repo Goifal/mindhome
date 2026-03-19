@@ -18,7 +18,7 @@ import json
 import logging
 import time
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import redis.asyncio as redis
@@ -26,6 +26,8 @@ import redis.asyncio as redis
 from .config import yaml_config, settings
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Stimmungs-Zustände
 MOOD_GOOD = "good"
@@ -163,7 +165,7 @@ class MoodDetector:
 
         try:
             # Tageszeit als Kontext — "bin muede" um 7 Uhr vs 23 Uhr
-            _hour = datetime.now().hour
+            _hour = datetime.now(_LOCAL_TZ).hour
             if 5 <= _hour < 10:
                 _time_hint = "Fruehmorgens"
             elif 10 <= _hour < 13:
@@ -614,7 +616,7 @@ class MoodDetector:
             signals.append("frustrated_prefix")
 
         # Sehr kurze Nachrichten spaet abends = muede
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
         if self.tired_hour_start > self.tired_hour_end:
             is_late = hour >= self.tired_hour_start or hour < self.tired_hour_end
         else:
@@ -824,7 +826,7 @@ class MoodDetector:
                 priority: str - low/medium/high
         """
         suggestions = []
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
 
         if self._current_mood == MOOD_STRESSED:
             suggestions.append({
@@ -1225,7 +1227,7 @@ class MoodDetector:
                 "tiredness": str(self._tiredness_level),
                 "frustration": str(self._frustration_count),
                 "positive": str(self._positive_count),
-                "updated": datetime.now().isoformat(),
+                "updated": datetime.now(timezone.utc).isoformat(),
             })
             # 1h TTL - Reset nach laengerer Inaktivitaet
             await self.redis.expire(redis_key, 3600)

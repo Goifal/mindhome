@@ -21,7 +21,7 @@ import logging
 import re
 import time
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from .config import yaml_config
@@ -320,7 +320,7 @@ class DialogueStateManager:
             if not cached:
                 return ""
 
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             target_time = now - matched_delta
             # Zeitfenster: +/- 2 Stunden um den Zielzeitpunkt
             window_start = target_time - timedelta(hours=2)

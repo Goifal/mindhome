@@ -23,7 +23,7 @@ Checks:
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -32,6 +32,8 @@ from .config import yaml_config, settings, get_person_title
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Redis-Key-Prefix
 _PREFIX = "mha:insight"
@@ -127,6 +129,7 @@ class InsightEngine:
         if self.enabled:
             self._running = True
             self._task = asyncio.create_task(self._insight_loop())
+            self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
             logger.info(
                 "InsightEngine initialisiert (Intervall: %d Min, Cooldown: %d Std)",
                 self.check_interval // 60,
@@ -217,6 +220,7 @@ class InsightEngine:
         if self.enabled and not was_enabled and not self._running:
             self._running = True
             self._task = asyncio.create_task(self._insight_loop())
+            self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
             logger.info("InsightEngine via Hot-Reload gestartet")
 
     # ------------------------------------------------------------------
@@ -444,7 +448,7 @@ class InsightEngine:
         if not calendar_entities:
             return []
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         end = now + timedelta(hours=24)
         all_events = []
 
@@ -736,7 +740,7 @@ class InsightEngine:
                     try:
                         fc_dt = datetime.fromisoformat(fc_time.replace("Z", "+00:00"))
                         fc_local = fc_dt.astimezone().replace(tzinfo=None)
-                        hours_until = (fc_local - datetime.now()).total_seconds() / 3600
+                        hours_until = (fc_local - datetime.now(timezone.utc)).total_seconds() / 3600
                         if hours_until <= 0:
                             time_hint = "jetzt"
                         elif hours_until < 1:
@@ -888,7 +892,7 @@ class InsightEngine:
 
         try:
             # 7-Tage-Durchschnitt + heutiger Verbrauch per mget laden
-            now_ts = datetime.now()
+            now_ts = datetime.now(timezone.utc)
             all_keys = [
                 f"mha:energy:daily:{(now_ts - timedelta(days=i)).strftime('%Y-%m-%d')}"
                 for i in range(1, 8)
@@ -926,7 +930,7 @@ class InsightEngine:
                 return None
 
             # Hochrechnung auf Tagesende
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             hours_passed = now.hour + now.minute / 60.0
             if hours_passed < 1:
                 return None  # Zu frueh fuer sinnvolle Hochrechnung (Division-by-zero-Schutz)
@@ -981,12 +985,12 @@ class InsightEngine:
         if self.redis:
             away_since = await self.redis.get(away_key)
             if not away_since:
-                await self.redis.setex(away_key, 86400, datetime.now().isoformat())
+                await self.redis.setex(away_key, 86400, datetime.now(timezone.utc).isoformat())
                 return None  # Gerade erst gegangen
             try:
                 away_since = away_since.decode() if isinstance(away_since, bytes) else away_since
                 since_dt = datetime.fromisoformat(away_since)
-                minutes_away = (datetime.now() - since_dt).total_seconds() / 60
+                minutes_away = (datetime.now(timezone.utc) - since_dt).total_seconds() / 60
                 if minutes_away < self.away_minutes:
                     return None  # Noch nicht lang genug weg
             except (ValueError, TypeError):
@@ -1033,7 +1037,7 @@ class InsightEngine:
             return None
 
         try:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             # Snapshot von vor 2h holen
             snapshot_key = f"mha:health:snapshot:{(now - timedelta(hours=2)).strftime('%Y-%m-%d:%H')}"
             snapshot_raw = await self.redis.get(snapshot_key)
@@ -1217,7 +1221,7 @@ class InsightEngine:
             try:
                 await self.redis.lpush(
                     "mha:insight:temp_history",
-                    json.dumps({"ts": datetime.now().isoformat(), "temps": temps}),
+                    json.dumps({"ts": datetime.now(timezone.utc).isoformat(), "temps": temps}),
                 )
                 await self.redis.ltrim("mha:insight:temp_history", 0, self.max_temp_snapshots - 1)
                 await self.redis.expire("mha:insight:temp_history", 6 * 3600)
@@ -1234,7 +1238,8 @@ class InsightEngine:
 
         try:
             snapshots_raw = await self.redis.lrange("mha:insight:temp_history", 0, self.max_temp_snapshots - 1)  # H5
-        except Exception:
+        except Exception as e:
+            logger.debug("Insight-Analyse fehlgeschlagen: %s", e)
             return None
 
         if len(snapshots_raw) < 3:
@@ -1294,7 +1299,7 @@ class InsightEngine:
         if not data.get("calendar_events") or not data.get("forecast"):
             return None
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         # Termine in den naechsten 18 Stunden suchen
         for event in data["calendar_events"]:
@@ -1304,7 +1309,8 @@ class InsightEngine:
             try:
                 if isinstance(start, str):
                     event_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
-                    event_dt = event_dt.replace(tzinfo=None) if event_dt.tzinfo else event_dt
+                    if event_dt.tzinfo is None:
+                        event_dt = event_dt.replace(tzinfo=timezone.utc)
                 else:
                     continue
             except (ValueError, TypeError):
@@ -1407,7 +1413,7 @@ class InsightEngine:
 
         # Gaeste-Event in den naechsten 4 Stunden?
         guest_event = None
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         for ev in events:
             title_lower = ev.get("summary", "").lower()
             start_raw = ev.get("start", "")
@@ -1422,8 +1428,9 @@ class InsightEngine:
                 continue  # Skip all-day events
             try:
                 start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
-                start_local = start_dt.astimezone().replace(tzinfo=None)
-                hours_until = (start_local - now).total_seconds() / 3600
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=timezone.utc)
+                hours_until = (start_dt - now).total_seconds() / 3600
                 if 0 < hours_until <= 4:
                     guest_event = ev
                     break
@@ -1571,7 +1578,7 @@ class InsightEngine:
         if not self.activity:
             return None
 
-        hour = datetime.now().hour
+        hour = datetime.now(_LOCAL_TZ).hour
         if hour < 18:  # Erst abends relevant
             return None
 
@@ -1619,7 +1626,8 @@ class InsightEngine:
                     "climate_issues": climate_hints,
                 },
             }
-        except Exception:
+        except Exception as e:
+            logger.debug("Insight-Analyse fehlgeschlagen: %s", e)
             return None
 
     async def _check_humidity_contradiction(self, data: dict) -> Optional[dict]:
@@ -1713,7 +1721,7 @@ class InsightEngine:
 
         Kreuz-referenziert: Uhrzeit × offene Fenster/Türen × Anwesenheit × Aktivitaet.
         """
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         if now.hour < 23 and now.hour >= 6:
             return None
 
@@ -1858,7 +1866,7 @@ class InsightEngine:
         # Alle weg ODER nach Mitternacht + keine Aktivitaet
         persons_home = data.get("persons_home", [])
         persons_away = data.get("persons_away", [])
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         is_late_night = 0 <= now.hour < 5
 
         all_away = len(persons_home) == 0 and len(persons_away) > 0
@@ -1916,13 +1924,13 @@ class InsightEngine:
         last = self._weather_action_cooldown.get(action_key)
         if last is None:
             return False
-        return (datetime.now() - last).total_seconds() < 3600
+        return (datetime.now(timezone.utc) - last).total_seconds() < 3600
 
     def _set_weather_action_cooldown(self, action_key: str) -> None:
         """Setzt Cooldown fuer eine Wetter-Aktion (60 Min)."""
-        self._weather_action_cooldown[action_key] = datetime.now()
+        self._weather_action_cooldown[action_key] = datetime.now(timezone.utc)
         # Abgelaufene Eintraege aufraeumen (aelter als 2h)
-        cutoff = datetime.now() - timedelta(hours=2)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=2)
         expired = [k for k, v in self._weather_action_cooldown.items() if v < cutoff]
         for k in expired:
             del self._weather_action_cooldown[k]
@@ -2008,7 +2016,7 @@ class InsightEngine:
         hours_until_rain: float = 0
         hours_until_storm: float = 0
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         for fc in forecast:
             condition = str(fc.get("condition", "")).lower()
@@ -2211,7 +2219,8 @@ class InsightEngine:
                     if cursor == 0:
                         break
                 status["active_cooldowns"] = cooldown_count
-            except Exception:
+            except Exception as e:
+                logger.debug("Cooldown-Status Abruf fehlgeschlagen: %s", e)
                 status["active_cooldowns"] = -1
 
         return status

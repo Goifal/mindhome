@@ -10,6 +10,7 @@ import logging
 import math
 import os
 import re
+import threading
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Raum-Profile laden
 _ROOM_PROFILES = {}
+_ROOM_PROFILES_LOCK = threading.Lock()
 _SEASONAL_CONFIG = {}
 _config_dir = Path(__file__).parent.parent / "config"
 try:
@@ -186,7 +188,7 @@ class ContextBuilder:
         context = {}
 
         # Zeitkontext — immer (trivial, kein I/O)
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         context["time"] = {
             "datetime": now.strftime("%Y-%m-%d %H:%M"),
             "weekday": self._weekday_german(now.weekday()),
@@ -329,8 +331,8 @@ class ContextBuilder:
                     if _active_scene:
                         _active_scene = _active_scene.decode() if isinstance(_active_scene, bytes) else _active_scene
                         context["house"]["active_mood_scene"] = _active_scene
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Aktive Szene aus Redis laden fehlgeschlagen: %s", e)
 
             # MCU-JARVIS: Anomalie-Kontext — ungewöhnliche Zustaende erkennen
             if yaml_config.get("mcu_intelligence", {}).get("anomaly_detection", True):
@@ -487,8 +489,8 @@ class ContextBuilder:
                         person_facts = self.semantic._get_cached_relationship(pattern, keywords, known_names)
                         if person_facts:
                             return person_facts
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Personen-Fakten Abruf fehlgeschlagen: %s", e)
                 break
 
         return ""
@@ -626,7 +628,7 @@ class ContextBuilder:
                     try:
                         changed_dt = datetime.fromisoformat(last_changed.replace("Z", "+00:00"))
                         # P06c DL3-CP8: Einheitliche TZ-Behandlung — immer aware
-                        now_dt = datetime.now(timezone.utc) if changed_dt.tzinfo else datetime.now()
+                        now_dt = datetime.now(timezone.utc)
                         diff_s = (now_dt - changed_dt).total_seconds()
                         if 0 <= diff_s < 7200:  # letzte 2 Stunden
                             name = _sanitize_for_prompt(
@@ -1165,7 +1167,7 @@ class ContextBuilder:
         if override_type in overrides:
             override = overrides[override_type]
             # Zeitbasiert: Prüfen ob Override gerade aktiv
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             if "active_hours" in override:
                 start_h, end_h = override["active_hours"]
                 if start_h <= end_h:
@@ -1186,16 +1188,17 @@ class ContextBuilder:
         sich die Änderung für diesen Raum merken soll.
         """
         room_lower = room_name.lower().replace(" ", "_")
-        if room_lower not in _ROOM_PROFILES:
-            _ROOM_PROFILES[room_lower] = {"name": room_name}
+        with _ROOM_PROFILES_LOCK:
+            if room_lower not in _ROOM_PROFILES:
+                _ROOM_PROFILES[room_lower] = {"name": room_name}
 
-        profile = _ROOM_PROFILES[room_lower]
-        if "overrides" not in profile:
-            profile["overrides"] = {}
-        profile["overrides"][override_type] = {
-            **value,
-            "learned_at": datetime.now().isoformat(),
-        }
+            profile = _ROOM_PROFILES[room_lower]
+            if "overrides" not in profile:
+                profile["overrides"] = {}
+            profile["overrides"][override_type] = {
+                **value,
+                "learned_at": datetime.now(timezone.utc).isoformat(),
+            }
 
         # In YAML schreiben
         try:
@@ -1214,7 +1217,8 @@ class ContextBuilder:
                 with os.fdopen(tmp_fd, "w") as tmp_f:
                     yaml.safe_dump(data, tmp_f, allow_unicode=True, default_flow_style=False)
                 os.replace(tmp_path, str(room_file))
-            except Exception:
+            except Exception as e:
+                logger.debug("Raum-Override Datei schreiben fehlgeschlagen: %s", e)
                 if os.path.exists(tmp_path):
                     os.unlink(tmp_path)
                 raise
@@ -1388,7 +1392,7 @@ class ContextBuilder:
 
     def _get_seasonal_context(self, states: Optional[list]) -> dict:
         """Ermittelt saisonale Kontextdaten."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         month = now.month
 
         # Jahreszeit bestimmen

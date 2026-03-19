@@ -214,8 +214,8 @@ class LearningTransfer:
                                     source_room, target_room, domain,
                                 )
                                 break
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Fenster-Status Pruefung fuer Transfer fehlgeschlagen: %s", e)
                 if _skip_transfer:
                     continue
 
@@ -377,7 +377,8 @@ class LearningTransfer:
         tz_name = yaml_config.get("timezone", "Europe/Berlin")
         try:
             local_tz = ZoneInfo(tz_name)
-        except Exception:
+        except Exception as e:
+            logger.debug("Zeitzone '%s' nicht verfuegbar, Fallback auf Europe/Berlin: %s", tz_name, e)
             local_tz = ZoneInfo("Europe/Berlin")
 
         if hour < 0:

@@ -4,7 +4,7 @@ Tests fuer Smart Shopping - Verbrauchsprognose und Einkaufslisten-Logik.
 
 import json
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock, AsyncMock
 
 from assistant.smart_shopping import SmartShopping
@@ -209,7 +209,7 @@ class TestGetPredictions:
 class TestGetItemsRunningLow:
     @pytest.mark.asyncio
     async def test_item_within_threshold(self, shop, redis_mock):
-        tomorrow = (datetime.now() + timedelta(hours=12)).isoformat()
+        tomorrow = (datetime.now(timezone.utc) + timedelta(hours=12)).isoformat()
         pred = json.dumps({
             "item": "Milch",
             "next_expected": tomorrow,
@@ -223,7 +223,7 @@ class TestGetItemsRunningLow:
 
     @pytest.mark.asyncio
     async def test_item_past_due_is_high_urgency(self, shop, redis_mock):
-        yesterday = (datetime.now() - timedelta(days=2)).isoformat()
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
         pred = json.dumps({
             "item": "Eier",
             "next_expected": yesterday,
@@ -237,7 +237,7 @@ class TestGetItemsRunningLow:
 
     @pytest.mark.asyncio
     async def test_low_confidence_excluded(self, shop, redis_mock):
-        tomorrow = (datetime.now() + timedelta(hours=12)).isoformat()
+        tomorrow = (datetime.now(timezone.utc) + timedelta(hours=12)).isoformat()
         pred = json.dumps({
             "item": "Milch",
             "next_expected": tomorrow,
@@ -250,7 +250,7 @@ class TestGetItemsRunningLow:
 
     @pytest.mark.asyncio
     async def test_far_future_item_excluded(self, shop, redis_mock):
-        far_future = (datetime.now() + timedelta(days=30)).isoformat()
+        far_future = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
         pred = json.dumps({
             "item": "Salz",
             "next_expected": far_future,
@@ -425,8 +425,8 @@ class TestCheckAndNotify:
 
     @pytest.mark.asyncio
     async def test_notifies_running_low_items(self, shop, redis_mock):
-        from datetime import datetime, timedelta
-        yesterday = (datetime.now() - timedelta(days=1)).isoformat()
+        from datetime import datetime, timedelta, timezone
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
         pred = json.dumps({
             "item": "Milch",
             "next_expected": yesterday,
@@ -444,8 +444,8 @@ class TestCheckAndNotify:
 
     @pytest.mark.asyncio
     async def test_cooldown_prevents_notification(self, shop, redis_mock):
-        from datetime import datetime, timedelta
-        yesterday = (datetime.now() - timedelta(days=1)).isoformat()
+        from datetime import datetime, timedelta, timezone
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
         pred = json.dumps({
             "item": "Milch",
             "next_expected": yesterday,
@@ -463,8 +463,8 @@ class TestCheckAndNotify:
 
     @pytest.mark.asyncio
     async def test_notify_callback_exception_handled(self, shop, redis_mock):
-        from datetime import datetime, timedelta
-        yesterday = (datetime.now() - timedelta(days=1)).isoformat()
+        from datetime import datetime, timedelta, timezone
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
         pred = json.dumps({
             "item": "Butter",
             "next_expected": yesterday,
@@ -481,8 +481,8 @@ class TestCheckAndNotify:
 
     @pytest.mark.asyncio
     async def test_notifies_item_soon_to_expire(self, shop, redis_mock):
-        from datetime import datetime, timedelta
-        tomorrow = (datetime.now() + timedelta(hours=12)).isoformat()
+        from datetime import datetime, timedelta, timezone
+        tomorrow = (datetime.now(timezone.utc) + timedelta(hours=12)).isoformat()
         pred = json.dumps({
             "item": "Eier",
             "next_expected": tomorrow,
@@ -624,8 +624,8 @@ class TestGetShoppingContextEdgeCases:
     @pytest.mark.asyncio
     async def test_includes_running_low_items(self, shop, ha_mock, redis_mock):
         ha_mock.api_get = AsyncMock(return_value=[])
-        from datetime import datetime, timedelta
-        yesterday = (datetime.now() - timedelta(days=1)).isoformat()
+        from datetime import datetime, timedelta, timezone
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
         pred = json.dumps({
             "item": "Milch",
             "next_expected": yesterday,

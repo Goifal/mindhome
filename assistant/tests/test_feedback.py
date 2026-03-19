@@ -3,7 +3,7 @@
 import json
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from assistant.feedback import (
     FeedbackTracker,
@@ -82,7 +82,7 @@ async def test_track_notification(tracker, mock_redis):
 async def test_record_feedback_from_pending(tracker, mock_redis):
     tracker.redis = mock_redis
     mock_redis.get.return_value = str(DEFAULT_SCORE)
-    tracker._pending["n1"] = {"event_type": "door_open", "sent_at": datetime.now()}
+    tracker._pending["n1"] = {"event_type": "door_open", "sent_at": datetime.now(timezone.utc)}
     result = await tracker.record_feedback("n1", "thanked")
     assert result is not None
     assert result["event_type"] == "door_open"
@@ -281,7 +281,7 @@ async def test_check_timeouts(tracker, mock_redis):
     mock_redis.get.return_value = str(DEFAULT_SCORE)
     tracker._pending["n1"] = {
         "event_type": "door_open",
-        "sent_at": datetime.now() - timedelta(seconds=200),
+        "sent_at": datetime.now(timezone.utc) - timedelta(seconds=200),
     }
     await tracker._check_timeouts()
     assert "n1" not in tracker._pending
@@ -294,7 +294,7 @@ async def test_check_timeouts_not_expired(tracker, mock_redis):
     tracker.redis = mock_redis
     tracker._pending["n1"] = {
         "event_type": "door_open",
-        "sent_at": datetime.now(),
+        "sent_at": datetime.now(timezone.utc),
     }
     await tracker._check_timeouts()
     assert "n1" in tracker._pending
@@ -311,7 +311,7 @@ async def test_record_feedback_empty_event_type(tracker, mock_redis):
     tracker.redis = mock_redis
     # notification_id not in pending, so fallback to notification_id as event_type
     # But if we pass empty string, event_type will be empty
-    tracker._pending["n_empty"] = {"event_type": "", "sent_at": datetime.now()}
+    tracker._pending["n_empty"] = {"event_type": "", "sent_at": datetime.now(timezone.utc)}
     result = await tracker.record_feedback("n_empty", "acknowledged")
     assert result is None
 
@@ -517,14 +517,14 @@ async def test_check_timeouts_concurrent_removal(tracker, mock_redis):
     # Add expired entry
     tracker._pending["n_race"] = {
         "event_type": "door_open",
-        "sent_at": datetime.now() - timedelta(seconds=200),
+        "sent_at": datetime.now(timezone.utc) - timedelta(seconds=200),
     }
     # Remove it before _check_timeouts processes it
     # by patching the lock to remove it between iterations
     original_pop = tracker._pending.pop
 
     async def patched_check():
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         timeout = timedelta(seconds=tracker.auto_timeout_seconds)
         expired = []
         async with tracker._pending_lock:

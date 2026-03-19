@@ -12,7 +12,7 @@ das Verhalten entsprechend an:
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as redis
@@ -77,6 +77,7 @@ class FeedbackTracker:
         self.redis = redis_client
         self._running = True
         self._timeout_task = asyncio.create_task(self._auto_timeout_loop())
+        self._timeout_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         logger.info("FeedbackTracker initialisiert")
 
     async def stop(self):
@@ -96,7 +97,7 @@ class FeedbackTracker:
         async with self._pending_lock:
             self._pending[notification_id] = {
                 "event_type": event_type,
-                "sent_at": datetime.now(),
+                "sent_at": datetime.now(timezone.utc),
             }
 
         # Gesamt-Zaehler erhoehen
@@ -439,7 +440,7 @@ class FeedbackTracker:
         entry = json.dumps({
             "type": feedback_type,
             "delta": delta,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
         key = f"mha:feedback:history:{event_type}"
@@ -478,7 +479,7 @@ class FeedbackTracker:
 
     async def _check_timeouts(self):
         """Markiert alte Meldungen ohne Feedback als 'ignored'."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         timeout = timedelta(seconds=self.auto_timeout_seconds)
 
         expired = []
@@ -487,10 +488,20 @@ class FeedbackTracker:
                 if now - info["sent_at"] > timeout:
                     expired.append(nid)
 
+        # Event-Typen die keinen Auto-Timeout-Abzug bekommen
+        # (TTS-only Meldungen: User kann nicht "acknowledgen")
+        _NO_AUTO_TIMEOUT_EVENTS = {"observation", "batch_summary", "ambient_status"}
+
         for nid in expired:
             async with self._pending_lock:
                 info = self._pending.pop(nid, None)
             if info is None:
+                continue
+            # TTS-only Meldungen: kein Score-Abzug bei Timeout
+            if info.get("event_type") in _NO_AUTO_TIMEOUT_EVENTS:
+                logger.debug(
+                    "Auto-Timeout uebersprungen (TTS-only): '%s'", info["event_type"]
+                )
                 continue
             await self._update_score(info["event_type"], FEEDBACK_DELTAS["ignored"])
             await self._store_feedback_entry(

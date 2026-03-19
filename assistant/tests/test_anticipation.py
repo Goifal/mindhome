@@ -13,7 +13,7 @@ Testet:
 
 import json
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from assistant.anticipation import AnticipationEngine
@@ -106,7 +106,7 @@ class TestActionLogging:
 class TestTimePatterns:
 
     def test_detect_time_pattern(self, anticipation):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         entries = []
         # 10 gleiche Aktionen am gleichen Wochentag/Stunde
         for i in range(10):
@@ -129,7 +129,7 @@ class TestTimePatterns:
     def test_too_few_entries(self, anticipation):
         entries = [
             {"action": "set_light", "args": "{}", "weekday": 0, "hour": 22,
-             "timestamp": datetime.now().isoformat(), "weather": ""},
+             "timestamp": datetime.now(timezone.utc).isoformat(), "weather": ""},
         ]
         patterns = anticipation._detect_time_patterns(entries)
         assert len(patterns) == 0
@@ -142,7 +142,7 @@ class TestTimePatterns:
 class TestSequencePatterns:
 
     def test_detect_sequence(self, anticipation):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         entries = []
         # 8 Paare von set_light → set_cover innerhalb 2 Min
         for i in range(8):
@@ -163,7 +163,7 @@ class TestSequencePatterns:
         assert patterns[0]["follow_action"] == "set_cover"
 
     def test_no_sequence_same_action(self, anticipation):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         entries = []
         for i in range(10):
             entries.append({
@@ -182,7 +182,7 @@ class TestContextPatterns:
 
     def test_detect_evening_cluster(self, anticipation):
         entries = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         # 15 set_cover Aktionen abends, 2 morgens
         for i in range(15):
             entries.append({
@@ -203,7 +203,7 @@ class TestContextPatterns:
 
     def test_weather_context(self, anticipation):
         entries = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         # 8 set_cover bei Regen, 2 bei Sonne
         for i in range(8):
             entries.append({
@@ -230,7 +230,7 @@ class TestContextPatterns:
 class TestCausalChains:
 
     def test_detect_chain_3_actions(self, anticipation):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         entries = []
         # 4 gleiche Ketten: set_light → set_cover → set_climate innerhalb 5 Min
         for i in range(4):
@@ -255,7 +255,7 @@ class TestCausalChains:
         assert len(causal[0]["actions"]) >= 3
 
     def test_no_chain_too_few_occurrences(self, anticipation):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         entries = []
         # Nur 1 Kette → unter Minimum
         entries.append({"action": "a", "args": "{}", "weekday": 0, "hour": 10,
@@ -346,7 +346,7 @@ class TestDetectPatterns:
     async def test_too_few_entries(self, anticipation_with_redis):
         anticipation_with_redis.redis.lrange = AsyncMock(return_value=[
             json.dumps({"action": "a", "args": "{}", "weekday": 0, "hour": 10,
-                        "timestamp": datetime.now().isoformat(), "weather": ""}),
+                        "timestamp": datetime.now(timezone.utc).isoformat(), "weather": ""}),
         ])
         result = await anticipation_with_redis.detect_patterns()
         assert result == []  # < 10 Eintraege
@@ -400,7 +400,7 @@ class TestDetectPatternsBytes:
     @pytest.mark.asyncio
     async def test_detect_patterns_bytes_entries(self, anticipation_with_redis):
         """Handles bytes entries in action log (line 135)."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         entries = []
         for i in range(15):
             entries.append(json.dumps({
@@ -438,9 +438,9 @@ class TestTimePatternPersonFilter:
         """Person filter with too few entries returns [] (lines 176-178)."""
         entries = [
             {"action": "set_light", "args": "{}", "weekday": 0, "hour": 22,
-             "timestamp": datetime.now().isoformat(), "weather": "", "person": "Max"},
+             "timestamp": datetime.now(timezone.utc).isoformat(), "weather": "", "person": "Max"},
             {"action": "set_light", "args": "{}", "weekday": 0, "hour": 22,
-             "timestamp": datetime.now().isoformat(), "weather": "", "person": "Anna"},
+             "timestamp": datetime.now(timezone.utc).isoformat(), "weather": "", "person": "Anna"},
         ]
         result = anticipation._detect_time_patterns(entries, person="Max")
         assert result == []
@@ -460,7 +460,7 @@ class TestTimePatternPersonFilter:
 
     def test_time_pattern_with_person(self, anticipation):
         """Time pattern includes person field when filtered (line 241)."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         entries = []
         for i in range(10):
             entries.append({
@@ -482,7 +482,7 @@ class TestSequencePatternsEdgeCases:
 
     def test_sequence_person_filter(self, anticipation):
         """Sequence patterns filter by person (line 258)."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         entries = []
         for i in range(8):
             t = now - timedelta(days=i)
@@ -511,7 +511,7 @@ class TestSequencePatternsEdgeCases:
 
     def test_sequence_with_person_in_pattern(self, anticipation):
         """Sequence pattern includes person field (line 309)."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         entries = []
         for i in range(8):
             t = now - timedelta(days=i)
@@ -538,7 +538,7 @@ class TestContextPatternsEdgeCases:
     def test_context_person_filter(self, anticipation):
         """Context patterns filter by person (line 329)."""
         entries = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         for i in range(20):
             entries.append({
                 "action": "set_cover", "args": "{}", "weekday": 0,
@@ -551,14 +551,14 @@ class TestContextPatternsEdgeCases:
     def test_context_empty_action_skipped(self, anticipation):
         """Empty action is skipped (line 337)."""
         entries = [{"action": "", "args": "{}", "weekday": 0, "hour": 10,
-                    "timestamp": datetime.now().isoformat(), "weather": ""}]
+                    "timestamp": datetime.now(timezone.utc).isoformat(), "weather": ""}]
         result = anticipation._detect_context_patterns(entries)
         assert result == []
 
     def test_context_night_cluster(self, anticipation):
         """Night cluster entries (line 345)."""
         entries = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         for i in range(10):
             entries.append({
                 "action": "set_light", "args": "{}", "weekday": 0,
@@ -571,7 +571,7 @@ class TestContextPatternsEdgeCases:
     def test_context_action_too_few_total(self, anticipation):
         """Action with < 5 total occurrences skipped (line 364)."""
         entries = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         for i in range(6):
             entries.append({
                 "action": "rare_action" if i < 3 else "common_action", "args": "{}", "weekday": 0,
@@ -586,7 +586,7 @@ class TestContextPatternsEdgeCases:
     def test_context_weather_person(self, anticipation):
         """Weather pattern includes person (line 428)."""
         entries = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         for i in range(10):
             entries.append({
                 "action": "set_cover", "args": "{}", "weekday": 0,
@@ -611,9 +611,9 @@ class TestCausalChainsEdgeCases:
             {"action": "a", "args": "{}", "weekday": 0, "hour": 10,
              "timestamp": "invalid", "weather": ""},
             {"action": "b", "args": "{}", "weekday": 0, "hour": 10,
-             "timestamp": datetime.now().isoformat(), "weather": ""},
+             "timestamp": datetime.now(timezone.utc).isoformat(), "weather": ""},
             {"action": "c", "args": "{}", "weekday": 0, "hour": 10,
-             "timestamp": datetime.now().isoformat(), "weather": ""},
+             "timestamp": datetime.now(timezone.utc).isoformat(), "weather": ""},
         ]
         with patch("assistant.anticipation.yaml_config", {
             "anticipation": {"causal_chain_window_min": 10, "causal_chain_min_occurrences": 1},
@@ -623,7 +623,7 @@ class TestCausalChainsEdgeCases:
 
     def test_causal_chain_invalid_inner_timestamp(self, anticipation):
         """Invalid timestamp inside cluster skipped (lines 486-488)."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         entries = [
             {"action": "a", "args": "{}", "weekday": 0, "hour": 10,
              "timestamp": now.isoformat(), "weather": ""},
@@ -640,7 +640,7 @@ class TestCausalChainsEdgeCases:
 
     def test_causal_chain_below_confidence(self, anticipation):
         """Chain below min_confidence is skipped (line 515)."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         entries = []
         # Create many entries to dilute confidence
         for i in range(100):
@@ -666,7 +666,7 @@ class TestCausalChainsEdgeCases:
 
     def test_causal_chain_person_in_result(self, anticipation):
         """Chain pattern includes person (line 527)."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         entries = []
         for rep in range(4):
             t = now - timedelta(hours=rep * 2)
@@ -707,7 +707,7 @@ class TestGetSuggestions:
     @pytest.mark.asyncio
     async def test_time_pattern_matching(self, anticipation_with_redis):
         """Time pattern matching current time generates suggestion (lines 610-619)."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         pattern = {
             "type": "time",
             "action": "set_light",
@@ -746,7 +746,7 @@ class TestGetSuggestions:
     @pytest.mark.asyncio
     async def test_sequence_pattern_matching(self, anticipation_with_redis):
         """Sequence pattern with recent trigger generates suggestion (lines 621-641)."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         pattern = {
             "type": "sequence",
             "trigger_action": "set_light",
@@ -769,7 +769,7 @@ class TestGetSuggestions:
     @pytest.mark.asyncio
     async def test_context_time_cluster_matching(self, anticipation_with_redis):
         """Context time_cluster pattern matching (lines 643-672)."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         hour = now.hour
         if 5 <= hour < 12:
             cluster = "morning"
@@ -817,7 +817,7 @@ class TestGetSuggestions:
     @pytest.mark.asyncio
     async def test_already_suggested_skipped(self, anticipation_with_redis):
         """Already suggested patterns are skipped (lines 604-606)."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         pattern = {
             "type": "time",
             "action": "set_light",
@@ -837,7 +837,7 @@ class TestGetSuggestions:
     @pytest.mark.asyncio
     async def test_suggestion_ask_mode(self, anticipation_with_redis):
         """Low confidence gets ask mode (line 682)."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         pattern = {
             "type": "time",
             "action": "set_light",
@@ -921,7 +921,7 @@ class TestCheckLoop:
         """Check loop processes suggestions and notifies (lines 750-754)."""
         import asyncio
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         suggestion = {
             "mode": "suggest",
             "description": "Test suggestion",
@@ -1062,7 +1062,7 @@ class TestPhase3APredictFuture:
         for i in range(50):
             entry = json.dumps({
                 "action": "make_coffee",
-                "weekday": datetime.now().weekday(),
+                "weekday": datetime.now(timezone.utc).weekday(),
                 "hour": 7,
                 "timestamp": f"2026-03-{10+i%15:02d}T07:00:00",
             })
