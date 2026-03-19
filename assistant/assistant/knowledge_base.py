@@ -96,7 +96,7 @@ class KnowledgeBase:
             await self.ingest_all()
 
         # Aktuelle Datei-Zeitstempel merken fuer Watch
-        self._snapshot_file_mtimes()
+        await asyncio.to_thread(self._snapshot_file_mtimes)
 
         # Auto-Watch starten: Prueeft regelmaessig auf neue/geaenderte Dateien
         watch_interval = kb_config.get("watch_interval_seconds", 120)
@@ -205,10 +205,14 @@ class KnowledgeBase:
         if not self._knowledge_dir or not self.chroma_collection:
             return 0
 
-        filepaths = []
-        for ext in SUPPORTED_EXTENSIONS:
-            # Rekursiv suchen (** statt nur direkte Dateien)
-            filepaths.extend(self._knowledge_dir.rglob(f"*{ext}"))
+        def _collect_filepaths():
+            result = []
+            for ext in SUPPORTED_EXTENSIONS:
+                # Rekursiv suchen (** statt nur direkte Dateien)
+                result.extend(self._knowledge_dir.rglob(f"*{ext}"))
+            return result
+
+        filepaths = await asyncio.to_thread(_collect_filepaths)
 
         if not filepaths:
             return 0
@@ -558,13 +562,15 @@ class KnowledgeBase:
             return 0
 
         # Datei finden (auch in Unterordnern)
-        filepath = None
-        for f in self._knowledge_dir.rglob(filename):
-            if f.is_file():
-                filepath = f
-                break
+        def _find_file():
+            for f in self._knowledge_dir.rglob(filename):
+                if f.is_file():
+                    return f
+            return None
 
-        if not filepath or not filepath.exists():
+        filepath = await asyncio.to_thread(_find_file)
+
+        if not filepath:
             logger.warning("Knowledge Base: Datei '%s' nicht gefunden", filename)
             return 0
 

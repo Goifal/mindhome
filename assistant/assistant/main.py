@@ -8190,66 +8190,69 @@ async def ui_system_status(token: str = ""):
         ollama_models = "\n".join(["NAME                           SIZE"] + lines)
 
     # Disk — alle physischen Partitionen erkennen (inkl. zweite SSD)
-    disk_info = {}
-    disk_path = _REPO_DIR if _REPO_DIR.exists() else Path("/app")
-    total, used, free = shutil.disk_usage(str(disk_path))
-    disk_info["system"] = {
-        "total_gb": round(total / (1024**3), 1),
-        "used_gb": round(used / (1024**3), 1),
-        "free_gb": round(free / (1024**3), 1),
-    }
-    # Weitere Partitionen aus /proc/mounts lesen
-    try:
-        seen_devs = set()
-        with open("/proc/mounts") as f:
-            for line in f:
-                parts_m = line.split()
-                if len(parts_m) < 2:
-                    continue
-                dev, mount = parts_m[0], parts_m[1]
-                if not dev.startswith("/dev/") or dev in seen_devs:
-                    continue
-                # Nur echte Block-Devices (sd*, nvme*, vd*), keine loop/ram
-                base = dev.split("/")[-1]
-                if not any(base.startswith(p) for p in ("sd", "nvme", "vd", "hd")):
-                    continue
-                seen_devs.add(dev)
-                try:
-                    t, u, fr = shutil.disk_usage(mount)
-                    total_gb = round(t / (1024**3), 1)
-                    # Ueberspringe wenn es dasselbe wie system ist
-                    if total_gb == disk_info["system"]["total_gb"]:
+    def _read_disk_and_ram():
+        disk_info = {}
+        disk_path = _REPO_DIR if _REPO_DIR.exists() else Path("/app")
+        total, used, free = shutil.disk_usage(str(disk_path))
+        disk_info["system"] = {
+            "total_gb": round(total / (1024**3), 1),
+            "used_gb": round(used / (1024**3), 1),
+            "free_gb": round(free / (1024**3), 1),
+        }
+        # Weitere Partitionen aus /proc/mounts lesen
+        try:
+            seen_devs = set()
+            with open("/proc/mounts") as f:
+                for line in f:
+                    parts_m = line.split()
+                    if len(parts_m) < 2:
                         continue
-                    disk_info[mount] = {
-                        "total_gb": total_gb,
-                        "used_gb": round(u / (1024**3), 1),
-                        "free_gb": round(fr / (1024**3), 1),
-                        "device": dev,
-                    }
-                except Exception as e:
-                    logger.debug("Unhandled: %s", e)
-    except Exception as e:
-        logger.debug("Unhandled: %s", e)
-    # RAM (via /proc/meminfo)
-    ram_info = {}
-    try:
-        with open("/proc/meminfo") as f:
-            meminfo = {}
-            for line in f:
-                parts = line.split(":")
-                if len(parts) == 2:
-                    meminfo[parts[0].strip()] = int(parts[1].strip().split()[0])
-            total_kb = meminfo.get("MemTotal", 0)
-            avail_kb = meminfo.get("MemAvailable", 0)
-            used_kb = total_kb - avail_kb
-            ram_info = {
-                "total_gb": round(total_kb / (1024**2), 1),
-                "used_gb": round(used_kb / (1024**2), 1),
-                "free_gb": round(avail_kb / (1024**2), 1),
-                "percent": round(used_kb / total_kb * 100, 1) if total_kb else 0,
-            }
-    except Exception as e:
-        logger.debug("Unhandled: %s", e)
+                    dev, mount = parts_m[0], parts_m[1]
+                    if not dev.startswith("/dev/") or dev in seen_devs:
+                        continue
+                    # Nur echte Block-Devices (sd*, nvme*, vd*), keine loop/ram
+                    base = dev.split("/")[-1]
+                    if not any(base.startswith(p) for p in ("sd", "nvme", "vd", "hd")):
+                        continue
+                    seen_devs.add(dev)
+                    try:
+                        t, u, fr = shutil.disk_usage(mount)
+                        total_gb = round(t / (1024**3), 1)
+                        # Ueberspringe wenn es dasselbe wie system ist
+                        if total_gb == disk_info["system"]["total_gb"]:
+                            continue
+                        disk_info[mount] = {
+                            "total_gb": total_gb,
+                            "used_gb": round(u / (1024**3), 1),
+                            "free_gb": round(fr / (1024**3), 1),
+                            "device": dev,
+                        }
+                    except Exception as e:
+                        logger.debug("Unhandled: %s", e)
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
+        # RAM (via /proc/meminfo)
+        ram_info = {}
+        try:
+            with open("/proc/meminfo") as f:
+                meminfo = {}
+                for line in f:
+                    parts = line.split(":")
+                    if len(parts) == 2:
+                        meminfo[parts[0].strip()] = int(parts[1].strip().split()[0])
+                total_kb = meminfo.get("MemTotal", 0)
+                avail_kb = meminfo.get("MemAvailable", 0)
+                used_kb = total_kb - avail_kb
+                ram_info = {
+                    "total_gb": round(total_kb / (1024**2), 1),
+                    "used_gb": round(used_kb / (1024**2), 1),
+                    "free_gb": round(avail_kb / (1024**2), 1),
+                    "percent": round(used_kb / total_kb * 100, 1) if total_kb else 0,
+                }
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
+        return disk_info, ram_info
+    disk_info, ram_info = await asyncio.to_thread(_read_disk_and_ram)
     # CPU Load
     cpu_info = {}
     try:
@@ -8268,16 +8271,19 @@ async def ui_system_status(token: str = ""):
     gpu_info = {}
     _gpu_status_file = Path("/var/lib/mindhome/gpu_status.json")
     try:
-        if _gpu_status_file.exists():
-            data = json.loads(_gpu_status_file.read_text())
-            if data.get("available") and data.get("name"):
-                gpu_info = {
-                    "name": data["name"],
-                    "memory_used_mb": int(data["memory_used_mb"]),
-                    "memory_total_mb": int(data["memory_total_mb"]),
-                    "utilization_percent": int(data["utilization_percent"]),
-                    "temperature_c": int(data["temperature_c"]),
-                }
+        def _read_gpu_status():
+            if _gpu_status_file.exists():
+                data = json.loads(_gpu_status_file.read_text())
+                if data.get("available") and data.get("name"):
+                    return {
+                        "name": data["name"],
+                        "memory_used_mb": int(data["memory_used_mb"]),
+                        "memory_total_mb": int(data["memory_total_mb"]),
+                        "utilization_percent": int(data["utilization_percent"]),
+                        "temperature_c": int(data["temperature_c"]),
+                    }
+            return {}
+        gpu_info = await asyncio.to_thread(_read_gpu_status)
     except Exception as e:
         logger.debug("Unhandled: %s", e)
     # Fallback 1: direktes nvidia-smi (falls Container GPU-Zugriff hat)
