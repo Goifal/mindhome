@@ -3174,12 +3174,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # --- Context Build Ergebnis verarbeiten ---
         context = _result_map.get("context")
+        _context_timed_out = False
         if isinstance(context, asyncio.TimeoutError):
             logger.warning("Context Build Timeout (%.0fs) — Fallback auf Minimal-Kontext", ctx_timeout)
             context = None
+            _context_timed_out = True
         elif isinstance(context, BaseException):
             logger.error("Context Build Fehler: %s — Fallback auf Minimal-Kontext", context)
             context = None
+            _context_timed_out = True
         if context is None:
             context = {"time": {"datetime": datetime.now(timezone.utc).isoformat()}}
         if room:
@@ -5391,8 +5394,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     "Aktionen. Text verworfen: '%s'", _category, response_text[:80],
                 )
                 if _category in ("device_command", "device_query"):
+                    _err_type = "timeout" if _context_timed_out else "unknown_device"
                     response_text = await self._generate_contextual_error(
-                        text, "unknown_device"
+                        text, _err_type
                     )
                 elif _category == "memory":
                     response_text = await self._generate_contextual_error(
@@ -6476,6 +6480,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     _devs = [s.split(" (")[0].split(" [")[0].strip()
                              for s in (_switches + _lights)]
                     _alternatives = "Verfuegbare Geraete: " + ", ".join(_devs[:15])
+
+            if error_type == "timeout":
+                # Context-Timeout: Kurze, hilfreiche Meldung ohne LLM-Call
+                _timeout_msgs = [
+                    "Da hat etwas gehakt. Sag es bitte nochmal.",
+                    "Das System war kurz ueberlastet. Versuch es bitte nochmal.",
+                    "Einen Moment war ich abgelenkt. Nochmal bitte?",
+                ]
+                return random.choice(_timeout_msgs)
 
             _prompt = (
                 f"Der User sagte: \"{user_text}\"\n"
