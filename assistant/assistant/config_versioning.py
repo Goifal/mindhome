@@ -65,7 +65,7 @@ class ConfigVersioning:
         if not self.is_enabled():
             return None
 
-        if not yaml_path.exists():
+        if not await asyncio.to_thread(yaml_path.exists):
             return None
 
         try:
@@ -152,7 +152,7 @@ class ConfigVersioning:
         snapshot_path = Path(target["snapshot_path"])
         original_path = Path(target["original_path"])
 
-        if not snapshot_path.exists():
+        if not await asyncio.to_thread(snapshot_path.exists):
             return {"success": False, "message": f"Snapshot-Datei fehlt: {snapshot_path}"}
 
         try:
@@ -246,14 +246,14 @@ class ConfigVersioning:
         """
         try:
             config_path = _CONFIG_DIR / "settings.yaml"
-            if not config_path.exists():
+            if not await asyncio.to_thread(config_path.exists):
                 return {"success": False, "message": "settings.yaml nicht gefunden"}
 
             # Snapshot vor Reload
             await self.create_snapshot("settings", config_path, reason="pre_reload")
 
             # Neu laden
-            new_config = load_yaml_config()
+            new_config = await asyncio.to_thread(load_yaml_config)
 
             # Aenderungen erkennen
             changed = []

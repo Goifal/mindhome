@@ -2683,11 +2683,13 @@ async def ui_regenerate_api_key(token: str = ""):
     _assistant_api_key = secrets.token_urlsafe(32)
 
     try:
-        with open(SETTINGS_YAML_PATH) as f:
-            cfg = yaml.safe_load(f) or {}
-        cfg.setdefault("security", {})["api_key"] = _assistant_api_key
-        with open(SETTINGS_YAML_PATH, "w") as f:
-            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        def _do_io():
+            with open(SETTINGS_YAML_PATH) as f:
+                cfg = yaml.safe_load(f) or {}
+            cfg.setdefault("security", {})["api_key"] = _assistant_api_key
+            with open(SETTINGS_YAML_PATH, "w") as f:
+                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_do_io)
         _audit_log("api_key_regenerated", {})
         return {"api_key": _assistant_api_key, "message": "Neuer API Key generiert. Addon und HA-Integration muessen aktualisiert werden."}
     except Exception as e:
@@ -2703,11 +2705,13 @@ async def ui_regenerate_recovery_key(token: str = ""):
     recovery_hash = _hash_value(new_recovery_key)
 
     try:
-        with open(SETTINGS_YAML_PATH) as f:
-            cfg = yaml.safe_load(f) or {}
-        cfg.setdefault("dashboard", {})["recovery_key_hash"] = recovery_hash
-        with open(SETTINGS_YAML_PATH, "w") as f:
-            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        def _do_io():
+            with open(SETTINGS_YAML_PATH) as f:
+                cfg = yaml.safe_load(f) or {}
+            cfg.setdefault("dashboard", {})["recovery_key_hash"] = recovery_hash
+            with open(SETTINGS_YAML_PATH, "w") as f:
+                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_do_io)
         _audit_log("recovery_key_regenerated", {})
         return {"recovery_key": new_recovery_key, "message": "Neuer Recovery-Key generiert. Bitte sicher aufbewahren!"}
     except Exception as e:
@@ -2739,11 +2743,13 @@ async def ui_set_api_key_enforcement(req: ApiKeyEnforcementRequest, token: str =
     _api_key_required = req.enabled
 
     try:
-        with open(SETTINGS_YAML_PATH) as f:
-            cfg = yaml.safe_load(f) or {}
-        cfg.setdefault("security", {})["api_key_required"] = req.enabled
-        with open(SETTINGS_YAML_PATH, "w") as f:
-            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        def _do_io():
+            with open(SETTINGS_YAML_PATH) as f:
+                cfg = yaml.safe_load(f) or {}
+            cfg.setdefault("security", {})["api_key_required"] = req.enabled
+            with open(SETTINGS_YAML_PATH, "w") as f:
+                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_do_io)
         _audit_log("api_key_enforcement_changed", {"enabled": req.enabled})
         status = "aktiviert" if req.enabled else "deaktiviert"
         logger.info("API Key Enforcement %s", status)
@@ -2809,8 +2815,10 @@ async def ui_get_settings(token: str = ""):
     """Alle Settings aus settings.yaml als JSON."""
     await _check_token(token)
     try:
-        with open(SETTINGS_YAML_PATH) as f:
-            config = yaml.safe_load(f) or {}
+        def _read():
+            with open(SETTINGS_YAML_PATH) as f:
+                return yaml.safe_load(f) or {}
+        config = await asyncio.to_thread(_read)
         return config
     except Exception as e:
         logger.error("API error: %s", e)
@@ -4396,15 +4404,15 @@ async def ui_set_room_temperature(req: Request, token: str = ""):
                 raise HTTPException(status_code=400, detail=f"Ungueltige Entity-ID: {sid}")
 
         # In settings.yaml speichern
-        with open(SETTINGS_YAML_PATH) as f:
-            config = yaml.safe_load(f) or {}
-
-        if "room_temperature" not in config:
-            config["room_temperature"] = {}
-        config["room_temperature"]["sensors"] = sensor_list
-
-        with open(SETTINGS_YAML_PATH, "w") as f:
-            yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        def _do_io():
+            with open(SETTINGS_YAML_PATH) as f:
+                config = yaml.safe_load(f) or {}
+            if "room_temperature" not in config:
+                config["room_temperature"] = {}
+            config["room_temperature"]["sensors"] = sensor_list
+            with open(SETTINGS_YAML_PATH, "w") as f:
+                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_do_io)
 
         # yaml_config im Speicher aktualisieren
         import assistant.config as cfg
@@ -4514,15 +4522,15 @@ async def ui_set_room_humidity(req: Request, token: str = ""):
                 raise HTTPException(status_code=400, detail=f"Ungueltige Entity-ID: {sid}")
 
         # In settings.yaml speichern
-        with open(SETTINGS_YAML_PATH) as f:
-            config = yaml.safe_load(f) or {}
-
-        if "health_monitor" not in config:
-            config["health_monitor"] = {}
-        config["health_monitor"]["humidity_sensors"] = sensor_list
-
-        with open(SETTINGS_YAML_PATH, "w") as f:
-            yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        def _do_io():
+            with open(SETTINGS_YAML_PATH) as f:
+                config = yaml.safe_load(f) or {}
+            if "health_monitor" not in config:
+                config["health_monitor"] = {}
+            config["health_monitor"]["humidity_sensors"] = sensor_list
+            with open(SETTINGS_YAML_PATH, "w") as f:
+                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_do_io)
 
         # yaml_config im Speicher aktualisieren
         import assistant.config as cfg
@@ -5634,8 +5642,10 @@ async def ui_get_room_profiles(token: str = ""):
     """Room-Profiles aus room_profiles.yaml als JSON."""
     await _check_token(token)
     try:
-        with open(ROOM_PROFILES_YAML_PATH) as f:
-            data = yaml.safe_load(f) or {}
+        def _read():
+            with open(ROOM_PROFILES_YAML_PATH) as f:
+                return yaml.safe_load(f) or {}
+        data = await asyncio.to_thread(_read)
         return data
     except Exception as e:
         logger.error("API error: %s", e)
@@ -5652,19 +5662,17 @@ async def ui_update_room_profiles(request: Request, token: str = ""):
         if not updates:
             return {"success": True, "message": "Keine Aenderungen"}
 
-        # Aktuelle Config laden
-        with open(ROOM_PROFILES_YAML_PATH) as f:
-            config = yaml.safe_load(f) or {}
-
-        # Deep Merge
-        _deep_merge(config, updates)
-
-        # Zurueckschreiben
-        with open(ROOM_PROFILES_YAML_PATH, "w") as f:
-            yaml.safe_dump(
-                config, f, allow_unicode=True,
-                default_flow_style=False, sort_keys=False,
-            )
+        # Aktuelle Config laden, mergen, zurueckschreiben (non-blocking)
+        def _do_io():
+            with open(ROOM_PROFILES_YAML_PATH) as f:
+                config = yaml.safe_load(f) or {}
+            _deep_merge(config, updates)
+            with open(ROOM_PROFILES_YAML_PATH, "w") as f:
+                yaml.safe_dump(
+                    config, f, allow_unicode=True,
+                    default_flow_style=False, sort_keys=False,
+                )
+        await asyncio.to_thread(_do_io)
 
         # Zentralen Room-Profiles-Cache invalidieren (config.py)
         import assistant.config as cfg_mod
@@ -5866,15 +5874,18 @@ async def ui_update_notification_channels(
     # In settings.yaml speichern
     try:
         config_path = Path(__file__).parent.parent / "config" / "settings.yaml"
-        if config_path.exists():
-            with open(config_path) as f:
-                cfg = yaml.safe_load(f) or {}
-        else:
-            cfg = {}
+        channels = req.channels
 
-        cfg.setdefault("notifications", {})["channels"] = req.channels
-        with open(config_path, "w") as f:
-            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        def _do_io():
+            if config_path.exists():
+                with open(config_path) as f:
+                    cfg = yaml.safe_load(f) or {}
+            else:
+                cfg = {}
+            cfg.setdefault("notifications", {})["channels"] = channels
+            with open(config_path, "w") as f:
+                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_do_io)
 
         # In-memory config aktualisieren
         import assistant.config as _cfg
@@ -6305,18 +6316,20 @@ async def ui_get_logs(token: str = "", limit: int = 50):
 async def ui_get_audit(token: str = "", limit: int = 50):
     """Audit-Log: Letzte Dashboard-Aenderungen und Auth-Events."""
     await _check_token(token)
-    entries = []
-    if _AUDIT_LOG_PATH.exists():
-        with open(_AUDIT_LOG_PATH) as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    try:
-                        entries.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        pass
-    # Neueste zuerst, limitiert
-    entries.reverse()
+    def _read():
+        entries = []
+        if _AUDIT_LOG_PATH.exists():
+            with open(_AUDIT_LOG_PATH) as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            entries.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            pass
+        entries.reverse()
+        return entries
+    entries = await asyncio.to_thread(_read)
     return {"entries": entries[:min(limit, 200)], "total": len(entries)}
 
 
@@ -6901,12 +6914,15 @@ async def workshop_update_settings(request: Request):
 
     try:
         config_path = Path(__file__).parent.parent / "config" / "settings.yaml"
-        with open(config_path) as f:
-            cfg = yaml.safe_load(f) or {}
-        ws = cfg.setdefault("workshop", {})
-        ws[key] = value
-        with open(config_path, "w") as f:
-            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        def _do_io():
+            with open(config_path) as f:
+                cfg = yaml.safe_load(f) or {}
+            ws = cfg.setdefault("workshop", {})
+            ws[key] = value
+            with open(config_path, "w") as f:
+                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_do_io)
 
         # Auch im laufenden yaml_config aktualisieren
         ws_live = yaml_config.setdefault("workshop", {})
@@ -7768,8 +7784,10 @@ async def ui_get_easter_eggs(token: str = ""):
     """Alle Easter Eggs aus easter_eggs.yaml."""
     await _check_token(token)
     try:
-        with open(EASTER_EGGS_PATH) as f:
-            data = yaml.safe_load(f) or {}
+        def _read():
+            with open(EASTER_EGGS_PATH) as f:
+                return yaml.safe_load(f) or {}
+        data = await asyncio.to_thread(_read)
         return {"easter_eggs": data.get("easter_eggs", [])}
     except Exception as e:
         logger.error("API error: %s", e)
@@ -7786,8 +7804,11 @@ async def ui_update_easter_eggs(req: EasterEggUpdate, token: str = ""):
     await _check_token(token)
     try:
         data = {"easter_eggs": req.easter_eggs}
-        with open(EASTER_EGGS_PATH, "w") as f:
-            yaml.safe_dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        def _write():
+            with open(EASTER_EGGS_PATH, "w") as f:
+                yaml.safe_dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_write)
 
         # Personality-Engine neu laden
         if hasattr(brain, "personality") and brain.personality:
@@ -7835,8 +7856,10 @@ async def ui_rollback(req: RollbackRequest, token: str = ""):
     try:
         # Aktuelle Security-Sections sichern BEVOR Rollback
         try:
-            with open(SETTINGS_YAML_PATH) as f:
-                pre_rollback = yaml.safe_load(f) or {}
+            def _read_pre():
+                with open(SETTINGS_YAML_PATH) as f:
+                    return yaml.safe_load(f) or {}
+            pre_rollback = await asyncio.to_thread(_read_pre)
         except Exception as e:
             logger.debug("Pre-rollback settings read failed: %s", e)
             pre_rollback = {}
@@ -7846,17 +7869,21 @@ async def ui_rollback(req: RollbackRequest, token: str = ""):
             # Post-Rollback: Kritische Security-Sections wiederherstellen
             _sections_to_preserve = ("dashboard", "security", "trust_levels")
             try:
-                with open(SETTINGS_YAML_PATH) as f:
-                    restored = yaml.safe_load(f) or {}
-                patched = False
-                for section in _sections_to_preserve:
-                    if section in pre_rollback:
-                        restored[section] = pre_rollback[section]
-                        patched = True
+                def _patch_security():
+                    with open(SETTINGS_YAML_PATH) as f:
+                        restored = yaml.safe_load(f) or {}
+                    patched = False
+                    for section in _sections_to_preserve:
+                        if section in pre_rollback:
+                            restored[section] = pre_rollback[section]
+                            patched = True
+                    if patched:
+                        with open(SETTINGS_YAML_PATH, "w") as f:
+                            yaml.safe_dump(restored, f, allow_unicode=True,
+                                           default_flow_style=False, sort_keys=False)
+                    return patched
+                patched = await asyncio.to_thread(_patch_security)
                 if patched:
-                    with open(SETTINGS_YAML_PATH, "w") as f:
-                        yaml.safe_dump(restored, f, allow_unicode=True,
-                                       default_flow_style=False, sort_keys=False)
                     logger.info("Rollback: Security-Sections aus Pre-Rollback beibehalten: %s",
                                 _sections_to_preserve)
             except Exception as e:

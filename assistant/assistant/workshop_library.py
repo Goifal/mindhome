@@ -66,7 +66,7 @@ class WorkshopLibrary:
             return {"status": "error", "message": "Library nicht initialisiert"}
 
         path = Path(filepath)
-        if not path.exists():
+        if not await asyncio.to_thread(path.exists):
             return {"status": "error", "message": f"Datei nicht gefunden: {path}"}
         if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
             return {

@@ -5556,22 +5556,28 @@ class FunctionExecutor:
 
         try:
             import fcntl
-            with open(SETTINGS_PATH, 'r+') as f:
-                fcntl.flock(f, fcntl.LOCK_EX)
-                f.seek(0)
-                config = _yaml.safe_load(f.read()) or {}
-                if "seasonal_actions" not in config:
-                    config["seasonal_actions"] = {}
-                if "cover_automation" not in config["seasonal_actions"]:
-                    config["seasonal_actions"]["cover_automation"] = {}
 
-                for k, v in changes.items():
-                    config["seasonal_actions"]["cover_automation"][k] = v
+            def _locked_yaml_update():
+                with open(SETTINGS_PATH, 'r+') as f:
+                    fcntl.flock(f, fcntl.LOCK_EX)
+                    try:
+                        f.seek(0)
+                        config = _yaml.safe_load(f.read()) or {}
+                        if "seasonal_actions" not in config:
+                            config["seasonal_actions"] = {}
+                        if "cover_automation" not in config["seasonal_actions"]:
+                            config["seasonal_actions"]["cover_automation"] = {}
 
-                f.seek(0)
-                f.truncate()
-                _yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-                fcntl.flock(f, fcntl.LOCK_UN)
+                        for k, v in changes.items():
+                            config["seasonal_actions"]["cover_automation"][k] = v
+
+                        f.seek(0)
+                        f.truncate()
+                        _yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                    finally:
+                        fcntl.flock(f, fcntl.LOCK_UN)
+
+            await asyncio.to_thread(_locked_yaml_update)
 
             # In-Memory Config aktualisieren
             import assistant.config as _cfg
@@ -7177,12 +7183,14 @@ class FunctionExecutor:
                     changed_by="jarvis",
                 )
 
-            # Config laden
-            if yaml_path.exists():
-                with open(yaml_path) as f:
-                    config = yaml.safe_load(f) or {}
-            else:
-                config = {}
+            # Config laden (blocking I/O in thread)
+            def _read_yaml():
+                if yaml_path.exists():
+                    with open(yaml_path) as f:
+                        return yaml.safe_load(f) or {}
+                return {}
+
+            config = await asyncio.to_thread(_read_yaml)
 
             # Aktion ausführen
             if action == "add":
@@ -7208,9 +7216,12 @@ class FunctionExecutor:
             else:
                 return {"success": False, "message": f"Unbekannte Aktion: {action}"}
 
-            # Zurückschreiben
-            with open(yaml_path, "w") as f:
-                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            # Zurückschreiben (blocking I/O in thread)
+            def _write_yaml():
+                with open(yaml_path, "w") as f:
+                    yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+            await asyncio.to_thread(_write_yaml)
 
             # Cache invalidieren damit Änderungen sofort wirken
             if config_file == "room_profiles":

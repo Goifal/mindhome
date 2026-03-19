@@ -923,15 +923,19 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 snapshot = result.get("snapshot")
                 if snapshot and isinstance(snapshot, bytes):
                     import tempfile, pathlib
-                    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-                        f.write(snapshot)
-                        tmp_path = pathlib.Path(f.name)
-                    try:
-                        ocr_text = self.ocr_engine.extract_text(tmp_path)
-                        if ocr_text:
-                            scan_result["ocr_text"] = ocr_text
-                    finally:
-                        tmp_path.unlink(missing_ok=True)
+
+                    def _write_and_ocr():
+                        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+                            f.write(snapshot)
+                            tmp_path = pathlib.Path(f.name)
+                        try:
+                            return self.ocr_engine.extract_text(tmp_path)
+                        finally:
+                            tmp_path.unlink(missing_ok=True)
+
+                    ocr_text = await asyncio.to_thread(_write_and_ocr)
+                    if ocr_text:
+                        scan_result["ocr_text"] = ocr_text
             return scan_result
 
         # Fall 2: Bild-Daten direkt → Vision-LLM Analyse

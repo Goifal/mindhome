@@ -142,18 +142,23 @@ class KnowledgeBase:
                 new_or_changed = []
                 current_files: dict[str, float] = {}
 
-                for ext in SUPPORTED_EXTENSIONS:
-                    for filepath in self._knowledge_dir.rglob(f"*{ext}"):
-                        try:
-                            mtime = filepath.stat().st_mtime
-                        except OSError:
-                            continue
-                        fpath = str(filepath)
-                        current_files[fpath] = mtime
+                def _scan_files():
+                    _new = []
+                    _current: dict[str, float] = {}
+                    for ext in SUPPORTED_EXTENSIONS:
+                        for fp in self._knowledge_dir.rglob(f"*{ext}"):
+                            try:
+                                mt = fp.stat().st_mtime
+                            except OSError:
+                                continue
+                            fp_str = str(fp)
+                            _current[fp_str] = mt
+                            old_mt = self._file_mtimes.get(fp_str)
+                            if old_mt is None or mt > old_mt:
+                                _new.append(fp)
+                    return _new, _current
 
-                        old_mtime = self._file_mtimes.get(fpath)
-                        if old_mtime is None or mtime > old_mtime:
-                            new_or_changed.append(filepath)
+                new_or_changed, current_files = await asyncio.to_thread(_scan_files)
 
                 if new_or_changed:
                     total = 0

@@ -585,8 +585,10 @@ class DiagnosticsEngine:
 
         # Memory via /proc/meminfo (Linux)
         try:
-            meminfo_path = Path("/proc/meminfo")
-            if meminfo_path.exists():
+            def _read_meminfo():
+                meminfo_path = Path("/proc/meminfo")
+                if not meminfo_path.exists():
+                    return None
                 meminfo = {}
                 with open(meminfo_path) as f:
                     for line in f:
@@ -595,7 +597,10 @@ class DiagnosticsEngine:
                             key = parts[0].strip()
                             val = parts[1].strip().split()[0]  # kB-Wert
                             meminfo[key] = int(val)
+                return meminfo
 
+            meminfo = _read_meminfo()
+            if meminfo:
                 total_mb = meminfo.get("MemTotal", 0) / 1024
                 available_mb = meminfo.get("MemAvailable", 0) / 1024
                 used_mb = total_mb - available_mb
@@ -854,8 +859,10 @@ class DiagnosticsEngine:
 
         # --- Arbeitsspeicher pruefen ---
         try:
-            meminfo_path = Path("/proc/meminfo")
-            if meminfo_path.exists():
+            def _read_meminfo_status():
+                meminfo_path = Path("/proc/meminfo")
+                if not meminfo_path.exists():
+                    return None
                 meminfo = {}
                 with open(meminfo_path) as f:
                     for line in f:
@@ -864,6 +871,10 @@ class DiagnosticsEngine:
                             key = parts[0].strip()
                             val = parts[1].strip().split()[0]
                             meminfo[key] = int(val)
+                return meminfo
+
+            meminfo = await asyncio.to_thread(_read_meminfo_status)
+            if meminfo:
                 total = meminfo.get("MemTotal", 0)
                 available = meminfo.get("MemAvailable", 0)
                 if total > 0:
