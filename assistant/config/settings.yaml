@@ -2169,7 +2169,7 @@ response_cache:
 # Inkrementeller LLM-Start: Bei Device-Commands kuerzerer Gather-Timeout
 incremental_llm:
   enabled: true
-  fast_gather_timeout: 3.0     # Sekunden — max. Wartezeit auf Kontext bei einfachen Befehlen
+  fast_gather_timeout: 5.0     # Sekunden — 3s war zu knapp, Context Build braucht Entity-Katalog fuer Tool-Calls
 # ── Session 6: Fortgeschrittene Intelligenz ──────────────────
 # B4: Background Reasoning — Idle-Analyse mit Smart-Modell
 background_reasoning:
