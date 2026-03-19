@@ -137,7 +137,7 @@ PROFILE_GENERAL = RequestProfile(
 # -----------------------------------------------------------------
 
 _DEVICE_VERBS = re.compile(
-    r"^(mach|schalte?|schalt|stell|setz|dreh|fahr|oeffne|schliess|aktivier|deaktivier"
+    r"^(mach|schalte?|schalt|stell|setz|dreh|fahr|oeffne|öffne|schliess|aktivier|deaktivier"
     r"|spiel|stopp|pause|pausier|lauter|leiser)e?\b",
 )
 
@@ -146,7 +146,7 @@ _DEVICE_VERBS_EMBEDDED = re.compile(
     r"\b((?:ein|aus|an|ab|um)schalten?|(?:ein|aus|an|ab|um)schalt\w*"
     r"|(?:ein|aus|an|ab|um)machen?\w*|(?:ein|aus)stellen?\w*"
     r"|aktivieren?\w*|deaktivieren?\w*|abdunkeln?\w*|aufdrehen?\w*|zudrehen?\w*"
-    r"|hochfahren?\w*|runterfahren?\w*|oeffnen?\w*|schliessen?\w*"
+    r"|hochfahren?\w*|runterfahren?\w*|oeffnen?\w*|öffnen?\w*|schliessen?\w*"
     r"|abspielen?\w*|stoppen?\w*|pausieren?\w*)\b",
 )
 
@@ -159,14 +159,21 @@ _DEVICE_VERBS_SEPARATED = re.compile(
 _DEVICE_NOUNS = [
     "rollladen", "rolladen", "rollo", "jalousie",
     "rollläden", "rolläden", "rolllaeden", "rollos", "jalousien",
-    "licht", "lampe", "leuchte",
-    "heizung", "thermostat",
+    "licht", "lampe", "leuchte", "beleuchtung",
+    "heizung", "thermostat", "temperatur", "klima",
     "steckdose", "schalter",
+    # Haushaltsgeraete (Switches)
+    "maschine", "kaffeemaschine", "siebtraeger",
+    "ventilator", "luefter", "pumpe", "boiler",
 ]
 
 _DEVICE_ACTIONS = [
     "auf", "zu", "an", "aus", "hoch", "runter",
-    "offen", "ein", "ab", "halb", "stopp",
+    "offen", "ein", "ab", "halb", "stopp", "stop",
+    "dicht", "starten",
+    # Klima-Aktionswoerter
+    "wärmer", "waermer", "kälter", "kaelter",
+    "kühler", "kuehler", "höher", "hoeher",
 ]
 
 _MEMORY_KEYWORDS = [
@@ -206,12 +213,13 @@ _STATUS_QUERY_PATTERNS = re.compile(
 
 _STATUS_NOUNS = [
     "temperatur", "grad", "warm", "kalt", "heizung", "klima",
-    "licht", "lampe", "hell", "dunkel", "helligkeit",
+    "licht", "lichter", "lampe", "lampen", "hell", "dunkel", "helligkeit",
     "rollladen", "rolladen", "rolllaeden", "rollläden", "rolläden",
-    "jalousie", "rollo",
+    "jalousie", "jalousien", "rollo", "rollos",
     "fenster", "tuer", "tür", "türen",
     "wetter", "aussen", "draussen",
     "strom", "verbrauch", "watt", "energie",
+    "steckdose", "steckdosen", "schalter",
     "status", "hausstatus", "ueberblick", "überblick",
     "musik", "spielt", "laeuft", "läuft",
     "offen", "geschlossen", "verriegelt",
@@ -376,6 +384,11 @@ class PreClassifier:
             if has_noun and has_action:
                 logger.debug("PreClassifier: DEVICE_FAST (noun+action: %s)", text)
                 return PROFILE_DEVICE_FAST
+            # "alles aus/zu/an" ohne spezifisches Geraete-Nomen
+            _has_alle = any(f" {w}" in f" {text_lower}" for w in ("alle", "alles", "überall", "ueberall"))
+            if _has_alle and has_action:
+                logger.debug("PreClassifier: DEVICE_FAST (alles+action: %s)", text)
+                return PROFILE_DEVICE_FAST
 
         # 1b. Eingebettete Device-Verben: "Ich will dass du X ausschaltest"
         #     Erkennt konjugierte Formen wie "ausschaltest", "einschalten", "anmachen"
@@ -405,6 +418,10 @@ class PreClassifier:
             )
             if has_status_pattern and has_status_noun:
                 logger.debug("PreClassifier: DEVICE_QUERY (%s)", text)
+                return PROFILE_DEVICE_QUERY
+            # Kurz-Queries: "Lichter?", "Rolllaeden?", "Steckdosen?" (1-2 Woerter + ?)
+            if word_count <= 2 and text_lower.rstrip().endswith("?") and has_status_noun:
+                logger.debug("PreClassifier: DEVICE_QUERY (short: %s)", text)
                 return PROFILE_DEVICE_QUERY
 
         # 2b. Implizite Befehle: "Mir ist kalt", "Es ist dunkel hier"
