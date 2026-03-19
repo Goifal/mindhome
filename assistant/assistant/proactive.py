@@ -6039,8 +6039,10 @@ class ProactiveManager:
                     eid = robot.get("entity_id")
                     if not eid:
                         continue
+                    entity_found = False
                     for s in (states or []):
                         if s.get("entity_id") == eid:
+                            entity_found = True
                             vac_state = s.get("state", "")
                             if vac_state == "cleaning":
                                 cleaning_robots.append((floor, eid, robot))
@@ -6051,10 +6053,18 @@ class ProactiveManager:
                             elif vac_state == "paused":
                                 # Pausiert (manuell oder automatisch) — nicht fertig
                                 all_docked = False
+                            elif vac_state == "unavailable":
+                                # Offline — nicht als docked werten (Sicherheit)
+                                all_docked = False
+                                logger.warning("Vacuum-PresenceMonitor: %s ist unavailable", eid)
                             elif vac_state not in ("docked", "idle"):
                                 # Unbekannter Zustand (error etc.) — nicht als docked werten
                                 all_docked = False
                             break
+                    if not entity_found:
+                        # Entity nicht in HA-States — nicht als docked werten
+                        all_docked = False
+                        logger.warning("Vacuum-PresenceMonitor: %s nicht in HA-States gefunden", eid)
 
                 # Fall 1: Jemand kommt heim + Vacuum saugt → Pausieren + Dock
                 # Guard: Nur wenn nicht schon pausiert (verhindert doppelte Befehle)
@@ -6112,13 +6122,12 @@ class ProactiveManager:
                             continue
 
                         floors = interrupted_str.split(",")
-                        _interrupted_local = None
-                        if _redis:
-                            await _redis.delete("mha:vacuum:interrupted")
 
                         # Alarm umschalten
                         await self._vacuum_alarm_switch("arm_home")
 
+                        # Erst alle Robots starten, DANN interrupted-State loeschen
+                        resumed_floors = []
                         for floor in floors:
                             robot = robots.get(floor)
                             if not robot:
@@ -6127,8 +6136,23 @@ class ProactiveManager:
                             if not eid:
                                 continue
                             nickname = robot.get("nickname", f"Saugroboter {floor.upper()}")
-                            await self.brain.ha.call_service("vacuum", "start", {"entity_id": eid})
-                            logger.info("Vacuum-PresenceMonitor: %s Reinigung fortgesetzt", nickname)
+                            success = await self.brain.ha.call_service("vacuum", "start", {"entity_id": eid})
+                            if success:
+                                resumed_floors.append(floor)
+                                logger.info("Vacuum-PresenceMonitor: %s Reinigung fortgesetzt", nickname)
+                            else:
+                                logger.warning("Vacuum-PresenceMonitor: %s Fortsetzung fehlgeschlagen", nickname)
+
+                        # Nur loeschen wenn mindestens ein Robot erfolgreich gestartet
+                        if resumed_floors:
+                            _interrupted_local = None
+                            if _redis:
+                                try:
+                                    await _redis.delete("mha:vacuum:interrupted")
+                                except Exception as e:
+                                    logger.warning("Vacuum-PresenceMonitor: Redis-Delete fehlgeschlagen: %s", e)
+                        else:
+                            logger.warning("Vacuum-PresenceMonitor: Kein Robot konnte fortgesetzt werden — State behalten")
 
                         await self._notify("vacuum_resumed", LOW, {
                             "message": "Saugroboter setzt Reinigung fort — alle sind wieder weg",
@@ -6153,7 +6177,17 @@ class ProactiveManager:
                         except Exception as e:
                             logger.warning("Vacuum-PresenceMonitor: Redis-Check fehlgeschlagen: %s — pruefe Alarm-Status direkt", e)
                             # Fallback: Alarm-Status direkt pruefen
-                            should_restore = True
+                            try:
+                                import assistant.config as _cfg3
+                                _guard3 = _cfg3.yaml_config.get("vacuum", {}).get("presence_guard", {})
+                                if _guard3.get("switch_alarm_for_cleaning"):
+                                    alarm_eid3 = _guard3.get("alarm_entity", "")
+                                    if alarm_eid3:
+                                        _astate3 = await self.brain.ha.get_state(alarm_eid3)
+                                        if _astate3 and _astate3.get("state") == "armed_home":
+                                            should_restore = True
+                            except Exception as e2:
+                                logger.warning("Vacuum-PresenceMonitor: Alarm-Fallback-Check fehlgeschlagen: %s", e2)
                     else:
                         # Kein Redis: Alarm-Status direkt pruefen als Fallback
                         try:
@@ -6197,7 +6231,13 @@ class ProactiveManager:
                     continue
 
                 mode = auto_cfg.get("mode", "smart")
-                now = datetime.now(timezone.utc)
+                # Lokalzeit verwenden — schedule_time/preferred_time sind in Benutzer-Lokalzeit
+                try:
+                    from zoneinfo import ZoneInfo
+                    _tz_name = vacuum_cfg.get("timezone") or cfg.yaml_config.get("timezone", "Europe/Berlin")
+                    now = datetime.now(ZoneInfo(_tz_name))
+                except Exception:
+                    now = datetime.now(timezone.utc)
                 hour = now.hour
 
                 # ── Wochenplan-Trigger ──
@@ -6255,15 +6295,18 @@ class ProactiveManager:
                         continue
 
                     if _redis:
-                        last_key = f"mha:vacuum:{floor}:last_auto_clean"
-                        last = await _redis.get(last_key)
-                        if last:
-                            try:
-                                hours_since = (time.time() - float(last)) / 3600
-                                if hours_since < min_hours:
-                                    continue
-                            except (ValueError, TypeError):
-                                pass
+                        try:
+                            last_key = f"mha:vacuum:{floor}:last_auto_clean"
+                            last = await _redis.get(last_key)
+                            if last:
+                                try:
+                                    hours_since = (time.time() - float(last)) / 3600
+                                    if hours_since < min_hours:
+                                        continue
+                                except (ValueError, TypeError):
+                                    logger.warning("Vacuum-Auto: Ungueltige Zeitangabe fuer %s: %s", last_key, last)
+                        except Exception as e:
+                            logger.warning("Vacuum-Auto: Redis-Cooldown-Check fehlgeschlagen fuer %s: %s", floor, e)
 
                     # Saugstaerke + Modus für Auto-Clean
                     auto_fan = auto_cfg.get("auto_fan_speed", "") or vacuum_cfg.get("default_fan_speed", "")
@@ -6276,7 +6319,10 @@ class ProactiveManager:
                     )
                     if success:
                         if _redis:
-                            await _redis.set(f"mha:vacuum:{floor}:last_auto_clean", str(time.time()))
+                            try:
+                                await _redis.set(f"mha:vacuum:{floor}:last_auto_clean", str(time.time()))
+                            except Exception as e:
+                                logger.warning("Vacuum-Auto: Redis-Timestamp setzen fehlgeschlagen: %s", e)
                         await self._notify("vacuum_auto_start", LOW, {
                             "message": f"{nickname} startet automatisch ({trigger_reason})",
                         })
@@ -6393,6 +6439,12 @@ class ProactiveManager:
                 triggers = pt_cfg.get("triggers", [])
                 delay_min = pt_cfg.get("delay_minutes", 5)
                 cooldown_h = pt_cfg.get("cooldown_hours", 12)
+
+                # Cleanup: Entfernte Entities aus Tracking-Dict loeschen
+                active_entities = {t.get("power_entity") for t in triggers if t.get("power_entity")}
+                for old_key in list(was_above.keys()):
+                    if old_key not in active_entities:
+                        del was_above[old_key]
 
                 if not triggers:
                     logger.debug("Vacuum-PowerTrigger: Keine Trigger konfiguriert")
@@ -6514,6 +6566,12 @@ class ProactiveManager:
                     logger.debug("Vacuum-SceneTrigger: Keine Trigger konfiguriert")
                     await asyncio.sleep(60)
                     continue
+
+                # Cleanup: Entfernte Entities aus Tracking-Dict loeschen
+                active_scene_entities = {t.get("entity") for t in triggers if t.get("entity")}
+                for old_key in list(last_seen.keys()):
+                    if old_key not in active_scene_entities:
+                        del last_seen[old_key]
 
                 for trigger in triggers:
                     entity = trigger.get("entity", "")

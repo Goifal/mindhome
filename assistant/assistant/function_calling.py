@@ -5811,13 +5811,20 @@ class FunctionExecutor:
         room = self._clean_room(args.get("room"))
         fan_speed = args.get("fan_speed", "")
         mode = args.get("mode", "")
-        repeat = min(max(args.get("repeat", 1), 1), 3)
+        try:
+            repeat = int(min(max(int(args.get("repeat", 1)), 1), 3))
+        except (ValueError, TypeError):
+            repeat = 1
         vacuum_cfg = yaml_config.get("vacuum", {})
         if not vacuum_cfg.get("enabled", True):
             return {"success": False, "message": "Saugroboter-Steuerung ist deaktiviert"}
         robots = vacuum_cfg.get("robots", {})
         if not robots:
             return {"success": False, "message": "Keine Saugroboter konfiguriert (settings.yaml → vacuum.robots)"}
+
+        _VALID_ACTIONS = {"start", "stop", "pause", "dock", "clean_room"}
+        if action not in _VALID_ACTIONS:
+            return {"success": False, "message": f"Unbekannte Aktion '{action}'. Erlaubt: {', '.join(sorted(_VALID_ACTIONS))}"}
 
         # Stop/Pause/Dock → alle Roboter (kein fan_speed/mode noetig)
         if action in ("stop", "pause", "dock"):
@@ -5852,6 +5859,11 @@ class FunctionExecutor:
             nickname = robot.get("nickname", "der Kleine")
 
             if segment_id is not None:
+                # Segment-ID als int sicherstellen (Dreame/Roborock erwarten int)
+                try:
+                    segment_id = int(segment_id)
+                except (ValueError, TypeError):
+                    pass  # Behalte Original-Wert als Fallback
                 await _prepare_robot(entity_id)
                 # Offizielle Dreame-Integration: vacuum.send_command
                 # Tasshack-Fallback: dreame_vacuum.vacuum_clean_segment
@@ -5918,6 +5930,8 @@ class FunctionExecutor:
                 names.append(robot.get("nickname", f"Roboter {floor.upper()}"))
                 if success:
                     await self._track_vacuum_clean(floor)
+        if not results:
+            return {"success": False, "message": "Keine Saugroboter mit entity_id konfiguriert"}
         return {"success": any(results), "message": f"{', '.join(names)} gestartet"}
 
     async def _exec_get_vacuum(self, args: dict) -> dict:
@@ -5934,7 +5948,7 @@ class FunctionExecutor:
             redis = getattr(_mem, "redis", None) if _mem else None
         except Exception as e:
             if isinstance(e, asyncio.CancelledError): raise
-            pass
+            logger.warning("Vacuum-Status: Redis-Zugriff fehlgeschlagen: %s", e)
 
         status_list = []
         for floor, robot in robots.items():
@@ -5989,9 +6003,13 @@ class FunctionExecutor:
                 ]:
                     val = attrs.get(key)
                     if val is not None and label not in maint:
-                        maint[label] = f"{val}%"
-                        if int(val) < 15:
-                            maint[label] += " ⚠ WECHSELN"
+                        try:
+                            val_int = int(val)
+                            maint[label] = f"{val_int}%"
+                            if val_int < 15:
+                                maint[label] += " ⚠ WECHSELN"
+                        except (ValueError, TypeError):
+                            maint[label] = str(val)
                 if maint:
                     entry["wartung"] = maint
 
