@@ -9631,21 +9631,227 @@ class StateChangeLog:
         )
 
     @staticmethod
-    def format_automations_for_prompt(automation_states: list[dict]) -> str:
+    def _summarize_trigger(trigger: dict) -> str:
+        """Fasst einen einzelnen HA-Automation-Trigger in natuerlicher Sprache zusammen."""
+        platform = trigger.get("platform", trigger.get("trigger", ""))
+        if platform == "time":
+            at = trigger.get("at", "?")
+            return f"um {at}"
+        if platform == "state":
+            eid = trigger.get("entity_id", "")
+            to = trigger.get("to", "")
+            short = eid.split(".", 1)[-1].replace("_", " ") if eid else "?"
+            if to:
+                return f"{short} → {to}"
+            return f"{short} aendert sich"
+        if platform == "sun":
+            event = trigger.get("event", "sunset")
+            offset = trigger.get("offset", "")
+            label = "Sonnenuntergang" if event == "sunset" else "Sonnenaufgang"
+            if offset:
+                return f"{label} {offset}"
+            return label
+        if platform == "numeric_state":
+            eid = trigger.get("entity_id", "")
+            short = eid.split(".", 1)[-1].replace("_", " ") if eid else "?"
+            above = trigger.get("above")
+            below = trigger.get("below")
+            if above is not None and below is not None:
+                return f"{short} zwischen {above}-{below}"
+            if above is not None:
+                return f"{short} > {above}"
+            if below is not None:
+                return f"{short} < {below}"
+            return f"{short} Schwellwert"
+        if platform == "zone":
+            zone = trigger.get("zone", "")
+            event = trigger.get("event", "enter")
+            z_short = zone.split(".", 1)[-1].replace("_", " ") if zone else "?"
+            return f"Zone {z_short} {'betreten' if event == 'enter' else 'verlassen'}"
+        if platform == "template":
+            return "Template-Bedingung"
+        if platform in ("mqtt", "webhook", "event"):
+            return f"{platform}-Event"
+        if platform == "time_pattern":
+            hours = trigger.get("hours", trigger.get("hour"))
+            minutes = trigger.get("minutes", trigger.get("minute"))
+            if hours and minutes:
+                return f"alle {hours}h {minutes}m"
+            if minutes:
+                return f"alle {minutes} Min"
+            return "Zeitintervall"
+        if platform == "device":
+            domain = trigger.get("domain", "")
+            device_type = trigger.get("type", "")
+            if device_type:
+                return f"Geraet: {device_type}"
+            if domain:
+                return f"Geraet ({domain})"
+            return "Geraete-Trigger"
+        return platform or "unbekannt"
+
+    @staticmethod
+    def _summarize_action(action: dict) -> str:
+        """Fasst eine einzelne HA-Automation-Aktion kompakt zusammen."""
+        service = action.get("service", "")
+        if not service:
+            # choose/if/repeat/delay/wait
+            if "delay" in action:
+                return "Pause"
+            if "choose" in action:
+                return "Bedingter Ablauf"
+            if "repeat" in action:
+                return "Wiederholung"
+            if "wait_template" in action or "wait_for_trigger" in action:
+                return "Warten"
+            if "scene" in action:
+                scene = action["scene"]
+                return f"Szene {scene.split('.')[-1].replace('_', ' ')}"
+            return ""
+
+        # service: "light.turn_on" → domain="light", svc="turn_on"
+        parts = service.split(".", 1)
+        domain = parts[0] if parts else ""
+        svc = parts[1] if len(parts) > 1 else ""
+
+        # Entity-Name extrahieren
+        data = action.get("data", {})
+        target = action.get("target", {})
+        entity = (
+            action.get("entity_id")
+            or target.get("entity_id")
+            or data.get("entity_id", "")
+        )
+        if isinstance(entity, list):
+            entity = entity[0] if entity else ""
+        short = entity.split(".", 1)[-1].replace("_", " ") if entity else ""
+
+        # Kompakte Zusammenfassung pro Domain
+        _DOMAIN_LABELS = {
+            "light": "Licht",
+            "switch": "Schalter",
+            "cover": "Rollladen",
+            "climate": "Klima",
+            "media_player": "Medien",
+            "fan": "Luefter",
+            "lock": "Schloss",
+            "alarm_control_panel": "Alarm",
+            "notify": "Benachrichtigung",
+            "script": "Skript",
+            "input_boolean": "Eingabe",
+            "input_number": "Eingabe",
+            "scene": "Szene",
+            "automation": "Automation",
+        }
+        d_label = _DOMAIN_LABELS.get(domain, domain)
+
+        if svc in ("turn_on", "open_cover", "unlock"):
+            return f"{d_label} {short} an".strip()
+        if svc in ("turn_off", "close_cover", "lock"):
+            return f"{d_label} {short} aus".strip()
+        if svc == "toggle":
+            return f"{d_label} {short} umschalten".strip()
+        if svc == "set_temperature":
+            temp = data.get("temperature", "?")
+            return f"Klima {short} → {temp}°C".strip()
+        if svc == "set_cover_position":
+            pos = data.get("position", "?")
+            return f"Rollladen {short} → {pos}%".strip()
+        if svc in ("volume_set", "volume_up", "volume_down"):
+            return f"Medien {short} Lautstaerke".strip()
+        if domain == "notify":
+            return "Benachrichtigung senden"
+        if domain == "script":
+            return f"Skript {svc.replace('_', ' ')}"
+
+        if short:
+            return f"{d_label} {short}: {svc.replace('_', ' ')}"
+        return f"{d_label}: {svc.replace('_', ' ')}"
+
+    @staticmethod
+    def summarize_automation(config: dict) -> str:
+        """Erzeugt eine kompakte einzeilige Beschreibung einer HA-Automation.
+
+        Args:
+            config: Automation-Config-Dict mit trigger/condition/action Feldern.
+
+        Returns:
+            Einzeilige Beschreibung, z.B.:
+            "um 07:00 → Licht Schlafzimmer an, Klima Wohnzimmer → 21°C"
+        """
+        # User-defined description hat Vorrang
+        desc = config.get("description")
+        if desc and isinstance(desc, str) and desc.strip():
+            return desc.strip()[:120]
+
+        parts = []
+
+        # Trigger zusammenfassen
+        triggers = config.get("trigger", [])
+        if isinstance(triggers, dict):
+            triggers = [triggers]
+        trigger_texts = []
+        for t in triggers[:3]:  # Max 3 Trigger
+            if isinstance(t, dict):
+                txt = StateChangeLog._summarize_trigger(t)
+                if txt:
+                    trigger_texts.append(txt)
+        if trigger_texts:
+            parts.append(" / ".join(trigger_texts))
+
+        # Aktionen zusammenfassen
+        actions = config.get("action", [])
+        if isinstance(actions, dict):
+            actions = [actions]
+        action_texts = []
+        for a in actions[:4]:  # Max 4 Aktionen
+            if isinstance(a, dict):
+                txt = StateChangeLog._summarize_action(a)
+                if txt:
+                    action_texts.append(txt)
+        if action_texts:
+            parts.append(", ".join(action_texts))
+
+        if not parts:
+            return ""
+        return " → ".join(parts)[:150]
+
+    @staticmethod
+    def format_automations_for_prompt(
+        automation_states: list[dict],
+        automation_configs: list[dict] | None = None,
+    ) -> str:
         """Formatiert HA-Automationen als LLM-Kontext.
 
-        Gibt dem LLM Wissen darueber welche Automationen existieren und
-        kuerzlich ausgeloest wurden, damit es erklaeren kann warum
-        Geraete ihren Zustand geaendert haben.
+        Gibt dem LLM Wissen darueber welche Automationen existieren,
+        was sie tun und wann sie kuerzlich ausgeloest wurden, damit es
+        erklaeren kann warum Geraete ihren Zustand geaendert haben.
 
         Args:
             automation_states: Liste von HA-State-Dicts fuer automation.*
+            automation_configs: Optionale Liste von Automation-Config-Dicts
+                mit trigger/condition/action Feldern (von /api/config/automation/config).
+                Wenn vorhanden, werden kompakte Zusammenfassungen der Logik angezeigt.
 
         Returns:
             Prompt-Sektion oder leerer String.
         """
         if not automation_states:
             return ""
+
+        # Config-Index aufbauen: automation.xyz / id → config
+        _config_by_id: dict[str, dict] = {}
+        if automation_configs:
+            for cfg in automation_configs:
+                # Config-Endpoint liefert "id" (z.B. "1234567890"), States haben entity_id
+                cfg_id = cfg.get("id", "")
+                if cfg_id:
+                    _config_by_id[cfg_id] = cfg
+                    # Auch als entity_id-Key (automation.<id>)
+                    _config_by_id[f"automation.{cfg_id}"] = cfg
+                alias = cfg.get("alias", "")
+                if alias:
+                    _config_by_id[alias.lower()] = cfg
 
         lines = []
         recently_triggered = []
@@ -9661,26 +9867,42 @@ class StateChangeLog:
             state = auto.get("state", "off")
             last_triggered = attrs.get("last_triggered", "")
 
+            # Config fuer diese Automation finden
+            _cfg = (
+                _config_by_id.get(entity_id)
+                or _config_by_id.get(entity_id.split(".", 1)[-1])
+                or _config_by_id.get(friendly.lower())
+            )
+            summary = ""
+            if _cfg:
+                try:
+                    summary = StateChangeLog.summarize_automation(_cfg)
+                except Exception:
+                    pass
+
             # Kuerzlich ausgeloest? (letzte 30 Min)
             is_recent = False
             if last_triggered:
                 try:
                     from datetime import datetime, timezone
                     if isinstance(last_triggered, str) and last_triggered:
-                        # ISO-Format parsen
                         _lt = last_triggered.replace("Z", "+00:00")
                         _dt = datetime.fromisoformat(_lt)
                         _age = now - _dt.timestamp()
                         if _age < 1800:  # 30 Min
                             is_recent = True
-                            recently_triggered.append(
-                                f"- {friendly} (vor {int(_age // 60)} Min)"
-                            )
+                            label = f"- {friendly} (vor {int(_age // 60)} Min)"
+                            if summary:
+                                label += f" [{summary}]"
+                            recently_triggered.append(label)
                 except (ValueError, TypeError, OSError):
                     pass
 
             if state == "on" and not is_recent:
-                lines.append(f"- {friendly} (aktiv)")
+                label = f"- {friendly} (aktiv)"
+                if summary:
+                    label += f" [{summary}]"
+                lines.append(label)
 
         if not lines and not recently_triggered:
             return ""
@@ -9692,7 +9914,6 @@ class StateChangeLog:
                 + "\n".join(recently_triggered)
             )
         if lines and len(lines) <= 15:
-            # Nur anzeigen wenn nicht zu viele (sonst Token-Verschwendung)
             parts.append(
                 "Aktive Automationen:\n"
                 + "\n".join(lines)

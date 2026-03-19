@@ -3813,14 +3813,21 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 logger.debug("Geraete-Konflikte Prompt fehlgeschlagen", exc_info=True)
 
         # HA-Automations-Kontext: Welche Automationen existieren/kuerzlich feuerten
+        # + was sie tun (Trigger/Aktionen aus Config-Endpoint)
         if _causal_states:
             try:
                 _auto_list = [
                     s for s in _causal_states
                     if s.get("entity_id", "").startswith("automation.")
                 ]
+                # Automation-Configs holen (Trigger/Conditions/Actions)
+                _auto_configs = None
+                try:
+                    _auto_configs = await self.ha.get_automations()
+                except Exception:
+                    logger.debug("Automation-Configs laden fehlgeschlagen", exc_info=True)
                 _auto_text = self.state_change_log.format_automations_for_prompt(
-                    _auto_list
+                    _auto_list, automation_configs=_auto_configs
                 )
                 if _auto_text:
                     sections.append(("automations", _auto_text, 4))
