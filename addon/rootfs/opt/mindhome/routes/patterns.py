@@ -492,8 +492,8 @@ def api_create_exclusion():
         try:
             excl = PatternExclusion(
                 exclusion_type=data.get("type", "device_pair"),
-                entity_a=data.get("entity_a", ""), entity_b=data.get("entity_b", ""),
-                reason=data.get("reason"), created_by=1
+                entity_a=sanitize_input(data.get("entity_a", "")), entity_b=sanitize_input(data.get("entity_b", "")),
+                reason=sanitize_input(data["reason"]) if data.get("reason") else None, created_by=1
             )
             session.add(excl)
             session.commit()
@@ -545,7 +545,7 @@ def api_create_manual_rule():
     with get_db_session() as session:
         try:
             rule = ManualRule(
-                name=data.get("name", "Rule"),
+                name=sanitize_input(data.get("name", "Rule")),
                 trigger_entity=data["trigger_entity"],
                 trigger_state=data["trigger_state"],
                 action_entity=data["action_entity"],

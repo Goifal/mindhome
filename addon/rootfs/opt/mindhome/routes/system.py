@@ -405,12 +405,12 @@ def api_update_quick_action(action_id):
             if not qa:
                 return jsonify({"error": "Not found"}), 404
             if data.get("name"):
-                qa.name_de = data["name"]
+                qa.name_de = sanitize_input(data["name"])
             if data.get("name_en"):
-                qa.name_en = data["name_en"]
+                qa.name_en = sanitize_input(data["name_en"])
             else:
                 if data.get("name"):
-                    qa.name_en = data["name"]
+                    qa.name_en = sanitize_input(data["name"])
             if data.get("icon"):
                 qa.icon = data["icon"]
             if data.get("action_data"):
@@ -1788,7 +1788,7 @@ def api_update_device_group(group_id):
             if not group:
                 return jsonify({"error": "Not found"}), 404
             if "name" in data:
-                group.name = data["name"]
+                group.name = sanitize_input(data["name"])
             if "device_ids" in data:
                 group.device_ids = json.dumps(data["device_ids"])
             if "is_active" in data:

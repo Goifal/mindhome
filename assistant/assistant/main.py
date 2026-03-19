@@ -24,6 +24,7 @@ from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,6 +37,8 @@ import yaml
 
 from .brain import AssistantBrain
 from .config import settings, yaml_config, load_yaml_config, get_person_title
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 from .constants import ERROR_BUFFER_MAX_SIZE, ACTIVITY_BUFFER_MAX_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_REQUESTS, TOKEN_CLEANUP_INTERVAL, WS_KEEPALIVE_INTERVAL
 from .cover_config import load_cover_configs, save_cover_configs
 from .file_handler import (
@@ -1720,7 +1723,7 @@ async def complete_maintenance(task_name: str, token: str = ""):
     success = brain.diagnostics.complete_task(task_name)
     if not success:
         raise HTTPException(status_code=404, detail=f"Aufgabe '{task_name}' nicht gefunden")
-    return {"completed": task_name, "date": __import__("datetime").datetime.now(timezone.utc).strftime("%Y-%m-%d")}
+    return {"completed": task_name, "date": datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")}
 
 
 # ----- Phase 14.3: Ambient Audio Endpoints -----
@@ -5979,7 +5982,7 @@ async def ui_knowledge_info(token: str = ""):
                 files.append({
                     "name": f.name,
                     "size": f.stat().st_size,
-                    "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                    "modified": datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).isoformat(),
                 })
     return {"stats": stats, "files": files}
 
@@ -6114,7 +6117,7 @@ async def ui_recipes_info(token: str = ""):
                 files.append({
                     "name": f.name,
                     "size": f.stat().st_size,
-                    "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                    "modified": datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).isoformat(),
                 })
     return {"stats": stats, "files": files}
 
@@ -8441,7 +8444,7 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
 
     async with _update_lock:
         _update_log.clear()
-        _update_log.append(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] Update gestartet...")
+        _update_log.append(f"[{datetime.now(_LOCAL_TZ).strftime('%H:%M:%S')}] Update gestartet...")
 
         # Aktuellen Branch merken (fuer Rollback bei Fehler)
         _, current_branch_raw = await _run_cmd(
@@ -8552,7 +8555,7 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
             except Exception as e:
                 _update_log.append(f"WARNUNG: {cfg_path.name} konnte nicht wiederhergestellt werden: {e}")
 
-        _update_log.append(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] Code aktualisiert!")
+        _update_log.append(f"[{datetime.now(_LOCAL_TZ).strftime('%H:%M:%S')}] Code aktualisiert!")
 
         # 4. Full Update: Docker Compose Build (Rebuild der Container-Images)
         is_full = body.full if body else False

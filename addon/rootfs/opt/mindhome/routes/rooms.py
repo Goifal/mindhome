@@ -129,7 +129,7 @@ def api_create_room():
         return jsonify({"error": "name required"}), 400
     with get_db_session() as session:
         room = Room(
-            name=data["name"],
+            name=sanitize_input(data["name"]),
             ha_area_id=data.get("ha_area_id"),
             icon=data.get("icon", "mdi:door"),
             privacy_mode=data.get("privacy_mode", {})
@@ -182,7 +182,7 @@ def api_import_rooms_from_ha():
                 continue
 
             room = Room(
-                name=area_name,
+                name=sanitize_input(area_name),
                 ha_area_id=area_id,
                 icon=area.get("icon") or "mdi:door",
                 privacy_mode={}
@@ -217,7 +217,7 @@ def api_update_room(room_id):
             return jsonify({"error": "Room not found"}), 404
 
         if "name" in data:
-            room.name = data["name"]
+            room.name = sanitize_input(data["name"])
         if "icon" in data:
             room.icon = data["icon"]
         if "privacy_mode" in data:

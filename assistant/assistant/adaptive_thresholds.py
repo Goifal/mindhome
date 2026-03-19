@@ -16,10 +16,13 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from .config import yaml_config
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Hardcoded Auto-Adjust Grenzen (eng, ohne Genehmigung)
 _AUTO_BOUNDS = {
@@ -73,7 +76,7 @@ class AdaptiveThresholds:
 
         async with self._adjust_lock:
             # Rate Limit
-            current_week = datetime.now(timezone.utc).strftime("%Y-W%W")
+            current_week = datetime.now(_LOCAL_TZ).strftime("%Y-W%W")
             if self._last_adjustment_week != current_week:
                 self._adjustments_this_week = 0
                 self._last_adjustment_week = current_week

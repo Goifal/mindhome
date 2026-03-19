@@ -15,12 +15,15 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import redis.asyncio as aioredis
 
 from .config import yaml_config
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Redis Keys
 _KEY_PROJECTS = "mha:memory:projects"               # Hash: project_id -> JSON
@@ -434,7 +437,7 @@ class ConversationMemory:
             return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
 
         if not date:
-            date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            date = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
 
         entry = {
             "date": date,
@@ -459,7 +462,7 @@ class ConversationMemory:
             return None
 
         if not date:
-            date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            date = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
 
         try:
             raw = await self.redis.get(_KEY_DAILY_SUMMARY + date)

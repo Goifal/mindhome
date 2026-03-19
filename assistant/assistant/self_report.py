@@ -12,10 +12,13 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from .config import settings, yaml_config
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
 class SelfReport:
@@ -47,7 +50,7 @@ class SelfReport:
             return {"error": "SelfReport nicht aktiv"}
 
         # Rate Limit: Max 1 Report pro Tag
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
         # On restart, try to recover last report day from Redis
         if not self._last_report_day and self.redis:
             try:

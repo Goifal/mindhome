@@ -18,10 +18,13 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import redis.asyncio as redis
 
 from .config import yaml_config
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
@@ -520,7 +523,7 @@ class TimeAwareness:
         if not self.redis:
             return
         try:
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
             stored_date = await self.redis.get(KEY_COUNTER_DATE)
             if isinstance(stored_date, bytes):
                 stored_date = stored_date.decode()

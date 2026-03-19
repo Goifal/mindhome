@@ -18,10 +18,14 @@ from typing import Optional
 
 import redis.asyncio as redis
 
+from zoneinfo import ZoneInfo
+
 from .config import settings, yaml_config
 from .ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Summary-Typen
 DAILY = "daily"
@@ -126,11 +130,11 @@ class DailySummarizer:
                         logger.error("Summary-Notify Fehler: %s", e)
 
                 # Wochen-Summary jeden Montag
-                if datetime.now(timezone.utc).weekday() == 0:
+                if datetime.now(_LOCAL_TZ).weekday() == 0:
                     await self.summarize_week()
 
                 # Monats-Summary am 1. des Monats
-                if datetime.now(timezone.utc).day == 1:
+                if datetime.now(_LOCAL_TZ).day == 1:
                     await self.summarize_month()
                     # Phase 8: Personality-Evolution Summary
                     await self._store_personality_snapshot()

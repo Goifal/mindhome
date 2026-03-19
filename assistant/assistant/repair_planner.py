@@ -22,10 +22,13 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from .config import yaml_config
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
 # ============================================================
@@ -1555,10 +1558,10 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         """Holt Journal-Einträge."""
         if not self.redis:
             return {"date": "", "entries": []}
-        key = f"mha:repair:journal:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+        key = f"mha:repair:journal:{datetime.now(_LOCAL_TZ).strftime('%Y-%m-%d')}"
         entries = await self.redis.lrange(key, 0, -1)
         return {
-            "date": datetime.now(timezone.utc).strftime('%Y-%m-%d'),
+            "date": datetime.now(_LOCAL_TZ).strftime('%Y-%m-%d'),
             "entries": [json.loads(e.decode() if isinstance(e, bytes) else e) for e in entries],
         }
 
@@ -1566,8 +1569,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         """Fuegt einen Journal-Eintrag hinzu."""
         if not self.redis:
             return {"status": "error", "message": "Redis nicht verfügbar"}
-        key = f"mha:repair:journal:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
-        entry = {"text": note, "time": datetime.now(timezone.utc).strftime('%H:%M')}
+        key = f"mha:repair:journal:{datetime.now(_LOCAL_TZ).strftime('%Y-%m-%d')}"
+        entry = {"text": note, "time": datetime.now(_LOCAL_TZ).strftime('%H:%M')}
         await self.redis.rpush(key, json.dumps(entry))
         await self.redis.expire(key, 90 * 86400)  # 90 Tage
         return {"status": "ok"}

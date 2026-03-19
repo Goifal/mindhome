@@ -13,10 +13,13 @@ import logging
 import time
 from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from .config import yaml_config
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Bekannte Fehler-Typen
 ERROR_TYPES = ("timeout", "service_unavailable", "entity_not_found",
@@ -69,7 +72,7 @@ class ErrorPatternTracker:
         await self.redis.expire("mha:errors:recent", 30 * 86400)
 
         # Pattern-Counter erhoehen (stuendlich)
-        hour_key = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H")
+        hour_key = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d-%H")
         pattern_key = f"mha:errors:pattern:{error_type}:{action_type}:{hour_key}"
         count = await self.redis.incr(pattern_key)
         await self.redis.expire(pattern_key, 7200)  # 2h TTL

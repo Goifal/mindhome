@@ -813,7 +813,7 @@ class PersonalityEngine:
             return
         person_key = person.lower().strip()
         key = f"mha:relationship:jokes:{person_key}"
-        entry = json.dumps({"joke": joke[:150], "date": datetime.now(timezone.utc).strftime("%Y-%m-%d")})
+        entry = json.dumps({"joke": joke[:150], "date": datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")})
         try:
             await self._redis.zadd(key, {entry: time.time()})
             count = await self._redis.zcard(key)
@@ -843,7 +843,7 @@ class PersonalityEngine:
         key = f"mha:relationship:milestones:{person_key}"
         entry = json.dumps({
             "event": event[:200],
-            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "date": datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d"),
         })
         try:
             await self._redis.lpush(key, entry)
@@ -1105,7 +1105,7 @@ class PersonalityEngine:
         title = get_person_title()
 
         # Tages-Reset
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
         if self._curiosity_last_date != today:
             self._curiosity_count_today = {}
             self._curiosity_last_date = today
@@ -1221,7 +1221,7 @@ class PersonalityEngine:
         entry = json.dumps({
             "type": interaction_type,
             "summary": summary[:120],
-            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "date": datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d"),
         })
 
         try:
@@ -1292,7 +1292,7 @@ class PersonalityEngine:
             # Aktuellen Gag loggen
             new_entry = json.dumps({
                 "type": gag_type,
-                "date": datetime.now(timezone.utc).strftime("%A"),  # Wochentag
+                "date": datetime.now(_LOCAL_TZ).strftime("%A"),  # Wochentag
                 "timestamp": time.time(),
                 "episode": episode,
             })
@@ -2056,7 +2056,7 @@ class PersonalityEngine:
         if not self._redis:
             return 0
         try:
-            key = f"mha:irony:count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+            key = f"mha:irony:count:{datetime.now(_LOCAL_TZ).strftime('%Y-%m-%d')}"
             count = await self._redis.get(key)
             return int(count) if count else 0
         except Exception:
@@ -2076,7 +2076,7 @@ class PersonalityEngine:
         if not self._redis:
             return True  # No Redis = no quota enforcement
         try:
-            key = f"mha:irony:count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+            key = f"mha:irony:count:{datetime.now(_LOCAL_TZ).strftime('%Y-%m-%d')}"
             new_count = await self._redis.incr(key)
             await self._redis.expire(key, 86400)  # 24h TTL
             if new_count > self.self_irony_max_per_day:
@@ -2097,7 +2097,7 @@ class PersonalityEngine:
         if not self._redis:
             return
         try:
-            key = f"mha:irony:count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+            key = f"mha:irony:count:{datetime.now(_LOCAL_TZ).strftime('%Y-%m-%d')}"
             await self._redis.incr(key)
             await self._redis.expire(key, 86400)  # 24h TTL
         except Exception as e:
@@ -2374,7 +2374,7 @@ class PersonalityEngine:
         # Phase 2A: Taegl. Humor-Fatigue — nach 8 Witzen/Tag -50%, nach 12 -80%
         if self._redis:
             try:
-                day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                day = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
                 daily_count = await self._redis.get(f"mha:humor:count:{day}")
                 daily_count = int(daily_count) if daily_count else 0
                 if daily_count >= 12 and random.random() < 0.8:
@@ -2449,7 +2449,7 @@ class PersonalityEngine:
         # Erfolg tracken (async, fire-and-forget)
         if self._redis:
             try:
-                day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                day = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
                 await self._redis.incr(f"mha:humor:count:{day}")
                 await self._redis.expire(f"mha:humor:count:{day}", 7 * 86400)
             except Exception:
@@ -2559,7 +2559,7 @@ class PersonalityEngine:
             return {"key": "late_night_command", "hour": hour, "room": room}
 
         # Wochenende morgens
-        weekday = datetime.now(timezone.utc).weekday()
+        weekday = datetime.now(_LOCAL_TZ).weekday()
         if weekday >= 5 and 6 <= hour < 9:
             return {"key": "weekend_morning", "hour": hour, "room": room}
 
@@ -2792,7 +2792,7 @@ class PersonalityEngine:
             return
 
         try:
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
 
             # Gesamt-Interaktionen inkrementieren
             await self._redis.incr("mha:personality:total_interactions")
@@ -4206,7 +4206,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         Nur abends, nur wenn Jarvis 'neugierig' ist und mit hoher
         Konfidenz, maximal einmal pro 24h.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         if now.hour < 20:
             return None
 
