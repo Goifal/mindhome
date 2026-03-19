@@ -1255,6 +1255,11 @@ class InsightEngine:
         try:
             newest_ts = datetime.fromisoformat(snapshots[0].get("ts", ""))
             oldest_ts = datetime.fromisoformat(snapshots[-1].get("ts", ""))
+            # Legacy-Snapshots koennten naive Timestamps haben (vor Timezone-Fix)
+            if newest_ts.tzinfo is None:
+                newest_ts = newest_ts.replace(tzinfo=timezone.utc)
+            if oldest_ts.tzinfo is None:
+                oldest_ts = oldest_ts.replace(tzinfo=timezone.utc)
             hours_diff = (newest_ts - oldest_ts).total_seconds() / 3600
         except (KeyError, ValueError):
             return None
