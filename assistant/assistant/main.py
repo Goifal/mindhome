@@ -8587,14 +8587,20 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
                 _update_log.append("Docker-Image erfolgreich gebaut")
 
             _update_log.append("Container werden neu erstellt...")
-            rc_up, out_up = await _run_cmd(
-                ["docker", "compose", "up", "-d"],
-                cwd=str(_MHA_DIR), timeout=120,
-            )
-            if rc_up != 0:
-                _update_log.append(f"WARNUNG: Docker up fehlgeschlagen: {out_up.strip()[:500]}")
-            else:
-                _update_log.append("Container erfolgreich neu erstellt")
+            # Fire-and-forget: docker compose up -d wuerde den eigenen Container
+            # ersetzen und damit diesen Prozess killen. Daher async ausfuehren,
+            # damit die Response noch rausgeht bevor der Container gestoppt wird.
+            async def _deferred_compose_up():
+                await asyncio.sleep(1)  # Response rauslassen
+                rc_up, out_up = await _run_cmd(
+                    ["docker", "compose", "up", "-d"],
+                    cwd=str(_MHA_DIR), timeout=120,
+                )
+                if rc_up != 0:
+                    logger.warning("Docker compose up fehlgeschlagen: %s", out_up.strip()[:500])
+
+            task = asyncio.ensure_future(_deferred_compose_up())
+            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         else:
             # 5. Quick: Restart via Docker Engine API (Code als Volume = sofort aktiv)
             _update_log.append("Container startet neu...")
