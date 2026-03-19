@@ -222,6 +222,31 @@ Frage nur bei Mehrdeutigkeit nach (z.B. "Welchen Raum?")."""
 SCENE_INTELLIGENCE_PROMPT = _build_scene_intelligence_prompt()
 
 
+def _extract_multi_rooms(text: str) -> list[str]:
+    """Extrahiert mehrere Raeume aus einem Text.
+
+    Erkennt Muster wie "im Wohnzimmer und der Kueche",
+    "in Kueche und Schlafzimmer", "im Wohnzimmer, Kueche und Flur".
+    """
+    t = text.lower()
+    # Muster: "im/in der X und (der/dem) Y (und (der/dem) Z)"
+    m = re.search(
+        r'(?:im|in\s+der|in\s+dem)\s+'
+        r'([a-zäöüß][a-zäöüß\-]+)'
+        r'(?:\s*,\s*|\s+und\s+(?:der\s+|dem\s+|im\s+)?)'
+        r'([a-zäöüß][a-zäöüß\-]+)'
+        r'(?:(?:\s*,\s*|\s+und\s+(?:der\s+|dem\s+|im\s+)?)'
+        r'([a-zäöüß][a-zäöüß\-]+))?',
+        t,
+    )
+    if m:
+        rooms = [r for r in m.groups() if r]
+        # Fuellwoerter ausfiltern
+        _skip = {"moment", "prinzip", "grunde", "allgemeinen", "ganzen"}
+        return [r for r in rooms if r not in _skip]
+    return []
+
+
 class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
     """Das zentrale Gehirn von MindHome Assistant."""
 
@@ -459,6 +484,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         cmd_cfg = cfg.yaml_config.get("command_detection", {})
         self._device_nouns = cmd_cfg.get("device_nouns") or [
             "rollladen", "rolladen", "rollo", "jalousie",
+            "rollläden", "rolläden", "rolllaeden", "rollos", "jalousien",
             "licht", "lampe", "leuchte", "beleuchtung",
             "heizung", "thermostat", "klima",
             "steckdose", "schalter", "musik", "lautsprecher",
@@ -4409,10 +4435,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         fallback_tc = {"function": {"name": _dev_cmd["function"],
                                                      "arguments": _dev_cmd["args"]}}
                 if fallback_tc:
-                    logger.info("Deterministischer Tool-Call: %s(%s)",
-                                fallback_tc["function"]["name"],
-                                fallback_tc["function"]["arguments"])
-                    tool_calls = [fallback_tc]
+                    # Multi-Room: _deterministic_tool_call kann Liste zurueckgeben
+                    if isinstance(fallback_tc, list):
+                        tool_calls = fallback_tc
+                        _names = [tc["function"]["name"] for tc in fallback_tc]
+                        logger.info("Deterministischer Multi-Tool-Call: %s", _names)
+                    else:
+                        logger.info("Deterministischer Tool-Call: %s(%s)",
+                                    fallback_tc["function"]["name"],
+                                    fallback_tc["function"]["arguments"])
+                        tool_calls = [fallback_tc]
                     response_text = ""
 
             # 7c. Tool-Calls aus Text extrahieren (LLM gibt manchmal Tool-Calls als Text aus)
@@ -9247,14 +9279,26 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 if brightness is not None:
                     args["brightness"] = brightness
                 return {"function": {"name": "set_light", "arguments": args}}
-        # Rollläden
-        if any(n in t for n in ["rollladen", "rolladen", "rollo", "jalousie"]):
+        # Rollläden (inkl. Umlaut-Pluralformen)
+        _cover_nouns = ["rollladen", "rolladen", "rollo", "jalousie",
+                        "rollläden", "rolläden", "rolllaeden", "rollos", "jalousien"]
+        if any(n in t for n in _cover_nouns):
+            action = None
             if words & {"auf", "hoch", "oeffne", "oeffnen", "offen"}:
+                action = "open"
+            elif words & {"zu", "runter", "schliess", "schliessen"}:
+                action = "close"
+            if action:
+                # Multi-Room: "Wohnzimmer und Kueche" → separate Tool-Calls
+                _rooms = _extract_multi_rooms(t)
+                if len(_rooms) >= 2:
+                    return [
+                        {"function": {"name": "set_cover",
+                                      "arguments": {"action": action, "room": r}}}
+                        for r in _rooms
+                    ]
                 return {"function": {"name": "set_cover",
-                                     "arguments": {"action": "open", "room": _room}}}
-            if words & {"zu", "runter", "schliess", "schliessen"}:
-                return {"function": {"name": "set_cover",
-                                     "arguments": {"action": "close", "room": _room}}}
+                                     "arguments": {"action": action, "room": _room}}}
 
         return None
 
