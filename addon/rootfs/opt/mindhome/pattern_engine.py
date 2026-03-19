@@ -333,6 +333,7 @@ class StateLogger:
         self._last_sensor_values = {}  # entity_id -> last_logged_value
         self._last_sensor_times = {}  # entity_id -> last_logged_timestamp
         self._MAX_SENSOR_TRACKING = 500
+        self._sensor_tracking_lock = threading.Lock()  # Schuetzt _motion_last_on, _last_sensor_*
 
         # Rate limiter: sliding window
         self._event_timestamps = []  # list of timestamps
@@ -358,20 +359,21 @@ class StateLogger:
             device_class = attributes.get("device_class", "")
             if ha_domain == "binary_sensor" and device_class in ("motion", "occupancy"):
                 now = datetime.now(timezone.utc)
-                if new_state == "on":
-                    last_on = self._motion_last_on.get(entity_id)
-                    if last_on and (now - last_on).total_seconds() < _get_motion_debounce():
-                        return False
-                    self._motion_last_on[entity_id] = now
-                    if len(self._motion_last_on) > self._MAX_SENSOR_TRACKING:
-                        self._motion_last_on.clear()
-                elif new_state == "off":
-                    if not hasattr(self, '_motion_last_off'):
-                        self._motion_last_off = {}
-                    last_off = self._motion_last_off.get(entity_id)
-                    if last_off and (now - last_off).total_seconds() < _get_motion_debounce():
-                        return False
-                    self._motion_last_off[entity_id] = now
+                with self._sensor_tracking_lock:
+                    if new_state == "on":
+                        last_on = self._motion_last_on.get(entity_id)
+                        if last_on and (now - last_on).total_seconds() < _get_motion_debounce():
+                            return False
+                        self._motion_last_on[entity_id] = now
+                        if len(self._motion_last_on) > self._MAX_SENSOR_TRACKING:
+                            self._motion_last_on.clear()
+                    elif new_state == "off":
+                        if not hasattr(self, '_motion_last_off'):
+                            self._motion_last_off = {}
+                        last_off = self._motion_last_off.get(entity_id)
+                        if last_off and (now - last_off).total_seconds() < _get_motion_debounce():
+                            return False
+                        self._motion_last_off[entity_id] = now
             return True
 
         # For sensors: check threshold
@@ -400,32 +402,34 @@ class StateLogger:
             if custom:
                 # Min interval check
                 now_ts = time.time()
-                last_ts = self._last_sensor_times.get(entity_id, 0)
+                with self._sensor_tracking_lock:
+                    last_ts = self._last_sensor_times.get(entity_id, 0)
                 min_interval = custom.min_interval_seconds or 60
                 if (now_ts - last_ts) < min_interval:
                     return False
 
                 try:
                     new_val = float(new_state)
-                    last_val = self._last_sensor_values.get(entity_id)
+                    with self._sensor_tracking_lock:
+                        last_val = self._last_sensor_values.get(entity_id)
 
-                    if last_val is not None:
-                        abs_change = abs(new_val - last_val)
-                        # Check absolute threshold
-                        if custom.min_change_absolute is not None:
-                            if abs_change < custom.min_change_absolute:
-                                return False
-                        # Check percent threshold
-                        elif custom.min_change_percent and last_val != 0:
-                            pct_change = (abs_change / abs(last_val)) * 100
-                            if pct_change < custom.min_change_percent:
-                                return False
+                        if last_val is not None:
+                            abs_change = abs(new_val - last_val)
+                            # Check absolute threshold
+                            if custom.min_change_absolute is not None:
+                                if abs_change < custom.min_change_absolute:
+                                    return False
+                            # Check percent threshold
+                            elif custom.min_change_percent and last_val != 0:
+                                pct_change = (abs_change / abs(last_val)) * 100
+                                if pct_change < custom.min_change_percent:
+                                    return False
 
-                    self._last_sensor_values[entity_id] = new_val
-                    self._last_sensor_times[entity_id] = now_ts
-                    if len(self._last_sensor_values) > self._MAX_SENSOR_TRACKING:
-                        self._last_sensor_values.clear()
-                        self._last_sensor_times.clear()
+                        self._last_sensor_values[entity_id] = new_val
+                        self._last_sensor_times[entity_id] = now_ts
+                        if len(self._last_sensor_values) > self._MAX_SENSOR_TRACKING:
+                            self._last_sensor_values.clear()
+                            self._last_sensor_times.clear()
                     return True
                 except (ValueError, TypeError):
                     return False
@@ -433,12 +437,13 @@ class StateLogger:
             elif threshold is not None:
                 try:
                     new_val = float(new_state)
-                    last_val = self._last_sensor_values.get(entity_id)
+                    with self._sensor_tracking_lock:
+                        last_val = self._last_sensor_values.get(entity_id)
 
-                    if last_val is not None and abs(new_val - last_val) < threshold:
-                        return False
+                        if last_val is not None and abs(new_val - last_val) < threshold:
+                            return False
 
-                    self._last_sensor_values[entity_id] = new_val
+                        self._last_sensor_values[entity_id] = new_val
                     return True
                 except (ValueError, TypeError):
                     return False
@@ -447,10 +452,11 @@ class StateLogger:
             try:
                 new_state_str = new_state.get("state", "") if isinstance(new_state, dict) else str(new_state)
                 new_val = float(new_state_str)
-                old_val = self._last_sensor_values.get(entity_id)
-                if old_val is not None and abs(new_val - old_val) < 10.0:
-                    return False
-                self._last_sensor_values[entity_id] = new_val
+                with self._sensor_tracking_lock:
+                    old_val = self._last_sensor_values.get(entity_id)
+                    if old_val is not None and abs(new_val - old_val) < 10.0:
+                        return False
+                    self._last_sensor_values[entity_id] = new_val
                 return True
             except (ValueError, TypeError):
                 # Non-numeric sensor: log state text changes

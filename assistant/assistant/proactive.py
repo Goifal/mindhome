@@ -7598,11 +7598,13 @@ class ProactiveManager:
                     else:
                         continue
                     # Nur vorschlagen wenn letzte Aktivierung < 7 Tage her
-                    days_ago = (now - last_dt.replace(tzinfo=None)).days
+                    # last_dt in lokale Zeitzone konvertieren (beide aware halten)
+                    last_local = last_dt.astimezone(_LOCAL_TZ)
+                    days_ago = (now - last_local).days
                     if days_ago > 7:
                         continue
                     # Uhrzeitvergleich: Aktivierungszeit +/- 30 Min zur aktuellen Zeit?
-                    last_minutes = last_dt.hour * 60 + last_dt.minute
+                    last_minutes = last_local.hour * 60 + last_local.minute
                     now_minutes = now.hour * 60 + now.minute
                     if abs(last_minutes - now_minutes) > 30:
                         continue
