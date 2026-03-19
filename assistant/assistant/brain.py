@@ -547,7 +547,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self._action_words = set(cmd_cfg.get("action_words") or [
             "auf", "zu", "an", "aus", "hoch", "runter",
             "offen", "ein", "ab", "halb", "stopp",
-            "oeffne", "schliess", "oeffnen", "schliessen",
+            "oeffne", "schliess", "schliesse", "schliesst",
+            "oeffnen", "schliessen",
             "einschalten", "ausschalten", "anmachen", "ausmachen",
             "aktivieren", "deaktivieren", "starten",
         ])
@@ -9391,7 +9392,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             action = None
             if words & {"auf", "hoch", "oeffne", "oeffnen", "offen"}:
                 action = "open"
-            elif words & {"zu", "runter", "schliess", "schliessen", "dicht"}:
+            elif words & {"zu", "runter", "schliess", "schliesse", "schliesst",
+                          "schliessen", "dicht"}:
                 action = "close"
             if action:
                 # Multi-Room: "Wohnzimmer und Kueche" → separate Tool-Calls
