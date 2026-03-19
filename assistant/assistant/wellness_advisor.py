@@ -18,9 +18,12 @@ from typing import Optional
 
 import redis.asyncio as aioredis
 
+from zoneinfo import ZoneInfo
+
 from .config import yaml_config, get_person_title
 
 logger = logging.getLogger(__name__)
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
 async def _safe_redis(redis_client, method: str, *args, **kwargs):
@@ -371,7 +374,7 @@ class WellnessAdvisor:
             trend_hint = "Ich sehe eine absteigende Tendenz. "
 
         addressing = await self._get_addressing()
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
 
         if stress_level >= 0.7:
             # Hoher Stress: Konkreter Aktionsvorschlag
@@ -479,7 +482,7 @@ class WellnessAdvisor:
         if not self.late_night_nudge or not self.redis:
             return
 
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
 
         # Nur zwischen 0 und 4 Uhr
         if hour >= 5:
@@ -648,7 +651,7 @@ class WellnessAdvisor:
         if not self.hydration_check or not self.redis:
             return
 
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
         if hour < 8 or hour > 22:
             return  # Nachts nicht erinnern
 

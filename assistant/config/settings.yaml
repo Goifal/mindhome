@@ -380,7 +380,7 @@ wellness:
     dinner: 19
   late_night_nudge: true
 ambient_presence:
-  enabled: false
+  enabled: true
   interval_minutes: 60
   quiet_start: 22
   quiet_end: 7

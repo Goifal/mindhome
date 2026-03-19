@@ -23,10 +23,13 @@ from typing import Optional
 
 import yaml
 
+from zoneinfo import ZoneInfo
+
 from .config import settings, yaml_config, get_person_title, get_active_person
 from .core_identity import IDENTITY_BLOCK
 
 logger = logging.getLogger(__name__)
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Stimmungsabhängige Stil-Anpassungen
 MOOD_STYLES = {
@@ -1615,7 +1618,7 @@ class PersonalityEngine:
     def get_time_of_day(self, hour: Optional[int] = None) -> str:
         """Bestimmt die aktuelle Tageszeit-Kategorie."""
         if hour is None:
-            hour = datetime.now(timezone.utc).hour
+            hour = datetime.now(_LOCAL_TZ).hour
 
         if 5 <= hour < 8:
             return "early_morning"
@@ -3867,7 +3870,7 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
         _pp_section = ""
         if _pp_cfg.get("enabled", True):
             from datetime import datetime as _dt
-            _now = _dt.now(timezone.utc)
+            _now = _dt.now(_LOCAL_TZ)
             _hour = _now.hour
             _weekday = _now.weekday()  # 0=Mo, 6=So
 

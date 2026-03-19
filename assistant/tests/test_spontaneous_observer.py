@@ -339,17 +339,18 @@ class TestSemanticMemoryEnrichment:
     def observer(self, ha_mock):
         obs = SpontaneousObserver(ha_client=ha_mock)
         obs.semantic_memory = AsyncMock()
-        obs.semantic_memory.search = AsyncMock(return_value=[
-            {"content": "User trinkt morgens Kaffee"}
+        obs.semantic_memory.search_facts = AsyncMock(return_value=[
+            {"content": "User trinkt morgens Kaffee", "relevance": 0.8, "category": "habit"}
         ])
+        obs.semantic_memory.get_relevant_conversations = AsyncMock(return_value=[])
         return obs
 
     @pytest.mark.asyncio
     async def test_enrichment_adds_context(self, observer):
-        """Enrichment sollte Kontext hinzufuegen."""
+        """Enrichment sollte Insider-Kontext hinzufuegen."""
         result = await observer._enrich_with_semantic_memory("Energieverbrauch gestiegen")
         assert "Energieverbrauch gestiegen" in result
-        observer.semantic_memory.search.assert_called_once()
+        observer.semantic_memory.search_facts.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_enrichment_no_memory(self, observer):
@@ -361,6 +362,7 @@ class TestSemanticMemoryEnrichment:
     @pytest.mark.asyncio
     async def test_enrichment_no_results(self, observer):
         """Keine Suchergebnisse → Text unveraendert."""
-        observer.semantic_memory.search = AsyncMock(return_value=[])
+        observer.semantic_memory.search_facts = AsyncMock(return_value=[])
+        observer.semantic_memory.get_relevant_conversations = AsyncMock(return_value=[])
         result = await observer._enrich_with_semantic_memory("Test")
         assert result == "Test"

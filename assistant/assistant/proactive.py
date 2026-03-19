@@ -24,6 +24,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import aiohttp
 import yaml
@@ -42,6 +43,8 @@ from .constants import (
 )
 from .ollama_client import validate_notification
 from .websocket import emit_proactive, emit_interrupt
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +191,8 @@ class ProactiveManager:
             "entity_recovered": (LOW, "Entity wieder online"),
             "scene_scheduled": (LOW, "Geplante Szene aktiviert"),
             "scene_suggested": (LOW, "Szenen-Vorschlag"),
+            "observation": (LOW, "Spontane Beobachtung"),
+            "ambient_status": (LOW, "Ambient-Status"),
         }
         # Dynamische Appliance-Handler (aus YAML devices) einfuegen — ueberschreiben Defaults
         self.event_handlers.update(_dynamic_handlers)
@@ -255,7 +260,7 @@ class ProactiveManager:
         base_score = self._SEVERITY_SCORES.get(urgency, 0.3)
 
         # 2. Tageszeit-Modifikator: nachts (22-7) sind LOW/MEDIUM weniger salient
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
         time_modifier = 1.0
         if self._quiet_start > self._quiet_end:
             is_night = hour >= self._quiet_start or hour < self._quiet_end
@@ -399,7 +404,7 @@ class ProactiveManager:
     @staticmethod
     def _check_quiet(start: int, end: int) -> bool:
         """Prueft ob die aktuelle Stunde in einem Quiet-Window liegt."""
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(_LOCAL_TZ).hour
         if start > end:
             return hour >= start or hour < end
         return start <= hour < end
@@ -2586,6 +2591,12 @@ class ProactiveManager:
                 except (ValueError, TypeError):
                     last_dt = None
                 if last_dt and datetime.now(timezone.utc) - last_dt < timedelta(seconds=effective_cooldown):
+                    detail = data.get("entity") or data.get("message", "")
+                    logger.info(
+                        "Meldung unterdrueckt (Cooldown %ds): [%s] %s",
+                        effective_cooldown, event_type,
+                        (detail[:80] if isinstance(detail, str) else "") if detail else "",
+                    )
                     return
 
         # Phase 15.4+: LOW und MEDIUM-Meldungen batchen statt sofort senden
@@ -3462,7 +3473,22 @@ class ProactiveManager:
                 f"Beispiel Stale: '{_title}, [Sensor] hat sich seit [X] Minuten nicht gemeldet.'"
             )
 
+        # Observation: Bereits polierter/generierter Text
+        if event_type == "observation" and data.get("message"):
+            msg = data["message"]
+            return (
+                f"Formuliere diese Beobachtung im JARVIS-Butler-Stil um.\n"
+                f"Max 2 Saetze. Deutsch. Trocken-britisch.\n"
+                f"Wenn ein [INSIDER-KONTEXT] angegeben ist, baue eine beilaeufige "
+                f"Rueck-Referenz ein (z.B. 'wie letzten Dienstag', 'das hatten wir schon mal').\n\n"
+                f"{msg}"
+            )
+
         parts.append(f"Dringlichkeit: {urgency}")
+
+        # data["message"] als Details einfuegen (generischer Fix)
+        if "message" in data:
+            parts.append(f"Details: {data['message']}")
 
         # Wer ist gerade zuhause?
         parts.append("Formuliere eine kurze Meldung. Sprich die Bewohner mit Namen an wenn passend.")
@@ -3697,7 +3723,7 @@ class ProactiveManager:
 
                 # Cooldown prüfen: max 1 pro Tag
                 if _redis:
-                    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                    today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
                     cooldown_key = f"mha:proactive:observation:{today}"
                     count = await _redis.get(cooldown_key)
                     if count and int(count) >= max_daily:
@@ -3718,7 +3744,7 @@ class ProactiveManager:
                     )
                     # Cooldown setzen
                     if _redis:
-                        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                        today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
                         cooldown_key = f"mha:proactive:observation:{today}"
                         await _redis.incr(cooldown_key)
                         await _redis.expire(cooldown_key, 86400)
@@ -3726,7 +3752,7 @@ class ProactiveManager:
             except asyncio.CancelledError:
                 return
             except Exception as e:
-                logger.debug("Observation-Loop Fehler: %s", e)
+                logger.warning("Observation-Loop Fehler: %s", e)
 
             await asyncio.sleep(interval_h * 3600)
 
@@ -3762,7 +3788,7 @@ class ProactiveManager:
                         pass
 
             # Check 2: Heizung läuft nachts auf hoher Temperatur
-            hour = datetime.now(timezone.utc).hour
+            hour = datetime.now(_LOCAL_TZ).hour
             if 23 <= hour or hour < 5:
                 for s in states:
                     eid = s.get("entity_id", "")
@@ -3837,7 +3863,7 @@ class ProactiveManager:
                     logger.warning("Unhandled: %s", e)
             return None
         except Exception as e:
-            logger.debug("Observation-Generierung fehlgeschlagen: %s", e)
+            logger.warning("Observation-Generierung fehlgeschlagen: %s", e)
             return None
 
     async def _contextualize_threat(self, threat: dict) -> str:
@@ -3852,7 +3878,7 @@ class ProactiveManager:
         try:
             # Kontext sammeln: Uhrzeit, Wetter
             from datetime import datetime
-            hour = datetime.now(timezone.utc).hour
+            hour = datetime.now(_LOCAL_TZ).hour
             weather_info = ""
             try:
                 states = await self.brain.ha.get_states()
@@ -3962,7 +3988,9 @@ class ProactiveManager:
                             "content": (
                                 "Formuliere diese Beobachtung um — kurz, trocken, JARVIS-Butler-Stil. "
                                 "Max 2 Saetze. Behalte die Fakten exakt bei, "
-                                "aendere nur den Ton (trockener Humor, britischer Butler):\n\n"
+                                "aendere nur den Ton (trockener Humor, britischer Butler). "
+                                "Wenn ein [INSIDER-KONTEXT] vorhanden ist, baue eine beilaeufige "
+                                "Referenz darauf ein — wie ein Butler der sich an fruehere Vorfaelle erinnert.\n\n"
                                 + raw_text
                             ),
                         },
@@ -3977,7 +4005,7 @@ class ProactiveManager:
             if polished and len(polished) > 10:
                 return polished
         except Exception as e:
-            logger.debug("Observation-LLM-Polish fehlgeschlagen: %s", e)
+            logger.warning("Observation-LLM-Polish fehlgeschlagen: %s", e)
         return raw_text
 
     async def _run_seasonal_loop(self):
@@ -7045,7 +7073,7 @@ class ProactiveManager:
 
         while self._running:
             try:
-                hour = datetime.now(timezone.utc).hour
+                hour = datetime.now(_LOCAL_TZ).hour
 
                 # Quiet Hours respektieren
                 if self._is_quiet_hours():

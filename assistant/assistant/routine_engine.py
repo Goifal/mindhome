@@ -2260,7 +2260,7 @@ class RoutineEngine:
 
             # Solar produziert, aber Sonne geht bald unter
             from datetime import datetime
-            hour = datetime.now(timezone.utc).hour
+            hour = datetime.now(_TZ).hour
             if solar_power > 200 and hour >= 16:
                 return (
                     f"Solar produziert noch {solar_power:.0f}W, aber die Sonne geht "

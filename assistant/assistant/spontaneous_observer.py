@@ -24,12 +24,20 @@ from typing import Optional
 
 import redis.asyncio as aioredis
 
+from zoneinfo import ZoneInfo
+
 from .config import yaml_config, get_person_title
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
 
 _PREFIX = "mha:spontaneous"
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
+
+
+def _local_now() -> datetime:
+    """Aktuelle Lokalzeit (Europe/Berlin oder konfiguriert)."""
+    return datetime.now(_LOCAL_TZ)
 
 
 class SpontaneousObserver:
@@ -152,7 +160,7 @@ class SpontaneousObserver:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.debug("SpontaneousObserver Loop Fehler: %s", e)
+                logger.warning("SpontaneousObserver Loop Fehler: %s", e)
 
             # Zufaellige Wartezeit: min_interval_hours bis 2x min_interval_hours
             wait_min = self.min_interval_hours * 3600
@@ -161,7 +169,7 @@ class SpontaneousObserver:
 
     def _within_active_hours(self) -> bool:
         """Prueft ob aktuell innerhalb der aktiven Stunden."""
-        hour = datetime.now(timezone.utc).hour
+        hour = _local_now().hour
         start = self.active_hours.get("start", 8)
         end = self.active_hours.get("end", 22)
         return start <= hour < end
@@ -170,7 +178,7 @@ class SpontaneousObserver:
         """Gibt die Anzahl der heutigen Beobachtungen zurueck."""
         if not self.redis:
             return 999
-        key = f"{_PREFIX}:daily_count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+        key = f"{_PREFIX}:daily_count:{_local_now().strftime('%Y-%m-%d')}"
         count = await self.redis.get(key)
         return int(count) if count else 0
 
@@ -178,7 +186,7 @@ class SpontaneousObserver:
         """Erhoeht den Tages-Zaehler."""
         if not self.redis:
             return
-        key = f"{_PREFIX}:daily_count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+        key = f"{_PREFIX}:daily_count:{_local_now().strftime('%Y-%m-%d')}"
         await self.redis.incr(key)
         await self.redis.expire(key, 48 * 3600)
 
@@ -198,7 +206,7 @@ class SpontaneousObserver:
 
     def _current_slot(self) -> Optional[str]:
         """Gibt den aktuellen Tageszeit-Slot zurueck."""
-        hour = datetime.now(timezone.utc).hour
+        hour = _local_now().hour
         for name, (start, end, _max) in self._TIME_SLOTS.items():
             if start <= hour < end:
                 return name
@@ -212,7 +220,7 @@ class SpontaneousObserver:
         if not slot:
             return False
         _, _, max_count = self._TIME_SLOTS[slot]
-        key = f"{_PREFIX}:slot_count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}:{slot}"
+        key = f"{_PREFIX}:slot_count:{_local_now().strftime('%Y-%m-%d')}:{slot}"
         count = await self.redis.get(key)
         return int(count) >= max_count if count else False
 
@@ -223,7 +231,7 @@ class SpontaneousObserver:
         slot = self._current_slot()
         if not slot:
             return
-        key = f"{_PREFIX}:slot_count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}:{slot}"
+        key = f"{_PREFIX}:slot_count:{_local_now().strftime('%Y-%m-%d')}:{slot}"
         await self.redis.incr(key)
         await self.redis.expire(key, 48 * 3600)
 
@@ -243,13 +251,13 @@ class SpontaneousObserver:
 
         try:
             # Cache pruefen (1x pro Tag analysieren)
-            cache_key = f"{_PREFIX}:trend_cache:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+            cache_key = f"{_PREFIX}:trend_cache:{_local_now().strftime('%Y-%m-%d')}"
             cached = await self.redis.get(cache_key)
             if cached:
                 return None  # Heute schon analysiert
 
             # Letzte 7 Tage Action-Logs laden
-            now = datetime.now(timezone.utc)
+            now = _local_now()
             daily_actions: dict[str, list[dict]] = {}
             for days_ago in range(7):
                 day = now - timedelta(days=days_ago)
@@ -386,13 +394,39 @@ class SpontaneousObserver:
             return observation_text
 
         try:
-            # Relevante Fakten suchen
-            facts = await self.semantic_memory.search(observation_text, limit=2)
-            if facts:
-                fact_texts = [f.get("content", "") for f in facts if f.get("content")]
-                if fact_texts:
-                    relevant = fact_texts[0]
-                    return f"{observation_text} (Kontext: {relevant})"
+            # 1. Relevante Fakten suchen
+            # search_facts ist die Standardmethode der SemanticMemory
+            facts = await self.semantic_memory.search_facts(observation_text, limit=3)
+
+            # 2. Relevante vergangene Gespraeche suchen
+            conversations = []
+            conv_method = getattr(self.semantic_memory, "get_relevant_conversations", None)
+            if conv_method:
+                try:
+                    conversations = await conv_method(observation_text, limit=2)
+                except Exception:
+                    pass
+
+            # 3. Beste Insider-Referenz waehlen
+            insider_ref = None
+            for fact in (facts or []):
+                content = fact.get("content", "")
+                relevance = fact.get("relevance", 0)
+                category = fact.get("category", "")
+                if relevance >= 0.7 and category in ("habit", "preference", "conversation_topic"):
+                    insider_ref = content
+                    break
+
+            if not insider_ref:
+                for conv in (conversations or []):
+                    content = conv.get("content", "")
+                    if content and len(content) > 10:
+                        insider_ref = content
+                        break
+
+            if insider_ref:
+                return f"{observation_text}\n[INSIDER-KONTEXT fuer Jarvis: {insider_ref}]"
+
         except Exception as e:
             logger.debug("Semantic memory enrichment failed: %s", e)
         return observation_text
@@ -487,7 +521,7 @@ class SpontaneousObserver:
                 return None
 
             # Kontext anreichern: Zeit + Wochentag + Aktivitaet
-            now = datetime.now(timezone.utc)
+            now = _local_now()
             _DAY_NAMES = {0: "Montag", 1: "Dienstag", 2: "Mittwoch", 3: "Donnerstag",
                           4: "Freitag", 5: "Samstag", 6: "Sonntag"}
             _hour = now.hour
@@ -522,14 +556,17 @@ class SpontaneousObserver:
                 f"{snapshot}\n\n"
                 "Nenne EINE interessante, nicht offensichtliche Beobachtung in 1-2 Saetzen auf Deutsch. "
                 "Beruecksichtige den zeitlichen Kontext (was ist fuer diese Uhrzeit/Wochentag ungewoehnlich?). "
-                "Sei spezifisch und nuetzlich. Antworte NUR mit der Beobachtung, ohne Einleitung."
+                "Sei spezifisch und nuetzlich. "
+                "Wenn ein INSIDER-KONTEXT gegeben ist, baue ihn beilaeufig ein "
+                "(z.B. 'wie letztes Mal', 'das kennen wir ja schon', 'wieder das alte Spiel'). "
+                "Antworte NUR mit der Beobachtung, ohne Einleitung."
             )
             response = await self._ollama.generate(prompt, max_tokens=300)
             if response and len(response.strip()) > 20:
                 enriched_text = await self._enrich_with_semantic_memory(response.strip())
                 return {
                     "type": "llm_observation",
-                    "text": enriched_text,
+                    "message": enriched_text,
                     "category": "insight",
                 }
         except Exception as e:
@@ -548,7 +585,7 @@ class SpontaneousObserver:
         try:
             # Heutige und letzte Wochen-Daten per mget aus Redis
             from datetime import timedelta
-            now_ts = datetime.now(timezone.utc)
+            now_ts = _local_now()
             today_key = f"mha:energy:daily:{now_ts.strftime('%Y-%m-%d')}"
             week_ago = now_ts - timedelta(days=7)
             week_key = f"mha:energy:daily:{week_ago.strftime('%Y-%m-%d')}"
@@ -679,7 +716,7 @@ class SpontaneousObserver:
             if not actions_raw:
                 return None
 
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            today = _local_now().strftime("%Y-%m-%d")
             today_count = 0
             for raw in actions_raw:
                 try:
@@ -722,7 +759,7 @@ class SpontaneousObserver:
 
             # Zaehle Aktionen pro Entity diese Woche
             from datetime import timedelta
-            week_start = datetime.now(timezone.utc) - timedelta(days=7)
+            week_start = _local_now() - timedelta(days=7)
             week_start_str = week_start.isoformat()
 
             entity_counts: dict[str, int] = {}
@@ -804,7 +841,7 @@ class SpontaneousObserver:
 
             # Alles optimiert (positives Feedback)
             if persons_home > 0 and lights_on <= 1 and heating_active <= 1:
-                hour = datetime.now(timezone.utc).hour
+                hour = _local_now().hour
                 if 10 <= hour <= 20:
                     return {
                         "message": (

@@ -24,9 +24,12 @@ from typing import Optional
 
 import redis.asyncio as redis
 
+from zoneinfo import ZoneInfo
+
 from .config import yaml_config
 
 logger = logging.getLogger(__name__)
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
 class AnticipationEngine:
@@ -1222,7 +1225,7 @@ class AnticipationEngine:
                 quiet_cfg = yaml_config.get("ambient_presence", {})
                 quiet_start = int(quiet_cfg.get("quiet_start", 22))
                 quiet_end = int(quiet_cfg.get("quiet_end", 7))
-                hour = datetime.now(timezone.utc).hour
+                hour = datetime.now(_LOCAL_TZ).hour
                 if quiet_start > quiet_end:
                     is_quiet = hour >= quiet_start or hour < quiet_end
                 else:
