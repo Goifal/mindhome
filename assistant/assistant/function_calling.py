@@ -5152,9 +5152,10 @@ class FunctionExecutor:
                 conf = configs.get(entity_id, {})
                 if "inverted" in conf:
                     return bool(conf["inverted"])
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
-            if isinstance(e, asyncio.CancelledError): raise
-            pass
+            logger.debug("Cover-Inversions-Check fehlgeschlagen: %s", e)
 
         # 2. Per-Cover in room_profiles.yaml
         profiles = _get_room_profiles()
@@ -5754,6 +5755,9 @@ class FunctionExecutor:
 
     async def _set_vacuum_fan_speed(self, entity_id: str, fan_speed: str) -> bool:
         """Setzt die Saugstaerke vor dem Start."""
+        if not fan_speed or fan_speed.lower() not in self._FAN_SPEED_MAP:
+            logger.warning("Unbekannte fan_speed '%s', ueberspringe", fan_speed)
+            return False
         resolved = self._FAN_SPEED_MAP.get(fan_speed.lower(), fan_speed)
         return await self.ha.call_service("vacuum", "set_fan_speed", {
             "entity_id": entity_id,
@@ -5762,6 +5766,9 @@ class FunctionExecutor:
 
     async def _set_vacuum_mode(self, entity_id: str, mode: str) -> bool:
         """Setzt den Reinigungsmodus (saugen/wischen/beides) via select-Entity."""
+        if not mode or mode.lower() not in self._CLEAN_MODE_MAP:
+            logger.warning("Unbekannter Reinigungsmodus '%s', ueberspringe", mode)
+            return False
         resolved = self._CLEAN_MODE_MAP.get(mode.lower(), mode)
         # Offizielle Dreame-Integration: select.{name}_cleaning_mode
         # Entity-ID aus vacuum entity ableiten
@@ -5794,9 +5801,10 @@ class FunctionExecutor:
             if room:
                 key = f"mha:vacuum:{floor}:room:{room}:last_clean"
             await redis.set(key, str(int(_time.time())), ex=86400 * 7)  # 7 Tage TTL
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
-            if isinstance(e, asyncio.CancelledError): raise
-            pass
+            logger.warning("Vacuum cleanup tracking fehlgeschlagen: %s", e)
 
     async def _exec_set_vacuum(self, args: dict) -> dict:
         """Saugroboter steuern — waehlt automatisch EG/OG-Roboter.
@@ -5836,6 +5844,8 @@ class FunctionExecutor:
                 if eid:
                     success = await self.ha.call_service("vacuum", service, {"entity_id": eid})
                     results.append(success)
+            if not results:
+                return {"success": False, "message": "Keine Saugroboter mit entity_id konfiguriert"}
             action_de = {"stop": "gestoppt", "pause": "pausiert", "dock": "zur Ladestation"}
             return {"success": any(results), "message": f"Saugroboter {action_de.get(action, action)}"}
 
@@ -5863,7 +5873,7 @@ class FunctionExecutor:
                 try:
                     segment_id = int(segment_id)
                 except (ValueError, TypeError):
-                    pass  # Behalte Original-Wert als Fallback
+                    return {"success": False, "message": f"Segment-ID '{segment_id}' ist keine gueltige Zahl"}
                 await _prepare_robot(entity_id)
                 # Offizielle Dreame-Integration: vacuum.send_command
                 # Tasshack-Fallback: dreame_vacuum.vacuum_clean_segment
@@ -6040,9 +6050,10 @@ class FunctionExecutor:
                                     room_history[rname] = f"vor {ago // 86400}d"
                         if room_history:
                             entry["raum_verlauf"] = room_history
+                    except asyncio.CancelledError:
+                        raise
                     except Exception as e:
-                        if isinstance(e, asyncio.CancelledError): raise
-                        pass
+                        logger.warning("Vacuum-Raumverlauf Fehler: %s", e)
 
                 status_list.append(entry)
             else:
