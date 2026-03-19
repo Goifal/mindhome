@@ -31,7 +31,7 @@ import asyncio
 import json
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 import pytest
@@ -494,17 +494,17 @@ class TestFormatDaysAgo:
 
     def test_today(self):
         from assistant.brain import AssistantBrain
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         assert AssistantBrain._format_days_ago(now) == "Heute"
 
     def test_yesterday(self):
         from assistant.brain import AssistantBrain
-        yesterday = (datetime.now() - timedelta(days=1)).isoformat()
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
         assert AssistantBrain._format_days_ago(yesterday) == "Gestern"
 
     def test_last_week(self):
         from assistant.brain import AssistantBrain
-        week_ago = (datetime.now() - timedelta(days=10)).isoformat()
+        week_ago = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
         result = AssistantBrain._format_days_ago(week_ago)
         assert "Vor 10 Tagen" in result
 

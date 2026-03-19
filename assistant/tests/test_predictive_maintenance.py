@@ -1,6 +1,6 @@
 """Tests for predictive_maintenance - device failure prediction and maintenance."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
@@ -161,7 +161,7 @@ class TestCalculateBatteryDrainRate:
 
     def test_normal_drain_rate(self):
         """1% drop over 7 days = 1%/week => normal."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
         pm = self._make_pm_with_history("sensor.a", [
             {"level": 100, "date": week_ago.isoformat()},
@@ -174,7 +174,7 @@ class TestCalculateBatteryDrainRate:
 
     def test_concerning_drain_rate(self):
         """5% drop over 7 days = 5%/week => concerning."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
         pm = self._make_pm_with_history("sensor.b", [
             {"level": 100, "date": week_ago.isoformat()},
@@ -185,7 +185,7 @@ class TestCalculateBatteryDrainRate:
 
     def test_critical_drain_rate(self):
         """20% drop over 7 days = 20%/week => critical."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
         pm = self._make_pm_with_history("sensor.c", [
             {"level": 100, "date": week_ago.isoformat()},
@@ -197,7 +197,7 @@ class TestCalculateBatteryDrainRate:
 
     def test_no_drop_returns_normal_with_zero_rate(self):
         """No drain (battery went up or stayed same)."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
         pm = self._make_pm_with_history("sensor.d", [
             {"level": 80, "date": week_ago.isoformat()},
@@ -210,7 +210,7 @@ class TestCalculateBatteryDrainRate:
 
     def test_days_until_empty_calculation(self):
         """10% drop over 10 days = 1%/day => at 50% level, ~50 days left."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         ten_days_ago = now - timedelta(days=10)
         pm = self._make_pm_with_history("sensor.e", [
             {"level": 60, "date": ten_days_ago.isoformat()},
@@ -237,7 +237,7 @@ class TestCalculateBatteryDrainRate:
         (20.0, "critical"),    # well above critical
     ])
     def test_severity_thresholds(self, drop, expected_severity):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
         pm = self._make_pm_with_history("sensor.thresh", [
             {"level": 100, "date": week_ago.isoformat()},
@@ -264,7 +264,7 @@ class TestCalculateHealthScore:
         pm = PredictiveMaintenance()
         entry = pm._get_or_create("sensor.new")
         entry.device_type = "motion_sensor"
-        entry.installed_date = datetime.now().isoformat()
+        entry.installed_date = datetime.now(timezone.utc).isoformat()
         result = pm.calculate_health_score("sensor.new")
         assert result["score"] >= 95
         assert result["risk"] == "low"
@@ -274,7 +274,7 @@ class TestCalculateHealthScore:
         entry = pm._get_or_create("sensor.old")
         entry.device_type = "motion_sensor"
         # Installed 5 years ago (full lifespan)
-        entry.installed_date = (datetime.now() - timedelta(days=1825)).isoformat()
+        entry.installed_date = (datetime.now(timezone.utc) - timedelta(days=1825)).isoformat()
         result = pm.calculate_health_score("sensor.old")
         assert "age" in result["factors"]
         assert result["factors"]["age"]["penalty"] == pytest.approx(40, abs=2)
@@ -318,10 +318,10 @@ class TestCalculateHealthScore:
         if score <= 29:
             # Need large penalties: age=40 + drain=30 + offline=20 = 90 penalty -> score=10
             entry.device_type = "motion_sensor"
-            entry.installed_date = (datetime.now() - timedelta(days=3650)).isoformat()
+            entry.installed_date = (datetime.now(timezone.utc) - timedelta(days=3650)).isoformat()
             entry.failure_count = 4
             # Add critical drain
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             week_ago = now - timedelta(days=7)
             entry.battery_history = [
                 {"level": 100, "date": week_ago.isoformat()},
@@ -329,12 +329,12 @@ class TestCalculateHealthScore:
             ]
         elif score <= 49:
             entry.device_type = "motion_sensor"
-            entry.installed_date = (datetime.now() - timedelta(days=1825)).isoformat()
+            entry.installed_date = (datetime.now(timezone.utc) - timedelta(days=1825)).isoformat()
             entry.failure_count = 3  # 15 penalty
         elif score <= 69:
             entry.failure_count = 4  # 20 penalty + some age
             entry.device_type = "motion_sensor"
-            entry.installed_date = (datetime.now() - timedelta(days=900)).isoformat()
+            entry.installed_date = (datetime.now(timezone.utc) - timedelta(days=900)).isoformat()
         # else: no penalties, score ~ 100
 
         result = pm.calculate_health_score("sensor.risk")
@@ -344,9 +344,9 @@ class TestCalculateHealthScore:
         pm = PredictiveMaintenance()
         entry = pm._get_or_create("sensor.floor")
         entry.device_type = "light_bulb"
-        entry.installed_date = (datetime.now() - timedelta(days=10000)).isoformat()
+        entry.installed_date = (datetime.now(timezone.utc) - timedelta(days=10000)).isoformat()
         entry.failure_count = 100
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
         entry.battery_history = [
             {"level": 100, "date": week_ago.isoformat()},
@@ -370,7 +370,7 @@ class TestPredictFailures:
         pm = PredictiveMaintenance()
         entry = pm._get_or_create("sensor.healthy")
         entry.device_type = "motion_sensor"
-        entry.installed_date = datetime.now().isoformat()
+        entry.installed_date = datetime.now(timezone.utc).isoformat()
         result = pm.predict_failures()
         assert len(result) == 0
 
@@ -379,7 +379,7 @@ class TestPredictFailures:
         entry = pm._get_or_create("sensor.risky")
         entry.device_type = "motion_sensor"
         # Very old device with failures
-        entry.installed_date = (datetime.now() - timedelta(days=1825)).isoformat()
+        entry.installed_date = (datetime.now(timezone.utc) - timedelta(days=1825)).isoformat()
         entry.failure_count = 4
         result = pm.predict_failures()
         assert len(result) >= 1
@@ -390,15 +390,15 @@ class TestPredictFailures:
         # High risk device
         e1 = pm._get_or_create("sensor.high")
         e1.device_type = "motion_sensor"
-        e1.installed_date = (datetime.now() - timedelta(days=1825)).isoformat()
+        e1.installed_date = (datetime.now(timezone.utc) - timedelta(days=1825)).isoformat()
         e1.failure_count = 3
 
         # Critical risk device
         e2 = pm._get_or_create("sensor.critical")
         e2.device_type = "light_bulb"
-        e2.installed_date = (datetime.now() - timedelta(days=5000)).isoformat()
+        e2.installed_date = (datetime.now(timezone.utc) - timedelta(days=5000)).isoformat()
         e2.failure_count = 4
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
         e2.battery_history = [
             {"level": 100, "date": week_ago.isoformat()},
@@ -423,7 +423,7 @@ class TestGetMaintenanceSuggestions:
     def test_battery_replacement_suggestion(self):
         pm = PredictiveMaintenance()
         entry = pm._get_or_create("sensor.low_batt")
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         # 10% drop over 7 days at 20% level => ~14 days remaining
         week_ago = now - timedelta(days=7)
         entry.battery_history = [
@@ -438,7 +438,7 @@ class TestGetMaintenanceSuggestions:
     def test_battery_high_urgency_when_7_days_or_less(self):
         pm = PredictiveMaintenance()
         entry = pm._get_or_create("sensor.urgent")
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         # 10% drop over 7 days at 5% level => ~3.5 days remaining
         week_ago = now - timedelta(days=7)
         entry.battery_history = [
@@ -455,7 +455,7 @@ class TestGetMaintenanceSuggestions:
         entry = pm._get_or_create("sensor.old")
         entry.device_type = "motion_sensor"
         # Installed 4.6 years ago (>= 90% of 5-year lifespan)
-        entry.installed_date = (datetime.now() - timedelta(days=1680)).isoformat()
+        entry.installed_date = (datetime.now(timezone.utc) - timedelta(days=1680)).isoformat()
         suggestions = pm.get_maintenance_suggestions()
         eol = [s for s in suggestions if s["type"] == "end_of_life"]
         assert len(eol) >= 1
@@ -465,7 +465,7 @@ class TestGetMaintenanceSuggestions:
         pm = PredictiveMaintenance()
         entry = pm._get_or_create("sensor.young")
         entry.device_type = "motion_sensor"
-        entry.installed_date = datetime.now().isoformat()
+        entry.installed_date = datetime.now(timezone.utc).isoformat()
         suggestions = pm.get_maintenance_suggestions()
         eol = [s for s in suggestions if s["type"] == "end_of_life"]
         assert len(eol) == 0
@@ -475,11 +475,11 @@ class TestGetMaintenanceSuggestions:
         # Medium urgency (end of life)
         e1 = pm._get_or_create("sensor.eol")
         e1.device_type = "motion_sensor"
-        e1.installed_date = (datetime.now() - timedelta(days=1700)).isoformat()
+        e1.installed_date = (datetime.now(timezone.utc) - timedelta(days=1700)).isoformat()
 
         # High urgency (battery about to die)
         e2 = pm._get_or_create("sensor.batt_dying")
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
         e2.battery_history = [
             {"level": 15, "date": week_ago.isoformat()},
@@ -494,7 +494,7 @@ class TestGetMaintenanceSuggestions:
         """Device with >30 days remaining should not trigger suggestion."""
         pm = PredictiveMaintenance()
         entry = pm._get_or_create("sensor.ok_batt")
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         month_ago = now - timedelta(days=30)
         # 1% drop over 30 days at 90% level => ~2700 days remaining
         entry.battery_history = [
@@ -524,7 +524,7 @@ class TestGetContextHint:
     def test_returns_hint_for_high_urgency(self):
         pm = PredictiveMaintenance()
         entry = pm._get_or_create("sensor.critical_batt")
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
         entry.battery_history = [
             {"level": 15, "date": week_ago.isoformat()},
@@ -537,7 +537,7 @@ class TestGetContextHint:
         pm = PredictiveMaintenance()
         entry = pm._get_or_create("sensor.eol_only")
         entry.device_type = "motion_sensor"
-        entry.installed_date = (datetime.now() - timedelta(days=1700)).isoformat()
+        entry.installed_date = (datetime.now(timezone.utc) - timedelta(days=1700)).isoformat()
         hint = pm.get_context_hint()
         assert hint == ""
 

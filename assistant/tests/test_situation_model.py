@@ -2,7 +2,7 @@
 
 import sys
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, AsyncMock
 
 import pytest
@@ -476,21 +476,21 @@ class TestCompareSnapshots:
     # --- Temperature drift ---
 
     def test_temperature_drift_after_1h(self, sm):
-        ts_old = (datetime.now() - timedelta(hours=2)).isoformat()
+        ts_old = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
         old = {"timestamp": ts_old, "temperatures": {"Room": 20.0}}
         new = {"temperatures": {"Room": 21.0}}
         changes = sm._compare_snapshots(old, new)
         assert any("langsam" in c for c in changes)
 
     def test_temperature_drift_not_if_recent(self, sm):
-        ts_old = (datetime.now() - timedelta(minutes=30)).isoformat()
+        ts_old = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
         old = {"timestamp": ts_old, "temperatures": {"Room": 20.0}}
         new = {"temperatures": {"Room": 21.0}}
         changes = sm._compare_snapshots(old, new)
         assert not any("langsam" in c for c in changes)
 
     def test_temperature_drift_not_if_too_small(self, sm):
-        ts_old = (datetime.now() - timedelta(hours=2)).isoformat()
+        ts_old = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
         old = {"timestamp": ts_old, "temperatures": {"Room": 20.0}}
         new = {"temperatures": {"Room": 20.3}}
         changes = sm._compare_snapshots(old, new)
@@ -498,7 +498,7 @@ class TestCompareSnapshots:
 
     def test_temperature_drift_not_if_above_main_threshold(self, sm):
         """If the change >= temp_threshold it is a normal change, not drift."""
-        ts_old = (datetime.now() - timedelta(hours=2)).isoformat()
+        ts_old = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
         old = {"timestamp": ts_old, "temperatures": {"Room": 20.0}}
         new = {"temperatures": {"Room": 23.0}}
         changes = sm._compare_snapshots(old, new)

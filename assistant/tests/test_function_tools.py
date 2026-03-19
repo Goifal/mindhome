@@ -126,8 +126,8 @@ class TestExecWellnessStatus:
     async def test_pc_minutes_from_redis(self):
         executor = _make_executor()
         mock_brain = _mock_brain()
-        from datetime import datetime, timedelta
-        start = (datetime.now() - timedelta(minutes=45)).isoformat()
+        from datetime import datetime, timedelta, timezone
+        start = (datetime.now(timezone.utc) - timedelta(minutes=45)).isoformat()
         mock_brain.memory.redis.get = AsyncMock(side_effect=lambda k: start if "pc_start" in k else None)
         with patch("assistant.main.brain", mock_brain):
             result = await executor._exec_get_wellness_status({})
