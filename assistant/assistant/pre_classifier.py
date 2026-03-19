@@ -153,11 +153,12 @@ _DEVICE_VERBS_EMBEDDED = re.compile(
 # Trennbare Verben: "schalte die Maschine aus", "mach das Licht an"
 # Deutsche Trennverben haben den Praefix am Satzende
 _DEVICE_VERBS_SEPARATED = re.compile(
-    r"\b(mach|schalt\w*|stell\w*|dreh\w*|fahr\w*)\b.+\b(ein|aus|an|ab|auf|zu|um|hoch|runter)\b"
+    r"\b(mach\w*|schalt\w*|stell\w*|dreh\w*|fahr\w*)\b.+\b(ein|aus|an|ab|auf|zu|um|hoch|runter)\b"
 )
 
 _DEVICE_NOUNS = [
     "rollladen", "rolladen", "rollo", "jalousie",
+    "rollläden", "rolläden", "rolllaeden", "rollos", "jalousien",
     "licht", "lampe", "leuchte",
     "heizung", "thermostat",
     "steckdose", "schalter",
@@ -349,13 +350,15 @@ class PreClassifier:
         text_lower = text.lower().strip()
         word_count = len(text_lower.split())
 
-        # 1. Geraete-Befehle: Verb-Start oder Nomen+Aktion, max 8 Woerter
+        # 1. Geraete-Befehle: Verb-Start oder Nomen+Aktion, max 12 Woerter
+        #    (12 statt 8: Multi-Raum-Befehle wie "Mache die Rolllaeden im
+        #    Wohnzimmer und der Kueche runter" haben 10 Woerter)
         #    ABER: Fragen ("ist ... an?", "sind ... offen?") sind Status-Queries, keine Commands
         #    FIX DL3-AI2/AI3: ? allein reicht NICHT — Fragewort muss dabei sein
         _question_starts = text_lower.startswith(("ist ", "sind ", "wie ", "was ", "wer ", "wo ", "wann ", "welch"))
         _has_question_mark = text_lower.rstrip().endswith("?")
         _is_question = _question_starts and (_has_question_mark or word_count <= 6)
-        if word_count <= 8 and not _is_question:
+        if word_count <= 12 and not _is_question:
             if _DEVICE_VERBS.search(text_lower):
                 logger.debug("PreClassifier: DEVICE_FAST (verb: %s)", text)
                 return PROFILE_DEVICE_FAST
