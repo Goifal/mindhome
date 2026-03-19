@@ -2080,7 +2080,7 @@ class ProactiveManager:
         if not redis_client:
             return
 
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
         flag_key = f"mha:personal_dates_checked:{today}"
 
         try:
@@ -2920,7 +2920,7 @@ class ProactiveManager:
                 "type": event_type,
                 "urgency": urgency,
                 "summary": self.event_handlers.get(event_type, (MEDIUM, event_type))[1],
-                "time": datetime.now(timezone.utc).strftime("%H:%M"),
+                "time": datetime.now(_LOCAL_TZ).strftime("%H:%M"),
                 "detail": data.get("person", data.get("entity", "")),
             }
 

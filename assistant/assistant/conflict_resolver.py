@@ -646,7 +646,7 @@ class ConflictResolver:
             lower_trust_level=lower_trust,
             conflict_description=desc,
             room=room or "unbekannter Raum",
-            time=datetime.now(timezone.utc).strftime("%H:%M"),
+            time=datetime.now(_LOCAL_TZ).strftime("%H:%M"),
             time_of_day=time_of_day,
         )
 
