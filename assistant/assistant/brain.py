@@ -9140,7 +9140,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         Wird für Tool-Call-Retry genutzt: Wenn das LLM keinen Tool-Call macht
         aber der Text offensichtlich ein Geraetebefehl ist.
         """
-        t = text.lower()
+        t = text.lower().replace("ß", "ss")
         has_noun = any(n in t for n in self._device_nouns)
         # Wort-genaue Aktionserkennung (kein Partial-Match auf "eine", "Auge" etc.)
         words = set(re.split(r'[\s,.!?]+', t))
@@ -9160,7 +9160,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         WICHTIG: Steuerungsbefehle ("stell auf 10%", "einstellen", "dimmen")
         werden NICHT als Status-Query erkannt, auch wenn sie "ist" enthalten.
         """
-        t = text.lower()
+        t = text.lower().replace("ß", "ss")
         has_noun = any(n in t for n in self._status_nouns)
         if not has_noun:
             return False
@@ -9184,7 +9184,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         Wird als Fallback genutzt wenn das LLM keinen Tool-Call generiert.
         Erkennt Status-Queries und einfache Steuerungsbefehle.
         """
-        t = text.lower()
+        t = text.lower().replace("ß", "ss")
         words = set(re.split(r'[\s,.!?]+', t))
 
         # --- Status-Queries: "Welche/Sind ... an/aus?" ---

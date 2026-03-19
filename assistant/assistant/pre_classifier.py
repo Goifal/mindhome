@@ -210,7 +210,7 @@ _STATUS_NOUNS = [
     "rollladen", "rolladen", "rolllaeden", "rollläden", "rolläden",
     "jalousie", "rollo",
     "fenster", "tuer", "tür", "türen",
-    "wetter", "aussen", "außen", "draussen", "draußen",
+    "wetter", "aussen", "draussen",
     "strom", "verbrauch", "watt", "energie",
     "status", "hausstatus", "ueberblick", "überblick",
     "musik", "spielt", "laeuft", "läuft",
@@ -227,13 +227,13 @@ _STATUS_SHORT_WORDS = re.compile(r'\b(?:an|aus)\b')
 # "Mir ist kalt" → Heizung hoch, "Es ist dunkel" → Licht an, etc.
 # Werden als DEVICE_FAST klassifiziert damit das LLM die passende Aktion waehlt.
 _IMPLICIT_COMMAND_PATTERNS = re.compile(
-    r"(?:mir ist (?:kalt|warm|heiss|heiß)|ich (?:friere|schwitz|schwitze|frier)"
+    r"(?:mir ist (?:kalt|warm|heiss)|ich (?:friere|schwitz|schwitze|frier)"
     r"|(?:es |hier |das )ist (?:(?:zu |so |viel zu |echt |total |ziemlich |sehr )?"
-    r"(?:kalt|warm|heiss|heiß|dunkel|hell|laut|leise|stickig))"
+    r"(?:kalt|warm|heiss|dunkel|hell|laut|leise|stickig))"
     r"|(?:es |hier )(?:zieht|stinkt|riecht)"
     r"|(?:ich (?:seh|sehe|kann) (?:nichts|nix|kaum (?:was|etwas)))"
     r"|(?:(?:zu |so |viel zu |echt |total |ziemlich |sehr )"
-    r"(?:kalt|warm|heiss|heiß|dunkel|hell|laut|leise|stickig) hier)"
+    r"(?:kalt|warm|heiss|dunkel|hell|laut|leise|stickig) hier)"
     r")"
 )
 
@@ -350,6 +350,9 @@ class PreClassifier:
           4. Alles andere → GENERAL
         """
         text_lower = text.lower().strip()
+        # Normalize ß → ss so regex patterns (e.g. "schliess") match
+        # both "schließe" and "schliesse" uniformly
+        text_lower = text_lower.replace("ß", "ss")
         word_count = len(text_lower.split())
 
         # 1. Geraete-Befehle: Verb-Start oder Nomen+Aktion, max 12 Woerter
