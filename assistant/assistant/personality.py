@@ -2385,9 +2385,12 @@ class PersonalityEngine:
         _hc_key = person.lower().strip() if person else "_default"
         with self._tracking_lock:
             _hc = self._humor_consecutive.get(_hc_key, 0)
-        if _hc >= 4:
-            with self._tracking_lock:
+            if _hc >= 4:
                 self._humor_consecutive[_hc_key] = 0
+                _hc_exceeded = True
+            else:
+                _hc_exceeded = False
+        if _hc_exceeded:
             return None
 
         # Situation erkennen

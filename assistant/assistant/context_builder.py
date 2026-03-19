@@ -186,7 +186,7 @@ class ContextBuilder:
         context = {}
 
         # Zeitkontext — immer (trivial, kein I/O)
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         context["time"] = {
             "datetime": now.strftime("%Y-%m-%d %H:%M"),
             "weekday": self._weekday_german(now.weekday()),
@@ -626,7 +626,7 @@ class ContextBuilder:
                     try:
                         changed_dt = datetime.fromisoformat(last_changed.replace("Z", "+00:00"))
                         # P06c DL3-CP8: Einheitliche TZ-Behandlung — immer aware
-                        now_dt = datetime.now(timezone.utc) if changed_dt.tzinfo else datetime.now()
+                        now_dt = datetime.now(timezone.utc)
                         diff_s = (now_dt - changed_dt).total_seconds()
                         if 0 <= diff_s < 7200:  # letzte 2 Stunden
                             name = _sanitize_for_prompt(
@@ -1165,7 +1165,7 @@ class ContextBuilder:
         if override_type in overrides:
             override = overrides[override_type]
             # Zeitbasiert: Prüfen ob Override gerade aktiv
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             if "active_hours" in override:
                 start_h, end_h = override["active_hours"]
                 if start_h <= end_h:
@@ -1194,7 +1194,7 @@ class ContextBuilder:
             profile["overrides"] = {}
         profile["overrides"][override_type] = {
             **value,
-            "learned_at": datetime.now().isoformat(),
+            "learned_at": datetime.now(timezone.utc).isoformat(),
         }
 
         # In YAML schreiben
@@ -1389,7 +1389,7 @@ class ContextBuilder:
 
     def _get_seasonal_context(self, states: Optional[list]) -> dict:
         """Ermittelt saisonale Kontextdaten."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         month = now.month
 
         # Jahreszeit bestimmen
