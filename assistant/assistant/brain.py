@@ -2969,6 +2969,60 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 except Exception as e:
                     logger.warning("Status-Query-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
+        # Device-Command-Shortcut: Direkte Ausfuehrung von Geraetebefehlen
+        # ("Licht an", "Rolllaeden runter", "Kaffeemaschine aus" etc.)
+        # Kein LLM noetig — deterministischer Tool-Call + Bestaetigungs-Template.
+        # Verhindert LLM-Halluzinationen ("Erledigt" ohne Aktion) und ist ~40x schneller.
+        if self._is_device_command(text) and not self._is_status_query(text):
+            det_tc = self._deterministic_tool_call(text)
+            if det_tc:
+                tc_list = det_tc if isinstance(det_tc, list) else [det_tc]
+                _names = [tc["function"]["name"] for tc in tc_list]
+                logger.info("Device-Command-Shortcut: '%s' -> %s", text, _names)
+                try:
+                    executed = []
+                    all_success = True
+                    for tc in tc_list:
+                        func_name = tc["function"]["name"]
+                        func_args = tc["function"]["arguments"]
+                        result = await self.executor.execute(func_name, func_args)
+                        success = isinstance(result, dict) and result.get("success", False)
+                        executed.append({"function": func_name, "args": func_args, "result": result})
+                        await emit_action(func_name, func_args, result)
+                        if not success:
+                            all_success = False
+                            logger.info(
+                                "Device-Command-Shortcut: %s fehlgeschlagen (%s) — Fallback auf LLM",
+                                func_name, result.get("message", "") if isinstance(result, dict) else result,
+                            )
+
+                    if all_success and executed:
+                        response_text = self._humanize_device_command(text, executed)
+                        self._remember_exchange(text, response_text)
+                        tts_data = self.tts_enhancer.enhance(
+                            response_text, message_type="confirmation",
+                        )
+                        if stream_callback:
+                            if not room:
+                                room = await self._get_occupied_room()
+                            self._task_registry.create_task(
+                                self.sound_manager.speak_response(
+                                    response_text, room=room, tts_data=tts_data),
+                                name="speak_response",
+                            )
+                        else:
+                            await self._speak_and_emit(
+                                response_text, room=room, tts_data=tts_data,
+                            )
+
+                        return self._result(
+                            response_text, actions=executed,
+                            model="device_command_shortcut", room=room,
+                            tts=tts_data, **{"_emitted": not stream_callback},
+                        )
+                except Exception as e:
+                    logger.warning("Device-Command-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
         # Smalltalk-Shortcut: Soziale Fragen sofort im JARVIS-Stil beantworten.
         # Verhindert, dass das LLM aus dem Charakter bricht ("Ich bin ein KI-Modell...").
         smalltalk_response = self._detect_smalltalk(text)

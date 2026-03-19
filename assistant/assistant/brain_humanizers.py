@@ -596,3 +596,91 @@ class BrainHumanizersMixin:
             suffix = f" — und {len(changes) - 5} weitere"
 
         return "Seit letzter Interaktion: " + ", ".join(parts) + suffix + "."
+
+    # ------------------------------------------------------------------
+    # Device-Command Bestaetigungs-Humanizer
+    # ------------------------------------------------------------------
+
+    def _humanize_device_command(self, text: str, executed: list) -> str:
+        """Generiert eine natuerliche Bestaetigung fuer ausgefuehrte Geraetebefehle.
+
+        Template-basiert, kein LLM noetig. Variiert leicht fuer natuerlichere Antworten.
+        """
+        import random
+
+        title = get_person_title() or "Sir"
+
+        # Sammle ausgefuehrte Aktionen nach Typ
+        actions_by_type: dict[str, list[str]] = {}
+        for act in executed:
+            func = act["function"]
+            args = act.get("args", {})
+            room = args.get("room", "")
+            action = args.get("action", args.get("state", ""))
+
+            # Menschenlesbare Beschreibung generieren
+            desc = self._describe_action(func, action, room)
+            if desc:
+                actions_by_type.setdefault(func, []).append(desc)
+
+        if not actions_by_type:
+            return f"Erledigt, {title}."
+
+        # Alle Beschreibungen zusammenfuegen
+        all_descs = []
+        for descs in actions_by_type.values():
+            all_descs.extend(descs)
+
+        action_text = " und ".join(all_descs) if len(all_descs) <= 2 else (
+            ", ".join(all_descs[:-1]) + f" und {all_descs[-1]}"
+        )
+
+        # Variierte Bestaetigungen
+        templates = [
+            f"Erledigt, {title} — {action_text}.",
+            f"Wird gemacht, {title}. {action_text}.",
+            f"Selbstverständlich, {title}. {action_text}.",
+            f"{action_text.capitalize()} — erledigt, {title}.",
+        ]
+
+        return random.choice(templates)
+
+    @staticmethod
+    def _describe_action(func: str, action: str, room: str) -> Optional[str]:
+        """Generiert eine menschenlesbare Beschreibung einer Geraeteaktion."""
+        # Deutsche Grammatik: "im" (Maskulin/Neutrum) vs. "in der" (Feminin)
+        _feminine_rooms = {"küche", "kueche", "garage", "werkstatt", "waschküche", "waschkueche"}
+        if room and room != "all":
+            r_cap = room.capitalize()
+            room_suffix = f" in der {r_cap}" if room.lower() in _feminine_rooms else f" im {r_cap}"
+        elif room == "all":
+            room_suffix = " überall"
+        else:
+            room_suffix = ""
+
+        _action_map = {
+            "set_cover": {
+                "close": f"Rollläden{room_suffix} heruntergefahren",
+                "open": f"Rollläden{room_suffix} hochgefahren",
+                "stop": f"Rollläden{room_suffix} gestoppt",
+            },
+            "set_light": {
+                "on": f"Licht{room_suffix} eingeschaltet",
+                "off": f"Licht{room_suffix} ausgeschaltet",
+            },
+            "set_switch": {
+                "on": f"Gerät{room_suffix} eingeschaltet",
+                "off": f"Gerät{room_suffix} ausgeschaltet",
+            },
+            "set_climate": {},
+        }
+
+        func_map = _action_map.get(func, {})
+        if action in func_map:
+            return func_map[action]
+
+        # Climate-Sonderfall
+        if func == "set_climate":
+            return f"Heizung{room_suffix} angepasst"
+
+        return None
