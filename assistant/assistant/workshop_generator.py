@@ -571,7 +571,7 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
                         "name": fn,
                         "size": filepath.stat().st_size,
                         "modified": datetime.fromtimestamp(
-                            filepath.stat().st_mtime).isoformat(),
+                            filepath.stat().st_mtime, tz=timezone.utc).isoformat(),
                     })
             return result
 
