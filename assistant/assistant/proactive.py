@@ -6485,16 +6485,19 @@ class ProactiveManager:
                     if prev_above and not above:
                         # Cooldown prüfen
                         if _redis:
-                            cd_key = f"mha:vacuum:pt:{entity}"
-                            last = await _redis.get(cd_key)
-                            if last:
-                                try:
-                                    hours_since = (time.time() - float(last)) / 3600
-                                    if hours_since < cooldown_h:
-                                        logger.info("Vacuum-PowerTrigger: %s Cooldown aktiv (%.1fh von %sh)", entity, hours_since, cooldown_h)
-                                        continue
-                                except (ValueError, TypeError):
-                                    pass
+                            try:
+                                cd_key = f"mha:vacuum:pt:{entity}"
+                                last = await _redis.get(cd_key)
+                                if last:
+                                    try:
+                                        hours_since = (time.time() - float(last)) / 3600
+                                        if hours_since < cooldown_h:
+                                            logger.info("Vacuum-PowerTrigger: %s Cooldown aktiv (%.1fh von %sh)", entity, hours_since, cooldown_h)
+                                            continue
+                                    except (ValueError, TypeError):
+                                        logger.warning("Vacuum-PowerTrigger: Ungueltige Cooldown-Daten fuer %s", entity)
+                            except Exception as e:
+                                logger.warning("Vacuum-PowerTrigger: Redis-Cooldown-Check fehlgeschlagen: %s", e)
 
                         # Verzoegerung abwarten
                         logger.info("Vacuum-PowerTrigger: %s unter %sW — warte %d Min", entity, threshold, delay_min)
@@ -6600,16 +6603,19 @@ class ProactiveManager:
 
                         # Cooldown prüfen
                         if _redis:
-                            cd_key = f"mha:vacuum:st:{entity}"
-                            last = await _redis.get(cd_key)
-                            if last:
-                                try:
-                                    hours_since = (time.time() - float(last)) / 3600
-                                    if hours_since < cooldown_h:
-                                        logger.info("Vacuum-SceneTrigger: %s Cooldown aktiv (%.1fh von %sh)", entity, hours_since, cooldown_h)
-                                        continue
-                                except (ValueError, TypeError):
-                                    pass
+                            try:
+                                cd_key = f"mha:vacuum:st:{entity}"
+                                last = await _redis.get(cd_key)
+                                if last:
+                                    try:
+                                        hours_since = (time.time() - float(last)) / 3600
+                                        if hours_since < cooldown_h:
+                                            logger.info("Vacuum-SceneTrigger: %s Cooldown aktiv (%.1fh von %sh)", entity, hours_since, cooldown_h)
+                                            continue
+                                    except (ValueError, TypeError):
+                                        logger.warning("Vacuum-SceneTrigger: Ungueltige Cooldown-Daten fuer %s", entity)
+                            except Exception as e:
+                                logger.warning("Vacuum-SceneTrigger: Redis-Cooldown-Check fehlgeschlagen: %s", e)
 
                         # Verzoegerung
                         scene_name = entity.replace("scene.", "").replace("_", " ").title()
@@ -6678,11 +6684,14 @@ class ProactiveManager:
 
                 # Dedup: Nur 1x pro Tag pro Teil warnen
                 if redis_client:
-                    dedup_key = f"mha:vacuum:maint:{floor}:{part}"
-                    already = await redis_client.get(dedup_key)
-                    if already:
-                        continue
-                    await redis_client.set(dedup_key, "1", ex=86400)
+                    try:
+                        dedup_key = f"mha:vacuum:maint:{floor}:{part}"
+                        already = await redis_client.get(dedup_key)
+                        if already:
+                            continue
+                        await redis_client.set(dedup_key, "1", ex=86400)
+                    except Exception as e:
+                        logger.warning("Vacuum-Wartung: Redis-Dedup fehlgeschlagen (%s): %s", part, e)
 
                 await self._notify("vacuum_maintenance", MEDIUM, {
                     "message": f"{nickname}: {part} bei {remaining}% — Wechsel empfohlen",
