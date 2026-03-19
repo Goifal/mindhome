@@ -536,7 +536,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             "rollladen", "rolladen", "rollo", "jalousie",
             "rollläden", "rolläden", "rolllaeden", "rollos", "jalousien",
             "licht", "lampe", "leuchte", "beleuchtung",
-            "heizung", "thermostat", "klima",
+            "heizung", "thermostat", "temperatur", "klima",
             "steckdose", "schalter", "musik", "lautsprecher",
             "wecker", "timer", "erinnerung",
             # Haushaltsgeraete (Switches)
@@ -546,7 +546,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         ]
         self._action_words = set(cmd_cfg.get("action_words") or [
             "auf", "zu", "an", "aus", "hoch", "runter",
-            "offen", "ein", "ab", "halb", "stopp", "stoppen", "stoppt",
+            "offen", "ein", "ab", "halb", "dicht",
+            "stopp", "stop", "stoppen", "stoppt",
             # Imperativ-/Konjugationsformen der haeufigsten Steuerverben
             "mach", "mache", "macht",
             "schalt", "schalte", "schaltet",
@@ -557,8 +558,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             "schliess", "schliesse", "schliesst", "schliessen",
             # Zusammengesetzte Verben
             "einschalten", "ausschalten", "anschalten", "abschalten",
-            "anmachen", "ausmachen",
+            "anmachen", "ausmachen", "aufdrehen", "zudrehen",
+            "hochfahren", "runterfahren", "runterdrehen",
             "aktivieren", "deaktivieren", "starten",
+            # Klima-Aktionswoerter
+            "wärmer", "waermer", "kälter", "kaelter",
+            "kühler", "kuehler", "höher", "hoeher",
         ])
         self._command_verbs = cmd_cfg.get("command_verbs") or [
             "mach ", "mache ", "schalt ", "schalte ",
@@ -9158,7 +9163,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         has_action = bool(words & self._action_words) or "%" in t
         # Verb-Start: "mach licht an", "schalte heizung ein"
         verb_start = any(t.startswith(v) for v in self._command_verbs)
-        return (has_noun and has_action) or (verb_start and has_noun)
+        # "alles/alle" als Pseudo-Nomen: "alles aus", "schliesse alles"
+        has_alle = bool(words & {"alle", "alles", "überall", "ueberall"})
+        return (has_noun and has_action) or (verb_start and has_noun) or \
+               (has_alle and has_action) or (verb_start and has_alle)
 
     def _is_status_query(self, text: str) -> bool:
         """Erkennt ob der Text eine Geraete-Status-Abfrage ist.
