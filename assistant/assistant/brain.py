@@ -546,14 +546,24 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         ]
         self._action_words = set(cmd_cfg.get("action_words") or [
             "auf", "zu", "an", "aus", "hoch", "runter",
-            "offen", "ein", "ab", "halb", "stopp",
-            "oeffne", "schliess", "schliesse", "schliesst",
-            "oeffnen", "schliessen",
-            "einschalten", "ausschalten", "anmachen", "ausmachen",
+            "offen", "ein", "ab", "halb", "stopp", "stoppen", "stoppt",
+            # Imperativ-/Konjugationsformen der haeufigsten Steuerverben
+            "mach", "mache", "macht",
+            "schalt", "schalte", "schaltet",
+            "stell", "stelle", "stellt",
+            "dreh", "drehe", "dreht",
+            "oeffne", "oeffnet", "oeffnen",
+            "öffne", "öffnet", "öffnen",
+            "schliess", "schliesse", "schliesst", "schliessen",
+            # Zusammengesetzte Verben
+            "einschalten", "ausschalten", "anschalten", "abschalten",
+            "anmachen", "ausmachen",
             "aktivieren", "deaktivieren", "starten",
         ])
         self._command_verbs = cmd_cfg.get("command_verbs") or [
-            "mach ", "schalte ", "stell ", "setz ", "dreh ", "oeffne ", "schliess",
+            "mach ", "mache ", "schalt ", "schalte ",
+            "stell ", "stelle ", "setz ", "setze ",
+            "dreh ", "drehe ", "oeffne ", "öffne ", "schliess",
             "aktiviere ", "deaktiviere ", "starte ",
         ]
         self._query_markers = cmd_cfg.get("query_markers") or [
@@ -9314,10 +9324,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                          "steckdose", "pumpe", "boiler", "bewaesserung",
                          "ventilator", "luefter"]
         if any(n in t for n in _switch_nouns):
-            state = "on" if (words & {"an", "ein", "einschalten", "aktivieren",
-                                      "starten", "anmachen"}) else \
-                    "off" if (words & {"aus", "ausschalten", "deaktivieren",
-                                       "ausmachen", "stopp", "stop"}) else None
+            state = "on" if (words & {"an", "ein", "einschalten", "anschalten",
+                                      "aktivieren", "starten", "anmachen"}) else \
+                    "off" if (words & {"aus", "ausschalten", "abschalten",
+                                       "deaktivieren", "ausmachen",
+                                       "stopp", "stop", "stoppen"}) else None
             if state:
                 # Switch-Name aus Entity-Katalog matchen.
                 # NUR Geraete-Nomen verwenden, NICHT Verben/Fuellwoerter wie
@@ -9362,7 +9373,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Lichter an/aus/dimmen
         if any(n in t for n in ["licht", "lichter", "lampe", "lampen", "leuchte"]):
-            state = "on" if (words & {"an", "ein"}) else "off" if (words & {"aus"}) else None
+            state = "on" if (words & {"an", "ein", "einschalten", "anschalten",
+                                      "anmachen", "aktivieren"}) else \
+                    "off" if (words & {"aus", "ausschalten", "abschalten",
+                                        "ausmachen", "deaktivieren"}) else None
             brightness = None
             pct_m = re.search(r'(\d{1,3})\s*(?:%|prozent)', t)
             if pct_m:
@@ -9390,7 +9404,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         "rollläden", "rolläden", "rolllaeden", "rollos", "jalousien"]
         if any(n in t for n in _cover_nouns):
             action = None
-            if words & {"auf", "hoch", "oeffne", "oeffnen", "offen"}:
+            if words & {"auf", "hoch", "oeffne", "oeffnet", "oeffnen",
+                        "öffne", "öffnet", "öffnen", "offen"}:
                 action = "open"
             elif words & {"zu", "runter", "schliess", "schliesse", "schliesst",
                           "schliessen", "dicht"}:
@@ -9451,7 +9466,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 # "Alles aus" → Lichter aus (haeufigster Use-Case)
                 return {"function": {"name": "set_light",
                                      "arguments": {"state": "off", "room": "all"}}}
-            if words & {"zu", "dicht", "schliessen"}:
+            if words & {"zu", "dicht", "schliess", "schliesse", "schliesst",
+                        "schliessen"}:
                 return {"function": {"name": "set_cover",
                                      "arguments": {"action": "close", "room": "all"}}}
 
@@ -9720,9 +9736,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             position = None
 
             # Eindeutige Verben
-            if any(v in t for v in ["hochfahren", "aufmachen", "oeffnen", "öffnen"]):
+            if any(v in t for v in ["hochfahren", "aufmachen", "oeffne", "oeffnet",
+                                    "oeffnen", "öffne", "öffnet", "öffnen"]):
                 action = "open"
-            elif any(v in t for v in ["runterfahren", "zumachen", "schliessen", "schließen"]):
+            elif any(v in t for v in ["runterfahren", "zumachen", "schliess", "schliesst",
+                                      "schliessen"]):
                 action = "close"
             # Aktionswort am Ende (vor optionalem "im X")
             elif _re.search(r'\b(?:hoch|auf)\s*(?:(?:im|in|vom)\s+\w+)?\s*$', t):
