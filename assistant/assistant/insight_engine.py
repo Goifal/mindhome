@@ -739,8 +739,8 @@ class InsightEngine:
                 if fc_time:
                     try:
                         fc_dt = datetime.fromisoformat(fc_time.replace("Z", "+00:00"))
-                        fc_local = fc_dt.astimezone().replace(tzinfo=None)
-                        hours_until = (fc_local - datetime.now(timezone.utc)).total_seconds() / 3600
+                        fc_local = fc_dt.astimezone(_LOCAL_TZ)
+                        hours_until = (fc_local - datetime.now(_LOCAL_TZ)).total_seconds() / 3600
                         if hours_until <= 0:
                             time_hint = "jetzt"
                         elif hours_until < 1:

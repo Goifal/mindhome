@@ -2151,7 +2151,7 @@ class ProactiveManager:
             is_away = False
             if _away_mode and hasattr(self.brain, "ha"):
                 try:
-                    is_away = not await self.brain.ha.is_anyone_home()
+                    is_away = not await self._is_anyone_home()
                 except Exception as e:
                     logger.warning("Anwesenheitspruefung fehlgeschlagen: %s", e)
             if not is_night and not is_away:
