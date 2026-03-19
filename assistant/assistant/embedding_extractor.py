@@ -6,7 +6,6 @@ Modell wird lazy geladen beim ersten Aufruf.
 """
 
 import base64
-import io
 import logging
 import struct
 from typing import Optional

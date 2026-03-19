@@ -21,7 +21,7 @@ import logging
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Optional, Callable, Awaitable
+from typing import Optional
 
 from .config import settings, yaml_config
 from .autonomy import AutonomyManager, TRUST_LEVEL_NAMES

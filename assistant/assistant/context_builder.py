@@ -10,6 +10,7 @@ import logging
 import math
 import os
 import re
+import threading
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Raum-Profile laden
 _ROOM_PROFILES = {}
+_ROOM_PROFILES_LOCK = threading.Lock()
 _SEASONAL_CONFIG = {}
 _config_dir = Path(__file__).parent.parent / "config"
 try:
@@ -1186,16 +1188,17 @@ class ContextBuilder:
         sich die Änderung für diesen Raum merken soll.
         """
         room_lower = room_name.lower().replace(" ", "_")
-        if room_lower not in _ROOM_PROFILES:
-            _ROOM_PROFILES[room_lower] = {"name": room_name}
+        with _ROOM_PROFILES_LOCK:
+            if room_lower not in _ROOM_PROFILES:
+                _ROOM_PROFILES[room_lower] = {"name": room_name}
 
-        profile = _ROOM_PROFILES[room_lower]
-        if "overrides" not in profile:
-            profile["overrides"] = {}
-        profile["overrides"][override_type] = {
-            **value,
-            "learned_at": datetime.now(timezone.utc).isoformat(),
-        }
+            profile = _ROOM_PROFILES[room_lower]
+            if "overrides" not in profile:
+                profile["overrides"] = {}
+            profile["overrides"][override_type] = {
+                **value,
+                "learned_at": datetime.now(timezone.utc).isoformat(),
+            }
 
         # In YAML schreiben
         try:

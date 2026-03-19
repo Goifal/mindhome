@@ -1164,8 +1164,9 @@ async def _refresh_entity_catalog_inner(ha: HomeAssistantClient) -> None:
 
 def _get_room_names() -> list[str]:
     """Liefert aktuelle Raumnamen (aus Cache oder Config-Fallback)."""
-    if _entity_catalog.get("rooms"):
-        return _entity_catalog["rooms"]
+    catalog = _entity_catalog  # Snapshot-Referenz gegen Mid-Refresh-Reads
+    if catalog.get("rooms"):
+        return catalog["rooms"]
     return _get_config_rooms()
 
 
@@ -1202,9 +1203,10 @@ def _inject_entity_hints(tool: dict) -> dict:
     }
     # get_entity_state bekommt Sensoren + Binary-Sensoren kombiniert
     # Priorisierung: Manuell annotierte und relevante Rollen (Power, Energy, Climate) zuerst
+    catalog = _entity_catalog  # Snapshot-Referenz gegen Mid-Refresh-Reads
     if fname == "get_entity_state":
-        combined = (_entity_catalog.get("sensors", []) +
-                    _entity_catalog.get("binary_sensors", []))
+        combined = (catalog.get("sensors", []) +
+                    catalog.get("binary_sensors", []))
         if combined:
             # Prioritaets-Rollen: Diese sind am häufigsten abgefragt
             _priority_roles = ("Strommesser", "Energie", "Innentemperatur",
@@ -1215,8 +1217,8 @@ def _inject_entity_hints(tool: dict) -> dict:
             entity_hint = ", ".join(ordered[:30])
             needs_copy = True
     # elif statt if — verhindert dass get_entity_state-Hint überschrieben wird
-    elif (catalog_key := _ENTITY_MAP.get(fname)) and _entity_catalog.get(catalog_key):
-        entities = _entity_catalog[catalog_key]
+    elif (catalog_key := _ENTITY_MAP.get(fname)) and catalog.get(catalog_key):
+        entities = catalog[catalog_key]
         if entities:
             entity_hint = ", ".join(entities[:30])  # Max 30 um Token zu sparen
             needs_copy = True

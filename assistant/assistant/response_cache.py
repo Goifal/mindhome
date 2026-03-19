@@ -18,6 +18,7 @@ Features:
 - Room-Invalidation: Cache wird bei State-Aenderung im Raum invalidiert
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -48,6 +49,7 @@ class ResponseCache:
         self._pre_cache_count = 0
         self._category_hits: dict[str, int] = {}
         self._invalidation_count = 0
+        self._stats_lock = asyncio.Lock()
 
     def configure(self, *, enabled: bool = True, ttl_overrides: Optional[dict] = None):
         """Konfiguriert den Cache (aus settings.yaml)."""
@@ -98,8 +100,9 @@ class ResponseCache:
         try:
             raw = await self._redis.get(key)
             if raw:
-                self._hits += 1
-                self._category_hits[category] = self._category_hits.get(category, 0) + 1
+                async with self._stats_lock:
+                    self._hits += 1
+                    self._category_hits[category] = self._category_hits.get(category, 0) + 1
                 data = json.loads(raw)
                 age_ms = round((time.time() - data.get("_ts", 0)) * 1000)
                 logger.info(
@@ -110,7 +113,8 @@ class ResponseCache:
         except Exception as e:
             logger.debug("ResponseCache get Fehler: %s", e)
 
-        self._misses += 1
+        async with self._stats_lock:
+            self._misses += 1
         return None
 
     async def put(
@@ -182,7 +186,8 @@ class ResponseCache:
             data["tts"] = tts
         try:
             await self._redis.set(key, json.dumps(data), ex=ttl)
-            self._pre_cache_count += 1
+            async with self._stats_lock:
+                self._pre_cache_count += 1
             logger.debug("ResponseCache PRE-CACHE [%s] ttl=%ds key=%s", category, ttl, key[-8:])
             return True
         except Exception as e:
@@ -221,7 +226,8 @@ class ResponseCache:
                     continue
 
             if deleted:
-                self._invalidation_count += deleted
+                async with self._stats_lock:
+                    self._invalidation_count += deleted
                 logger.debug("ResponseCache invalidated %d entries for room '%s'", deleted, room)
             return deleted
         except Exception as e:

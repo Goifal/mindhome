@@ -18,6 +18,7 @@ import collections
 import json
 import logging
 import random
+import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -203,6 +204,7 @@ class ProactiveManager:
         self._notification_timestamps: collections.deque[float] = collections.deque(maxlen=200)
         # Ignorierte Events pro Typ: zaehlt wie oft User aehnliche Events ignoriert hat
         self._dismissed_event_types: collections.Counter = collections.Counter()
+        self._salience_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Attention / Salience Scoring
@@ -266,7 +268,8 @@ class ProactiveManager:
         fatigue = self._notification_fatigue_score()
 
         # 4. Ignorier-Abzug: Wenn der User diesen Event-Typ oft ignoriert hat
-        dismiss_count = self._dismissed_event_types.get(event_type, 0)
+        with self._salience_lock:
+            dismiss_count = self._dismissed_event_types.get(event_type, 0)
         # Jedes Ignorieren reduziert Salienz um 5%, max 40% Reduktion
         dismiss_penalty = max(0.6, 1.0 - dismiss_count * 0.05)
 
@@ -304,7 +307,8 @@ class ProactiveManager:
         one_hour_ago = now - 3600
 
         # Zaehle Notifications der letzten Stunde
-        recent_count = sum(1 for ts in self._notification_timestamps if ts > one_hour_ago)
+        with self._salience_lock:
+            recent_count = sum(1 for ts in self._notification_timestamps if ts > one_hour_ago)
 
         if recent_count <= 2:
             return 1.0    # Keine Ermuedung
@@ -324,7 +328,8 @@ class ProactiveManager:
         Args:
             event_type: Event-Typ (fuer zukuenftige Event-spezifische Fatigue)
         """
-        self._notification_timestamps.append(time.time())
+        with self._salience_lock:
+            self._notification_timestamps.append(time.time())
 
     def record_notification_dismissed(self, event_type: str):
         """Registriert dass der User eine Notification ignoriert/dismissed hat.
@@ -334,7 +339,8 @@ class ProactiveManager:
         Args:
             event_type: Der Event-Typ der ignoriert wurde
         """
-        self._dismissed_event_types[event_type] += 1
+        with self._salience_lock:
+            self._dismissed_event_types[event_type] += 1
 
     # ------------------------------------------------------------------
     # LED Status-Indikator: Systemzustand als Lichtfarbe

@@ -94,7 +94,6 @@ from .brain_humanizers import BrainHumanizersMixin
 from .pre_classifier import PreClassifier
 from .response_cache import ResponseCache
 from .latency_tracker import latency_tracker
-from .circuit_breaker import registry as cb_registry, ollama_breaker, ha_breaker
 from .constants import REDIS_SECURITY_CONFIRM_KEY, REDIS_SECURITY_CONFIRM_TTL, ENTITY_CATALOG_REFRESH_INTERVAL, ERROR_BACKOFF_LONG, ERROR_BACKOFF_SHORT
 from .task_registry import TaskRegistry
 from .protocol_engine import ProtocolEngine
@@ -399,6 +398,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Per-Person Scoping um Cross-User-Leakage im Pronomen-Shortcut zu verhindern
         # Dict: person -> (action_name, action_args, timestamp)
         self._last_executed_actions: dict[str, tuple[str, dict, float]] = {}
+        self._last_actions_lock = asyncio.Lock()
 
         self._LAST_ACTION_TTL = 300  # 5 Minuten TTL für Per-Person-Action-Tracking
 
@@ -519,27 +519,29 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
     # --- Per-Person Last-Action Tracking (Cross-User-Leakage Fix) ---
 
-    def _get_last_action(self, person: str = "") -> tuple[str, dict]:
+    async def _get_last_action(self, person: str = "") -> tuple[str, dict]:
         """Letzte Aktion einer Person abrufen (mit 5-Min-TTL)."""
         import time
         key = (person or "user").lower()
-        entry = self._last_executed_actions.get(key)
-        if not entry:
-            return "", {}
-        action, args, ts = entry
-        if (time.monotonic() - ts) > self._LAST_ACTION_TTL:
-            del self._last_executed_actions[key]
-            return "", {}
-        return action, args
+        async with self._last_actions_lock:
+            entry = self._last_executed_actions.get(key)
+            if not entry:
+                return "", {}
+            action, args, ts = entry
+            if (time.monotonic() - ts) > self._LAST_ACTION_TTL:
+                del self._last_executed_actions[key]
+                return "", {}
+            return action, args
 
-    def _set_last_action(self, action: str, args: dict, person: str = "") -> None:
+    async def _set_last_action(self, action: str, args: dict, person: str = "") -> None:
         """Letzte Aktion einer Person setzen."""
         import time
         key = (person or "user").lower()
-        if action:
-            self._last_executed_actions[key] = (action, dict(args), time.monotonic())
-        elif key in self._last_executed_actions:
-            del self._last_executed_actions[key]
+        async with self._last_actions_lock:
+            if action:
+                self._last_executed_actions[key] = (action, dict(args), time.monotonic())
+            elif key in self._last_executed_actions:
+                del self._last_executed_actions[key]
 
     async def _get_caring_context(self, person: str, context: dict) -> str:
         """Caring-Butler: Prueft ob ein fuersorglicher Hinweis passt.
@@ -2260,7 +2262,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             r"\s*[.!]?$",
             text.lower().strip(),
         )
-        _la_person, _la_args_person = self._get_last_action(person)
+        _la_person, _la_args_person = await self._get_last_action(person)
         if _room_repeat and _la_person and _la_person.startswith("set_"):
             _la = _la_person
             _la_args = dict(_la_args_person or {})
@@ -2456,7 +2458,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 self.state_change_log.mark_jarvis_action(entity_id)
 
                         # Letzte Aktion merken (für Pronomen-Shortcut im nächsten Turn)
-                        self._set_last_action(func_name, func_args, person)
+                        await self._set_last_action(func_name, func_args, person)
                         return self._result(response_text, actions=all_actions, model="device_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Geraete-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
@@ -2511,7 +2513,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     await emit_action(func_name, func_args, result)
 
                     # Letzte Aktion merken (für Pronomen-Shortcut im nächsten Turn)
-                    self._set_last_action(func_name, func_args, person)
+                    await self._set_last_action(func_name, func_args, person)
                     return self._result(response_text, actions=[{"function": func_name, "args": func_args, "result": result}], model="media_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Media-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
@@ -3129,7 +3131,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             _mega_tasks.append(("conv_memory_extended", self.conversation_memory.get_memory_context()))
 
         # B10: Emotionale Kontinuitaet — vergangene negative Reaktionen beruecksichtigen
-        _emo_action, _ = self._get_last_action(person)
+        _emo_action, _ = await self._get_last_action(person)
         if self.memory_extractor and _emo_action:
             _mega_tasks.append(("emotional_ctx", MemoryExtractor.get_emotional_context(
                 action_type=_emo_action,
@@ -3440,7 +3442,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             logger.debug("Aktivitaetserkennung fehlgeschlagen: %s", e)
             self.personality._current_activity = ""
 
-        _prompt_action, _prompt_args = self._get_last_action(person)
+        _prompt_action, _prompt_args = await self._get_last_action(person)
         system_prompt = self.personality.build_system_prompt(
             context, formality_score=formality_score,
             irony_count_today=irony_count,
@@ -3529,7 +3531,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Letzte ausgefuehrte Aktion im Kontext — wichtig für Korrekturen
         # ("Nein, ich meinte das Schlafzimmer" → LLM weiss was zu korrigieren)
-        _ctx_action, _ctx_args = self._get_last_action(person)
+        _ctx_action, _ctx_args = await self._get_last_action(person)
         if _ctx_action:
             _args_str = ", ".join(f"{k}={v}" for k, v in _ctx_args.items()) if _ctx_args else ""
             _action_text = (
@@ -5798,7 +5800,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # d.h. der User reagiert auf eine VORHERIGE Aktion (z.B. "Nein, lass das").
         # Wenn im aktuellen Turn Aktionen ausgefuehrt wurden, ist der negative Text
         # Teil des Befehls (z.B. "Nein, mach das Licht aus") und keine Reaktion.
-        _react_action, _ = self._get_last_action(person)
+        _react_action, _ = await self._get_last_action(person)
         if self.memory_extractor and not executed_actions and person and _react_action:
             is_negative = self.memory_extractor.detect_negative_reaction(text)
             if is_negative:
@@ -5821,7 +5823,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             if isinstance(a.get("result"), dict) and a["result"].get("success", False)
         ]
         if _successful_actions:
-            self._set_last_action(
+            await self._set_last_action(
                 _successful_actions[-1].get("function", ""),
                 _successful_actions[-1].get("args", {}),
                 person,
@@ -5829,7 +5831,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         elif not executed_actions:
             # Nur leeren wenn gar keine Aktionen liefen — bei fehlgeschlagenen
             # Aktionen letzte gute Aktion beibehalten
-            self._set_last_action("", {}, person)
+            await self._set_last_action("", {}, person)
 
         # Phase 17: Situation Snapshot speichern (für Delta beim naechsten Gespraech)
         self._task_registry.create_task(
@@ -6086,7 +6088,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             )
 
         # Self-Improvement: Outcome Tracker — "Danke" = POSITIVE
-        _thanks_action, _ = self._get_last_action(person)
+        _thanks_action, _ = await self._get_last_action(person)
         if _is_thanked and _thanks_action:
             self._task_registry.create_task(
                 self.outcome_tracker.record_verbal_feedback(
@@ -11493,7 +11495,7 @@ Regeln:
                 logger.info("Korrektur-Lernen: '%s' gespeichert (Person: %s)", fact_text, person)
 
                 # Self-Improvement: Correction Memory — strukturiert speichern
-                _corr_action, _corr_args = self._get_last_action(person)
+                _corr_action, _corr_args = await self._get_last_action(person)
                 await self.correction_memory.store_correction(
                     original_action=_corr_action,
                     original_args=_corr_args,
