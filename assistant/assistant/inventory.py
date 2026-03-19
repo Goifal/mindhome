@@ -8,7 +8,7 @@ fehlende Artikel zur HA-Einkaufsliste hinzu.
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as redis
@@ -56,7 +56,7 @@ class InventoryManager:
             "quantity": str(quantity),
             "expiry_date": expiry_date,
             "category": category,
-            "added_at": datetime.now().isoformat(),
+            "added_at": datetime.now(timezone.utc).isoformat(),
         }
 
         try:
@@ -247,7 +247,7 @@ class InventoryManager:
         """Berechnet Tage bis zu einem Datum."""
         try:
             expiry = datetime.strptime(date_str, "%Y-%m-%d").date()
-            today = datetime.now().date()
+            today = datetime.now(timezone.utc).date()
             return (expiry - today).days
         except (ValueError, TypeError):
             return None

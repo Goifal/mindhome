@@ -24,7 +24,7 @@ import asyncio
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from .config import yaml_config
@@ -403,7 +403,7 @@ class SoundManager:
         F-060: Beruecksichtigt Activity-State (sleeping, in_call, focused).
         Wetter-Adaptiv: Bei Regen/Sturm Lautstaerke erhoehen (Umgebungsgeraeusch).
         """
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
         is_night = hour >= self.evening_start or hour < self.morning_start
 
         # Basis-Volume pro Event-Typ

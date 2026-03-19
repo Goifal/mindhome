@@ -10,7 +10,7 @@ import copy
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -3654,7 +3654,7 @@ class FunctionExecutor:
 
         try:
             from .state_change_log import StateChangeLog
-            hour = datetime.now().hour
+            hour = datetime.now(timezone.utc).hour
             states_raw = None  # Lazy-Load
 
             async def _get_states():
@@ -3891,7 +3891,7 @@ class FunctionExecutor:
         dim2warm-Lampen regeln Farbtemperatur über die Helligkeit
         in Hardware — je dunkler, desto waermer.
         """
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         minutes = now.hour * 60 + now.minute
         profiles = _get_room_profiles()
         room_cfg = profiles.get("rooms", {}).get(room, {})
@@ -8665,7 +8665,7 @@ class FunctionExecutor:
             if not intents:
                 return {"success": True, "message": "Keine anstehenden Vorhaben gemerkt."}
             # Abgelaufene Intents filtern
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             active = []
             for intent in intents:
                 deadline = intent.get("deadline", "")
@@ -8720,7 +8720,7 @@ class FunctionExecutor:
                     from datetime import datetime
                     try:
                         start_dt = datetime.fromisoformat(pc_start)
-                        minutes = (datetime.now() - start_dt).total_seconds() / 60
+                        minutes = (datetime.now(timezone.utc) - start_dt).total_seconds() / 60
                         status["pc_minutes"] = round(minutes)
                     except (ValueError, TypeError):
                         pass
@@ -9504,7 +9504,7 @@ class FunctionExecutor:
             matches = []
 
             for day_offset in range(days_back):
-                date = (datetime.now() - timedelta(days=day_offset)).strftime("%Y-%m-%d")
+                date = (datetime.now(timezone.utc) - timedelta(days=day_offset)).strftime("%Y-%m-%d")
                 archive_key = f"mha:archive:{date}"
 
                 try:

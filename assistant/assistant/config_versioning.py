@@ -14,7 +14,7 @@ import json
 import logging
 import re
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -69,7 +69,7 @@ class ConfigVersioning:
             return None
 
         try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             snapshot_id = f"{config_file}_{timestamp}"
             snapshot_path = _SNAPSHOT_DIR / f"{snapshot_id}.yaml"
 
@@ -82,7 +82,7 @@ class ConfigVersioning:
                 "snapshot_path": str(snapshot_path),
                 "reason": reason,
                 "changed_by": changed_by,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
             key = f"mha:config_snapshots:{config_file}"

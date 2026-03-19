@@ -14,7 +14,7 @@ Sicherheit:
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from .config import yaml_config
@@ -73,7 +73,7 @@ class AdaptiveThresholds:
 
         async with self._adjust_lock:
             # Rate Limit
-            current_week = datetime.now().strftime("%Y-W%W")
+            current_week = datetime.now(timezone.utc).strftime("%Y-W%W")
             if self._last_adjustment_week != current_week:
                 self._adjustments_this_week = 0
                 self._last_adjustment_week = current_week
@@ -193,7 +193,7 @@ class AdaptiveThresholds:
             "old_value": current,
             "new_value": new_value,
             "reason": reason,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     async def _determine_direction(self, param_name: str,

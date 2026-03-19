@@ -21,7 +21,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from .config import get_person_title
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -32,7 +32,7 @@ _TZ = ZoneInfo("Europe/Berlin")
 
 
 def _now() -> datetime:
-    """Timezone-aware datetime.now() für Europe/Berlin."""
+    """Timezone-aware datetime.now(timezone.utc) für Europe/Berlin."""
     return datetime.now(_TZ)
 
 logger = logging.getLogger(__name__)
@@ -1045,7 +1045,7 @@ class TimerManager:
 
         try:
             from datetime import date
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             today = date.today().isoformat()
             current_time = now.strftime("%H:%M")
             weekday = now.weekday()  # 0=Mo, 6=So

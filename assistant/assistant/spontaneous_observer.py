@@ -19,7 +19,7 @@ import json
 import logging
 import random
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -138,7 +138,6 @@ class SpontaneousObserver:
                 if observation and self._notify_callback:
                     await self._notify_callback(observation)
                     # Dashboard-History: Beobachtung fuer Widget speichern
-                    from datetime import datetime, timezone
                     self._observation_history.append({
                         "text": observation.get("message", ""),
                         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -162,7 +161,7 @@ class SpontaneousObserver:
 
     def _within_active_hours(self) -> bool:
         """Prueft ob aktuell innerhalb der aktiven Stunden."""
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
         start = self.active_hours.get("start", 8)
         end = self.active_hours.get("end", 22)
         return start <= hour < end
@@ -171,7 +170,7 @@ class SpontaneousObserver:
         """Gibt die Anzahl der heutigen Beobachtungen zurueck."""
         if not self.redis:
             return 999
-        key = f"{_PREFIX}:daily_count:{datetime.now().strftime('%Y-%m-%d')}"
+        key = f"{_PREFIX}:daily_count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
         count = await self.redis.get(key)
         return int(count) if count else 0
 
@@ -179,7 +178,7 @@ class SpontaneousObserver:
         """Erhoeht den Tages-Zaehler."""
         if not self.redis:
             return
-        key = f"{_PREFIX}:daily_count:{datetime.now().strftime('%Y-%m-%d')}"
+        key = f"{_PREFIX}:daily_count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
         await self.redis.incr(key)
         await self.redis.expire(key, 48 * 3600)
 
@@ -199,7 +198,7 @@ class SpontaneousObserver:
 
     def _current_slot(self) -> Optional[str]:
         """Gibt den aktuellen Tageszeit-Slot zurueck."""
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
         for name, (start, end, _max) in self._TIME_SLOTS.items():
             if start <= hour < end:
                 return name
@@ -213,7 +212,7 @@ class SpontaneousObserver:
         if not slot:
             return False
         _, _, max_count = self._TIME_SLOTS[slot]
-        key = f"{_PREFIX}:slot_count:{datetime.now().strftime('%Y-%m-%d')}:{slot}"
+        key = f"{_PREFIX}:slot_count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}:{slot}"
         count = await self.redis.get(key)
         return int(count) >= max_count if count else False
 
@@ -224,7 +223,7 @@ class SpontaneousObserver:
         slot = self._current_slot()
         if not slot:
             return
-        key = f"{_PREFIX}:slot_count:{datetime.now().strftime('%Y-%m-%d')}:{slot}"
+        key = f"{_PREFIX}:slot_count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}:{slot}"
         await self.redis.incr(key)
         await self.redis.expire(key, 48 * 3600)
 
@@ -244,13 +243,13 @@ class SpontaneousObserver:
 
         try:
             # Cache pruefen (1x pro Tag analysieren)
-            cache_key = f"{_PREFIX}:trend_cache:{datetime.now().strftime('%Y-%m-%d')}"
+            cache_key = f"{_PREFIX}:trend_cache:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
             cached = await self.redis.get(cache_key)
             if cached:
                 return None  # Heute schon analysiert
 
             # Letzte 7 Tage Action-Logs laden
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             daily_actions: dict[str, list[dict]] = {}
             for days_ago in range(7):
                 day = now - timedelta(days=days_ago)
@@ -488,7 +487,7 @@ class SpontaneousObserver:
                 return None
 
             # Kontext anreichern: Zeit + Wochentag + Aktivitaet
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             _DAY_NAMES = {0: "Montag", 1: "Dienstag", 2: "Mittwoch", 3: "Donnerstag",
                           4: "Freitag", 5: "Samstag", 6: "Sonntag"}
             _hour = now.hour
@@ -549,7 +548,7 @@ class SpontaneousObserver:
         try:
             # Heutige und letzte Wochen-Daten per mget aus Redis
             from datetime import timedelta
-            now_ts = datetime.now()
+            now_ts = datetime.now(timezone.utc)
             today_key = f"mha:energy:daily:{now_ts.strftime('%Y-%m-%d')}"
             week_ago = now_ts - timedelta(days=7)
             week_key = f"mha:energy:daily:{week_ago.strftime('%Y-%m-%d')}"
@@ -680,7 +679,7 @@ class SpontaneousObserver:
             if not actions_raw:
                 return None
 
-            today = datetime.now().strftime("%Y-%m-%d")
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             today_count = 0
             for raw in actions_raw:
                 try:
@@ -723,7 +722,7 @@ class SpontaneousObserver:
 
             # Zaehle Aktionen pro Entity diese Woche
             from datetime import timedelta
-            week_start = datetime.now() - timedelta(days=7)
+            week_start = datetime.now(timezone.utc) - timedelta(days=7)
             week_start_str = week_start.isoformat()
 
             entity_counts: dict[str, int] = {}
@@ -805,7 +804,7 @@ class SpontaneousObserver:
 
             # Alles optimiert (positives Feedback)
             if persons_home > 0 and lights_on <= 1 and heating_active <= 1:
-                hour = datetime.now().hour
+                hour = datetime.now(timezone.utc).hour
                 if 10 <= hour <= 20:
                     return {
                         "message": (

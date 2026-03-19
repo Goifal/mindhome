@@ -12,7 +12,7 @@ das Verhalten entsprechend an:
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as redis
@@ -97,7 +97,7 @@ class FeedbackTracker:
         async with self._pending_lock:
             self._pending[notification_id] = {
                 "event_type": event_type,
-                "sent_at": datetime.now(),
+                "sent_at": datetime.now(timezone.utc),
             }
 
         # Gesamt-Zaehler erhoehen
@@ -440,7 +440,7 @@ class FeedbackTracker:
         entry = json.dumps({
             "type": feedback_type,
             "delta": delta,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
         key = f"mha:feedback:history:{event_type}"
@@ -479,7 +479,7 @@ class FeedbackTracker:
 
     async def _check_timeouts(self):
         """Markiert alte Meldungen ohne Feedback als 'ignored'."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         timeout = timedelta(seconds=self.auto_timeout_seconds)
 
         expired = []

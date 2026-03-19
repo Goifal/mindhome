@@ -11,7 +11,7 @@ Vier Kernbereiche:
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from .config import settings, yaml_config, get_person_title
@@ -170,7 +170,7 @@ class SmartIntentRecognizer:
             return None
 
         if not time_of_day:
-            hour = datetime.now().hour
+            hour = datetime.now(timezone.utc).hour
             if 5 <= hour < 12:
                 time_of_day = "Morgen"
             elif 12 <= hour < 17:
@@ -421,7 +421,7 @@ class ProactiveSuggester:
         self.max_suggestions_per_day = cfg.get("max_per_day", 5)
         self._model = cfg.get("model", "")
         self._suggestions_today = 0
-        self._last_reset_day = datetime.now().date()
+        self._last_reset_day = datetime.now(timezone.utc).date()
 
     def _get_model(self) -> str:
         if self._model:
@@ -431,7 +431,7 @@ class ProactiveSuggester:
 
     def _check_daily_limit(self) -> bool:
         """Prueft ob das Tageslimit noch nicht erreicht ist."""
-        today = datetime.now().date()
+        today = datetime.now(timezone.utc).date()
         if today != self._last_reset_day:
             self._suggestions_today = 0
             self._last_reset_day = today
@@ -464,7 +464,7 @@ class ProactiveSuggester:
         if not self._check_daily_limit():
             return None
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         weekdays = ["Montag", "Dienstag", "Mittwoch", "Donnerstag",
                      "Freitag", "Samstag", "Sonntag"]
 

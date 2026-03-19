@@ -16,7 +16,7 @@ Nutzt bestehende Module:
 import asyncio
 import logging
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -2260,7 +2260,7 @@ class RoutineEngine:
 
             # Solar produziert, aber Sonne geht bald unter
             from datetime import datetime
-            hour = datetime.now().hour
+            hour = datetime.now(timezone.utc).hour
             if solar_power > 200 and hour >= 16:
                 return (
                     f"Solar produziert noch {solar_power:.0f}W, aber die Sonne geht "
@@ -2307,7 +2307,7 @@ class RoutineEngine:
         """
         try:
             from datetime import datetime
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             if now.hour < 23 or (now.hour == 23 and now.minute < 30):
                 return None
 

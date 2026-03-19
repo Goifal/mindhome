@@ -27,7 +27,7 @@ Jedes erkannte Event wird:
 import asyncio
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Callable, Awaitable
 
 from .config import yaml_config
@@ -292,7 +292,7 @@ class AmbientAudioClassifier:
             "message": message,
             "sound_event": reaction.get("sound_event"),
             "actions": reaction.get("actions", []),
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "is_night": self._is_night(),
         }
 
@@ -452,7 +452,7 @@ class AmbientAudioClassifier:
 
     def _is_night(self) -> bool:
         """Prueft ob Nachtmodus aktiv ist."""
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
         if self._night_start > self._night_end:
             return hour >= self._night_start or hour < self._night_end
         return self._night_start <= hour < self._night_end

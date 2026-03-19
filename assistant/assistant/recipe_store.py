@@ -12,7 +12,7 @@ allgemeinen Wissensdatenbank. Nur der Kochmodus greift darauf zu.
 import asyncio
 import hashlib
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
@@ -166,7 +166,7 @@ class RecipeStore:
                 "chunk_index": str(i),
                 "total_chunks": str(len(chunks)),
                 "content_hash": content_hash,
-                "ingested_at": datetime.now().isoformat(),
+                "ingested_at": datetime.now(timezone.utc).isoformat(),
             }
 
             try:

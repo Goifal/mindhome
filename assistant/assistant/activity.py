@@ -24,7 +24,7 @@ Zustellmethoden:
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from .config import yaml_config, get_all_bed_sensors
@@ -330,7 +330,7 @@ class ActivityEngine:
         """
         from datetime import timedelta
         self._manual_override = activity
-        self._override_until = datetime.now() + timedelta(minutes=duration_minutes)
+        self._override_until = datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)
         logger.info("Manueller Override: %s für %d Minuten", activity, duration_minutes)
 
     def clear_manual_override(self):
@@ -378,7 +378,7 @@ class ActivityEngine:
         """
         # Manueller Override pruefen
         if self._manual_override and self._override_until:
-            if datetime.now() < self._override_until:
+            if datetime.now(timezone.utc) < self._override_until:
                 return {
                     "activity": self._manual_override,
                     "confidence": 1.0,
@@ -467,7 +467,7 @@ class ActivityEngine:
         base_volume = activity_row.get(urgency, 0.7)
 
         # Tageszeit-Faktor: Abends/Nachts leiser
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
         # Nacht-Erkennung (funktioniert auch bei Mitternachts-Uebergang, z.B. 22-7)
         if self.night_start > self.night_end:
             is_night = hour >= self.night_start or hour < self.night_end
@@ -664,7 +664,7 @@ class ActivityEngine:
             return False
         if self._check_bed_occupied(states):
             return True
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         is_night = now.hour >= self.night_start or now.hour < self.night_end
         if is_night:
             return self._check_lights_off(states)

@@ -13,7 +13,7 @@ import asyncio
 import json
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -74,7 +74,7 @@ class ConversationMemory:
             return
         try:
             raw = await self.redis.hgetall(_KEY_PROJECTS)
-            cutoff = (datetime.now() - timedelta(days=30)).isoformat()
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
             removed = 0
             for key, val in raw.items():
                 key_str = key.decode() if isinstance(key, bytes) else key
@@ -96,7 +96,7 @@ class ConversationMemory:
             return
         try:
             raw = await self.redis.hgetall(_KEY_FOLLOWUPS)
-            cutoff = (datetime.now() - timedelta(days=self.question_ttl_days)).isoformat()
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=self.question_ttl_days)).isoformat()
             removed = 0
             for key, val in raw.items():
                 key_str = key.decode() if isinstance(key, bytes) else key
@@ -142,7 +142,7 @@ class ConversationMemory:
             return {"success": False, "message": f"Projekt '{name}' existiert bereits (Status: {existing.get('status', '?')}). Nutze update_project um es zu aendern."}
 
         import secrets
-        project_id = f"proj_{datetime.now().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(3)}_{name.lower().replace(' ', '_')[:20]}"
+        project_id = f"proj_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(3)}_{name.lower().replace(' ', '_')[:20]}"
         project = {
             "id": project_id,
             "name": name,
@@ -151,8 +151,8 @@ class ConversationMemory:
             "status": "active",
             "milestones": [],
             "notes": [],
-            "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
         try:
@@ -196,7 +196,7 @@ class ConversationMemory:
             if note:
                 project["notes"].append({
                     "text": note,
-                    "date": datetime.now().isoformat(),
+                    "date": datetime.now(timezone.utc).isoformat(),
                 })
                 # Max 20 Notizen
                 if len(project["notes"]) > 20:
@@ -205,7 +205,7 @@ class ConversationMemory:
             if milestone:
                 project["milestones"].append({
                     "text": milestone,
-                    "date": datetime.now().isoformat(),
+                    "date": datetime.now(timezone.utc).isoformat(),
                     "done": True,
                 })
                 changes.append(f"Meilenstein: {milestone}")
@@ -213,7 +213,7 @@ class ConversationMemory:
             if not changes:
                 return {"success": False, "message": "Keine Aenderung angegeben (status, note oder milestone)."}
 
-            project["updated_at"] = datetime.now().isoformat()
+            project["updated_at"] = datetime.now(timezone.utc).isoformat()
 
             try:
                 await self.redis.hset(_KEY_PROJECTS, project["id"], json.dumps(project))
@@ -307,7 +307,7 @@ class ConversationMemory:
 
         question = question.strip()
 
-        q_id = f"q_{datetime.now().strftime('%Y%m%d%H%M%S%f')[:20]}"
+        q_id = f"q_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')[:20]}"
         entry = {
             "id": q_id,
             "question": question,
@@ -315,7 +315,7 @@ class ConversationMemory:
             "person": person,
             "status": "open",
             "answer": "",
-            "created_at": datetime.now().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
         try:
@@ -346,7 +346,7 @@ class ConversationMemory:
 
         q["status"] = "answered"
         q["answer"] = answer
-        q["answered_at"] = datetime.now().isoformat()
+        q["answered_at"] = datetime.now(timezone.utc).isoformat()
 
         try:
             await self.redis.hset(_KEY_OPEN_QUESTIONS, q["id"], json.dumps(q))
@@ -401,7 +401,7 @@ class ConversationMemory:
             return
         try:
             raw = await self.redis.hgetall(_KEY_OPEN_QUESTIONS)
-            cutoff = (datetime.now() - timedelta(days=self.question_ttl_days)).isoformat()
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=self.question_ttl_days)).isoformat()
             for key, val in raw.items():
                 key_str = key.decode() if isinstance(key, bytes) else key
                 val_str = val.decode() if isinstance(val, bytes) else val
@@ -434,13 +434,13 @@ class ConversationMemory:
             return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
 
         if not date:
-            date = datetime.now().strftime("%Y-%m-%d")
+            date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         entry = {
             "date": date,
             "summary": summary,
             "topics": topics,
-            "created_at": datetime.now().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
         try:
@@ -459,7 +459,7 @@ class ConversationMemory:
             return None
 
         if not date:
-            date = datetime.now().strftime("%Y-%m-%d")
+            date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         try:
             raw = await self.redis.get(_KEY_DAILY_SUMMARY + date)
@@ -477,7 +477,7 @@ class ConversationMemory:
             return []
 
         summaries = []
-        today = datetime.now().date()
+        today = datetime.now(timezone.utc).date()
         for i in range(days):
             date = (today - timedelta(days=i)).strftime("%Y-%m-%d")
             s = await self.get_daily_summary(date)
@@ -536,7 +536,7 @@ class ConversationMemory:
         due_at = self._resolve_ask_after(ask_after)
 
         import secrets
-        followup_id = f"fu_{datetime.now().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(3)}"
+        followup_id = f"fu_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(3)}"
         entry = {
             "id": followup_id,
             "topic": topic,
@@ -544,7 +544,7 @@ class ConversationMemory:
             "ask_after": ask_after,
             "due_at": due_at,
             "status": "pending",
-            "created_at": datetime.now().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
         try:
@@ -568,7 +568,7 @@ class ConversationMemory:
 
         try:
             raw = await self.redis.hgetall(_KEY_FOLLOWUPS)
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             pending = []
 
             for val in raw.values():
@@ -613,7 +613,7 @@ class ConversationMemory:
             return {"success": False, "message": f"Follow-Up zu '{topic}' nicht gefunden."}
 
         entry["status"] = "done"
-        entry["completed_at"] = datetime.now().isoformat()
+        entry["completed_at"] = datetime.now(timezone.utc).isoformat()
 
         try:
             await self.redis.hset(_KEY_FOLLOWUPS, entry["id"], json.dumps(entry))
@@ -664,7 +664,7 @@ class ConversationMemory:
 
     def _resolve_ask_after(self, ask_after: str) -> str:
         """Wandelt ask_after in einen konkreten ISO-Zeitpunkt um."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         if ask_after == "next_conversation":
             # Sofort faellig — beim naechsten Gespraech nachfragen
@@ -737,7 +737,7 @@ class ConversationMemory:
             parts.append(f"Offene Fragen ({len(questions)}): {'; '.join(q_strs)}")
 
         # Gestrige Zusammenfassung
-        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
         summary = await self.get_daily_summary(yesterday)
         if summary and summary.get("topics"):
             parts.append(f"Gestern: {', '.join(summary['topics'][:5])}")
@@ -770,14 +770,14 @@ class ConversationMemory:
             return {}
 
         try:
-            thread_id = f"thread_{datetime.now().strftime('%Y%m%d%H%M%S')}_{id(topic) % 10000}"
+            thread_id = f"thread_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{id(topic) % 10000}"
             thread = {
                 "id": thread_id,
                 "topic": topic,
                 "session_ids": [session_id] if session_id else [],
                 "messages_count": 0,
-                "created_at": datetime.now().isoformat(),
-                "last_active": datetime.now().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "last_active": datetime.now(timezone.utc).isoformat(),
             }
             await self.redis.hset(_KEY_THREADS, thread_id, json.dumps(thread))
 
@@ -839,7 +839,7 @@ class ConversationMemory:
                     thread = json.loads(thread_raw)
                     if session_id not in thread.get("session_ids", []):
                         thread.setdefault("session_ids", []).append(session_id)
-                        thread["last_active"] = datetime.now().isoformat()
+                        thread["last_active"] = datetime.now(timezone.utc).isoformat()
                         thread["messages_count"] = thread.get("messages_count", 0) + 1
                         await self.redis.hset(_KEY_THREADS, best_thread_id, json.dumps(thread))
                 return best_thread_id

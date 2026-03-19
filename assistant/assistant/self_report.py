@@ -10,7 +10,7 @@ Sicherheit: Rein lesend + aggregierend. Keine Schreibzugriffe. User sieht alles.
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from .config import settings, yaml_config
@@ -47,7 +47,7 @@ class SelfReport:
             return {"error": "SelfReport nicht aktiv"}
 
         # Rate Limit: Max 1 Report pro Tag
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         # On restart, try to recover last report day from Redis
         if not self._last_report_day and self.redis:
             try:
@@ -118,7 +118,7 @@ class SelfReport:
             summary = self._format_fallback(data)
 
         report = {
-            "generated_at": datetime.now().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "summary": summary,
             "data": data,
         }

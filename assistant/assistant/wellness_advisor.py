@@ -13,7 +13,7 @@ zu kontextsensitiven Wellness-Hinweisen:
 import asyncio
 import logging
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -254,7 +254,7 @@ class WellnessAdvisor:
             await _safe_redis(self.redis, "delete", "mha:wellness:pc_start")
             return
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         pc_start = await _safe_redis(self.redis, "get", "mha:wellness:pc_start")
 
         if not pc_start:
@@ -358,12 +358,12 @@ class WellnessAdvisor:
                 # Fix: Redis bytes decode
                 last_str = last.decode() if isinstance(last, bytes) else last
                 last_dt = datetime.fromisoformat(last_str)
-                if (datetime.now() - last_dt).total_seconds() < cooldown_sec:
+                if (datetime.now(timezone.utc) - last_dt).total_seconds() < cooldown_sec:
                     return
             except (ValueError, TypeError):
                 pass
 
-        await _safe_redis(self.redis, "setex", "mha:wellness:last_stress_nudge", 86400, datetime.now().isoformat())
+        await _safe_redis(self.redis, "setex", "mha:wellness:last_stress_nudge", 86400, datetime.now(timezone.utc).isoformat())
 
         # Trend-Eskalation: Bei "declining" deutlichere Nachricht
         trend_hint = ""
@@ -371,7 +371,7 @@ class WellnessAdvisor:
             trend_hint = "Ich sehe eine absteigende Tendenz. "
 
         addressing = await self._get_addressing()
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
 
         if stress_level >= 0.7:
             # Hoher Stress: Konkreter Aktionsvorschlag
@@ -407,7 +407,7 @@ class WellnessAdvisor:
         if not self.meal_reminders or not self.redis:
             return
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         hour = now.hour
 
         for meal, target_hour in self.meal_times.items():
@@ -479,7 +479,7 @@ class WellnessAdvisor:
         if not self.late_night_nudge or not self.redis:
             return
 
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
 
         # Nur zwischen 0 und 4 Uhr
         if hour >= 5:
@@ -581,7 +581,7 @@ class WellnessAdvisor:
                 try:
                     # HA liefert start_time als "2026-03-04 08:00:00"
                     from datetime import timedelta
-                    tomorrow = (datetime.now() + timedelta(days=1)).date()
+                    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).date()
                     event_dt = datetime.fromisoformat(start_time)
                     if event_dt.date() == tomorrow:
                         event_hour = event_dt.strftime("%H:%M")
@@ -612,7 +612,7 @@ class WellnessAdvisor:
         try:
             from datetime import timedelta
 
-            today = datetime.now().date().isoformat()
+            today = datetime.now(timezone.utc).date().isoformat()
             key = "mha:wellness:latenight_dates"
 
             # Heute hinzufuegen (Set — kein Duplikat)
@@ -621,7 +621,7 @@ class WellnessAdvisor:
 
             # Aufeinanderfolgende Naechte zaehlen (rueckwaerts von heute)
             consecutive = 1
-            check_date = datetime.now().date()
+            check_date = datetime.now(timezone.utc).date()
             for _ in range(14):  # Max 14 Tage zurueck
                 check_date = check_date - timedelta(days=1)
                 is_member = await _safe_redis(self.redis, "sismember", key, check_date.isoformat())
@@ -648,7 +648,7 @@ class WellnessAdvisor:
         if not self.hydration_check or not self.redis:
             return
 
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
         if hour < 8 or hour > 22:
             return  # Nachts nicht erinnern
 
@@ -659,7 +659,7 @@ class WellnessAdvisor:
                 # Fix: Redis bytes decode
                 last_str = last.decode() if isinstance(last, bytes) else last
                 last_dt = datetime.fromisoformat(last_str)
-                elapsed_h = (datetime.now() - last_dt).total_seconds() / 3600
+                elapsed_h = (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600
                 if elapsed_h < self.hydration_interval_hours:
                     return
             except (ValueError, TypeError):
@@ -675,7 +675,7 @@ class WellnessAdvisor:
             logger.debug("Hydration Activity-Check fehlgeschlagen: %s", e)
             return
 
-        await _safe_redis(self.redis, "setex", key, 86400, datetime.now().isoformat())
+        await _safe_redis(self.redis, "setex", key, 86400, datetime.now(timezone.utc).isoformat())
         addressing = await self._get_addressing()
 
         mood_data = self.mood.get_current_mood()
@@ -721,7 +721,7 @@ class WellnessAdvisor:
             try:
                 last_str = last.decode() if isinstance(last, bytes) else last
                 last_dt = datetime.fromisoformat(last_str)
-                if (datetime.now() - last_dt).total_seconds() < 1800:
+                if (datetime.now(timezone.utc) - last_dt).total_seconds() < 1800:
                     return
             except (ValueError, TypeError):
                 pass
@@ -736,7 +736,7 @@ class WellnessAdvisor:
         if not executed:
             return
 
-        await _safe_redis(self.redis, "setex", key, 86400, datetime.now().isoformat())
+        await _safe_redis(self.redis, "setex", key, 86400, datetime.now(timezone.utc).isoformat())
 
         # Jarvis meldet was er getan hat — beilaeufig
         addressing = await self._get_addressing()
@@ -1008,7 +1008,7 @@ class WellnessAdvisor:
 
         try:
             from datetime import timedelta
-            today = datetime.now()
+            today = datetime.now(timezone.utc)
 
             for days_ago in range(1, 8):
                 date_str = (today - timedelta(days=days_ago)).strftime("%Y-%m-%d")
@@ -1092,7 +1092,7 @@ class WellnessAdvisor:
                     factors.append(f"Stimmung: {current_mood}")
 
             # Faktor 3: Spaete Nacht (nach 23 Uhr)
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             if now.hour >= 23 or now.hour < 5:
                 factors.append(f"Spaete Stunde ({now.strftime('%H:%M')})")
 

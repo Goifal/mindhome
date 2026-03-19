@@ -1710,7 +1710,7 @@ async def complete_maintenance(task_name: str, token: str = ""):
     success = brain.diagnostics.complete_task(task_name)
     if not success:
         raise HTTPException(status_code=404, detail=f"Aufgabe '{task_name}' nicht gefunden")
-    return {"completed": task_name, "date": __import__("datetime").datetime.now().strftime("%Y-%m-%d")}
+    return {"completed": task_name, "date": __import__("datetime").datetime.now(timezone.utc).strftime("%Y-%m-%d")}
 
 
 # ----- Phase 14.3: Ambient Audio Endpoints -----
@@ -2544,7 +2544,7 @@ async def ui_auth(req: PinRequest, request: Request):
         except Exception as e:
             logger.warning("PIN-Hash Migration fehlgeschlagen: %s", e)
 
-    token = hashlib.sha256(f"{req.pin}{datetime.now().isoformat()}{secrets.token_hex(8)}".encode()).hexdigest()[:32]
+    token = hashlib.sha256(f"{req.pin}{datetime.now(timezone.utc).isoformat()}{secrets.token_hex(8)}".encode()).hexdigest()[:32]
     async with _token_lock:
         _active_tokens[token] = datetime.now(timezone.utc).timestamp()
         # Abgelaufene Tokens aufraumen
@@ -5021,7 +5021,7 @@ async def ui_scenes_status(token: str = ""):
         # 3. HA-Szenen mit letztem Aktivierungszeitpunkt
         states = await brain.ha.get_states()
         ha_scenes = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         for s in (states or []):
             eid = s.get("entity_id", "")
             if not eid.startswith("scene."):
@@ -5743,7 +5743,7 @@ async def ui_live_status(token: str = ""):
         whisper = brain.tts_enhancer.is_whisper_mode
 
         return {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "system_health": health,
             "mood": mood,
             "room_health": health_status,
@@ -5915,7 +5915,7 @@ async def ui_health_trends(token: str = "", hours: int = 24):
     trends = {"co2": [], "temperature": [], "humidity": []}
     if brain.memory.redis:
         try:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             for h in range(hours):
                 ts = now - timedelta(hours=h)
                 key = f"mha:health:snapshot:{ts.strftime('%Y-%m-%d:%H')}"
@@ -6991,7 +6991,7 @@ async def workshop_add_inventory(request: Request):
         "unit": data.get("unit", "Stueck"),
         "location": data.get("location", ""),
         "min_quantity": str(data.get("min_quantity", 0)),
-        "added": datetime.now().isoformat(),
+        "added": datetime.now(timezone.utc).isoformat(),
     })
     return {"success": True, "name": name}
 
@@ -8398,7 +8398,7 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
 
     async with _update_lock:
         _update_log.clear()
-        _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Update gestartet...")
+        _update_log.append(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] Update gestartet...")
 
         # Aktuellen Branch merken (fuer Rollback bei Fehler)
         _, current_branch_raw = await _run_cmd(
@@ -8509,7 +8509,7 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
             except Exception as e:
                 _update_log.append(f"WARNUNG: {cfg_path.name} konnte nicht wiederhergestellt werden: {e}")
 
-        _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Code aktualisiert!")
+        _update_log.append(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] Code aktualisiert!")
 
         # 4. Full Update: Docker Compose Build (Rebuild der Container-Images)
         is_full = body.full if body else False

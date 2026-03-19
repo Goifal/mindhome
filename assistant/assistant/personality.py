@@ -17,7 +17,7 @@ import logging
 import random
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -520,7 +520,7 @@ class PersonalityEngine:
             pipe.hincrbyfloat(_key, "total_score", quality_score)
             pipe.hincrby(_key, "count", 1)
             pipe.hset(_key, "last_category", category)
-            pipe.hset(_key, "last_seen", datetime.now().isoformat())
+            pipe.hset(_key, "last_seen", datetime.now(timezone.utc).isoformat())
             pipe.expire(_key, 90 * 86400)
             await pipe.execute()
 
@@ -810,7 +810,7 @@ class PersonalityEngine:
             return
         person_key = person.lower().strip()
         key = f"mha:relationship:jokes:{person_key}"
-        entry = json.dumps({"joke": joke[:150], "date": datetime.now().strftime("%Y-%m-%d")})
+        entry = json.dumps({"joke": joke[:150], "date": datetime.now(timezone.utc).strftime("%Y-%m-%d")})
         try:
             await self._redis.zadd(key, {entry: time.time()})
             count = await self._redis.zcard(key)
@@ -840,7 +840,7 @@ class PersonalityEngine:
         key = f"mha:relationship:milestones:{person_key}"
         entry = json.dumps({
             "event": event[:200],
-            "date": datetime.now().strftime("%Y-%m-%d"),
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         })
         try:
             await self._redis.lpush(key, entry)
@@ -982,7 +982,7 @@ class PersonalityEngine:
         if effective_mood in ("stressed", "frustrated"):
             return None
 
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
 
         for rule in self._opinion_rules:
             if not self._match_rule(rule, action, args, hour):
@@ -1059,7 +1059,7 @@ class PersonalityEngine:
         if not pushback_cfg.get("enabled", True):
             return None
 
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
 
         for rule in self._opinion_rules:
             pushback_level = rule.get("pushback_level", 0)
@@ -1102,7 +1102,7 @@ class PersonalityEngine:
         title = get_person_title()
 
         # Tages-Reset
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if self._curiosity_last_date != today:
             self._curiosity_count_today = {}
             self._curiosity_last_date = today
@@ -1218,7 +1218,7 @@ class PersonalityEngine:
         entry = json.dumps({
             "type": interaction_type,
             "summary": summary[:120],
-            "date": datetime.now().strftime("%Y-%m-%d"),
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         })
 
         try:
@@ -1289,7 +1289,7 @@ class PersonalityEngine:
             # Aktuellen Gag loggen
             new_entry = json.dumps({
                 "type": gag_type,
-                "date": datetime.now().strftime("%A"),  # Wochentag
+                "date": datetime.now(timezone.utc).strftime("%A"),  # Wochentag
                 "timestamp": time.time(),
                 "episode": episode,
             })
@@ -1412,7 +1412,7 @@ class PersonalityEngine:
 
         house = context.get("house", {})
         open_windows = house.get("open_windows", [])
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
 
         hints = []
 
@@ -1544,7 +1544,7 @@ class PersonalityEngine:
         if random.random() > 0.75:
             return ""
 
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
         room_short = (room or "").split("_")[0].title() if room else ""
 
         # Aktions-spezifische Bestätigungen — immer im Jarvis-Ton
@@ -1615,7 +1615,7 @@ class PersonalityEngine:
     def get_time_of_day(self, hour: Optional[int] = None) -> str:
         """Bestimmt die aktuelle Tageszeit-Kategorie."""
         if hour is None:
-            hour = datetime.now().hour
+            hour = datetime.now(timezone.utc).hour
 
         if 5 <= hour < 8:
             return "early_morning"
@@ -2053,7 +2053,7 @@ class PersonalityEngine:
         if not self._redis:
             return 0
         try:
-            key = f"mha:irony:count:{datetime.now().strftime('%Y-%m-%d')}"
+            key = f"mha:irony:count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
             count = await self._redis.get(key)
             return int(count) if count else 0
         except Exception:
@@ -2073,7 +2073,7 @@ class PersonalityEngine:
         if not self._redis:
             return True  # No Redis = no quota enforcement
         try:
-            key = f"mha:irony:count:{datetime.now().strftime('%Y-%m-%d')}"
+            key = f"mha:irony:count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
             new_count = await self._redis.incr(key)
             await self._redis.expire(key, 86400)  # 24h TTL
             if new_count > self.self_irony_max_per_day:
@@ -2094,7 +2094,7 @@ class PersonalityEngine:
         if not self._redis:
             return
         try:
-            key = f"mha:irony:count:{datetime.now().strftime('%Y-%m-%d')}"
+            key = f"mha:irony:count:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
             await self._redis.incr(key)
             await self._redis.expire(key, 86400)  # 24h TTL
         except Exception as e:
@@ -2305,7 +2305,7 @@ class PersonalityEngine:
     async def _check_short_memory_gag(self, text: str) -> Optional[str]:
         """Erkennt wenn User innerhalb von 30 Sekunden das gleiche fragt."""
         key = "mha:gag:last_questions"
-        now = datetime.now().timestamp()
+        now = datetime.now(timezone.utc).timestamp()
 
         # Letzte Fragen holen
         try:
@@ -2371,7 +2371,7 @@ class PersonalityEngine:
         # Phase 2A: Taegl. Humor-Fatigue — nach 8 Witzen/Tag -50%, nach 12 -80%
         if self._redis:
             try:
-                day = datetime.now().strftime("%Y-%m-%d")
+                day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
                 daily_count = await self._redis.get(f"mha:humor:count:{day}")
                 daily_count = int(daily_count) if daily_count else 0
                 if daily_count >= 12 and random.random() < 0.8:
@@ -2424,7 +2424,7 @@ class PersonalityEngine:
         template = random.choice(templates)
         humor_text = template.format(
             temp=situation.get("temp", "?"),
-            hour=situation.get("hour", datetime.now().hour),
+            hour=situation.get("hour", datetime.now(timezone.utc).hour),
             count=situation.get("count", "?"),
             weather=situation.get("weather", "?"),
             room=situation.get("room", ""),
@@ -2446,7 +2446,7 @@ class PersonalityEngine:
         # Erfolg tracken (async, fire-and-forget)
         if self._redis:
             try:
-                day = datetime.now().strftime("%Y-%m-%d")
+                day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
                 await self._redis.incr(f"mha:humor:count:{day}")
                 await self._redis.expire(f"mha:humor:count:{day}", 7 * 86400)
             except Exception:
@@ -2470,7 +2470,7 @@ class PersonalityEngine:
             from .config import settings
             title = get_person_title()
             situation_key = situation.get("key", "")
-            hour = situation.get("hour", datetime.now().hour)
+            hour = situation.get("hour", datetime.now(timezone.utc).hour)
             temp = situation.get("temp", "")
             weather = situation.get("weather", "")
             room = situation.get("room", "")
@@ -2544,7 +2544,7 @@ class PersonalityEngine:
         Returns:
             Dict mit 'key' und Kontext-Daten oder None.
         """
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
         room = (args.get("room") or "").lower()
 
         # Frühaufsteher (5-6 Uhr)
@@ -2556,7 +2556,7 @@ class PersonalityEngine:
             return {"key": "late_night_command", "hour": hour, "room": room}
 
         # Wochenende morgens
-        weekday = datetime.now().weekday()
+        weekday = datetime.now(timezone.utc).weekday()
         if weekday >= 5 and 6 <= hour < 9:
             return {"key": "weekend_morning", "hour": hour, "room": room}
 
@@ -2789,7 +2789,7 @@ class PersonalityEngine:
             return
 
         try:
-            today = datetime.now().strftime("%Y-%m-%d")
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
             # Gesamt-Interaktionen inkrementieren
             await self._redis.incr("mha:personality:total_interactions")
@@ -3044,7 +3044,7 @@ class PersonalityEngine:
             mood_section = f"STIMMUNG: {mood_config['style_addon']}\n"
 
         # Phase 17.4: Late-Night Fürsorge — zwischen 0-4 Uhr sanfter Ton
-        _hour = datetime.now().hour
+        _hour = datetime.now(timezone.utc).hour
         if _hour < 5 and time_of_day in ("night", "early_morning"):
             _late_night_addon = (
                 "NACHTMODUS: Es ist sehr spät. Antworte leiser, kürzer, wärmer. "
@@ -3791,7 +3791,7 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
         }
 
         # Fürsorge-Hint: Was Jarvis beiläufig erwähnen koennte
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
         if mood == "frustrated":
             result["care_hint"] = "Kurz und direkt. Wenn wiederholte Frustration, beiläufig Hilfe anbieten."
         elif mood == "stressed":
@@ -3867,7 +3867,7 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
         _pp_section = ""
         if _pp_cfg.get("enabled", True):
             from datetime import datetime as _dt
-            _now = _dt.now()
+            _now = _dt.now(timezone.utc)
             _hour = _now.hour
             _weekday = _now.weekday()  # 0=Mo, 6=So
 
@@ -4203,7 +4203,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         Nur abends, nur wenn Jarvis 'neugierig' ist und mit hoher
         Konfidenz, maximal einmal pro 24h.
         """
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         if now.hour < 20:
             return None
 

@@ -20,7 +20,7 @@ import logging
 import random
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -253,7 +253,7 @@ class ProactiveManager:
         base_score = self._SEVERITY_SCORES.get(urgency, 0.3)
 
         # 2. Tageszeit-Modifikator: nachts (22-7) sind LOW/MEDIUM weniger salient
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
         time_modifier = 1.0
         if self._quiet_start > self._quiet_end:
             is_night = hour >= self._quiet_start or hour < self._quiet_end
@@ -393,7 +393,7 @@ class ProactiveManager:
     @staticmethod
     def _check_quiet(start: int, end: int) -> bool:
         """Prueft ob die aktuelle Stunde in einem Quiet-Window liegt."""
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
         if start > end:
             return hour >= start or hour < end
         return start <= hour < end
@@ -1606,7 +1606,7 @@ class ProactiveManager:
                 if last:
                     last_dt = datetime.fromisoformat(last)
                     cooldown_min = followup_cfg.get("cooldown_minutes", 60)
-                    if (datetime.now() - last_dt).total_seconds() < cooldown_min * 60:
+                    if (datetime.now(timezone.utc) - last_dt).total_seconds() < cooldown_min * 60:
                         return
             except Exception as e:
                 logger.warning("Follow-up Cooldown-Check fehlgeschlagen: %s", e)
@@ -1645,7 +1645,7 @@ class ProactiveManager:
         if delivered > 0 and self.brain.memory.redis:
             try:
                 await self.brain.memory.redis.set(
-                    _cooldown_key, datetime.now().isoformat(), ex=7200,
+                    _cooldown_key, datetime.now(timezone.utc).isoformat(), ex=7200,
                 )
             except Exception as e:
                 logger.warning("Follow-up Cooldown-Marker setzen fehlgeschlagen: %s", e)
@@ -1703,7 +1703,7 @@ class ProactiveManager:
         if not self._mb_enabled:
             return
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         today = now.strftime("%Y-%m-%d")
 
         # D1: Adaptives Zeitfenster aus gelernter Aufwach-Zeit
@@ -1850,7 +1850,7 @@ class ProactiveManager:
         if not self._eb_enabled:
             return
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         today = now.strftime("%Y-%m-%d")
 
         # Reset am neuen Tag — lock prevents double-trigger from concurrent events
@@ -2069,7 +2069,7 @@ class ProactiveManager:
         if not redis_client:
             return
 
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         flag_key = f"mha:personal_dates_checked:{today}"
 
         try:
@@ -2086,7 +2086,7 @@ class ProactiveManager:
                 await redis_client.setex(flag_key, 86400, "1")
                 return
 
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             for entry in upcoming:
                 days = entry["days_until"]
                 name = entry["person"].capitalize()
@@ -2132,7 +2132,7 @@ class ProactiveManager:
         """Motion-Kamera: Nachts oder bei Abwesenheit → Kamera-Snapshot analysieren."""
         from datetime import datetime
         try:
-            hour = datetime.now().hour
+            hour = datetime.now(timezone.utc).hour
             is_night = (hour >= 22 or hour < 6)
             # Tagsueber: Nur analysieren wenn niemand zuhause
             _cam_cfg = yaml_config.get("cameras", {}).get("proactive_analysis", {})
@@ -2354,7 +2354,7 @@ class ProactiveManager:
             last_time = await self.brain.memory.get_last_notification_time(cooldown_key)
             if last_time:
                 last_dt = datetime.fromisoformat(last_time)
-                if datetime.now() - last_dt < timedelta(minutes=5):
+                if datetime.now(timezone.utc) - last_dt < timedelta(minutes=5):
                     return
 
             # Phase 10.1: Auto-Follow bei hohem Autonomie-Level
@@ -2414,7 +2414,7 @@ class ProactiveManager:
             last = await self.brain.memory.get_last_notification_time(cooldown_key)
             if last:
                 last_dt = datetime.fromisoformat(last)
-                if datetime.now() - last_dt < timedelta(minutes=GEO_APPROACHING_COOLDOWN_MIN):
+                if datetime.now(timezone.utc) - last_dt < timedelta(minutes=GEO_APPROACHING_COOLDOWN_MIN):
                     return
             await self.brain.memory.set_last_notification_time(cooldown_key)
             await self._notify("person_approaching", LOW, {
@@ -2429,7 +2429,7 @@ class ProactiveManager:
             last = await self.brain.memory.get_last_notification_time(cooldown_key)
             if last:
                 last_dt = datetime.fromisoformat(last)
-                if datetime.now() - last_dt < timedelta(minutes=GEO_ARRIVING_COOLDOWN_MIN):
+                if datetime.now(timezone.utc) - last_dt < timedelta(minutes=GEO_ARRIVING_COOLDOWN_MIN):
                     return
             await self.brain.memory.set_last_notification_time(cooldown_key)
             await self._notify("person_arriving", MEDIUM, {
@@ -2579,7 +2579,7 @@ class ProactiveManager:
                     last_dt = datetime.fromisoformat(last_time)
                 except (ValueError, TypeError):
                     last_dt = None
-                if last_dt and datetime.now() - last_dt < timedelta(seconds=effective_cooldown):
+                if last_dt and datetime.now(timezone.utc) - last_dt < timedelta(seconds=effective_cooldown):
                     return
 
         # Phase 15.4+: LOW und MEDIUM-Meldungen batchen statt sofort senden
@@ -2595,7 +2595,7 @@ class ProactiveManager:
                     "urgency": urgency,
                     "description": description,
                     "data": data,
-                    "time": datetime.now().isoformat(),
+                    "time": datetime.now(timezone.utc).isoformat(),
                 })
 
                 medium_items = sum(1 for b in self._batch_queue if b.get("urgency") == MEDIUM)
@@ -2871,7 +2871,7 @@ class ProactiveManager:
             key = self._RETURN_BRIEFING_KEY.format(person=person_name.lower())
             # Initialer Eintrag mit Abgangszeit
             initial = json.dumps({
-                "departed": datetime.now().isoformat(),
+                "departed": datetime.now(timezone.utc).isoformat(),
                 "events": [],
             })
             await self.brain.memory.redis.setex(key, ttl, initial)
@@ -2903,7 +2903,7 @@ class ProactiveManager:
                 "type": event_type,
                 "urgency": urgency,
                 "summary": self.event_handlers.get(event_type, (MEDIUM, event_type))[1],
-                "time": datetime.now().strftime("%H:%M"),
+                "time": datetime.now(timezone.utc).strftime("%H:%M"),
                 "detail": data.get("person", data.get("entity", "")),
             }
 
@@ -2988,7 +2988,7 @@ class ProactiveManager:
             if departed:
                 try:
                     dep_dt = datetime.fromisoformat(departed)
-                    diff = datetime.now() - dep_dt
+                    diff = datetime.now(timezone.utc) - dep_dt
                     hours = diff.total_seconds() / 3600
                     if hours >= 1:
                         duration_str = f" (Abwesend: {int(hours)}h {int(diff.total_seconds() % 3600 / 60)}min)"
@@ -3691,7 +3691,7 @@ class ProactiveManager:
 
                 # Cooldown prüfen: max 1 pro Tag
                 if _redis:
-                    today = datetime.now().strftime("%Y-%m-%d")
+                    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
                     cooldown_key = f"mha:proactive:observation:{today}"
                     count = await _redis.get(cooldown_key)
                     if count and int(count) >= max_daily:
@@ -3712,7 +3712,7 @@ class ProactiveManager:
                     )
                     # Cooldown setzen
                     if _redis:
-                        today = datetime.now().strftime("%Y-%m-%d")
+                        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
                         cooldown_key = f"mha:proactive:observation:{today}"
                         await _redis.incr(cooldown_key)
                         await _redis.expire(cooldown_key, 86400)
@@ -3756,7 +3756,7 @@ class ProactiveManager:
                         pass
 
             # Check 2: Heizung läuft nachts auf hoher Temperatur
-            hour = datetime.now().hour
+            hour = datetime.now(timezone.utc).hour
             if 23 <= hour or hour < 5:
                 for s in states:
                     eid = s.get("entity_id", "")
@@ -3846,7 +3846,7 @@ class ProactiveManager:
         try:
             # Kontext sammeln: Uhrzeit, Wetter
             from datetime import datetime
-            hour = datetime.now().hour
+            hour = datetime.now(timezone.utc).hour
             weather_info = ""
             try:
                 states = await self.brain.ha.get_states()
@@ -4025,7 +4025,7 @@ class ProactiveManager:
         # und es ist nach der typischen Morgens-Öffnungszeit, defensiv "open" annehmen
         # um doppelte Morgens-Öffnung zu vermeiden
         if not last_schedule_action and not last_action_date:
-            _now = datetime.now()
+            _now = datetime.now(timezone.utc)
             if _now.hour >= 10:  # Nach 10 Uhr: Morgens-Öffnung war vermutlich schon
                 last_schedule_action = "open"
                 last_action_date = _now.strftime("%Y-%m-%d")
@@ -4057,7 +4057,7 @@ class ProactiveManager:
                 auto_level = seasonal_cfg.get("auto_execute_level", 3)
                 cover_cfg = seasonal_cfg.get("cover_automation", {})
 
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 today = now.strftime("%Y-%m-%d")
 
                 if last_action_date != today:
@@ -4266,7 +4266,6 @@ class ProactiveManager:
             lux = 0.0
 
         # Sensor-Staleness: Warnung wenn Sensor seit >3h nicht aktualisiert
-        from datetime import timezone
         for _eid, _label in [
             (get_sensor_by_role("wind_sensor"), "Wind"),
             (get_sensor_by_role("temp_outdoor"), "Temperatur"),
@@ -4444,7 +4443,7 @@ class ProactiveManager:
             reason_data = _json.dumps({
                 "position": position,
                 "reason": reason,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
             await redis_client.set(f"mha:cover:reason:{entity_id}", reason_data, ex=86400)
         except Exception as e:
@@ -4978,7 +4977,7 @@ class ProactiveManager:
     ):
         """Kaelte nachts → runter (Isolierung). Mit konfigurierbaren Nacht-Zeiten (Bug 5)."""
         temp = weather.get("temperature", 10)
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
         frost_temp = cover_cfg.get("frost_protection_temp", 3)
         night_insulation = cover_cfg.get("night_insulation", True)
         # Bug 5: Konfigurierbare Nacht-Stunden
@@ -5014,7 +5013,7 @@ class ProactiveManager:
         if not schedules:
             return
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         current_minutes = now.hour * 60 + now.minute
         weekday = now.weekday()  # 0=Mo, 6=So
         tolerance = 10  # +/- 10 Minuten Toleranz (> 15 Min Check-Intervall/2)
@@ -5111,7 +5110,7 @@ class ProactiveManager:
         Feature 7: Wellenfoermiges Oeffnen (Ost→Sued→West).
         Feature 13: Bettsensor respektieren.
         """
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         current_minutes = now.hour * 60 + now.minute
         open_time = timing.get("open_time", "07:30")
         close_time = timing.get("close_time", "19:00")
@@ -5711,7 +5710,7 @@ class ProactiveManager:
         if elevation > 0:
             return  # Nur nach Sonnenuntergang
 
-        current_hour = _dt.now().hour
+        current_hour = _dt.now(timezone.utc).hour
         cover_cfg = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
         global_close_hour = cover_cfg.get("privacy_close_hour", None)
 
@@ -6116,7 +6115,7 @@ class ProactiveManager:
                     continue
 
                 mode = auto_cfg.get("mode", "smart")
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 hour = now.hour
 
                 # ── Wochenplan-Trigger ──
@@ -6860,7 +6859,7 @@ class ProactiveManager:
                     if self.brain.memory and self.brain.memory.redis:
                         tracked_key = "mha:energy:daily_tracked"
                         from datetime import datetime as _dt
-                        today = _dt.now().strftime("%Y-%m-%d")
+                        today = _dt.now(timezone.utc).strftime("%Y-%m-%d")
                         last_tracked = await self.brain.memory.redis.get(tracked_key)
                         if isinstance(last_tracked, bytes):
                             last_tracked = last_tracked.decode("utf-8", errors="ignore")
@@ -6893,7 +6892,7 @@ class ProactiveManager:
 
         while self._running:
             try:
-                hour = datetime.now().hour
+                hour = datetime.now(timezone.utc).hour
 
                 # Quiet Hours respektieren
                 if self._is_quiet_hours():
@@ -7072,13 +7071,13 @@ class ProactiveManager:
         def __init__(self, entity_id: str):
             self.entity_id = entity_id
             self.state = self.IDLE
-            self.since = datetime.now()
+            self.since = datetime.now(timezone.utc)
             self.history: list[tuple[str, str, str]] = []  # (timestamp, from, to)
 
         def transition(self, new_state: str, reason: str = ""):
             if new_state != self.state:
                 self.history.append((
-                    datetime.now().isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                     self.state,
                     new_state,
                 ))
@@ -7088,7 +7087,7 @@ class ProactiveManager:
                 logger.debug("CoverState %s: %s → %s (%s)",
                              self.entity_id, self.state, new_state, reason)
                 self.state = new_state
-                self.since = datetime.now()
+                self.since = datetime.now(timezone.utc)
 
         def to_dict(self) -> dict:
             return {
@@ -7247,7 +7246,7 @@ class ProactiveManager:
 
         while self._running:
             try:
-                hour = datetime.now().hour
+                hour = datetime.now(timezone.utc).hour
                 if 17 <= hour <= 22:
                     # Abwesende Personen ermitteln
                     household = yaml_config.get("household", {}).get("members", [])
@@ -7348,7 +7347,7 @@ class ProactiveManager:
                     await asyncio.sleep(60)
                     continue
 
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 for scene in scenes:
                     if not scene.get("schedule_enabled"):
                         continue

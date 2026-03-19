@@ -13,7 +13,7 @@ Alle Daten in Redis mit TTL (max 2 Jahre).
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -99,7 +99,7 @@ class SeasonalInsightEngine:
         if not self.redis or not self.enabled:
             return
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         month_key = now.strftime("%Y-%m")
         redis_key = f"{_PREFIX}:monthly:{month_key}"
 
@@ -137,7 +137,7 @@ class SeasonalInsightEngine:
         if not self.redis:
             return None
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         current_month = now.month
         current_season = _SEASONS.get(current_month, "unbekannt")
         title = get_person_title()
@@ -319,7 +319,7 @@ class SeasonalInsightEngine:
         if not self.redis:
             return None
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         current_key = f"{_PREFIX}:monthly:{now.strftime('%Y-%m')}"
         last_year_key = f"{_PREFIX}:monthly:{now.year - 1}-{now.month:02d}"
 

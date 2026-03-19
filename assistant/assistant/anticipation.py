@@ -19,7 +19,7 @@ import asyncio
 import json
 import logging
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as redis
@@ -91,7 +91,7 @@ class AnticipationEngine:
             return
 
         try:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             entry = {
                 "action": action,
                 "args": json.dumps(args),
@@ -192,7 +192,7 @@ class AnticipationEngine:
 
         # Muster: Wenn eine Aktion an einem bestimmten Wochentag/Stunde
         # in > 60% der Wochen vorkommt
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         weeks_in_data = max(1, len(entries) / 50)  # Grobe Schaetzung
 
         for key, group in time_groups.items():
@@ -595,7 +595,7 @@ class AnticipationEngine:
         if not patterns:
             return []
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         suggestions = []
 
         for pattern in patterns:
@@ -774,7 +774,7 @@ class AnticipationEngine:
             return []
 
         crossrefs = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         try:
             # Kalender-Events aus Redis Cache holen
@@ -941,7 +941,7 @@ class AnticipationEngine:
         if not patterns:
             return
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         current_weather = await self._get_current_weather()
 
         # Abgelaufene Cooldowns entfernen (aelter als 30 Min)
@@ -1069,7 +1069,7 @@ class AnticipationEngine:
             return []
 
         try:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             # Alle Eintraege laden
             raw_entries = await self.redis.lrange("mha:action_log", 0, 999)
             if len(raw_entries) < 10:
@@ -1219,11 +1219,10 @@ class AnticipationEngine:
                 # Quiet Hours: Pattern-Detection komplett ueberspringen.
                 # Spart CPU und vermeidet Log-Spam (Suggestions werden eh unterdrueckt).
                 from .config import yaml_config
-                from datetime import datetime
                 quiet_cfg = yaml_config.get("ambient_presence", {})
                 quiet_start = int(quiet_cfg.get("quiet_start", 22))
                 quiet_end = int(quiet_cfg.get("quiet_end", 7))
-                hour = datetime.now().hour
+                hour = datetime.now(timezone.utc).hour
                 if quiet_start > quiet_end:
                     is_quiet = hour >= quiet_start or hour < quiet_end
                 else:
@@ -1265,7 +1264,7 @@ class AnticipationEngine:
             return []
 
         deviations = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         # Nur zwischen 17:00 und 22:00 pruefen
         if not (17 <= now.hour <= 22):
@@ -1359,7 +1358,7 @@ class AnticipationEngine:
                     pattern_counts[(action, int(weekday), int(hour))] += 1
 
             # Vorhersagen fuer die naechsten Tage
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             predictions = []
             weeks_data = max(1, len(entries) / 200)  # Grobe Schaetzung der Wochen
 

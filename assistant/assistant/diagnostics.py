@@ -175,7 +175,7 @@ class DiagnosticsEngine:
 
         issues = []
         now = datetime.now(timezone.utc)
-        now_local = datetime.now()
+        now_local = datetime.now(timezone.utc)
 
         # Entities die in diesem Zyklus als problematisch erkannt werden
         seen_problematic: set[str] = set()
@@ -408,7 +408,7 @@ class DiagnosticsEngine:
 
     def _check_cooldown(self, alert_key: str) -> bool:
         """Prueft ob ein Alert gesendet werden darf (Cooldown)."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         last = self._alert_cooldowns.get(alert_key)
         if last and (now - last) < timedelta(minutes=self.alert_cooldown):
             return False
@@ -436,7 +436,7 @@ class DiagnosticsEngine:
 
         tasks = self._load_maintenance_tasks()
         due = []
-        today = datetime.now().date()
+        today = datetime.now(timezone.utc).date()
 
         for task in tasks:
             name = task.get("name", "")
@@ -501,7 +501,7 @@ class DiagnosticsEngine:
 
         for task in tasks:
             if task.get("name", "").lower() == task_name.lower():
-                today = datetime.now().strftime("%Y-%m-%d")
+                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
                 # Completion-History fuehren (max 10 Eintraege)
                 history = task.get("history", [])
                 history.append(today)
@@ -703,7 +703,7 @@ class DiagnosticsEngine:
             Umfassender Report aller Diagnose-Ergebnisse
         """
         report = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "entities": {},
             "system": {},
             "connectivity": {},

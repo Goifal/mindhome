@@ -581,7 +581,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
             # Spaete Stunde
             from datetime import datetime
-            _hour = datetime.now().hour
+            _hour = datetime.now(timezone.utc).hour
             _late = _cfg.get("late_night_hour", 1)
             if _late <= _hour < 5:
                 hints.append("Es ist sehr spaet. Erwaehne beilaeufig die Uhrzeit.")
@@ -612,7 +612,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             from datetime import datetime as _dt
             async with self.proactive._state_lock:
                 consumed_indices = []
-                now = _dt.now()
+                now = _dt.now(timezone.utc)
                 for i, item in enumerate(self.proactive._batch_queue):
                     if len(asides) >= max_items:
                         break
@@ -2902,7 +2902,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         _implicit_intent = None
         if self.llm_enhancer.enabled and self.llm_enhancer.smart_intent.enabled:
             try:
-                _hour = datetime.now().hour
+                _hour = datetime.now(timezone.utc).hour
                 if 5 <= _hour < 12:
                     _tod = "Morgen"
                 elif 12 <= _hour < 17:
@@ -3177,7 +3177,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             logger.error("Context Build Fehler: %s — Fallback auf Minimal-Kontext", context)
             context = None
         if context is None:
-            context = {"time": {"datetime": datetime.now().isoformat()}}
+            context = {"time": {"datetime": datetime.now(timezone.utc).isoformat()}}
         if room:
             context["room"] = room
         if person:
@@ -3262,7 +3262,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             if _cm_msgs:
                 _cm_ts = _cm_msgs[-1].get("timestamp", "")
                 if _cm_ts:
-                    _cm_age = (datetime.now() - datetime.fromisoformat(_cm_ts)).total_seconds()
+                    _cm_age = (datetime.now(timezone.utc) - datetime.fromisoformat(_cm_ts)).total_seconds()
                     if _cm_age < _cm_timeout:
                         _conversation_mode = True
                         # Topic-Continuity: Roh-Text aus letzten Nachrichten
@@ -4973,7 +4973,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     if isinstance(result, dict) and result.get("success"):
                         try:
                             curiosity = await self.personality.check_curiosity(
-                                func_name, final_args, person or "", datetime.now().hour,
+                                func_name, final_args, person or "", datetime.now(timezone.utc).hour,
                             )
                             if curiosity:
                                 if response_text:
@@ -5990,7 +5990,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     outcome_entry = json.dumps({
                         "action": action["function"],
                         "args": action.get("args", {}),
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                         "person": person or "",
                         "context_hint": situation_delta or "",
                     })
@@ -7428,7 +7428,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             return ""
         try:
             dt = datetime.fromisoformat(iso_str)
-            days_ago = (datetime.now() - dt).days
+            days_ago = (datetime.now(timezone.utc) - dt).days
             if days_ago == 0:
                 return "Heute"
             elif days_ago == 1:
@@ -7448,7 +7448,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             Tuple (start_date, end_date) als ISO-Strings oder None.
         """
         text_lower = text.lower()
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         # "gestern"
         if "gestern" in text_lower:
@@ -7677,7 +7677,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         if _eid and self.memory.redis:
                             await self.memory.redis.hset(
                                 f"mha:fact:{_eid}", "updated_at",
-                                datetime.now().isoformat(),
+                                datetime.now(timezone.utc).isoformat(),
                             )
                         logger.debug("Topic-Dedup: '%s' existiert bereits als '%s'",
                                      topic_text[:40], existing.get("content", "")[:40])
@@ -10640,7 +10640,7 @@ Regeln:
                 recent_audio = self.ambient_audio.get_recent_events(limit=5)
                 if recent_audio:
                     from datetime import datetime, timedelta
-                    now = datetime.now()
+                    now = datetime.now(timezone.utc)
                     recent = []
                     for ev in recent_audio:
                         ts_str = ev.get("timestamp", "")
@@ -10940,18 +10940,18 @@ Regeln:
                 from datetime import datetime
                 last_dt = datetime.fromisoformat(last)
                 cooldown_min = _b12_cfg.get("cooldown_minutes", 30)
-                if (datetime.now() - last_dt).total_seconds() < cooldown_min * 60:
+                if (datetime.now(timezone.utc) - last_dt).total_seconds() < cooldown_min * 60:
                     return
 
             # Lern-Notiz speichern
             gap_entry = json.dumps({
                 "question": user_text[:200],
                 "person": person,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }, ensure_ascii=False)
             await self.memory.redis.lpush("mha:self_learning:gaps", gap_entry)
             await self.memory.redis.ltrim("mha:self_learning:gaps", 0, 19)
-            await self.memory.redis.set(cooldown_key, datetime.now().isoformat(), ex=7200)
+            await self.memory.redis.set(cooldown_key, datetime.now(timezone.utc).isoformat(), ex=7200)
             logger.info("B12: Wissensluecke erkannt: %s", user_text[:500])
         except Exception as e:
             logger.debug("B12 Knowledge Gap Check Fehler: %s", e)
@@ -11027,7 +11027,7 @@ Regeln:
             if entry.get("action") in target_actions:
                 try:
                     ts = datetime.fromisoformat(entry["timestamp"])
-                    delta = datetime.now() - ts
+                    delta = datetime.now(timezone.utc) - ts
                     if 1 <= delta.days <= 30:  # Mindestens 1 Tag alt, max 30
                         relevant.append((delta, entry))
                 except (KeyError, ValueError):
@@ -11039,7 +11039,7 @@ Regeln:
         # Aelteste relevante Erfahrung nehmen (nicht die juengste — die ist trivial)
         relevant.sort(key=lambda x: x[0], reverse=True)
         _, best = relevant[0]
-        days_ago = (datetime.now() - datetime.fromisoformat(best["timestamp"])).days
+        days_ago = (datetime.now(timezone.utc) - datetime.fromisoformat(best["timestamp"])).days
 
         time_ref = "gestern" if days_ago == 1 else f"vor {days_ago} Tagen"
         hint = best.get("context_hint", "")
@@ -11235,7 +11235,7 @@ Regeln:
             lights = house.get("lights", [])
             presence = house.get("presence", {})
             weather = house.get("weather", {})
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             hour = now.hour
 
             # --- 1. Niemand zuhause aber Lichter an ---
@@ -11719,7 +11719,7 @@ Regeln:
                 target_day = int(weekly_cfg.get("day", 6))  # 0=Montag, 6=Sonntag
                 target_hour = int(weekly_cfg.get("hour", 19))
 
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 days_ahead = target_day - now.weekday()
                 if days_ahead < 0 or (days_ahead == 0 and now.hour >= target_hour):
                     days_ahead += 7
@@ -11870,7 +11870,7 @@ Regeln:
         """Fuehrt einmal taeglich den Fact Decay aus (04:00 Uhr)."""
         while True:
             try:
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 # Naechste 04:00 berechnen
                 target = now.replace(hour=4, minute=0, second=0, microsecond=0)
                 if now >= target:
@@ -11903,7 +11903,7 @@ Regeln:
         """Prueft woechentlich ob ein Autonomy-Level-Aufstieg moeglich ist (Sonntag 05:00)."""
         while True:
             try:
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 # Naechsten Sonntag 05:00 berechnen
                 days_until_sunday = (6 - now.weekday()) % 7
                 if days_until_sunday == 0 and now.hour >= 5:
@@ -12074,7 +12074,7 @@ Regeln:
                     await self.memory.redis.setex(
                         "mha:idle_reasoning:last_run",
                         _cooldown_minutes * 60,
-                        datetime.now().isoformat(),
+                        datetime.now(timezone.utc).isoformat(),
                     )
 
             except asyncio.CancelledError:
@@ -12104,7 +12104,7 @@ Regeln:
             _context_parts = []
 
             # Aktuelle Uhrzeit + Wochentag
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             _context_parts.append(
                 f"Aktuelle Zeit: {now.strftime('%A %d.%m.%Y %H:%M')} Uhr"
             )
@@ -12605,7 +12605,7 @@ Regeln:
                         break
 
                 if calendar_entity:
-                    now = datetime.now()
+                    now = datetime.now(timezone.utc)
                     end = now + timedelta(minutes=lookahead)
                     result = await self.ha.call_service_with_response(
                         "calendar", "get_events",

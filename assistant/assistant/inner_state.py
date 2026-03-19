@@ -15,7 +15,7 @@ Redis Keys:
 import asyncio
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -373,7 +373,7 @@ class InnerStateEngine:
         if not self.redis:
             return
         try:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             pipe = self.redis.pipeline()
             pipe.set("mha:inner_state:mood", self._mood, ex=86400)
             pipe.set("mha:inner_state:confidence", str(round(self._confidence, 3)), ex=86400)
@@ -416,7 +416,7 @@ class InnerStateEngine:
             return []
         try:
             import json
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             min_score = now.timestamp() - (days * 86400)
             raw = await self.redis.zrangebyscore(
                 _KEY_MOOD_HISTORY, min_score, "+inf", withscores=True,

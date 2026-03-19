@@ -12,7 +12,7 @@ Phase 11.1: Wissensdatenbank
 import asyncio
 import hashlib
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
@@ -262,7 +262,7 @@ class KnowledgeBase:
                 "chunk_index": str(i),
                 "total_chunks": str(len(chunks)),
                 "content_hash": content_hash,
-                "ingested_at": datetime.now().isoformat(),
+                "ingested_at": datetime.now(timezone.utc).isoformat(),
             }
 
             try:
@@ -301,13 +301,13 @@ class KnowledgeBase:
             if content_hash in self._ingested_hashes:
                 continue
 
-            chunk_id = f"kb_{source}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{i}"
+            chunk_id = f"kb_{source}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{i}"
             metadata = {
                 "source_file": source,
                 "chunk_index": str(i),
                 "total_chunks": str(len(chunks)),
                 "content_hash": content_hash,
-                "ingested_at": datetime.now().isoformat(),
+                "ingested_at": datetime.now(timezone.utc).isoformat(),
             }
 
             try:

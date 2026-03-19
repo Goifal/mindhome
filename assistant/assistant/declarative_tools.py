@@ -20,7 +20,7 @@ Sicherheit:
 
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -539,7 +539,7 @@ class DeclarativeToolExecutor:
     async def _exec_schedule_checker(self, config: dict, description: str) -> dict:
         """Prueft zeitbasierte Schedules."""
         schedules = config.get("schedules", [])
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         current_hour = now.hour
         current_minute = now.minute
         current_time_min = current_hour * 60 + current_minute
@@ -635,7 +635,6 @@ class DeclarativeToolExecutor:
 
         # Wenn aktuell noch im Target-State: bis jetzt zaehlen
         if in_target and last_ts:
-            from datetime import timezone
             now = datetime.now(timezone.utc)
             total_seconds += (now - last_ts).total_seconds()
 

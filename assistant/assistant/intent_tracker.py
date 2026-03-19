@@ -12,7 +12,7 @@ Beispiel: "Naechstes WE kommen meine Eltern"
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as redis
@@ -62,7 +62,7 @@ def parse_relative_date(text: str, reference: datetime = None) -> Optional[str]:
         ISO-Datum string (YYYY-MM-DD) oder None
     """
     if not reference:
-        reference = datetime.now()
+        reference = datetime.now(timezone.utc)
 
     text_lower = text.lower().strip()
     # Umlaute normalisieren, damit sowohl "nächste" als auch "naechste" matchen
@@ -195,7 +195,7 @@ class IntentTracker:
         if not any(kw in text_lower for kw in time_keywords):
             return []
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         weekdays = ["Montag", "Dienstag", "Mittwoch", "Donnerstag",
                      "Freitag", "Samstag", "Sonntag"]
 
@@ -267,9 +267,9 @@ class IntentTracker:
             return False
 
         try:
-            intent_id = f"intent_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+            intent_id = f"intent_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}"
             intent["intent_id"] = intent_id
-            intent["created_at"] = datetime.now().isoformat()
+            intent["created_at"] = datetime.now(timezone.utc).isoformat()
             intent["status"] = "active"
 
             await self.redis.hset(
@@ -354,7 +354,7 @@ class IntentTracker:
         if not intents:
             return []
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         remind_before = timedelta(hours=self.remind_hours_before)
         due = []
 

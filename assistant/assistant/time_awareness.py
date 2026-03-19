@@ -16,7 +16,7 @@ Nutzt Redis fuer Tracking und wird vom ProactiveManager aufgerufen.
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import redis.asyncio as redis
@@ -520,7 +520,7 @@ class TimeAwareness:
         if not self.redis:
             return
         try:
-            today = datetime.now().strftime("%Y-%m-%d")
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             stored_date = await self.redis.get(KEY_COUNTER_DATE)
             if isinstance(stored_date, bytes):
                 stored_date = stored_date.decode()
@@ -550,7 +550,7 @@ class TimeAwareness:
 
         if start_time is None:
             # Erster Check -> Timer starten
-            await self.redis.set(key, str(datetime.now().timestamp()))
+            await self.redis.set(key, str(datetime.now(timezone.utc).timestamp()))
             await self.redis.expire(key, 86400)
             return 0.0
 
@@ -559,7 +559,7 @@ class TimeAwareness:
         except (ValueError, TypeError):
             await self._clear_device_timer(device_key)
             return None
-        elapsed_seconds = datetime.now().timestamp() - start_ts
+        elapsed_seconds = datetime.now(timezone.utc).timestamp() - start_ts
         return elapsed_seconds / 60.0
 
     async def _was_notified(self, device_key: str) -> bool:

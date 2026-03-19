@@ -25,7 +25,7 @@ Manual Override:
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from .config import yaml_config, get_room_profiles
@@ -222,7 +222,7 @@ class LightEngine:
             return
 
         # Nur nach sleep_start_hour
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         start_hour = bed_cfg.get("sleep_start_hour", 21)
         if now.hour < start_hour and now.hour >= 6:
             logger.debug("Bett belegt, aber vor Schlafzeit (%d < %d)", now.hour, start_hour)
@@ -251,7 +251,7 @@ class LightEngine:
         if self.redis:
             await _safe_redis(self.redis, "delete", _R_SLEEP)
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         pc = cfg.get("presence_control", {})
 
         # Morgen-Fenster? → Aufwach-Licht
@@ -408,7 +408,7 @@ class LightEngine:
 
     async def _check_night_dimming(self, cfg: dict, states: list[dict]):
         """Nach Startzeit: Lichter die heller als night_brightness sind, dimmen."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         start_hour = cfg.get("night_dimming_start_hour", 21)
 
         # Nur zwischen start_hour und 06:00
@@ -691,7 +691,7 @@ class LightEngine:
             return
 
         # Feature 7: Nur tagsueber aktiv — nach Night-Dimming-Start kein Boost
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         night_start = cfg.get("night_dimming_start_hour", 21)
         night_end = cfg.get("presence_control", {}).get("night_end_hour", 6)
         if now.hour >= night_start or now.hour < night_end:
@@ -913,7 +913,7 @@ class LightEngine:
         """Prueft ob aktuell Nacht ist (konfigurierbar)."""
         if pc is None:
             pc = yaml_config.get("lighting", {}).get("presence_control", {})
-        now_h = datetime.now().hour
+        now_h = datetime.now(timezone.utc).hour
         start = pc.get("night_start_hour", 22)
         end = pc.get("night_end_hour", 6)
         if start > end:
@@ -923,7 +923,7 @@ class LightEngine:
     def _is_morning_window(self) -> bool:
         """Prueft ob aktuell Morgen-Fenster (Aufwach-Zeit)."""
         bed_cfg = yaml_config.get("lighting", {}).get("bed_sensors", {})
-        now_h = datetime.now().hour
+        now_h = datetime.now(timezone.utc).hour
         start = bed_cfg.get("wakeup_window_start", 5)
         end = bed_cfg.get("wakeup_window_end", 9)
         return start <= now_h < end

@@ -19,7 +19,7 @@ import re
 import time
 import uuid as uuid_mod
 from dataclasses import dataclass, field, asdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -279,7 +279,7 @@ class RepairPlanner:
             "priority": priority,   # niedrig|normal|hoch|dringend
             "status": "erstellt",   # erstellt|diagnose|teile_bestellt|in_arbeit|pausiert|fertig
             "slug": slug,
-            "created": datetime.now().isoformat(),
+            "created": datetime.now(timezone.utc).isoformat(),
             "parts": "[]",
             "tools": "[]",
             "notes": "[]",
@@ -377,7 +377,7 @@ class RepairPlanner:
         """Schliesst ein Projekt ab."""
         await self.update_project(
             project_id, status="fertig",
-            completed=datetime.now().isoformat())
+            completed=datetime.now(timezone.utc).isoformat())
         if notes:
             await self.add_project_note(project_id, notes)
         # Auto-Dokumentation generieren
@@ -397,7 +397,7 @@ class RepairPlanner:
         if not project:
             return {"status": "error", "message": "Projekt nicht gefunden"}
         notes = project.get("notes", [])
-        notes.append({"text": note, "timestamp": datetime.now().isoformat()})
+        notes.append({"text": note, "timestamp": datetime.now(timezone.utc).isoformat()})
         await self.redis.hset(
             f"mha:repair:project:{project_id}", "notes", json.dumps(notes))
         return {"status": "ok", "note_count": len(notes)}
@@ -497,7 +497,7 @@ class RepairPlanner:
                 title=project["title"],
                 category="reparatur",
                 steps=steps,
-                started_at=datetime.now().isoformat(),
+                started_at=datetime.now(timezone.utc).isoformat(),
             )
             await self._save_session()
 
@@ -991,7 +991,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         item = {
             "name": name, "quantity": str(quantity),
             "category": category, "location": location,
-            "added": datetime.now().isoformat(),
+            "added": datetime.now(timezone.utc).isoformat(),
         }
         await self.redis.hset(
             f"mha:repair:workshop:{item_id}", mapping=item)
@@ -1032,7 +1032,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         await self.redis.hset(key, mapping={
             "tool": tool_name,
             "interval_days": str(interval_days),
-            "last_done": last_done or datetime.now().isoformat(),
+            "last_done": last_done or datetime.now(timezone.utc).isoformat(),
         })
         return {"status": "ok"}
 
@@ -1059,7 +1059,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 last = datetime.fromisoformat(
                     data.get("last_done", "2000-01-01T00:00:00"))
                 interval = int(data.get("interval_days", 90))
-                if (datetime.now() - last).days >= interval:
+                if (datetime.now(timezone.utc) - last).days >= interval:
                     due.append(data)
             except (ValueError, TypeError) as e:
                 logger.debug("S6: Maintenance check skipped: %s", e)
@@ -1083,7 +1083,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         expenses = project.get("expenses", [])
         expenses.append({
             "item": item, "cost": float(cost),
-            "date": datetime.now().isoformat(),
+            "date": datetime.now(timezone.utc).isoformat(),
         })
         await self.redis.hset(
             f"mha:repair:project:{project_id}",
@@ -1148,7 +1148,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         key = f"mha:repair:lent:{tool_name.lower().replace(' ', '_')}"
         await self.redis.hset(key, mapping={
             "tool": tool_name, "person": person,
-            "since": datetime.now().isoformat(),
+            "since": datetime.now(timezone.utc).isoformat(),
         })
         return {"status": "ok",
                 "message": f"{tool_name} an {person} verliehen"}
@@ -1551,10 +1551,10 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         """Holt Journal-Einträge."""
         if not self.redis:
             return {"date": "", "entries": []}
-        key = f"mha:repair:journal:{datetime.now().strftime('%Y-%m-%d')}"
+        key = f"mha:repair:journal:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
         entries = await self.redis.lrange(key, 0, -1)
         return {
-            "date": datetime.now().strftime('%Y-%m-%d'),
+            "date": datetime.now(timezone.utc).strftime('%Y-%m-%d'),
             "entries": [json.loads(e.decode() if isinstance(e, bytes) else e) for e in entries],
         }
 
@@ -1562,8 +1562,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         """Fuegt einen Journal-Eintrag hinzu."""
         if not self.redis:
             return {"status": "error", "message": "Redis nicht verfügbar"}
-        key = f"mha:repair:journal:{datetime.now().strftime('%Y-%m-%d')}"
-        entry = {"text": note, "time": datetime.now().strftime('%H:%M')}
+        key = f"mha:repair:journal:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+        entry = {"text": note, "time": datetime.now(timezone.utc).strftime('%H:%M')}
         await self.redis.rpush(key, json.dumps(entry))
         await self.redis.expire(key, 90 * 86400)  # 90 Tage
         return {"status": "ok"}
@@ -1579,7 +1579,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         await self.redis.hset(key, mapping={
             "name": name, "code": code, "language": language,
             "tags": json.dumps(tags or []),
-            "created": datetime.now().isoformat(),
+            "created": datetime.now(timezone.utc).isoformat(),
         })
         return {"status": "ok"}
 
@@ -1606,7 +1606,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
             project_id=project_id,
             title=project.get("title", ""),
             category=project.get("category", "maker"),
-            started_at=datetime.now().isoformat(),
+            started_at=datetime.now(timezone.utc).isoformat(),
         )
         await self._save_session()
         return {"status": "ok",

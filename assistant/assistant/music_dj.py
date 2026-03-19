@@ -9,7 +9,7 @@ Nutzer-Feedback wird in Redis gespeichert und beeinflusst zukuenftige Empfehlung
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from .config import yaml_config, get_person_title
@@ -51,7 +51,7 @@ GENRE_LABELS: dict[str, str] = {
 
 def _get_time_of_day() -> str:
     """Gibt die Tageszeit als String zurueck."""
-    hour = datetime.now().hour
+    hour = datetime.now(timezone.utc).hour
     if 5 <= hour < 10:
         return "morning"
     elif 10 <= hour < 17:
@@ -399,7 +399,7 @@ class MusicDJ:
             entry = json.dumps({
                 "genre": genre,
                 "positive": positive,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
             await self.redis.lpush(fb_key, entry)
             await self.redis.ltrim(fb_key, 0, 49)

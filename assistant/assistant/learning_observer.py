@@ -14,7 +14,7 @@ Ergaenzt die bestehende anticipation.py mit manuellen Aktions-Mustern.
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -123,7 +123,7 @@ class LearningObserver:
             return
 
         try:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             hour = now.hour
             minute = now.minute
             weekday = now.weekday()
@@ -312,7 +312,7 @@ class LearningObserver:
             "time_slot": time_slot,
             "weekday": weekday,
             "accepted": accepted,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "person": person,
         }
         await self.redis.lpush(KEY_RESPONSES, json.dumps(response))
@@ -629,7 +629,7 @@ class LearningObserver:
             return
 
         try:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             person_prefix = f"{person}:" if person else ""
             concept_key = f"{KEY_CONCEPT_OBSERVATIONS}:{person_prefix}{_concept_name}"
 
@@ -761,7 +761,7 @@ class LearningObserver:
                 "primary_weekdays": _primary_days,
                 "observation_count": len(observations),
                 "person": person,
-                "created": datetime.now().isoformat(),
+                "created": datetime.now(timezone.utc).isoformat(),
             }
 
             await self.redis.hset(
@@ -882,7 +882,7 @@ class LearningObserver:
             last_ask = await self.redis.get(self._B12_COOLDOWN_KEY)
             if last_ask:
                 last_dt = datetime.fromisoformat(last_ask.decode() if isinstance(last_ask, bytes) else last_ask)
-                if (datetime.now() - last_dt).total_seconds() < cooldown_min * 60:
+                if (datetime.now(timezone.utc) - last_dt).total_seconds() < cooldown_min * 60:
                     return
         except Exception as e:
             logger.debug("Cooldown-Pruefung fehlgeschlagen: %s", e)
@@ -907,7 +907,7 @@ class LearningObserver:
             try:
                 await self.redis.set(
                     self._B12_COOLDOWN_KEY,
-                    datetime.now().isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                     ex=cooldown_min * 60,
                 )
                 await self._notify_callback({

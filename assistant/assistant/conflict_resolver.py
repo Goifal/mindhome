@@ -20,7 +20,7 @@ import asyncio
 import logging
 import time
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Callable, Awaitable
 
 from .config import settings, yaml_config
@@ -207,7 +207,7 @@ class ConflictResolver:
             "args": function_args,
             "room": room,
             "timestamp": time.time(),
-            "datetime": datetime.now().isoformat(),
+            "datetime": datetime.now(timezone.utc).isoformat(),
         }
 
         person_key = person.lower()
@@ -459,7 +459,7 @@ class ConflictResolver:
             "person_b_trust": trust_b,
             "conflict_detail": conflict_detail,
             "strategy": strategy,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         # Dependency-Hinweise an Resolution anfuegen
@@ -614,7 +614,7 @@ class ConflictResolver:
             )
 
         # Tageszeit bestimmen
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
         if 5 <= hour < 12:
             time_of_day = "Morgen"
         elif 12 <= hour < 18:
@@ -644,7 +644,7 @@ class ConflictResolver:
             lower_trust_level=lower_trust,
             conflict_description=desc,
             room=room or "unbekannter Raum",
-            time=datetime.now().strftime("%H:%M"),
+            time=datetime.now(timezone.utc).strftime("%H:%M"),
             time_of_day=time_of_day,
         )
 

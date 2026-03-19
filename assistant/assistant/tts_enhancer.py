@@ -18,7 +18,7 @@ Nachrichtentypen:
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from xml.sax.saxutils import escape as xml_escape  # P-2: Modul-Ebene statt pro Aufruf
 
@@ -343,7 +343,7 @@ class TTSEnhancer:
                 return vol_sleeping
 
             # Tageszeit-basiert — evening check before night check
-            hour = datetime.now().hour
+            hour = datetime.now(timezone.utc).hour
 
             # Evening: between evening_start and night_start
             is_evening = False
@@ -407,7 +407,7 @@ class TTSEnhancer:
             vol_cfg = yaml_config.get("volume", {})
             if not tts_cfg.get("auto_night_whisper", False):
                 return False
-            hour = datetime.now().hour
+            hour = datetime.now(timezone.utc).hour
             start = int(vol_cfg.get("auto_whisper_start", 23))
             end = int(vol_cfg.get("auto_whisper_end", 6))
             if start > end:

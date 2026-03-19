@@ -20,7 +20,7 @@ import logging
 import math
 import re
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -181,7 +181,7 @@ class WorkshopGenerator:
             "html": ".html", "javascript": ".js", "yaml": ".yaml",
             "micropython": ".py",
         }.get(language, ".txt")
-        filename = f"code_{language}_{datetime.now().strftime('%H%M%S')}{ext}"
+        filename = f"code_{language}_{datetime.now(timezone.utc).strftime('%H%M%S')}{ext}"
         if project_id:
             await self._save_file(project_id, filename, code)
 
@@ -214,7 +214,7 @@ class WorkshopGenerator:
             model=model, messages=messages,
             temperature=0.2, max_tokens=4096)
 
-        filename = f"model_{datetime.now().strftime('%H%M%S')}.scad"
+        filename = f"model_{datetime.now(timezone.utc).strftime('%H%M%S')}.scad"
         if project_id:
             await self._save_file(project_id, filename, scad_code)
         return {"status": "ok", "code": scad_code, "filename": filename}
@@ -240,7 +240,7 @@ class WorkshopGenerator:
         if svg_match:
             svg = svg_match.group(0)
 
-        filename = f"schematic_{datetime.now().strftime('%H%M%S')}.svg"
+        filename = f"schematic_{datetime.now(timezone.utc).strftime('%H%M%S')}.svg"
         if project_id:
             await self._save_file(project_id, filename, svg)
         return {"status": "ok", "svg": svg, "filename": filename}
@@ -262,7 +262,7 @@ class WorkshopGenerator:
             model=model, messages=messages,
             temperature=0.3, max_tokens=8192)
 
-        filename = f"site_{datetime.now().strftime('%H%M%S')}.html"
+        filename = f"site_{datetime.now(timezone.utc).strftime('%H%M%S')}.html"
         if project_id:
             await self._save_file(project_id, filename, html)
         return {"status": "ok", "html": html, "filename": filename}
@@ -515,7 +515,7 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
             await self.redis.rpush(
                 f"mha:repair:versions:{project_id}:{filename}",
                 json.dumps({
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "size": len(content),
                 }))
 

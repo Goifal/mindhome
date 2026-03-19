@@ -11,7 +11,7 @@ TTL 24h = Auto-Reset. Keine neuen HA-Rechte.
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from .config import yaml_config
@@ -59,7 +59,7 @@ class ErrorPatternTracker:
             "action_type": action_type,
             "model": model,
             "context": context[:200] if context else "",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "ts": now,
         }, ensure_ascii=False)
 
@@ -69,7 +69,7 @@ class ErrorPatternTracker:
         await self.redis.expire("mha:errors:recent", 30 * 86400)
 
         # Pattern-Counter erhoehen (stuendlich)
-        hour_key = datetime.now().strftime("%Y-%m-%d-%H")
+        hour_key = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H")
         pattern_key = f"mha:errors:pattern:{error_type}:{action_type}:{hour_key}"
         count = await self.redis.incr(pattern_key)
         await self.redis.expire(pattern_key, 7200)  # 2h TTL
@@ -174,7 +174,7 @@ class ErrorPatternTracker:
                 "type": MITIGATION_USE_FALLBACK,
                 "reason": f"{count}x timeout fuer {model} in letzter Stunde",
                 "original_model": model,
-                "activated_at": datetime.now().isoformat(),
+                "activated_at": datetime.now(timezone.utc).isoformat(),
             }
             key = f"mha:errors:mitigation:model:{model}"
             await self.redis.setex(key, ttl, json.dumps(mitigation, ensure_ascii=False))
@@ -186,7 +186,7 @@ class ErrorPatternTracker:
                 "type": MITIGATION_WARN_USER,
                 "reason": f"{count}x service_unavailable fuer {action_type}",
                 "action_type": action_type,
-                "activated_at": datetime.now().isoformat(),
+                "activated_at": datetime.now(timezone.utc).isoformat(),
             }
             key = f"mha:errors:mitigation:{action_type}"
             await self.redis.setex(key, ttl, json.dumps(mitigation, ensure_ascii=False))
@@ -198,7 +198,7 @@ class ErrorPatternTracker:
                 "type": MITIGATION_SKIP_ENTITY,
                 "reason": f"{count}x entity_not_found bei {action_type}",
                 "action_type": action_type,
-                "activated_at": datetime.now().isoformat(),
+                "activated_at": datetime.now(timezone.utc).isoformat(),
             }
             key = f"mha:errors:mitigation:{action_type}"
             await self.redis.setex(key, ttl, json.dumps(mitigation, ensure_ascii=False))

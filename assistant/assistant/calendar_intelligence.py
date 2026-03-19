@@ -11,7 +11,7 @@ Konfigurierbar in der Jarvis Assistant UI unter dem Tab "Kalender-Intelligenz".
 import json
 import logging
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -245,7 +245,7 @@ class CalendarIntelligence:
             if not raw:
                 return None
             events = json.loads(raw)
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             for ev in events:
                 start = self._parse_dt(ev.get("start", ""))
                 end = self._parse_dt(ev.get("end", ""))

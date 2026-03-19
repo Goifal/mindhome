@@ -14,7 +14,7 @@ Verbrauchshistorie wird in Redis gespeichert.
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -82,7 +82,7 @@ class SmartShopping:
             return {"success": False, "message": "SmartShopping nicht verfuegbar"}
 
         key = _KEY_CONSUMPTION + item_name.lower().replace(" ", "_")
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         entry = json.dumps({
             "date": now.isoformat(),
             "quantity": quantity,
@@ -203,7 +203,7 @@ class SmartShopping:
         if not predictions:
             return []
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         threshold = now + timedelta(days=self.reminder_days_before)
         running_low = []
 
