@@ -23,8 +23,13 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
+
+from .config import yaml_config
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
 # ============================================================
@@ -181,7 +186,7 @@ class WorkshopGenerator:
             "html": ".html", "javascript": ".js", "yaml": ".yaml",
             "micropython": ".py",
         }.get(language, ".txt")
-        filename = f"code_{language}_{datetime.now(timezone.utc).strftime('%H%M%S')}{ext}"
+        filename = f"code_{language}_{datetime.now(_LOCAL_TZ).strftime('%H%M%S')}{ext}"
         if project_id:
             await self._save_file(project_id, filename, code)
 
@@ -214,7 +219,7 @@ class WorkshopGenerator:
             model=model, messages=messages,
             temperature=0.2, max_tokens=4096)
 
-        filename = f"model_{datetime.now(timezone.utc).strftime('%H%M%S')}.scad"
+        filename = f"model_{datetime.now(_LOCAL_TZ).strftime('%H%M%S')}.scad"
         if project_id:
             await self._save_file(project_id, filename, scad_code)
         return {"status": "ok", "code": scad_code, "filename": filename}
@@ -240,7 +245,7 @@ class WorkshopGenerator:
         if svg_match:
             svg = svg_match.group(0)
 
-        filename = f"schematic_{datetime.now(timezone.utc).strftime('%H%M%S')}.svg"
+        filename = f"schematic_{datetime.now(_LOCAL_TZ).strftime('%H%M%S')}.svg"
         if project_id:
             await self._save_file(project_id, filename, svg)
         return {"status": "ok", "svg": svg, "filename": filename}
@@ -262,7 +267,7 @@ class WorkshopGenerator:
             model=model, messages=messages,
             temperature=0.3, max_tokens=8192)
 
-        filename = f"site_{datetime.now(timezone.utc).strftime('%H%M%S')}.html"
+        filename = f"site_{datetime.now(_LOCAL_TZ).strftime('%H%M%S')}.html"
         if project_id:
             await self._save_file(project_id, filename, html)
         return {"status": "ok", "html": html, "filename": filename}
@@ -566,7 +571,7 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
                         "name": fn,
                         "size": filepath.stat().st_size,
                         "modified": datetime.fromtimestamp(
-                            filepath.stat().st_mtime).isoformat(),
+                            filepath.stat().st_mtime, tz=timezone.utc).isoformat(),
                     })
             return result
 

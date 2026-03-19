@@ -3813,14 +3813,21 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 logger.debug("Geraete-Konflikte Prompt fehlgeschlagen", exc_info=True)
 
         # HA-Automations-Kontext: Welche Automationen existieren/kuerzlich feuerten
+        # + was sie tun (Trigger/Aktionen aus Config-Endpoint)
         if _causal_states:
             try:
                 _auto_list = [
                     s for s in _causal_states
                     if s.get("entity_id", "").startswith("automation.")
                 ]
+                # Automation-Configs holen (Trigger/Conditions/Actions)
+                _auto_configs = None
+                try:
+                    _auto_configs = await self.ha.get_automations()
+                except Exception:
+                    logger.debug("Automation-Configs laden fehlgeschlagen", exc_info=True)
                 _auto_text = self.state_change_log.format_automations_for_prompt(
-                    _auto_list
+                    _auto_list, automation_configs=_auto_configs
                 )
                 if _auto_text:
                     sections.append(("automations", _auto_text, 4))
@@ -7452,7 +7459,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             Tuple (start_date, end_date) als ISO-Strings oder None.
         """
         text_lower = text.lower()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
 
         # "gestern"
         if "gestern" in text_lower:
@@ -11239,7 +11246,7 @@ Regeln:
             lights = house.get("lights", [])
             presence = house.get("presence", {})
             weather = house.get("weather", {})
-            now = datetime.now(timezone.utc)
+            now = datetime.now(_LOCAL_TZ)
             hour = now.hour
 
             # --- 1. Niemand zuhause aber Lichter an ---
@@ -11723,7 +11730,7 @@ Regeln:
                 target_day = int(weekly_cfg.get("day", 6))  # 0=Montag, 6=Sonntag
                 target_hour = int(weekly_cfg.get("hour", 19))
 
-                now = datetime.now(timezone.utc)
+                now = datetime.now(_LOCAL_TZ)
                 days_ahead = target_day - now.weekday()
                 if days_ahead < 0 or (days_ahead == 0 and now.hour >= target_hour):
                     days_ahead += 7
@@ -11874,7 +11881,7 @@ Regeln:
         """Fuehrt einmal taeglich den Fact Decay aus (04:00 Uhr)."""
         while True:
             try:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(_LOCAL_TZ)
                 # Naechste 04:00 berechnen
                 target = now.replace(hour=4, minute=0, second=0, microsecond=0)
                 if now >= target:
@@ -11907,7 +11914,7 @@ Regeln:
         """Prueft woechentlich ob ein Autonomy-Level-Aufstieg moeglich ist (Sonntag 05:00)."""
         while True:
             try:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(_LOCAL_TZ)
                 # Naechsten Sonntag 05:00 berechnen
                 days_until_sunday = (6 - now.weekday()) % 7
                 if days_until_sunday == 0 and now.hour >= 5:
@@ -12108,7 +12115,7 @@ Regeln:
             _context_parts = []
 
             # Aktuelle Uhrzeit + Wochentag
-            now = datetime.now(timezone.utc)
+            now = datetime.now(_LOCAL_TZ)
             _context_parts.append(
                 f"Aktuelle Zeit: {now.strftime('%A %d.%m.%Y %H:%M')} Uhr"
             )

@@ -575,10 +575,17 @@ class HAConnection:
             return self._ws_id
 
     def _ws_command(self, command_type, **kwargs):
-        if not self._ws_connected:
-            logger.warning("WebSocket not connected")
-            return None
-        msg_id = self._next_ws_id()
+        # TOCTOU-Fix: ws-Referenz und connected-Check atomar unter Lock
+        with self._ws_lock:
+            if not self._ws_connected:
+                logger.warning("WebSocket not connected")
+                return None
+            ws = self._ws
+            if ws is None:
+                logger.warning("WebSocket object is None")
+                return None
+            msg_id = self._ws_id + 1
+            self._ws_id = msg_id
         msg = {"id": msg_id, "type": command_type}
         msg.update(kwargs)
         result_event = threading.Event()
@@ -590,10 +597,6 @@ class HAConnection:
 
         self._response_handlers[msg_id] = handler
         try:
-            ws = self._ws
-            if ws is None:
-                logger.warning("WebSocket object is None")
-                return None
             ws.send(json.dumps(msg))
             result_event.wait(timeout=10)
             return result_data[0]
@@ -610,14 +613,19 @@ class HAConnection:
     def subscribe_events(self, callback: Callable, event_type: Optional[str] = None):
         with self._cb_lock:
             self._event_callbacks.append({"callback": callback, "event_type": event_type})
-        if self._ws_connected:
-            msg = {"id": self._next_ws_id(), "type": "subscribe_events"}
-            if event_type:
-                msg["event_type"] = event_type
-            try:
-                self._ws.send(json.dumps(msg))
-            except Exception as e:
-                logger.debug("Unhandled: %s", e)
+        # TOCTOU-Fix: ws-Referenz und connected-Check atomar unter Lock
+        with self._ws_lock:
+            if not self._ws_connected or self._ws is None:
+                return
+            ws = self._ws
+            msg = {"id": self._ws_id + 1, "type": "subscribe_events"}
+            self._ws_id = msg["id"]
+        if event_type:
+            msg["event_type"] = event_type
+        try:
+            ws.send(json.dumps(msg))
+        except Exception as e:
+            logger.debug("subscribe_events send fehlgeschlagen: %s", e)
     def _on_ws_open(self, ws):
         logger.info("WebSocket connection opened")
 
@@ -710,11 +718,12 @@ class HAConnection:
             if self._reconnect_attempts > MAX_RECONNECT_ATTEMPTS:
                 logger.error(f"Max reconnect attempts ({MAX_RECONNECT_ATTEMPTS}) reached.")
                 return
-            logger.info(f"Reconnecting in {self._reconnect_delay}s "
-                        f"(attempt {self._reconnect_attempts}/{MAX_RECONNECT_ATTEMPTS})...")
-            time.sleep(self._reconnect_delay)
+            delay = self._reconnect_delay
             self._reconnect_delay = min(self._reconnect_delay * 2, 60)
-            self._start_ws()
+            logger.info(f"Reconnecting in {delay}s "
+                        f"(attempt {self._reconnect_attempts}/{MAX_RECONNECT_ATTEMPTS})...")
+            # Reconnect in separatem Thread statt blocking sleep im WS-Callback
+            threading.Timer(delay, self._start_ws).start()
 
     def _start_ws(self):
         self._ws = websocket.WebSocketApp(

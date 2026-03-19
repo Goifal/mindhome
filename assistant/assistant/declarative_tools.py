@@ -21,12 +21,15 @@ Sicherheit:
 import logging
 import time
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Optional
 
 import yaml
 
 from .config import yaml_config
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 logger = logging.getLogger(__name__)
 
@@ -539,7 +542,7 @@ class DeclarativeToolExecutor:
     async def _exec_schedule_checker(self, config: dict, description: str) -> dict:
         """Prueft zeitbasierte Schedules."""
         schedules = config.get("schedules", [])
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         current_hour = now.hour
         current_minute = now.minute
         current_time_min = current_hour * 60 + current_minute

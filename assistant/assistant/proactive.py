@@ -1714,7 +1714,7 @@ class ProactiveManager:
         if not self._mb_enabled:
             return
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         today = now.strftime("%Y-%m-%d")
 
         # D1: Adaptives Zeitfenster aus gelernter Aufwach-Zeit
@@ -1861,7 +1861,7 @@ class ProactiveManager:
         if not self._eb_enabled:
             return
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         today = now.strftime("%Y-%m-%d")
 
         # Reset am neuen Tag — lock prevents double-trigger from concurrent events
@@ -2097,7 +2097,7 @@ class ProactiveManager:
                 await redis_client.setex(flag_key, 86400, "1")
                 return
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(_LOCAL_TZ)
             for entry in upcoming:
                 days = entry["days_until"]
                 name = entry["person"].capitalize()
@@ -2151,7 +2151,7 @@ class ProactiveManager:
             is_away = False
             if _away_mode and hasattr(self.brain, "ha"):
                 try:
-                    is_away = not await self.brain.ha.is_anyone_home()
+                    is_away = not await self._is_anyone_home()
                 except Exception as e:
                     logger.warning("Anwesenheitspruefung fehlgeschlagen: %s", e)
             if not is_night and not is_away:
@@ -4059,7 +4059,7 @@ class ProactiveManager:
         # und es ist nach der typischen Morgens-Öffnungszeit, defensiv "open" annehmen
         # um doppelte Morgens-Öffnung zu vermeiden
         if not last_schedule_action and not last_action_date:
-            _now = datetime.now(timezone.utc)
+            _now = datetime.now(_LOCAL_TZ)
             if _now.hour >= 10:  # Nach 10 Uhr: Morgens-Öffnung war vermutlich schon
                 last_schedule_action = "open"
                 last_action_date = _now.strftime("%Y-%m-%d")
@@ -4091,7 +4091,7 @@ class ProactiveManager:
                 auto_level = seasonal_cfg.get("auto_execute_level", 3)
                 cover_cfg = seasonal_cfg.get("cover_automation", {})
 
-                now = datetime.now(timezone.utc)
+                now = datetime.now(_LOCAL_TZ)
                 today = now.strftime("%Y-%m-%d")
 
                 if last_action_date != today:
@@ -5047,7 +5047,7 @@ class ProactiveManager:
         if not schedules:
             return
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         current_minutes = now.hour * 60 + now.minute
         weekday = now.weekday()  # 0=Mo, 6=So
         tolerance = 10  # +/- 10 Minuten Toleranz (> 15 Min Check-Intervall/2)
@@ -5144,7 +5144,7 @@ class ProactiveManager:
         Feature 7: Wellenfoermiges Oeffnen (Ost→Sued→West).
         Feature 13: Bettsensor respektieren.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         current_minutes = now.hour * 60 + now.minute
         open_time = timing.get("open_time", "07:30")
         close_time = timing.get("close_time", "19:00")
@@ -6265,7 +6265,7 @@ class ProactiveManager:
                     _tz_name = vacuum_cfg.get("timezone") or cfg.yaml_config.get("timezone", "Europe/Berlin")
                     now = datetime.now(ZoneInfo(_tz_name))
                 except Exception:
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(_LOCAL_TZ)
                 hour = now.hour
 
                 # ── Wochenplan-Trigger ──
@@ -7528,7 +7528,7 @@ class ProactiveManager:
                     await asyncio.sleep(60)
                     continue
 
-                now = datetime.now(timezone.utc)
+                now = datetime.now(_LOCAL_TZ)
                 for scene in scenes:
                     if not scene.get("schedule_enabled"):
                         continue
@@ -7598,11 +7598,13 @@ class ProactiveManager:
                     else:
                         continue
                     # Nur vorschlagen wenn letzte Aktivierung < 7 Tage her
-                    days_ago = (now - last_dt.replace(tzinfo=None)).days
+                    # last_dt in lokale Zeitzone konvertieren (beide aware halten)
+                    last_local = last_dt.astimezone(_LOCAL_TZ)
+                    days_ago = (now - last_local).days
                     if days_ago > 7:
                         continue
                     # Uhrzeitvergleich: Aktivierungszeit +/- 30 Min zur aktuellen Zeit?
-                    last_minutes = last_dt.hour * 60 + last_dt.minute
+                    last_minutes = last_local.hour * 60 + last_local.minute
                     now_minutes = now.hour * 60 + now.minute
                     if abs(last_minutes - now_minutes) > 30:
                         continue

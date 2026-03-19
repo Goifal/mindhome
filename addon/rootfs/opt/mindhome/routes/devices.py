@@ -206,7 +206,7 @@ def api_update_device(device_id):
             if "is_controllable" in data:
                 device.is_controllable = data["is_controllable"]
             if "name" in data:
-                device.name = data["name"]
+                device.name = sanitize_input(data["name"])
             if "domain_id" in data:
                 device.domain_id = data["domain_id"]
 

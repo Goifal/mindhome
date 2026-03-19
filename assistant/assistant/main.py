@@ -24,6 +24,7 @@ from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,6 +37,8 @@ import yaml
 
 from .brain import AssistantBrain
 from .config import settings, yaml_config, load_yaml_config, get_person_title
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 from .constants import ERROR_BUFFER_MAX_SIZE, ACTIVITY_BUFFER_MAX_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_REQUESTS, TOKEN_CLEANUP_INTERVAL, WS_KEEPALIVE_INTERVAL
 from .cover_config import load_cover_configs, save_cover_configs
 from .file_handler import (
@@ -1080,7 +1083,7 @@ async def ui_factory_reset(req: FactoryResetRequest, request: Request, token: st
     await _check_token(token)
 
     client_ip = request.client.host if request.client else "unknown"
-    if not _check_pin_rate_limit(client_ip):
+    if not await _check_pin_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Zu viele Versuche. Bitte warten.")
 
     env_pin = os.environ.get("JARVIS_UI_PIN")
@@ -1091,11 +1094,11 @@ async def ui_factory_reset(req: FactoryResetRequest, request: Request, token: st
         valid = stored_hash and _verify_hash(req.pin, stored_hash)
 
     if not valid:
-        _record_pin_failure(client_ip)
+        await _record_pin_failure(client_ip)
         _audit_log("factory_reset", {"success": False, "reason": "wrong_pin"})
         raise HTTPException(status_code=403, detail="Falscher PIN")
 
-    _clear_pin_attempts(client_ip)
+    await _clear_pin_attempts(client_ip)
 
     # Knowledge Base + Recipe Store zuruecksetzen
     kb_cleared = await brain.knowledge_base.clear()
@@ -1720,7 +1723,7 @@ async def complete_maintenance(task_name: str, token: str = ""):
     success = brain.diagnostics.complete_task(task_name)
     if not success:
         raise HTTPException(status_code=404, detail=f"Aufgabe '{task_name}' nicht gefunden")
-    return {"completed": task_name, "date": __import__("datetime").datetime.now(timezone.utc).strftime("%Y-%m-%d")}
+    return {"completed": task_name, "date": datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")}
 
 
 # ----- Phase 14.3: Ambient Audio Endpoints -----
@@ -2095,10 +2098,14 @@ async def websocket_endpoint(websocket: WebSocket):
                                     tts_data = brain.tts_enhancer.enhance(
                                         sentence, message_type="response",
                                     )
-                                    asyncio.ensure_future(
+                                    _tts_task = asyncio.ensure_future(
                                         brain.sound_manager.speak_response(
                                             sentence, room=room, tts_data=tts_data,
                                         )
+                                    )
+                                    _tts_task.add_done_callback(
+                                        lambda t: logger.warning("Sentence-TTS Task fehlgeschlagen: %s", t.exception())
+                                        if not t.cancelled() and t.exception() else None
                                     )
                                 except Exception as e:
                                     logger.debug("Sentence-TTS Fehler: %s", e)
@@ -2289,8 +2296,12 @@ async def websocket_endpoint(websocket: WebSocket):
                         await brain.feedback.record_feedback(identifier, feedback_type)
                         # Autonomy Evolution: Feedback als Interaktion tracken
                         _fb_positive = feedback_type in ("acknowledged", "engaged", "thanked")
-                        asyncio.ensure_future(
+                        _auto_task = asyncio.ensure_future(
                             brain.autonomy.track_interaction("proactive_feedback", _fb_positive)
+                        )
+                        _auto_task.add_done_callback(
+                            lambda t: logger.warning("autonomy.track_interaction fehlgeschlagen: %s", t.exception())
+                            if not t.cancelled() and t.exception() else None
                         )
 
                 elif event == "assistant.interrupt":
@@ -2301,10 +2312,14 @@ async def websocket_endpoint(websocket: WebSocket):
                         try:
                             speaker = await brain.sound_manager._resolve_speaker(None)
                             if speaker:
-                                asyncio.ensure_future(brain.ha.call_service(
+                                _stop_task = asyncio.ensure_future(brain.ha.call_service(
                                     "media_player", "media_stop",
                                     {"entity_id": speaker},
                                 ))
+                                _stop_task.add_done_callback(
+                                    lambda t: logger.warning("media_stop fehlgeschlagen: %s", t.exception())
+                                    if not t.cancelled() and t.exception() else None
+                                )
                         except Exception as e:
                             logger.debug("Unhandled: %s", e)
             except json.JSONDecodeError:
@@ -2349,40 +2364,44 @@ _token_lock = asyncio.Lock()
 _pin_attempts: dict[str, list[float]] = {}
 _PIN_MAX_ATTEMPTS = 5
 _PIN_WINDOW_SECONDS = 300  # 5 Minuten
+_pin_lock = asyncio.Lock()  # Schuetzt _pin_attempts gegen concurrent async Zugriffe
 
 
-def _check_pin_rate_limit(client_ip: str) -> bool:
+async def _check_pin_rate_limit(client_ip: str) -> bool:
     """Prueft ob eine IP zu viele PIN-Versuche hat.
 
     Returns True wenn erlaubt, False wenn blockiert.
     Bereinigt abgelaufene Eintraege (> 5 Min) bei jedem Aufruf.
     """
-    now = _time.time()
-    cutoff = now - _PIN_WINDOW_SECONDS
+    async with _pin_lock:
+        now = _time.time()
+        cutoff = now - _PIN_WINDOW_SECONDS
 
-    # Alte Eintraege bereinigen
-    if client_ip in _pin_attempts:
-        _pin_attempts[client_ip] = [t for t in _pin_attempts[client_ip] if t > cutoff]
-        if not _pin_attempts[client_ip]:
-            del _pin_attempts[client_ip]
+        # Alte Eintraege bereinigen
+        if client_ip in _pin_attempts:
+            _pin_attempts[client_ip] = [t for t in _pin_attempts[client_ip] if t > cutoff]
+            if not _pin_attempts[client_ip]:
+                del _pin_attempts[client_ip]
 
-    # Leere IPs bereinigen (andere IPs mit nur alten Eintraegen)
-    stale_ips = [ip for ip, timestamps in _pin_attempts.items() if all(t <= cutoff for t in timestamps)]
-    for ip in stale_ips:
-        del _pin_attempts[ip]
+        # Leere IPs bereinigen (andere IPs mit nur alten Eintraegen)
+        stale_ips = [ip for ip, timestamps in _pin_attempts.items() if all(t <= cutoff for t in timestamps)]
+        for ip in stale_ips:
+            del _pin_attempts[ip]
 
-    attempts = _pin_attempts.get(client_ip, [])
-    return len(attempts) < _PIN_MAX_ATTEMPTS
+        attempts = _pin_attempts.get(client_ip, [])
+        return len(attempts) < _PIN_MAX_ATTEMPTS
 
 
-def _record_pin_failure(client_ip: str):
+async def _record_pin_failure(client_ip: str):
     """Zeichnet einen fehlgeschlagenen PIN-Versuch auf."""
-    _pin_attempts.setdefault(client_ip, []).append(_time.time())
+    async with _pin_lock:
+        _pin_attempts.setdefault(client_ip, []).append(_time.time())
 
 
-def _clear_pin_attempts(client_ip: str):
+async def _clear_pin_attempts(client_ip: str):
     """Loescht PIN-Versuche fuer eine IP nach erfolgreichem Login."""
-    _pin_attempts.pop(client_ip, None)
+    async with _pin_lock:
+        _pin_attempts.pop(client_ip, None)
 
 
 def _get_dashboard_config() -> dict:
@@ -2520,7 +2539,7 @@ async def ui_auth(req: PinRequest, request: Request):
         raise HTTPException(status_code=400, detail="Setup noch nicht abgeschlossen")
 
     client_ip = request.client.host if request.client else "unknown"
-    if not _check_pin_rate_limit(client_ip):
+    if not await _check_pin_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Zu viele Versuche. Bitte warten.")
 
     # Vergleich: Env-PIN (Klartext, timing-safe) oder gehashter PIN aus YAML
@@ -2536,11 +2555,11 @@ async def ui_auth(req: PinRequest, request: Request):
             legacy_migration = True
 
     if not valid:
-        _record_pin_failure(client_ip)
+        await _record_pin_failure(client_ip)
         _audit_log("login", {"success": False})
         raise HTTPException(status_code=401, detail="Falscher PIN")
 
-    _clear_pin_attempts(client_ip)
+    await _clear_pin_attempts(client_ip)
 
     # Legacy-PIN-Hash automatisch auf PBKDF2 upgraden
     if legacy_migration:
@@ -2570,7 +2589,7 @@ async def ui_reset_pin(req: ResetPinRequest, request: Request):
         raise HTTPException(status_code=400, detail="Setup noch nicht abgeschlossen")
 
     client_ip = request.client.host if request.client else "unknown"
-    if not _check_pin_rate_limit(client_ip):
+    if not await _check_pin_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Zu viele Versuche. Bitte warten.")
 
     if req.new_pin != req.new_pin_confirm:
@@ -2582,10 +2601,10 @@ async def ui_reset_pin(req: ResetPinRequest, request: Request):
     # Recovery-Key pruefen
     stored_recovery_hash = _get_dashboard_config().get("recovery_key_hash", "")
     if not stored_recovery_hash or not _verify_hash(req.recovery_key, stored_recovery_hash):
-        _record_pin_failure(client_ip)
+        await _record_pin_failure(client_ip)
         raise HTTPException(status_code=401, detail="Falscher Recovery-Key")
 
-    _clear_pin_attempts(client_ip)
+    await _clear_pin_attempts(client_ip)
 
     # Neuen Recovery-Key generieren
     new_recovery_key = secrets.token_urlsafe(16)[:12].upper()
@@ -5979,7 +5998,7 @@ async def ui_knowledge_info(token: str = ""):
                 files.append({
                     "name": f.name,
                     "size": f.stat().st_size,
-                    "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                    "modified": datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).isoformat(),
                 })
     return {"stats": stats, "files": files}
 
@@ -6114,7 +6133,7 @@ async def ui_recipes_info(token: str = ""):
                 files.append({
                     "name": f.name,
                     "size": f.stat().st_size,
-                    "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                    "modified": datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).isoformat(),
                 })
     return {"stats": stats, "files": files}
 
@@ -8441,7 +8460,7 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
 
     async with _update_lock:
         _update_log.clear()
-        _update_log.append(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] Update gestartet...")
+        _update_log.append(f"[{datetime.now(_LOCAL_TZ).strftime('%H:%M:%S')}] Update gestartet...")
 
         # Aktuellen Branch merken (fuer Rollback bei Fehler)
         _, current_branch_raw = await _run_cmd(
@@ -8552,7 +8571,7 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
             except Exception as e:
                 _update_log.append(f"WARNUNG: {cfg_path.name} konnte nicht wiederhergestellt werden: {e}")
 
-        _update_log.append(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] Code aktualisiert!")
+        _update_log.append(f"[{datetime.now(_LOCAL_TZ).strftime('%H:%M:%S')}] Code aktualisiert!")
 
         # 4. Full Update: Docker Compose Build (Rebuild der Container-Images)
         is_full = body.full if body else False
@@ -8568,14 +8587,20 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
                 _update_log.append("Docker-Image erfolgreich gebaut")
 
             _update_log.append("Container werden neu erstellt...")
-            rc_up, out_up = await _run_cmd(
-                ["docker", "compose", "up", "-d"],
-                cwd=str(_MHA_DIR), timeout=120,
-            )
-            if rc_up != 0:
-                _update_log.append(f"WARNUNG: Docker up fehlgeschlagen: {out_up.strip()[:500]}")
-            else:
-                _update_log.append("Container erfolgreich neu erstellt")
+            # Fire-and-forget: docker compose up -d wuerde den eigenen Container
+            # ersetzen und damit diesen Prozess killen. Daher async ausfuehren,
+            # damit die Response noch rausgeht bevor der Container gestoppt wird.
+            async def _deferred_compose_up():
+                await asyncio.sleep(1)  # Response rauslassen
+                rc_up, out_up = await _run_cmd(
+                    ["docker", "compose", "up", "-d"],
+                    cwd=str(_MHA_DIR), timeout=120,
+                )
+                if rc_up != 0:
+                    logger.warning("Docker compose up fehlgeschlagen: %s", out_up.strip()[:500])
+
+            task = asyncio.ensure_future(_deferred_compose_up())
+            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         else:
             # 5. Quick: Restart via Docker Engine API (Code als Volume = sofort aktiv)
             _update_log.append("Container startet neu...")

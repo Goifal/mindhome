@@ -10,12 +10,15 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import redis.asyncio as redis
 
 from .config import settings, yaml_config
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Monats-Namen und Lookup fuer Datums-Parsing
 _MONTH_NAMES = {
@@ -1209,7 +1212,7 @@ class SemanticMemory:
 
     async def get_todays_learnings(self) -> list[dict]:
         """Gibt alle heute gelernten Fakten zurueck."""
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
 
         if not self.redis:
             return []

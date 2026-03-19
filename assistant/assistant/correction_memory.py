@@ -382,7 +382,7 @@ class CorrectionMemory:
             return
 
         # Rate Limit: Max N Regeln pro Tag — lock prevents concurrent overcount
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
         async with self._rules_lock:
             if self._last_rules_day != today:
                 self._rules_created_today = 0

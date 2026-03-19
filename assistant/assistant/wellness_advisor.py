@@ -410,7 +410,7 @@ class WellnessAdvisor:
         if not self.meal_reminders or not self.redis:
             return
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         hour = now.hour
 
         for meal, target_hour in self.meal_times.items():
@@ -1095,7 +1095,7 @@ class WellnessAdvisor:
                     factors.append(f"Stimmung: {current_mood}")
 
             # Faktor 3: Spaete Nacht (nach 23 Uhr)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(_LOCAL_TZ)
             if now.hour >= 23 or now.hour < 5:
                 factors.append(f"Spaete Stunde ({now.strftime('%H:%M')})")
 

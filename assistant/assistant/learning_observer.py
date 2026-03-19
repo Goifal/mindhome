@@ -16,12 +16,15 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import redis.asyncio as aioredis
 
 from .config import get_person_title
 
 from .config import yaml_config
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +126,7 @@ class LearningObserver:
             return
 
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(_LOCAL_TZ)
             hour = now.hour
             minute = now.minute
             weekday = now.weekday()
@@ -629,7 +632,7 @@ class LearningObserver:
             return
 
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(_LOCAL_TZ)
             person_prefix = f"{person}:" if person else ""
             concept_key = f"{KEY_CONCEPT_OBSERVATIONS}:{person_prefix}{_concept_name}"
 

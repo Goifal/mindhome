@@ -14,6 +14,10 @@ Testet:
 import json
 import pytest
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+from assistant.config import yaml_config
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from assistant.anticipation import AnticipationEngine
@@ -707,7 +711,7 @@ class TestGetSuggestions:
     @pytest.mark.asyncio
     async def test_time_pattern_matching(self, anticipation_with_redis):
         """Time pattern matching current time generates suggestion (lines 610-619)."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         pattern = {
             "type": "time",
             "action": "set_light",
@@ -769,7 +773,7 @@ class TestGetSuggestions:
     @pytest.mark.asyncio
     async def test_context_time_cluster_matching(self, anticipation_with_redis):
         """Context time_cluster pattern matching (lines 643-672)."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         hour = now.hour
         if 5 <= hour < 12:
             cluster = "morning"

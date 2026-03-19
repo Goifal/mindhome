@@ -425,7 +425,7 @@ class InnerStateEngine:
             for entry, score in raw:
                 entry_str = entry.decode() if isinstance(entry, bytes) else entry
                 data = json.loads(entry_str)
-                data["timestamp"] = datetime.fromtimestamp(score).isoformat()
+                data["timestamp"] = datetime.fromtimestamp(score, tz=timezone.utc).isoformat()
                 history.append(data)
             return history
         except Exception as e:

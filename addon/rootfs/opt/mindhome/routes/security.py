@@ -10,7 +10,7 @@ import json
 import os
 from flask import Blueprint, request, jsonify
 
-from helpers import get_setting, set_setting
+from helpers import get_setting, set_setting, sanitize_input
 
 logger = logging.getLogger("mindhome.routes.security")
 
@@ -640,7 +640,7 @@ def geofence_zone_create():
     if not all(data.get(k) for k in required):
         return jsonify({"error": f"{', '.join(required)} are required"}), 400
     zone_id = mgr.create_zone(
-        name=data["name"],
+        name=sanitize_input(data["name"]),
         latitude=data["latitude"],
         longitude=data["longitude"],
         radius_m=data["radius_m"],
@@ -895,9 +895,9 @@ def emergency_contact_create():
     try:
         with _get_session() as session:
             c = EmergencyContact(
-                name=data["name"],
-                phone=data.get("phone"),
-                email=data.get("email"),
+                name=sanitize_input(data["name"]),
+                phone=sanitize_input(data["phone"]) if data.get("phone") else None,
+                email=sanitize_input(data["email"]) if data.get("email") else None,
                 notify_method=data.get("notify_method", "push"),
                 priority=data.get("priority", 0),
                 is_active=True,

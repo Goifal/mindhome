@@ -130,21 +130,21 @@ def api_update_domain(domain_id):
         # Other fields only for custom domains
         if is_custom:
             if "display_name_de" in data:
-                domain.display_name_de = data["display_name_de"]
+                domain.display_name_de = sanitize_input(data["display_name_de"])
             if "display_name_en" in data:
-                domain.display_name_en = data["display_name_en"]
+                domain.display_name_en = sanitize_input(data["display_name_en"])
             if "name_de" in data:
-                domain.display_name_de = data["name_de"]
+                domain.display_name_de = sanitize_input(data["name_de"])
                 if not domain.display_name_en:
-                    domain.display_name_en = data["name_de"]
+                    domain.display_name_en = sanitize_input(data["name_de"])
             if "description_de" in data:
-                domain.description_de = data["description_de"]
+                domain.description_de = sanitize_input(data["description_de"])
             if "description_en" in data:
-                domain.description_en = data["description_en"]
+                domain.description_en = sanitize_input(data["description_en"])
             if "description" in data:
-                domain.description_de = data["description"]
+                domain.description_de = sanitize_input(data["description"])
                 if not domain.description_en:
-                    domain.description_en = data["description"]
+                    domain.description_en = sanitize_input(data["description"])
             if "keywords" in data:
                 domain.keywords = data["keywords"]
 

@@ -666,7 +666,7 @@ class ActivityEngine:
             return False
         if self._check_bed_occupied(states):
             return True
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         is_night = now.hour >= self.night_start or now.hour < self.night_end
         if is_night:
             return self._check_lights_off(states)

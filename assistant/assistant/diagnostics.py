@@ -21,10 +21,13 @@ import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import yaml
 
 from .config import yaml_config, settings
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 from .function_calling import get_entity_annotation, is_entity_hidden
 from .ha_client import HomeAssistantClient
 
@@ -501,7 +504,7 @@ class DiagnosticsEngine:
 
         for task in tasks:
             if task.get("name", "").lower() == task_name.lower():
-                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
                 # Completion-History fuehren (max 10 Eintraege)
                 history = task.get("history", [])
                 history.append(today)

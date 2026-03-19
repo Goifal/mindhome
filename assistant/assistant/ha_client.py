@@ -225,8 +225,8 @@ class HomeAssistantClient:
         # ── Zentrale Device-Dependency Pruefung ──────────────────
         # Nur fuer physische Geraete-Domains, rate-limited pro Entity.
         # Ueberspringen wenn FunctionExecutor bereits geprueft hat
-        # (_skip_dep_check Flag gesetzt von executor.execute()).
-        if domain in _ACTION_DOMAINS and not getattr(self, "_skip_dep_check", False):
+        # (_skip_dep_check_depth Counter gesetzt von executor.execute()).
+        if domain in _ACTION_DOMAINS and not getattr(self, "_skip_dep_check_depth", 0):
             await self._check_dependency_conflicts(domain, service, data)
 
         result = await self._post_ha(

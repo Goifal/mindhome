@@ -9,11 +9,14 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 import redis.asyncio as redis
 
 from .circuit_breaker import redis_breaker, chromadb_breaker
-from .config import settings
+from .config import settings, yaml_config
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 from .semantic_memory import SemanticMemory
 
 logger = logging.getLogger(__name__)
@@ -89,7 +92,7 @@ class MemoryManager:
         entry_json = json.dumps(entry)
 
         # P-5: Redis Pipeline — 5 Roundtrips auf 1 reduziert (~80-150ms gespart)
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
         archive_key = f"mha:archive:{today}"
         try:
             pipe = self.redis.pipeline()

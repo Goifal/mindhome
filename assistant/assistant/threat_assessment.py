@@ -15,10 +15,13 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import redis.asyncio as aioredis
 
 from .config import yaml_config
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
@@ -288,7 +291,7 @@ class ThreatAssessment:
 
         weather_ctx = self._get_weather_context(states)
         threats = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         is_night = now.hour >= self.night_start or now.hour < self.night_end
 
         # 1. Nächtliche Bewegung wenn alle schlafen
@@ -693,7 +696,7 @@ class ThreatAssessment:
             details.append("Wasserleck erkannt!")
 
         # Nachtzeit + niemand zuhause
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         is_night = now.hour >= self.night_start or now.hour < self.night_end
         anyone_home = any(
             s.get("entity_id", "").startswith("person.") and s.get("state") == "home"

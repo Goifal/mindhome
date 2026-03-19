@@ -181,7 +181,7 @@ def api_get_school_vacations():
 def api_create_school_vacation():
     data = request.json or {}
     with get_db_session() as session:
-        sv = SchoolVacation(name_de=data.get("name_de","Ferien"), name_en=data.get("name_en","Vacation"), start_date=data["start_date"], end_date=data["end_date"], region=data.get("region","AT-NO"), source="manual")
+        sv = SchoolVacation(name_de=sanitize_input(data.get("name_de","Ferien")), name_en=sanitize_input(data.get("name_en","Vacation")), start_date=data["start_date"], end_date=data["end_date"], region=data.get("region","AT-NO"), source="manual")
         session.add(sv); session.commit()
         return jsonify({"id": sv.id, "success": True})
 
@@ -270,7 +270,7 @@ def api_create_shift_template():
     data = request.json or {}
     with get_db_session() as session:
         try:
-            t = ShiftTemplate(name=data["name"], short_code=data.get("short_code"),
+            t = ShiftTemplate(name=sanitize_input(data["name"]), short_code=data.get("short_code"),
                 blocks=data.get("blocks", []), color=data.get("color"))
             session.add(t); session.commit()
             return jsonify({"success": True, "id": t.id})
@@ -378,7 +378,7 @@ def api_get_holidays():
 def api_create_holiday():
     data = request.json or {}
     with get_db_session() as session:
-        h = Holiday(name=data["name"], date=data["date"], is_recurring=data.get("is_recurring", False),
+        h = Holiday(name=sanitize_input(data["name"]), date=data["date"], is_recurring=data.get("is_recurring", False),
             region=data.get("region", "AT"), source=data.get("source", "manual"))
         session.add(h); session.commit()
         return jsonify({"id": h.id, "success": True})

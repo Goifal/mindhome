@@ -18,10 +18,14 @@ from typing import Optional
 
 import redis.asyncio as aioredis
 
+from zoneinfo import ZoneInfo
+
 from .config import yaml_config
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Redis Keys
 KEY_DAILY_ENERGY = "mha:energy:daily:"
@@ -421,7 +425,7 @@ class EnergyOptimizer:
         avg_price = await self._get_avg_price(current_price)
 
         schedule: list[dict] = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
 
         for device_key, load_info in self.flexible_loads.items():
             estimated_kwh = load_info["kwh"]
@@ -594,7 +598,7 @@ class EnergyOptimizer:
         if consumption is None:
             return
 
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
         key = f"{KEY_DAILY_ENERGY}{today}"
 
         try:
@@ -620,7 +624,7 @@ class EnergyOptimizer:
 
         try:
             # Letzte 7 Tage per mget laden
-            days = [(datetime.now(timezone.utc) - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
+            days = [(datetime.now(_LOCAL_TZ) - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
             keys = [f"{KEY_DAILY_ENERGY}{day}" for day in days]
             raw_results = await self.redis.mget(keys)
             values = []
@@ -664,7 +668,7 @@ class EnergyOptimizer:
         try:
             this_week = []
             last_week = []
-            now = datetime.now(timezone.utc)
+            now = datetime.now(_LOCAL_TZ)
 
             # Alle 14 Tage per mget laden (7 diese Woche + 7 letzte Woche)
             all_keys = []

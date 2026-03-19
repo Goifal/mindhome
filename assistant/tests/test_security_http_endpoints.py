@@ -112,11 +112,11 @@ class TestPinBruteForceProtection:
 
         # 5 Fehlversuche aufzeichnen
         for _ in range(5):
-            assert _check_pin_rate_limit(test_ip) is True
-            _record_pin_failure(test_ip)
+            assert await _check_pin_rate_limit(test_ip) is True
+            await _record_pin_failure(test_ip)
 
         # 6. Versuch muss blockiert werden
-        assert _check_pin_rate_limit(test_ip) is False
+        assert await _check_pin_rate_limit(test_ip) is False
 
         # Aufraumen
         _pin_attempts.pop(test_ip, None)

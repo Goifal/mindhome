@@ -849,6 +849,262 @@ class TestFormatAutomationsForPrompt:
 
 
 # =========================================================================
+# summarize_automation + _summarize_trigger + _summarize_action
+# =========================================================================
+
+class TestSummarizeAutomation:
+    """Tests fuer die kompakte Automation-Zusammenfassung."""
+
+    def test_time_trigger(self):
+        result = StateChangeLog._summarize_trigger({"platform": "time", "at": "07:00"})
+        assert result == "um 07:00"
+
+    def test_state_trigger_with_to(self):
+        result = StateChangeLog._summarize_trigger({
+            "platform": "state",
+            "entity_id": "binary_sensor.motion_kitchen",
+            "to": "on",
+        })
+        assert "motion kitchen" in result
+        assert "on" in result
+
+    def test_state_trigger_without_to(self):
+        result = StateChangeLog._summarize_trigger({
+            "platform": "state",
+            "entity_id": "sensor.temperature",
+        })
+        assert "aendert sich" in result
+
+    def test_sun_trigger_sunset(self):
+        result = StateChangeLog._summarize_trigger({"platform": "sun", "event": "sunset"})
+        assert "Sonnenuntergang" in result
+
+    def test_sun_trigger_with_offset(self):
+        result = StateChangeLog._summarize_trigger({"platform": "sun", "event": "sunrise", "offset": "-00:30:00"})
+        assert "Sonnenaufgang" in result
+        assert "-00:30:00" in result
+
+    def test_numeric_state_above(self):
+        result = StateChangeLog._summarize_trigger({
+            "platform": "numeric_state",
+            "entity_id": "sensor.co2",
+            "above": 1000,
+        })
+        assert "co2" in result
+        assert "1000" in result
+
+    def test_numeric_state_below(self):
+        result = StateChangeLog._summarize_trigger({
+            "platform": "numeric_state",
+            "entity_id": "sensor.temperature",
+            "below": 5,
+        })
+        assert "< 5" in result
+
+    def test_zone_trigger(self):
+        result = StateChangeLog._summarize_trigger({
+            "platform": "zone",
+            "zone": "zone.home",
+            "event": "enter",
+        })
+        assert "Zone" in result
+        assert "betreten" in result
+
+    def test_template_trigger(self):
+        result = StateChangeLog._summarize_trigger({"platform": "template"})
+        assert "Template" in result
+
+    def test_time_pattern_trigger(self):
+        result = StateChangeLog._summarize_trigger({"platform": "time_pattern", "minutes": "/5"})
+        assert "/5" in result
+
+    def test_device_trigger(self):
+        result = StateChangeLog._summarize_trigger({"platform": "device", "type": "turned_on", "domain": "light"})
+        assert "turned_on" in result
+
+    def test_unknown_trigger(self):
+        result = StateChangeLog._summarize_trigger({"platform": "calendar"})
+        assert result == "calendar"
+
+    def test_action_light_on(self):
+        result = StateChangeLog._summarize_action({
+            "service": "light.turn_on",
+            "entity_id": "light.schlafzimmer",
+        })
+        assert "Licht" in result
+        assert "schlafzimmer" in result
+        assert "an" in result
+
+    def test_action_light_off(self):
+        result = StateChangeLog._summarize_action({
+            "service": "light.turn_off",
+            "entity_id": "light.wohnzimmer",
+        })
+        assert "Licht" in result
+        assert "aus" in result
+
+    def test_action_climate_set_temp(self):
+        result = StateChangeLog._summarize_action({
+            "service": "climate.set_temperature",
+            "entity_id": "climate.heizung",
+            "data": {"temperature": 21},
+        })
+        assert "21" in result
+        assert "°C" in result
+
+    def test_action_cover_position(self):
+        result = StateChangeLog._summarize_action({
+            "service": "cover.set_cover_position",
+            "entity_id": "cover.rollladen_kueche",
+            "data": {"position": 50},
+        })
+        assert "50%" in result
+
+    def test_action_notify(self):
+        result = StateChangeLog._summarize_action({
+            "service": "notify.mobile_app",
+        })
+        assert "Benachrichtigung" in result
+
+    def test_action_scene(self):
+        result = StateChangeLog._summarize_action({
+            "scene": "scene.abend_stimmung",
+        })
+        assert "Szene" in result
+        assert "abend stimmung" in result
+
+    def test_action_delay(self):
+        result = StateChangeLog._summarize_action({"delay": "00:05:00"})
+        assert result == "Pause"
+
+    def test_action_choose(self):
+        result = StateChangeLog._summarize_action({"choose": []})
+        assert "Bedingter Ablauf" in result
+
+    def test_action_entity_in_target(self):
+        """Entity-ID im target-Feld statt direkt auf der Aktion."""
+        result = StateChangeLog._summarize_action({
+            "service": "light.turn_on",
+            "target": {"entity_id": "light.flur"},
+        })
+        assert "flur" in result
+
+    def test_summarize_full_automation(self):
+        config = {
+            "trigger": [{"platform": "time", "at": "07:00"}],
+            "action": [
+                {"service": "light.turn_on", "entity_id": "light.schlafzimmer"},
+                {"service": "climate.set_temperature", "entity_id": "climate.heizung", "data": {"temperature": 21}},
+            ],
+        }
+        result = StateChangeLog.summarize_automation(config)
+        assert "07:00" in result
+        assert "Licht" in result
+        assert "21" in result
+        # Format: "trigger → aktionen"
+        assert "→" in result
+
+    def test_summarize_prefers_description(self):
+        config = {
+            "description": "Morgens alles vorbereiten",
+            "trigger": [{"platform": "time", "at": "07:00"}],
+            "action": [{"service": "light.turn_on"}],
+        }
+        result = StateChangeLog.summarize_automation(config)
+        assert result == "Morgens alles vorbereiten"
+
+    def test_summarize_empty_description_ignored(self):
+        config = {
+            "description": "",
+            "trigger": [{"platform": "time", "at": "07:00"}],
+            "action": [{"service": "light.turn_on", "entity_id": "light.test"}],
+        }
+        result = StateChangeLog.summarize_automation(config)
+        assert "07:00" in result
+
+    def test_summarize_truncates_long_output(self):
+        config = {
+            "trigger": [{"platform": "time", "at": "07:00"}],
+            "action": [
+                {"service": "light.turn_on", "entity_id": f"light.raum_{i}"}
+                for i in range(10)
+            ],
+        }
+        result = StateChangeLog.summarize_automation(config)
+        assert len(result) <= 150
+
+    def test_summarize_empty_config(self):
+        assert StateChangeLog.summarize_automation({}) == ""
+
+
+class TestFormatAutomationsWithConfigs:
+    """Tests fuer format_automations_for_prompt mit automation_configs."""
+
+    def test_configs_add_summary_to_active(self):
+        states = [{
+            "entity_id": "automation.morgen_routine",
+            "state": "on",
+            "attributes": {"friendly_name": "Morgen Routine", "last_triggered": ""},
+        }]
+        configs = [{
+            "id": "morgen_routine",
+            "alias": "Morgen Routine",
+            "trigger": [{"platform": "time", "at": "07:00"}],
+            "action": [{"service": "light.turn_on", "entity_id": "light.schlafzimmer"}],
+        }]
+        result = StateChangeLog.format_automations_for_prompt(states, automation_configs=configs)
+        assert "07:00" in result
+        assert "Licht" in result
+
+    def test_configs_add_summary_to_recently_triggered(self):
+        import time as _time
+        from datetime import datetime, timezone
+        # Erzeuge "vor 5 Min" Zeitstempel
+        recent = datetime.now(timezone.utc).isoformat()
+        states = [{
+            "entity_id": "automation.fenster_alarm",
+            "state": "on",
+            "attributes": {
+                "friendly_name": "Fenster Alarm",
+                "last_triggered": recent,
+            },
+        }]
+        configs = [{
+            "id": "fenster_alarm",
+            "alias": "Fenster Alarm",
+            "trigger": [{"platform": "state", "entity_id": "binary_sensor.fenster", "to": "on"}],
+            "action": [{"service": "notify.mobile_app"}],
+        }]
+        result = StateChangeLog.format_automations_for_prompt(states, automation_configs=configs)
+        assert "Fenster Alarm" in result
+        assert "Benachrichtigung" in result
+
+    def test_without_configs_still_works(self):
+        states = [{
+            "entity_id": "automation.test",
+            "state": "on",
+            "attributes": {"friendly_name": "Test", "last_triggered": ""},
+        }]
+        result = StateChangeLog.format_automations_for_prompt(states)
+        assert "Test (aktiv)" in result
+
+    def test_config_matched_by_alias(self):
+        states = [{
+            "entity_id": "automation.1234567890",
+            "state": "on",
+            "attributes": {"friendly_name": "Nachtlicht", "last_triggered": ""},
+        }]
+        configs = [{
+            "id": "1234567890",
+            "alias": "Nachtlicht",
+            "trigger": [{"platform": "sun", "event": "sunset"}],
+            "action": [{"service": "light.turn_on", "entity_id": "light.flur"}],
+        }]
+        result = StateChangeLog.format_automations_for_prompt(states, automation_configs=configs)
+        assert "Sonnenuntergang" in result
+
+
+# =========================================================================
 # DEVICE_DEPENDENCIES structure
 # =========================================================================
 class TestDeviceDependencies:

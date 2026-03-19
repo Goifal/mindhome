@@ -17,10 +17,13 @@ import logging
 import math
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import redis.asyncio as aioredis
 
 from .config import yaml_config
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 from .function_calling import get_entity_annotation, is_entity_hidden
 from .ha_client import HomeAssistantClient
 
@@ -457,7 +460,7 @@ class DeviceHealthMonitor:
         if not self.redis:
             return
         try:
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
             sample_key = f"mha:device:sample:{entity_id}:{today}"
 
             pipe = self.redis.pipeline()
@@ -475,7 +478,7 @@ class DeviceHealthMonitor:
             return
         try:
             all_values = []
-            now = datetime.now(timezone.utc)
+            now = datetime.now(_LOCAL_TZ)
 
             # Pipeline: 31 lrange-Calls in einem Roundtrip statt 31 einzelnen
             pipe = self.redis.pipeline()

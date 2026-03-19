@@ -3596,11 +3596,12 @@ class FunctionExecutor:
 
             # Zentralen ha_client Dependency-Check fuer diesen Call
             # ueberspringen — _check_consequences hat bereits geprueft
-            self.ha._skip_dep_check = True
+            # Counter statt Boolean: async-safe bei konkurrierenden execute()-Aufrufen
+            self.ha._skip_dep_check_depth = getattr(self.ha, "_skip_dep_check_depth", 0) + 1
             try:
                 result = await handler(arguments)
             finally:
-                self.ha._skip_dep_check = False
+                self.ha._skip_dep_check_depth = max(0, getattr(self.ha, "_skip_dep_check_depth", 1) - 1)
 
             # Phase 18: Consequence-Hint an Ergebnis anfuegen
             # WICHTIG: Hint ist rein informativ — Aktion wurde BEREITS ausgefuehrt.
@@ -3896,7 +3897,7 @@ class FunctionExecutor:
         dim2warm-Lampen regeln Farbtemperatur über die Helligkeit
         in Hardware — je dunkler, desto waermer.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         minutes = now.hour * 60 + now.minute
         profiles = _get_room_profiles()
         room_cfg = profiles.get("rooms", {}).get(room, {})
@@ -4147,7 +4148,7 @@ class FunctionExecutor:
         service = "turn_on" if state == "on" else "turn_off"
         count = 0
         # Bulk-Op: Dependency-Check ueberspringen — wird bereits vom Executor geprueft
-        self.ha._skip_dep_check = True
+        self.ha._skip_dep_check_depth = getattr(self.ha, "_skip_dep_check_depth", 0) + 1
         try:
             for s in states:
                 eid = s.get("entity_id", "")
@@ -4169,7 +4170,7 @@ class FunctionExecutor:
                     await self.ha.call_service("light", service, service_data)
                     count += 1
         finally:
-            self.ha._skip_dep_check = False
+            self.ha._skip_dep_check_depth = max(0, getattr(self.ha, "_skip_dep_check_depth", 1) - 1)
 
         return {"success": True, "message": f"Alle Lichter {state} ({count} geschaltet)"}
 
@@ -5470,7 +5471,7 @@ class FunctionExecutor:
         count = 0
         skipped = []
         # Bulk-Op: Dependency-Check ueberspringen — wird bereits vom Executor geprueft
-        self.ha._skip_dep_check = True
+        self.ha._skip_dep_check_depth = getattr(self.ha, "_skip_dep_check_depth", 0) + 1
         try:
             for s in states:
                 eid = s.get("entity_id", "")
@@ -5491,7 +5492,7 @@ class FunctionExecutor:
                 await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
                 count += 1
         finally:
-            self.ha._skip_dep_check = False
+            self.ha._skip_dep_check_depth = max(0, getattr(self.ha, "_skip_dep_check_depth", 1) - 1)
 
         msg = f"Alle Rollläden auf {position}% ({count} geschaltet)"
         if skipped:
@@ -5504,7 +5505,7 @@ class FunctionExecutor:
         if not states:
             return {"success": False, "message": "Die Geräte reagieren gerade nicht. Einen Moment."}
         count = 0
-        self.ha._skip_dep_check = True
+        self.ha._skip_dep_check_depth = getattr(self.ha, "_skip_dep_check_depth", 0) + 1
         try:
             for s in states:
                 eid = s.get("entity_id", "")
@@ -5518,7 +5519,7 @@ class FunctionExecutor:
                 await self.ha.call_service("cover", service, {"entity_id": eid})
                 count += 1
         finally:
-            self.ha._skip_dep_check = False
+            self.ha._skip_dep_check_depth = max(0, getattr(self.ha, "_skip_dep_check_depth", 1) - 1)
         return {"success": True, "message": f"{count} Rollläden: {service}"}
 
     # ── Cover-Automatik Konfiguration ──────────────────────
@@ -8769,7 +8770,7 @@ class FunctionExecutor:
                 if deadline:
                     try:
                         dl = datetime.fromisoformat(deadline.replace("Z", "+00:00"))
-                        if dl.replace(tzinfo=None) < now:
+                        if dl < now:
                             continue  # Abgelaufen — nicht anzeigen
                     except (ValueError, TypeError):
                         pass

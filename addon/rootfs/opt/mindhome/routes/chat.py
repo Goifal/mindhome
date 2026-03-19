@@ -10,7 +10,7 @@ import requests
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, Response
 
-from helpers import get_setting
+from helpers import get_setting, sanitize_input
 
 logger = logging.getLogger("mindhome.routes.chat")
 
@@ -874,10 +874,10 @@ def api_chat_voice_settings_update():
     data = request.get_json(silent=True) or {}
     updated = []
     if "stt_entity" in data:
-        set_setting("stt_entity", data["stt_entity"])
+        set_setting("stt_entity", sanitize_input(data["stt_entity"]))
         updated.append("stt_entity")
     if "tts_entity" in data:
-        set_setting("tts_entity", data["tts_entity"])
+        set_setting("tts_entity", sanitize_input(data["tts_entity"]))
         updated.append("tts_entity")
     return jsonify({"success": True, "updated": updated})
 

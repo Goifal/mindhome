@@ -25,6 +25,8 @@ _TZ = ZoneInfo("Europe/Berlin")
 import redis.asyncio as redis
 
 from .config import settings, yaml_config, get_person_title, get_all_bed_sensors
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 from .ha_client import HomeAssistantClient
 from .ollama_client import OllamaClient
 from .websocket import emit_speaking
@@ -2307,7 +2309,7 @@ class RoutineEngine:
         """
         try:
             from datetime import datetime
-            now = datetime.now(timezone.utc)
+            now = datetime.now(_LOCAL_TZ)
             if now.hour < 23 or (now.hour == 23 and now.minute < 30):
                 return None
 
