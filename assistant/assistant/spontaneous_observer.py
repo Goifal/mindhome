@@ -177,7 +177,7 @@ class SpontaneousObserver:
     async def _daily_count(self) -> int:
         """Gibt die Anzahl der heutigen Beobachtungen zurueck."""
         if not self.redis:
-            return 999
+            return 0  # Ohne Redis: kein Tracking, aber nicht blockieren
         key = f"{_PREFIX}:daily_count:{_local_now().strftime('%Y-%m-%d')}"
         count = await self.redis.get(key)
         return int(count) if count else 0
@@ -193,7 +193,7 @@ class SpontaneousObserver:
     async def _on_cooldown(self, obs_type: str) -> bool:
         """Prueft ob ein Observation-Typ auf Cooldown ist."""
         if not self.redis:
-            return True
+            return False  # Ohne Redis: kein Cooldown-Tracking, aber nicht blockieren
         key = f"{_PREFIX}:cooldown:{obs_type}"
         return bool(await self.redis.get(key))
 
