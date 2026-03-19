@@ -15,11 +15,14 @@ Verbrauchshistorie wird in Redis gespeichert.
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Optional
 
 import redis.asyncio as aioredis
 
 from .config import yaml_config
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 from .constants import (
     SHOPPING_MIN_PURCHASES,
     SHOPPING_REMINDER_DAYS_BEFORE,
@@ -82,7 +85,7 @@ class SmartShopping:
             return {"success": False, "message": "SmartShopping nicht verfuegbar"}
 
         key = _KEY_CONSUMPTION + item_name.lower().replace(" ", "_")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         entry = json.dumps({
             "date": now.isoformat(),
             "quantity": quantity,
@@ -203,7 +206,7 @@ class SmartShopping:
         if not predictions:
             return []
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         threshold = now + timedelta(days=self.reminder_days_before)
         running_low = []
 

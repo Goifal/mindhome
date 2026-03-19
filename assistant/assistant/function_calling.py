@@ -3896,7 +3896,7 @@ class FunctionExecutor:
         dim2warm-Lampen regeln Farbtemperatur über die Helligkeit
         in Hardware — je dunkler, desto waermer.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         minutes = now.hour * 60 + now.minute
         profiles = _get_room_profiles()
         room_cfg = profiles.get("rooms", {}).get(room, {})
@@ -8769,7 +8769,7 @@ class FunctionExecutor:
                 if deadline:
                     try:
                         dl = datetime.fromisoformat(deadline.replace("Z", "+00:00"))
-                        if dl.replace(tzinfo=None) < now:
+                        if dl < now:
                             continue  # Abgelaufen — nicht anzeigen
                     except (ValueError, TypeError):
                         pass

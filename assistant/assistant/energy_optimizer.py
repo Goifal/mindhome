@@ -425,7 +425,7 @@ class EnergyOptimizer:
         avg_price = await self._get_avg_price(current_price)
 
         schedule: list[dict] = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
 
         for device_key, load_info in self.flexible_loads.items():
             estimated_kwh = load_info["kwh"]

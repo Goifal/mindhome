@@ -99,7 +99,7 @@ class DailySummarizer:
         """Wartet bis zur konfigurierten Uhrzeit und erstellt Zusammenfassungen."""
         while self._running:
             try:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(_LOCAL_TZ)
                 target = now.replace(
                     hour=self.run_hour, minute=self.run_minute, second=0, microsecond=0
                 )
@@ -115,7 +115,7 @@ class DailySummarizer:
                 await asyncio.sleep(wait_seconds)
 
                 # Tages-Summary fuer gestern
-                yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+                yesterday = (datetime.now(_LOCAL_TZ) - timedelta(days=1)).strftime("%Y-%m-%d")
                 daily_summary = await self.summarize_day(yesterday)
 
                 # Callback: Zusammenfassung proaktiv melden

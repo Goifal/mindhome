@@ -466,7 +466,7 @@ class ProactiveSuggester:
         if not self._check_daily_limit():
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         weekdays = ["Montag", "Dienstag", "Mittwoch", "Donnerstag",
                      "Freitag", "Samstag", "Sonntag"]
 

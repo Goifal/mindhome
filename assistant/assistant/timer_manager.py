@@ -1046,8 +1046,8 @@ class TimerManager:
 
         try:
             from datetime import date
-            now = datetime.now(timezone.utc)
-            today = date.today().isoformat()
+            now = datetime.now(_TZ)
+            today = now.date().isoformat()
             current_time = now.strftime("%H:%M")
             weekday = now.weekday()  # 0=Mo, 6=So
 

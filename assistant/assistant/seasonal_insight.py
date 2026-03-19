@@ -15,10 +15,13 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import redis.asyncio as aioredis
 
 from .config import yaml_config, get_person_title
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +102,7 @@ class SeasonalInsightEngine:
         if not self.redis or not self.enabled:
             return
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         month_key = now.strftime("%Y-%m")
         redis_key = f"{_PREFIX}:monthly:{month_key}"
 
@@ -137,7 +140,7 @@ class SeasonalInsightEngine:
         if not self.redis:
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         current_month = now.month
         current_season = _SEASONS.get(current_month, "unbekannt")
         title = get_person_title()
@@ -319,7 +322,7 @@ class SeasonalInsightEngine:
         if not self.redis:
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         current_key = f"{_PREFIX}:monthly:{now.strftime('%Y-%m')}"
         last_year_key = f"{_PREFIX}:monthly:{now.year - 1}-{now.month:02d}"
 

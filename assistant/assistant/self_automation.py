@@ -17,12 +17,15 @@ import logging
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Optional
 
 import yaml
 
 from .config import settings, yaml_config
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 from .constants import SELF_AUTOMATION_PENDING_TTL
 from .ha_client import HomeAssistantClient
 from .ollama_client import OllamaClient
@@ -1237,7 +1240,7 @@ REGELN:
     def _check_rate_limit(self) -> bool:
         """Prueft ob das Tageslimit erreicht ist."""
         with self._pending_lock:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(_LOCAL_TZ)
             if self._daily_reset is None or now.date() > self._daily_reset.date():
                 self._daily_count = 0
                 self._daily_reset = now

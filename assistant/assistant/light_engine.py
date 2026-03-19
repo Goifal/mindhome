@@ -224,7 +224,7 @@ class LightEngine:
             return
 
         # Nur nach sleep_start_hour
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         start_hour = bed_cfg.get("sleep_start_hour", 21)
         if now.hour < start_hour and now.hour >= 6:
             logger.debug("Bett belegt, aber vor Schlafzeit (%d < %d)", now.hour, start_hour)
@@ -253,7 +253,7 @@ class LightEngine:
         if self.redis:
             await _safe_redis(self.redis, "delete", _R_SLEEP)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         pc = cfg.get("presence_control", {})
 
         # Morgen-Fenster? → Aufwach-Licht
@@ -410,7 +410,7 @@ class LightEngine:
 
     async def _check_night_dimming(self, cfg: dict, states: list[dict]):
         """Nach Startzeit: Lichter die heller als night_brightness sind, dimmen."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         start_hour = cfg.get("night_dimming_start_hour", 21)
 
         # Nur zwischen start_hour und 06:00
@@ -693,7 +693,7 @@ class LightEngine:
             return
 
         # Feature 7: Nur tagsueber aktiv — nach Night-Dimming-Start kein Boost
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         night_start = cfg.get("night_dimming_start_hour", 21)
         night_end = cfg.get("presence_control", {}).get("night_end_hour", 6)
         if now.hour >= night_start or now.hour < night_end:

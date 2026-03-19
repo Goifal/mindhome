@@ -14,11 +14,14 @@ import threading
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from typing import Optional
 
 import yaml
 
 from .config import yaml_config, resolve_person_by_entity
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 from .function_calling import get_mindhome_room, get_entity_annotation, is_entity_hidden
 from .ha_client import HomeAssistantClient
 from .semantic_memory import SemanticMemory
@@ -188,7 +191,7 @@ class ContextBuilder:
         context = {}
 
         # Zeitkontext — immer (trivial, kein I/O)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         context["time"] = {
             "datetime": now.strftime("%Y-%m-%d %H:%M"),
             "weekday": self._weekday_german(now.weekday()),
@@ -1167,7 +1170,7 @@ class ContextBuilder:
         if override_type in overrides:
             override = overrides[override_type]
             # Zeitbasiert: Prüfen ob Override gerade aktiv
-            now = datetime.now(timezone.utc)
+            now = datetime.now(_LOCAL_TZ)
             if "active_hours" in override:
                 start_h, end_h = override["active_hours"]
                 if start_h <= end_h:
@@ -1392,7 +1395,7 @@ class ContextBuilder:
 
     def _get_seasonal_context(self, states: Optional[list]) -> dict:
         """Ermittelt saisonale Kontextdaten."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         month = now.month
 
         # Jahreszeit bestimmen

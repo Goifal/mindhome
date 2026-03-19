@@ -13,10 +13,13 @@ import logging
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import redis.asyncio as aioredis
 
 from .config import yaml_config
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 logger = logging.getLogger(__name__)
 
@@ -245,20 +248,20 @@ class CalendarIntelligence:
             if not raw:
                 return None
             events = json.loads(raw)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(_LOCAL_TZ)
             for ev in events:
                 start = self._parse_dt(ev.get("start", ""))
                 end = self._parse_dt(ev.get("end", ""))
                 if not start or not end or ev.get("all_day"):
                     continue
-                # Naive-Vergleich (lokale Zeit)
-                start_naive = start.replace(tzinfo=None) if start.tzinfo else start
-                end_naive = end.replace(tzinfo=None) if end.tzinfo else end
-                if start_naive <= now <= end_naive:
+                # Vergleich in Lokalzeit
+                start_local = start.astimezone(_LOCAL_TZ) if start.tzinfo else start.replace(tzinfo=_LOCAL_TZ)
+                end_local = end.astimezone(_LOCAL_TZ) if end.tzinfo else end.replace(tzinfo=_LOCAL_TZ)
+                if start_local <= now <= end_local:
                     return {
                         "in_event": True,
                         "summary": ev.get("summary", "Termin"),
-                        "ends_at": end_naive.strftime("%H:%M"),
+                        "ends_at": end_local.strftime("%H:%M"),
                     }
         except Exception as e:
             logger.debug("is_in_event Fehler: %s", e)

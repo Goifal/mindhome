@@ -930,7 +930,7 @@ class InsightEngine:
                 return None
 
             # Hochrechnung auf Tagesende
-            now = datetime.now(timezone.utc)
+            now = datetime.now(_LOCAL_TZ)
             hours_passed = now.hour + now.minute / 60.0
             if hours_passed < 1:
                 return None  # Zu frueh fuer sinnvolle Hochrechnung (Division-by-zero-Schutz)
@@ -1721,7 +1721,7 @@ class InsightEngine:
 
         Kreuz-referenziert: Uhrzeit × offene Fenster/Türen × Anwesenheit × Aktivitaet.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         if now.hour < 23 and now.hour >= 6:
             return None
 
@@ -1866,7 +1866,7 @@ class InsightEngine:
         # Alle weg ODER nach Mitternacht + keine Aktivitaet
         persons_home = data.get("persons_home", [])
         persons_away = data.get("persons_away", [])
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
         is_late_night = 0 <= now.hour < 5
 
         all_away = len(persons_home) == 0 and len(persons_away) > 0
@@ -2016,7 +2016,7 @@ class InsightEngine:
         hours_until_rain: float = 0
         hours_until_storm: float = 0
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_LOCAL_TZ)
 
         for fc in forecast:
             condition = str(fc.get("condition", "")).lower()
@@ -2030,7 +2030,7 @@ class InsightEngine:
             if fc_time:
                 try:
                     fc_dt = datetime.fromisoformat(fc_time.replace("Z", "+00:00"))
-                    fc_local = fc_dt.astimezone().replace(tzinfo=None)
+                    fc_local = fc_dt.astimezone(_LOCAL_TZ)
                     hours_ahead = (fc_local - now).total_seconds() / 3600
                 except (ValueError, TypeError):
                     pass
