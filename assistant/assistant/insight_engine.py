@@ -1307,7 +1307,8 @@ class InsightEngine:
             try:
                 if isinstance(start, str):
                     event_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
-                    event_dt = event_dt.replace(tzinfo=None) if event_dt.tzinfo else event_dt
+                    if event_dt.tzinfo is None:
+                        event_dt = event_dt.replace(tzinfo=timezone.utc)
                 else:
                     continue
             except (ValueError, TypeError):
@@ -1425,8 +1426,9 @@ class InsightEngine:
                 continue  # Skip all-day events
             try:
                 start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
-                start_local = start_dt.astimezone().replace(tzinfo=None)
-                hours_until = (start_local - now).total_seconds() / 3600
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=timezone.utc)
+                hours_until = (start_dt - now).total_seconds() / 3600
                 if 0 < hours_until <= 4:
                     guest_event = ev
                     break
