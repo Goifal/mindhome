@@ -5490,12 +5490,19 @@ class ProactiveManager:
                     sun_on_window = start <= azimuth <= end
                 else:
                     sun_on_window = azimuth >= start or azimuth <= end
-                if not sun_on_window and elevation > 0:
+                # Nachts (elevation <= 0): ALLE Fenster schliessen fuer Waermedaemmung
+                # Tags: nur nicht-sonnenbeschienene Fenster schliessen
+                should_close = elevation <= 0 or not sun_on_window
+                if should_close:
                     if cycle_acted is not None and entity_id in cycle_acted:
                         continue
+                    reason = f"Heizungs-Isolierung ({temp}°C, Heizung läuft"
+                    if elevation <= 0:
+                        reason += ", Nacht"
+                    reason += ")"
                     acted = await self._auto_cover_action(
                         entity_id, 0,
-                        f"Heizungs-Isolierung ({temp}°C, Heizung läuft)",
+                        reason,
                         auto_level, redis_client,
                     )
                     if acted and cycle_acted is not None:

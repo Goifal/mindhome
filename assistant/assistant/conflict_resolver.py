@@ -722,7 +722,7 @@ class ConflictResolver:
             return f"die Musik auf {action}" if action else "die Musik entsprechend"
         elif domain == "cover":
             position = args.get("position")
-            return f"die Rolladen auf {position}%" if position else "die Rolladen entsprechend"
+            return f"die Rolladen auf {position}%" if position is not None else "die Rolladen entsprechend"
         return "es entsprechend"
 
     def _resolve_by_room_presence(

@@ -778,14 +778,15 @@ class ThreatAssessment:
         ):
             try:
                 states = await self.ha.get_states()
+                covers_closed = 0
                 for s in (states or []):
                     eid = s.get("entity_id", "")
                     # Rollaeden schliessen (sicher, reversibel)
                     if eid.startswith("cover.") and s.get("state") == "open":
                         await self.ha.call_service("cover", "close_cover", {"entity_id": eid})
-                if any(s.get("entity_id", "").startswith("cover.") and s.get("state") == "open"
-                       for s in (states or [])):
-                    actions_taken.append("Alle Rollaeden geschlossen")
+                        covers_closed += 1
+                if covers_closed > 0:
+                    actions_taken.append(f"{covers_closed} Rollaeden geschlossen")
             except Exception as e:
                 logger.warning("Eskalation Covers fehlgeschlagen: %s", e)
 

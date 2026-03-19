@@ -5102,7 +5102,7 @@ class FunctionExecutor:
         eid_lower = entity_id.lower()
         if "garage" in eid_lower or "gate" in eid_lower:
             return False
-        if re.search(r'(?:^|[_.\s])tor(?:$|[_.\s])', eid_lower):
+        if re.search(r'(?:^|[_.\-\s])tor(?:$|[_.\-\s])', eid_lower):
             return False
         try:
             from .cover_config import load_cover_configs
@@ -5120,9 +5120,13 @@ class FunctionExecutor:
         return True
 
     def _is_markise(self, entity_id: str, state: dict) -> bool:
-        """Prueft ob ein Cover eine Markise ist (entity_id oder cover_profiles)."""
+        """Prueft ob ein Cover eine Markise ist (entity_id, device_class oder cover_profiles)."""
         eid_lower = entity_id.lower()
         if "markise" in eid_lower or "awning" in eid_lower:
+            return True
+        # HA device_class pruefen
+        attrs = state.get("attributes", {}) if isinstance(state, dict) else {}
+        if attrs.get("device_class") == "awning":
             return True
         profiles = _get_room_profiles()
         for c in profiles.get("cover_profiles", {}).get("covers", []):
@@ -5325,6 +5329,7 @@ class FunctionExecutor:
             return {"success": False, "message": "Die Geräte reagieren gerade nicht. Einen Moment."}
 
         count = 0
+        last_pos = position  # Track actual position for message
         for room_name in floor_rooms:
             for s in states:
                 eid = s.get("entity_id", "")
@@ -5345,13 +5350,35 @@ class FunctionExecutor:
                 await self._mark_cover_jarvis_acting(eid)
                 if is_stop:
                     await self.ha.call_service("cover", "stop_cover", {"entity_id": eid})
+                elif adjust in ("up", "down"):
+                    # Relative Anpassung pro Cover
+                    current_position = 50
+                    try:
+                        ha_pos = int(s.get("attributes", {}).get("current_position", 50))
+                        current_position = self._translate_cover_position_from_ha(eid, ha_pos)
+                    except (ValueError, TypeError):
+                        current_position = 50
+                    step = 20
+                    final_pos = current_position + step if adjust == "up" else current_position - step
+                    final_pos = max(0, min(100, final_pos))
+                    last_pos = final_pos
+                    ha_pos = self._translate_cover_position(eid, final_pos)
+                    await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
                 else:
                     final_pos = position if position is not None else 0
+                    last_pos = final_pos
                     ha_pos = self._translate_cover_position(eid, final_pos)
                     await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
                 count += 1
 
-        action_str = "gestoppt" if is_stop else f"auf {position}%"
+        if is_stop:
+            action_str = "gestoppt"
+        elif adjust == "up":
+            action_str = "hoch angepasst"
+        elif adjust == "down":
+            action_str = "runter angepasst"
+        else:
+            action_str = f"auf {last_pos}%"
         return {"success": count > 0, "message": f"{count} Rollläden im {floor.upper()} {action_str}"}
 
     async def _exec_set_cover_markisen(self, args: dict) -> dict:
@@ -5363,7 +5390,9 @@ class FunctionExecutor:
         position, adjust, is_stop = self._resolve_cover_position(args)
 
         # Sicherheits-Check: Bei Wind/Regen Markisen nicht ausfahren
-        if position is not None and position > 0 and not is_stop:
+        # Gilt auch bei adjust="up" (oeffnet Markise weiter)
+        wants_open = (position is not None and position > 0) or adjust == "up"
+        if wants_open and not is_stop:
             profiles = _get_room_profiles()
             markise_cfg = profiles.get("markisen", {})
             wind_limit = markise_cfg.get("wind_retract_speed", 40)
@@ -5385,6 +5414,7 @@ class FunctionExecutor:
                     break
 
         count = 0
+        last_pos = position  # Track actual position for message
         for s in states:
             eid = s.get("entity_id", "")
             if not eid.startswith("cover."):
@@ -5394,15 +5424,37 @@ class FunctionExecutor:
             await self._mark_cover_jarvis_acting(eid)
             if is_stop:
                 await self.ha.call_service("cover", "stop_cover", {"entity_id": eid})
+            elif adjust in ("up", "down"):
+                # Relative Anpassung pro Markise
+                current_position = 50
+                try:
+                    ha_pos = int(s.get("attributes", {}).get("current_position", 50))
+                    current_position = self._translate_cover_position_from_ha(eid, ha_pos)
+                except (ValueError, TypeError):
+                    current_position = 50
+                step = 20
+                final_pos = current_position + step if adjust == "up" else current_position - step
+                final_pos = max(0, min(100, final_pos))
+                last_pos = final_pos
+                ha_pos = self._translate_cover_position(eid, final_pos)
+                await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
             else:
                 final_pos = position if position is not None else 0
+                last_pos = final_pos
                 ha_pos = self._translate_cover_position(eid, final_pos)
                 await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
             count += 1
 
         if count == 0:
             return {"success": False, "message": "Keine Markisen gefunden"}
-        action_str = "gestoppt" if is_stop else f"auf {position}%"
+        if is_stop:
+            action_str = "gestoppt"
+        elif adjust == "up":
+            action_str = "hoch angepasst"
+        elif adjust == "down":
+            action_str = "runter angepasst"
+        else:
+            action_str = f"auf {last_pos}%"
         return {"success": True, "message": f"{count} Markise(n) {action_str}"}
 
     async def _exec_set_cover_all(self, position: int, cover_type: str = None) -> dict:
