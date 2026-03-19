@@ -225,26 +225,76 @@ SCENE_INTELLIGENCE_PROMPT = _build_scene_intelligence_prompt()
 def _extract_multi_rooms(text: str) -> list[str]:
     """Extrahiert mehrere Raeume aus einem Text.
 
-    Erkennt Muster wie "im Wohnzimmer und der Kueche",
-    "in Kueche und Schlafzimmer", "im Wohnzimmer, Kueche und Flur".
+    Erkennt Muster wie:
+    - "im Wohnzimmer und der Kueche"
+    - "in Kueche und Bad" (ohne Artikel)
+    - "im Wohnzimmer, im Schlafzimmer und in der Kueche" (wiederholte Praep.)
+    - "im Bad und Schlafzimmer" (gemischt)
+
+    Strategie: Alle Raum-Tokens nach Praepositionen extrahieren,
+    dann pruefen ob es sich um echte Raeume handelt.
     """
     t = text.lower()
-    # Muster: "im/in der X und (der/dem) Y (und (der/dem) Z)"
-    m = re.search(
-        r'(?:im|in\s+der|in\s+dem)\s+'
-        r'([a-zäöüß][a-zäöüß\-]+)'
-        r'(?:\s*,\s*|\s+und\s+(?:der\s+|dem\s+|im\s+)?)'
-        r'([a-zäöüß][a-zäöüß\-]+)'
-        r'(?:(?:\s*,\s*|\s+und\s+(?:der\s+|dem\s+|im\s+)?)'
-        r'([a-zäöüß][a-zäöüß\-]+))?',
-        t,
+
+    _skip = {"moment", "prinzip", "grunde", "allgemeinen", "ganzen",
+             "der", "dem", "den", "das", "die", "ein", "eine", "einem"}
+
+    # Bekannte Raumnamen (haeufigste deutsche Raeume)
+    _known_rooms = {
+        "wohnzimmer", "schlafzimmer", "kinderzimmer", "badezimmer",
+        "bad", "küche", "kueche", "flur", "diele", "gang",
+        "büro", "buero", "arbeitszimmer", "gästezimmer", "gaestezimmer",
+        "esszimmer", "keller", "dachboden", "garage",
+        "balkon", "terrasse", "garten", "eingang",
+        "waschküche", "waschkueche", "abstellraum", "hauswirtschaftsraum",
+        "og", "eg", "obergeschoss", "erdgeschoss",
+    }
+
+    # Strategie 1: Alle Praepositional-Phrasen sammeln
+    # Matcht: "im X", "in der X", "in dem X", "in X"
+    _prep_pattern = re.compile(
+        r'(?:im|in\s+der|in\s+dem|in)\s+([a-zäöüß][a-zäöüß\-]+)'
     )
-    if m:
-        rooms = [r for r in m.groups() if r]
-        # Fuellwoerter ausfiltern
-        _skip = {"moment", "prinzip", "grunde", "allgemeinen", "ganzen"}
-        return [r for r in rooms if r not in _skip]
-    return []
+    rooms: list[str] = []
+    for m in _prep_pattern.finditer(t):
+        candidate = m.group(1)
+        if candidate not in _skip:
+            rooms.append(candidate)
+
+    # Strategie 2: Bare Raeume nach "und"/"," die KEINER Praeposition folgen
+    # "im Wohnzimmer und Schlafzimmer" → Schlafzimmer hat keine Praep.
+    # "im Wohnzimmer und der Kueche" → "der" ist Artikel, Kueche ist der Raum
+    _continuation = re.compile(
+        r'(?:\s*,\s*|\s+und\s+)'
+        r'(?:der\s+|dem\s+|des\s+)?'
+        r'([a-zäöüß][a-zäöüß\-]+)'
+    )
+    if rooms:
+        # Ab dem letzten gefundenen Raum nach Fortsetzungen suchen
+        last_room = rooms[-1]
+        search_start = t.find(last_room) + len(last_room)
+        remaining = t[search_start:]
+        for _cm in _continuation.finditer(remaining):
+            cand = _cm.group(1)
+            if cand not in _skip and cand not in rooms:
+                rooms.append(cand)
+
+    # Strategie 3: Bare Raeume ohne Praeposition ("Wohnzimmer und Kueche")
+    if len(rooms) < 2:
+        rooms = []  # Reset — Strategie 1 hat keinen Multi-Room ergeben
+        parts = re.split(r'\s*,\s*|\s+und\s+', t)
+        bare = []
+        for p in parts:
+            words = p.strip().split()
+            for w in words:
+                w_clean = w.strip(".,!?")
+                if w_clean in _known_rooms:
+                    bare.append(w_clean)
+        if len(bare) >= 2:
+            rooms = bare
+
+    # Nur zurueckgeben wenn mindestens 2 Raeume
+    return rooms if len(rooms) >= 2 else []
 
 
 class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
@@ -5387,6 +5437,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # - ZUSTANDS-CLAIMS: Nur bei device_command problematisch, bei device_query
         #   sind "ist eingeschaltet" etc. legitime Status-Antworten
         # Effektiv ausgefuehrte Aktionen: Blocked/String-Results zaehlen nicht
+        _hallucination_replaced = False
         _effective_actions = [
             a for a in executed_actions
             if isinstance(a.get("result"), dict) and a["result"].get("success", False)
@@ -5421,6 +5472,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 _all_patterns = _action_claim_patterns + (
                     _state_claim_patterns if _has_state_claim else []
                 )
+                _hallucination_replaced = True
                 logger.warning(
                     "Halluzinations-Schutz [%s]: LLM behauptet Aktion bei 0 ausgefuehrten "
                     "Aktionen. Text verworfen: '%s'", _category, response_text[:80],
@@ -5693,7 +5745,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 logger.debug("Qualitativer Halluzinations-Guard fehlgeschlagen: %s", _qe)
 
         # Phase 6.9: Running Gag an Antwort anhaengen
-        if gag_response and response_text:
+        # Nicht an Fehlermeldungen anhaengen (Halluzinations-Schutz hat Text ersetzt)
+        if gag_response and response_text and not _hallucination_replaced:
             response_text = f"{response_text} {gag_response}"
 
         # Phase 6.7: Emotionale Intelligenz — Aktions-Vorschlaege loggen
@@ -9229,7 +9282,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             r'(?:im|in\s+der|in\s+dem|ins|vom|am)\s+'
             r'([a-zäöüß][a-zäöüß\-]+)', t)
         if _rm:
-            _skip_words = {"moment", "prinzip", "grunde", "allgemeinen"}
+            _skip_words = {"moment", "prinzip", "grunde", "allgemeinen", "ganzen", "ganze", "ganzem"}
             if _rm.group(1) not in _skip_words:
                 _room = _rm.group(1)
         if not _room:
@@ -9249,7 +9302,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     break
 
         # --- Steuerungsbefehle: "Licht aus", "Rollladen hoch" ---
-        _has_alle = "alle" in words or "alles" in words
+        _has_alle = (
+            bool(words & {"alle", "alles", "überall", "ueberall"})
+            or "ganzen haus" in t or "ganze haus" in t
+            or "ganzem haus" in t
+        )
 
         # Switches: "Siebträgermaschine ein", "Kaffeemaschine an", "Steckdose Kueche aus"
         _switch_nouns = ["maschine", "kaffeemaschine", "siebtraeger", "siebträger",
@@ -9288,6 +9345,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     if _score > _best_score:
                         _best_score = _score
                         _best_match = _sw.split(" (")[0].split(" [")[0].strip()
+                # Multi-Room: "Steckdose in Kueche und Buero aus"
+                _rooms = _extract_multi_rooms(t)
+                if len(_rooms) >= 2 and not _best_match:
+                    return [
+                        {"function": {"name": "set_switch",
+                                      "arguments": {"entity_id": "",
+                                                    "state": state, "room": r}}}
+                        for r in _rooms
+                    ]
                 return {"function": {"name": "set_switch",
                                      "arguments": {"entity_id": f"switch.{_best_match}" if _best_match else "",
                                                    "state": state,
@@ -9325,7 +9391,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             action = None
             if words & {"auf", "hoch", "oeffne", "oeffnen", "offen"}:
                 action = "open"
-            elif words & {"zu", "runter", "schliess", "schliessen"}:
+            elif words & {"zu", "runter", "schliess", "schliessen", "dicht"}:
                 action = "close"
             if action:
                 # Multi-Room: "Wohnzimmer und Kueche" → separate Tool-Calls
@@ -9336,8 +9402,56 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                       "arguments": {"action": action, "room": r}}}
                         for r in _rooms
                     ]
+                _eff_room = _room if _room else ("all" if _has_alle else "")
                 return {"function": {"name": "set_cover",
-                                     "arguments": {"action": action, "room": _room}}}
+                                     "arguments": {"action": action, "room": _eff_room}}}
+
+        # Heizung/Klima
+        if any(n in t for n in ["heizung", "thermostat", "temperatur", "klima"]):
+            temperature = None
+            adjust = None
+            temp_m = re.search(r'(\d{1,2}(?:[.,]\d)?)\s*(?:°|grad)', t)
+            if not temp_m:
+                temp_m = re.search(r'auf\s+(\d{1,2}(?:[.,]\d)?)', t)
+            if temp_m:
+                temperature = float(temp_m.group(1).replace(",", "."))
+                temperature = max(5.0, min(30.0, temperature))
+            if any(kw in t for kw in ["wärmer", "waermer", "höher", "hoeher",
+                                       "aufdrehen"]):
+                adjust = "warmer"
+            elif any(kw in t for kw in ["kälter", "kaelter", "runter", "niedriger",
+                                         "kühler", "kuehler", "runterdrehen"]):
+                adjust = "cooler"
+            if temperature is not None or adjust:
+                # Multi-Room: "Heizung im Bad und Schlafzimmer auf 22 Grad"
+                _rooms = _extract_multi_rooms(t)
+                if len(_rooms) >= 2:
+                    _calls = []
+                    for r in _rooms:
+                        _a = {"room": r}
+                        if temperature is not None:
+                            _a["temperature"] = temperature
+                        if adjust:
+                            _a["adjust"] = adjust
+                        _calls.append({"function": {"name": "set_climate",
+                                                    "arguments": _a}})
+                    return _calls
+                args = {"room": _room if _room else ("all" if _has_alle else "")}
+                if temperature is not None:
+                    args["temperature"] = temperature
+                if adjust:
+                    args["adjust"] = adjust
+                return {"function": {"name": "set_climate", "arguments": args}}
+
+        # "alles aus" / "alles zu" / "alles dicht" ohne spezifisches Geraete-Nomen
+        if _has_alle:
+            if words & {"aus"}:
+                # "Alles aus" → Lichter aus (haeufigster Use-Case)
+                return {"function": {"name": "set_light",
+                                     "arguments": {"state": "off", "room": "all"}}}
+            if words & {"zu", "dicht", "schliessen"}:
+                return {"function": {"name": "set_cover",
+                                     "arguments": {"action": "close", "room": "all"}}}
 
         return None
 
