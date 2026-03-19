@@ -5837,16 +5837,24 @@ class ProactiveManager:
         alarm_entity = guard_cfg.get("alarm_entity", "")
         if not alarm_entity:
             # Automatisch erste Alarmanlage finden
-            states = await self.brain.ha.get_states()
-            for s in (states or []):
-                if s.get("entity_id", "").startswith("alarm_control_panel."):
-                    alarm_entity = s["entity_id"]
-                    break
+            try:
+                states = await self.brain.ha.get_states()
+                for s in (states or []):
+                    if s.get("entity_id", "").startswith("alarm_control_panel."):
+                        alarm_entity = s["entity_id"]
+                        break
+            except Exception as e:
+                logger.error("Vacuum-Alarm: Alarmanlage suchen fehlgeschlagen: %s", e)
+                return False
         if not alarm_entity:
             return True  # Keine Alarmanlage vorhanden
 
         # Aktuellen Alarm-Status prüfen
-        state = await self.brain.ha.get_state(alarm_entity)
+        try:
+            state = await self.brain.ha.get_state(alarm_entity)
+        except Exception as e:
+            logger.error("Vacuum-Alarm: Status von %s nicht abrufbar: %s", alarm_entity, e)
+            return False
         current = state.get("state", "") if state else ""
 
         service_map = {
@@ -5857,33 +5865,63 @@ class ProactiveManager:
         if not service:
             return False
 
-        # Nur umschalten wenn nötig
-        if mode == "arm_home" and current == "armed_away":
-            logger.info("Vacuum-Alarm: %s → arm_home (Saugroboter startet)", alarm_entity)
-            success = await self.brain.ha.call_service(
-                "alarm_control_panel", service, {"entity_id": alarm_entity}
-            )
+        # Redis-Client holen (einmal, statt doppelt)
+        _memory = getattr(self.brain, "memory", None)
+        _redis = getattr(_memory, "redis", None) if _memory else None
+
+        # Nur umschalten wenn noetig
+        # armed_away UND armed_night benoetigen Umschaltung auf arm_home
+        if mode == "arm_home" and current in ("armed_away", "armed_night"):
+            logger.info("Vacuum-Alarm: %s (%s) → arm_home (Saugroboter startet)", alarm_entity, current)
+            try:
+                success = await self.brain.ha.call_service(
+                    "alarm_control_panel", service, {"entity_id": alarm_entity}
+                )
+            except Exception as e:
+                logger.error("Vacuum-Alarm: arm_home Service-Aufruf fehlgeschlagen: %s", e)
+                return False
             if success:
-                # Merken dass wir den Alarm umgeschaltet haben
-                _redis = getattr(self.brain, "memory", None)
-                _redis = getattr(_redis, "redis", None) if _redis else None
+                # Merken dass wir den Alarm umgeschaltet haben + vorherigen Zustand
                 if _redis:
-                    await _redis.set("mha:vacuum:alarm_switched", "1", ex=7200)
+                    try:
+                        await _redis.set("mha:vacuum:alarm_switched", current, ex=7200)
+                    except Exception as e:
+                        logger.warning("Vacuum-Alarm: Redis-Flag setzen fehlgeschlagen: %s", e)
+            else:
+                logger.error("Vacuum-Alarm: Umschalten auf arm_home fehlgeschlagen fuer %s", alarm_entity)
             return success
         elif mode == "arm_away" and current == "armed_home":
-            # Nur zurückschalten wenn WIR den Alarm umgeschaltet haben
-            _redis = getattr(self.brain, "memory", None)
-            _redis = getattr(_redis, "redis", None) if _redis else None
+            # Nur zurueckschalten wenn WIR den Alarm umgeschaltet haben
+            previous_state = None
             if _redis:
-                was_switched = await _redis.get("mha:vacuum:alarm_switched")
-                if not was_switched:
-                    return True  # Wir haben nicht umgeschaltet → nichts tun
-                await _redis.delete("mha:vacuum:alarm_switched")
-            logger.info("Vacuum-Alarm: %s → arm_away (Reinigung beendet)", alarm_entity)
-            return await self.brain.ha.call_service(
-                "alarm_control_panel", service, {"entity_id": alarm_entity}
-            )
-        return True  # Kein Umschalten nötig
+                try:
+                    was_switched = await _redis.get("mha:vacuum:alarm_switched")
+                    if not was_switched:
+                        return True  # Wir haben nicht umgeschaltet → nichts tun
+                    # Vorherigen Zustand auslesen (armed_away oder armed_night)
+                    previous_state = was_switched if isinstance(was_switched, str) else was_switched.decode()
+                    await _redis.delete("mha:vacuum:alarm_switched")
+                except Exception as e:
+                    logger.warning("Vacuum-Alarm: Redis-Flag lesen/loeschen fehlgeschlagen: %s — schalte trotzdem zurueck", e)
+            else:
+                logger.warning("Vacuum-Alarm: Redis nicht verfuegbar — schalte trotzdem zurueck")
+
+            # Zum vorherigen Zustand zurueckschalten (armed_away oder armed_night)
+            restore_service = "alarm_arm_away"
+            if previous_state == "armed_night":
+                restore_service = "alarm_arm_night"
+            logger.info("Vacuum-Alarm: %s → %s (Reinigung beendet)", alarm_entity, restore_service)
+            try:
+                success = await self.brain.ha.call_service(
+                    "alarm_control_panel", restore_service, {"entity_id": alarm_entity}
+                )
+                if not success:
+                    logger.error("Vacuum-Alarm: Zurueckschalten auf %s fehlgeschlagen fuer %s", restore_service, alarm_entity)
+                return success
+            except Exception as e:
+                logger.error("Vacuum-Alarm: Service-Aufruf %s fehlgeschlagen: %s", restore_service, e)
+                return False
+        return True  # Kein Umschalten noetig
 
     async def _vacuum_can_start(self) -> tuple[bool, str]:
         """Prüft ob der Vacuum starten darf (Anwesenheits-Guard).
@@ -5938,7 +5976,10 @@ class ProactiveManager:
             return False
 
         # Alarm umschalten BEVOR Vacuum startet
-        await self._vacuum_alarm_switch("arm_home")
+        alarm_ok = await self._vacuum_alarm_switch("arm_home")
+        if not alarm_ok:
+            logger.error("Vacuum: Alarm konnte nicht umgeschaltet werden — %s wird NICHT gestartet", nickname)
+            return False
 
         # Saugstaerke und Modus setzen
         if fan_speed or mode:
@@ -6004,7 +6045,14 @@ class ProactiveManager:
                             if vac_state == "cleaning":
                                 cleaning_robots.append((floor, eid, robot))
                                 all_docked = False
+                            elif vac_state == "returning":
+                                # Auf dem Weg zur Ladestation — noch nicht fertig
+                                all_docked = False
+                            elif vac_state == "paused":
+                                # Pausiert (manuell oder automatisch) — nicht fertig
+                                all_docked = False
                             elif vac_state not in ("docked", "idle"):
+                                # Unbekannter Zustand (error etc.) — nicht als docked werten
                                 all_docked = False
                             break
 
@@ -6094,12 +6142,33 @@ class ProactiveManager:
                         except Exception as e:
                             logger.debug("Staubsauger-Fortsetzungs-Protokollierung fehlgeschlagen: %s", e)
 
-                # Fall 3: Alle Vacuums fertig (docked) → Alarm zurückschalten
+                # Fall 3: Alle Vacuums fertig (docked) → Alarm zurueckschalten
                 if all_docked and not cleaning_robots:
+                    should_restore = False
                     if _redis:
-                        was_switched = await _redis.get("mha:vacuum:alarm_switched")
-                        if was_switched:
-                            await self._vacuum_alarm_switch("arm_away")
+                        try:
+                            was_switched = await _redis.get("mha:vacuum:alarm_switched")
+                            if was_switched:
+                                should_restore = True
+                        except Exception as e:
+                            logger.warning("Vacuum-PresenceMonitor: Redis-Check fehlgeschlagen: %s — pruefe Alarm-Status direkt", e)
+                            # Fallback: Alarm-Status direkt pruefen
+                            should_restore = True
+                    else:
+                        # Kein Redis: Alarm-Status direkt pruefen als Fallback
+                        try:
+                            import assistant.config as _cfg2
+                            _guard = _cfg2.yaml_config.get("vacuum", {}).get("presence_guard", {})
+                            if _guard.get("switch_alarm_for_cleaning"):
+                                alarm_eid = _guard.get("alarm_entity", "")
+                                if alarm_eid:
+                                    _astate = await self.brain.ha.get_state(alarm_eid)
+                                    if _astate and _astate.get("state") == "armed_home":
+                                        should_restore = True
+                        except Exception as e:
+                            logger.warning("Vacuum-PresenceMonitor: Alarm-Fallback-Check fehlgeschlagen: %s", e)
+                    if should_restore:
+                        await self._vacuum_alarm_switch("arm_away")
 
             except Exception as e:
                 logger.error("Vacuum-PresenceMonitor Fehler: %s", e)
@@ -6251,7 +6320,11 @@ class ProactiveManager:
             return False
 
         # Alarm umschalten (abwesend → anwesend)
-        await self._vacuum_alarm_switch("arm_home")
+        alarm_ok = await self._vacuum_alarm_switch("arm_home")
+        if not alarm_ok:
+            logger.error("Vacuum-Trigger: Alarm konnte nicht umgeschaltet werden — %s wird NICHT gestartet",
+                         robot.get("nickname", "Saugroboter"))
+            return False
 
         nickname = robot.get("nickname", "Saugroboter")
         success = False
