@@ -331,6 +331,7 @@ class PersonalityEngine:
 
         # State
         self.__mood_formality_lock = threading.Lock()
+        self._tracking_lock = threading.Lock()  # Schuetzt _last_confirmations, _sarcasm_streak, _humor_consecutive, _last_interaction_times
         self._current_mood: str = "neutral"
         self._mood_detector = None
         self._inner_state = None  # B5: JARVIS-eigene Emotionen
@@ -1474,7 +1475,9 @@ class PersonalityEngine:
 
         # F-021: Per-User History statt globaler Liste
         user_key = person or "_default"
-        user_history = self._last_confirmations.get(user_key, [])
+
+        with self._tracking_lock:
+            user_history = list(self._last_confirmations.get(user_key, []))
 
         # Bei Stress/Muedigkeit: Ultra-kurze Bestätigungen bevorzugen
         if effective_mood in ("stressed", "tired") and success and not partial:
@@ -1483,11 +1486,12 @@ class PersonalityEngine:
             if available:
                 chosen = random.choice(available)
                 user_history.append(chosen)
-                self._last_confirmations[user_key] = user_history[-10:]
-                # F-021: Begrenze Anzahl getrackter User (Speicherleck vermeiden)
-                if len(self._last_confirmations) > 50:
-                    oldest_key = next(iter(self._last_confirmations))
-                    del self._last_confirmations[oldest_key]
+                with self._tracking_lock:
+                    self._last_confirmations[user_key] = user_history[-10:]
+                    # F-021: Begrenze Anzahl getrackter User (Speicherleck vermeiden)
+                    if len(self._last_confirmations) > 50:
+                        oldest_key = next(iter(self._last_confirmations))
+                        del self._last_confirmations[oldest_key]
                 return chosen
 
         # Kontextbezogene Bestätigung versuchen
@@ -1497,7 +1501,8 @@ class PersonalityEngine:
                 user_history.append(contextual)
                 if len(user_history) > 10:
                     user_history = user_history[-10:]
-                self._last_confirmations[user_key] = user_history
+                with self._tracking_lock:
+                    self._last_confirmations[user_key] = user_history
                 return contextual
 
         if partial:
@@ -1521,12 +1526,13 @@ class PersonalityEngine:
         user_history.append(chosen)
         if len(user_history) > 10:
             user_history = user_history[-10:]
-        self._last_confirmations[user_key] = user_history
 
-        # F-021: Begrenze Anzahl getrackter User (Speicherleck vermeiden)
-        if len(self._last_confirmations) > 50:
-            oldest_key = next(iter(self._last_confirmations))
-            del self._last_confirmations[oldest_key]
+        with self._tracking_lock:
+            self._last_confirmations[user_key] = user_history
+            # F-021: Begrenze Anzahl getrackter User (Speicherleck vermeiden)
+            if len(self._last_confirmations) > 50:
+                oldest_key = next(iter(self._last_confirmations))
+                del self._last_confirmations[oldest_key]
 
         return chosen
 
@@ -1936,7 +1942,8 @@ class PersonalityEngine:
         # Sarkasmus-Fatigue: Nach 4+ Antworten in Folge etwas zurücknehmen
         # Jarvis wird nie repetitiv — ein echter Butler variiert
         user_key = person.lower().strip() if person else "_default"
-        streak = self._sarcasm_streak.get(user_key, 0)
+        with self._tracking_lock:
+            streak = self._sarcasm_streak.get(user_key, 0)
         if streak >= 6 and effective_level >= 3:
             effective_level = max(2, effective_level - 2)
         elif streak >= 4 and effective_level >= 3:
@@ -1984,20 +1991,21 @@ class PersonalityEngine:
     def track_sarcasm_streak(self, was_snarky: bool, person_id: str = "_default"):
         """Trackt aufeinanderfolgende sarkastische Antworten per User. 0ms — rein in-memory."""
         key = person_id.lower().strip() if person_id else "_default"
-        if was_snarky:
-            self._sarcasm_streak[key] = self._sarcasm_streak.get(key, 0) + 1
-        else:
-            self._sarcasm_streak[key] = 0
-        # Memory-Leak-Schutz: Max 30 User tracken
-        if len(self._sarcasm_streak) > 30:
-            oldest = next(iter(self._sarcasm_streak))
-            del self._sarcasm_streak[oldest]
-        if len(self._humor_consecutive) > 30:
-            oldest = next(iter(self._humor_consecutive))
-            del self._humor_consecutive[oldest]
-        if len(self._last_interaction_times) > 30:
-            oldest_key = min(self._last_interaction_times, key=self._last_interaction_times.get)
-            del self._last_interaction_times[oldest_key]
+        with self._tracking_lock:
+            if was_snarky:
+                self._sarcasm_streak[key] = self._sarcasm_streak.get(key, 0) + 1
+            else:
+                self._sarcasm_streak[key] = 0
+            # Memory-Leak-Schutz: Max 30 User tracken
+            if len(self._sarcasm_streak) > 30:
+                oldest = next(iter(self._sarcasm_streak))
+                del self._sarcasm_streak[oldest]
+            if len(self._humor_consecutive) > 30:
+                oldest = next(iter(self._humor_consecutive))
+                del self._humor_consecutive[oldest]
+            if len(self._last_interaction_times) > 30:
+                oldest_key = min(self._last_interaction_times, key=self._last_interaction_times.get)
+                del self._last_interaction_times[oldest_key]
 
     # ------------------------------------------------------------------
     # Adaptive Komplexitaet (Phase 6.8)
@@ -2010,14 +2018,14 @@ class PersonalityEngine:
         """
         now = time.time()
         user_key = person or "_default"
-        last_time = self._last_interaction_times.get(user_key, 0.0)
-        time_since_last = now - last_time if last_time else 999
-        self._last_interaction_times[user_key] = now
-
-        # F-022: Begrenze Anzahl getrackter User
-        if len(self._last_interaction_times) > 30:
-            oldest_key = min(self._last_interaction_times, key=self._last_interaction_times.get)
-            del self._last_interaction_times[oldest_key]
+        with self._tracking_lock:
+            last_time = self._last_interaction_times.get(user_key, 0.0)
+            time_since_last = now - last_time if last_time else 999
+            self._last_interaction_times[user_key] = now
+            # F-022: Begrenze Anzahl getrackter User
+            if len(self._last_interaction_times) > 30:
+                oldest_key = min(self._last_interaction_times, key=self._last_interaction_times.get)
+                del self._last_interaction_times[oldest_key]
 
         # Schnelle Befehle hintereinander = Kurz-Modus
         if time_since_last < 5.0:
@@ -2375,16 +2383,19 @@ class PersonalityEngine:
 
         # Humor-Fatigue: Nach 4 Witzen Pause (per User, consecutive)
         _hc_key = person.lower().strip() if person else "_default"
-        _hc = self._humor_consecutive.get(_hc_key, 0)
+        with self._tracking_lock:
+            _hc = self._humor_consecutive.get(_hc_key, 0)
         if _hc >= 4:
-            self._humor_consecutive[_hc_key] = 0
+            with self._tracking_lock:
+                self._humor_consecutive[_hc_key] = 0
             return None
 
         # Situation erkennen
         situation = self._detect_humor_situation(func_name, func_args, context)
         if not situation:
             # Kein Humor nötig — Reset
-            self._humor_consecutive[_hc_key] = 0
+            with self._tracking_lock:
+                self._humor_consecutive[_hc_key] = 0
             return None
 
         # Templates holen
@@ -2426,7 +2437,8 @@ class PersonalityEngine:
             humor_text = llm_humor
 
         # Fatigue tracken (per User)
-        self._humor_consecutive[_hc_key] = self._humor_consecutive.get(_hc_key, 0) + 1
+        with self._tracking_lock:
+            self._humor_consecutive[_hc_key] = self._humor_consecutive.get(_hc_key, 0) + 1
 
         # Erfolg tracken (async, fire-and-forget)
         if self._redis:

@@ -535,7 +535,7 @@ class SeasonalAdvisor:
 
     def get_season(self):
         """Get current season."""
-        month = datetime.now().month
+        month = datetime.now(timezone.utc).month
         for months, season in self.SEASONS.items():
             if month in months:
                 return season

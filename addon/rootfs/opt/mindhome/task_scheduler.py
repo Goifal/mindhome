@@ -92,23 +92,26 @@ class TaskScheduler:
 
     def enable(self, name: str) -> bool:
         """Enable a disabled task."""
-        if name in self._tasks:
-            self._tasks[name].enabled = True
-            return True
+        with self._lock:
+            if name in self._tasks:
+                self._tasks[name].enabled = True
+                return True
         return False
 
     def disable(self, name: str) -> bool:
         """Disable a task without removing it."""
-        if name in self._tasks:
-            self._tasks[name].enabled = False
-            return True
+        with self._lock:
+            if name in self._tasks:
+                self._tasks[name].enabled = False
+                return True
         return False
 
     def trigger_now(self, name: str) -> bool:
         """Trigger a task to run on next tick."""
-        if name in self._tasks:
-            self._tasks[name].next_run = 0
-            return True
+        with self._lock:
+            if name in self._tasks:
+                self._tasks[name].next_run = 0
+                return True
         return False
 
     def start(self):
@@ -170,18 +173,19 @@ class TaskScheduler:
     def get_status(self) -> list:
         """Get status of all registered tasks."""
         result = []
-        for name, task in self._tasks.items():
-            result.append({
-                "name": name,
-                "enabled": task.enabled,
-                "interval_seconds": task.interval_seconds,
-                "run_count": task.run_count,
-                "error_count": task.error_count,
-                "last_run": datetime.fromtimestamp(task.last_run, tz=timezone.utc).isoformat() if task.last_run else None,
-                "last_duration_ms": round(task.last_duration * 1000, 1),
-                "last_error": task.last_error,
-                "one_shot": task.one_shot,
-            })
+        with self._lock:
+            for name, task in self._tasks.items():
+                result.append({
+                    "name": name,
+                    "enabled": task.enabled,
+                    "interval_seconds": task.interval_seconds,
+                    "run_count": task.run_count,
+                    "error_count": task.error_count,
+                    "last_run": datetime.fromtimestamp(task.last_run, tz=timezone.utc).isoformat() if task.last_run else None,
+                    "last_duration_ms": round(task.last_duration * 1000, 1),
+                    "last_error": task.last_error,
+                    "one_shot": task.one_shot,
+                })
         return result
 
     @property
