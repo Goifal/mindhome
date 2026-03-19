@@ -9194,6 +9194,35 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     return {"function": {"name": "get_entity_state",
                                          "arguments": {"entity_id": query}}}
 
+        # --- Gemischte Befehle: "Licht aus und Rolllaeden runter" ---
+        # Erkennt verschiedene Geraetetypen in einem Satz, getrennt durch "und".
+        # Muss VOR der Einzelgeraete-Erkennung stehen, da sonst nur der erste Typ matcht.
+        # Nur aktivieren wenn "und" UND mindestens 2 verschiedene Geraetetypen vorhanden sind.
+        if " und " in t:
+            _light_kw = {"licht", "lichter", "lampe", "lampen", "leuchte"}
+            _cover_kw = {"rollladen", "rolladen", "rollo", "jalousie",
+                         "rollläden", "rolläden", "rolllaeden", "rollos", "jalousien"}
+            _switch_kw = {"steckdose", "steckdosen", "maschine", "kaffeemaschine",
+                          "siebträger", "ventilator", "pumpe", "boiler"}
+            _text_words = set(re.split(r'[\s,.!?]+', t))
+            _has_light = bool(_text_words & _light_kw) or any(n in t for n in _light_kw)
+            _has_cover = any(n in t for n in _cover_kw)
+            _has_switch = any(n in t for n in _switch_kw)
+            _device_types = sum([_has_light, _has_cover, _has_switch])
+            if _device_types >= 2:
+                _parts = re.split(r'\s+und\s+', t)
+                if len(_parts) >= 2:
+                    _combined = []
+                    for part in _parts:
+                        _sub = AssistantBrain._deterministic_tool_call(part.strip())
+                        if _sub:
+                            if isinstance(_sub, list):
+                                _combined.extend(_sub)
+                            else:
+                                _combined.append(_sub)
+                    if len(_combined) >= 2:
+                        return _combined
+
         # --- Raum-Extraktion (für Steuerungsbefehle) ---
         _room = ""
         _rm = re.search(
@@ -9273,6 +9302,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 brightness = max(1, min(100, int(pct_m.group(1))))
                 state = "on"
             if state:
+                # Multi-Room: "Licht im Wohnzimmer und Schlafzimmer aus"
+                _rooms = _extract_multi_rooms(t)
+                if len(_rooms) >= 2:
+                    _calls = []
+                    for r in _rooms:
+                        _a = {"state": state, "room": r}
+                        if brightness is not None:
+                            _a["brightness"] = brightness
+                        _calls.append({"function": {"name": "set_light", "arguments": _a}})
+                    return _calls
                 # "alle Lichter" → set_light mit room (Executor handhabt "all"/Etagen)
                 effective_room = _room if _room else ("all" if _has_alle else "")
                 args = {"state": state, "room": effective_room}
