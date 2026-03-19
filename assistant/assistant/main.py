@@ -1383,13 +1383,17 @@ async def _wyoming_tts(text: str) -> bytes:
         pcm = b"".join(audio_chunks)
         import io
         import wave
-        wav_buf = io.BytesIO()
-        with wave.open(wav_buf, "wb") as wf:
-            wf.setnchannels(channels)
-            wf.setsampwidth(sample_width)
-            wf.setframerate(sample_rate)
-            wf.writeframes(pcm)
-        return wav_buf.getvalue()
+
+        def _pcm_to_wav() -> bytes:
+            wav_buf = io.BytesIO()
+            with wave.open(wav_buf, "wb") as wf:
+                wf.setnchannels(channels)
+                wf.setsampwidth(sample_width)
+                wf.setframerate(sample_rate)
+                wf.writeframes(pcm)
+            return wav_buf.getvalue()
+
+        return await asyncio.to_thread(_pcm_to_wav)
 
     finally:
         writer.close()
@@ -1491,13 +1495,16 @@ async def stt_transcribe(audio: UploadFile = File(...)):
         if "wav" in content_type or audio_bytes[:4] == b"RIFF":
             # WAV: PCM-Daten extrahieren
             import io, wave
-            with wave.open(io.BytesIO(audio_bytes), "rb") as wf:
-                sample_rate = wf.getframerate()
-                pcm_data = wf.readframes(wf.getnframes())
-                # Resample zu 16kHz mono wenn noetig
-                if wf.getnchannels() > 1 or sample_rate != 16000 or wf.getsampwidth() != 2:
-                    pcm_data = await _convert_audio_to_16k_mono(audio_bytes)
-                    sample_rate = 16000
+
+            def _read_wav():
+                with wave.open(io.BytesIO(audio_bytes), "rb") as wf:
+                    return wf.getframerate(), wf.readframes(wf.getnframes()), wf.getnchannels(), wf.getsampwidth()
+
+            sample_rate, pcm_data, _nch, _sw = await asyncio.to_thread(_read_wav)
+            # Resample zu 16kHz mono wenn noetig
+            if _nch > 1 or sample_rate != 16000 or _sw != 2:
+                pcm_data = await _convert_audio_to_16k_mono(audio_bytes)
+                sample_rate = 16000
         else:
             # WebM/OGG/MP3: ffmpeg konvertieren
             pcm_data = await _convert_audio_to_16k_mono(audio_bytes)
@@ -1570,11 +1577,14 @@ async def voice_chat(
         # 1. Audio zu PCM konvertieren
         if "wav" in content_type or audio_bytes[:4] == b"RIFF":
             import io, wave
-            with wave.open(io.BytesIO(audio_bytes), "rb") as wf:
-                pcm_data = wf.readframes(wf.getnframes())
-                sr = wf.getframerate()
-                if wf.getnchannels() > 1 or sr != 16000 or wf.getsampwidth() != 2:
-                    pcm_data = await _convert_audio_to_16k_mono(audio_bytes)
+
+            def _read_wav_vc():
+                with wave.open(io.BytesIO(audio_bytes), "rb") as wf:
+                    return wf.readframes(wf.getnframes()), wf.getframerate(), wf.getnchannels(), wf.getsampwidth()
+
+            pcm_data, sr, _nch, _sw = await asyncio.to_thread(_read_wav_vc)
+            if _nch > 1 or sr != 16000 or _sw != 2:
+                pcm_data = await _convert_audio_to_16k_mono(audio_bytes)
         else:
             pcm_data = await _convert_audio_to_16k_mono(audio_bytes)
 
@@ -8719,10 +8729,10 @@ async def redis_backup(token: str = Header(None, alias="X-Auth-Token")):
     if not redis:
         raise HTTPException(status_code=503, detail="Redis nicht verfuegbar")
 
-    from datetime import datetime as _dt
+    from datetime import datetime as _dt, timezone as _tz_utc
 
     backup = {
-        "backup_timestamp": _dt.now().isoformat(),
+        "backup_timestamp": _dt.now(tz=_tz_utc.utc).isoformat(),
         "version": "1.0",
         "keys": {},
     }
@@ -8769,7 +8779,7 @@ async def redis_backup(token: str = Header(None, alias="X-Auth-Token")):
     return JSONResponse(
         content=backup,
         headers={
-            "Content-Disposition": f'attachment; filename="redis_backup_{_dt.now().strftime("%Y%m%d_%H%M%S")}.json"',
+            "Content-Disposition": f'attachment; filename="redis_backup_{_dt.now(tz=_tz_utc.utc).strftime("%Y%m%d_%H%M%S")}.json"',
         },
     )
 

@@ -862,6 +862,7 @@ class TimerManager:
             )
             self.timers[alarm_id] = timer
             task = asyncio.create_task(self._alarm_watcher(alarm_id, alarm_data))
+            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
             self._tasks[alarm_id] = task
 
             logger.info("Naechster Wecker: %s um %s", alarm_data["label"],

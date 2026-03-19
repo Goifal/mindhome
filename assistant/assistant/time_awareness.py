@@ -596,7 +596,8 @@ class TimeAwareness:
             from .config import settings
             from .ollama_client import strip_think_tags
             from datetime import datetime as _dt
-            _now = _dt.now()
+            from zoneinfo import ZoneInfo as _ZI
+            _now = _dt.now(tz=_ZI("Europe/Berlin"))
             _DAY_NAMES = {0: "Montag", 1: "Dienstag", 2: "Mittwoch", 3: "Donnerstag",
                           4: "Freitag", 5: "Samstag", 6: "Sonntag"}
             _is_weekend = _now.weekday() >= 5

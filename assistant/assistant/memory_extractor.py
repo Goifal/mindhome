@@ -470,13 +470,13 @@ class MemoryExtractor:
 
         try:
             import json as _json
-            from datetime import datetime as _dt
+            from datetime import datetime as _dt, timezone as _tz_utc
 
             entry = _json.dumps({
                 "sentiment": sentiment,
                 "action": action_performed,
                 "user_text": user_text[:100],
-                "timestamp": _dt.now().isoformat(),
+                "timestamp": _dt.now(tz=_tz_utc.utc).isoformat(),
             })
 
             await redis.lpush(key, entry)

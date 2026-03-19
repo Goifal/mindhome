@@ -304,7 +304,8 @@ class EnergyOptimizer:
         try:
             from .config import settings
             from datetime import datetime as _dt
-            _now = _dt.now()
+            from zoneinfo import ZoneInfo as _ZI
+            _now = _dt.now(tz=_ZI("Europe/Berlin"))
             _hour = _now.hour
             _DAY_NAMES = {0: "Montag", 1: "Dienstag", 2: "Mittwoch", 3: "Donnerstag",
                           4: "Freitag", 5: "Samstag", 6: "Sonntag"}

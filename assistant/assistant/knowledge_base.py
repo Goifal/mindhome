@@ -105,6 +105,9 @@ class KnowledgeBase:
             self._watch_task = asyncio.create_task(
                 self._watch_loop(watch_interval)
             )
+            self._watch_task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
+            )
             logger.info(
                 "Knowledge Base Auto-Watch aktiv (alle %ds)", watch_interval
             )

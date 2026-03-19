@@ -379,7 +379,8 @@ class VisitorManager:
             title = get_person_title()
             camera_hint = f"\nKamera zeigt: {camera_desc}" if camera_desc else ""
             from datetime import datetime as _dt
-            _hour = _dt.now().hour
+            from zoneinfo import ZoneInfo as _ZI
+            _hour = _dt.now(tz=_ZI("Europe/Berlin")).hour
             if 22 <= _hour or _hour < 6:
                 _time_hint = f"Nacht ({_hour}:00 Uhr)"
             elif 6 <= _hour < 12:
