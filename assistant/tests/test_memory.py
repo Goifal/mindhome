@@ -1150,3 +1150,373 @@ class TestConversationContinuityErrors:
         redis_mock.hdel = AsyncMock(side_effect=Exception("Redis delete error"))
         # Kein Crash
         await memory.resolve_conversation("Topic")
+
+
+# =====================================================================
+# store_episode — Retry Logic and Edge Cases
+# =====================================================================
+
+
+class TestStoreEpisodeRetry:
+    """Tests fuer store_episode Timeout/Retry-Logik."""
+
+    @pytest.fixture
+    def memory(self, redis_mock, chroma_mock):
+        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.memory.settings"):
+            m = MemoryManager()
+            m.redis = redis_mock
+            m.chroma_collection = chroma_mock
+            return m
+
+    @pytest.mark.asyncio
+    async def test_dedup_check_skips_similar_episode(self, memory, chroma_mock):
+        """Skips storing when very similar episode already exists."""
+        chroma_mock.query.return_value = {
+            "documents": [["Similar episode"]],
+            "distances": [[0.05]],  # Very close = duplicate
+            "metadatas": [[]],
+        }
+
+        await memory.store_episode("Similar episode content")
+        chroma_mock.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_dedup_check_failure_continues(self, memory, chroma_mock):
+        """Dedup check failure doesn't prevent storage."""
+        chroma_mock.query.side_effect = Exception("Dedup error")
+        chroma_mock.add = MagicMock()
+
+        await memory.store_episode("New episode")
+        chroma_mock.add.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_no_chroma_logs_warning(self, memory):
+        """Without ChromaDB, logs a warning."""
+        memory.chroma_collection = None
+        await memory.store_episode("Test")  # No exception
+
+    @pytest.mark.asyncio
+    async def test_stores_with_metadata(self, memory, chroma_mock):
+        """Stores episode with custom metadata."""
+        chroma_mock.query.return_value = {
+            "documents": [[]], "distances": [[]], "metadatas": [[]],
+        }
+
+        await memory.store_episode("Content", {"person": "Max", "room": "Office"})
+        call_kwargs = chroma_mock.add.call_args[1]
+        assert call_kwargs["metadatas"][0]["person"] == "Max"
+        assert call_kwargs["metadatas"][0]["room"] == "Office"
+        assert call_kwargs["metadatas"][0]["type"] == "conversation"
+
+
+# =====================================================================
+# _split_conversation Tests
+# =====================================================================
+
+
+class TestSplitConversation:
+    """Tests fuer _split_conversation."""
+
+    def test_short_text_returns_single_chunk(self):
+        result = MemoryManager._split_conversation("Short text")
+        assert result == ["Short text"]
+
+    def test_empty_text_returns_empty(self):
+        result = MemoryManager._split_conversation("")
+        assert result == []
+
+    def test_whitespace_only_returns_empty(self):
+        result = MemoryManager._split_conversation("   ")
+        assert result == []
+
+    def test_long_text_splits_into_chunks(self):
+        # Create text longer than chunk size (200 chars)
+        long_text = "User: " + "a " * 150 + "Assistant: " + "b " * 150
+        result = MemoryManager._split_conversation(long_text)
+        assert len(result) > 1
+
+    def test_speaker_boundaries(self):
+        """Text is split at speaker change boundaries."""
+        text = "User: Hallo! " + "a " * 100 + "Assistant: Hi! " + "b " * 100
+        result = MemoryManager._split_conversation(text)
+        assert len(result) >= 2
+
+
+# =====================================================================
+# close Tests
+# =====================================================================
+
+
+class TestClose:
+    """Tests fuer close()."""
+
+    @pytest.mark.asyncio
+    async def test_closes_redis(self, memory, redis_mock):
+        result = await memory.close()
+        redis_mock.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_redis_no_error(self):
+        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.memory.settings"):
+            m = MemoryManager()
+        await m.close()  # No exception
+
+
+# =====================================================================
+# clear_all_memory Tests
+# =====================================================================
+
+
+class TestClearAllMemory:
+    """Tests fuer clear_all_memory."""
+
+    @pytest.fixture
+    def memory(self, redis_mock, chroma_mock):
+        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.memory.settings"):
+            m = MemoryManager()
+            m.redis = redis_mock
+            m.chroma_collection = chroma_mock
+            m._chroma_client = MagicMock()
+            m.semantic = MagicMock()
+            m.semantic.clear_all = AsyncMock(return_value=5)
+            return m
+
+    @pytest.mark.asyncio
+    async def test_clears_all_components(self, memory, redis_mock):
+        """Clears episodes, facts, and working memory."""
+        async def scan_iter_mock(match=""):
+            return
+            yield
+
+        redis_mock.scan_iter = scan_iter_mock
+
+        result = await memory.clear_all_memory()
+        assert result["episodes_deleted"] == -1  # All episodes
+        assert result["facts_deleted"] == 5
+        assert result["working_cleared"] is True
+
+    @pytest.mark.asyncio
+    async def test_no_chroma_client(self, memory, redis_mock):
+        """Works when no ChromaDB client."""
+        memory._chroma_client = None
+        memory.chroma_collection = None
+
+        async def scan_iter_mock(match=""):
+            return
+            yield
+
+        redis_mock.scan_iter = scan_iter_mock
+
+        result = await memory.clear_all_memory()
+        assert result["episodes_deleted"] == 0
+
+    @pytest.mark.asyncio
+    async def test_no_redis(self):
+        """Works when no Redis."""
+        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.memory.settings"):
+            m = MemoryManager()
+        m.semantic = MagicMock()
+        m.semantic.clear_all = AsyncMock(return_value=0)
+
+        result = await m.clear_all_memory()
+        assert result["working_cleared"] is False
+
+    @pytest.mark.asyncio
+    async def test_semantic_error_caught(self, memory, redis_mock):
+        """Semantic memory error is caught."""
+        memory.semantic.clear_all = AsyncMock(side_effect=Exception("Error"))
+
+        async def scan_iter_mock(match=""):
+            return
+            yield
+
+        redis_mock.scan_iter = scan_iter_mock
+
+        result = await memory.clear_all_memory()
+        assert result["facts_deleted"] == 0
+
+
+# =====================================================================
+# factory_reset Tests
+# =====================================================================
+
+
+class TestFactoryReset:
+    """Tests fuer factory_reset."""
+
+    @pytest.fixture
+    def memory(self, redis_mock, chroma_mock):
+        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.memory.settings"):
+            m = MemoryManager()
+            m.redis = redis_mock
+            m.chroma_collection = chroma_mock
+            m._chroma_client = MagicMock()
+            m.semantic = MagicMock()
+            m.semantic.clear_all = AsyncMock(return_value=0)
+            return m
+
+    @pytest.mark.asyncio
+    async def test_deletes_all_redis_keys(self, memory, redis_mock):
+        """Factory reset deletes all mha:* keys."""
+        async def scan_iter_mock(match=""):
+            for key in ["mha:key1", "mha:key2"]:
+                yield key
+
+        redis_mock.scan_iter = scan_iter_mock
+
+        result = await memory.factory_reset()
+        assert result["redis_keys_deleted"] >= 2
+
+    @pytest.mark.asyncio
+    async def test_no_redis_handles_gracefully(self):
+        """Factory reset works without Redis."""
+        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.memory.settings"):
+            m = MemoryManager()
+        m.semantic = MagicMock()
+        m.semantic.clear_all = AsyncMock(return_value=0)
+
+        result = await m.factory_reset()
+        assert "redis_keys_deleted" not in result or result.get("redis_keys_deleted", 0) == 0
+
+    @pytest.mark.asyncio
+    async def test_redis_error_caught(self, memory, redis_mock):
+        """Redis error during key scan is caught."""
+        async def scan_iter_error(match=""):
+            raise Exception("Redis scan error")
+            yield  # Make it async generator
+
+        redis_mock.scan_iter = scan_iter_error
+
+        result = await memory.factory_reset()
+        assert result["redis_keys_deleted"] == 0
+
+
+# =====================================================================
+# delete_episodes Tests
+# =====================================================================
+
+
+class TestDeleteEpisodes:
+    """Tests fuer delete_episodes."""
+
+    @pytest.fixture
+    def memory(self, redis_mock, chroma_mock):
+        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.memory.settings"):
+            m = MemoryManager()
+            m.redis = redis_mock
+            m.chroma_collection = chroma_mock
+            return m
+
+    @pytest.mark.asyncio
+    async def test_deletes_episodes(self, memory, chroma_mock):
+        result = await memory.delete_episodes(["ep_1", "ep_2"])
+        assert result == 2
+        chroma_mock.delete.assert_called_once_with(ids=["ep_1", "ep_2"])
+
+    @pytest.mark.asyncio
+    async def test_empty_list_returns_zero(self, memory, chroma_mock):
+        result = await memory.delete_episodes([])
+        assert result == 0
+        chroma_mock.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_chroma_returns_zero(self, memory):
+        memory.chroma_collection = None
+        result = await memory.delete_episodes(["ep_1"])
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_chroma_error_returns_zero(self, memory, chroma_mock):
+        chroma_mock.delete.side_effect = Exception("ChromaDB error")
+        result = await memory.delete_episodes(["ep_1"])
+        assert result == 0
+
+
+# =====================================================================
+# get_conversations_for_date Tests
+# =====================================================================
+
+
+class TestGetConversationsForDate:
+    """Tests fuer get_conversations_for_date."""
+
+    @pytest.fixture
+    def memory(self, redis_mock):
+        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.memory.settings"):
+            m = MemoryManager()
+            m.redis = redis_mock
+            return m
+
+    @pytest.mark.asyncio
+    async def test_returns_archived_conversations(self, memory, redis_mock):
+        entries = [
+            json.dumps({"role": "user", "content": "Hello", "timestamp": "2025-06-15T10:00:00"}),
+            json.dumps({"role": "assistant", "content": "Hi!", "timestamp": "2025-06-15T10:01:00"}),
+        ]
+        redis_mock.lrange = AsyncMock(return_value=entries)
+
+        result = await memory.get_conversations_for_date("2025-06-15")
+        assert len(result) == 2
+        assert result[0]["content"] == "Hello"
+
+    @pytest.mark.asyncio
+    async def test_no_redis_returns_empty(self):
+        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.memory.settings"):
+            m = MemoryManager()
+        result = await m.get_conversations_for_date("2025-06-15")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_skipped(self, memory, redis_mock):
+        entries = ["not json", json.dumps({"role": "user", "content": "Valid"})]
+        redis_mock.lrange = AsyncMock(return_value=entries)
+
+        result = await memory.get_conversations_for_date("2025-06-15")
+        assert len(result) == 1
+
+    @pytest.mark.asyncio
+    async def test_empty_entries_skipped(self, memory, redis_mock):
+        entries = ["", None, json.dumps({"role": "user", "content": "Valid"})]
+        redis_mock.lrange = AsyncMock(return_value=entries)
+
+        result = await memory.get_conversations_for_date("2025-06-15")
+        assert len(result) == 1
+
+    @pytest.mark.asyncio
+    async def test_redis_error_returns_empty(self, memory, redis_mock):
+        redis_mock.lrange = AsyncMock(side_effect=Exception("Redis error"))
+        result = await memory.get_conversations_for_date("2025-06-15")
+        assert result == []
+
+
+# =====================================================================
+# search_episodes_by_time Tests
+# =====================================================================
+
+
+class TestSearchEpisodesByTime:
+    """Tests fuer search_episodes_by_time."""
+
+    @pytest.fixture
+    def memory(self, redis_mock, chroma_mock):
+        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.memory.settings"):
+            m = MemoryManager()
+            m.redis = redis_mock
+            m.chroma_collection = chroma_mock
+            return m
+
+    @pytest.mark.asyncio
+    async def test_no_chroma_returns_empty(self, memory):
+        memory.chroma_collection = None
+        result = await memory.search_episodes_by_time("test", "2025-01-01", "2025-01-31")
+        assert result == []

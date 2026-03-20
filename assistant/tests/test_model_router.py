@@ -1131,3 +1131,317 @@ class TestUrgencyOverrideExtended:
 
     def test_empty_mood(self, router):
         assert router.urgency_override("", 0.9) is None
+
+
+
+# ============================================================
+# _update_availability Edge Cases
+# ============================================================
+
+class TestUpdateAvailabilityEdgeCases:
+    """Edge cases fuer _update_availability."""
+
+    @pytest.fixture
+    def router(self):
+        with patch("assistant.model_router.settings") as mock_settings, \
+             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+            mock_settings.model_fast = MODEL_FAST
+            mock_settings.model_smart = MODEL_SMART
+            mock_settings.model_deep = MODEL_DEEP
+            from assistant.model_router import ModelRouter
+            return ModelRouter()
+
+    def test_deep_disabled_but_installed(self, router):
+        """Deep model installed but disabled by user."""
+        router._available_models = [MODEL_FAST, MODEL_SMART, MODEL_DEEP]
+        router._deep_enabled = False
+        router._update_availability()
+        assert router._deep_available is False
+
+    def test_smart_disabled_but_installed(self, router):
+        """Smart model installed but disabled by user."""
+        router._available_models = [MODEL_FAST, MODEL_SMART, MODEL_DEEP]
+        router._smart_enabled = False
+        router._update_availability()
+        assert router._smart_available is False
+
+    def test_both_unavailable(self, router):
+        """Both deep and smart unavailable."""
+        router._available_models = [MODEL_FAST]
+        router._deep_enabled = True
+        router._smart_enabled = True
+        router._update_availability()
+        assert router._deep_available is False
+        assert router._smart_available is False
+
+    def test_empty_available_models(self, router):
+        """No models in available list."""
+        router._available_models = []
+        router._update_availability()
+        assert router._deep_available is False
+        assert router._smart_available is False
+
+
+# ============================================================
+# _is_model_installed Edge Cases
+# ============================================================
+
+class TestIsModelInstalledEdgeCases:
+    """Edge cases fuer _is_model_installed."""
+
+    @pytest.fixture
+    def router(self):
+        with patch("assistant.model_router.settings") as mock_settings, \
+             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+            mock_settings.model_fast = MODEL_FAST
+            mock_settings.model_smart = MODEL_SMART
+            mock_settings.model_deep = MODEL_DEEP
+            from assistant.model_router import ModelRouter
+            return ModelRouter()
+
+    def test_exact_match(self, router):
+        router._available_models = ["qwen3.5:4b"]
+        assert router._is_model_installed("qwen3.5:4b") is True
+
+    def test_prefix_match_available_starts(self, router):
+        """Available model starts with requested model + ':'."""
+        router._available_models = ["qwen3.5:4b"]
+        assert router._is_model_installed("qwen3.5") is True
+
+    def test_prefix_match_requested_starts(self, router):
+        """Requested model starts with available model + ':'."""
+        router._available_models = ["qwen3.5"]
+        assert router._is_model_installed("qwen3.5:4b") is True
+
+    def test_no_match(self, router):
+        router._available_models = ["llama3:8b"]
+        assert router._is_model_installed("qwen3.5:4b") is False
+
+    def test_case_insensitive(self, router):
+        router._available_models = ["qwen3.5:4b"]
+        assert router._is_model_installed("Qwen3.5:4B") is True
+
+
+# ============================================================
+# record_latency Edge Cases
+# ============================================================
+
+class TestRecordLatencyEdgeCases:
+    """Edge cases fuer record_latency."""
+
+    @pytest.fixture
+    def router(self):
+        with patch("assistant.model_router.settings") as mock_settings, \
+             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+            mock_settings.model_fast = MODEL_FAST
+            mock_settings.model_smart = MODEL_SMART
+            mock_settings.model_deep = MODEL_DEEP
+            from assistant.model_router import ModelRouter
+            return ModelRouter()
+
+    def test_disabled_latency_feedback(self, router):
+        """When latency feedback is disabled, does nothing."""
+        router._latency_feedback_enabled = False
+        router.record_latency("deep", 10.0)
+        assert len(router._latency_history["deep"]) == 0
+
+    def test_unknown_tier_ignored(self, router):
+        """Unknown tier name is ignored."""
+        router.record_latency("unknown_tier", 5.0)
+        # No exception, no data stored
+
+    def test_deep_degradation_triggers(self, router):
+        """Deep degradation triggers when avg exceeds threshold."""
+        router._deep_degradation_threshold = 5.0
+        # Record 10 calls above threshold
+        for _ in range(10):
+            router.record_latency("deep", 6.0)
+        assert router._deep_degraded is True
+
+    def test_deep_recovery(self, router):
+        """Deep model recovers when latency drops below threshold."""
+        router._deep_degradation_threshold = 5.0
+        # First degrade
+        for _ in range(10):
+            router.record_latency("deep", 6.0)
+        assert router._deep_degraded is True
+
+        # Then recover with fast responses
+        for _ in range(10):
+            router.record_latency("deep", 2.0)
+        assert router._deep_degraded is False
+
+    def test_not_enough_samples_no_degradation(self, router):
+        """Less than 10 samples doesn't trigger degradation check."""
+        for _ in range(9):
+            router.record_latency("deep", 20.0)
+        assert router._deep_degraded is False
+
+    def test_smart_tier_no_degradation_check(self, router):
+        """Smart tier recording doesn't trigger degradation."""
+        for _ in range(20):
+            router.record_latency("smart", 20.0)
+        assert router._deep_degraded is False
+
+
+# ============================================================
+# get_routing_stats Tests
+# ============================================================
+
+class TestGetRoutingStatsExtended:
+    """Extended tests fuer get_routing_stats."""
+
+    @pytest.fixture
+    def router(self):
+        with patch("assistant.model_router.settings") as mock_settings, \
+             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+            mock_settings.model_fast = MODEL_FAST
+            mock_settings.model_smart = MODEL_SMART
+            mock_settings.model_deep = MODEL_DEEP
+            from assistant.model_router import ModelRouter
+            return ModelRouter()
+
+    def test_empty_history(self, router):
+        stats = router.get_routing_stats()
+        assert stats["fast"]["count"] == 0
+        assert stats["smart"]["count"] == 0
+        assert stats["deep"]["count"] == 0
+        assert stats["deep_degraded"] is False
+
+    def test_with_latency_data(self, router):
+        router.record_latency("fast", 0.5)
+        router.record_latency("fast", 1.0)
+        router.record_latency("smart", 2.0)
+
+        stats = router.get_routing_stats()
+        assert stats["fast"]["count"] == 2
+        assert stats["fast"]["avg_s"] == 0.75
+        assert stats["fast"]["min_s"] == 0.5
+        assert stats["fast"]["max_s"] == 1.0
+        assert stats["smart"]["count"] == 1
+
+    def test_degraded_flag_in_stats(self, router):
+        router._deep_degraded = True
+        stats = router.get_routing_stats()
+        assert stats["deep_degraded"] is True
+
+
+# ============================================================
+# select_model_tier_reasoning with degradation
+# ============================================================
+
+class TestSelectModelWithDegradation:
+    """Tests fuer Modell-Auswahl bei Deep-Degradation."""
+
+    @pytest.fixture
+    def router(self):
+        with patch("assistant.model_router.settings") as mock_settings, \
+             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+            mock_settings.model_fast = MODEL_FAST
+            mock_settings.model_smart = MODEL_SMART
+            mock_settings.model_deep = MODEL_DEEP
+            from assistant.model_router import ModelRouter
+            r = ModelRouter()
+            r._available_models = [MODEL_FAST, MODEL_SMART, MODEL_DEEP]
+            r._deep_available = True
+            r._smart_available = True
+            return r
+
+    def test_deep_keyword_when_degraded(self, router):
+        """Deep keyword falls to smart when degraded."""
+        router._deep_degraded = True
+        model, tier, reasoning = router.select_model_tier_reasoning("Analysiere den Energieverbrauch")
+        assert tier == "smart"
+        assert reasoning is False
+
+    def test_long_text_when_degraded(self, router):
+        """Long text falls to smart when degraded."""
+        router._deep_degraded = True
+        long_text = " ".join(["wort"] * 20)
+        model, tier, reasoning = router.select_model_tier_reasoning(long_text)
+        assert tier == "smart"
+
+    def test_deep_keyword_not_degraded(self, router):
+        """Deep keyword uses deep when not degraded."""
+        router._deep_degraded = False
+        model, tier, reasoning = router.select_model_tier_reasoning("Analysiere den Energieverbrauch")
+        assert tier == "deep"
+        assert reasoning is True
+
+
+# ============================================================
+# get_tier_for_model Tests
+# ============================================================
+
+class TestGetTierForModel:
+    """Tests fuer get_tier_for_model."""
+
+    @pytest.fixture
+    def router(self):
+        with patch("assistant.model_router.settings") as mock_settings, \
+             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+            mock_settings.model_fast = MODEL_FAST
+            mock_settings.model_smart = MODEL_SMART
+            mock_settings.model_deep = MODEL_DEEP
+            from assistant.model_router import ModelRouter
+            return ModelRouter()
+
+    def test_fast_model(self, router):
+        assert router.get_tier_for_model(MODEL_FAST) == "fast"
+
+    def test_smart_model(self, router):
+        assert router.get_tier_for_model(MODEL_SMART) == "smart"
+
+    def test_deep_model(self, router):
+        assert router.get_tier_for_model(MODEL_DEEP) == "deep"
+
+    def test_all_same_model(self, router):
+        """When all tiers use the same model, returns 'smart'."""
+        router.model_fast = "same-model"
+        router.model_smart = "same-model"
+        router.model_deep = "same-model"
+        assert router.get_tier_for_model("same-model") == "smart"
+
+    def test_unknown_model(self, router):
+        assert router.get_tier_for_model("unknown:model") == "smart"
+
+
+# ============================================================
+# get_fallback_model Edge Cases
+# ============================================================
+
+class TestGetFallbackModelEdgeCases:
+    """Edge cases fuer get_fallback_model."""
+
+    @pytest.fixture
+    def router(self):
+        with patch("assistant.model_router.settings") as mock_settings, \
+             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+            mock_settings.model_fast = MODEL_FAST
+            mock_settings.model_smart = MODEL_SMART
+            mock_settings.model_deep = MODEL_DEEP
+            from assistant.model_router import ModelRouter
+            r = ModelRouter()
+            r._smart_available = True
+            return r
+
+    def test_deep_to_smart(self, router):
+        assert router.get_fallback_model(MODEL_DEEP) == MODEL_SMART
+
+    def test_deep_to_fast_when_smart_same(self, router):
+        """When deep == smart, falls directly to fast."""
+        router.model_smart = MODEL_DEEP  # Same as deep
+        result = router.get_fallback_model(MODEL_DEEP)
+        assert result == MODEL_FAST
+
+    def test_deep_to_fast_when_smart_unavailable(self, router):
+        """When smart is unavailable, deep falls to fast."""
+        router._smart_available = False
+        result = router.get_fallback_model(MODEL_DEEP)
+        assert result == MODEL_FAST
+
+    def test_smart_to_fast(self, router):
+        assert router.get_fallback_model(MODEL_SMART) == MODEL_FAST
+
+    def test_fast_no_fallback(self, router):
+        assert router.get_fallback_model(MODEL_FAST) == ""

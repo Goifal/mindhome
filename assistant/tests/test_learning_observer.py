@@ -1638,3 +1638,259 @@ class TestGetLearnedPatternsWeekday:
         assert len(result) == 2
         assert result[0]["count"] == 7  # Highest first
         assert result[1]["count"] == 3
+
+
+# =====================================================================
+# observe_scene_activation — Additional Edge Cases
+# =====================================================================
+
+
+class TestObserveSceneActivationEdgeCases:
+    """Additional edge cases for observe_scene_activation."""
+
+    @pytest.fixture
+    def observer(self):
+        o = LearningObserver()
+        o.redis = AsyncMock()
+        o.enabled = True
+        o.min_repetitions = 3
+        o._notify_callback = AsyncMock()
+        return o
+
+    @pytest.mark.asyncio
+    async def test_auto_learning_disabled_in_config(self, observer):
+        """Skips when auto_learning.enabled is False in scenes config."""
+        with patch("assistant.learning_observer.yaml_config", {
+            "timezone": "Europe/Berlin",
+            "scenes": {"auto_learning": {"enabled": False}},
+        }):
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            action = json.dumps({
+                "entity_id": "media_player.tv",
+                "new_state": "on",
+                "timestamp": now.isoformat(),
+            })
+            observer.redis.lrange = AsyncMock(return_value=[action])
+            await observer.observe_scene_activation("filmabend")
+            observer._notify_callback.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_already_in_device_trigger_map(self, observer):
+        """Skips when trigger_entity→scene is already configured in device_trigger_map."""
+        with patch("assistant.learning_observer.yaml_config", {
+            "timezone": "Europe/Berlin",
+            "scenes": {
+                "auto_learning": {"enabled": True},
+                "device_trigger_map": {"media_player.tv": ["filmabend"]},
+            },
+        }):
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            action = json.dumps({
+                "entity_id": "media_player.tv",
+                "new_state": "on",
+                "timestamp": now.isoformat(),
+            })
+            observer.redis.lrange = AsyncMock(return_value=[action])
+            pipe_mock = MagicMock()
+            pipe_mock.execute = AsyncMock(return_value=[5, 86400])  # count=5
+            observer.redis.pipeline = MagicMock(return_value=pipe_mock)
+            observer.redis.get = AsyncMock(return_value=None)  # Not suggested
+            await observer.observe_scene_activation("filmabend")
+            observer._notify_callback.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_callback_still_completes(self, observer):
+        """Runs without error even when no _notify_callback is set."""
+        observer._notify_callback = None
+        with patch("assistant.learning_observer.yaml_config", {
+            "timezone": "Europe/Berlin",
+            "scenes": {"auto_learning": {"enabled": True}},
+        }):
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            action = json.dumps({
+                "entity_id": "switch.tv_power",
+                "new_state": "on",
+                "timestamp": now.isoformat(),
+            })
+            observer.redis.lrange = AsyncMock(return_value=[action])
+            pipe_mock = MagicMock()
+            pipe_mock.execute = AsyncMock(return_value=[3, -2])
+            observer.redis.pipeline = MagicMock(return_value=pipe_mock)
+            observer.redis.get = AsyncMock(return_value=None)
+            await observer.observe_scene_activation("filmabend")  # No exception
+
+    @pytest.mark.asyncio
+    async def test_sets_ttl_when_missing(self, observer):
+        """Sets 60-day TTL when pattern key has no TTL."""
+        with patch("assistant.learning_observer.yaml_config", {
+            "timezone": "Europe/Berlin",
+            "scenes": {"auto_learning": {"enabled": True}},
+        }):
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            action = json.dumps({
+                "entity_id": "switch.tv",
+                "new_state": "on",
+                "timestamp": now.isoformat(),
+            })
+            observer.redis.lrange = AsyncMock(return_value=[action])
+            pipe_mock = MagicMock()
+            pipe_mock.execute = AsyncMock(return_value=[1, -2])  # count=1, no TTL
+            observer.redis.pipeline = MagicMock(return_value=pipe_mock)
+            await observer.observe_scene_activation("filmabend")
+            observer.redis.expire.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_bytes_action_decoded(self, observer):
+        """Bytes actions from Redis are decoded correctly."""
+        with patch("assistant.learning_observer.yaml_config", {
+            "timezone": "Europe/Berlin",
+            "scenes": {"auto_learning": {"enabled": True}},
+        }):
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            action = json.dumps({
+                "entity_id": "switch.tv",
+                "new_state": "on",
+                "timestamp": now.isoformat(),
+            }).encode()
+            observer.redis.lrange = AsyncMock(return_value=[action])
+            pipe_mock = MagicMock()
+            pipe_mock.execute = AsyncMock(return_value=[1, 86400])
+            observer.redis.pipeline = MagicMock(return_value=pipe_mock)
+            await observer.observe_scene_activation("filmabend")  # No exception
+
+
+# =====================================================================
+# observe_abstract_action Edge Cases
+# =====================================================================
+
+
+class TestObserveAbstractActionEdgeCases:
+    """Edge cases for observe_abstract_action."""
+
+    @pytest.fixture
+    def observer(self):
+        o = LearningObserver()
+        o.redis = AsyncMock()
+        o.enabled = True
+        return o
+
+    @pytest.mark.asyncio
+    async def test_disabled_skips(self, observer):
+        observer.enabled = False
+        await observer.observe_abstract_action([{"entity_id": "a", "new_state": "on"}], "Feierabend")
+        observer.redis.lpush.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_redis_skips(self, observer):
+        observer.redis = None
+        await observer.observe_abstract_action([{"entity_id": "a", "new_state": "on"}], "Feierabend")
+
+    @pytest.mark.asyncio
+    async def test_less_than_two_actions_skips(self, observer):
+        """Needs at least 2 actions for abstract concept."""
+        with patch("assistant.learning_observer.yaml_config", {
+            "timezone": "Europe/Berlin",
+            "dynamic_skills": {"enabled": True},
+        }):
+            await observer.observe_abstract_action(
+                [{"entity_id": "a", "new_state": "on"}],
+                "Feierabend",
+            )
+            observer.redis.lpush.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_concept_name_extracted_skips(self, observer):
+        """If no concept name extracted, skips."""
+        with patch("assistant.learning_observer.yaml_config", {
+            "timezone": "Europe/Berlin",
+            "dynamic_skills": {"enabled": True},
+        }):
+            await observer.observe_abstract_action(
+                [{"entity_id": "a", "new_state": "on"}, {"entity_id": "b", "new_state": "off"}],
+                "Mach mal das Licht an und die Heizung aus",  # No abstract concept
+            )
+            observer.redis.lpush.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_stores_observation(self, observer):
+        """Stores observation in Redis when concept name is found."""
+        with patch("assistant.learning_observer.yaml_config", {
+            "timezone": "Europe/Berlin",
+            "dynamic_skills": {"enabled": True, "min_observations": 5},
+        }):
+            observer.redis.llen = AsyncMock(return_value=1)  # Not enough for concept
+            await observer.observe_abstract_action(
+                [{"entity_id": "light.wz", "new_state": "on"}, {"entity_id": "switch.tv", "new_state": "on"}],
+                "Feierabend",
+            )
+            observer.redis.lpush.assert_called_once()
+            observer.redis.ltrim.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_dynamic_skills_disabled(self, observer):
+        """Skips when dynamic_skills.enabled is False."""
+        with patch("assistant.learning_observer.yaml_config", {
+            "timezone": "Europe/Berlin",
+            "dynamic_skills": {"enabled": False},
+        }):
+            await observer.observe_abstract_action(
+                [{"entity_id": "a", "new_state": "on"}, {"entity_id": "b", "new_state": "off"}],
+                "Feierabend",
+            )
+            observer.redis.lpush.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_exception_caught(self, observer):
+        """Exceptions are caught gracefully."""
+        with patch("assistant.learning_observer.yaml_config", {
+            "timezone": "Europe/Berlin",
+            "dynamic_skills": {"enabled": True},
+        }):
+            observer.redis.lpush = AsyncMock(side_effect=Exception("Redis error"))
+            await observer.observe_abstract_action(
+                [{"entity_id": "a", "new_state": "on"}, {"entity_id": "b", "new_state": "off"}],
+                "Feierabend",
+            )  # No exception raised
+
+
+# =====================================================================
+# format_learning_report edge cases
+# =====================================================================
+
+
+class TestFormatLearningReportEdgeCases:
+    """Additional edge cases for format_learning_report."""
+
+    def test_with_patterns(self):
+        o = LearningObserver()
+        report = {
+            "patterns": [
+                {"entity": "light.wz", "state": "on", "time": "22:00", "count": 5},
+                {"entity": "cover.sz", "state": "close", "time": "23:00", "count": 3},
+            ],
+            "total_observations": 100,
+            "suggestions_made": 2,
+            "accepted": 1,
+            "declined": 1,
+        }
+        result = o.format_learning_report(report)
+        assert "100 manuelle Aktionen" in result
+        assert "2 erkannte Muster" in result
+        assert "1 akzeptiert" in result
+
+    def test_zero_observations(self):
+        o = LearningObserver()
+        report = {
+            "patterns": [],
+            "total_observations": 0,
+            "suggestions_made": 0,
+            "accepted": 0,
+            "declined": 0,
+        }
+        result = o.format_learning_report(report)
+        assert "Noch keine" in result
