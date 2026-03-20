@@ -95,7 +95,7 @@ class SelfAutomation:
             "homeassistant.stop", "homeassistant.reload_all",
             "automation.turn_off", "automation.turn_on",
             "automation.trigger", "automation.reload",
-            "lock.unlock",
+            "lock.unlock", "lock.lock", "lock.open",
         ]))
         self._allowed_trigger_platforms = set(self._security.get("allowed_trigger_platforms", [
             "state", "time", "sun", "zone",

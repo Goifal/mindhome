@@ -443,9 +443,13 @@ class ActionPlanner:
                     # Bei Fehlschlag: Re-Planning versuchen, dann ggf. Rollback
                     if step.status == "failed" and len(plan.steps) > 0:
                         error_msg = result.get("message", "Unbekannter Fehler")
-                        replan_result = await self._attempt_replan(
-                            func_name, func_args, error_msg, plan, planner_messages,
-                        )
+                        try:
+                            replan_result = await self._attempt_replan(
+                                func_name, func_args, error_msg, plan, planner_messages,
+                            )
+                        except Exception as rp_err:
+                            logger.error("Re-Planning Ausnahme fuer '%s': %s", func_name, rp_err)
+                            replan_result = None
                         if replan_result:
                             tool_results.append(
                                 f"RE-PLAN: {func_name} fehlgeschlagen ({error_msg}). "
@@ -453,7 +457,11 @@ class ActionPlanner:
                             )
                         else:
                             # Kein Re-Planning moeglich — Rollback
-                            rollback_count = await self._rollback_completed_steps(plan.steps)
+                            try:
+                                rollback_count = await self._rollback_completed_steps(plan.steps)
+                            except Exception as rb_err:
+                                logger.error("Rollback Ausnahme: %s", rb_err)
+                                rollback_count = 0
                             if rollback_count > 0:
                                 plan.rollback_performed = True
                                 logger.info(
@@ -808,12 +816,18 @@ Frage am Ende ob der Plan so umgesetzt werden soll."""},
                 "content": replan_prompt,
             }]
 
-            response = await self.ollama.chat(
-                messages=replan_messages,
-                model=self.model,
-                tools=tools,
-                max_tokens=256,
-                temperature=0.3,
+            from .config import resolve_model
+            replan_model = resolve_model(_planner_cfg.get("model", ""), fallback_tier="smart")
+
+            response = await asyncio.wait_for(
+                self.ollama.chat(
+                    messages=replan_messages,
+                    model=replan_model,
+                    tools=tools,
+                    max_tokens=256,
+                    temperature=0.3,
+                ),
+                timeout=15.0,
             )
 
             alt_text = (response.get("message", {}).get("content") or "").strip()

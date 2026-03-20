@@ -55,7 +55,7 @@ _INJECTION_PATTERN = re.compile(
     r'|<\/?(?:system|instruction|admin|role|prompt)\b'
     # F-080: Erweiterte Patterns
     r'|YOU\s+ARE\s+NOW'                         # Persona-Hijacking
-    r'|ACT\s+AS\s+(?:IF|A|AN|THE)'             # Persona-Hijacking v2
+    r'|\bACT\s+AS\s+(?:IF|A|AN|THE)'            # Persona-Hijacking v2 (word boundary)
     r'|DISREGARD\s+(?:ALL|PREVIOUS|ABOVE)'      # Instruction Override
     r'|FORGET\s+(?:ALL|EVERYTHING|YOUR)'        # Memory Wipe
     r'|NEW\s+(?:INSTRUCTION|DIRECTIVE|TASK)'    # Neuer Kontext
@@ -100,10 +100,10 @@ _INJECTION_PATTERN = re.compile(
     r'|(?:NOW|JETZT)\s+(?:ACT|AGIERE)\s+AS'    # Mixed DE/EN
     # F-090: Indirect Injection via Entity-Namen/Attribute
     r'|entity_id\s*[=:]\s*["\']?(?:system|admin|root|sudo)'  # Entity-ID Hijacking
-    r'|friendly_name\s*[=:]\s*.*(?:SYSTEM|IGNORE|OVERRIDE)'  # HA Attribute Injection
+    r'|friendly_name\s*[=:]\s*.*?(?:SYSTEM|IGNORE|OVERRIDE)'  # HA Attribute Injection (non-greedy)
     # F-090: Advanced Evasion Techniques
-    r'|(?:S\s*Y\s*S\s*T\s*E\s*M)'              # Spaced-out keywords
-    r'|(?:I\s*G\s*N\s*O\s*R\s*E)'              # Spaced-out keywords v2
+    r'|(?:S\s+Y\s+S\s+T\s+E\s+M)'             # Spaced-out keywords (mindestens 1 Space)
+    r'|(?:I\s+G\s+N\s+O\s+R\s+E)'             # Spaced-out keywords v2 (mindestens 1 Space)
     r'|(?:SYS|SYS)(?:TEM|tem)'                  # Mixed-case obfuscation
     r'|(?:IGN|ign)(?:ORE|ore)'                  # Mixed-case obfuscation v2
     # F-090: Prompt Leaking via Encoding

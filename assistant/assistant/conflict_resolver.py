@@ -125,6 +125,15 @@ class ConflictResolver:
         # Domain-spezifische Konfiguration
         self._domain_configs: dict[str, dict] = cfg.get("conflict_domains", {})
 
+        # Konfigurierbare Kontext-Schwellwerte (F-090 Review)
+        ctx_cfg = cfg.get("context_thresholds", {})
+        self._threshold_solar_w = float(ctx_cfg.get("solar_producing_w", 100))
+        self._threshold_lux = float(ctx_cfg.get("high_lux", 500))
+        self._threshold_wind_kmh = float(ctx_cfg.get("high_wind_kmh", 60))
+        self._threshold_energy_price = float(ctx_cfg.get("high_energy_price", 0.30))
+        self._threshold_frost_c = float(ctx_cfg.get("frost_below_c", 0))
+        self._weather_entity = ctx_cfg.get("weather_entity", "weather.home")
+
         # Konfigurierbare Safe-Limits (Fallback: hardcoded)
         _DEFAULT_SAFE_LIMITS = {
             "climate": {"temperature": (15.0, 28.0), "offset": (-3.0, 3.0)},
@@ -873,7 +882,7 @@ class ConflictResolver:
                 for eid, val in state_map.items():
                     if eid.startswith("sensor.") and "solar" in eid:
                         try:
-                            if float(val) > 100:
+                            if float(val) > self._threshold_solar_w:
                                 matched = True
                                 break
                         except (ValueError, TypeError):
@@ -882,7 +891,7 @@ class ConflictResolver:
                 for eid, val in state_map.items():
                     if eid.startswith("sensor.") and "lux" in eid:
                         try:
-                            if float(val) > 500:
+                            if float(val) > self._threshold_lux:
                                 matched = True
                                 break
                         except (ValueError, TypeError):
@@ -924,7 +933,7 @@ class ConflictResolver:
                 for eid, val in state_map.items():
                     if eid.startswith("sensor.") and ("wind" in eid and "speed" in eid):
                         try:
-                            if float(val) > 60:
+                            if float(val) > self._threshold_wind_kmh:
                                 matched = True
                                 break
                         except (ValueError, TypeError):
@@ -942,13 +951,13 @@ class ConflictResolver:
                     if "sleep" in eid or "schlaf" in eid or "goodnight" in eid
                 )
             elif ctx == "rain_detected":
-                weather = state_map.get("weather.home", "")
-                matched = weather in ("rainy", "pouring", "lightning-rainy", "hail")
+                weather = state_map.get(self._weather_entity, "")
+                matched = weather in ("rainy", "pouring", "lightning-rainy", "hail", "rain", "thunderstorm")
             elif ctx == "frost_detected":
                 for eid, val in state_map.items():
-                    if eid.startswith("sensor.") and "temperature" in eid and "outdoor" in eid:
+                    if eid.startswith("sensor.") and "temperature" in eid and ("outdoor" in eid or "aussen" in eid or "außen" in eid):
                         try:
-                            if float(val) < 0:
+                            if float(val) < self._threshold_frost_c:
                                 matched = True
                                 break
                         except (ValueError, TypeError):
@@ -957,7 +966,7 @@ class ConflictResolver:
                 for eid, val in state_map.items():
                     if "price" in eid or "tarif" in eid or "strom" in eid:
                         try:
-                            if float(val) > 0.30:
+                            if float(val) > self._threshold_energy_price:
                                 matched = True
                                 break
                         except (ValueError, TypeError):

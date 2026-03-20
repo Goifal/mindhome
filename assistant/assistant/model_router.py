@@ -60,6 +60,8 @@ class ModelRouter:
         }
         self._deep_degraded = False
         self._smart_degraded = False
+        self._smart_degraded_since: float = 0.0  # Timestamp wann Smart zuletzt degradiert wurde
+        self._smart_probe_interval: float = 300.0  # Alle 5 Min eine Probe-Anfrage durchlassen
         _router_cfg = yaml_config.get("model_router", {})
         self._latency_feedback_enabled = _router_cfg.get("latency_feedback", True)
         self._deep_degradation_threshold = _router_cfg.get("deep_degradation_threshold_s", 8.0)
@@ -326,9 +328,15 @@ class ModelRouter:
             "was ", "wie ", "warum ", "wann ", "wo ", "wer ",
         ]):
             if self._smart_degraded and word_count <= 10 and self._fast_enabled:
-                model = self._cap_model(self.model_fast)
-                logger.debug("SMART→FAST (degradiert) fuer kurze Frage: '%s'", text)
-                return model, "fast", False
+                # Recovery-Probe: alle 5 Min eine Anfrage auf Smart durchlassen
+                import time as _time
+                if _time.time() - self._smart_degraded_since > self._smart_probe_interval:
+                    self._smart_degraded_since = _time.time()
+                    logger.info("Smart-Degradation Recovery-Probe: lasse Anfrage auf Smart durch")
+                else:
+                    model = self._cap_model(self.model_fast)
+                    logger.debug("SMART→FAST (degradiert) fuer kurze Frage: '%s'", text)
+                    return model, "fast", False
             model = self._cap_model(self.model_smart)
             logger.debug("SMART model fuer Frage: '%s' (actual: %s)", text, model)
             return model, "smart", False
@@ -462,6 +470,8 @@ class ModelRouter:
             self._smart_degraded = avg > self._smart_degradation_threshold
 
             if self._smart_degraded and not was_degraded:
+                import time as _time
+                self._smart_degraded_since = _time.time()
                 logger.warning(
                     "Smart-Modell degradiert: Durchschnitt %.1fs > %.1fs Schwelle. "
                     "Einfache Anfragen werden auf Fast heruntergestuft.",
