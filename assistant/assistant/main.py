@@ -716,7 +716,7 @@ async def jarvis_status():
             _mood = brain.mood.get_current_mood()
             status["mood"] = _mood if isinstance(_mood, str) else _mood.get("mood", "neutral")
         if hasattr(brain, "autonomy"):
-            status["autonomy_level"] = getattr(brain.autonomy, "current_level", 2)
+            status["autonomy_level"] = getattr(brain.autonomy, "level", 2)
         status["processing"] = getattr(brain, "_is_processing", False)
     except Exception as e:
         logger.debug("Jarvis status error: %s", e)
