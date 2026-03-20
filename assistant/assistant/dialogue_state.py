@@ -71,9 +71,9 @@ CLARIFICATION_ANSWER_PATTERNS = [
 class DialogueState:
     """Speichert den Zustand eines laufenden Dialogs."""
 
-    def __init__(self):
+    def __init__(self, max_references: int = 20):
         self.state: str = "idle"  # idle, awaiting_clarification, follow_up, multi_step
-        self.last_entities: deque[str] = deque(maxlen=10)
+        self.last_entities: deque[str] = deque(maxlen=max_references)
         self.last_rooms: deque[str] = deque(maxlen=3)
         self.last_actions: deque[dict] = deque(maxlen=5)
         self.last_domains: deque[str] = deque(maxlen=3)
@@ -123,6 +123,7 @@ class DialogueStateManager:
         self.auto_resolve_references = cfg.get("auto_resolve_references", True)
         self.clarification_enabled = cfg.get("clarification_enabled", True)
         self.max_clarification_options = cfg.get("max_clarification_options", 5)
+        self.max_references = cfg.get("max_references", 20)
 
         # Per-Person Dialog-Zustaende
         self._states: dict[str, DialogueState] = {}
@@ -146,7 +147,7 @@ class DialogueStateManager:
                 )[:25]
                 for old_key in oldest:
                     del self._states[old_key]
-            self._states[key] = DialogueState()
+            self._states[key] = DialogueState(max_references=self.max_references)
         state = self._states[key]
         # Stale-Check: Zustand zuruecksetzen wenn zu alt
         if state.is_stale(self.timeout_seconds):

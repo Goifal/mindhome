@@ -113,6 +113,10 @@ class InsightEngine:
         # Wetter-Aktions-Cooldown: verhindert wiederholte Vorschlaege innerhalb 60 Min
         self._weather_action_cooldown: dict[str, datetime] = {}
 
+        # Deduplication: Entities die im aktuellen Check-Zyklus bereits Insights ausgeloest haben
+        self._dedup_enabled = insight_checks_cfg.get("deduplication", True)
+        self._current_cycle_entities: set[str] = set()
+
         # LLM-basierte Kausalanalyse
         _llm_causal_cfg = yaml_config.get("insight_llm_causal", {})
         self._llm_causal_enabled = _llm_causal_cfg.get("enabled", True)
@@ -205,6 +209,7 @@ class InsightEngine:
         self.check_night_security = insight_checks_cfg.get("night_security", True)
         self.check_heating_vs_sun = insight_checks_cfg.get("heating_vs_sun", True)
         self.check_forgotten_devices = insight_checks_cfg.get("forgotten_devices", True)
+        self._dedup_enabled = insight_checks_cfg.get("deduplication", True)
 
         thresholds = cfg.get("thresholds", {})
         self.frost_temp = thresholds.get("frost_temp_c", 2)
@@ -518,6 +523,7 @@ class InsightEngine:
                 logger.debug("LearningObserver-Daten fuer Insights fehlgeschlagen: %s", e)
 
         insights = []
+        self._current_cycle_entities.clear()
 
         check_methods = self._get_check_list()
 
@@ -527,12 +533,38 @@ class InsightEngine:
             try:
                 result = await method(data)
                 if result and not await self._is_on_cooldown(result["check"]):
+                    if self._dedup_enabled:
+                        result_entities = self._extract_insight_entities(result)
+                        if result_entities and result_entities.issubset(self._current_cycle_entities):
+                            logger.debug(
+                                "Insight %s uebersprungen (Dedup: Entities bereits abgedeckt)",
+                                result.get("check"),
+                            )
+                            continue
+                        self._current_cycle_entities.update(result_entities)
                     insights.append(result)
                     await self._set_cooldown(result["check"])
             except Exception as e:
                 logger.warning("Check %s fehlgeschlagen: %s", method.__name__, e)
 
         return insights
+
+    @staticmethod
+    def _extract_insight_entities(insight: dict) -> set[str]:
+        """Extrahiert Entity-Bezeichner aus einem Insight-Ergebnis fuer Dedup."""
+        entities: set[str] = set()
+        result_data = insight.get("data", {})
+        for key in ("entity_id", "entity", "room", "device"):
+            val = result_data.get(key)
+            if isinstance(val, str) and val:
+                entities.add(val)
+            elif isinstance(val, list):
+                entities.update(v for v in val if isinstance(v, str))
+        for key in ("windows", "lights_on", "open_windows"):
+            val = result_data.get(key)
+            if isinstance(val, list):
+                entities.update(v for v in val if isinstance(v, str))
+        return entities
 
     async def _check_llm_causal(self, data: dict) -> Optional[dict]:
         """LLM-basierte Kausalanalyse: Findet ungewoehnliche Korrelationen.
@@ -1188,6 +1220,7 @@ class InsightEngine:
                 return []
 
             insights = []
+            on_demand_entities: set[str] = set()
             check_methods = self._get_check_list()
 
             for enabled, method in check_methods:
@@ -1196,6 +1229,11 @@ class InsightEngine:
                 try:
                     result = await method(data)
                     if result:
+                        if self._dedup_enabled:
+                            result_entities = self._extract_insight_entities(result)
+                            if result_entities and result_entities.issubset(on_demand_entities):
+                                continue
+                            on_demand_entities.update(result_entities)
                         insights.append(result)
                 except Exception as e:
                     logger.debug("On-Demand Check Fehler: %s", e)

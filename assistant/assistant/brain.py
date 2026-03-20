@@ -1386,6 +1386,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.visitor_manager.set_notify_callback(self._handle_visitor_event)
         self.visitor_manager.set_executor(self.executor)
         self.validator.set_ha_client(self.ha)
+        self.validator.set_redis(self.memory.redis)
         self.wellness_advisor.set_notify_callback(self._handle_wellness_nudge)
         self.wellness_advisor.executor = self.executor
         self.insight_engine.set_notify_callback(self._handle_insight)
@@ -6453,9 +6454,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
                     # Wiring 2B: Proaktive Konfliktvermeidung (logische Konflikte)
                     _conflict_warning = None
-                    if hasattr(self.conflict_resolver, "predict_conflict"):
+                    if hasattr(self.conflict_resolver, "predict_logical_conflict"):
                         try:
-                            _predicted = await self.conflict_resolver.predict_conflict(
+                            _predicted = await self.conflict_resolver.predict_logical_conflict(
                                 func_name,
                                 func_args if isinstance(func_args, dict) else {},
                                 await self.get_states_cached() if self.ha else [],
@@ -6466,7 +6467,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     "Conflict prediction: %s", _conflict_warning
                                 )
                         except Exception as _pc_err:
-                            logger.debug("predict_conflict fehlgeschlagen: %s", _pc_err)
+                            logger.debug("predict_logical_conflict fehlgeschlagen: %s", _pc_err)
 
                     # Phase 16.1: Konflikt-Check (Multi-User)
                     final_args = func_args

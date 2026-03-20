@@ -34,9 +34,17 @@ KEY_PRICE_HISTORY = "mha:energy:price_history"
 
 # Standard flexible Lasten — konfigurierbar ueber config.yaml (energy.flexible_loads)
 DEFAULT_FLEXIBLE_LOADS: dict[str, dict] = {
-    "waschmaschine": {"kwh": 1.5, "duration_h": 2.0, "entities": ["switch.waschmaschine"]},
+    "waschmaschine": {
+        "kwh": 1.5,
+        "duration_h": 2.0,
+        "entities": ["switch.waschmaschine"],
+    },
     "trockner": {"kwh": 3.0, "duration_h": 2.5, "entities": ["switch.trockner"]},
-    "spuelmaschine": {"kwh": 1.2, "duration_h": 2.0, "entities": ["switch.spuelmaschine"]},
+    "spuelmaschine": {
+        "kwh": 1.2,
+        "duration_h": 2.0,
+        "entities": ["switch.spuelmaschine"],
+    },
     "e_auto": {"kwh": 11.0, "duration_h": 3.0, "entities": ["switch.wallbox"]},
 }
 
@@ -75,10 +83,19 @@ class EnergyOptimizer:
         }
 
         # F-056: Essentielle Geraete die nie abgeschaltet werden duerfen
-        self.essential_entities = set(energy_cfg.get("essential_entities", [
-            "switch.kuehlschrank", "switch.gefrierschrank", "switch.tiefkuehler",
-            "switch.server", "switch.nas", "switch.aquarium",
-        ]))
+        self.essential_entities = set(
+            energy_cfg.get(
+                "essential_entities",
+                [
+                    "switch.kuehlschrank",
+                    "switch.gefrierschrank",
+                    "switch.tiefkuehler",
+                    "switch.server",
+                    "switch.nas",
+                    "switch.aquarium",
+                ],
+            )
+        )
 
     def set_ollama(self, ollama_client):
         """Setzt den OllamaClient fuer LLM-basierte Empfehlungen."""
@@ -105,11 +122,15 @@ class EnergyOptimizer:
         parts = ["Energie-Bericht:"]
 
         # Aktueller Strompreis (mit Einheiten-Erkennung)
-        price_raw = self._find_sensor_value(states, self.price_sensor, ["price", "strom", "electricity"])
+        price_raw = self._find_sensor_value(
+            states, self.price_sensor, ["price", "strom", "electricity"]
+        )
         price = None
         if price_raw is not None:
             # Einheit des Sensors pruefen und nach ct/kWh normalisieren
-            price_unit = self._find_sensor_unit(states, self.price_sensor, ["price", "strom", "electricity"])
+            price_unit = self._find_sensor_unit(
+                states, self.price_sensor, ["price", "strom", "electricity"]
+            )
             price_unit_lower = (price_unit or "").lower().replace(" ", "")
             if "eur/mwh" in price_unit_lower or "€/mwh" in price_unit_lower:
                 price = price_raw / 10.0  # EUR/MWh -> ct/kWh
@@ -123,21 +144,33 @@ class EnergyOptimizer:
                 price = price_raw * 100.0
             else:
                 price = price_raw  # Bereits ct/kWh
-            price_status = "guenstig" if price < self.price_low else "teuer" if price > self.price_high else "normal"
+            price_status = (
+                "guenstig"
+                if price < self.price_low
+                else "teuer"
+                if price > self.price_high
+                else "normal"
+            )
             parts.append(f"  Strompreis: {price:.1f} ct/kWh ({price_status})")
 
         # Solar-Produktion
-        solar = self._find_sensor_value(states, self.solar_sensor, ["solar", "pv", "photovoltaik"])
+        solar = self._find_sensor_value(
+            states, self.solar_sensor, ["solar", "pv", "photovoltaik"]
+        )
         if solar is not None:
             parts.append(f"  Solar-Ertrag: {solar:.0f} W")
 
         # Aktueller Verbrauch
-        consumption = self._find_sensor_value(states, self.consumption_sensor, ["consumption", "verbrauch", "power"])
+        consumption = self._find_sensor_value(
+            states, self.consumption_sensor, ["consumption", "verbrauch", "power"]
+        )
         if consumption is not None:
             parts.append(f"  Aktueller Verbrauch: {consumption:.0f} W")
 
         # Netz-Export
-        export = self._find_sensor_value(states, self.grid_export_sensor, ["export", "einspeisung"])
+        export = self._find_sensor_value(
+            states, self.grid_export_sensor, ["export", "einspeisung"]
+        )
         if export is not None and export > 0:
             parts.append(f"  Netz-Einspeisung: {export:.0f} W")
 
@@ -149,7 +182,10 @@ class EnergyOptimizer:
                 parts.append(f"  - {rec}")
 
         if len(parts) == 1:
-            return {"success": True, "message": "Keine Energie-Sensoren konfiguriert. Bitte energy-Entities in der Config hinterlegen."}
+            return {
+                "success": True,
+                "message": "Keine Energie-Sensoren konfiguriert. Bitte energy-Entities in der Config hinterlegen.",
+            }
 
         return {"success": True, "message": "\n".join(parts)}
 
@@ -165,6 +201,7 @@ class EnergyOptimizer:
         try:
             # Tagesverbraeuche der letzten 7 Tage holen
             from datetime import datetime as dt, timedelta as td
+
             today = dt.now(_LOCAL_TZ)
             costs = []
             for d in range(1, 8):
@@ -184,7 +221,9 @@ class EnergyOptimizer:
             parts = [f"Gestern: {yesterday:.1f} kWh"]
             if abs(trend_pct) > 5:
                 direction = "mehr" if trend_pct > 0 else "weniger"
-                parts.append(f"({abs(trend_pct):.0f}% {direction} als der Wochenschnitt)")
+                parts.append(
+                    f"({abs(trend_pct):.0f}% {direction} als der Wochenschnitt)"
+                )
             else:
                 parts.append("(im Wochenschnitt)")
 
@@ -196,8 +235,12 @@ class EnergyOptimizer:
     @property
     def has_configured_entities(self) -> bool:
         """True wenn mindestens ein Energie-Entity explizit konfiguriert ist."""
-        return bool(self.price_sensor or self.consumption_sensor
-                     or self.solar_sensor or self.grid_export_sensor)
+        return bool(
+            self.price_sensor
+            or self.consumption_sensor
+            or self.solar_sensor
+            or self.grid_export_sensor
+        )
 
     async def check_energy_events(self) -> list[dict]:
         """Periodischer Check fuer proaktive Energie-Meldungen.
@@ -222,55 +265,75 @@ class EnergyOptimizer:
             return []
 
         # 1. Guenstiger Strom — deaktiviert (Owner-Feedback: uninteressant)
-        price = self._find_sensor_value(states, self.price_sensor, ["price", "strom", "electricity"])
+        price = self._find_sensor_value(
+            states, self.price_sensor, ["price", "strom", "electricity"]
+        )
 
         # 2. Solar-Ueberschuss + Cloud-Forecast
         solar = self._find_sensor_value(states, self.solar_sensor, ["solar", "pv"])
-        export = self._find_sensor_value(states, self.grid_export_sensor, ["export", "einspeisung"])
-        if solar is not None and solar > self.solar_high_watts and export is not None and export > 500:
+        export = self._find_sensor_value(
+            states, self.grid_export_sensor, ["export", "einspeisung"]
+        )
+        if (
+            solar is not None
+            and solar > self.solar_high_watts
+            and export is not None
+            and export > 500
+        ):
             # Cloud-Forecast: Bewoelkung in den naechsten Stunden pruefen
             clouds_coming = self._check_cloud_forecast(states)
-            if clouds_coming and not await self._was_recently_alerted("solar_cloud_shift"):
+            if clouds_coming and not await self._was_recently_alerted(
+                "solar_cloud_shift"
+            ):
                 await self._mark_alerted("solar_cloud_shift", cooldown_minutes=120)
-                alerts.append({
-                    "type": "solar_cloud_shift",
-                    "message": f"Solar-Ertrag aktuell hoch ({solar:.0f} W), aber Bewoelkung "
-                               f"vorhergesagt. Energieintensive Geraete JETZT starten "
-                               f"(Waschmaschine, Trockner, Spuelmaschine).",
-                    "urgency": "low",
-                })
+                alerts.append(
+                    {
+                        "type": "solar_cloud_shift",
+                        "message": f"Solar-Ertrag aktuell hoch ({solar:.0f} W), aber Bewoelkung "
+                        f"vorhergesagt. Energieintensive Geraete JETZT starten "
+                        f"(Waschmaschine, Trockner, Spuelmaschine).",
+                        "urgency": "low",
+                    }
+                )
             elif not await self._was_recently_alerted("solar_high"):
                 await self._mark_alerted("solar_high", cooldown_minutes=180)
-                alerts.append({
-                    "type": "solar_surplus",
-                    "message": f"Solar-Ertrag ist hoch ({solar:.0f} W) mit {export:.0f} W Einspeisung. "
-                               f"Eigenverbrauch optimieren, z.B. Waschmaschine starten.",
-                    "urgency": "low",
-                })
+                alerts.append(
+                    {
+                        "type": "solar_surplus",
+                        "message": f"Solar-Ertrag ist hoch ({solar:.0f} W) mit {export:.0f} W Einspeisung. "
+                        f"Eigenverbrauch optimieren, z.B. Waschmaschine starten.",
+                        "urgency": "low",
+                    }
+                )
 
         # 3. Hoher Strompreis
         if price is not None and price > self.price_high:
             if not await self._was_recently_alerted("high_price"):
                 await self._mark_alerted("high_price", cooldown_minutes=240)
-                alerts.append({
-                    "type": "energy_price_high",
-                    "message": f"Strompreis ist hoch ({price:.1f} ct/kWh). "
-                               f"Grosse Verbraucher besser spaeter einschalten.",
-                    "urgency": "low",
-                })
+                alerts.append(
+                    {
+                        "type": "energy_price_high",
+                        "message": f"Strompreis ist hoch ({price:.1f} ct/kWh). "
+                        f"Grosse Verbraucher besser spaeter einschalten.",
+                        "urgency": "low",
+                    }
+                )
 
         # 4. Anomalie-Erkennung: Ungewoehnlich hoher Verbrauch
-        consumption = self._find_sensor_value(states, self.consumption_sensor,
-                                              ["consumption", "verbrauch", "power"])
+        consumption = self._find_sensor_value(
+            states, self.consumption_sensor, ["consumption", "verbrauch", "power"]
+        )
         anomaly_msg = await self._check_anomaly(consumption)
         if anomaly_msg:
             if not await self._was_recently_alerted("anomaly"):
                 await self._mark_alerted("anomaly", cooldown_minutes=360)
-                alerts.append({
-                    "type": "energy_anomaly",
-                    "message": anomaly_msg,
-                    "urgency": "medium",
-                })
+                alerts.append(
+                    {
+                        "type": "energy_anomaly",
+                        "message": anomaly_msg,
+                        "urgency": "medium",
+                    }
+                )
 
         # E4: Saisonale Kontext-Anreicherung
         if alerts and self.seasonal_insight:
@@ -279,11 +342,22 @@ class EnergyOptimizer:
                 if seasonal_status.get("months_with_data", 0) >= 3:
                     # Saisonalen Kontext an Anomalie-Alerts anhaengen
                     from datetime import datetime
+
                     month = datetime.now().month
-                    seasons = {12: "Winter", 1: "Winter", 2: "Winter",
-                               3: "Fruehling", 4: "Fruehling", 5: "Fruehling",
-                               6: "Sommer", 7: "Sommer", 8: "Sommer",
-                               9: "Herbst", 10: "Herbst", 11: "Herbst"}
+                    seasons = {
+                        12: "Winter",
+                        1: "Winter",
+                        2: "Winter",
+                        3: "Fruehling",
+                        4: "Fruehling",
+                        5: "Fruehling",
+                        6: "Sommer",
+                        7: "Sommer",
+                        8: "Sommer",
+                        9: "Herbst",
+                        10: "Herbst",
+                        11: "Herbst",
+                    }
                     season = seasons.get(month, "")
                     for alert in alerts:
                         if alert["type"] == "energy_anomaly" and season:
@@ -303,12 +377,16 @@ class EnergyOptimizer:
 
         if price is not None:
             if price < self.price_low:
-                recs.append("Strom ist guenstig — guter Zeitpunkt fuer energieintensive Geraete.")
+                recs.append(
+                    "Strom ist guenstig — guter Zeitpunkt fuer energieintensive Geraete."
+                )
             elif price > self.price_high:
                 recs.append("Strom ist teuer — grosse Verbraucher besser verschieben.")
 
         if solar is not None and solar > self.solar_high_watts:
-            recs.append(f"Hoher Solar-Ertrag ({solar:.0f} W) — Eigenverbrauch maximieren.")
+            recs.append(
+                f"Hoher Solar-Ertrag ({solar:.0f} W) — Eigenverbrauch maximieren."
+            )
 
         # Anomalie-Hinweis
         anomaly = await self._check_anomaly(consumption)
@@ -323,34 +401,48 @@ class EnergyOptimizer:
         # Device-Dependency-Kontext: Konflikte die Energieverbrauch beeinflussen
         try:
             from .state_change_log import StateChangeLog
+
             states = await self.ha.get_states() if self.ha else []
             if states:
                 state_dict = {
                     s["entity_id"]: s.get("state", "")
-                    for s in states if "entity_id" in s
+                    for s in states
+                    if "entity_id" in s
                 }
                 scl = StateChangeLog.__new__(StateChangeLog)
                 conflicts = scl.detect_conflicts(state_dict)
                 energy_relevant = [
-                    c for c in conflicts
-                    if c.get("affected_active") and any(
+                    c
+                    for c in conflicts
+                    if c.get("affected_active")
+                    and any(
                         kw in c.get("effect", "").lower()
                         for kw in ["heiz", "kuehl", "energie", "strom", "ineffizient"]
                     )
                 ]
                 for c in energy_relevant[:2]:
-                    room = f" ({c.get('trigger_room', '')})" if c.get("trigger_room") else ""
+                    room = (
+                        f" ({c.get('trigger_room', '')})"
+                        if c.get("trigger_room")
+                        else ""
+                    )
                     recs.append(f"Energiehinweis: {c['hint']}{room}")
         except Exception as _dep_err:
             logger.debug("Energy Dependency-Kontext: %s", _dep_err)
 
         # LLM-Zusammenfassung: Statische Empfehlungen natuerlicher formulieren
-        recs = await self._llm_summarize_recommendations(recs, price, solar, consumption)
+        recs = await self._llm_summarize_recommendations(
+            recs, price, solar, consumption
+        )
 
         return recs
 
     async def _llm_summarize_recommendations(
-        self, recs: list[str], price, solar, consumption,
+        self,
+        recs: list[str],
+        price,
+        solar,
+        consumption,
     ) -> list[str]:
         """Formuliert Energie-Empfehlungen via LLM natuerlicher.
 
@@ -358,6 +450,7 @@ class EnergyOptimizer:
         Bei Fehler oder wenn kein LLM verfuegbar: Original-Liste zurueck.
         """
         import asyncio
+
         energy_cfg = yaml_config.get("energy", {})
         if not energy_cfg.get("llm_recommendations", True) or not self._ollama:
             return recs
@@ -369,10 +462,18 @@ class EnergyOptimizer:
             from .config import settings
             from datetime import datetime as _dt
             from zoneinfo import ZoneInfo as _ZI
+
             _now = _dt.now(tz=_ZI("Europe/Berlin"))
             _hour = _now.hour
-            _DAY_NAMES = {0: "Montag", 1: "Dienstag", 2: "Mittwoch", 3: "Donnerstag",
-                          4: "Freitag", 5: "Samstag", 6: "Sonntag"}
+            _DAY_NAMES = {
+                0: "Montag",
+                1: "Dienstag",
+                2: "Mittwoch",
+                3: "Donnerstag",
+                4: "Freitag",
+                5: "Samstag",
+                6: "Sonntag",
+            }
             context_parts = [
                 f"Zeit: {_DAY_NAMES.get(_now.weekday(), '')} {_now.strftime('%H:%M')}",
             ]
@@ -415,7 +516,7 @@ class EnergyOptimizer:
             if "<think>" in content:
                 think_end = content.find("</think>")
                 if think_end != -1:
-                    content = content[think_end + 8:].strip()
+                    content = content[think_end + 8 :].strip()
 
             if content and len(content) > 10:
                 return [content]
@@ -431,8 +532,9 @@ class EnergyOptimizer:
     # Lastverschiebung / Energie-Arbitrage
     # ------------------------------------------------------------------
 
-    def calculate_load_shift_savings(self, current_price: float, avg_price: float,
-                                     estimated_kwh: float) -> float:
+    def calculate_load_shift_savings(
+        self, current_price: float, avg_price: float, estimated_kwh: float
+    ) -> float:
         """Berechnet Ersparnis in Cent wenn eine Last in guenstigere Zeit verschoben wird.
 
         Args:
@@ -463,12 +565,16 @@ class EnergyOptimizer:
             return []
 
         # Aktuellen Preis ermitteln (normalisiert auf ct/kWh)
-        price_raw = self._find_sensor_value(states, self.price_sensor, ["price", "strom", "electricity"])
+        price_raw = self._find_sensor_value(
+            states, self.price_sensor, ["price", "strom", "electricity"]
+        )
         if price_raw is None:
             return []
 
         # Einheit normalisieren (gleiche Logik wie get_energy_report)
-        price_unit = self._find_sensor_unit(states, self.price_sensor, ["price", "strom", "electricity"])
+        price_unit = self._find_sensor_unit(
+            states, self.price_sensor, ["price", "strom", "electricity"]
+        )
         price_unit_lower = (price_unit or "").lower().replace(" ", "")
         if "eur/mwh" in price_unit_lower or "€/mwh" in price_unit_lower:
             current_price = price_raw / 10.0
@@ -490,7 +596,9 @@ class EnergyOptimizer:
         for device_key, load_info in self.flexible_loads.items():
             estimated_kwh = load_info["kwh"]
             duration_h = load_info["duration_h"]
-            savings_ct = self.calculate_load_shift_savings(current_price, avg_price, estimated_kwh)
+            savings_ct = self.calculate_load_shift_savings(
+                current_price, avg_price, estimated_kwh
+            )
 
             # Geraetename fuer Anzeige (Grossbuchstabe)
             display_name = device_key.replace("_", "-").capitalize()
@@ -499,32 +607,42 @@ class EnergyOptimizer:
 
             if current_price < avg_price:
                 # Jetzt ist guenstig — sofort starten empfehlen
-                discount_pct = ((avg_price - current_price) / avg_price) * 100 if avg_price > 0 else 0
+                discount_pct = (
+                    ((avg_price - current_price) / avg_price) * 100
+                    if avg_price > 0
+                    else 0
+                )
                 end_time = now + timedelta(hours=duration_h)
                 window = f"{now.strftime('%H:%M')}-{end_time.strftime('%H:%M')}"
-                schedule.append({
-                    "device": display_name,
-                    "suggestion": f"Jetzt starten — Strom ist {discount_pct:.0f}% guenstiger als Durchschnitt",
-                    "savings_estimate_ct": abs(savings_ct),
-                    "optimal_window": window,
-                })
+                schedule.append(
+                    {
+                        "device": display_name,
+                        "suggestion": f"Jetzt starten — Strom ist {discount_pct:.0f}% guenstiger als Durchschnitt",
+                        "savings_estimate_ct": abs(savings_ct),
+                        "optimal_window": window,
+                    }
+                )
             else:
                 # Jetzt teuer — guenstigeres Fenster vorschlagen
                 # Heuristik: Nachtstunden (1:00-5:00) und Mittagsstunden (12:00-14:00) sind oft guenstig
                 cheap_windows = self._estimate_cheap_windows(now, duration_h)
                 if cheap_windows:
                     window = cheap_windows[0]
-                    schedule.append({
-                        "device": display_name,
-                        "suggestion": f"Besser spaeter starten — aktuell {current_price:.1f} ct/kWh "
-                                      f"(Durchschnitt {avg_price:.1f} ct/kWh)",
-                        "savings_estimate_ct": abs(savings_ct),
-                        "optimal_window": window,
-                    })
+                    schedule.append(
+                        {
+                            "device": display_name,
+                            "suggestion": f"Besser spaeter starten — aktuell {current_price:.1f} ct/kWh "
+                            f"(Durchschnitt {avg_price:.1f} ct/kWh)",
+                            "savings_estimate_ct": abs(savings_ct),
+                            "optimal_window": window,
+                        }
+                    )
 
         return schedule
 
-    async def get_solar_surplus_actions(self, ha_client: HomeAssistantClient) -> list[dict]:
+    async def get_solar_surplus_actions(
+        self, ha_client: HomeAssistantClient
+    ) -> list[dict]:
         """Empfehlungen bei Solar-Ueberschuss: Welche Geraete jetzt gestartet werden koennten.
 
         Priorisiert nach Verbrauch — groesste Verbraucher zuerst, damit der
@@ -540,9 +658,12 @@ class EnergyOptimizer:
         if not states:
             return []
 
-        solar = self._find_sensor_value(states, self.solar_sensor, ["solar", "pv", "photovoltaik"])
-        consumption = self._find_sensor_value(states, self.consumption_sensor,
-                                              ["consumption", "verbrauch", "power"])
+        solar = self._find_sensor_value(
+            states, self.solar_sensor, ["solar", "pv", "photovoltaik"]
+        )
+        consumption = self._find_sensor_value(
+            states, self.consumption_sensor, ["consumption", "verbrauch", "power"]
+        )
 
         if solar is None or consumption is None:
             return []
@@ -557,9 +678,11 @@ class EnergyOptimizer:
         actions: list[dict] = []
 
         # Nach Verbrauch sortieren (groesste zuerst fuer maximale Eigenverbrauchsquote)
-        sorted_loads = sorted(self.flexible_loads.items(),
-                              key=lambda x: x[1]["kwh"] / max(x[1]["duration_h"], 0.1),
-                              reverse=True)
+        sorted_loads = sorted(
+            self.flexible_loads.items(),
+            key=lambda x: x[1]["kwh"] / max(x[1]["duration_h"], 0.1),
+            reverse=True,
+        )
 
         remaining_kw = surplus_kw
         for device_key, load_info in sorted_loads:
@@ -572,13 +695,15 @@ class EnergyOptimizer:
 
             if remaining_kw >= avg_power_kw * 0.5:
                 # Genuegend Ueberschuss fuer dieses Geraet (mind. 50% der Leistung)
-                actions.append({
-                    "device": display_name,
-                    "message": f"Solarueberschuss von {surplus_kw:.1f} kW — "
-                               f"gute Zeit fuer {display_name}"
-                               f" ({avg_power_kw:.1f} kW Verbrauch)",
-                    "power_kw": round(avg_power_kw, 1),
-                })
+                actions.append(
+                    {
+                        "device": display_name,
+                        "message": f"Solarueberschuss von {surplus_kw:.1f} kW — "
+                        f"gute Zeit fuer {display_name}"
+                        f" ({avg_power_kw:.1f} kW Verbrauch)",
+                        "power_kw": round(avg_power_kw, 1),
+                    }
+                )
                 remaining_kw -= avg_power_kw
 
             if remaining_kw <= 0:
@@ -640,7 +765,9 @@ class EnergyOptimizer:
             if slot_start <= now:
                 slot_start += timedelta(days=1)
             slot_end = slot_start + timedelta(hours=duration_h)
-            windows.append(f"{slot_start.strftime('%H:%M')}-{slot_end.strftime('%H:%M')}")
+            windows.append(
+                f"{slot_start.strftime('%H:%M')}-{slot_end.strftime('%H:%M')}"
+            )
 
         return windows
 
@@ -660,10 +787,14 @@ class EnergyOptimizer:
         if not states:
             return
 
-        consumption = self._find_sensor_value(states, self.consumption_sensor,
-                                              ["consumption", "verbrauch", "energy_total"])
-        price = self._find_sensor_value(states, self.price_sensor,
-                                        ["price", "strom", "electricity"])
+        consumption = self._find_sensor_value(
+            states,
+            self.consumption_sensor,
+            ["consumption", "verbrauch", "energy_total"],
+        )
+        price = self._find_sensor_value(
+            states, self.price_sensor, ["price", "strom", "electricity"]
+        )
 
         if consumption is None:
             return
@@ -673,13 +804,19 @@ class EnergyOptimizer:
 
         try:
             # Tagesverbrauch (kWh) und Durchschnittspreis speichern
-            data = json.dumps({
-                "consumption_wh": consumption,
-                "avg_price_cent": price or 0,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
+            data = json.dumps(
+                {
+                    "consumption_wh": consumption,
+                    "avg_price_cent": price or 0,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
             await self.redis.setex(key, 90 * 86400, data)  # 90 Tage aufheben
-            logger.info("Tagesverbrauch gespeichert: %.1f Wh, %.1f ct/kWh", consumption, price or 0)
+            logger.info(
+                "Tagesverbrauch gespeichert: %.1f Wh, %.1f ct/kWh",
+                consumption,
+                price or 0,
+            )
         except Exception as e:
             logger.debug("Tagesverbrauch nicht gespeichert: %s", e)
 
@@ -687,14 +824,19 @@ class EnergyOptimizer:
     # Anomalie-Erkennung
     # ------------------------------------------------------------------
 
-    async def _check_anomaly(self, current_consumption: Optional[float]) -> Optional[str]:
+    async def _check_anomaly(
+        self, current_consumption: Optional[float]
+    ) -> Optional[str]:
         """Vergleicht aktuellen Verbrauch mit 7-Tage-Durchschnitt."""
         if not self.redis or current_consumption is None:
             return None
 
         try:
             # Letzte 7 Tage per mget laden
-            days = [(datetime.now(_LOCAL_TZ) - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
+            days = [
+                (datetime.now(_LOCAL_TZ) - timedelta(days=i)).strftime("%Y-%m-%d")
+                for i in range(1, 8)
+            ]
             keys = [f"{KEY_DAILY_ENERGY}{day}" for day in days]
             raw_results = await self.redis.mget(keys)
             values = []
@@ -718,9 +860,11 @@ class EnergyOptimizer:
             increase_pct = ((current_consumption - avg) / avg) * 100
 
             if increase_pct > self.anomaly_percent:
-                return (f"Verbrauch liegt {increase_pct:.0f}% ueber dem 7-Tage-Durchschnitt "
-                        f"({current_consumption:.0f} vs. {avg:.0f} Durchschnitt). "
-                        f"Ungewoehnlicher Verbraucher aktiv?")
+                return (
+                    f"Verbrauch liegt {increase_pct:.0f}% ueber dem 7-Tage-Durchschnitt "
+                    f"({current_consumption:.0f} vs. {avg:.0f} Durchschnitt). "
+                    f"Ungewoehnlicher Verbraucher aktiv?"
+                )
         except Exception as e:
             logger.debug("Anomalie-Check Fehler: %s", e)
 
@@ -743,8 +887,12 @@ class EnergyOptimizer:
             # Alle 14 Tage per mget laden (7 diese Woche + 7 letzte Woche)
             all_keys = []
             for i in range(7):
-                all_keys.append(f"{KEY_DAILY_ENERGY}{(now - timedelta(days=i)).strftime('%Y-%m-%d')}")
-                all_keys.append(f"{KEY_DAILY_ENERGY}{(now - timedelta(days=i + 7)).strftime('%Y-%m-%d')}")
+                all_keys.append(
+                    f"{KEY_DAILY_ENERGY}{(now - timedelta(days=i)).strftime('%Y-%m-%d')}"
+                )
+                all_keys.append(
+                    f"{KEY_DAILY_ENERGY}{(now - timedelta(days=i + 7)).strftime('%Y-%m-%d')}"
+                )
             raw_results = await self.redis.mget(all_keys)
 
             for idx in range(7):
@@ -811,8 +959,9 @@ class EnergyOptimizer:
             break
         return False
 
-    def _find_sensor_unit(self, states: list[dict], configured_entity: str,
-                          search_keywords: list[str]) -> str:
+    def _find_sensor_unit(
+        self, states: list[dict], configured_entity: str, search_keywords: list[str]
+    ) -> str:
         """Findet die unit_of_measurement eines Sensors."""
         if configured_entity:
             for s in states:
@@ -826,8 +975,9 @@ class EnergyOptimizer:
                 return s.get("attributes", {}).get("unit_of_measurement", "")
         return ""
 
-    def _find_sensor_value(self, states: list[dict], configured_entity: str,
-                           search_keywords: list[str]) -> Optional[float]:
+    def _find_sensor_value(
+        self, states: list[dict], configured_entity: str, search_keywords: list[str]
+    ) -> Optional[float]:
         """Findet einen Sensor-Wert (konfiguriert oder per Keyword-Suche)."""
         # 1. Konfiguriertes Entity
         if configured_entity:
@@ -855,6 +1005,146 @@ class EnergyOptimizer:
                     continue
 
         return None
+
+    # ------------------------------------------------------------------
+    # Price Trend & Solar Forecast
+    # ------------------------------------------------------------------
+
+    async def get_price_trend(self) -> Optional[str]:
+        """Analysiert Preistrend der letzten 24h.
+
+        Returns:
+            Trend-String ("rising"/"stable"/"falling") mit Empfehlung, oder None.
+        """
+        energy_cfg = yaml_config.get("energy", {})
+        if not energy_cfg.get("price_forecast_enabled", False):
+            return None
+
+        price_entity = energy_cfg.get("price_entity", "") or self.price_sensor
+        if not price_entity or not self.redis:
+            return None
+
+        try:
+            raw = await self.redis.get(KEY_PRICE_HISTORY)
+            if not raw:
+                return None
+            history = json.loads(raw)
+            if not isinstance(history, list) or len(history) < 4:
+                return None
+
+            # Split into first half and second half
+            mid = len(history) // 2
+            first_half_avg = sum(history[:mid]) / mid
+            second_half_avg = sum(history[mid:]) / (len(history) - mid)
+
+            if first_half_avg <= 0:
+                return None
+
+            change_pct = ((second_half_avg - first_half_avg) / first_half_avg) * 100
+
+            if change_pct > 10:
+                trend = "rising"
+                recommendation = (
+                    "Flexible Lasten jetzt starten, bevor der Preis weiter steigt."
+                )
+            elif change_pct < -10:
+                trend = "falling"
+                recommendation = "Preise sinken — flexible Lasten koennen warten."
+            else:
+                trend = "stable"
+                recommendation = "Preise stabil — normaler Betrieb."
+
+            return (
+                f"{trend} ({change_pct:+.1f}% in 24h, "
+                f"aktuell ~{second_half_avg:.1f} ct/kWh). {recommendation}"
+            )
+        except Exception as e:
+            logger.debug("Price trend analysis failed: %s", e)
+            return None
+
+    async def get_solar_forecast(self) -> Optional[dict]:
+        """Schaetzt Solar-Produktion basierend auf Wetter-Forecast.
+
+        Returns:
+            Dict mit estimate (high/medium/low/minimal) und details, oder None.
+        """
+        energy_cfg = yaml_config.get("energy", {})
+        if not energy_cfg.get("solar_forecast_enabled", False):
+            return None
+
+        solar_entity = energy_cfg.get("solar_entity", "") or self.solar_sensor
+        if not solar_entity:
+            return None
+
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return None
+
+            # Find weather forecast entity
+            weather_condition = None
+            forecast_entries = []
+            for s in states:
+                if s.get("entity_id", "").startswith("weather."):
+                    weather_condition = s.get("state", "").lower()
+                    forecast_entries = s.get("attributes", {}).get("forecast", [])
+                    break
+
+            if not weather_condition:
+                return None
+
+            # Heuristic: map weather condition to solar estimate
+            high_conditions = {"sunny", "clear-night", "clear"}
+            medium_conditions = {"partlycloudy", "partly_cloudy", "windy"}
+            low_conditions = {"cloudy", "fog"}
+            # Everything else (rainy, pouring, etc.) = minimal
+
+            if weather_condition in high_conditions:
+                estimate = "high"
+                production_pct = 90
+            elif weather_condition in medium_conditions:
+                estimate = "medium"
+                production_pct = 55
+            elif weather_condition in low_conditions:
+                estimate = "low"
+                production_pct = 25
+            else:
+                estimate = "minimal"
+                production_pct = 10
+
+            # Check upcoming hours from forecast
+            upcoming_conditions = []
+            for fc in forecast_entries[:6]:
+                cond = fc.get("condition", "").lower()
+                if cond:
+                    upcoming_conditions.append(cond)
+
+            declining = False
+            if upcoming_conditions:
+                bad = {"cloudy", "rainy", "pouring", "fog", "lightning-rainy"}
+                bad_count = sum(1 for c in upcoming_conditions if c in bad)
+                if bad_count >= len(upcoming_conditions) / 2:
+                    declining = True
+
+            current_solar = self._find_sensor_value(
+                states, solar_entity, ["solar", "pv", "photovoltaik"]
+            )
+
+            return {
+                "estimate": estimate,
+                "production_pct": production_pct,
+                "current_watts": current_solar,
+                "weather": weather_condition,
+                "declining": declining,
+                "recommendation": (
+                    "Solar sinkt bald — energieintensive Geraete jetzt nutzen."
+                    if declining
+                    else f"Solar-Produktion: {estimate} (~{production_pct}%)."
+                ),
+            }
+        except Exception as e:
+            logger.debug("Solar forecast failed: %s", e)
+            return None
 
     async def _was_recently_alerted(self, alert_type: str) -> bool:
         """Prueft ob bereits kuerzlich ein Alert dieses Typs gesendet wurde (TTL kommt von _mark_alerted)."""

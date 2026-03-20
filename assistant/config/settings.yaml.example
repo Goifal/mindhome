@@ -14,6 +14,9 @@ pushback:
   confirmation_timeout: 120
   escalation_enabled: true
   resignation_ttl_seconds: 1800
+  learning_enabled: false
+  suppress_after_overrides: 5
+  suppress_duration_days: 30
 das_uebliche:
   enabled: true
   auto_execute_confidence: 0.8
@@ -144,6 +147,7 @@ wellness:
     lunch: 13
     dinner: 19
   late_night_nudge: true
+  suppress_when_away: true
 ambient_presence:
   enabled: false
   interval_minutes: 60
@@ -191,6 +195,16 @@ autonomy:
     security: 1      # Sicherheit (niedrig empfohlen)
     automation: 2    # Automationen & Routinen
     notification: 2  # Benachrichtigungen
+  # Temporale Autonomie: Offset auf Level je nach Tageszeit
+  temporal:
+    enabled: false
+    night_offset: -1       # Level-Offset 22-7 Uhr (z.B. -1 = weniger proaktiv nachts)
+    day_offset: 0          # Level-Offset 7-22 Uhr
+  # De-Eskalation: Automatische Level-Reduktion bei niedriger Akzeptanz
+  deescalation:
+    enabled: false
+    min_acceptance_rate: 0.5   # Unter 50% → Rueckstufung vorschlagen
+    evaluation_days: 7
 
 # Kalender-Intelligenz: Gewohnheiten, Konflikte, Pausen
 calendar_intelligence:
@@ -208,6 +222,10 @@ explainability:
   detail_level: normal     # minimal, normal, verbose
   auto_explain: false
   max_history: 50
+  counterfactual_enabled: true
+  reasoning_chains: false
+  confidence_display: false
+  explanation_style: auto  # template, llm, auto
 
 # Lern-Transfer: Praeferenzen zwischen Raeumen uebertragen
 learning_transfer:
@@ -232,6 +250,7 @@ dialogue:
   clarification_enabled: true
   timeout_seconds: 300
   max_clarification_options: 5
+  max_references: 20
 
 # Klima-Modell (Digitaler Zwilling): Was-waere-wenn-Simulation
 climate_model:
@@ -250,6 +269,7 @@ predictive_maintenance:
   lookback_days: 90
   failure_probability_threshold: 0.7
   battery_drain_alert_pct_per_week: 5
+  seasonal_baseline: true
 
 # AP 1: Persoenlichkeit & Gedaechtnis
 memorable_interactions:
@@ -274,6 +294,8 @@ next_step_hints:
 anticipation:
   causal_chain_window_min: 10                # Zeitfenster fuer Ketten-Erkennung
   causal_chain_min_occurrences: 3            # Min Wiederholungen
+  implicit_needs_enabled: false              # Beduerfnisse ohne bekanntes Pattern erkennen
+  implicit_needs_min_confidence: 0.7
 
 insight_checks:
   guest_preparation: true                    # Kalender x Sicherheit x Hausstatus
@@ -283,6 +305,7 @@ insight_checks:
   night_security: true                       # Uhrzeit x Fenster x Tueren x Anwesenheit
   heating_vs_sun: true                       # Klima x Wetter x Aussentemperatur x Rollladen
   forgotten_devices: true                    # Media Player x Abwesenheit x Uhrzeit
+  deduplication: true                         # Alert-Deduplizierung pro Entity
 
 proactive_planner:
   enabled: true
@@ -430,6 +453,9 @@ personality:
   formality_start: 80
   formality_min: 30
   formality_decay_per_day: 0.5
+  transition_comments: false                 # Natuerliche Denkpausen in Antworten
+  trait_unlocks_enabled: false               # Stage-basierte Trait-Freischaltung
+  trait_unlock_days_per_stage: 14
   time_layers:
     early_morning:
       style: ruhig, minimal, kein Humor. Kurzes Briefing wenn gefragt.
@@ -581,6 +607,7 @@ proactive:
     person_arrived: { priority: "medium", description: "Person angekommen" }
     doorbell: { priority: "medium", description: "Jemand hat geklingelt" }
     weather_warning: { priority: "low", description: "Wetterwarnung" }
+  personality_filter: true                   # Proaktive Nachrichten durch Persoenlichkeit filtern
 memory:
   extraction_enabled: true
   extraction_min_words: 5
@@ -716,6 +743,8 @@ feedback:
   score_reduce: 0.3
   score_normal: 0.5
   score_boost: 0.7
+  smoothing_enabled: true
+  smoothing_factor: 0.3
 summarizer:
   run_hour: 3
   run_minute: 0
@@ -728,6 +757,7 @@ context:
   conversation_mode_timeout: 300  # Sek. — Gespraechsmodus aktiv wenn letzte Nachricht < X Sek
   api_timeout: 10
   llm_timeout: 60
+  state_cache_ttl_seconds: 5                 # HA-States Cache-Dauer
 heating:
   mode: room_thermostat
   curve_entity: ''
@@ -1075,6 +1105,10 @@ health_monitor:
   hydration_start_hour: 8
   hydration_end_hour: 22
   alert_cooldown_minutes: 60
+  hysteresis_enabled: true
+  hysteresis_pct: 2                          # Puffer in % (Entwarnung bei Schwelle - X%)
+  room_overrides_enabled: false
+  room_overrides: {}                         # z.B. {"schlafzimmer": {"co2_warn": 800}}
 device_health:
   enabled: true
   check_interval_minutes: 60
@@ -1173,6 +1207,8 @@ conflict_resolution:
       position: [0, 100]
     media:
       volume: [0, 100]
+  prediction_enabled: false                  # Proaktive Konflikt-Vorhersage
+  prediction_window_seconds: 180             # Zeitfenster fuer Vorhersage
 maintenance:
   enabled: true
   config_file: config/maintenance.yaml
@@ -1235,6 +1271,10 @@ energy:
     price_high_cent: 35
     solar_high_watts: 2000
     anomaly_increase_percent: 30
+  price_forecast_enabled: false
+  price_entity: ''                           # z.B. sensor.electricity_price
+  solar_forecast_enabled: false
+  solar_entity: ''                           # z.B. sensor.solar_power
 # --- Geo-Fence / Proximity ---
 geo_fence:
   approaching_km: 2.0
@@ -1272,6 +1312,7 @@ vacation_simulation:
   evening_hour: 18
   night_hour: 23
   variation_minutes: 30
+  use_learned_patterns: true                 # Gelernte Muster statt Zufall
 # --- Wetter-Warnungen ---
 weather_warnings:
   enabled: true
@@ -1283,6 +1324,66 @@ weather_warnings:
   - lightning-rainy
   - hail
   - exceptional
+# --- Bedrohungserkennung ---
+threat_assessment:
+  enabled: true
+  auto_execute_playbooks: false              # Sicherheits-Default: aus
+  night_start_hour: 22
+  night_end_hour: 6
+  motion_cooldown_minutes: 30
+  state_max_age_minutes: 10
+  emergency_autonomy_boost: false            # Autonomie-Boost bei Notfall
+  emergency_boost_duration_min: 15
+# --- Wirkungstracker ---
+outcome_tracker:
+  enabled: true
+  observation_delay_seconds: 180
+  max_results: 500
+  calibration_min: 0.5
+  calibration_max: 1.5
+  anticipation_feedback: true                # Anticipation-Feedback aktiv
+  success_confidence_boost: 0.1
+  failure_confidence_penalty: 0.15
+  learning_observer_feedback: true           # Lern-Observer Feedback aktiv
+  learning_boost: 0.1
+# --- Korrektur-Gedaechtnis ---
+correction_memory:
+  enabled: true
+  max_entries: 200
+  max_context_entries: 3
+  cross_domain_rules: true                   # Domain-uebergreifende Regeln
+# --- Routine-Anomalie-Erkennung ---
+routine_anomaly:
+  enabled: false
+  min_confidence: 0.8
+  grace_period_minutes: 30
+  max_daily_checks: 2
+  min_pattern_days: 14
+# --- Wetter-Vorhersage ---
+weather_forecast:
+  enabled: false
+  lookahead_hours: 6
+  entity: weather.home
+# --- Stimmungs-Reaktion ---
+mood_reaction:
+  enabled: true
+  frustration_sarcasm_reduction: 2           # Sarkasmus-Stufen-Reduktion bei Stress
+  frustration_threshold: 2                   # 1=leicht, 2=mittel, 3=stark
+# --- Jarvis-Innenleben ---
+inner_state:
+  mood_decay_enabled: true
+  mood_decay_minutes: 30
+  emotion_blending: false                    # Mehrere Emotionen gleichzeitig
+# --- Semantisches Gedaechtnis ---
+semantic_memory:
+  fact_versioning: false                     # Fakt-Versionierung statt Ueberschreiben
+  contradiction_query: true                  # Bei Widerspruechen nachfragen
+# --- Was-Waere-Wenn Simulation ---
+whatif_simulation:
+  strompreis_kwh: 0.30
+  gaspreis_kwh: 0.08
+  proactive_enabled: false                   # Proaktive Vorschlaege
+  proactive_min_confidence: 0.7
 # --- Web-Suche ---
 web_search:
   enabled: false

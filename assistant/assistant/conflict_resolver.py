@@ -166,6 +166,10 @@ class ConflictResolver:
         self._conflict_history: list[dict] = []
         self._max_history = 50
 
+        # Prediction-Config
+        self._prediction_enabled = cfg.get("prediction_enabled", False)
+        self._prediction_window_seconds = int(cfg.get("prediction_window_seconds", 180))
+
         # Validator für Kompromiss-Werte (kann später gesetzt werden)
         self._validator = None
 
@@ -198,8 +202,12 @@ class ConflictResolver:
         # Regel-Toggles aktualisieren
         self._rules_enabled = cfg.get("rules_enabled", {})
 
-        logger.info("ConflictResolver config reloaded (enabled=%s, rules_enabled=%d custom)",
-                     self.enabled, len(self._rules_enabled))
+        # Prediction-Config aktualisieren
+        self._prediction_enabled = cfg.get("prediction_enabled", False)
+        self._prediction_window_seconds = int(cfg.get("prediction_window_seconds", 180))
+
+        logger.info("ConflictResolver config reloaded (enabled=%s, prediction=%s, rules_enabled=%d custom)",
+                     self.enabled, self._prediction_enabled, len(self._rules_enabled))
 
     async def initialize(self, redis_client=None):
         """Initialisiert den Resolver mit Redis-Anbindung."""
@@ -863,10 +871,135 @@ class ConflictResolver:
         }
 
     # ------------------------------------------------------------------
-    # Phase 2B: Predictive Conflict Detection
+    # Phase 2B: Multi-User Conflict Prediction
     # ------------------------------------------------------------------
 
     async def predict_conflict(
+        self,
+        person: str,
+        domain: str,
+        room: str,
+        args: dict,
+    ) -> Optional[dict]:
+        """Sagt voraus ob ein geplanter Befehl mit kuerzlichen Befehlen
+        anderer Personen im selben Raum/Domain kollidieren wird.
+
+        Args:
+            person: Name der Person die den Befehl ausfuehren will.
+            domain: Domain (z.B. "climate", "light").
+            room: Raum in dem der Befehl ausgefuehrt wird.
+            args: Argumente des geplanten Befehls.
+
+        Returns:
+            Warning-Dict oder None wenn kein Konflikt vorhergesagt.
+        """
+        cfg = yaml_config.get("conflict_resolution", {})
+        if not cfg.get("prediction_enabled", False):
+            return None
+
+        if not person or not domain:
+            return None
+
+        prediction_window = int(cfg.get("prediction_window_seconds", 180))
+        person_lower = person.lower()
+        room_lower = room.lower() if room else ""
+        now = time.time()
+        params = get_conflict_parameters().get(domain)
+
+        with self._commands_lock:
+            snapshot = dict(self._recent_commands)
+
+        for other_person, commands in snapshot.items():
+            if other_person == person_lower:
+                continue
+
+            for cmd in reversed(commands):
+                age = now - cmd["timestamp"]
+                if age > prediction_window:
+                    continue
+
+                other_domain = FUNCTION_DOMAIN_MAP.get(cmd["function"])
+                if other_domain != domain:
+                    continue
+
+                cmd_room = cmd.get("room") or cmd["args"].get("room", "")
+                if room_lower and cmd_room and cmd_room.lower() != room_lower:
+                    continue
+
+                if not params:
+                    continue
+
+                contradicts = False
+                if params["type"] == "numeric":
+                    key = params["key"]
+                    val_new = args.get(key)
+                    val_existing = cmd["args"].get(key)
+                    if val_new is not None and val_existing is not None:
+                        try:
+                            if float(val_new) != float(val_existing):
+                                contradicts = True
+                        except (ValueError, TypeError):
+                            pass
+                    for check_key in params.get("also_check", []):
+                        v_new = args.get(check_key)
+                        v_old = cmd["args"].get(check_key)
+                        if v_new and v_old and v_new != v_old:
+                            contradicts = True
+                elif params["type"] == "categorical":
+                    key = params["key"]
+                    v_new = args.get(key)
+                    v_old = cmd["args"].get(key)
+                    if v_new and v_old and v_new != v_old:
+                        contradicts = True
+
+                if not contradicts:
+                    continue
+
+                time_ago = int(age)
+                minutes = time_ago // 60
+                if minutes >= 1:
+                    time_label = f"vor {minutes} Min."
+                else:
+                    time_label = f"vor {time_ago} Sek."
+
+                detail_parts = []
+                if params["type"] == "numeric":
+                    key = params["key"]
+                    val = cmd["args"].get(key)
+                    unit = params.get("unit", "")
+                    if val is not None:
+                        detail_parts.append(f"auf {val}{unit}")
+                elif params["type"] == "categorical":
+                    key = params["key"]
+                    val = cmd["args"].get(key)
+                    if val:
+                        detail_parts.append(str(val))
+
+                detail_str = " ".join(detail_parts)
+                warning_text = (
+                    f"{other_person.title()} hat {time_label} "
+                    f"{detail_str} gestellt"
+                ).strip()
+
+                logger.info(
+                    "Conflict prediction: %s vs %s in %s/%s (%ds ago)",
+                    person_lower, other_person, domain, room or "?", time_ago,
+                )
+
+                return {
+                    "warning": warning_text,
+                    "person": other_person,
+                    "time_ago_seconds": time_ago,
+                    "their_args": cmd["args"],
+                }
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Phase 2B: Predictive Logical Conflict Detection
+    # ------------------------------------------------------------------
+
+    async def predict_logical_conflict(
         self, action: str, args: dict, ha_states: list
     ) -> Optional[dict]:
         """Prueft ob eine geplante Aktion einen logischen Konflikt verursacht.

@@ -64,6 +64,9 @@ class OutcomeTracker:
         self._calibration_max = self._cfg.get("calibration_max", 1.5)
         self._task_registry = None
         self._background_tasks: set[asyncio.Task] = set()
+        self._learning_observer = None
+        self._lo_feedback_enabled = self._cfg.get("learning_observer_feedback", True)
+        self._lo_learning_boost = float(self._cfg.get("learning_boost", 0.1))
 
     async def initialize(self, redis_client, ha_client, task_registry=None):
         """Initialisiert mit Redis und HA Client."""
@@ -692,6 +695,10 @@ class OutcomeTracker:
         if person:
             await self._update_score(action_type, outcome, person=person)
 
+        # LearningObserver feedback: boost pattern confidence on success
+        if outcome == OUTCOME_POSITIVE and self._lo_feedback_enabled:
+            await self._notify_learning_observer(action_type, person, room)
+
         # Letzten Aktionstyp merken (fuer verbal feedback ohne Kontext)
         await self.redis.setex("mha:outcome:last_action_type", 300, action_type)
 
@@ -739,6 +746,43 @@ class OutcomeTracker:
 
         ttl = 180 * 86400
         await self.redis.setex(score_key, ttl, str(round(final_score, 4)))
+
+    async def _notify_learning_observer(
+        self, action_type: str, person: str = "", room: str = ""
+    ):
+        """Boosts pattern confidence in LearningObserver on successful outcome."""
+        try:
+            if not self._learning_observer:
+                import assistant.main as main_module
+
+                if hasattr(main_module, "brain"):
+                    self._learning_observer = getattr(
+                        main_module.brain, "learning_observer", None
+                    )
+            if not self._learning_observer:
+                return
+
+            boost_redis_key = f"mha:outcome:lo_boost:{action_type}"
+            if self.redis:
+                already = await self.redis.get(boost_redis_key)
+                if already:
+                    return
+                await self.redis.setex(boost_redis_key, 3600, "1")
+
+            if hasattr(self._learning_observer, "boost_pattern_confidence"):
+                await self._learning_observer.boost_pattern_confidence(
+                    action_type,
+                    self._lo_learning_boost,
+                    person=person,
+                    room=room,
+                )
+                logger.debug(
+                    "LearningObserver boosted: %s +%.2f",
+                    action_type,
+                    self._lo_learning_boost,
+                )
+        except Exception as e:
+            logger.debug("LearningObserver notification failed: %s", e)
 
 
 def _extract_state_key(state) -> dict:

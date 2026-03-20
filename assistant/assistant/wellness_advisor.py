@@ -67,6 +67,7 @@ class WellnessAdvisor:
         self.kitchen_motion_sensor = entities.get("kitchen_motion", "")
         self.hydration_check = cfg.get("hydration_reminder", True)
         self.hydration_interval_hours = cfg.get("hydration_interval_hours", 2)
+        self._suppress_when_away = cfg.get("suppress_when_away", True)
 
     # ------------------------------------------------------------------
     # Anrede: Alle anwesenden Personen mit konfiguriertem Titel
@@ -150,6 +151,7 @@ class WellnessAdvisor:
         self.kitchen_motion_sensor = entities.get("kitchen_motion", "")
         self.hydration_check = cfg.get("hydration_reminder", True)
         self.hydration_interval_hours = cfg.get("hydration_interval_hours", 2)
+        self._suppress_when_away = cfg.get("suppress_when_away", True)
         logger.info("WellnessAdvisor Config reloaded (enabled=%s, interval=%ds)",
                      self.enabled, self.check_interval)
 
@@ -179,6 +181,23 @@ class WellnessAdvisor:
             except asyncio.CancelledError:
                 pass
 
+    async def _is_anyone_home(self) -> bool:
+        """Prueft ob mindestens eine Person zuhause ist."""
+        if not self.ha:
+            return True
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return True
+            for s in states:
+                eid = s.get("entity_id", "")
+                if eid.startswith("person.") and s.get("state") == "home":
+                    return True
+            return False
+        except Exception as e:
+            logger.debug("Presence-Check fehlgeschlagen: %s", e)
+            return True
+
     async def _wellness_loop(self):
         """Periodischer Wellness-Check."""
         # 5 Min nach Start warten (System stabilisieren)
@@ -186,6 +205,11 @@ class WellnessAdvisor:
 
         while self._running:
             try:
+                if self._suppress_when_away and not await self._is_anyone_home():
+                    logger.debug("Wellness-Checks uebersprungen: niemand zuhause")
+                    await asyncio.sleep(self.check_interval)
+                    continue
+
                 # F-061: Wellness-Checks bei aktiven Notfaellen unterdruecken
                 if self.redis:
                     active_threats = await _safe_redis(self.redis, "get", "mha:threat:active")

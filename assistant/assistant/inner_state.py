@@ -29,17 +29,24 @@ _KEY_MOOD_HISTORY = "mha:inner_state:mood_history"
 
 # JARVIS-Emotionszustaende
 MOOD_NEUTRAL = "neutral"
-MOOD_CONTENT = "zufrieden"       # Haus laeuft optimal
-MOOD_AMUSED = "amuesiert"        # Witzige Interaktion
-MOOD_CONCERNED = "besorgt"       # Sicherheitsproblem oder User-Stress
-MOOD_PROUD = "stolz"             # Komplexe Aufgabe elegant geloest
-MOOD_CURIOUS = "neugierig"       # Ungewoehnliche Anfrage
-MOOD_IRRITATED = "irritiert"     # Wiederholte Fehler, ignorierte Warnungen
+MOOD_CONTENT = "zufrieden"  # Haus laeuft optimal
+MOOD_AMUSED = "amuesiert"  # Witzige Interaktion
+MOOD_CONCERNED = "besorgt"  # Sicherheitsproblem oder User-Stress
+MOOD_PROUD = "stolz"  # Komplexe Aufgabe elegant geloest
+MOOD_CURIOUS = "neugierig"  # Ungewoehnliche Anfrage
+MOOD_IRRITATED = "irritiert"  # Wiederholte Fehler, ignorierte Warnungen
 
-VALID_MOODS = frozenset({
-    MOOD_NEUTRAL, MOOD_CONTENT, MOOD_AMUSED,
-    MOOD_CONCERNED, MOOD_PROUD, MOOD_CURIOUS, MOOD_IRRITATED,
-})
+VALID_MOODS = frozenset(
+    {
+        MOOD_NEUTRAL,
+        MOOD_CONTENT,
+        MOOD_AMUSED,
+        MOOD_CONCERNED,
+        MOOD_PROUD,
+        MOOD_CURIOUS,
+        MOOD_IRRITATED,
+    }
+)
 
 # Mapping: Wie jeder innere Zustand den Prompt beeinflusst
 MOOD_PROMPT_HINTS = {
@@ -128,6 +135,7 @@ class InnerStateEngine:
         self._confidence: float = 0.6  # Start: Solide Basis
         self._satisfaction: float = 0.5
         self._last_update: float = time.time()
+        self._last_mood_change: float = time.time()
         self._notify_callback = None
 
         # Event-Counter fuer Mood-Berechnung
@@ -137,6 +145,9 @@ class InnerStateEngine:
         self._funny_interactions: int = 0
         self._complex_solves: int = 0
 
+        # #18: Emotion Blending — gewichtete Mischung aus Emotionen
+        self._emotion_weights: dict[str, float] = {MOOD_NEUTRAL: 1.0}
+
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis und laedt gespeicherten Zustand."""
         self.redis = redis_client
@@ -144,7 +155,11 @@ class InnerStateEngine:
             try:
                 saved_mood = await self.redis.get("mha:inner_state:mood")
                 if saved_mood:
-                    mood_str = saved_mood.decode() if isinstance(saved_mood, bytes) else saved_mood
+                    mood_str = (
+                        saved_mood.decode()
+                        if isinstance(saved_mood, bytes)
+                        else saved_mood
+                    )
                     if mood_str in VALID_MOODS:
                         self._mood = mood_str
 
@@ -160,7 +175,9 @@ class InnerStateEngine:
 
         logger.info(
             "InnerState initialisiert: mood=%s, confidence=%.2f, satisfaction=%.2f",
-            self._mood, self._confidence, self._satisfaction,
+            self._mood,
+            self._confidence,
+            self._satisfaction,
         )
 
     def set_notify_callback(self, callback):
@@ -218,17 +235,29 @@ class InnerStateEngine:
         """
         if mood in ("frustrated", "stressed"):
             self._previous_mood = self._mood
+            self._blend_emotion(MOOD_CONCERNED)
             self._mood = MOOD_CONCERNED
-            logger.info("Inner-State: → %s (User '%s' ist %s)", MOOD_CONCERNED, person or "?", mood)
+            self._last_mood_change = time.time()
+            logger.info(
+                "Inner-State: → %s (User '%s' ist %s)",
+                MOOD_CONCERNED,
+                person or "?",
+                mood,
+            )
             await self._save_state()
         elif mood == "good":
             self._satisfaction = min(1.0, self._satisfaction + 0.1)
-            logger.info("Inner-State: satisfaction +0.1 (User '%s' gut gelaunt)", person or "?")
+            logger.info(
+                "Inner-State: satisfaction +0.1 (User '%s' gut gelaunt)", person or "?"
+            )
             await self._save_state()
 
     async def on_security_event(self):
         """Sicherheitsrelevantes Event erkannt."""
+        self._previous_mood = self._mood
+        self._blend_emotion(MOOD_CONCERNED)
         self._mood = MOOD_CONCERNED
+        self._last_mood_change = time.time()
         self._satisfaction = max(0.0, self._satisfaction - 0.1)
         await self._save_state()
 
@@ -236,7 +265,10 @@ class InnerStateEngine:
         """Haus laeuft optimal (keine Alerts, gute Werte)."""
         self._satisfaction = min(1.0, self._satisfaction + 0.02)
         if self._mood == MOOD_NEUTRAL and self._satisfaction > 0.7:
+            self._previous_mood = self._mood
+            self._blend_emotion(MOOD_CONTENT)
             self._mood = MOOD_CONTENT
+            self._last_mood_change = time.time()
             await self._save_state()
 
     # Scene → Jarvis-Stimmung
@@ -259,9 +291,38 @@ class InnerStateEngine:
         target_mood = self._SCENE_MOOD_MAP.get(scene_name)
         if target_mood and target_mood != self._mood:
             self._previous_mood = self._mood
+            self._blend_emotion(target_mood)
             self._mood = target_mood
-            logger.info("Inner-State: → %s (Szene '%s' aktiviert)", target_mood, scene_name)
+            self._last_mood_change = time.time()
+            logger.info(
+                "Inner-State: → %s (Szene '%s' aktiviert)", target_mood, scene_name
+            )
             await self._save_state()
+
+    # ------------------------------------------------------------------
+    # Emotion Blending (#18)
+    # ------------------------------------------------------------------
+
+    def _blend_emotion(self, new_mood: str):
+        """#18: Mischt neue Emotion mit bestehenden Gewichten.
+
+        Neue Emotion erhaelt 0.7, bestehende werden auf 0.3 skaliert.
+        Nur aktiv wenn emotion_blending in der Config aktiviert ist.
+        """
+        _cfg = yaml_config.get("inner_state", {})
+        if not _cfg.get("emotion_blending", False):
+            self._emotion_weights = {new_mood: 1.0}
+            return
+        blended: dict[str, float] = {}
+        for mood_key, weight in self._emotion_weights.items():
+            scaled = weight * 0.3
+            if scaled >= 0.05:
+                blended[mood_key] = scaled
+        blended[new_mood] = blended.get(new_mood, 0.0) + 0.7
+        total = sum(blended.values())
+        if total > 0:
+            blended = {k: round(v / total, 3) for k, v in blended.items()}
+        self._emotion_weights = blended
 
     # ------------------------------------------------------------------
     # Mood-Berechnung
@@ -286,7 +347,9 @@ class InnerStateEngine:
         if new_mood != self._mood:
             logger.info("Inner-State: %s → %s", self._mood, new_mood)
             self._previous_mood = self._mood
+            self._blend_emotion(new_mood)
             self._mood = new_mood
+            self._last_mood_change = time.time()
 
         await self._save_state()
 
@@ -341,9 +404,61 @@ class InnerStateEngine:
             return comment
         return None
 
+    def _apply_mood_decay(self):
+        """#17: Mood Decay — nicht-neutrale Stimmungen klingen nach Ablauf ab."""
+        _cfg = yaml_config.get("inner_state", {})
+        if not _cfg.get("mood_decay_enabled", True):
+            return
+        if self._mood == MOOD_NEUTRAL:
+            return
+        decay_minutes = _cfg.get("mood_decay_minutes", 30)
+        elapsed_minutes = (time.time() - self._last_mood_change) / 60.0
+        if elapsed_minutes >= decay_minutes:
+            logger.info(
+                "Mood-Decay: %s → %s (%.0f min verstrichen)",
+                self._mood,
+                MOOD_NEUTRAL,
+                elapsed_minutes,
+            )
+            self._previous_mood = self._mood
+            self._mood = MOOD_NEUTRAL
+            self._last_mood_change = time.time()
+            self._emotion_weights = {MOOD_NEUTRAL: 1.0}
+
+    def get_mood_decay_factor(self) -> float:
+        """#17: Gibt den Einfluss-Faktor der aktuellen Stimmung zurueck (1.0 = voll, 0.5 = halbiert).
+
+        Nach der Haelfte der Decay-Zeit sinkt der Einfluss linear auf 0.5.
+        """
+        _cfg = yaml_config.get("inner_state", {})
+        if not _cfg.get("mood_decay_enabled", True):
+            return 1.0
+        if self._mood == MOOD_NEUTRAL:
+            return 1.0
+        decay_minutes = _cfg.get("mood_decay_minutes", 30)
+        elapsed_minutes = (time.time() - self._last_mood_change) / 60.0
+        half_decay = decay_minutes / 2.0
+        if elapsed_minutes <= half_decay:
+            return 1.0
+        if elapsed_minutes >= decay_minutes:
+            return 0.0
+        return 1.0 - 0.5 * ((elapsed_minutes - half_decay) / half_decay)
+
+    def get_blended_mood(self) -> dict[str, float]:
+        """#18: Gibt gewichtete Emotionsmischung zurueck.
+
+        Nur aktiv wenn emotion_blending in der Config aktiviert ist.
+        Fallback: {aktueller_mood: 1.0}
+        """
+        _cfg = yaml_config.get("inner_state", {})
+        if not _cfg.get("emotion_blending", False):
+            return {self._mood: 1.0}
+        return dict(self._emotion_weights)
+
     @property
     def mood(self) -> str:
-        """Aktueller innerer Zustand."""
+        """Aktueller innerer Zustand (mit Decay-Pruefung)."""
+        self._apply_mood_decay()
         return self._mood
 
     @property
@@ -376,21 +491,30 @@ class InnerStateEngine:
             now = datetime.now(timezone.utc)
             pipe = self.redis.pipeline()
             pipe.set("mha:inner_state:mood", self._mood, ex=86400)
-            pipe.set("mha:inner_state:confidence", str(round(self._confidence, 3)), ex=86400)
-            pipe.set("mha:inner_state:satisfaction", str(round(self._satisfaction, 3)), ex=86400)
+            pipe.set(
+                "mha:inner_state:confidence", str(round(self._confidence, 3)), ex=86400
+            )
+            pipe.set(
+                "mha:inner_state:satisfaction",
+                str(round(self._satisfaction, 3)),
+                ex=86400,
+            )
             pipe.set("mha:inner_state:last_update", now.isoformat(), ex=86400)
 
             # Mood-History: Snapshot als Sorted Set (Score = Unix-Timestamp)
             # Max 1 Eintrag pro Stunde (Deduplizierung ueber Stunden-Key),
             # 90 Tage Retention, max 2160 Eintraege.
             import json
+
             hour_key = now.strftime("%Y-%m-%d-%H")
-            snapshot = json.dumps({
-                "mood": self._mood,
-                "confidence": round(self._confidence, 3),
-                "satisfaction": round(self._satisfaction, 3),
-                "hour": hour_key,
-            })
+            snapshot = json.dumps(
+                {
+                    "mood": self._mood,
+                    "confidence": round(self._confidence, 3),
+                    "satisfaction": round(self._satisfaction, 3),
+                    "hour": hour_key,
+                }
+            )
             # Alten Eintrag derselben Stunde entfernen (Dedup)
             # Dann neuen hinzufuegen mit aktuellem Timestamp als Score
             pipe.zremrangebyscore(
@@ -416,16 +540,22 @@ class InnerStateEngine:
             return []
         try:
             import json
+
             now = datetime.now(timezone.utc)
             min_score = now.timestamp() - (days * 86400)
             raw = await self.redis.zrangebyscore(
-                _KEY_MOOD_HISTORY, min_score, "+inf", withscores=True,
+                _KEY_MOOD_HISTORY,
+                min_score,
+                "+inf",
+                withscores=True,
             )
             history = []
             for entry, score in raw:
                 entry_str = entry.decode() if isinstance(entry, bytes) else entry
                 data = json.loads(entry_str)
-                data["timestamp"] = datetime.fromtimestamp(score, tz=timezone.utc).isoformat()
+                data["timestamp"] = datetime.fromtimestamp(
+                    score, tz=timezone.utc
+                ).isoformat()
                 history.append(data)
             return history
         except Exception as e:

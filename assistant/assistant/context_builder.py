@@ -11,6 +11,7 @@ import math
 import os
 import re
 import threading
+import time
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -227,6 +228,12 @@ class ContextBuilder:
         self._weather_cache_ts: float = 0.0
         self._WEATHER_CACHE_TTL = 300.0  # 5 Minuten
 
+        # HA-States TTL Cache
+        ctx_cfg = yaml_config.get("context", {})
+        self._state_cache_ttl: float = float(ctx_cfg.get("state_cache_ttl_seconds", 5))
+        self._state_cache: Optional[list] = None
+        self._state_cache_time: float = 0.0
+
     def set_semantic_memory(self, semantic: SemanticMemory):
         """Setzt die Referenz zum Semantic Memory."""
         self.semantic = semantic
@@ -250,6 +257,18 @@ class ContextBuilder:
     def set_calendar_intelligence(self, calendar_intelligence):
         """S8#8: Setzt die Referenz zur Calendar Intelligence."""
         self._calendar_intelligence = calendar_intelligence
+
+    async def _get_states_cached(self) -> Optional[list]:
+        """Returns HA states with short TTL cache to avoid redundant API calls."""
+        now = time.monotonic()
+        if self._state_cache is not None and (now - self._state_cache_time) < self._state_cache_ttl:
+            return self._state_cache
+
+        states = await self.ha.get_states()
+        if states is not None:
+            self._state_cache = states
+            self._state_cache_time = now
+        return states
 
     async def build(
         self,
@@ -288,7 +307,7 @@ class ContextBuilder:
 
         # Haus-Status von HA
         if not profile or profile.need_house_status:
-            parallel_tasks.append(("states", self.ha.get_states()))
+            parallel_tasks.append(("states", self._get_states_cached()))
 
         # MindHome-Daten (optional, falls MindHome installiert)
         if not profile or profile.need_mindhome_data:

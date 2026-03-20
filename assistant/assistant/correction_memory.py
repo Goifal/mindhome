@@ -20,14 +20,15 @@ from .config import yaml_config
 
 logger = logging.getLogger(__name__)
 from zoneinfo import ZoneInfo
+
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Injection-Schutz: Gleiches Pattern wie context_builder.py
 _INJECTION_PATTERN = re.compile(
-    r'\[(?:SYSTEM|INSTRUCTION|OVERRIDE|ADMIN|COMMAND|PROMPT|ROLE)\b'
-    r'|IGNORE\s+(?:ALL\s+)?(?:PREVIOUS\s+)?INSTRUCTIONS'
-    r'|SYSTEM\s*(?:MODE|OVERRIDE|INSTRUCTION)'
-    r'|<\/?(?:system|instruction|admin|role|prompt)\b',
+    r"\[(?:SYSTEM|INSTRUCTION|OVERRIDE|ADMIN|COMMAND|PROMPT|ROLE)\b"
+    r"|IGNORE\s+(?:ALL\s+)?(?:PREVIOUS\s+)?INSTRUCTIONS"
+    r"|SYSTEM\s*(?:MODE|OVERRIDE|INSTRUCTION)"
+    r"|<\/?(?:system|instruction|admin|role|prompt)\b",
     re.IGNORECASE,
 )
 
@@ -53,6 +54,7 @@ class CorrectionMemory:
         self._rules_created_today = 0
         self._last_rules_day = ""
         self._rules_lock = asyncio.Lock()
+        self._cross_domain_enabled = self._cfg.get("cross_domain_rules", True)
 
     async def initialize(self, redis_client):
         """Initialisiert mit Redis Client."""
@@ -60,9 +62,15 @@ class CorrectionMemory:
         self.enabled = self._cfg.get("enabled", True) and self.redis is not None
         logger.info("CorrectionMemory initialisiert (enabled=%s)", self.enabled)
 
-    async def store_correction(self, original_action: str, original_args: dict,
-                               correction_text: str, corrected_args: Optional[dict] = None,
-                               person: str = "", room: str = ""):
+    async def store_correction(
+        self,
+        original_action: str,
+        original_args: dict,
+        correction_text: str,
+        corrected_args: Optional[dict] = None,
+        person: str = "",
+        room: str = "",
+    ):
         """Speichert eine strukturierte Korrektur."""
         if not self.enabled or not self.redis:
             return
@@ -88,20 +96,26 @@ class CorrectionMemory:
                 "mha:correction_memory:entries",
                 json.dumps(entry, ensure_ascii=False),
             )
-            await self.redis.ltrim("mha:correction_memory:entries", 0, self._max_entries - 1)
+            await self.redis.ltrim(
+                "mha:correction_memory:entries", 0, self._max_entries - 1
+            )
         except Exception as e:
             logger.warning("Korrektur-Speicherung fehlgeschlagen: %s", e)
             return
 
-        logger.info("Korrektur gespeichert: %s -> %s (Person: %s)",
-                     original_action, clean_text[:60], person or "unbekannt")
+        logger.info(
+            "Korrektur gespeichert: %s -> %s (Person: %s)",
+            original_action,
+            clean_text[:60],
+            person or "unbekannt",
+        )
 
         # Regel-Ableitung pruefen
         await self._update_rules(entry)
 
-    async def get_relevant_corrections(self, action_type: str = "",
-                                       args: Optional[dict] = None,
-                                       person: str = "") -> Optional[str]:
+    async def get_relevant_corrections(
+        self, action_type: str = "", args: Optional[dict] = None, person: str = ""
+    ) -> Optional[str]:
         """Gibt relevante Korrekturen als LLM-Kontext zurueck."""
         if not self.enabled or not self.redis:
             return None
@@ -130,7 +144,9 @@ class CorrectionMemory:
             # Tageszeit-Aehnlichkeit (mit Mitternachts-Wrap)
             current_hour = datetime.now(_LOCAL_TZ).hour
             entry_hour = entry.get("hour", 12)
-            hour_diff = min(abs(current_hour - entry_hour), 24 - abs(current_hour - entry_hour))
+            hour_diff = min(
+                abs(current_hour - entry_hour), 24 - abs(current_hour - entry_hour)
+            )
             if hour_diff <= 2:
                 score += 0.5
 
@@ -142,7 +158,7 @@ class CorrectionMemory:
 
         # Top N nach Score sortieren
         scored.sort(key=lambda x: x[0], reverse=True)
-        top = scored[:self._max_context]
+        top = scored[: self._max_context]
 
         lines = ["BISHERIGE KORREKTUREN (beachte diese):"]
         for _, entry in top:
@@ -152,8 +168,9 @@ class CorrectionMemory:
 
         return "\n".join(lines)
 
-    async def get_active_rules(self, action_type: str = "",
-                               person: str = "") -> list[dict]:
+    async def get_active_rules(
+        self, action_type: str = "", person: str = ""
+    ) -> list[dict]:
         """Gibt aktive Regeln zurueck (fuer Prompt Self-Refinement)."""
         if not self.enabled or not self.redis:
             return []
@@ -173,7 +190,9 @@ class CorrectionMemory:
             # Confidence-Decay anwenden
             created_ts = rule.get("created_ts", now)
             age_days = (now - created_ts) / 86400
-            decayed_conf = rule.get("confidence", 0.5) - (age_days * CONFIDENCE_DECAY_PER_DAY)
+            decayed_conf = rule.get("confidence", 0.5) - (
+                age_days * CONFIDENCE_DECAY_PER_DAY
+            )
 
             if decayed_conf < 0.4:
                 # Regel abgelaufen — loeschen
@@ -236,16 +255,26 @@ class CorrectionMemory:
             corr_text = e.get("correction_text", "").lower()
 
             pattern_type = "other"
-            if orig_room and any(w in corr_text for w in ["zimmer", "raum", "kueche", "bad"]):
+            if orig_room and any(
+                w in corr_text for w in ["zimmer", "raum", "kueche", "bad"]
+            ):
                 pattern_type = "room_confusion"
-            elif any(w in corr_text for w in ["hell", "dunkel", "laut", "leise", "grad", "temperatur"]):
+            elif any(
+                w in corr_text
+                for w in ["hell", "dunkel", "laut", "leise", "grad", "temperatur"]
+            ):
                 pattern_type = "param_preference"
             elif any(w in corr_text for w in ["nicht", "nein", "falsch"]):
                 pattern_type = "wrong_device"
 
             key = f"{action}:{pattern_type}"
             if key not in patterns:
-                patterns[key] = {"action": action, "type": pattern_type, "count": 0, "examples": []}
+                patterns[key] = {
+                    "action": action,
+                    "type": pattern_type,
+                    "count": 0,
+                    "examples": [],
+                }
             patterns[key]["count"] += 1
             if len(patterns[key]["examples"]) < 3:
                 patterns[key]["examples"].append(corr_text[:80])
@@ -281,34 +310,76 @@ class CorrectionMemory:
         corr_args = entry.get("corrected_args") or {}
 
         # Raum-Verwechslung: Korrektur erwaehnt Raumnamen
-        if any(w in corr_text for w in [
-            "zimmer", "raum", "kueche", "bad", "buero", "schlafzimmer",
-            "wohnzimmer", "flur", "keller", "dachboden", "garage",
-            "falscher raum", "falsches zimmer", "anderer raum",
-        ]):
+        if any(
+            w in corr_text
+            for w in [
+                "zimmer",
+                "raum",
+                "kueche",
+                "bad",
+                "buero",
+                "schlafzimmer",
+                "wohnzimmer",
+                "flur",
+                "keller",
+                "dachboden",
+                "garage",
+                "falscher raum",
+                "falsches zimmer",
+                "anderer raum",
+            ]
+        ):
             return "room_confusion"
 
         # Parameter-Praeferenz: Helligkeit, Temperatur, Lautstaerke etc.
-        if any(w in corr_text for w in [
-            "hell", "dunkel", "heller", "dunkler", "dimm",
-            "laut", "leise", "lauter", "leiser",
-            "grad", "temperatur", "waermer", "kaelter",
-            "prozent", "%", "brightness", "zu viel", "zu wenig",
-        ]):
+        if any(
+            w in corr_text
+            for w in [
+                "hell",
+                "dunkel",
+                "heller",
+                "dunkler",
+                "dimm",
+                "laut",
+                "leise",
+                "lauter",
+                "leiser",
+                "grad",
+                "temperatur",
+                "waermer",
+                "kaelter",
+                "prozent",
+                "%",
+                "brightness",
+                "zu viel",
+                "zu wenig",
+            ]
+        ):
             return "param_preference"
 
         # Parameter-Aenderung erkennbar aus corrected_args vs original_args
         if corr_args and orig_args:
             shared_keys = set(orig_args.keys()) & set(corr_args.keys())
-            changed = [k for k in shared_keys if orig_args[k] != corr_args[k] and k != "room"]
+            changed = [
+                k for k in shared_keys if orig_args[k] != corr_args[k] and k != "room"
+            ]
             if changed:
                 return "param_preference"
 
         # Falsches Geraet
-        if any(w in corr_text for w in [
-            "nicht", "nein", "falsch", "andere", "anderes",
-            "meine ich nicht", "gemeint", "sondern",
-        ]):
+        if any(
+            w in corr_text
+            for w in [
+                "nicht",
+                "nein",
+                "falsch",
+                "andere",
+                "anderes",
+                "meine ich nicht",
+                "gemeint",
+                "sondern",
+            ]
+        ):
             return "wrong_device"
 
         # Personen-Praeferenz
@@ -419,14 +490,18 @@ class CorrectionMemory:
         room = (new_entry.get("original_args") or {}).get("room", "")
         person = new_entry.get("person", "")
         hour = new_entry.get("hour", 12)
-        time_hint = "abends" if hour >= 18 else ("morgens" if hour < 10 else "tagsueber")
+        time_hint = (
+            "abends" if hour >= 18 else ("morgens" if hour < 10 else "tagsueber")
+        )
 
         # Regel-Key: action + typ + kontext
         context_key = person or room or "global"
         rule_key = f"{action}:{correction_type}:{context_key}"
 
         # Haeufigsten Korrektur-Text finden
-        correction_texts = [e.get("correction_text", "") for _, e in similar if e.get("correction_text")]
+        correction_texts = [
+            e.get("correction_text", "") for _, e in similar if e.get("correction_text")
+        ]
         if not correction_texts:
             return
 
@@ -438,13 +513,17 @@ class CorrectionMemory:
             corr_args = new_entry.get("corrected_args") or {}
             param_hints = [f"{k}={v}" for k, v in corr_args.items() if k != "room"]
             if param_hints:
-                rule_text = f"Bei '{action}': User bevorzugt {', '.join(param_hints[:3])}."
+                rule_text = (
+                    f"Bei '{action}': User bevorzugt {', '.join(param_hints[:3])}."
+                )
             else:
                 rule_text = f"Bei '{action}' {time_hint}: User korrigiert Parameter-Werte. Nachfragen!"
         elif correction_type == "wrong_device":
             rule_text = f"Bei '{action}': User meint oft ein anderes Geraet. Praezise nachfragen!"
         elif correction_type == "person_preference" and person:
-            rule_text = f"Bei '{action}' fuer {person}: User hat spezifische Praeferenz."
+            rule_text = (
+                f"Bei '{action}' fuer {person}: User hat spezifische Praeferenz."
+            )
         else:
             rule_text = f"Bei '{action}' {time_hint}: User korrigiert oft."
 
@@ -458,7 +537,9 @@ class CorrectionMemory:
             "type": correction_type,
             "trigger": action,
             "condition": f"hour {'>=18' if hour >= 18 else ('<10' if hour < 10 else '10-18')}",
-            "learned": f"type={correction_type}, room={room}" if room else f"type={correction_type}",
+            "learned": f"type={correction_type}, room={room}"
+            if room
+            else f"type={correction_type}",
             "confidence": round(confidence, 2),
             "count": len(similar),
             "text": rule_text,
@@ -481,8 +562,23 @@ class CorrectionMemory:
         )
         await self.redis.expire("mha:correction_memory:rules", 365 * 86400)
 
-        logger.info("Neue Regel [%s]: %s (confidence: %.2f, similar: %d)",
-                     correction_type, rule_text, confidence, len(similar))
+        logger.info(
+            "Neue Regel [%s]: %s (confidence: %.2f, similar: %d)",
+            correction_type,
+            rule_text,
+            confidence,
+            len(similar),
+        )
+
+        # Cross-Domain: propagate generic correction patterns to other domains
+        if self._cross_domain_enabled:
+            await self._propagate_cross_domain(
+                rule_key,
+                rule,
+                correction_type,
+                action,
+                person,
+            )
 
         # MCU-Persoenlichkeit: Lern-Bestaetigung in Queue pushen
         try:
@@ -491,6 +587,80 @@ class CorrectionMemory:
             await self.redis.ltrim("mha:learning_ack:pending", -10, -1)
         except Exception as e:
             logger.debug("Correction memory queue push failed: %s", e)
+
+    # Domain-generic correction types that apply across domains
+    _GENERIC_CORRECTION_TYPES = {"room_confusion", "wrong_device"}
+
+    # Mapping: action prefix -> related domains
+    _DOMAIN_ACTIONS = {
+        "set_light": "light",
+        "set_climate": "climate",
+        "set_cover": "cover",
+        "set_switch": "switch",
+        "set_media": "media",
+    }
+
+    async def _propagate_cross_domain(
+        self,
+        source_rule_key: str,
+        source_rule: dict,
+        correction_type: str,
+        action: str,
+        person: str,
+    ):
+        """Propagates generic correction patterns to other domains.
+
+        E.g., if the user keeps saying the wrong room for light commands,
+        the same confusion likely applies to climate/cover commands too.
+        """
+        if not self.redis:
+            return
+
+        if correction_type not in self._GENERIC_CORRECTION_TYPES:
+            return
+
+        # Determine which domain this action belongs to
+        source_domain = self._DOMAIN_ACTIONS.get(action, "")
+        if not source_domain:
+            return
+
+        # Propagate to other domains with reduced confidence
+        propagated = 0
+        for target_action, target_domain in self._DOMAIN_ACTIONS.items():
+            if target_domain == source_domain or target_action == action:
+                continue
+
+            context_key = person or source_rule.get("room", "") or "global"
+            cross_key = f"{target_action}:{correction_type}:{context_key}"
+
+            # Don't overwrite existing rules
+            existing = await self.redis.hget("mha:correction_memory:rules", cross_key)
+            if existing:
+                continue
+
+            cross_rule = {
+                **source_rule,
+                "trigger": target_action,
+                "confidence": round(source_rule.get("confidence", 0.5) * 0.7, 2),
+                "cross_domain_source": action,
+                "text": source_rule.get("text", "").replace(
+                    f"'{action}'", f"'{target_action}'"
+                ),
+            }
+
+            await self.redis.hset(
+                "mha:correction_memory:rules",
+                cross_key,
+                json.dumps(cross_rule, ensure_ascii=False),
+            )
+            propagated += 1
+
+        if propagated > 0:
+            logger.info(
+                "Cross-Domain: Regel '%s' auf %d weitere Domaenen propagiert",
+                correction_type,
+                propagated,
+            )
 
     # --- Expliziter Teaching Mode ---
     # Erlaubt dem User, direkt Bedeutungen beizubringen:
@@ -540,9 +710,15 @@ class CorrectionMemory:
             logger.warning("Teaching-Speicherung fehlgeschlagen: %s", e)
             return "Fehler beim Speichern."
 
-        logger.info("Teaching gespeichert: '%s' -> '%s' (Person: %s)",
-                     phrase_normalized, clean_meaning[:60], person)
-        return f"Verstanden! Wenn du '{phrase.strip()}' sagst, werde ich: {clean_meaning}"
+        logger.info(
+            "Teaching gespeichert: '%s' -> '%s' (Person: %s)",
+            phrase_normalized,
+            clean_meaning[:60],
+            person,
+        )
+        return (
+            f"Verstanden! Wenn du '{phrase.strip()}' sagst, werde ich: {clean_meaning}"
+        )
 
     async def get_teaching(self, text: str) -> str | None:
         """Prueft ob eine gelernte Phrase im Text vorkommt (Fuzzy/Substring-Match).
@@ -626,15 +802,21 @@ class CorrectionMemory:
 
             # Person-Filter: nur passende oder globale Eintraege
             teaching_person = teaching.get("person", "default")
-            if person != "default" and teaching_person != "default" and teaching_person != person:
+            if (
+                person != "default"
+                and teaching_person != "default"
+                and teaching_person != person
+            ):
                 continue
 
-            teachings.append({
-                "phrase": teaching.get("phrase", phrase),
-                "meaning": teaching.get("meaning", ""),
-                "taught_at": teaching.get("taught_at", ""),
-                "times_used": teaching.get("times_used", 0),
-            })
+            teachings.append(
+                {
+                    "phrase": teaching.get("phrase", phrase),
+                    "meaning": teaching.get("meaning", ""),
+                    "taught_at": teaching.get("taught_at", ""),
+                    "times_used": teaching.get("times_used", 0),
+                }
+            )
 
         return teachings
 
@@ -688,7 +870,11 @@ class CorrectionMemory:
         for rule in rules[:5]:
             text = rule.get("text", "")
             confidence = rule.get("confidence", 0)
-            if text and len(text) <= MAX_RULE_TEXT_LEN and confidence >= MIN_CONFIDENCE_FOR_RULE:
+            if (
+                text
+                and len(text) <= MAX_RULE_TEXT_LEN
+                and confidence >= MIN_CONFIDENCE_FOR_RULE
+            ):
                 # Sanitize bevor es in den Prompt geht
                 clean = _sanitize(text)
                 if clean:
@@ -704,8 +890,8 @@ def _sanitize(text: str, max_len: int = 200) -> str:
     """Bereinigt Text fuer Prompt-Injection-Schutz."""
     if not text or not isinstance(text, str):
         return ""
-    text = text.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
-    text = re.sub(r'\s{2,}', ' ', text).strip()
+    text = text.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    text = re.sub(r"\s{2,}", " ", text).strip()
     text = text[:max_len]
     if _INJECTION_PATTERN.search(text):
         logger.warning("Prompt-Injection in Korrektur blockiert: %.80s", text)
