@@ -282,7 +282,8 @@ creative_problem_solving:
   enabled: true
 multi_turn_tools:
   enabled: true
-  max_iterations: 3
+  max_iterations: 5
+  max_total_tool_calls: 15
 inner_state:
   enabled: true
 # C3: Self-initiated Follow-ups — JARVIS greift offene Themen proaktiv auf
@@ -2154,7 +2155,7 @@ caring_butler:
   busy_day_threshold: 4          # Termine fuer "voller Tag"
 latency_optimization:
   knowledge_fast_path: true
-  think_control: smart_off    # auto | off | smart_off | on
+  think_control: auto    # auto | off | smart_off | on
   upgrade_signal_threshold: 3
   refinement_skip_max_chars: 120
   tools_cache_ttl: 60

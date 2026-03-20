@@ -12,11 +12,40 @@ Testet:
 - Formality-Stufen
 - Person-Profile
 - Reload Config
+- System Prompt Generation (build_system_prompt, build_minimal_system_prompt)
+- Person-specific adaptations (_build_person_addressing)
+- Mood-dependent response style (get_mood_response_config, _build_empathy_section)
+- Butler humor generation (_build_humor_section)
+- Opinion engine (check_opinion, check_opinion_with_context, check_pushback)
+- Dynamic sarcasm levels (track_sarcasm_streak, sarcasm fatigue)
+- Confirmation message selection (get_varied_confirmation, _get_contextual_confirmation)
+- Curiosity questions (check_curiosity)
+- Urgency detection (_build_urgency_section, _is_crisis_alert)
+- Complexity classification (classify_request_complexity, get_mood_complexity_sentences)
+- Time-of-day logic (get_time_of_day, get_time_style, get_max_sentences)
+- Self-irony management (_build_self_irony_section, try_reserve_self_irony)
+- Formality system (_build_formality_section, get_formality_score, decay_formality)
+- Personality evolution (_get_personality_stage, get_personality_drift)
+- Next-step hints (build_next_step_hint)
+- Learned rules (build_learned_rules_section)
+- Device narration (narrate_device_event, _get_device_nickname)
+- Scene adjustments (get_scene_adjustment)
+- Error responses (get_error_response)
+- Progress messages (get_progress_message)
+- Notification and routine prompts (build_notification_prompt, build_routine_prompt)
+- Context formatting (_format_context)
+- Warning deduplication (track_warning_given, was_warning_given, get_warning_dedup_notes)
+- Existential hints (get_existential_hint)
+- Confidence section (_build_confidence_section)
+- Contextual silence (_build_contextual_silence_section)
 """
 
 import json
+import time
 import pytest
+import random
 from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime
 
 from assistant.personality import (
     PersonalityEngine,
@@ -26,6 +55,13 @@ from assistant.personality import (
     FORMALITY_PROMPTS,
     CONFIRMATIONS_SUCCESS,
     CONFIRMATIONS_FAILED,
+    CONFIRMATIONS_SUCCESS_SNARKY,
+    CONFIRMATIONS_PARTIAL,
+    CONFIRMATIONS_FAILED_SNARKY,
+    CONTEXTUAL_HUMOR_TRIGGERS,
+    HUMOR_CATEGORIES,
+    DIAGNOSTIC_OPENERS,
+    CASUAL_WARNINGS,
 )
 
 
@@ -425,3 +461,121 @@ class TestPhase2AGagEvolution:
         result = await personality.build_evolved_gag("thermostat_war", "Max")
         assert result is not None
         assert "Episode" in result or "statistisch" in result
+
+
+# ============================================================
+# Phase 5.1: Delayed Callback Humor
+# ============================================================
+
+class TestCallbackHumor:
+    """Tests fuer store_humor_context() und get_callback_humor()."""
+
+    @pytest.fixture
+    def personality(self):
+        from assistant.personality import PersonalityEngine
+        with patch("assistant.personality.yaml_config", {
+            "personality": {"sarcasm_level": 3},
+        }):
+            p = PersonalityEngine()
+            p._redis = AsyncMock()
+            return p
+
+    @pytest.mark.asyncio
+    async def test_store_humor_context(self, personality):
+        """Humor-Kontext wird in Redis gespeichert."""
+        await personality.store_humor_context("max", "failed_action", "Licht ging nicht an")
+        personality._redis.lpush.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_get_callback_no_contexts(self, personality):
+        """Ohne gespeicherte Kontexte kommt kein Callback."""
+        personality._redis.lrange = AsyncMock(return_value=[])
+        result = await personality.get_callback_humor("max")
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_get_callback_too_recent(self, personality):
+        """Kontexte unter 1 Stunde alt werden nicht verwendet."""
+        import time
+        ctx = json.dumps({
+            "type": "failed_action",
+            "text": "Licht ging nicht an",
+            "timestamp": time.time() - 600,  # 10 Min — zu frisch
+        })
+        personality._redis.lrange = AsyncMock(return_value=[ctx])
+        personality._redis.get = AsyncMock(return_value=None)
+        result = await personality.get_callback_humor("max")
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_get_callback_daily_limit(self, personality):
+        """Maximal 1 Callback pro Tag."""
+        import time
+        ctx = json.dumps({
+            "type": "failed_action",
+            "text": "Licht ging nicht an",
+            "timestamp": time.time() - 7200,  # 2h her — alt genug
+        })
+        personality._redis.lrange = AsyncMock(return_value=[ctx])
+        personality._redis.get = AsyncMock(return_value="1")  # Schon 1 Callback heute
+        result = await personality.get_callback_humor("max")
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_get_callback_success_path(self, personality):
+        """Erfolgreicher Callback: alt genug, kein Daily-Limit."""
+        import time
+        ctx = json.dumps({
+            "type": "failed_action",
+            "text": "Licht ging nicht an",
+            "timestamp": time.time() - 7200,  # 2h alt — alt genug
+        })
+        personality._redis.lrange = AsyncMock(return_value=[ctx])
+        personality._redis.exists = AsyncMock(return_value=False)
+        personality._redis.setex = AsyncMock()
+        personality._redis.lrem = AsyncMock()
+        result = await personality.get_callback_humor("max")
+        assert result != ""
+        assert "Licht ging nicht an" in result
+        # Daily-Key muss gesetzt werden
+        personality._redis.setex.assert_called_once()
+        # Kontext muss entfernt werden
+        personality._redis.lrem.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_callback_sarcasm_too_low(self, personality):
+        """Kein Callback bei sarcasm_level < 2."""
+        personality.sarcasm_level = 1
+        result = await personality.get_callback_humor("max")
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_get_callback_bold_claim_type(self, personality):
+        """Callback fuer bold_claim Typ."""
+        import time
+        ctx = json.dumps({
+            "type": "bold_claim",
+            "text": "Ich kann das in 5 Minuten",
+            "timestamp": time.time() - 10800,  # 3h alt
+        })
+        personality._redis.lrange = AsyncMock(return_value=[ctx])
+        personality._redis.exists = AsyncMock(return_value=False)
+        personality._redis.setex = AsyncMock()
+        personality._redis.lrem = AsyncMock()
+        result = await personality.get_callback_humor("max")
+        assert result != ""
+        assert "Ich kann das in 5 Minuten" in result
+
+    @pytest.mark.asyncio
+    async def test_get_callback_unknown_type_skipped(self, personality):
+        """Unbekannter Kontext-Typ wird uebersprungen."""
+        import time
+        ctx = json.dumps({
+            "type": "unknown_type",
+            "text": "something",
+            "timestamp": time.time() - 7200,
+        })
+        personality._redis.lrange = AsyncMock(return_value=[ctx])
+        personality._redis.exists = AsyncMock(return_value=False)
+        result = await personality.get_callback_humor("max")
+        assert result == ""

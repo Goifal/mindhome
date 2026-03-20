@@ -345,3 +345,84 @@ class TestStatusExceptions:
         p.redis = redis
         status = await p.get_status()
         assert status["active_cooldowns"] == -1
+
+
+# ============================================================
+# Anticipation→Planner Bridge (_enrich_plan_from_patterns)
+# ============================================================
+
+class TestAnticipationBridge:
+    """Tests fuer _enrich_plan_from_patterns() — Gelernte Muster in Plaene integrieren."""
+
+    @pytest.fixture
+    def planner_with_anticipation(self, ha_mock, redis_mock):
+        anticipation = AsyncMock()
+        with patch("assistant.proactive_planner.yaml_config", {"proactive_planner": {"enabled": True}}):
+            p = ProactiveSequencePlanner(ha=ha_mock, anticipation=anticipation)
+        p.redis = redis_mock
+        return p
+
+    @pytest.mark.asyncio
+    async def test_enrich_adds_learned_actions(self, planner_with_anticipation):
+        """Gelernte Causal Chains mit hoher Confidence werden hinzugefuegt."""
+        p = planner_with_anticipation
+        p.anticipation.detect_patterns = AsyncMock(return_value=[
+            {
+                "type": "causal_chain",
+                "confidence": 0.9,
+                "chain_actions": [
+                    {"action": "turn_on_radio", "args": {"room": "kueche"}},
+                ],
+            },
+        ])
+        plan = {
+            "trigger": "person_arrived",
+            "actions": [{"type": "set_light", "args": {"state": "on"}}],
+            "message": "Test",
+        }
+        learned = await p._enrich_plan_from_patterns(plan, "person_arrived", {"person": {"name": "max"}})
+        assert len(learned) == 1
+        assert learned[0]["function"] == "turn_on_radio"
+        assert learned[0]["type"] == "learned_pattern"
+
+    @pytest.mark.asyncio
+    async def test_enrich_skips_low_confidence(self, planner_with_anticipation):
+        """Patterns mit niedriger Confidence werden ignoriert."""
+        p = planner_with_anticipation
+        p.anticipation.detect_patterns = AsyncMock(return_value=[
+            {"type": "causal_chain", "confidence": 0.5, "chain_actions": [{"action": "play_music"}]},
+        ])
+        learned = await p._enrich_plan_from_patterns({"actions": [], "message": ""}, "test", {})
+        assert len(learned) == 0
+
+    @pytest.mark.asyncio
+    async def test_enrich_max_5_actions(self, planner_with_anticipation):
+        """Maximal 5 zusaetzliche Aktionen."""
+        p = planner_with_anticipation
+        p.anticipation.detect_patterns = AsyncMock(return_value=[
+            {
+                "type": "causal_chain",
+                "confidence": 0.9,
+                "chain_actions": [{"action": f"action_{i}"} for i in range(10)],
+            },
+        ])
+        learned = await p._enrich_plan_from_patterns({"actions": [], "message": ""}, "test", {})
+        assert len(learned) <= 5
+
+    @pytest.mark.asyncio
+    async def test_enrich_without_anticipation(self, ha_mock):
+        """Ohne Anticipation-Engine werden keine Aktionen hinzugefuegt."""
+        with patch("assistant.proactive_planner.yaml_config", {"proactive_planner": {"enabled": True}}):
+            p = ProactiveSequencePlanner(ha=ha_mock, anticipation=None)
+        learned = await p._enrich_plan_from_patterns({"actions": [], "message": ""}, "test", {})
+        assert len(learned) == 0
+
+    @pytest.mark.asyncio
+    async def test_enrich_skips_non_causal_chain(self, planner_with_anticipation):
+        """Nur causal_chain Patterns werden verwendet."""
+        p = planner_with_anticipation
+        p.anticipation.detect_patterns = AsyncMock(return_value=[
+            {"type": "time_pattern", "confidence": 0.95, "chain_actions": [{"action": "test"}]},
+        ])
+        learned = await p._enrich_plan_from_patterns({"actions": [], "message": ""}, "test", {})
+        assert len(learned) == 0

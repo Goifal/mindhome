@@ -45,6 +45,7 @@ from .smart_shopping import SmartShopping
 from .conversation_memory import ConversationMemory
 from .multi_room_audio import MultiRoomAudio
 from .knowledge_base import KnowledgeBase
+from .knowledge_graph import KnowledgeGraph
 from .recipe_store import RecipeStore
 from .memory import MemoryManager
 from .memory_extractor import MemoryExtractor
@@ -406,6 +407,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Phase 11.1: Knowledge Base (RAG)
         self.knowledge_base = KnowledgeBase()
+
+        # Knowledge Graph (Redis-basierter Wissensgraph)
+        self.knowledge_graph = KnowledgeGraph()
 
         # Recipe Store (dedizierte Rezeptdatenbank für den Koch-Assistenten)
         self.recipe_store = RecipeStore()
@@ -877,6 +881,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Phase 11.1: Knowledge Base initialisieren
         await _safe_init("KnowledgeBase", self.knowledge_base.initialize())
+
+        # Knowledge Graph initialisieren
+        await _safe_init("KnowledgeGraph", self.knowledge_graph.initialize(redis_client=self.memory.redis))
 
         # Recipe Store initialisieren und mit Koch-Assistent verbinden
         await _safe_init("RecipeStore", self.recipe_store.initialize())
@@ -1364,11 +1371,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     if _lt:
                         _lt.mark("llm_complete")
                     if not stream_error and collected:
+                        # Think-Content aus Stream verfügbar machen
+                        _stream_thinking = getattr(self.ollama, "_last_stream_thinking", "")
                         return {
                             "text": "".join(collected),
                             "model": current,
                             "message": {},
                             "error": False,
+                            "thinking": _stream_thinking,
                         }
                 else:
                     response = await asyncio.wait_for(
@@ -1391,6 +1401,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             "model": current,
                             "message": msg,
                             "error": False,
+                            "thinking": response.get("thinking", ""),
                         }
                     _err_msg = str(response["error"])
                     logger.error("LLM Fehler (%s): %s", current, _err_msg)
@@ -3398,8 +3409,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         context["mood"] = mood_result
 
-        # 3. Modell waehlen (mit kontext-basiertem Upgrade)
-        model, _model_tier = self.model_router.select_model_and_tier(text)
+        # 3. Modell waehlen (mit kontext-basiertem Upgrade + Reasoning-Flag)
+        model, _model_tier, _requires_reasoning = self.model_router.select_model_tier_reasoning(text)
         # D1: Task-aware Temperature
         _task_temperature = self.model_router.get_task_temperature(text)
 
@@ -4149,6 +4160,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 p1_tokens, tokens_used_p2, section_budget_p2, len(sections_added),
             )
 
+        # 4b. CoT-Reasoning-Instruktionen fuer Deep-Model injizieren
+        if _requires_reasoning:
+            system_prompt += (
+                "\n\n[REASONING-MODUS]: Diese Anfrage erfordert gruendliches Nachdenken. "
+                "Analysiere die Anfrage Schritt fuer Schritt: "
+                "1) Was genau wird gefragt/gewuenscht? "
+                "2) Welche Informationen hast du bereits? "
+                "3) Welche Tools brauchst du um fehlende Daten zu bekommen? "
+                "4) Gibt es Konflikte oder Abhaengigkeiten zwischen Aktionen? "
+                "5) Pruefe nach der Ausfuehrung ob das Ergebnis stimmt."
+            )
+
         # 5. Letzte Gespraeche laden (Working Memory)
         # Token-Budget für Conversations: Restliches Budget nach System-Prompt + Sektionen
         system_tokens = _estimate_tokens(system_prompt)
@@ -4471,9 +4494,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 else:
                     _think_mode = None  # Konversation/General: Modell entscheidet
 
-            # N3: Multi-Turn Tool Calling — iterativer Loop
-            _max_tool_turns = cfg.yaml_config.get("multi_turn_tools", {}).get("max_iterations", 3)
+            # N3: Multi-Turn Tool Calling — iterativer ReAct-Loop
+            _mt_cfg = cfg.yaml_config.get("multi_turn_tools", {})
+            _max_tool_turns = _mt_cfg.get("max_iterations", 5)
+            _max_total_tool_calls = _mt_cfg.get("max_total_tool_calls", 15)
             _tool_turn = 0
+            _total_tool_call_count = 0
             executed_actions = []
             _turn_messages = list(messages)  # Kopie fuer Multi-Turn
 
@@ -4491,6 +4517,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 await self._speak_and_emit(_err, room=room)
                 return self._result(_err, model=model, room=room, emitted=True, error="cascade_failed")
             model = _cascade["model"]
+            _llm_thinking = _cascade.get("thinking", "")
 
             # 7. Antwort verarbeiten
             message = _cascade["message"]
@@ -5149,13 +5176,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         except Exception as _cur_err:
                             logger.debug("Curiosity-Check fehlgeschlagen: %s", _cur_err)
 
-            # N3: Multi-Turn Tool Calling — Ergebnisse zurueck ans LLM senden
-            # Wenn Tool-Calls ausgefuehrt wurden und das LLM mehr Kontext braucht,
-            # Ergebnisse als Tool-Response-Messages anhaengen und erneut fragen.
+            # N3: Multi-Turn Tool Calling — ReAct-Loop
+            # Ergebnisse zurueck ans LLM senden fuer iteratives Reasoning.
             _tool_turn += 1
+            _total_tool_call_count += len(executed_actions)
             while (
                 tool_calls
                 and _tool_turn < _max_tool_turns
+                and _total_tool_call_count < _max_total_tool_calls
                 and executed_actions
                 and cfg.yaml_config.get("multi_turn_tools", {}).get("enabled", True)
             ):
@@ -5183,7 +5211,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     tools=_llm_tools,
                     max_tokens=response_tokens,
                     timeout=float(llm_timeout),
-                    think=False,  # Follow-up Turns ohne Think
+                    think=_think_mode,  # Thinking beibehalten fuer Reasoning
                     tier=_model_tier,
                     temperature=_task_temperature,
                 )
@@ -5224,6 +5252,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     logger.info("N3: Multi-Turn Tool-Call: %s(%s)", _fname, _fargs)
                     await emit_action(_fname, _fargs, _result)
 
+                _total_tool_call_count += len(tool_calls)
+                # Think-Content aus Follow-up-Turns akkumulieren
+                _turn_thinking = _cascade.get("thinking", "")
+                if _turn_thinking:
+                    _llm_thinking = f"{_llm_thinking}\n{_turn_thinking}" if _llm_thinking else _turn_thinking
                 _tool_turn += 1
 
             # Post-Execution State Verification (LLM-Pfad):
@@ -6044,10 +6077,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             if isinstance(_act.get("result"), dict) and _act["result"].get("success"):
                 _act_args = _act.get("args", {})
                 _act_desc = f"{_act['function']}({', '.join(f'{k}={v}' for k, v in _act_args.items())})"
+                # Think-Content als Reasoning-Kontext mitgeben
+                _reason = _llm_thinking[:500] if _llm_thinking else f"User-Befehl: {text[:100]}"
                 self._task_registry.create_task(
                     self.explainability.log_decision(
                         action=_act_desc,
-                        reason=f"User-Befehl: {text[:100]}",
+                        reason=_reason,
                         trigger="user_command",
                         person=person or "",
                         domain=_executed_domain,
@@ -6399,6 +6434,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             elif _re.search(r'\b(tts\.speak|light\.turn_|cover\.(?:open|close|set)|climate\.set)\b', response_text):
                 logger.warning("Rohdaten-Leak (Service-Call) vor Senden erkannt: '%s'", response_text[:500])
                 response_text = self.personality.get_varied_confirmation(success=True)
+
+        # Think-Content in Redis speichern für "Warum hast du das gemacht?"-Queries
+        if _llm_thinking and self.memory and self.memory.redis:
+            try:
+                await self.memory.redis.setex(
+                    "mha:last_thinking", 3600,
+                    _llm_thinking[:2000],
+                )
+            except Exception:
+                logger.debug("Think-Content Redis-Speicherung fehlgeschlagen", exc_info=True)
 
         result = self._result(response_text, actions=executed_actions, model=model, room=context.get("room"), tts=tts_data)
 

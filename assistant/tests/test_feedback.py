@@ -542,3 +542,261 @@ async def test_check_timeouts_concurrent_removal(tracker, mock_redis):
 
     await patched_check()
     # Should not raise
+
+
+# ------------------------------------------------------------------
+# detect_positive_feedback (static method)
+# ------------------------------------------------------------------
+
+
+class TestDetectPositiveFeedback:
+    """Tests for static detect_positive_feedback method."""
+
+    def test_detect_thanked_danke(self):
+        result = FeedbackTracker.detect_positive_feedback("Danke dir!")
+        assert result == "thanked"
+
+    def test_detect_thanked_vielen_dank(self):
+        result = FeedbackTracker.detect_positive_feedback("Vielen Dank fuer die Info")
+        assert result == "thanked"
+
+    def test_detect_thanked_thanks(self):
+        result = FeedbackTracker.detect_positive_feedback("Thanks a lot")
+        assert result == "thanked"
+
+    def test_detect_praised_super(self):
+        result = FeedbackTracker.detect_positive_feedback("Das ist super!")
+        assert result == "praised"
+
+    def test_detect_praised_perfekt(self):
+        result = FeedbackTracker.detect_positive_feedback("Perfekt, genau so")
+        assert result == "praised"
+
+    def test_detect_praised_grossartig(self):
+        result = FeedbackTracker.detect_positive_feedback("Das ist grossartig")
+        assert result == "praised"
+
+    def test_detect_no_feedback_neutral(self):
+        result = FeedbackTracker.detect_positive_feedback("Wie ist das Wetter morgen?")
+        assert result is None
+
+    def test_detect_empty_text(self):
+        result = FeedbackTracker.detect_positive_feedback("")
+        assert result is None
+
+    def test_detect_none_text(self):
+        result = FeedbackTracker.detect_positive_feedback(None)
+        assert result is None
+
+    def test_thanked_takes_priority_over_praised(self):
+        """When both thank and praise words present, 'thanked' wins (checked first)."""
+        result = FeedbackTracker.detect_positive_feedback("Danke, super gemacht!")
+        assert result == "thanked"
+
+    def test_case_insensitive(self):
+        result = FeedbackTracker.detect_positive_feedback("DANKE!!!")
+        assert result == "thanked"
+
+
+# ------------------------------------------------------------------
+# get_feedback_intensity
+# ------------------------------------------------------------------
+
+
+class TestGetFeedbackIntensity:
+    """Tests for get_feedback_intensity method."""
+
+    def test_intensity_info(self, tracker):
+        assert tracker.get_feedback_intensity("event", 0) == "info"
+        assert tracker.get_feedback_intensity("event", 1) == "info"
+
+    def test_intensity_reminder(self, tracker):
+        assert tracker.get_feedback_intensity("event", 2) == "reminder"
+        assert tracker.get_feedback_intensity("event", 3) == "reminder"
+
+    def test_intensity_warning(self, tracker):
+        assert tracker.get_feedback_intensity("event", 4) == "warning"
+        assert tracker.get_feedback_intensity("event", 5) == "warning"
+
+    def test_intensity_urgent(self, tracker):
+        assert tracker.get_feedback_intensity("event", 6) == "urgent"
+        assert tracker.get_feedback_intensity("event", 100) == "urgent"
+
+
+# ------------------------------------------------------------------
+# get_event_cooldown
+# ------------------------------------------------------------------
+
+
+class TestGetEventCooldown:
+    """Tests for get_event_cooldown method."""
+
+    def test_known_event_cooldown(self, tracker):
+        assert tracker.get_event_cooldown("anticipation_suggestion") == 1800
+        assert tracker.get_event_cooldown("wellness_nudge") == 3600
+        assert tracker.get_event_cooldown("spontaneous_observation") == 5400
+        assert tracker.get_event_cooldown("learning_suggestion") == 7200
+        assert tracker.get_event_cooldown("insight") == 3600
+
+    def test_unknown_event_default_cooldown(self, tracker):
+        assert tracker.get_event_cooldown("unknown_event") == 1800
+
+
+# ------------------------------------------------------------------
+# _update_score clamping
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_update_score_clamps_to_zero(tracker, mock_redis):
+    """Score should never go below 0.0."""
+    tracker.redis = mock_redis
+    mock_redis.get.return_value = "0.05"
+    new_score = await tracker._update_score("event", -0.20)
+    assert new_score == 0.0
+
+
+@pytest.mark.asyncio
+async def test_update_score_clamps_to_one(tracker, mock_redis):
+    """Score should never exceed 1.0."""
+    tracker.redis = mock_redis
+    mock_redis.get.return_value = "0.95"
+    new_score = await tracker._update_score("event", 0.20)
+    assert new_score == 1.0
+
+
+# ------------------------------------------------------------------
+# _check_timeouts with TTS-only events (no auto-timeout penalty)
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_check_timeouts_skips_tts_only_events(tracker, mock_redis):
+    """TTS-only events (observation, batch_summary, ambient_status) should not get score penalty on timeout."""
+    tracker.redis = mock_redis
+    mock_redis.get.return_value = str(DEFAULT_SCORE)
+    tracker._pending["n_obs"] = {
+        "event_type": "observation",
+        "sent_at": datetime.now(timezone.utc) - timedelta(seconds=200),
+    }
+    tracker._pending["n_batch"] = {
+        "event_type": "batch_summary",
+        "sent_at": datetime.now(timezone.utc) - timedelta(seconds=200),
+    }
+    tracker._pending["n_ambient"] = {
+        "event_type": "ambient_status",
+        "sent_at": datetime.now(timezone.utc) - timedelta(seconds=200),
+    }
+    await tracker._check_timeouts()
+    # All should be removed from pending
+    assert "n_obs" not in tracker._pending
+    assert "n_batch" not in tracker._pending
+    assert "n_ambient" not in tracker._pending
+    # But no score update should have been made (setex not called)
+    mock_redis.setex.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_check_timeouts_penalizes_normal_events(tracker, mock_redis):
+    """Normal (non-TTS-only) expired events get the 'ignored' score penalty."""
+    tracker.redis = mock_redis
+    mock_redis.get.return_value = str(DEFAULT_SCORE)
+    tracker._pending["n_normal"] = {
+        "event_type": "door_open",
+        "sent_at": datetime.now(timezone.utc) - timedelta(seconds=200),
+    }
+    await tracker._check_timeouts()
+    assert "n_normal" not in tracker._pending
+    mock_redis.setex.assert_called_once()
+
+
+# ------------------------------------------------------------------
+# get_score with bytes return value
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_score_bytes_value(tracker, mock_redis):
+    """Score returned as bytes from Redis is decoded correctly."""
+    tracker.redis = mock_redis
+    mock_redis.get.return_value = b"0.42"
+    score = await tracker.get_score("some_event")
+    assert score == 0.42
+
+
+# ------------------------------------------------------------------
+# Multiple feedback accumulation
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_repeated_feedback_accumulates(tracker, mock_redis):
+    """Multiple feedback records update score cumulatively."""
+    tracker.redis = mock_redis
+    # Start at 0.5
+    mock_redis.get.return_value = "0.5"
+    r1 = await tracker.record_feedback("event_a", "thanked")
+    assert r1["new_score"] == 0.7
+
+    # Now redis returns the updated score
+    mock_redis.get.return_value = "0.7"
+    r2 = await tracker.record_feedback("event_a", "dismissed")
+    assert r2["new_score"] == 0.6
+
+
+# ------------------------------------------------------------------
+# should_notify cooldown values
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_should_notify_returns_correct_cooldowns(tracker, mock_redis):
+    """Verify the cooldown values returned match _calculate_cooldown."""
+    tracker.redis = mock_redis
+
+    # Boost score
+    mock_redis.get.return_value = str(SCORE_BOOST + 0.05)
+    result = await tracker.should_notify("event", "high")
+    assert result["cooldown"] == int(300 * 0.6)
+
+    # Normal score
+    mock_redis.get.return_value = str(SCORE_NORMAL + 0.05)
+    result = await tracker.should_notify("event", "medium")
+    assert result["cooldown"] == 300
+
+
+# ------------------------------------------------------------------
+# _store_feedback_entry writes correctly
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_store_feedback_entry_writes_json(tracker, mock_redis):
+    """Verify feedback entry is stored as JSON with correct structure."""
+    tracker.redis = mock_redis
+    await tracker._store_feedback_entry("door_open", "thanked", 0.20)
+
+    mock_redis.lpush.assert_called_once()
+    call_args = mock_redis.lpush.call_args
+    key = call_args[0][0]
+    entry_json = call_args[0][1]
+    assert key == "mha:feedback:history:door_open"
+    entry = json.loads(entry_json)
+    assert entry["type"] == "thanked"
+    assert entry["delta"] == 0.20
+    assert "timestamp" in entry
+
+    mock_redis.ltrim.assert_called_once_with("mha:feedback:history:door_open", 0, 499)
+
+
+# ------------------------------------------------------------------
+# get_person_score no redis
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_person_score_no_redis(tracker):
+    """No redis returns DEFAULT_SCORE."""
+    tracker.redis = None
+    score = await tracker.get_person_score("event", "Max")
+    assert score == DEFAULT_SCORE

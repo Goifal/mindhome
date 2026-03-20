@@ -2,8 +2,10 @@
 Tests fuer CookingAssistant — Koch-Session + Redis-Persistenz.
 """
 
+import asyncio
 import json
-from unittest.mock import AsyncMock, MagicMock
+import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -13,6 +15,7 @@ from assistant.cooking_assistant import (
     CookingStep,
     CookingTimer,
 )
+from assistant.constants import MAX_TIMERS_PER_SESSION
 
 
 @pytest.fixture
@@ -36,15 +39,26 @@ def assistant(ollama, redis_mock):
     return ca
 
 
-def _make_session(dish="Spaghetti", steps=3, current_step=0):
+def _make_session(dish="Spaghetti", steps=3, current_step=0, timer_minutes_list=None):
+    """Erzeugt eine CookingSession fuer Tests.
+
+    Args:
+        timer_minutes_list: Optionale Liste von timer_minutes pro Schritt.
+            Laenge muss == steps sein. None-Werte = kein Timer.
+    """
+    step_list = []
+    for i in range(steps):
+        tm = None
+        if timer_minutes_list and i < len(timer_minutes_list):
+            tm = timer_minutes_list[i]
+        step_list.append(
+            CookingStep(number=i + 1, instruction=f"Schritt {i + 1}", timer_minutes=tm)
+        )
     return CookingSession(
         dish=dish,
         portions=2,
         ingredients=["200g Spaghetti", "100g Guanciale"],
-        steps=[
-            CookingStep(number=i + 1, instruction=f"Schritt {i + 1}", timer_minutes=None)
-            for i in range(steps)
-        ],
+        steps=step_list,
         current_step=current_step,
         started_at=1000.0,
         person="max",

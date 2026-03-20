@@ -86,6 +86,18 @@ class ProactiveSequencePlanner:
         elif trigger == "calendar_event_soon":
             plan = await self._plan_guest_sequence(context)
 
+        # Brücke: Gelernte Causal Chains aus anticipation.py einbeziehen
+        if self.anticipation and plan:
+            try:
+                learned_actions = await self._enrich_plan_from_patterns(
+                    plan, trigger, context,
+                )
+                if learned_actions:
+                    plan["actions"].extend(learned_actions)
+                    plan["message"] += " (inkl. gelernter Muster)"
+            except Exception as e:
+                logger.debug("Anticipation-Enrichment fehlgeschlagen: %s", e)
+
         if not plan:
             return None
 
@@ -220,6 +232,45 @@ class ProactiveSequencePlanner:
             "message": f"{title}, Gaeste kommen bald. Soll ich {actions_desc} vorbereiten?",
             "auto_message": f"Gaeste-Vorbereitung: {actions_desc}.",
         }
+
+    async def _enrich_plan_from_patterns(
+        self, plan: dict, trigger: str, context: dict,
+    ) -> list[dict]:
+        """Reichert einen Plan mit gelernten Mustern aus anticipation.py an.
+
+        Sucht passende Causal Chains die zum Trigger und Kontext passen
+        und fuegt sie als zusaetzliche Aktionen hinzu.
+        """
+        if not self.anticipation or not hasattr(self.anticipation, 'detect_patterns'):
+            return []
+
+        person = context.get("person", {}).get("name", "")
+        patterns = await self.anticipation.detect_patterns(person=person)
+
+        # Nur Causal Chains mit hoher Confidence nutzen
+        learned_actions = []
+        existing_functions = {a.get("function") for a in plan.get("actions", [])}
+
+        for pattern in patterns:
+            if pattern.get("type") != "causal_chain":
+                continue
+            if pattern.get("confidence", 0) < 0.8:
+                continue
+
+            # Aktionen aus der Chain die noch nicht im Plan sind
+            chain_actions = pattern.get("chain_actions", [])
+            for chain_action in chain_actions:
+                func_name = chain_action.get("action", "")
+                if func_name and func_name not in existing_functions:
+                    learned_actions.append({
+                        "function": func_name,
+                        "args": chain_action.get("args", {}),
+                        "type": "learned_pattern",
+                        "confidence": pattern["confidence"],
+                    })
+                    existing_functions.add(func_name)
+
+        return learned_actions[:5]  # Max 5 zusaetzliche Aktionen
 
     async def get_status(self) -> dict:
         """Gibt den Status des Planners zurueck."""

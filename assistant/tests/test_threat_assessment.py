@@ -2,7 +2,9 @@
 Tests fuer ThreatAssessment — Sicherheitsanalyse + Score + Eskalation.
 """
 
-from unittest.mock import AsyncMock, MagicMock
+import asyncio
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -14,6 +16,26 @@ def threat():
     ha = AsyncMock()
     t = ThreatAssessment(ha)
     t.redis = AsyncMock()
+    return t
+
+
+@pytest.fixture
+def threat_no_redis():
+    """ThreatAssessment ohne Redis — fuer Graceful-Degradation-Tests."""
+    ha = AsyncMock()
+    t = ThreatAssessment(ha)
+    t.redis = None
+    return t
+
+
+@pytest.fixture
+def threat_with_cooldown():
+    """ThreatAssessment mit aktivem Cooldown (wurde bereits benachrichtigt)."""
+    ha = AsyncMock()
+    t = ThreatAssessment(ha)
+    t.redis = AsyncMock()
+    # _was_notified returns True -> already notified, cooldown active
+    t.redis.get.return_value = b"1"
     return t
 
 

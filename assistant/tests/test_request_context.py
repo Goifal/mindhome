@@ -1,6 +1,8 @@
 """Tests for request_context - Request-ID tracing and structured logging."""
 
+import asyncio
 import logging
+import sys
 import uuid
 from contextvars import ContextVar
 from unittest.mock import patch, MagicMock, AsyncMock
@@ -399,3 +401,220 @@ class TestSetupStructuredLogging:
             assert len(root.handlers) == count_after_first
         finally:
             root.handlers = original_handlers
+
+
+# ---------------------------------------------------------------------------
+# Additional ContextVar isolation tests
+# ---------------------------------------------------------------------------
+
+class TestContextVarIsolation:
+    """Tests ensuring ContextVar properly isolates between requests."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_requests_have_separate_ids(self):
+        """Two concurrent requests should not interfere with each other."""
+        captured_ids = []
+
+        async def app(scope, receive, send):
+            captured_ids.append(get_request_id())
+            # Yield control to allow interleaving
+            await asyncio.sleep(0.01)
+            # Verify ID hasn't changed
+            captured_ids.append(get_request_id())
+
+        middleware = RequestContextMiddleware(app)
+
+        scope1 = {
+            "type": "http",
+            "headers": [(b"x-request-id", b"req-A")],
+        }
+        scope2 = {
+            "type": "http",
+            "headers": [(b"x-request-id", b"req-B")],
+        }
+
+        await asyncio.gather(
+            middleware(scope1, AsyncMock(), AsyncMock()),
+            middleware(scope2, AsyncMock(), AsyncMock()),
+        )
+
+        # Each request should see its own ID consistently
+        a_ids = [cid for cid in captured_ids if cid == "req-A"]
+        b_ids = [cid for cid in captured_ids if cid == "req-B"]
+        assert len(a_ids) == 2
+        assert len(b_ids) == 2
+
+    def test_get_request_id_outside_context_returns_default(self):
+        """Outside any middleware, get_request_id should return empty string."""
+        token = _request_id_var.set("")
+        try:
+            assert get_request_id() == ""
+        finally:
+            _request_id_var.reset(token)
+
+
+# ---------------------------------------------------------------------------
+# Middleware header edge cases
+# ---------------------------------------------------------------------------
+
+class TestMiddlewareHeaderEdgeCases:
+
+    @pytest.mark.asyncio
+    async def test_multiple_headers_only_first_x_request_id_used(self):
+        """If multiple x-request-id headers exist, the first should be used."""
+        captured_id = None
+
+        async def app(scope, receive, send):
+            nonlocal captured_id
+            captured_id = get_request_id()
+
+        middleware = RequestContextMiddleware(app)
+        scope = {
+            "type": "http",
+            "headers": [
+                (b"x-request-id", b"first-id"),
+                (b"x-request-id", b"second-id"),
+            ],
+        }
+        await middleware(scope, AsyncMock(), AsyncMock())
+        assert captured_id == "first-id"
+
+    @pytest.mark.asyncio
+    async def test_other_headers_ignored(self):
+        """Non x-request-id headers should not affect request ID generation."""
+        captured_id = None
+
+        async def app(scope, receive, send):
+            nonlocal captured_id
+            captured_id = get_request_id()
+
+        middleware = RequestContextMiddleware(app)
+        scope = {
+            "type": "http",
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"authorization", b"Bearer token123"),
+            ],
+        }
+        await middleware(scope, AsyncMock(), AsyncMock())
+        # Should generate a new ID since no x-request-id was provided
+        assert captured_id is not None
+        assert len(captured_id) == 12
+
+    @pytest.mark.asyncio
+    async def test_empty_x_request_id_header_generates_new(self):
+        """An empty x-request-id header should still use the empty string from header."""
+        captured_id = None
+
+        async def app(scope, receive, send):
+            nonlocal captured_id
+            captured_id = get_request_id()
+
+        middleware = RequestContextMiddleware(app)
+        scope = {
+            "type": "http",
+            "headers": [(b"x-request-id", b"")],
+        }
+        await middleware(scope, AsyncMock(), AsyncMock())
+        # Empty string is falsy, so a new ID should be generated
+        assert captured_id is not None
+        assert len(captured_id) == 12
+
+    @pytest.mark.asyncio
+    async def test_response_body_message_not_modified(self):
+        """http.response.body messages should pass through without modification."""
+        sent_messages = []
+
+        async def app(scope, receive, send):
+            await send({
+                "type": "http.response.start",
+                "headers": [(b"content-type", b"text/plain")],
+            })
+            await send({
+                "type": "http.response.body",
+                "body": b"hello world",
+            })
+
+        middleware = RequestContextMiddleware(app)
+        scope = {"type": "http", "headers": []}
+
+        async def capture_send(msg):
+            sent_messages.append(msg)
+
+        await middleware(scope, AsyncMock(), capture_send)
+        body_msg = sent_messages[1]
+        assert body_msg["type"] == "http.response.body"
+        assert body_msg["body"] == b"hello world"
+        # Body message should not have headers added
+        assert "headers" not in body_msg or body_msg.get("headers") is None
+
+    @pytest.mark.asyncio
+    async def test_existing_response_headers_preserved(self):
+        """Existing response headers should be preserved when adding x-request-id."""
+        sent_messages = []
+
+        async def app(scope, receive, send):
+            await send({
+                "type": "http.response.start",
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"x-custom", b"value"),
+                ],
+            })
+
+        middleware = RequestContextMiddleware(app)
+        scope = {"type": "http", "headers": []}
+
+        async def capture_send(msg):
+            sent_messages.append(msg)
+
+        await middleware(scope, AsyncMock(), capture_send)
+        start_msg = sent_messages[0]
+        header_keys = [h[0] for h in start_msg["headers"]]
+        assert b"content-type" in header_keys
+        assert b"x-custom" in header_keys
+        assert b"x-request-id" in header_keys
+
+
+# ---------------------------------------------------------------------------
+# StructuredFormatter additional tests
+# ---------------------------------------------------------------------------
+
+class TestStructuredFormatterEdgeCases:
+
+    def _make_record(self, msg="test"):
+        return logging.LogRecord(
+            name="test", level=logging.INFO, pathname="test.py",
+            lineno=1, msg=msg, args=(), exc_info=None,
+        )
+
+    def test_format_with_exception_info(self):
+        """Formatter should handle records with exception info."""
+        fmt = "%(request_id)s%(message)s"
+        formatter = StructuredFormatter(fmt=fmt)
+        token = _request_id_var.set("exc-test")
+        try:
+            try:
+                raise ValueError("test error")
+            except ValueError:
+                import sys
+                record = self._make_record("error occurred")
+                record.exc_info = sys.exc_info()
+                output = formatter.format(record)
+                assert "[req-exc-test]" in output
+                assert "error occurred" in output
+        finally:
+            _request_id_var.reset(token)
+
+    def test_format_preserves_record_attributes(self):
+        """Formatting should not corrupt other record attributes."""
+        fmt = "%(request_id)s%(name)s: %(message)s"
+        formatter = StructuredFormatter(fmt=fmt)
+        token = _request_id_var.set("attr-test")
+        try:
+            record = self._make_record("check attrs")
+            formatter.format(record)
+            assert record.name == "test"
+            assert record.msg == "check attrs"
+        finally:
+            _request_id_var.reset(token)

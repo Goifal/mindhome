@@ -740,6 +740,22 @@ class AnticipationEngine:
                 # Cooldown setzen (1 Stunde)
                 await self.redis.setex(pattern_key, 3600, "1")
 
+        # Kalender x Wetter Kreuzreferenzen einbinden (bisher verwaist)
+        try:
+            crossrefs = await self.get_calendar_weather_crossrefs()
+            for xref in crossrefs:
+                suggestions.append({
+                    "pattern": {"type": "calendar_crossref"},
+                    "action": "send_notification",
+                    "args": {"message": xref.get("message", "")},
+                    "confidence": 0.85,
+                    "description": xref.get("message", ""),
+                    "mode": "suggest",
+                    "urgency": xref.get("urgency", "medium"),
+                })
+        except Exception as e:
+            logger.debug("Kalender-Crossref fehlgeschlagen: %s", e)
+
         return suggestions
 
     async def _get_current_weather(self) -> str:

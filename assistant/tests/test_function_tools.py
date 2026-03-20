@@ -272,6 +272,251 @@ class TestExecDescribeDoorbell:
         assert result["success"] is False
         assert "fehlgeschlagen" in result["message"]
 
+@_needs_main
+class TestExecRetrieveMemory:
+    """Tests fuer _exec_retrieve_memory()."""
+
+    @pytest.mark.asyncio
+    async def test_returns_facts(self):
+        executor = _make_executor()
+        mock_brain = _mock_brain()
+        mock_brain.semantic_memory = MagicMock()
+        mock_brain.semantic_memory.search_facts = AsyncMock(return_value=[
+            {"content": "Lieblingsfarbe ist Blau", "confidence": 0.9, "category": "preferences", "person": "Max"},
+            {"content": "Allergisch gegen Erdnuesse", "confidence": 0.85, "category": "health", "person": ""},
+        ])
+        with patch("assistant.main.brain", mock_brain):
+            result = await executor._exec_retrieve_memory({"query": "Vorlieben"})
+        assert result["success"] is True
+        assert "Lieblingsfarbe ist Blau" in result["message"]
+        assert "[preferences]" in result["message"]
+        assert "(Person: Max)" in result["message"]
+        assert "90%" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_empty_results(self):
+        executor = _make_executor()
+        mock_brain = _mock_brain()
+        mock_brain.semantic_memory = MagicMock()
+        mock_brain.semantic_memory.search_facts = AsyncMock(return_value=[])
+        with patch("assistant.main.brain", mock_brain):
+            result = await executor._exec_retrieve_memory({"query": "unbekannt"})
+        assert result["success"] is True
+        assert "Keine Fakten" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_missing_query_returns_false(self):
+        executor = _make_executor()
+        result = await executor._exec_retrieve_memory({})
+        assert result["success"] is False
+        assert "Suchbegriff" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_empty_query_returns_false(self):
+        executor = _make_executor()
+        result = await executor._exec_retrieve_memory({"query": ""})
+        assert result["success"] is False
+        assert "Suchbegriff" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_with_person_filter(self):
+        executor = _make_executor()
+        mock_brain = _mock_brain()
+        mock_brain.semantic_memory = MagicMock()
+        mock_brain.semantic_memory.search_facts = AsyncMock(return_value=[
+            {"content": "Trinkt gerne Kaffee", "confidence": 0.95, "category": "preferences", "person": "Lisa"},
+        ])
+        with patch("assistant.main.brain", mock_brain):
+            result = await executor._exec_retrieve_memory({"query": "Kaffee", "person": "Lisa"})
+        assert result["success"] is True
+        mock_brain.semantic_memory.search_facts.assert_awaited_once_with(
+            "Kaffee", limit=5, person="Lisa",
+        )
+
+    @pytest.mark.asyncio
+    async def test_error_returns_false(self):
+        executor = _make_executor()
+        mock_brain = _mock_brain()
+        mock_brain.semantic_memory = MagicMock()
+        mock_brain.semantic_memory.search_facts = AsyncMock(side_effect=RuntimeError("ChromaDB down"))
+        with patch("assistant.main.brain", mock_brain):
+            result = await executor._exec_retrieve_memory({"query": "test"})
+        assert result["success"] is False
+        assert "fehlgeschlagen" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_no_semantic_memory_returns_false(self):
+        executor = _make_executor()
+        mock_brain = _mock_brain()
+        if hasattr(mock_brain, "semantic_memory"):
+            del mock_brain.semantic_memory
+        with patch("assistant.main.brain", mock_brain):
+            result = await executor._exec_retrieve_memory({"query": "test"})
+        assert result["success"] is False
+        assert "nicht verfuegbar" in result["message"]
+
+
+@_needs_main
+class TestExecRetrieveHistory:
+    """Tests fuer _exec_retrieve_history()."""
+
+    @pytest.mark.asyncio
+    async def test_returns_conversations(self):
+        executor = _make_executor()
+        mock_brain = _mock_brain()
+        mock_brain.memory.get_recent_conversations = AsyncMock(return_value=[
+            {"role": "user", "content": "Mach das Licht an", "timestamp": "2026-03-20T14:30:00"},
+            {"role": "assistant", "content": "Licht ist an.", "timestamp": "2026-03-20T14:30:05"},
+        ])
+        with patch("assistant.main.brain", mock_brain):
+            result = await executor._exec_retrieve_history({})
+        assert result["success"] is True
+        assert "2 Interaktionen" in result["message"]
+        assert "[14:30]" in result["message"]
+        assert "Mach das Licht an" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_empty_history(self):
+        executor = _make_executor()
+        mock_brain = _mock_brain()
+        mock_brain.memory.get_recent_conversations = AsyncMock(return_value=[])
+        with patch("assistant.main.brain", mock_brain):
+            result = await executor._exec_retrieve_history({})
+        assert result["success"] is True
+        assert "Keine aktuellen" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_limit_capped_at_20(self):
+        executor = _make_executor()
+        mock_brain = _mock_brain()
+        mock_brain.memory.get_recent_conversations = AsyncMock(return_value=[])
+        with patch("assistant.main.brain", mock_brain):
+            await executor._exec_retrieve_history({"limit": 50})
+        mock_brain.memory.get_recent_conversations.assert_awaited_once_with(limit=20)
+
+    @pytest.mark.asyncio
+    async def test_default_limit_is_5(self):
+        executor = _make_executor()
+        mock_brain = _mock_brain()
+        mock_brain.memory.get_recent_conversations = AsyncMock(return_value=[])
+        with patch("assistant.main.brain", mock_brain):
+            await executor._exec_retrieve_history({})
+        mock_brain.memory.get_recent_conversations.assert_awaited_once_with(limit=5)
+
+    @pytest.mark.asyncio
+    async def test_error_returns_false(self):
+        executor = _make_executor()
+        mock_brain = _mock_brain()
+        mock_brain.memory.get_recent_conversations = AsyncMock(side_effect=Exception("Redis down"))
+        with patch("assistant.main.brain", mock_brain):
+            result = await executor._exec_retrieve_history({})
+        assert result["success"] is False
+        assert "fehlgeschlagen" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_content_truncated_at_200(self):
+        executor = _make_executor()
+        mock_brain = _mock_brain()
+        long_content = "A" * 300
+        mock_brain.memory.get_recent_conversations = AsyncMock(return_value=[
+            {"role": "user", "content": long_content, "timestamp": "2026-03-20T10:00:00"},
+        ])
+        with patch("assistant.main.brain", mock_brain):
+            result = await executor._exec_retrieve_history({})
+        assert result["success"] is True
+        # Content should be truncated to 200 chars in the output
+        assert "A" * 201 not in result["message"]
+
+
+@_needs_main
+class TestExecVerifyDeviceState:
+    """Tests fuer _exec_verify_device_state()."""
+
+    @pytest.mark.asyncio
+    async def test_light_with_brightness(self):
+        executor = _make_executor()
+        executor.ha.get_state = AsyncMock(return_value={
+            "state": "on",
+            "attributes": {"brightness": 128},
+        })
+        result = await executor._exec_verify_device_state({"entity_id": "light.wohnzimmer"})
+        assert result["success"] is True
+        assert result["state"] == "on"
+        assert "Helligkeit: 50%" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_climate_with_temperatures(self):
+        executor = _make_executor()
+        executor.ha.get_state = AsyncMock(return_value={
+            "state": "heat",
+            "attributes": {"temperature": 22, "current_temperature": 20.5},
+        })
+        result = await executor._exec_verify_device_state({"entity_id": "climate.buero"})
+        assert result["success"] is True
+        assert "Zieltemperatur: 22°C" in result["message"]
+        assert "Aktuelle Temperatur: 20.5°C" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_cover_with_position(self):
+        executor = _make_executor()
+        executor.ha.get_state = AsyncMock(return_value={
+            "state": "open",
+            "attributes": {"current_position": 75},
+        })
+        result = await executor._exec_verify_device_state({"entity_id": "cover.rolladen"})
+        assert result["success"] is True
+        assert "Position: 75%" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_missing_entity_id_returns_false(self):
+        executor = _make_executor()
+        result = await executor._exec_verify_device_state({})
+        assert result["success"] is False
+        assert "entity_id" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_entity_not_found(self):
+        executor = _make_executor()
+        executor.ha.get_state = AsyncMock(return_value=None)
+        result = await executor._exec_verify_device_state({"entity_id": "light.gibts_nicht"})
+        assert result["success"] is False
+        assert "nicht gefunden" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_expected_state_verified(self):
+        executor = _make_executor()
+        executor.ha.get_state = AsyncMock(return_value={
+            "state": "on",
+            "attributes": {},
+        })
+        result = await executor._exec_verify_device_state({
+            "entity_id": "light.flur", "expected_state": "on",
+        })
+        assert result["success"] is True
+        assert result["verified"] is True
+
+    @pytest.mark.asyncio
+    async def test_expected_state_mismatch(self):
+        executor = _make_executor()
+        executor.ha.get_state = AsyncMock(return_value={
+            "state": "off",
+            "attributes": {},
+        })
+        result = await executor._exec_verify_device_state({
+            "entity_id": "light.flur", "expected_state": "on",
+        })
+        assert result["success"] is True
+        assert result["verified"] is False
+        assert "tatsaechlich: off" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_error_returns_false(self):
+        executor = _make_executor()
+        executor.ha.get_state = AsyncMock(side_effect=ConnectionError("HA offline"))
+        result = await executor._exec_verify_device_state({"entity_id": "light.test"})
+        assert result["success"] is False
+        assert "fehlgeschlagen" in result["message"]
+
 
 # ---------------------------------------------------------------
 # Stream-Callback in OllamaClient.stream_chat()

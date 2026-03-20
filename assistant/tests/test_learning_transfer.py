@@ -670,3 +670,455 @@ class TestConstants:
         assert "nassbereich" in DEFAULT_ROOM_GROUPS
         assert "arbeitsbereich" in DEFAULT_ROOM_GROUPS
         assert "aussen" in DEFAULT_ROOM_GROUPS
+
+
+# ── transfer_with_person_filter ────────────────────────────────────
+
+
+class TestTransferWithPersonFilter:
+    """Tests fuer transfer_with_person_filter."""
+
+    @pytest.mark.asyncio
+    async def test_transfers_matching_person(self, lt):
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 200, "count": 5, "person": "Alice", "last_seen": 100},
+                {"brightness": 100, "count": 4, "person": "Bob", "last_seen": 90},
+            ],
+        }
+        result = await lt.transfer_with_person_filter("wohnzimmer", "esszimmer", person="Alice")
+        assert len(result["transferred"]) == 1
+        assert result["transferred"][0]["attributes"]["brightness"] == 200
+        assert result["transferred"][0]["person"] == "Alice"
+        assert result["skipped"] == 1
+
+    @pytest.mark.asyncio
+    async def test_transfers_all_when_no_person_filter(self, lt):
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 200, "count": 5, "person": "Alice", "last_seen": 100},
+                {"brightness": 100, "count": 4, "person": "Bob", "last_seen": 90},
+            ],
+        }
+        result = await lt.transfer_with_person_filter("wohnzimmer", "esszimmer", person="")
+        assert len(result["transferred"]) == 2
+        assert result["skipped"] == 0
+
+    @pytest.mark.asyncio
+    async def test_skips_below_min_observations(self, lt):
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 200, "count": 2, "person": "Alice", "last_seen": 100},
+            ],
+        }
+        result = await lt.transfer_with_person_filter("wohnzimmer", "esszimmer", person="Alice")
+        assert len(result["transferred"]) == 0
+        assert result["skipped"] == 0
+
+    @pytest.mark.asyncio
+    async def test_case_insensitive_person_match(self, lt):
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 200, "count": 5, "person": "alice", "last_seen": 100},
+            ],
+        }
+        result = await lt.transfer_with_person_filter("wohnzimmer", "esszimmer", person="Alice")
+        assert len(result["transferred"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_preferences_for_source_room(self, lt):
+        lt._preferences = {}
+        result = await lt.transfer_with_person_filter("wohnzimmer", "esszimmer", person="Alice")
+        assert len(result["transferred"]) == 0
+        assert result["skipped"] == 0
+
+    @pytest.mark.asyncio
+    async def test_multiple_domains(self, lt):
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 200, "count": 5, "person": "Alice", "last_seen": 100},
+            ],
+            "wohnzimmer:climate": [
+                {"temperature": 22, "count": 4, "person": "Alice", "last_seen": 100},
+            ],
+        }
+        result = await lt.transfer_with_person_filter("wohnzimmer", "esszimmer", person="Alice")
+        assert len(result["transferred"]) == 2
+        domains = {t["domain"] for t in result["transferred"]}
+        assert domains == {"light", "climate"}
+
+    @pytest.mark.asyncio
+    async def test_only_transferable_attrs_included(self, lt):
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 200, "count": 5, "person": "Alice", "last_seen": 100, "extra": "data"},
+            ],
+        }
+        result = await lt.transfer_with_person_filter("wohnzimmer", "esszimmer", person="Alice")
+        assert len(result["transferred"]) == 1
+        attrs = result["transferred"][0]["attributes"]
+        assert "brightness" in attrs
+        assert "count" not in attrs
+        assert "extra" not in attrs
+
+    @pytest.mark.asyncio
+    async def test_pref_no_person_transfers_when_filter_set(self, lt):
+        """Pref with empty person is NOT skipped when person filter is set."""
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 200, "count": 5, "person": "", "last_seen": 100},
+            ],
+        }
+        result = await lt.transfer_with_person_filter("wohnzimmer", "esszimmer", person="Alice")
+        # person="" and pref_person="" -> pref_person is falsy, so condition `pref_person and ...` is False -> not skipped
+        assert len(result["transferred"]) == 1
+
+
+# ── transfer_with_temporal_filter ──────────────────────────────────
+
+
+class TestTransferWithTemporalFilter:
+    """Tests fuer transfer_with_temporal_filter."""
+
+    @pytest.mark.asyncio
+    async def test_morning_block(self, lt):
+        """Hour 8 is morning block (5-11)."""
+        # Set last_seen to a morning timestamp (8:00 local time)
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("Europe/Berlin")
+        morning_ts = _dt(2025, 6, 15, 8, 0, 0, tzinfo=tz).timestamp()
+
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 200, "count": 5, "last_seen": morning_ts},
+            ],
+        }
+        result = await lt.transfer_with_temporal_filter("wohnzimmer", "esszimmer", hour=8)
+        assert result["time_block"] == "morning"
+        assert len(result["transferred"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_afternoon_block(self, lt):
+        """Hour 14 is afternoon block (12-17)."""
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("Europe/Berlin")
+        afternoon_ts = _dt(2025, 6, 15, 14, 0, 0, tzinfo=tz).timestamp()
+
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 150, "count": 4, "last_seen": afternoon_ts},
+            ],
+        }
+        result = await lt.transfer_with_temporal_filter("wohnzimmer", "esszimmer", hour=15)
+        assert result["time_block"] == "afternoon"
+        assert len(result["transferred"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_evening_block(self, lt):
+        """Hour 20 is evening block (18-4)."""
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("Europe/Berlin")
+        evening_ts = _dt(2025, 6, 15, 21, 0, 0, tzinfo=tz).timestamp()
+
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 80, "count": 3, "last_seen": evening_ts},
+            ],
+        }
+        result = await lt.transfer_with_temporal_filter("wohnzimmer", "esszimmer", hour=20)
+        assert result["time_block"] == "evening"
+        assert len(result["transferred"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_evening_block_late_night(self, lt):
+        """Hour 2 is also evening block (18-4)."""
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("Europe/Berlin")
+        late_night_ts = _dt(2025, 6, 15, 2, 0, 0, tzinfo=tz).timestamp()
+
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 50, "count": 3, "last_seen": late_night_ts},
+            ],
+        }
+        result = await lt.transfer_with_temporal_filter("wohnzimmer", "esszimmer", hour=3)
+        assert result["time_block"] == "evening"
+        assert len(result["transferred"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_mismatched_time_block_filtered(self, lt):
+        """Pref from morning not transferred when asking for evening."""
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("Europe/Berlin")
+        morning_ts = _dt(2025, 6, 15, 9, 0, 0, tzinfo=tz).timestamp()
+
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 200, "count": 5, "last_seen": morning_ts},
+            ],
+        }
+        result = await lt.transfer_with_temporal_filter("wohnzimmer", "esszimmer", hour=21)
+        assert result["time_block"] == "evening"
+        assert len(result["transferred"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_skips_below_min_observations(self, lt):
+        """Prefs below min_observations threshold are not transferred."""
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("Europe/Berlin")
+        morning_ts = _dt(2025, 6, 15, 8, 0, 0, tzinfo=tz).timestamp()
+
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 200, "count": 2, "last_seen": morning_ts},
+            ],
+        }
+        result = await lt.transfer_with_temporal_filter("wohnzimmer", "esszimmer", hour=8)
+        assert len(result["transferred"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_skips_zero_last_seen(self, lt):
+        """Prefs with last_seen=0 are skipped."""
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 200, "count": 5, "last_seen": 0},
+            ],
+        }
+        result = await lt.transfer_with_temporal_filter("wohnzimmer", "esszimmer", hour=10)
+        assert len(result["transferred"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_skips_negative_last_seen(self, lt):
+        """Prefs with last_seen<0 are skipped."""
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 200, "count": 5, "last_seen": -1},
+            ],
+        }
+        result = await lt.transfer_with_temporal_filter("wohnzimmer", "esszimmer", hour=10)
+        assert len(result["transferred"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_auto_hour_uses_current_time(self, lt):
+        """hour=-1 uses the current local hour."""
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("Europe/Berlin")
+        now = _dt.now(tz=tz)
+        # Create pref matching current time block
+        ts = now.timestamp()
+
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 200, "count": 5, "last_seen": ts},
+            ],
+        }
+        result = await lt.transfer_with_temporal_filter("wohnzimmer", "esszimmer", hour=-1)
+        assert result["time_block"] in ("morning", "afternoon", "evening")
+        # Since pref was created 'now', same time block -> should transfer
+        assert len(result["transferred"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_multiple_domains_filtered(self, lt):
+        """Multiple domains, only matching time block transferred."""
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("Europe/Berlin")
+        morning_ts = _dt(2025, 6, 15, 9, 0, 0, tzinfo=tz).timestamp()
+        evening_ts = _dt(2025, 6, 15, 22, 0, 0, tzinfo=tz).timestamp()
+
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 200, "count": 5, "last_seen": morning_ts},
+            ],
+            "wohnzimmer:climate": [
+                {"temperature": 22, "count": 4, "last_seen": evening_ts},
+            ],
+        }
+        result = await lt.transfer_with_temporal_filter("wohnzimmer", "esszimmer", hour=9)
+        assert result["time_block"] == "morning"
+        assert len(result["transferred"]) == 1
+        assert result["transferred"][0]["domain"] == "light"
+
+    @pytest.mark.asyncio
+    async def test_no_preferences_returns_empty(self, lt):
+        lt._preferences = {}
+        result = await lt.transfer_with_temporal_filter("wohnzimmer", "esszimmer", hour=10)
+        assert result["transferred"] == []
+
+    @pytest.mark.asyncio
+    async def test_only_transferable_attrs_included(self, lt):
+        """Non-transferable attributes are excluded from the result."""
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("Europe/Berlin")
+        morning_ts = _dt(2025, 6, 15, 9, 0, 0, tzinfo=tz).timestamp()
+
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {"brightness": 200, "color_temp": 400, "count": 5, "last_seen": morning_ts, "person": "Alice"},
+            ],
+        }
+        result = await lt.transfer_with_temporal_filter("wohnzimmer", "esszimmer", hour=9)
+        assert len(result["transferred"]) == 1
+        attrs = result["transferred"][0]["attributes"]
+        assert "brightness" in attrs
+        assert "color_temp" in attrs
+        assert "count" not in attrs
+        assert "person" not in attrs
+
+
+# ── learn_from_failure ─────────────────────────────────────────────
+
+
+class TestLearnFromFailure:
+    """Tests fuer learn_from_failure."""
+
+    @pytest.mark.asyncio
+    async def test_records_failure(self, lt):
+        await lt.learn_from_failure("wohnzimmer", "light", "brightness=255", person="Alice")
+        key = "wohnzimmer:light:failures"
+        assert key in lt._preferences
+        assert len(lt._preferences[key]) == 1
+        entry = lt._preferences[key][0]
+        assert entry["action"] == "brightness=255"
+        assert entry["person"] == "Alice"
+        assert entry["count"] == 1
+        assert "timestamp" in entry
+
+    @pytest.mark.asyncio
+    async def test_records_failure_saves_to_redis(self, lt):
+        await lt.learn_from_failure("wohnzimmer", "light", "brightness=255")
+        lt.redis.set.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_disabled_noop(self, lt_disabled):
+        await lt_disabled.learn_from_failure("wohnzimmer", "light", "brightness=255")
+        assert lt_disabled._preferences == {}
+
+    @pytest.mark.asyncio
+    async def test_max_10_failure_entries(self, lt):
+        for i in range(15):
+            await lt.learn_from_failure("wohnzimmer", "light", f"brightness={i}")
+        key = "wohnzimmer:light:failures"
+        assert len(lt._preferences[key]) == 10
+        # Should keep the last 10
+        assert lt._preferences[key][0]["action"] == "brightness=5"
+        assert lt._preferences[key][-1]["action"] == "brightness=14"
+
+    @pytest.mark.asyncio
+    async def test_lowercases_room(self, lt):
+        await lt.learn_from_failure("Wohnzimmer", "light", "brightness=255")
+        assert "wohnzimmer:light:failures" in lt._preferences
+
+    @pytest.mark.asyncio
+    async def test_multiple_rooms_independent(self, lt):
+        await lt.learn_from_failure("wohnzimmer", "light", "brightness=255")
+        await lt.learn_from_failure("kueche", "light", "brightness=100")
+        assert "wohnzimmer:light:failures" in lt._preferences
+        assert "kueche:light:failures" in lt._preferences
+        assert len(lt._preferences["wohnzimmer:light:failures"]) == 1
+        assert len(lt._preferences["kueche:light:failures"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_empty_person(self, lt):
+        await lt.learn_from_failure("wohnzimmer", "light", "brightness=255", person="")
+        entry = lt._preferences["wohnzimmer:light:failures"][0]
+        assert entry["person"] == ""
+
+
+# ── get_transfer_suggestion edge cases ─────────────────────────────
+
+
+class TestGetTransferSuggestionEdgeCases:
+
+    def test_empty_pending_transfers(self, lt):
+        result = lt.get_transfer_suggestion("esszimmer", "light")
+        assert result is None
+
+    def test_multiple_transfers_returns_first_match(self, lt):
+        lt._pending_transfers.append({
+            "source_room": "wohnzimmer",
+            "target_room": "esszimmer",
+            "domain": "light",
+            "attributes": {"brightness": 100},
+        })
+        lt._pending_transfers.append({
+            "source_room": "kueche",
+            "target_room": "esszimmer",
+            "domain": "light",
+            "attributes": {"brightness": 200},
+        })
+        result = lt.get_transfer_suggestion("esszimmer", "light")
+        assert result["attributes"]["brightness"] == 100
+
+
+# ── get_context_hint edge cases ────────────────────────────────────
+
+
+class TestGetContextHintEdgeCases:
+
+    def test_hint_with_multiple_attributes(self, lt):
+        lt._pending_transfers.append({
+            "source_room": "wohnzimmer",
+            "target_room": "esszimmer",
+            "domain": "light",
+            "attributes": {"brightness": 200, "color_temp": 400},
+        })
+        hint = lt.get_context_hint()
+        assert "brightness=200" in hint
+        assert "color_temp=400" in hint
+
+    def test_hint_room_filter_no_match(self, lt):
+        lt._pending_transfers.append({
+            "source_room": "wohnzimmer",
+            "target_room": "esszimmer",
+            "domain": "light",
+            "attributes": {"brightness": 200},
+        })
+        hint = lt.get_context_hint("kueche")
+        assert hint == ""
+
+
+# ── get_preferences_summary edge cases ─────────────────────────────
+
+
+class TestGetPreferencesSummaryEdgeCases:
+
+    def test_summary_excludes_metadata_keys(self, lt):
+        """Verify that count, last_seen, person are excluded from top_preference."""
+        lt._preferences = {
+            "wohnzimmer:light": [
+                {
+                    "brightness": 200,
+                    "color_temp": 400,
+                    "color_mode": "color_temp",
+                    "count": 10,
+                    "last_seen": 999,
+                    "person": "Alice",
+                },
+            ],
+        }
+        summary = lt.get_preferences_summary()
+        top_pref = summary["wohnzimmer:light"]["top_preference"]
+        assert "brightness" in top_pref
+        assert "color_temp" in top_pref
+        assert "color_mode" in top_pref
+        assert "count" not in top_pref
+        assert "last_seen" not in top_pref
+        assert "person" not in top_pref

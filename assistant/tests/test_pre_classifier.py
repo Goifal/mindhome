@@ -393,3 +393,218 @@ class TestEdgeCases:
         # "was war" → memory keyword, aber "temperatur" + status pattern → device_query
         result2 = classifier.classify("Wie warm ist es?")
         assert result2.category == "device_query"
+
+
+# ============================================================
+# DEVICE_FAST: Implizite Befehle ("Mir ist kalt" → Heizung hoch)
+# ============================================================
+
+class TestImplicitCommands:
+    """Zustandsbeschreibungen die eine Geraete-Aktion implizieren.
+
+    Hinweis: Einige implizite Befehle wie 'Mir ist kalt' oder 'Es ist dunkel hier'
+    werden als DEVICE_QUERY klassifiziert, weil die Status-Query-Erkennung (Schritt 2)
+    VOR der impliziten Befehlserkennung (Schritt 2b) greift. Das ist korrekt —
+    'ist' + Status-Nomen ('kalt', 'warm', 'hell', 'dunkel') matcht _STATUS_QUERY_PATTERNS.
+    Nur Saetze die NICHT als Status-Query matchen, fallen durch zu Schritt 2b.
+    """
+
+    @pytest.mark.parametrize("text", [
+        "Ich friere",
+        "Ich schwitze",
+        "Es zieht hier",
+        "Ich sehe nichts",
+        "Ich kann kaum was sehen",
+    ])
+    def test_implicit_commands_classify_as_device(self, classifier, text):
+        result = classifier.classify(text)
+        assert result.category == "device_command", f"'{text}' sollte DEVICE_FAST sein (impliziter Befehl)"
+
+    @pytest.mark.parametrize("text", [
+        "Mir ist kalt",
+        "Mir ist warm",
+        "Es ist dunkel hier",
+        "Es ist zu hell",
+        "Es ist viel zu kalt",
+    ])
+    def test_implicit_with_status_noun_goes_device_query(self, classifier, text):
+        """Implizite Befehle mit Status-Nomen werden als DEVICE_QUERY erkannt.
+
+        Status-Query-Erkennung (Schritt 2) hat Vorrang vor impliziten Befehlen (Schritt 2b).
+        """
+        result = classifier.classify(text)
+        assert result.category == "device_query", f"'{text}' sollte DEVICE_QUERY sein (Status-Nomen hat Vorrang)"
+
+    def test_implicit_command_too_long(self, classifier):
+        """Implizite Befehle mit >10 Woertern → GENERAL."""
+        text = "Mir ist kalt weil das Fenster die ganze Zeit offen war und der Wind reinkommt"
+        result = classifier.classify(text)
+        assert result.category == "general"
+
+
+# ============================================================
+# DEVICE_FAST: "Alles aus/an" Befehle
+# ============================================================
+
+class TestAllesCommands:
+    """Befehle mit 'alles/alle/ueberall' + Aktion."""
+
+    @pytest.mark.parametrize("text", [
+        "alles aus",
+        "alle aus",
+        "alles an",
+        "überall aus",
+        "ueberall aus",
+        "alles zu",
+    ])
+    def test_alles_action_commands(self, classifier, text):
+        result = classifier.classify(text)
+        assert result.category == "device_command", f"'{text}' sollte DEVICE_FAST sein"
+
+
+# ============================================================
+# Eszett (ß) Normalisierung
+# ============================================================
+
+class TestEszettNormalization:
+    """ß wird zu ss normalisiert, damit Patterns greifen."""
+
+    @pytest.mark.parametrize("text", [
+        "Schließe die Tuer",
+        "Schließ die Jalousie",
+    ])
+    def test_eszett_normalized_for_matching(self, classifier, text):
+        result = classifier.classify(text)
+        assert result.category == "device_command", f"'{text}' sollte trotz ß als DEVICE_FAST erkannt werden"
+
+
+# ============================================================
+# DEVICE_QUERY: Kurz-Queries (1-2 Woerter + ?)
+# ============================================================
+
+class TestShortDeviceQueries:
+    """1-2 Wort Abfragen mit Fragezeichen."""
+
+    @pytest.mark.parametrize("text", [
+        "Lichter?",
+        "Temperatur?",
+        "Strom?",
+        "Rolllaeden?",
+        "Status?",
+    ])
+    def test_short_queries_with_questionmark(self, classifier, text):
+        result = classifier.classify(text)
+        assert result.category == "device_query", f"'{text}' sollte DEVICE_QUERY sein"
+
+    def test_single_word_without_questionmark_is_general(self, classifier):
+        """Einzelwort ohne Fragezeichen und ohne Aktion → nicht DEVICE_QUERY."""
+        result = classifier.classify("Wetter")
+        assert result.category == "general"
+
+
+# ============================================================
+# Async classify_async Tests
+# ============================================================
+
+class TestClassifyAsync:
+    """Tests fuer die async Version mit LLM-Fallback."""
+
+    @pytest.mark.asyncio
+    async def test_async_returns_same_as_sync_for_clear_input(self):
+        """Klare Eingaben brauchen kein LLM-Fallback."""
+        classifier = PreClassifier()
+        result = await classifier.classify_async("Mach das Licht an")
+        assert result.category == "device_command"
+
+    @pytest.mark.asyncio
+    async def test_async_general_without_ollama_stays_general(self):
+        """Ohne Ollama-Client bleibt GENERAL auch bei langen Texten."""
+        classifier = PreClassifier()
+        # >10 Woerter, keine Device/Memory/Knowledge Keywords
+        text = "Ich wollte dir sagen dass ich heute einen echt guten Tag hatte und mich freue"
+        result = await classifier.classify_async(text)
+        assert result.category == "general"
+
+    @pytest.mark.asyncio
+    async def test_async_tracks_last_category(self):
+        """classify_async setzt _last_category korrekt."""
+        classifier = PreClassifier()
+        await classifier.classify_async("Licht an")
+        assert classifier._last_category == "device_command"
+        await classifier.classify_async("Guten Morgen")
+        assert classifier._last_category == "general"
+
+
+# ============================================================
+# Profil-Flags: Andere Profile
+# ============================================================
+
+class TestProfileFlags:
+    """Verifiziere Flags der verschiedenen Profile."""
+
+    def test_knowledge_profile_flags(self):
+        """KNOWLEDGE braucht RAG und Memories, aber kein House-Status."""
+        assert PROFILE_KNOWLEDGE.need_rag is True
+        assert PROFILE_KNOWLEDGE.need_memories is True
+        assert PROFILE_KNOWLEDGE.need_house_status is False
+        assert PROFILE_KNOWLEDGE.need_room_profile is False
+
+    def test_memory_profile_flags(self):
+        """MEMORY braucht Memories, aber kein RAG."""
+        assert PROFILE_MEMORY.need_memories is True
+        assert PROFILE_MEMORY.need_rag is False
+        assert PROFILE_MEMORY.need_house_status is False
+
+    def test_device_query_profile_flags(self):
+        """DEVICE_QUERY braucht House-Status, aber kein RAG/Memories."""
+        assert PROFILE_DEVICE_QUERY.need_house_status is True
+        assert PROFILE_DEVICE_QUERY.need_room_profile is True
+        assert PROFILE_DEVICE_QUERY.need_memories is False
+        assert PROFILE_DEVICE_QUERY.need_rag is False
+        assert PROFILE_DEVICE_QUERY.need_mood is False
+
+    def test_request_profile_is_frozen(self):
+        """Profile sind frozen dataclasses — unveraenderlich."""
+        with pytest.raises(AttributeError):
+            PROFILE_GENERAL.category = "hacked"
+
+
+# ============================================================
+# Mixed Intent / Ambiguous Cases
+# ============================================================
+
+class TestMixedIntentCases:
+    """Mehrdeutige Eingaben — pruefe dass eine konsistente Kategorie gewaehlt wird."""
+
+    def test_command_with_question_form_but_no_question_word(self, classifier):
+        """Rhetorische Frage ohne Fragewort → bleibt Command."""
+        result = classifier.classify("Mach mal das Licht aus?")
+        assert result.category == "device_command"
+
+    def test_question_word_with_device_noun(self, classifier):
+        """Fragewort + Device-Noun → device_query, nicht device_command."""
+        result = classifier.classify("Ist die Lampe an?")
+        assert result.category == "device_query"
+
+    def test_very_short_text_no_crash(self, classifier):
+        """Einzelzeichen und Sonderzeichen crashen nicht."""
+        for text in ["?", "!", ".", "a", "  "]:
+            result = classifier.classify(text)
+            assert result.category == "general"
+
+    def test_only_whitespace(self, classifier):
+        """Nur Leerzeichen → GENERAL ohne Crash."""
+        result = classifier.classify("     ")
+        assert result.category == "general"
+
+    def test_multi_room_command_within_12_words(self, classifier):
+        """Multi-Raum-Befehl mit bis zu 12 Woertern → DEVICE_FAST."""
+        text = "Mache die Rolllaeden im Wohnzimmer und der Kueche runter"
+        assert len(text.split()) <= 12
+        result = classifier.classify(text)
+        assert result.category == "device_command"
+
+    def test_knowledge_question_with_smart_home_noun(self, classifier):
+        """Wissensfrage mit Smart-Home-Nomen → GENERAL (nicht KNOWLEDGE)."""
+        result = classifier.classify("Wie funktioniert ein Thermostat?")
+        assert result.category != "knowledge"

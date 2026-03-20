@@ -1,8 +1,12 @@
 """
-Tests fuer RepairPlanner — Projekt-CRUD, Session, Navigation, Inventar.
+Tests fuer RepairPlanner — Projekt-CRUD, Session, Navigation, Inventar,
+Diagnose, Simulation, Troubleshooting, 3D-Drucker, Roboterarm, Timer,
+Journal, Snippets, Scanner, Geraete-Management und mehr.
 """
 
+import asyncio
 import json
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -13,6 +17,10 @@ from assistant.repair_planner import (
     RepairStep,
     TEMPLATES,
     REPAIR_KEYWORDS,
+    ACTIVATION_ON,
+    ACTIVATION_OFF,
+    NAV_NEXT,
+    NAV_PREV,
 )
 
 

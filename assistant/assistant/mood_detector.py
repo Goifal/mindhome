@@ -645,6 +645,13 @@ class MoodDetector:
         self._interaction_lengths.append(text_len)
         self._last_texts.append(text_lower)
 
+        # Ironie-Erkennung: Positive Keywords nach negativem Event = ironisch
+        if "positive_language" in signals and self._detect_irony(text_lower, person):
+            signals.append("irony_detected")
+            # Ironie ist kein echtes positives Signal — Stress beibehalten
+            self._positive_count = max(0, self._positive_count - 1)
+            self._stress_level = min(1.0, self._stress_level + 0.05)
+
         # N1: LLM-basierte Sentiment-Analyse (ergaenzt Keywords)
         llm_result = await self._llm_analyze_sentiment(text)
         if llm_result:
@@ -785,6 +792,60 @@ class MoodDetector:
             prev_words = set(prev.split())
             if len(words) > 1 and len(words & prev_words) / max(len(words), 1) > 0.7:
                 return True
+        return False
+
+    def _detect_irony(self, text_lower: str, person: str) -> bool:
+        """Erkennt ironische/sarkastische Aussagen.
+
+        Heuristik: Positive Keywords in Kombination mit negativem Kontext
+        deuten auf Ironie hin. Prueft:
+        1. Kuerzliche negative Interaktionen (letzte 3 Sentiments)
+        2. Widerspruch zwischen positivem Text und negativer History
+        3. Typische Ironie-Marker ("ja klar", "super toll", Uebertreibungen)
+        """
+        # 1. Direkte Ironie-Marker (hochpraezise)
+        irony_markers = [
+            "ja klar", "na super", "na toll", "ach wirklich",
+            "wie schoen", "ganz toll", "super gemacht", "laeuft ja",
+            "laeuft bei dir", "wie immer perfekt", "mega hilfreich",
+            "grossartig", "fantastisch wie immer", "ganz grosses kino",
+            "herzlichen glueckwunsch", "bravo", "oh wie schoen",
+            "was fuer eine ueberraschung", "wer haette das gedacht",
+        ]
+        for marker in irony_markers:
+            if marker in text_lower:
+                # Nur ironisch wenn kuerzlich negative Sentiments
+                recent_neg = sum(
+                    1 for s in list(self._interaction_sentiments)[-3:]
+                    if s in ("negative", "impatient")
+                )
+                if recent_neg >= 1:
+                    logger.debug("Ironie erkannt via Marker '%s' (person=%s)", marker, person)
+                    return True
+
+        # 2. Uebertreibung + negativer Kontext
+        exaggeration_words = {"super", "mega", "extrem", "total", "absolut", "voll"}
+        positive_words = {"gut", "toll", "geil", "nice", "perfekt", "klasse"}
+        words = set(text_lower.split())
+        has_exaggeration = bool(words & exaggeration_words)
+        has_positive = bool(words & positive_words)
+
+        if has_exaggeration and has_positive:
+            recent_neg = sum(
+                1 for s in list(self._interaction_sentiments)[-3:]
+                if s in ("negative", "impatient")
+            )
+            if recent_neg >= 2:
+                logger.debug("Ironie erkannt via Uebertreibung (person=%s)", person)
+                return True
+
+        # 3. Positive Antwort unmittelbar nach Frustration
+        if self._frustration_count >= 2 and self._stress_level > 0.4:
+            # Kurze positive Aussage bei hohem Stress = wahrscheinlich ironisch
+            if len(text_lower.split()) <= 5 and has_positive:
+                logger.debug("Ironie erkannt via Frustrations-Kontext (person=%s)", person)
+                return True
+
         return False
 
     @staticmethod

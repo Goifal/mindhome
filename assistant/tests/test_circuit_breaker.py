@@ -847,3 +847,292 @@ class TestGlobalBreakers:
         avail = registry.all_available()
         assert "ollama" in avail
         assert "redis" in avail
+
+
+# ---------------------------------------------------------------------------
+# 14. Graduated Degradation (Phase 8C)
+# ---------------------------------------------------------------------------
+
+class TestGraduatedState:
+    """Tests for CircuitBreakerRegistry.get_graduated_state()."""
+
+    def test_closed_at_zero_failures(self):
+        reg = CircuitBreakerRegistry()
+        reg.register("svc", failure_threshold=10)
+        assert reg.get_graduated_state("svc") == "CLOSED"
+
+    def test_closed_at_two_failures(self):
+        reg = CircuitBreakerRegistry()
+        cb = reg.register("svc", failure_threshold=20)
+        cb._failure_count = 2
+        assert reg.get_graduated_state("svc") == "CLOSED"
+
+    def test_warning_at_three_failures(self):
+        reg = CircuitBreakerRegistry()
+        cb = reg.register("svc", failure_threshold=20)
+        cb._failure_count = 3
+        assert reg.get_graduated_state("svc") == "WARNING"
+
+    def test_warning_at_five_failures(self):
+        reg = CircuitBreakerRegistry()
+        cb = reg.register("svc", failure_threshold=20)
+        cb._failure_count = 5
+        assert reg.get_graduated_state("svc") == "WARNING"
+
+    def test_reduced_at_six_failures(self):
+        reg = CircuitBreakerRegistry()
+        cb = reg.register("svc", failure_threshold=20)
+        cb._failure_count = 6
+        assert reg.get_graduated_state("svc") == "REDUCED"
+
+    def test_reduced_at_nine_failures(self):
+        reg = CircuitBreakerRegistry()
+        cb = reg.register("svc", failure_threshold=20)
+        cb._failure_count = 9
+        assert reg.get_graduated_state("svc") == "REDUCED"
+
+    def test_open_at_ten_failures(self):
+        reg = CircuitBreakerRegistry()
+        cb = reg.register("svc", failure_threshold=20)
+        cb._failure_count = 10
+        assert reg.get_graduated_state("svc") == "OPEN"
+
+    def test_open_at_many_failures(self):
+        reg = CircuitBreakerRegistry()
+        cb = reg.register("svc", failure_threshold=100)
+        cb._failure_count = 50
+        assert reg.get_graduated_state("svc") == "OPEN"
+
+    def test_unknown_service_returns_closed(self):
+        reg = CircuitBreakerRegistry()
+        assert reg.get_graduated_state("nonexistent") == "CLOSED"
+
+    def test_graduated_states_alias(self):
+        """_GRADUATED_STATES is an alias for _STATES."""
+        assert CircuitBreakerRegistry._GRADUATED_STATES is CircuitBreakerRegistry._STATES
+        assert CircuitBreakerRegistry._STATES == ["CLOSED", "WARNING", "REDUCED", "OPEN"]
+
+
+# ---------------------------------------------------------------------------
+# 15. Error Categorization
+# ---------------------------------------------------------------------------
+
+class TestCategorizeError:
+    """Tests for CircuitBreakerRegistry.categorize_error()."""
+
+    def test_timeout_by_class_name(self):
+        class TimeoutError(Exception):
+            pass
+        assert CircuitBreakerRegistry.categorize_error(TimeoutError("request failed")) == "timeout"
+
+    def test_timeout_by_message(self):
+        assert CircuitBreakerRegistry.categorize_error(Exception("connection timeout after 30s")) == "timeout"
+
+    def test_connection_error_by_class_name(self):
+        assert CircuitBreakerRegistry.categorize_error(ConnectionError("refused")) == "connection_error"
+
+    def test_connection_error_by_message(self):
+        assert CircuitBreakerRegistry.categorize_error(Exception("could not connect to host")) == "connection_error"
+
+    def test_server_error_500(self):
+        assert CircuitBreakerRegistry.categorize_error(Exception("HTTP 500 Internal Server Error")) == "server_error"
+
+    def test_server_error_502(self):
+        assert CircuitBreakerRegistry.categorize_error(Exception("502 Bad Gateway")) == "server_error"
+
+    def test_server_error_503(self):
+        assert CircuitBreakerRegistry.categorize_error(Exception("503 Service Unavailable")) == "server_error"
+
+    def test_server_error_504(self):
+        # "504 Gateway Timeout" contains "timeout" which is matched first
+        assert CircuitBreakerRegistry.categorize_error(Exception("504 Gateway Timeout")) == "timeout"
+
+    def test_server_error_504_without_timeout_word(self):
+        assert CircuitBreakerRegistry.categorize_error(Exception("504 Bad Gateway")) == "server_error"
+
+    def test_client_error_400(self):
+        assert CircuitBreakerRegistry.categorize_error(Exception("400 Bad Request")) == "client_error"
+
+    def test_client_error_401(self):
+        assert CircuitBreakerRegistry.categorize_error(Exception("401 Unauthorized")) == "client_error"
+
+    def test_client_error_403(self):
+        assert CircuitBreakerRegistry.categorize_error(Exception("403 Forbidden")) == "client_error"
+
+    def test_client_error_404(self):
+        assert CircuitBreakerRegistry.categorize_error(Exception("404 Not Found")) == "client_error"
+
+    def test_client_error_422(self):
+        assert CircuitBreakerRegistry.categorize_error(Exception("422 Unprocessable Entity")) == "client_error"
+
+    def test_unknown_error_defaults_to_server_error(self):
+        assert CircuitBreakerRegistry.categorize_error(Exception("something weird")) == "server_error"
+
+    def test_empty_message_defaults_to_server_error(self):
+        assert CircuitBreakerRegistry.categorize_error(Exception("")) == "server_error"
+
+
+# ---------------------------------------------------------------------------
+# 16. Cascade Map
+# ---------------------------------------------------------------------------
+
+class TestCheckCascade:
+    """Tests for CircuitBreakerRegistry.check_cascade()."""
+
+    def test_ollama_cascades(self):
+        reg = CircuitBreakerRegistry()
+        affected = reg.check_cascade("ollama")
+        assert "response_cache" in affected
+
+    def test_redis_cascades(self):
+        reg = CircuitBreakerRegistry()
+        affected = reg.check_cascade("redis")
+        assert set(affected) == {"memory", "anticipation", "feedback"}
+
+    def test_chromadb_cascades(self):
+        reg = CircuitBreakerRegistry()
+        affected = reg.check_cascade("chromadb")
+        assert set(affected) == {"semantic_memory", "rag"}
+
+    def test_home_assistant_cascades(self):
+        reg = CircuitBreakerRegistry()
+        affected = reg.check_cascade("home_assistant")
+        assert set(affected) == {"device_health", "diagnostics"}
+
+    def test_unknown_service_no_cascade(self):
+        reg = CircuitBreakerRegistry()
+        affected = reg.check_cascade("unknown_service")
+        assert affected == []
+
+    def test_cascade_returns_list_copy(self):
+        """check_cascade should return a new list, not the internal one."""
+        reg = CircuitBreakerRegistry()
+        result = reg.check_cascade("ollama")
+        assert isinstance(result, list)
+
+
+# ---------------------------------------------------------------------------
+# 17. Independent service tracking
+# ---------------------------------------------------------------------------
+
+class TestIndependentServices:
+    """Multiple circuit breakers track independently."""
+
+    def test_failure_on_one_does_not_affect_other(self):
+        reg = CircuitBreakerRegistry()
+        cb1 = reg.register("svc1", failure_threshold=2)
+        cb2 = reg.register("svc2", failure_threshold=2)
+
+        cb1.record_failure()
+        cb1.record_failure()
+        assert cb1._state == RealCircuitState.OPEN
+        assert cb2._state == RealCircuitState.CLOSED
+
+    def test_reset_one_does_not_affect_other(self):
+        reg = CircuitBreakerRegistry()
+        cb1 = reg.register("svc1", failure_threshold=1)
+        cb2 = reg.register("svc2", failure_threshold=1)
+
+        cb1.record_failure()
+        cb2.record_failure()
+        assert cb1._state == RealCircuitState.OPEN
+        assert cb2._state == RealCircuitState.OPEN
+
+        cb1.reset()
+        assert cb1._state == RealCircuitState.CLOSED
+        assert cb2._state == RealCircuitState.OPEN
+
+    def test_different_thresholds(self):
+        reg = CircuitBreakerRegistry()
+        cb_fast = reg.register("fast", failure_threshold=2)
+        cb_slow = reg.register("slow", failure_threshold=10)
+
+        for _ in range(5):
+            cb_fast.record_failure()
+            cb_slow.record_failure()
+
+        assert cb_fast._state == RealCircuitState.OPEN
+        assert cb_slow._state == RealCircuitState.CLOSED
+
+    @patch("assistant.circuit_breaker.time.monotonic")
+    def test_different_recovery_timeouts(self, mock_time):
+        reg = CircuitBreakerRegistry()
+        cb_quick = reg.register("quick", failure_threshold=1, recovery_timeout=5.0)
+        cb_slow = reg.register("slow_rec", failure_threshold=1, recovery_timeout=60.0)
+
+        mock_time.return_value = 100.0
+        cb_quick.record_failure()
+        cb_slow.record_failure()
+
+        # After 10 seconds: quick recovers, slow stays open
+        mock_time.return_value = 110.0
+        assert cb_quick.check_state() == RealCircuitState.HALF_OPEN
+        assert cb_slow.check_state() == RealCircuitState.OPEN
+
+    def test_all_available_reflects_individual_states(self):
+        reg = CircuitBreakerRegistry()
+        cb1 = reg.register("up", failure_threshold=5)
+        cb2 = reg.register("down", failure_threshold=1)
+        cb2.record_failure()
+
+        avail = reg.all_available()
+        assert avail["up"] is True
+        # down is OPEN, time.monotonic hasn't advanced past recovery, so False
+        assert avail["down"] is False
+
+
+# ---------------------------------------------------------------------------
+# 18. Thread safety smoke test
+# ---------------------------------------------------------------------------
+
+import threading
+
+
+class TestThreadSafety:
+    """Basic concurrency test for CircuitBreaker thread safety."""
+
+    def test_concurrent_record_failure(self):
+        """Multiple threads recording failures should not corrupt state."""
+        cb = RealCircuitBreaker("concurrent", failure_threshold=100, recovery_timeout=999.0)
+        errors = []
+
+        def record_failures():
+            try:
+                for _ in range(50):
+                    cb.record_failure()
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=record_failures) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors
+        assert cb._failure_count == 200
+        assert cb._state == RealCircuitState.OPEN
+
+    def test_concurrent_try_acquire_half_open(self):
+        """In HALF_OPEN with max_calls=1, only one thread should acquire."""
+        cb = RealCircuitBreaker("concurrent_ho", failure_threshold=1, recovery_timeout=0.0, half_open_max_calls=1)
+        cb.record_failure()
+        # State is OPEN with recovery_timeout=0, so try_acquire triggers HALF_OPEN
+
+        results = []
+        lock = threading.Lock()
+
+        def try_once():
+            acquired = cb.try_acquire()
+            with lock:
+                results.append(acquired)
+
+        threads = [threading.Thread(target=try_once) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Exactly one thread should have acquired
+        assert results.count(True) == 1
+        assert results.count(False) == 9

@@ -97,12 +97,29 @@ def _log_ollama_metrics(result: dict, model: str, endpoint: str = "chat") -> Non
     )
 
 
+def extract_thinking(text: str) -> tuple[str, str]:
+    """Extrahiert Think-Content und bereinigten Text aus LLM-Antworten.
+
+    Returns:
+        (cleaned_text, thinking_content) — thinking ist leer wenn keine Tags
+    """
+    if not text or "<think>" not in text:
+        return text, ""
+    thinking_parts: list[str] = []
+    for match in _THINK_PATTERN.finditer(text):
+        # Inhalt zwischen <think> und </think> extrahieren
+        block = match.group(0)
+        inner = block.removeprefix("<think>").removesuffix("</think>").strip()
+        if inner:
+            thinking_parts.append(inner)
+    cleaned = _THINK_PATTERN.sub("", text).strip()
+    return (cleaned if cleaned else text), "\n".join(thinking_parts)
+
+
 def strip_think_tags(text: str) -> str:
     """Entfernt <think>...</think> Bloecke aus LLM-Antworten."""
-    if not text or "<think>" not in text:
-        return text
-    cleaned = _THINK_PATTERN.sub("", text).strip()
-    return cleaned if cleaned else text
+    cleaned, _ = extract_thinking(text)
+    return cleaned
 
 
 def validate_notification(text: str) -> str:
@@ -478,14 +495,16 @@ class OllamaClient:
                 ollama_breaker.record_success()
                 _log_ollama_metrics(result, model, "chat")
 
-                # Think-Tags aus der Antwort strippen (Sicherheitsnetz)
+                # Think-Tags extrahieren und surfacen statt verwerfen
                 msg = result.get("message", {})
                 content = msg.get("content", "")
                 if content and "<think>" in content:
-                    cleaned = strip_think_tags(content)
-                    logger.debug("Think-Tags entfernt (%d → %d Zeichen)",
-                                 len(content), len(cleaned))
+                    cleaned, thinking = extract_thinking(content)
+                    logger.debug("Think-Tags extrahiert (%d → %d Zeichen, %d Thinking)",
+                                 len(content), len(cleaned), len(thinking))
                     msg["content"] = cleaned
+                    if thinking:
+                        result["thinking"] = thinking
 
                 return result
         except asyncio.TimeoutError:
@@ -558,6 +577,7 @@ class OllamaClient:
         # F-024: Buffer-basiertes Think-Tag-Filtering (verhindert Content-Verlust)
         _think_buffer = ""
         in_think_block = False
+        _thinking_parts: list[str] = []  # Think-Content sammeln statt verwerfen
 
         try:
             session = await self._get_session()
@@ -606,8 +626,10 @@ class OllamaClient:
                     # Wenn wir im Think-Block sind, weiter buffern bis </think>
                     if in_think_block:
                         if "</think>" in _think_buffer:
-                            # Think-Block beenden, Rest nach </think> behalten
-                            _, _, after = _think_buffer.partition("</think>")
+                            # Think-Block beenden, Content surfacen statt verwerfen
+                            think_content, _, after = _think_buffer.partition("</think>")
+                            if think_content.strip():
+                                _thinking_parts.append(think_content.strip())
                             _think_buffer = after.lstrip()
                             in_think_block = False
                         else:
@@ -626,7 +648,9 @@ class OllamaClient:
                         in_think_block = True
                         # Sofort prüfen ob </think> auch schon im Buffer
                         if "</think>" in _think_buffer:
-                            _, _, after = _think_buffer.partition("</think>")
+                            think_content, _, after = _think_buffer.partition("</think>")
+                            if think_content.strip():
+                                _thinking_parts.append(think_content.strip())
                             _think_buffer = after.lstrip()
                             in_think_block = False
                         if is_done:
@@ -646,6 +670,9 @@ class OllamaClient:
                 # Rest im Buffer ausgeben (falls kein offener Think-Block)
                 if _think_buffer and not in_think_block:
                     yield _think_buffer
+
+                # Think-Content nach Stream verfügbar machen
+                self._last_stream_thinking = "\n".join(_thinking_parts) if _thinking_parts else ""
 
         except asyncio.TimeoutError:
             logger.error("Ollama Stream Timeout nach %ds", LLM_TIMEOUT_STREAM)
@@ -711,7 +738,8 @@ class OllamaClient:
                 ollama_breaker.record_success()
                 _log_ollama_metrics(result, model, "generate")
                 text = result.get("response", "")
-                return strip_think_tags(text)
+                cleaned, _ = extract_thinking(text)
+                return cleaned
         except asyncio.TimeoutError:
             logger.error("Ollama Generate Timeout nach %ds für Modell %s", timeout, model)
             ollama_breaker.record_failure()

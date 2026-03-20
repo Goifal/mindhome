@@ -2676,6 +2676,92 @@ class PersonalityEngine:
         return prefs
 
     # ------------------------------------------------------------------
+    # Delayed Callback Humor — Referenzen zu frueheren Gespraechen
+    # ------------------------------------------------------------------
+
+    async def store_humor_context(self, person: str, context_type: str,
+                                  context_text: str):
+        """Speichert einen Humor-wuerdigen Kontext fuer spaetere Referenz.
+
+        Args:
+            person: Name der Person
+            context_type: Art des Kontexts (z.B. "failed_action", "funny_request",
+                         "bold_claim", "repeated_mistake")
+            context_text: Beschreibung des Kontexts
+        """
+        if not self._redis:
+            return
+
+        try:
+            entry = json.dumps({
+                "type": context_type,
+                "text": context_text[:200],
+                "timestamp": time.time(),
+            })
+            key = f"mha:humor:callback_contexts:{person}"
+            await self._redis.lpush(key, entry)
+            await self._redis.ltrim(key, 0, 9)  # Max 10 Kontexte
+            await self._redis.expire(key, 86400)  # 24h TTL
+        except Exception as e:
+            logger.debug("Humor-Context speichern fehlgeschlagen: %s", e)
+
+    async def get_callback_humor(self, person: str) -> str:
+        """Prueft ob ein passender Callback-Witz verfuegbar ist.
+
+        Gibt maximal 1 Callback pro Tag zurueck, um nicht zu nerven.
+        Format: "Uebrigens Sir — bezueglich Ihres '...' heute Morgen..."
+
+        Returns:
+            Callback-Text oder leerer String
+        """
+        if not self._redis or self.sarcasm_level < 2:
+            return ""
+
+        try:
+            # Max 1 Callback pro Tag
+            daily_key = f"mha:humor:callback_used:{person}:{datetime.now(_LOCAL_TZ).date()}"
+            if await self._redis.exists(daily_key):
+                return ""
+
+            key = f"mha:humor:callback_contexts:{person}"
+            entries_raw = await self._redis.lrange(key, 0, 9)
+            if not entries_raw:
+                return ""
+
+            # Aeltesten Kontext waehlen (mindestens 1h alt fuer Delayed-Effekt)
+            now = time.time()
+            for raw in reversed(entries_raw):
+                entry = json.loads(raw)
+                age_hours = (now - entry.get("timestamp", now)) / 3600
+                if age_hours < 1:
+                    continue  # Zu frisch
+
+                ctx_type = entry.get("type", "")
+                ctx_text = entry.get("text", "")
+                title = get_person_title(person) or "Sir"
+
+                templates = {
+                    "failed_action": f"Uebrigens {title} — Ihr 'brillanter' Plan mit {ctx_text}... hat sich inzwischen geklaert?",
+                    "bold_claim": f"Apropos {title} — bezueglich Ihrer Aussage '{ctx_text}'... nur damit ich es fuer die Akten habe.",
+                    "repeated_mistake": f"{title}, nicht dass ich zaehle, aber das mit {ctx_text}... ist Ihnen heute schon zum wiederholten Mal passiert.",
+                    "funny_request": f"Ach {title}, ich musste heute noch an Ihre Anfrage bezueglich '{ctx_text}' denken.",
+                }
+
+                callback = templates.get(ctx_type)
+                if callback:
+                    # Callback als verwendet markieren
+                    await self._redis.setex(daily_key, 86400, "1")
+                    # Kontext entfernen
+                    await self._redis.lrem(key, 1, raw)
+                    logger.info("Humor-Callback ausgeloest fuer %s: %s", person, ctx_type)
+                    return callback
+
+            return ""
+        except Exception as e:
+            logger.debug("Humor-Callback fehlgeschlagen: %s", e)
+            return ""
+
+    # ------------------------------------------------------------------
     # Phase 8: Langzeit-Persönlichkeitsanpassung
     # ------------------------------------------------------------------
 

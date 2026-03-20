@@ -1058,3 +1058,337 @@ class TestPhase2AEmotionalBoundaries:
         """Root-Cause wird in Redis gespeichert."""
         await detector._store_root_cause("max", "zeitdruck")
         detector.redis.setex.assert_called()
+
+
+# =====================================================================
+# Phase 1/5: Ironie-Erkennung (_detect_irony)
+# =====================================================================
+
+
+class TestIronyDetection:
+    """Tests fuer _detect_irony() — Ironie-/Sarkasmus-Erkennung."""
+
+    @pytest.fixture
+    def detector(self):
+        d = MoodDetector()
+        d.redis = AsyncMock()
+        return d
+
+    def test_irony_marker_with_negative_history(self, detector):
+        """'Na super' nach negativen Interaktionen = ironisch."""
+        from collections import deque
+        detector._interaction_sentiments = deque(["negative", "negative", "neutral"])
+        assert detector._detect_irony("na super, laeuft ja", "max") is True
+
+    def test_irony_marker_without_negative_history(self, detector):
+        """'Na super' ohne negative History = nicht ironisch."""
+        from collections import deque
+        detector._interaction_sentiments = deque(["neutral", "neutral", "neutral"])
+        assert detector._detect_irony("na super, das freut mich", "max") is False
+
+    def test_exaggeration_with_high_negatives(self, detector):
+        """'Mega toll' nach 2+ negativen Sentiments = ironisch."""
+        from collections import deque
+        detector._interaction_sentiments = deque(["negative", "impatient", "negative"])
+        assert detector._detect_irony("mega toll das ergebnis", "max") is True
+
+    def test_exaggeration_without_negatives(self, detector):
+        """'Mega toll' ohne negative History = echt gemeint."""
+        from collections import deque
+        detector._interaction_sentiments = deque(["neutral", "neutral"])
+        assert detector._detect_irony("mega toll das ergebnis", "max") is False
+
+    def test_frustrated_short_positive(self, detector):
+        """Kurzes 'super toll' bei hoher Frustration + Stress = ironisch."""
+        from collections import deque
+        detector._frustration_count = 3
+        detector._stress_level = 0.6
+        detector._interaction_sentiments = deque(["neutral"])
+        assert detector._detect_irony("super toll", "max") is True
+
+    def test_normal_positive_not_ironic(self, detector):
+        """Normales positives Feedback wird nicht als Ironie erkannt."""
+        from collections import deque
+        detector._frustration_count = 0
+        detector._stress_level = 0.0
+        detector._interaction_sentiments = deque(["neutral", "neutral"])
+        assert detector._detect_irony("danke das ist gut", "max") is False
+
+    def test_ja_klar_marker(self, detector):
+        """'Ja klar' nach negativem Sentiment = ironisch."""
+        from collections import deque
+        detector._interaction_sentiments = deque(["negative"])
+        assert detector._detect_irony("ja klar macht sinn", "max") is True
+
+    def test_ganz_grosses_kino_marker(self, detector):
+        """'Ganz grosses Kino' nach negativem Sentiment = ironisch."""
+        from collections import deque
+        detector._interaction_sentiments = deque(["impatient"])
+        assert detector._detect_irony("ganz grosses kino wirklich", "max") is True
+
+
+# =====================================================================
+# Irony detection integration in full analyze() flow
+# =====================================================================
+
+
+class TestIronyInAnalyzeFlow:
+    """Tests that irony detection integrates correctly into analyze().
+
+    When _detect_irony returns True for seemingly positive text,
+    analyze() should produce 'irony_detected' in signals, revert
+    the positive_count increment, and keep/increase stress.
+    """
+
+    @pytest.mark.asyncio
+    async def test_ironic_positive_produces_irony_signal(self, detector):
+        """Ironic 'na super' after frustration triggers irony_detected signal."""
+        # Build negative history first
+        await detector.analyze("das geht nicht")
+        await detector.analyze("funktioniert nicht")
+        # Now send ironic positive text
+        result = await detector.analyze("na super, laeuft ja")
+        assert "irony_detected" in result["signals"]
+        assert "positive_language" in result["signals"]
+
+    @pytest.mark.asyncio
+    async def test_ironic_text_keeps_stress_higher_than_genuine(self, detector):
+        """Ironic positive text should keep stress higher than genuine praise would."""
+        # Build frustration with negative history
+        await detector.analyze("das geht nicht")
+        await detector.analyze("funktioniert nicht")
+        stress_after_negatives = detector._stress_level
+
+        # Send ironic positive — stress gets +0.05 from irony but -0.1 from positive
+        result = await detector.analyze("na super, laeuft ja")
+        assert "irony_detected" in result["signals"]
+        stress_after_irony = detector._stress_level
+
+        # Compare: genuine positive without irony context reduces stress more
+        detector2 = MoodDetector()
+        detector2.redis = AsyncMock()
+        await detector2.analyze("Hallo")
+        await detector2.analyze("ok")
+        # Set same stress level as after negatives
+        detector2._stress_level = stress_after_negatives
+        await detector2.analyze("Danke, super gemacht!")
+        # Genuine positive should reduce stress more than ironic one
+        assert detector2._stress_level < stress_after_irony
+
+    @pytest.mark.asyncio
+    async def test_ironic_text_reverts_positive_count(self, detector):
+        """Irony should decrement positive_count that was incremented by keyword match."""
+        await detector.analyze("das geht nicht")
+        positive_before = detector._positive_count
+        result = await detector.analyze("na toll, ganz toll")
+        # positive_count should not net-increase from ironic text
+        assert detector._positive_count <= positive_before + 1
+        if "irony_detected" in result["signals"]:
+            assert detector._positive_count <= positive_before
+
+    @pytest.mark.asyncio
+    async def test_genuine_positive_no_irony_signal(self, detector):
+        """Genuine positive text without negative history has no irony_detected."""
+        result = await detector.analyze("Danke, super gemacht!")
+        assert "irony_detected" not in result["signals"]
+        assert "positive_language" in result["signals"]
+
+    @pytest.mark.asyncio
+    async def test_irony_mood_stays_negative(self, detector):
+        """After ironic text, mood should not flip to 'good'."""
+        # Build significant frustration
+        for _ in range(3):
+            await detector.analyze("funktioniert nicht, nervig")
+        result = await detector.analyze("ja klar, super toll")
+        assert result["mood"] != MOOD_GOOD
+
+    @pytest.mark.asyncio
+    async def test_irony_after_escalation(self, detector):
+        """Ironic response after escalation keeps high stress."""
+        await detector.analyze("mach das licht an")
+        await detector.analyze("mach das licht an jetzt")
+        await detector.analyze("mach das licht an sofort")
+        result = await detector.analyze("na super, perfekt gemacht")
+        if "irony_detected" in result["signals"]:
+            assert result["stress_level"] > 0.3
+
+    @pytest.mark.asyncio
+    async def test_frustrated_short_positive_in_flow(self, detector):
+        """Short positive after heavy frustration is detected as irony."""
+        # Build frustration and stress
+        for _ in range(3):
+            await detector.analyze("geht nicht, nervig!")
+        result = await detector.analyze("super toll")
+        # Should detect irony via frustration-context path
+        assert "irony_detected" in result["signals"]
+
+
+# =====================================================================
+# Mood trend tracking — extended tests
+# =====================================================================
+
+
+class TestMoodTrends:
+    """Extended tests for mood trend tracking across analyze() calls."""
+
+    @pytest.mark.asyncio
+    async def test_trend_after_positive_sequence(self, detector):
+        """Sequence of positive messages should produce improving or stable trend."""
+        await detector.analyze("das ist schlecht")
+        await detector.analyze("naja, besser")
+        await detector.analyze("Danke, super!")
+        await detector.analyze("Perfekt, toll!")
+        await detector.analyze("Freut mich, klasse!")
+        trend = detector.get_mood_trend()
+        assert trend in ("improving", "stable")
+
+    @pytest.mark.asyncio
+    async def test_trend_after_negative_sequence(self, detector):
+        """Sequence of negative messages should produce declining trend."""
+        await detector.analyze("Hallo, alles gut")
+        await detector.analyze("ok passt")
+        await detector.analyze("das stimmt nicht, falsch!")
+        await detector.analyze("nervt mich, schlecht")
+        await detector.analyze("geht nicht, kaputt")
+        trend = detector.get_mood_trend()
+        assert trend in ("declining", "volatile")
+
+    @pytest.mark.asyncio
+    async def test_trend_alternating_is_volatile(self, detector):
+        """Alternating positive/negative should produce volatile trend."""
+        for i in range(6):
+            if i % 2 == 0:
+                await detector.analyze("Danke, super gemacht!")
+            else:
+                await detector.analyze("funktioniert nicht, nervt")
+        trend = detector.get_mood_trend()
+        assert trend in ("volatile", "declining")
+
+    def test_trend_empty_sentiments(self, detector):
+        """Empty sentiments should return stable."""
+        assert detector.get_mood_trend() == "stable"
+
+    def test_trend_single_sentiment(self, detector):
+        """Single sentiment should return stable (not enough data)."""
+        detector._interaction_sentiments.append("negative")
+        assert detector.get_mood_trend() == "stable"
+
+    @pytest.mark.asyncio
+    async def test_sentiments_capped_at_maxlen(self, detector):
+        """Sentiments deque should not grow beyond its maxlen."""
+        for i in range(25):
+            await detector.analyze(f"nachricht nummer {i}")
+        assert len(detector._interaction_sentiments) <= 10
+
+
+# =====================================================================
+# Edge cases
+# =====================================================================
+
+
+class TestEdgeCases:
+    """Edge cases: empty text, very long text, special characters."""
+
+    @pytest.mark.asyncio
+    async def test_empty_string(self, detector):
+        """Empty string should not crash and return neutral mood."""
+        result = await detector.analyze("")
+        assert result["mood"] in (MOOD_NEUTRAL, MOOD_TIRED)
+        assert isinstance(result["signals"], list)
+
+    @pytest.mark.asyncio
+    async def test_whitespace_only(self, detector):
+        """Whitespace-only input should not crash."""
+        result = await detector.analyze("   ")
+        assert result["mood"] in (MOOD_NEUTRAL, MOOD_TIRED)
+        assert isinstance(result["signals"], list)
+
+    @pytest.mark.asyncio
+    async def test_very_long_text(self, detector):
+        """Very long text should be handled without crash."""
+        long_text = "Hallo " * 5000
+        result = await detector.analyze(long_text)
+        assert isinstance(result["mood"], str)
+        assert isinstance(result["stress_level"], float)
+
+    @pytest.mark.asyncio
+    async def test_special_characters(self, detector):
+        """Special characters should not crash analysis."""
+        result = await detector.analyze("!@#$%^&*()_+-=[]{}|;':\",./<>?")
+        assert isinstance(result["mood"], str)
+        assert isinstance(result["signals"], list)
+
+    @pytest.mark.asyncio
+    async def test_emoji_text(self, detector):
+        """Emoji-containing text should not crash."""
+        result = await detector.analyze("Das ist gut 😊👍🔥")
+        assert isinstance(result["mood"], str)
+
+    @pytest.mark.asyncio
+    async def test_multiline_text(self, detector):
+        """Multiline text should be handled."""
+        result = await detector.analyze("Zeile eins\nZeile zwei\nZeile drei")
+        assert isinstance(result["mood"], str)
+
+    @pytest.mark.asyncio
+    async def test_numeric_only_text(self, detector):
+        """Pure numeric input should not crash."""
+        result = await detector.analyze("12345 67890")
+        assert isinstance(result["mood"], str)
+
+    @pytest.mark.asyncio
+    async def test_single_character(self, detector):
+        """Single character should be handled."""
+        result = await detector.analyze("x")
+        assert isinstance(result["mood"], str)
+
+    @pytest.mark.asyncio
+    async def test_repeated_analyze_calls_stable(self, detector):
+        """Many sequential calls with varied neutral text should stay low stress."""
+        neutral_texts = [
+            "Hallo", "wie geht es", "alles klar", "ja", "verstanden",
+            "in Ordnung", "ok danke", "passt", "gut", "weiter",
+        ]
+        for text in neutral_texts:
+            result = await detector.analyze(text)
+        # Varied neutral texts should not accumulate high stress
+        assert result["stress_level"] <= 0.7
+
+    @pytest.mark.asyncio
+    async def test_person_parameter_none_string(self, detector):
+        """Empty person string should default to _default key."""
+        result = await detector.analyze("Hallo", "")
+        assert isinstance(result["mood"], str)
+
+    @pytest.mark.asyncio
+    async def test_person_parameter_with_name(self, detector):
+        """Named person should create per-person state."""
+        await detector.analyze("Hallo", "Max")
+        assert "max" in detector._person_states
+
+    @pytest.mark.asyncio
+    async def test_result_structure(self, detector):
+        """Verify analyze() returns all expected keys."""
+        result = await detector.analyze("Hallo Welt")
+        assert "mood" in result
+        assert "stress_level" in result
+        assert "tiredness_level" in result
+        assert "frustration_count" in result
+        assert "signals" in result
+        assert isinstance(result["stress_level"], float)
+        assert isinstance(result["tiredness_level"], float)
+        assert isinstance(result["frustration_count"], int)
+
+    @pytest.mark.asyncio
+    async def test_stress_level_bounded(self, detector):
+        """Stress level should never exceed 1.0 even with many negative inputs."""
+        for _ in range(20):
+            await detector.analyze("funktioniert nicht! nervt! kaputt!")
+        assert detector._stress_level <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_tiredness_level_bounded(self, detector):
+        """Tiredness level should never exceed 1.0."""
+        for _ in range(20):
+            await detector.analyze("bin so muede, gute nacht, will schlafen")
+        assert detector._tiredness_level <= 1.0

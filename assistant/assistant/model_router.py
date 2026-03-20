@@ -270,6 +270,16 @@ class ModelRouter:
             Tuple (model_name, tier) wobei tier 'fast', 'smart' oder 'deep' ist.
             Wichtig fuer korrekten num_ctx wenn alle Tiers das gleiche Modell nutzen.
         """
+        model, tier, _ = self.select_model_tier_reasoning(text)
+        return model, tier
+
+    def select_model_tier_reasoning(self, text: str) -> tuple[str, str, bool]:
+        """Waehlt Modell, Tier und ob Reasoning-Instruktionen noetig sind.
+
+        Returns:
+            Tuple (model_name, tier, requires_reasoning).
+            requires_reasoning=True wenn Deep-Tier fuer komplexe Aufgabe gewaehlt.
+        """
         text_lower = text.lower().strip()
         word_count = len(text_lower.split())
 
@@ -278,7 +288,7 @@ class ModelRouter:
             for keyword in self.fast_keywords:
                 if self._word_match(keyword, text_lower):
                     logger.debug("FAST model fuer: '%s' (keyword: %s)", text, keyword)
-                    return self.model_fast, "fast"
+                    return self.model_fast, "fast", False
 
         # 2. Deep-Keywords -> Deep-Modell (oder Smart wenn degradiert)
         for keyword in self.deep_keywords:
@@ -286,22 +296,22 @@ class ModelRouter:
                 if self._deep_degraded:
                     model = self._cap_model(self.model_smart)
                     logger.debug("DEEP→SMART (degradiert) fuer: '%s' (keyword: %s)", text, keyword)
-                    return model, "smart"
+                    return model, "smart", False
                 model = self._cap_model(self.model_deep)
                 logger.debug("DEEP model fuer: '%s' (keyword: %s, actual: %s)",
                              text, keyword, model)
-                return model, "deep"
+                return model, "deep", True
 
         # 3. Sehr lange Anfragen (>15 Woerter) -> Deep (oder Smart wenn degradiert)
         if word_count >= self.deep_min_words:
             if self._deep_degraded:
                 model = self._cap_model(self.model_smart)
                 logger.debug("DEEP→SMART (degradiert) fuer lange Anfrage: '%s'", text[:80])
-                return model, "smart"
+                return model, "smart", False
             model = self._cap_model(self.model_deep)
             logger.debug("DEEP model fuer lange Anfrage (%d Woerter): '%s' (actual: %s)",
                          word_count, text[:80], model)
-            return model, "deep"
+            return model, "deep", True
 
         # 4. Fragen -> schlaues Modell
         if any(text_lower.startswith(w) for w in [
@@ -309,12 +319,12 @@ class ModelRouter:
         ]):
             model = self._cap_model(self.model_smart)
             logger.debug("SMART model fuer Frage: '%s' (actual: %s)", text, model)
-            return model, "smart"
+            return model, "smart", False
 
         # Default: schlaues Modell
         model = self._cap_model(self.model_smart)
         logger.debug("SMART model (default) fuer: '%s' (actual: %s)", text, model)
-        return model, "smart"
+        return model, "smart", False
 
     def classify_task(self, text: str) -> str:
         """D1: Klassifiziert die Aufgabe fuer task-aware Temperature.

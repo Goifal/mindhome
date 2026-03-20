@@ -568,3 +568,404 @@ class TestHumanizeClimateList:
         result = humanizer._humanize_climate_list(raw)
         # Should process without error
         assert isinstance(result, str)
+
+
+# ── format_comparison ───────────────────────────────────────
+
+
+class TestFormatComparison:
+    def test_unchanged(self, humanizer):
+        result = humanizer.format_comparison(20.0, 20.0, "°C")
+        assert "unveraendert" in result
+        assert "20.0°C" in result
+
+    def test_increase_integer(self, humanizer):
+        result = humanizer.format_comparison(22.0, 18.0, "°C")
+        assert "↑" in result
+        assert "22°C" in result
+        assert "18°C" in result
+        assert "4°C" in result
+
+    def test_decrease_integer(self, humanizer):
+        result = humanizer.format_comparison(15.0, 20.0, "°C")
+        assert "↓" in result
+        assert "15°C" in result
+        assert "20°C" in result
+        assert "5°C" in result
+
+    def test_float_formatting(self, humanizer):
+        result = humanizer.format_comparison(21.5, 20.3, "°C")
+        assert "↑" in result
+        assert "21.5°C" in result
+        assert "20.3°C" in result
+
+    def test_no_unit(self, humanizer):
+        result = humanizer.format_comparison(10.0, 8.0)
+        assert "↑" in result
+        assert "vorher" in result
+
+    def test_negative_values(self, humanizer):
+        result = humanizer.format_comparison(-5.0, -2.0, "°C")
+        assert "↓" in result
+        assert "3°C" in result
+
+
+# ── highlight_anomaly ───────────────────────────────────────
+
+
+class TestHighlightAnomaly:
+    def test_empty_values(self, humanizer):
+        assert humanizer.highlight_anomaly({}) is None
+
+    def test_single_item(self, humanizer):
+        assert humanizer.highlight_anomaly({"door1": "open"}) is None
+
+    def test_no_anomaly_all_closed(self, humanizer):
+        values = {"door1": "closed", "door2": "closed", "door3": "open"}
+        result = humanizer.highlight_anomaly(values, "Tueren")
+        # 1/3 active = not anomaly
+        assert result is None
+
+    def test_anomaly_majority_open(self, humanizer):
+        values = {"door1": "open", "door2": "open", "door3": "closed"}
+        result = humanizer.highlight_anomaly(values, "Tueren")
+        assert result is not None
+        assert "2/3" in result
+        assert "Tueren" in result
+        assert "ungewoehnlich" in result
+
+    def test_anomaly_all_on(self, humanizer):
+        values = {"sw1": "on", "sw2": "on", "sw3": "on", "sw4": "on"}
+        result = humanizer.highlight_anomaly(values, "Schalter")
+        assert result is not None
+        assert "4/4" in result
+
+    def test_anomaly_boolean_true(self, humanizer):
+        values = {"a": True, "b": True, "c": False}
+        result = humanizer.highlight_anomaly(values)
+        assert result is not None
+        assert "Geraete" in result  # default label
+
+    def test_anomaly_offen_state(self, humanizer):
+        values = {"w1": "offen", "w2": "offen", "w3": "geschlossen"}
+        result = humanizer.highlight_anomaly(values, "Fenster")
+        assert result is not None
+        assert "2/3" in result
+
+    def test_exactly_half_not_anomaly(self, humanizer):
+        values = {"a": "on", "b": "off"}
+        result = humanizer.highlight_anomaly(values)
+        # 1/2 = not > half
+        assert result is None
+
+
+# ── format_delta_context ────────────────────────────────────
+
+
+class TestFormatDeltaContext:
+    def test_empty_changes(self, humanizer):
+        assert humanizer.format_delta_context([]) == ""
+
+    def test_single_change(self, humanizer):
+        changes = [{"entity": "Licht", "old_state": "off", "new_state": "on"}]
+        result = humanizer.format_delta_context(changes)
+        assert "Seit letzter Interaktion" in result
+        assert "Licht" in result
+        assert "off → on" in result
+
+    def test_change_with_room(self, humanizer):
+        changes = [{"entity": "Licht", "old_state": "off", "new_state": "on", "room": "Kueche"}]
+        result = humanizer.format_delta_context(changes)
+        assert "(Kueche)" in result
+
+    def test_multiple_changes(self, humanizer):
+        changes = [
+            {"entity": "Licht", "old_state": "off", "new_state": "on"},
+            {"entity": "Heizung", "old_state": "22", "new_state": "20"},
+        ]
+        result = humanizer.format_delta_context(changes)
+        assert "Licht" in result
+        assert "Heizung" in result
+
+    def test_more_than_five_truncated(self, humanizer):
+        changes = [
+            {"entity": f"Device{i}", "old_state": "off", "new_state": "on"}
+            for i in range(8)
+        ]
+        result = humanizer.format_delta_context(changes)
+        assert "3 weitere" in result
+        # Only first 5 devices should be mentioned
+        assert "Device0" in result
+        assert "Device4" in result
+        assert "Device5" not in result
+
+    def test_missing_fields_use_defaults(self, humanizer):
+        changes = [{}]  # no entity, old_state, new_state
+        result = humanizer.format_delta_context(changes)
+        assert "Unbekannt" in result
+        assert "? → ?" in result
+
+
+# ── _humanize_device_command ────────────────────────────────
+
+
+class TestHumanizeDeviceCommand:
+    def test_empty_executed_list(self, humanizer):
+        with patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            result = humanizer._humanize_device_command("Mach das Licht an", [])
+        assert "Erledigt" in result
+
+    def test_single_light_on(self, humanizer):
+        with patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            executed = [{"function": "set_light", "args": {"room": "wohnzimmer", "action": "on"}}]
+            result = humanizer._humanize_device_command("Licht an", executed)
+        assert "licht" in result.lower()
+        assert "eingeschaltet" in result.lower()
+        assert "wohnzimmer" in result.lower()
+
+    def test_multiple_actions(self, humanizer):
+        with patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            executed = [
+                {"function": "set_light", "args": {"room": "wohnzimmer", "action": "off"}},
+                {"function": "set_cover", "args": {"room": "schlafzimmer", "action": "close"}},
+            ]
+            result = humanizer._humanize_device_command("Gute Nacht", executed)
+        assert "ausgeschaltet" in result
+        assert "heruntergefahren" in result
+
+    def test_three_actions_uses_comma(self, humanizer):
+        with patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            executed = [
+                {"function": "set_light", "args": {"room": "wohnzimmer", "action": "off"}},
+                {"function": "set_cover", "args": {"room": "all", "action": "close"}},
+                {"function": "set_switch", "args": {"room": "kueche", "action": "off"}},
+            ]
+            result = humanizer._humanize_device_command("Alles aus", executed)
+        assert " und " in result
+
+    def test_unknown_function_skipped(self, humanizer):
+        with patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            executed = [{"function": "unknown_func", "args": {"room": "", "action": ""}}]
+            result = humanizer._humanize_device_command("Test", executed)
+        assert "Erledigt" in result
+
+    def test_climate_action(self, humanizer):
+        with patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            executed = [{"function": "set_climate", "args": {"room": "wohnzimmer"}}]
+            result = humanizer._humanize_device_command("Heizung", executed)
+        assert "Heizung" in result
+        assert "angepasst" in result
+
+
+# ── _describe_action ────────────────────────────────────────
+
+
+class TestDescribeAction:
+    def test_cover_close(self):
+        result = BrainHumanizersMixin._describe_action("set_cover", "close", "wohnzimmer")
+        assert "heruntergefahren" in result
+        assert "Wohnzimmer" in result
+
+    def test_cover_open(self):
+        result = BrainHumanizersMixin._describe_action("set_cover", "open", "")
+        assert "hochgefahren" in result
+
+    def test_cover_stop(self):
+        result = BrainHumanizersMixin._describe_action("set_cover", "stop", "buero")
+        assert "gestoppt" in result
+
+    def test_light_on(self):
+        result = BrainHumanizersMixin._describe_action("set_light", "on", "bad")
+        assert "eingeschaltet" in result
+        assert "Bad" in result
+
+    def test_light_off_no_room(self):
+        result = BrainHumanizersMixin._describe_action("set_light", "off", "")
+        assert "ausgeschaltet" in result
+
+    def test_switch_on(self):
+        result = BrainHumanizersMixin._describe_action("set_switch", "on", "garage")
+        assert "eingeschaltet" in result
+        assert "Garage" in result
+
+    def test_feminine_room_uses_in_der(self):
+        result = BrainHumanizersMixin._describe_action("set_light", "on", "kueche")
+        assert "in der Kueche" in result
+
+    def test_room_all_uses_ueberall(self):
+        result = BrainHumanizersMixin._describe_action("set_light", "off", "all")
+        assert "überall" in result
+
+    def test_climate_special_case(self):
+        result = BrainHumanizersMixin._describe_action("set_climate", "heat", "wohnzimmer")
+        assert "Heizung" in result
+        assert "angepasst" in result
+
+    def test_unknown_function(self):
+        result = BrainHumanizersMixin._describe_action("unknown", "action", "room")
+        assert result is None
+
+    def test_unknown_action_in_known_function(self):
+        result = BrainHumanizersMixin._describe_action("set_light", "toggle", "room")
+        assert result is None
+
+
+# ── _humanize_house_status extended ─────────────────────────
+
+
+class TestHumanizeHouseStatusExtended:
+    def test_security_triggered(self, humanizer):
+        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
+             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
+            raw = "Sicherheit: triggered"
+            result = humanizer._humanize_house_status(raw)
+            assert "ALARM AUSGELOEST" in result
+
+    def test_security_disarmed(self, humanizer):
+        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
+             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
+            raw = "Sicherheit: disarmed"
+            result = humanizer._humanize_house_status(raw)
+            assert "Alarmanlage aus" in result
+
+    def test_security_unknown_is_empty(self, humanizer):
+        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
+             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
+            raw = "Sicherheit: unknown"
+            result = humanizer._humanize_house_status(raw)
+            # "unknown" maps to "" which is falsy, so nothing appended
+            assert "ruhig" in result
+
+    def test_multiple_persons_zuhause(self, humanizer):
+        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
+             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
+            raw = "Zuhause: Max, Anna, Tom"
+            result = humanizer._humanize_house_status(raw)
+            assert "sind zuhause" in result
+
+    def test_unterwegs_normal_shown(self, humanizer):
+        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
+             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
+            raw = "Unterwegs: Anna"
+            result = humanizer._humanize_house_status(raw)
+            assert "Anna unterwegs" in result
+
+    def test_open_items_kompakt(self, humanizer):
+        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
+             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            mock_cfg.yaml_config = {"house_status": {"detail_level": "kompakt"}}
+            raw = "Offen: Fenster Kueche, Tuer Flur"
+            result = humanizer._humanize_house_status(raw)
+            assert "2 offen" in result
+
+    def test_media_kompakt(self, humanizer):
+        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
+             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            mock_cfg.yaml_config = {"house_status": {"detail_level": "kompakt"}}
+            raw = "Medien aktiv: Spotify im Wohnzimmer"
+            result = humanizer._humanize_house_status(raw)
+            assert "Medien aktiv" in result
+            # kompakt should not have details
+            assert "Spotify" not in result
+
+    def test_offline_normal(self, humanizer):
+        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
+             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
+            raw = "Offline (3)"
+            result = humanizer._humanize_house_status(raw)
+            assert "Offline (3)" in result
+
+    def test_combined_status(self, humanizer):
+        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
+             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
+            raw = "Zuhause: Max\nLichter an: Wohnzimmer\nWetter: 18°C, sonnig"
+            result = humanizer._humanize_house_status(raw)
+            assert "Max ist zuhause" in result
+            assert "Lichter an" in result
+            assert "Draussen" in result
+
+    def test_temperatures_ausfuehrlich(self, humanizer):
+        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
+             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            mock_cfg.yaml_config = {"house_status": {"detail_level": "ausfuehrlich"}}
+            raw = "Temperaturen: Wohnzimmer 21°C (Soll 22°C)"
+            result = humanizer._humanize_house_status(raw)
+            # ausfuehrlich keeps all detail including Soll
+            assert "Soll 22°C" in result
+
+    def test_weather_normal_format(self, humanizer):
+        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
+             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
+            raw = "Wetter: 15°C, bewoelkt"
+            result = humanizer._humanize_house_status(raw)
+            assert "Draussen: 15°C, bewoelkt" in result
+
+    def test_weather_kompakt_no_temp_match(self, humanizer):
+        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
+             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+            mock_cfg.yaml_config = {"house_status": {"detail_level": "kompakt"}}
+            raw = "Wetter: bewoelkt"
+            result = humanizer._humanize_house_status(raw)
+            assert "Draussen: bewoelkt" in result
+
+
+# ── _humanize_media extended ────────────────────────────────
+
+
+class TestHumanizeMediaExtended:
+    def test_spielt_keyword(self, humanizer):
+        raw = "- Wohnzimmer [media_player.wz]: spielt Musik"
+        result = humanizer._humanize_media(raw)
+        assert "laeuft" in result
+        assert "Wohnzimmer" in result
+
+
+# ── _humanize_weather extended ──────────────────────────────
+
+
+class TestHumanizeWeatherExtended:
+    def test_no_condition_match(self, humanizer):
+        raw = "AKTUELL: 18°C, unbekannt, Wind aus West mit 5 km/h"
+        result = humanizer._humanize_weather(raw)
+        assert "18 Grad draussen" in result
+
+    def test_forecast_with_precipitation(self, humanizer):
+        raw = (
+            "AKTUELL: 15°C, bewoelkt, Wind aus Süd mit 5 km/h\n"
+            "VORHERSAGE 2026-03-12: regen, Hoch 12, Tief 5, Niederschlag 8 mm"
+        )
+        result = humanizer._humanize_weather(raw)
+        assert "8 mm Regen" in result
+
+    def test_forecast_zero_precipitation(self, humanizer):
+        raw = (
+            "AKTUELL: 15°C, bewoelkt, Wind aus Süd mit 5 km/h\n"
+            "VORHERSAGE 2026-03-12: sonnig, Hoch 20, Tief 10, Niederschlag 0 mm"
+        )
+        result = humanizer._humanize_weather(raw)
+        # Zero precipitation should NOT be mentioned
+        assert "mm Regen" not in result
+
+    def test_forecast_with_condition_mapping(self, humanizer):
+        raw = (
+            "AKTUELL: 15°C, sonnig, Wind aus Ost mit 3 km/h\n"
+            "VORHERSAGE 2026-03-12: nebel, Hoch 10, Tief 2"
+        )
+        result = humanizer._humanize_weather(raw)
+        assert "neblig" in result
+
+    def test_moderate_temp_no_comment(self, humanizer):
+        raw = "AKTUELL: 18°C, sonnig, Wind aus West mit 5 km/h"
+        result = humanizer._humanize_weather(raw)
+        # 18 degrees: not cold, not hot - no comment
+        assert "Handschuhe" not in result
+        assert "Jacke" not in result
+        assert "trinken" not in result
