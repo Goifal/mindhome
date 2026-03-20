@@ -859,9 +859,14 @@ class ConflictResolver:
         if not self.enabled:
             return None
 
+        if not isinstance(ha_states, list):
+            return None
+
         # Index fuer schnellen Zugriff
         state_map: dict[str, str] = {}
         for s in ha_states:
+            if not isinstance(s, dict):
+                continue
             eid = s.get("entity_id", "")
             state_map[eid] = s.get("state", "")
 
@@ -905,24 +910,24 @@ class ConflictResolver:
                 ):
                     matched = True
             elif ctx == "cooling_and_heating":
-                # Klimaanlage kuehlt waehrend Heizung heizt
+                # Klimaanlage kuehlt waehrend Heizung heizt — nur im gleichen Bereich
+                # Bereich wird aus friendly_name oder area extrahiert
+                climate_actions = {}  # area_hint -> list of (eid, hvac_action)
                 for eid, val in state_map.items():
                     if eid.startswith("climate."):
                         attrs = next((s.get("attributes", {}) for s in ha_states
                                       if s.get("entity_id") == eid), {})
                         hvac = attrs.get("hvac_action", val)
                         if hvac in ("cooling", "heating"):
-                            # Pruefen ob ein anderes Klimageraet das Gegenteil tut
-                            opposite = "heating" if hvac == "cooling" else "cooling"
-                            for eid2, val2 in state_map.items():
-                                if eid2 != eid and eid2.startswith("climate."):
-                                    attrs2 = next((s.get("attributes", {}) for s in ha_states
-                                                    if s.get("entity_id") == eid2), {})
-                                    if attrs2.get("hvac_action", val2) == opposite:
-                                        matched = True
-                                        break
-                        if matched:
-                            break
+                            # Bereich-Hint aus Entity-ID oder Area extrahieren
+                            area = attrs.get("area_id", "") or eid.split(".")[-1].rsplit("_", 1)[0]
+                            climate_actions.setdefault(area, []).append((eid, hvac))
+                # Konflikt nur wenn im gleichen Bereich gegenläufig
+                for area, devices in climate_actions.items():
+                    actions_set = {hvac for _, hvac in devices}
+                    if "cooling" in actions_set and "heating" in actions_set:
+                        matched = True
+                        break
             elif ctx == "goodnight_active":
                 matched = any(
                     state_map.get(eid) == "on"
@@ -949,6 +954,7 @@ class ConflictResolver:
                     state_map.get(eid) == "on"
                     for eid in state_map
                     if "sleep" in eid or "schlaf" in eid or "goodnight" in eid
+                    or "gute_nacht" in eid or "bett" in eid or "nachtmodus" in eid
                 )
             elif ctx == "rain_detected":
                 weather = state_map.get(self._weather_entity, "")
@@ -1110,6 +1116,43 @@ _LOGICAL_CONFLICT_RULES = [
         "action": "set_climate",
         "context": "window_scheduled_open",
         "warning": "Lueften geplant — Heizung vorher reduzieren spart Energie",
+        "severity": "low",
+    },
+    # --- Neue Regeln: Schlaf, Energie, Komfort ---
+    {
+        "action": "set_climate",
+        "context": "sleeping_detected",
+        "warning": "Schlafenszeit erkannt — Temperaturänderung koennte Bewohner stoeren",
+        "severity": "info",
+    },
+    {
+        "action": "set_cover",
+        "context": "media_playing",
+        "warning": "Medien werden abgespielt — Rollladen oeffnen koennte Filmerlebnis stoeren",
+        "severity": "low",
+    },
+    {
+        "action": "set_vacuum",
+        "context": "media_playing",
+        "warning": "Medien werden abgespielt — Staubsauger koennte stoeren",
+        "severity": "info",
+    },
+    {
+        "action": "set_light",
+        "context": "sleeping_detected",
+        "warning": "Schlafenszeit erkannt — Licht einschalten koennte Bewohner wecken",
+        "severity": "info",
+    },
+    {
+        "action": "set_climate",
+        "context": "frost_detected",
+        "warning": "Frost erkannt — Kuehlen nicht sinnvoll, Heizschutz beachten",
+        "severity": "warning",
+    },
+    {
+        "action": "set_cover",
+        "context": "nobody_home",
+        "warning": "Niemand zuhause — Rollladen oeffnen koennte Sicherheitsrisiko sein",
         "severity": "low",
     },
 ]

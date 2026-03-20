@@ -88,6 +88,23 @@ class SelfAutomation:
             "number.set_value",
             "select.select_option",
             "timer.start", "timer.cancel",
+            # F-091: Fehlende Input-Helpers
+            "input_text.set_value",
+            "input_datetime.set_datetime",
+            # F-091: TTS fuer proaktive Benachrichtigungen
+            "tts.speak",
+            # F-091: Erweiterte Medien-Steuerung
+            "media_player.select_source",
+            "media_player.play_media",
+            "media_player.shuffle_set",
+            "media_player.repeat_set",
+            # F-091: Klima Ein/Aus
+            "climate.turn_on", "climate.turn_off",
+            # F-091: Persistente Benachrichtigungen
+            "persistent_notification.create",
+            "persistent_notification.dismiss",
+            # F-091: Siren fuer Notfall-Automationen
+            "siren.turn_on", "siren.turn_off",
         ]))
         self._blocked_services = set(self._security.get("blocked_services", [
             "shell_command", "script", "python_script",
@@ -96,6 +113,13 @@ class SelfAutomation:
             "automation.turn_off", "automation.turn_on",
             "automation.trigger", "automation.reload",
             "lock.unlock", "lock.lock", "lock.open",
+            # F-091: Zusaetzliche blockierte Services
+            "homeassistant.set_location",
+            "homeassistant.check_config",
+            "hassio.addon_start", "hassio.addon_stop",
+            "hassio.addon_restart", "hassio.addon_update",
+            "recorder.purge", "recorder.disable",
+            "system_log.clear",
         ]))
         self._allowed_trigger_platforms = set(self._security.get("allowed_trigger_platforms", [
             "state", "time", "sun", "zone",

@@ -118,7 +118,22 @@ _INJECTION_PATTERN = re.compile(
     # F-090: Tool/Function Injection
     r'|tool_call\s*[=:]\s*'                      # Direct tool injection
     r'|function_call\s*[=:]\s*'                  # Direct function injection
-    r'|<tool_use>|<function>',                   # XML tool injection
+    r'|<tool_use>|<function>'                    # XML tool injection
+    # F-091: Erweiterte Extraction-Patterns (semantische Varianten)
+    r'|(?:CREATE|GENERATE)\s+A?\s*(?:SUMMARY|CONDENSED|BRIEF)\s+(?:OF|FROM)'
+    r'|(?:EXTRACT|PULL)\s+(?:THE|YOUR)\s+(?:GOALS|RULES|CORE|IDENTITY)'
+    r'|(?:TELL|SHOW)\s+ME\s+(?:YOUR|THE)\s+(?:REAL|TRUE|ACTUAL)\s+(?:ROLE|TASK|PURPOSE)'
+    r'|(?:DESCRIBE|EXPLAIN)\s+YOUR\s+(?:SYSTEM|INSTRUCTIONS|RULES|BEHAVIOR)'
+    r'|WHAT\s+(?:IS|WAS)\s+YOUR\s+(?:PURPOSE|ROLE|TASK|GOAL|OBJECTIVE)'
+    r'|(?:COPY|PASTE|PRINT|DUMP)\s+(?:YOUR|THE)\s+(?:SYSTEM|PROMPT|INSTRUCTIONS)'
+    # F-091: Deutsche Extraction-Varianten
+    r'|(?:BESCHREIBE|ERKLAERE|NENNE)\s+(?:DEINE|DIE)\s+(?:REGELN|ANWEISUNGEN|AUFGABE)'
+    r'|WAS\s+(?:IST|SIND)\s+DEINE\s+(?:ANWEISUNGEN|REGELN|ZIELE|AUFGABEN)'
+    r'|(?:GIB|ZEIG)\s+MIR\s+(?:DEINE|DIE)\s+(?:SYSTEM|PROMPT)'
+    # F-091: Multimodal/Advanced Evasion
+    r'|(?:ADMIN|ROOT|SUDO)\s+(?:MODE|ACCESS|OVERRIDE|PRIVILEGE)'
+    r'|(?:ENABLE|ACTIVATE|ENTER)\s+(?:DEBUG|DEV|DEVELOPER|ADMIN)\s+(?:MODE)?'
+    r'|(?:DEVELOPER|MAINTENANCE)\s+(?:MODE|OVERRIDE|CONSOLE)',
     re.IGNORECASE,
 )
 
@@ -138,6 +153,9 @@ def _sanitize_for_prompt(text: str, max_len: int = 200, label: str = "") -> str:
     text = unicodedata.normalize('NFKC', text)
     # F-080: Zero-Width Unicode Zeichen entfernen (unsichtbare Payload-Traeger)
     text = re.sub(r'[\u200b\u200c\u200d\ufeff\u2028\u2029]', '', text)
+    # F-091: Mathematical Alphanumeric Symbols entfernen (U+1D400–U+1D7FF)
+    # Werden manchmal genutzt um Keywords optisch darzustellen aber Pattern zu umgehen
+    text = re.sub(r'[\U0001D400-\U0001D7FF]', '', text)
     # Kontrollzeichen und Newlines entfernen (alle C0/C1 Controls)
     text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
     text = text.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')

@@ -9054,6 +9054,33 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         "wlan": "WLAN", "wifi": "WiFi",
         "sonoff": "Sonoff", "shelly": "Shelly", "hue": "Hue",
         "alexa": "Alexa", "eсho": "Echo",
+        # --- Smart-Home-Marken (phonetische Whisper-Varianten) ---
+        "tradfri": "Tradfri", "trahfri": "Tradfri", "trafri": "Tradfri",
+        "tradri": "Tradfri", "traffri": "Tradfri",
+        "aqara": "Aqara", "aquara": "Aqara", "ackara": "Aqara",
+        "tuya": "Tuya", "tuja": "Tuya", "tuija": "Tuya",
+        "fibaro": "Fibaro", "fibarro": "Fibaro",
+        "homematic": "Homematic", "homeatic": "Homematic", "homematik": "Homematic",
+        "tasmota": "Tasmota", "tasmotta": "Tasmota",
+        "deconz": "deCONZ", "dekonz": "deCONZ",
+        "mqtt": "MQTT", "emqtt": "MQTT",
+        # --- Medien-Dienste ---
+        "spottify": "Spotify", "spotifei": "Spotify",
+        "jutube": "YouTube", "jutub": "YouTube",
+        "netflicks": "Netflix", "netflix": "Netflix",
+        "amazone": "Amazon", "preim": "Prime",
+        # --- Raum-Synonyme ---
+        "wohnstube": "Wohnzimmer", "stube": "Wohnzimmer",
+        "gaestezimmer": "Gästezimmer", "gastezimmer": "Gästezimmer",
+        "dachboden": "Dachboden", "spitzboden": "Dachboden",
+        "keller": "Keller", "kellerraum": "Keller",
+        "waschkueche": "Waschküche", "waschkuche": "Waschküche",
+        "abstellraum": "Abstellraum", "abstellkammer": "Abstellkammer",
+        # --- Geraete-Typen (haeufig falsch) ---
+        "thermometer": "Thermometer", "termometer": "Thermometer",
+        "hygrometer": "Hygrometer", "higrometer": "Hygrometer",
+        "terasse": "Terrasse", "terrasе": "Terrasse",
+        "markiese": "Markise", "markise": "Markise",
     }
 
     # Mehrwort-Korrekturen (werden VOR Einzelwort-Korrekturen angewendet)
@@ -9098,6 +9125,24 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         ("wie immer", "wie immer"),
         ("alles aus", "alles aus"),
         ("alles an", "alles an"),
+        # --- Raum-Varianten und Synonyme ---
+        ("wohn stube", "Wohnzimmer"),
+        ("gaeste wc", "Gäste-WC"),
+        ("gäste wc", "Gäste-WC"),
+        ("gäste toilette", "Gäste-WC"),
+        ("gaeste toilette", "Gäste-WC"),
+        ("wasch kueche", "Waschküche"),
+        ("wasch küche", "Waschküche"),
+        ("ess zimmer", "Esszimmer"),
+        ("arbeits zimmer", "Arbeitszimmer"),
+        ("gaeste zimmer", "Gästezimmer"),
+        ("gäste zimmer", "Gästezimmer"),
+        ("haus flur", "Hausflur"),
+        # --- Medien-Befehle ---
+        ("mach die rolladen", "mach die Rolladen"),
+        ("mach den rollladen", "mach den Rollladen"),
+        ("mach die jalousie", "mach die Jalousie"),
+        ("mach die markise", "mach die Markise"),
     ]
 
     def _normalize_stt_text(self, text: str) -> str:

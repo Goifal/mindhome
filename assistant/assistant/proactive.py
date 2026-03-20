@@ -126,15 +126,29 @@ class ProactiveManager:
                 "washer": appliance_cfg.get("washer_patterns", ["washer", "waschmaschine"]),
                 "dryer": appliance_cfg.get("dryer_patterns", ["dryer", "trockner"]),
                 "dishwasher": appliance_cfg.get("dishwasher_patterns", ["dishwasher", "geschirrspueler", "spuelmaschine"]),
+                # F-091: Neue Geraete
+                "oven": ["oven", "ofen", "backofen", "herd"],
+                "coffee_machine": ["coffee", "kaffee", "kaffeemaschine", "espresso"],
+                "ev_charger": ["ev_charger", "wallbox", "ladestation", "charger"],
+                "heat_pump": ["heat_pump", "waermepumpe", "warmepumpe"],
+                "3d_printer": ["3d_printer", "3d_drucker", "printer_3d"],
+                "robot_vacuum": ["robot_vacuum", "saugroboter", "roborock", "roomba"],
             }
         self._appliance_confirm_task: Optional[asyncio.Task] = None
 
         # Power-Curve Profile: Per-Appliance Thresholds fuer genauere Erkennung
         # Jedes Profil definiert spezifische Leistungsschwellen (Watt)
         self._appliance_power_profiles = appliance_cfg.get("power_profiles", {
-            "washer": {"running": 50, "idle": 5, "peak": 2000, "confirm_minutes": 5},
-            "dryer": {"running": 100, "idle": 10, "peak": 3000, "confirm_minutes": 8},
-            "dishwasher": {"running": 30, "idle": 3, "peak": 2200, "confirm_minutes": 5},
+            "washer": {"running": 50, "idle": 5, "standby": 3, "peak": 2000, "confirm_minutes": 5, "hysteresis": 5},
+            "dryer": {"running": 100, "idle": 10, "standby": 5, "peak": 3000, "confirm_minutes": 8, "hysteresis": 10},
+            "dishwasher": {"running": 30, "idle": 3, "standby": 2, "peak": 2200, "confirm_minutes": 5, "hysteresis": 3},
+            # F-091: Neue Geraete-Profile
+            "oven": {"running": 800, "idle": 20, "standby": 5, "peak": 3500, "confirm_minutes": 10, "hysteresis": 20},
+            "coffee_machine": {"running": 200, "idle": 5, "standby": 2, "peak": 1200, "confirm_minutes": 3, "hysteresis": 10},
+            "ev_charger": {"running": 1000, "idle": 50, "standby": 10, "peak": 11000, "confirm_minutes": 15, "hysteresis": 50},
+            "heat_pump": {"running": 500, "idle": 30, "standby": 10, "peak": 5000, "confirm_minutes": 20, "hysteresis": 30},
+            "3d_printer": {"running": 50, "idle": 8, "standby": 5, "peak": 400, "confirm_minutes": 5, "hysteresis": 5},
+            "robot_vacuum": {"running": 20, "idle": 3, "standby": 2, "peak": 50, "confirm_minutes": 3, "hysteresis": 3},
         })
 
         # Phase 7.1: Morning Briefing Auto-Trigger
@@ -1394,20 +1408,26 @@ class ProactiveManager:
 
         try:
             new_num = float(new_val)
-            old_num = float(old_val) if old_val and old_val.replace(".", "", 1).isdigit() else 0.0
         except (ValueError, TypeError):
             return
+        try:
+            old_num = float(old_val) if old_val and old_val not in ("unknown", "unavailable") else 0.0
+        except (ValueError, TypeError):
+            old_num = 0.0
 
         # Per-Appliance Power-Profile verwenden (Fallback auf globale Schwellwerte)
         profile = self._appliance_power_profiles.get(appliance, {})
         power_high = float(profile.get("running", self._appliance_power_high))
         power_low = float(profile.get("idle", self._appliance_power_low))
+        hysteresis = float(profile.get("hysteresis", 0))
         confirm_minutes = int(profile.get("confirm_minutes", self._appliance_confirm_minutes))
 
         idle_key = f"mha:appliance:idle_since:{appliance}"
         running_key = f"mha:appliance:was_running:{appliance}"
 
-        if new_num >= power_high:
+        # F-091: Hysteresis — Geraet muss power_high + hysteresis ueberschreiten
+        # um als "laufend" zu gelten, verhindert False-Positives bei Schwankungen
+        if new_num >= power_high + hysteresis:
             # Geraet laeuft (wieder) — idle-Marker loeschen, running setzen
             await redis_client.set(running_key, entity_id, ex=86400)
             await redis_client.delete(idle_key)
@@ -1423,9 +1443,10 @@ class ProactiveManager:
             logger.debug("Appliance %s: Power-Drop erkannt, Idle-Timer gestartet (%d Min, Profil: high=%dW low=%dW)",
                          appliance, confirm_minutes, power_high, power_low)
 
-            # Bestaetigungs-Task starten falls nicht schon laufend
-            if not self._appliance_confirm_task or self._appliance_confirm_task.done():
-                self._appliance_confirm_task = self._create_loop_task(self._appliance_confirm_loop(), name="proactive_appliance_confirm")
+            # Bestaetigungs-Task starten falls nicht schon laufend (Lock gegen Race Condition)
+            async with self._state_lock:
+                if not self._appliance_confirm_task or self._appliance_confirm_task.done():
+                    self._appliance_confirm_task = self._create_loop_task(self._appliance_confirm_loop(), name="proactive_appliance_confirm")
 
     async def _appliance_confirm_loop(self):
         """Prueft periodisch ob idle-Marker abgelaufen sind und meldet Geraete als fertig."""
