@@ -192,9 +192,12 @@ class FeedbackTracker:
             return float(score)
         return DEFAULT_SCORE
 
-    async def should_notify(self, event_type: str, urgency: str) -> dict:
+    async def should_notify(self, event_type: str, urgency: str,
+                            person: str = "") -> dict:
         """
         Entscheidet ob eine proaktive Meldung gesendet werden soll.
+
+        Verwendet Per-Person-Score wenn Person bekannt ist, sonst globalen Score.
 
         Returns:
             Dict mit:
@@ -210,7 +213,11 @@ class FeedbackTracker:
                 "cooldown": 0,
             }
 
-        score = await self.get_score(event_type)
+        # Per-Person Score hat Vorrang wenn verfuegbar
+        if person:
+            score = await self.get_person_score(event_type, person)
+        else:
+            score = await self.get_score(event_type)
 
         # HIGH: nur unterdruecken wenn Score sehr niedrig
         if urgency == "high":

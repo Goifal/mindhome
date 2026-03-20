@@ -43,6 +43,7 @@ class WellnessAdvisor:
         self.activity = activity_engine
         self.mood = mood_detector
         self.inner_state = inner_state
+        self.calendar_intelligence = None  # E2: Calendar-Integration — set by Brain
         self.executor = None  # Phase 17.4: FunctionExecutor fuer Ambient Actions
         self._ollama = None   # LLM fuer natuerlichere Nachrichten-Varianz
         self.redis: Optional[aioredis.Redis] = None
@@ -834,6 +835,17 @@ class WellnessAdvisor:
         if not self._notify_callback:
             logger.debug("Wellness-Nudge ohne Callback: %s", message)
             return
+
+        # E2: Kalender-Integration — waehrend Termine nur dringende Nudges senden
+        if urgency == "low" and self.calendar_intelligence:
+            try:
+                event = await self.calendar_intelligence.is_in_event()
+                if event and event.get("in_event"):
+                    logger.debug("Wellness-Nudge [%s] unterdrueckt: Termin '%s' bis %s",
+                                 nudge_type, event.get("summary", "?"), event.get("ends_at", "?"))
+                    return
+            except Exception as e:
+                logger.debug("Kalender-Check fuer Wellness-Nudge fehlgeschlagen: %s", e)
 
         # LLM-Rewrite fuer natuerlichere Varianz (optional, Fallback auf Original)
         message = await self._llm_rewrite_nudge(message, nudge_type)

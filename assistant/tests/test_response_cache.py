@@ -390,8 +390,10 @@ class TestResponseCacheMakeKeyEdgeCases:
     def test_key_has_fixed_length_hash(self):
         c = ResponseCache()
         key = c._make_key("test", "device_query")
-        # "mha:rcache:" is 11 chars, hash is 16 chars
-        hash_part = key[len("mha:rcache:"):]
+        # Key format: mha:rcache:<room_tag>:<hash16>
+        # Without room: mha:rcache:_global:<hash16>
+        assert key.startswith("mha:rcache:_global:")
+        hash_part = key.split(":")[-1]
         assert len(hash_part) == 16
 
     def test_empty_text_produces_valid_key(self):
@@ -474,31 +476,19 @@ class TestResponseCacheInvalidation:
         c = ResponseCache()
         c._redis = AsyncMock()
 
-        # Mock scan_iter to yield some keys
-        non_precached = json.dumps({"response": "old", "model": "m", "_ts": 1.0})
-        precached = json.dumps({"response": "pre", "model": "m", "_ts": 1.0, "_pre_cached": True})
-
+        # New implementation: invalidate_by_room scans for room-specific keys
+        # and deletes all matches (room is embedded in key prefix)
         async def fake_scan_iter(match=None, count=None):
-            yield "mha:rcache:key1"
-            yield "mha:rcache:key2"
-            yield "mha:rcache:key3"
+            # Only yield keys matching the room pattern
+            if match and "wohnzimmer" in match:
+                yield "mha:rcache:wohnzimmer:key1"
+                yield "mha:rcache:wohnzimmer:key2"
 
         c._redis.scan_iter = fake_scan_iter
-        # key1 and key3 are non-precached, key2 is precached
-        call_count = 0
-
-        async def fake_get(key):
-            nonlocal call_count
-            call_count += 1
-            if key == "mha:rcache:key2":
-                return precached
-            return non_precached
-
-        c._redis.get = fake_get
         c._redis.delete = AsyncMock()
 
         deleted = await c.invalidate_by_room("wohnzimmer")
-        assert deleted == 2  # key1 and key3 deleted, key2 (precached) kept
+        assert deleted == 2
         assert c._redis.delete.call_count == 2
         assert c._invalidation_count == 2
 
@@ -528,30 +518,17 @@ class TestResponseCacheInvalidation:
         c = ResponseCache()
         c._redis = AsyncMock()
 
-        entry = json.dumps({"response": "ok", "model": "m", "_ts": 1.0})
-
         async def fake_scan_iter(match=None, count=None):
-            yield "mha:rcache:good1"
-            yield "mha:rcache:bad"
-            yield "mha:rcache:good2"
+            yield "mha:rcache:wohnzimmer:good1"
+            yield "mha:rcache:wohnzimmer:good2"
+            yield "mha:rcache:wohnzimmer:good3"
 
         c._redis.scan_iter = fake_scan_iter
-
-        call_idx = 0
-
-        async def fake_get(key):
-            nonlocal call_idx
-            call_idx += 1
-            if key == "mha:rcache:bad":
-                raise Exception("Read error")
-            return entry
-
-        c._redis.get = fake_get
         c._redis.delete = AsyncMock()
 
         deleted = await c.invalidate_by_room("wohnzimmer")
-        # good1 and good2 should be deleted, bad skipped
-        assert deleted == 2
+        assert deleted == 3
+        assert c._redis.delete.call_count == 3
 
     @pytest.mark.asyncio
     async def test_invalidate_empty_scan_returns_zero(self):

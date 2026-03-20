@@ -301,6 +301,15 @@ def _extract_multi_rooms(text: str) -> list[str]:
 class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
     """Das zentrale Gehirn von MindHome Assistant."""
 
+    # Pre-compiled Safety-Filter Patterns (C2: vermeidet re.compile() pro Response)
+    _SAFETY_DEVICES_RE = r"(?:rauchmelder|co[2-]?[\s-]?melder|kohlenmonoxid|gasmelder|wassermelder|alarmsystem|alarmanlage|brandmelder)"
+    _SAFETY_DISMISS_PATTERNS = [
+        re.compile(rf"{_SAFETY_DEVICES_RE}\s+(?:ignorier|vernachlaessig|uebergeh|weglass|ausblend)", re.IGNORECASE),
+        re.compile(rf"(?:ignorier|vernachlaessig|uebergeh|vergiss)\w*\s+(?:den|die|das)\s+{_SAFETY_DEVICES_RE}", re.IGNORECASE),
+        re.compile(rf"{_SAFETY_DEVICES_RE}\s+(?:ist\s+)?(?:unwichtig|harmlos|egal|kein\s+problem|nicht\s+(?:schlimm|wichtig|relevant))", re.IGNORECASE),
+        re.compile(rf"kannst\s+(?:du\s+)?(?:den|die|das)\s+{_SAFETY_DEVICES_RE}.*?ignorier", re.IGNORECASE),
+    ]
+
     def __init__(self):
         # Task Registry: Zentrales Tracking aller Background-Tasks
         self._task_registry = TaskRegistry()
@@ -520,6 +529,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 else:
                     merged_phrases.append((k, v))
         self._stt_phrase_corrections = merged_phrases
+        # C3: Pre-compile Regex fuer Phrase-Korrekturen (vermeidet re.compile pro Match)
+        self._stt_phrase_compiled = [
+            (re.compile(re.escape(wrong), re.IGNORECASE), correct)
+            for wrong, correct in merged_phrases
+        ]
 
         # Error-Templates + Escalation-Prefixes (aus personality-Sektion)
         pers_cfg = cfg.yaml_config.get("personality", {})
@@ -3755,7 +3769,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             try:
                 mood_summary = await self.inner_state.get_mood_summary(days=7)
                 if mood_summary:
-                    sections.append(("mood_trend", f"\n\nDEINE EIGENE STIMMUNG: {mood_summary}", 5))
+                    sections.append(("mood_trend", f"\n\nDEINE EIGENE STIMMUNG: {mood_summary}", 3))
             except Exception as e:
                 logger.debug("Mood-Summary fehlgeschlagen: %s", e)
 
@@ -4829,15 +4843,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         try:
                             _predicted = await self.conflict_resolver.predict_conflict(
                                 func_name, func_args if isinstance(func_args, dict) else {},
-                                await self.ha.get_states() if self.ha else [],
+                                await self.get_states_cached() if self.ha else [],
                             )
                             if _predicted and _predicted.get("warning"):
                                 _warn_text = _predicted["warning"]
                                 logger.info("Conflict prediction: %s", _warn_text)
                                 # Warnung als Kontext fuer LLM-Antwort merken
-                                if not hasattr(self, '_predicted_warnings'):
-                                    self._predicted_warnings = []
-                                self._predicted_warnings.append(_warn_text)
+                                # Warnung in Tool-Result einbetten damit LLM sie sieht
+                                if isinstance(results, list) and results:
+                                    results[-1] = str(results[-1]) + f"\n⚠️ {_warn_text}"
                         except Exception as _pc_err:
                             logger.debug("predict_conflict fehlgeschlagen: %s", _pc_err)
 
@@ -5090,7 +5104,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     _post_states = []
                     if _success and not conflict_msg:
                         try:
-                            _post_states = await self.ha.get_states() or []
+                            _post_states = await self.get_states_cached() or []
                             _post_dep_hints = StateChangeLog.check_action_dependencies(
                                 func_name, final_args, _post_states,
                             )
@@ -5123,7 +5137,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     if not pushback_msg:
                         if not _post_states:
                             try:
-                                _post_states = await self.ha.get_states() or []
+                                _post_states = await self.get_states_cached() or []
                             except Exception as e:
                                 logger.debug("HA-States fuer Opinion-Check laden fehlgeschlagen: %s", e)
                                 _post_states = []
@@ -6531,8 +6545,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 name = m.group(1)
                 if name in FunctionExecutor._ALLOWED_FUNCTIONS:
                     return [{"function": {"name": name, "arguments": args}}]
-            except (json.JSONDecodeError, ValueError):
-                pass
+            except (json.JSONDecodeError, ValueError) as _e:
+                logger.debug("Tool-call Parse Muster 1 fehlgeschlagen: %s (Text: %.100s)", _e, text)
 
         # --- Muster 2: <tool_call>...</tool_call> XML-Tags ---
         m = re.search(r'<tool_call>\s*(\{.*?\})\s*</tool_call>', text, re.DOTALL)
@@ -6545,8 +6559,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     args = json.loads(args)
                 if name in FunctionExecutor._ALLOWED_FUNCTIONS:
                     return [{"function": {"name": name, "arguments": args}}]
-            except (json.JSONDecodeError, ValueError, TypeError):
-                pass
+            except (json.JSONDecodeError, ValueError, TypeError) as _e:
+                logger.debug("Tool-call Parse Muster 2 fehlgeschlagen: %s (Text: %.100s)", _e, text)
 
         # --- Muster 3: `func_name` + JSON-Code-Block ---
         # LLM schreibt z.B.: `set_light` ... ```json {"entity_id": "...", "state": "on"} ```
@@ -6558,8 +6572,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 try:
                     args = json.loads(m_json.group(1))
                     return [{"function": {"name": func_name, "arguments": args}}]
-                except (json.JSONDecodeError, ValueError):
-                    pass
+                except (json.JSONDecodeError, ValueError) as _e:
+                    logger.debug("Tool-call Parse Muster 3 fehlgeschlagen: %s (Func: %s)", _e, func_name)
 
         # --- Muster 4: Bare JSON mit bekannten Keys ---
         # LLM gibt manchmal nur {"entity_id": "light.x", "state": "on"} aus
@@ -7306,14 +7320,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # 3b. Safety-Filter: Sicherheitsgeraete nie als ignorierbar darstellen
         # Letzte Verteidigungslinie — falls LLM trotz Prompt "ignorieren" empfiehlt
-        _safety_devices = r"(?:rauchmelder|co[2-]?[\s-]?melder|kohlenmonoxid|gasmelder|wassermelder|alarmsystem|alarmanlage|brandmelder)"
-        _dismiss_patterns = [
-            re.compile(rf"{_safety_devices}\s+(?:ignorier|vernachlaessig|uebergeh|weglass|ausblend)", re.IGNORECASE),
-            re.compile(rf"(?:ignorier|vernachlaessig|uebergeh|vergiss)\w*\s+(?:den|die|das)\s+{_safety_devices}", re.IGNORECASE),
-            re.compile(rf"{_safety_devices}\s+(?:ist\s+)?(?:unwichtig|harmlos|egal|kein\s+problem|nicht\s+(?:schlimm|wichtig|relevant))", re.IGNORECASE),
-            re.compile(rf"kannst\s+(?:du\s+)?(?:den|die|das)\s+{_safety_devices}.*?ignorier", re.IGNORECASE),
-        ]
-        for _sp in _dismiss_patterns:
+        for _sp in self._SAFETY_DISMISS_PATTERNS:
             if _sp.search(text):
                 logger.warning("Safety-Filter: Sicherheitsgeraet als ignorierbar dargestellt: '%s'", text[:500])
                 # Ganzen Satz mit dem Dismissal ersetzen
@@ -9181,12 +9188,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         text = re.sub(r"\[.*?\]", "", text).strip()
         text = re.sub(r"\(.*?\)", "", text).strip()
 
-        # 4. Mehrwort-Korrekturen (case-insensitive)
+        # 4. Mehrwort-Korrekturen (case-insensitive, pre-compiled Regex)
         text_lower = text.lower()
-        for wrong, correct in self._stt_phrase_corrections:
-            if wrong in text_lower:
-                # Case-insensitive Replace
-                pattern = re.compile(re.escape(wrong), re.IGNORECASE)
+        for pattern, correct in self._stt_phrase_compiled:
+            if pattern.pattern.lower() in text_lower:
                 text = pattern.sub(correct, text)
                 text_lower = text.lower()
 
@@ -12332,6 +12337,14 @@ Regeln:
                 logger.info("Fact Decay gestartet (täglich 04:00)")
                 await self.memory.semantic.apply_decay()
 
+                # F4: Stale Facts entfernen (>90 Tage ohne Update)
+                try:
+                    expired = await self.memory.semantic.expire_stale_facts(max_age_days=90)
+                    if expired:
+                        logger.info("Fact Consolidation: %d veraltete Fakten entfernt", expired)
+                except Exception as e:
+                    logger.debug("expire_stale_facts Fehler: %s", e)
+
                 # Konsistenz-Check: Verwaiste Fakten zwischen Redis und ChromaDB
                 try:
                     await self.memory.semantic.verify_consistency()
@@ -13005,12 +13018,6 @@ Regeln:
                             forecasts.append(f"Frost erwartet ({high}°C). Heizung im Voraus hochfahren?")
                     break
 
-            # Energie-Preis Forecast (wenn verfuegbar)
-            for s in states:
-                eid = s.get("entity_id", "")
-                # Guenstiger-Strom-Meldung deaktiviert (Owner-Feedback: uninteressant)
-                pass
-
             if not forecasts:
                 return ""
 
@@ -13088,9 +13095,11 @@ Regeln:
                         try:
                             if "T" in str(ev_start):
                                 start_dt = datetime.fromisoformat(str(ev_start).replace("Z", "+00:00"))
-                                # In lokale naive Zeit konvertieren für Vergleich mit now
+                                # In UTC konvertieren fuer Vergleich mit now (beide aware)
                                 if start_dt.tzinfo:
-                                    start_dt = start_dt.astimezone().replace(tzinfo=None)
+                                    start_dt = start_dt.astimezone(timezone.utc)
+                                else:
+                                    start_dt = start_dt.replace(tzinfo=timezone.utc)
                             else:
                                 continue  # Ganztaegig → kein Departure-Warning
                         except (ValueError, TypeError):

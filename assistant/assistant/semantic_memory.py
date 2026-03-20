@@ -8,7 +8,7 @@ import asyncio
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -1519,7 +1519,54 @@ class SemanticMemory:
         return deleted
 
     async def expire_stale_facts(self, max_age_days: int = 90) -> int:
-        """Entfernt Fakten die seit max_age_days nicht bestaetigt wurden."""
-        # Placeholder — ChromaDB hat kein natives TTL
-        # Implementierung: Bei search() Alter pruefen und alte Fakten filtern
-        return 0
+        """Entfernt Fakten die seit max_age_days nicht bestaetigt/aktualisiert wurden.
+
+        ChromaDB hat kein natives TTL, daher iteriert diese Methode ueber
+        alle Redis-Fakt-Metadaten und loescht veraltete Eintraege aus
+        beiden Speichern (Redis + ChromaDB).
+        """
+        if not self.redis or not self.chroma_collection:
+            return 0
+
+        deleted = 0
+        cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+
+        try:
+            # Alle Fakt-IDs aus Redis scannen
+            stale_ids = []
+            async for key in self.redis.scan_iter(match="mha:fact:*", count=200):
+                key_str = key.decode() if isinstance(key, bytes) else key
+                # Nur Top-Level-Hashes (keine Sub-Keys)
+                if key_str.count(":") != 2:
+                    continue
+                try:
+                    updated_at = await self.redis.hget(key_str, "updated_at")
+                    if isinstance(updated_at, bytes):
+                        updated_at = updated_at.decode()
+                    if not updated_at:
+                        continue
+                    last_update = datetime.fromisoformat(updated_at)
+                    if last_update.tzinfo is None:
+                        last_update = last_update.replace(tzinfo=timezone.utc)
+                    if last_update < cutoff:
+                        fact_id = key_str.split(":")[-1]
+                        stale_ids.append(fact_id)
+                except (ValueError, TypeError):
+                    continue
+
+            # Batch-Loeschung
+            for fact_id in stale_ids:
+                try:
+                    await asyncio.to_thread(self.chroma_collection.delete, ids=[fact_id])
+                    await self.redis.delete(f"mha:fact:{fact_id}")
+                    deleted += 1
+                except Exception as e:
+                    logger.debug("Stale fact %s Loeschung fehlgeschlagen: %s", fact_id, e)
+
+            if deleted:
+                logger.info("expire_stale_facts: %d Fakten aelter als %d Tage entfernt",
+                            deleted, max_age_days)
+        except Exception as e:
+            logger.warning("expire_stale_facts Fehler: %s", e)
+
+        return deleted

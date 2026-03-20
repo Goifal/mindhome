@@ -93,6 +93,22 @@ class SelfReport:
             except Exception as e:
                 logger.debug("SelfReport: Learning-Daten Fehler: %s", e)
 
+        if anticipation and hasattr(anticipation, 'get_suggestions'):
+            try:
+                suggestions = await anticipation.get_suggestions()
+                data["anticipation"] = {
+                    "active_suggestions": len(suggestions),
+                    "top_suggestions": suggestions[:5],
+                }
+            except Exception as e:
+                logger.debug("SelfReport: Anticipation-Daten Fehler: %s", e)
+
+        if insight_engine and hasattr(insight_engine, 'get_status'):
+            try:
+                data["insight_engine"] = await insight_engine.get_status()
+            except Exception as e:
+                logger.debug("SelfReport: InsightEngine-Daten Fehler: %s", e)
+
         if response_quality:
             try:
                 data["response_quality"] = await response_quality.get_stats()

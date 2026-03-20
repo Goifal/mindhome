@@ -384,9 +384,28 @@ class OutcomeTracker:
             if self.redis:
                 await self.redis.delete(f"mha:outcome:pending:{obs_id}")
 
+    # Aktionstypen bei denen State-Aenderungen nach dem Delay normal sind
+    # (Timer laufen aus, Klima-Schedules, circadiane Beleuchtung etc.)
+    _EXPECTED_CHANGE_ACTIONS = frozenset({
+        "set_temperature", "set_hvac_mode", "climate_set",
+        "timer_start", "timer_set", "set_sleep_timer",
+        "set_brightness", "set_color_temp",  # circadian dimming
+        "cover_set_position",  # auto-schedules
+    })
+
+    # Attribute die sich durch Automatisierungen/Schedules normal aendern
+    _VOLATILE_ATTRS = frozenset({
+        "current_temperature", "temperature", "hvac_action",
+        "color_temp", "brightness", "position", "current_position",
+    })
+
     def _classify_outcome(self, state_after: dict, state_now: dict,
                           action_type: str) -> str:
-        """Vergleicht State: Rueckgaengig = NEGATIVE, angepasst = PARTIAL, gleich = NEUTRAL."""
+        """Vergleicht State: Rueckgaengig = NEGATIVE, angepasst = PARTIAL, gleich = NEUTRAL.
+
+        Beruecksichtigt erwartete Aenderungen (Timer, Schedules, circadiane Beleuchtung)
+        und volatile Attribute um False-Negatives zu vermeiden.
+        """
         if not state_after or not state_now:
             return OUTCOME_NEUTRAL
 
@@ -395,6 +414,9 @@ class OutcomeTracker:
 
         # State komplett rueckgaengig gemacht (z.B. Licht wieder aus)
         if after_state != now_state:
+            # Bei Aktionen mit erwartetem State-Wechsel (Timer, Klima) ist das normal
+            if action_type in self._EXPECTED_CHANGE_ACTIONS:
+                return OUTCOME_NEUTRAL
             return OUTCOME_NEGATIVE
 
         # Attribute vergleichen (z.B. Helligkeit geaendert)
@@ -405,6 +427,9 @@ class OutcomeTracker:
         total_attrs = 0
         for key in set(after_attrs.keys()) | set(now_attrs.keys()):
             if key in ("friendly_name", "icon", "supported_features"):
+                continue
+            # Volatile Attribute (Temperatur, Position) aendern sich natuerlich
+            if key in self._VOLATILE_ATTRS:
                 continue
             total_attrs += 1
             if after_attrs.get(key) != now_attrs.get(key):

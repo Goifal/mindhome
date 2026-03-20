@@ -465,6 +465,14 @@ class CorrectionMemory:
             "created_ts": time.time(),
             "person": person,
         }
+        # F2: Strukturierte Praeferenz-Werte fuer param_preference Regeln
+        if correction_type == "param_preference":
+            corr_args = new_entry.get("corrected_args") or {}
+            preferred = {k: v for k, v in corr_args.items() if k != "room"}
+            if preferred:
+                rule["preferred_params"] = preferred
+        if room:
+            rule["room"] = room
 
         await self.redis.hset(
             "mha:correction_memory:rules",

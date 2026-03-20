@@ -85,6 +85,13 @@ class ProactiveSequencePlanner:
             plan = await self._plan_weather_sequence(context)
         elif trigger == "calendar_event_soon":
             plan = await self._plan_guest_sequence(context)
+        # F5: Erweiterte Trigger
+        elif trigger == "person_left":
+            plan = await self._plan_departure_sequence(context)
+        elif trigger == "energy_price_changed":
+            plan = await self._plan_energy_sequence(context)
+        elif trigger == "bedtime_approaching":
+            plan = await self._plan_bedtime_sequence(context)
 
         # Brücke: Gelernte Causal Chains aus anticipation.py einbeziehen
         if self.anticipation and plan:
@@ -231,6 +238,92 @@ class ProactiveSequencePlanner:
             "actions": actions,
             "message": f"{title}, Gaeste kommen bald. Soll ich {actions_desc} vorbereiten?",
             "auto_message": f"Gaeste-Vorbereitung: {actions_desc}.",
+        }
+
+    async def _plan_departure_sequence(self, context: dict) -> Optional[dict]:
+        """Person verlässt das Haus: Eco-Modus → Lichter aus → Sicherheit."""
+        actions = []
+        house = context.get("house", {})
+
+        # Lichter ausschalten
+        lights = house.get("lights_on", [])
+        if lights:
+            actions.append({
+                "type": "set_light",
+                "args": {"state": "off"},
+                "description": "Alle Lichter ausschalten",
+            })
+
+        # Klima auf Eco
+        actions.append({
+            "type": "set_climate",
+            "args": {"preset_mode": "eco"},
+            "description": "Heizung auf Eco-Modus",
+        })
+
+        if not actions:
+            return None
+
+        title = get_person_title()
+        actions_desc = ", ".join(a["description"] for a in actions)
+        return {
+            "trigger": "person_left",
+            "actions": actions,
+            "message": f"{title} geht. Soll ich {actions_desc}?",
+            "auto_message": f"Abwesenheitsmodus: {actions_desc}.",
+        }
+
+    async def _plan_energy_sequence(self, context: dict) -> Optional[dict]:
+        """Strompreis aendert sich: Geraete verschieben oder starten."""
+        energy = context.get("energy", {})
+        price = energy.get("current_price")
+        if not price:
+            return None
+
+        actions = []
+        if price < energy.get("low_threshold", 0.15):
+            actions.append({
+                "type": "notify",
+                "args": {"message": f"Strom guenstig ({price:.1f} ct/kWh)"},
+                "description": "Guenstiger Strom — energieintensive Geraete starten",
+            })
+
+        if not actions:
+            return None
+
+        return {
+            "trigger": "energy_price_changed",
+            "actions": actions,
+            "message": actions[0]["description"],
+            "auto_message": actions[0]["description"],
+        }
+
+    async def _plan_bedtime_sequence(self, context: dict) -> Optional[dict]:
+        """Schlafenszeit naht: Lichter dimmen → Medien stoppen → Tuer pruefen."""
+        actions = []
+
+        actions.append({
+            "type": "set_light",
+            "args": {"brightness": 20, "color_temp": "warmest"},
+            "description": "Lichter dimmen",
+        })
+
+        house = context.get("house", {})
+        open_doors = house.get("open_doors", [])
+        if open_doors:
+            actions.append({
+                "type": "notify",
+                "args": {"message": f"Noch offene Tueren: {', '.join(open_doors[:3])}"},
+                "description": "Offene Tueren melden",
+            })
+
+        title = get_person_title()
+        actions_desc = ", ".join(a["description"] for a in actions)
+        return {
+            "trigger": "bedtime_approaching",
+            "actions": actions,
+            "message": f"Gute Nacht, {title}. Soll ich {actions_desc}?",
+            "auto_message": f"Gute Nacht. {actions_desc} — erledigt.",
         }
 
     async def _enrich_plan_from_patterns(

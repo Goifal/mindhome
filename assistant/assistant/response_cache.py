@@ -62,7 +62,11 @@ class ResponseCache:
         self._redis = redis_client
 
     def _make_key(self, text: str, category: str, room: Optional[str] = None) -> str:
-        """Erzeugt einen Cache-Key aus normalisiertem Text + Kategorie."""
+        """Erzeugt einen Cache-Key aus normalisiertem Text + Kategorie.
+
+        Room wird als Prefix im Key eingebettet, damit invalidate_by_room()
+        gezielt nur Keys eines bestimmten Raums loeschen kann.
+        """
         # Normalisierung: lowercase, Whitespace komprimieren, Satzzeichen entfernen
         normalized = " ".join(text.lower().split())
         for ch in ".,!?;:":
@@ -72,7 +76,8 @@ class ResponseCache:
             parts.append(room.lower())
         raw = "|".join(parts)
         h = hashlib.sha256(raw.encode()).hexdigest()[:16]
-        return f"mha:rcache:{h}"
+        room_tag = room.lower().replace(" ", "_") if room else "_global"
+        return f"mha:rcache:{room_tag}:{h}"
 
     def _get_ttl(self, category: str) -> int:
         """Gibt TTL fuer eine Kategorie zurueck."""
@@ -195,10 +200,10 @@ class ResponseCache:
             return False
 
     async def invalidate_by_room(self, room: str) -> int:
-        """Invalidiert device_query-Cache fuer einen bestimmten Raum.
+        """Invalidiert Cache-Eintraege fuer einen bestimmten Raum.
 
-        Wird aufgerufen wenn sich ein State im Raum aendert,
-        damit gecachte Antworten nicht veraltet sind.
+        Room ist im Redis-Key als Prefix eingebettet (mha:rcache:<room>:<hash>),
+        sodass gezielt nur Keys dieses Raums geloescht werden.
 
         Returns: Anzahl geloeschter Keys.
         """
@@ -206,24 +211,12 @@ class ResponseCache:
             return 0
 
         try:
-            # Scan nach Cache-Keys die diesen Raum betreffen
-            pattern = "mha:rcache:*"
+            room_tag = room.lower().replace(" ", "_")
+            pattern = f"mha:rcache:{room_tag}:*"
             deleted = 0
             async for key in self._redis.scan_iter(match=pattern, count=100):
-                try:
-                    raw = await self._redis.get(key)
-                    if not raw:
-                        continue
-                    # Key-Struktur: category|text|room -> SHA256
-                    # Wir koennen den Raum nicht aus dem Hash rekonstruieren,
-                    # daher loeschen wir alle device_query-Caches (kurzer TTL, schnell rebuilt)
-                    data = json.loads(raw)
-                    if not data.get("_pre_cached"):
-                        await self._redis.delete(key)
-                        deleted += 1
-                except Exception as e:
-                    logger.debug("Cache-Eintrag Invalidierung fehlgeschlagen: %s", e)
-                    continue
+                await self._redis.delete(key)
+                deleted += 1
 
             if deleted:
                 async with self._stats_lock:

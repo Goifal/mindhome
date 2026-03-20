@@ -29,6 +29,8 @@ ERROR_TYPES = ("timeout", "service_unavailable", "entity_not_found",
 MITIGATION_USE_FALLBACK = "use_fallback"
 MITIGATION_WARN_USER = "warn_user"
 MITIGATION_SKIP_ENTITY = "skip_entity"
+MITIGATION_RETRY_DELAY = "retry_delay"
+MITIGATION_FIX_PARAMS = "fix_params"
 
 
 class ErrorPatternTracker:
@@ -206,3 +208,28 @@ class ErrorPatternTracker:
             key = f"mha:errors:mitigation:{action_type}"
             await self.redis.setex(key, ttl, json.dumps(mitigation, ensure_ascii=False))
             logger.info("Mitigation aktiviert: skip_entity fuer %s", action_type)
+
+        elif error_type == "model_overloaded" and model:
+            mitigation = {
+                "type": MITIGATION_RETRY_DELAY,
+                "reason": f"{count}x model_overloaded fuer {model} in letzter Stunde",
+                "original_model": model,
+                "retry_delay_seconds": min(30 * count, 120),
+                "activated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            key = f"mha:errors:mitigation:model:{model}"
+            await self.redis.setex(key, ttl, json.dumps(mitigation, ensure_ascii=False))
+            logger.info("Mitigation aktiviert: retry_delay fuer %s (TTL: %dh, %dx overloaded)",
+                        model, self._mitigation_ttl_hours, count)
+
+        elif error_type == "bad_params" and action_type:
+            mitigation = {
+                "type": MITIGATION_FIX_PARAMS,
+                "reason": f"{count}x bad_params bei {action_type}",
+                "action_type": action_type,
+                "activated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            key = f"mha:errors:mitigation:{action_type}"
+            await self.redis.setex(key, ttl, json.dumps(mitigation, ensure_ascii=False))
+            logger.info("Mitigation aktiviert: fix_params fuer %s (TTL: %dh)",
+                        action_type, self._mitigation_ttl_hours)

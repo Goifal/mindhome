@@ -478,16 +478,30 @@ class TestActivateMitigation:
         assert "5x" in val["reason"] or "5" in val["reason"]
 
     @pytest.mark.asyncio
-    async def test_bad_params_no_mitigation(self, tracker):
-        """bad_params error type should not create a mitigation."""
+    async def test_bad_params_creates_fix_params_mitigation(self, tracker):
+        """bad_params error type creates a fix_params mitigation."""
         await tracker._activate_mitigation("bad_params", "set_light", "model", 3)
+        tracker.redis.setex.assert_called_once()
+        call_args = tracker.redis.setex.call_args
+        stored = json.loads(call_args[0][2])
+        assert stored["type"] == "fix_params"
+        assert "bad_params" in stored["reason"]
+
+    @pytest.mark.asyncio
+    async def test_model_overloaded_no_mitigation_without_model(self, tracker):
+        """model_overloaded without model should not create mitigation."""
+        await tracker._activate_mitigation("model_overloaded", "llm_chat", "", 3)
         tracker.redis.setex.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_model_overloaded_no_mitigation(self, tracker):
-        """model_overloaded without matching condition should not create mitigation."""
-        await tracker._activate_mitigation("model_overloaded", "llm_chat", "", 3)
-        tracker.redis.setex.assert_not_called()
+    async def test_model_overloaded_creates_retry_delay(self, tracker):
+        """model_overloaded with model creates retry_delay mitigation."""
+        await tracker._activate_mitigation("model_overloaded", "llm_chat", "qwen2.5:14b", 3)
+        tracker.redis.setex.assert_called_once()
+        call_args = tracker.redis.setex.call_args
+        stored = json.loads(call_args[0][2])
+        assert stored["type"] == "retry_delay"
+        assert stored["retry_delay_seconds"] == 90  # min(30*3, 120)
 
 
 # ============================================================
