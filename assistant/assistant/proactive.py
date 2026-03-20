@@ -129,6 +129,14 @@ class ProactiveManager:
             }
         self._appliance_confirm_task: Optional[asyncio.Task] = None
 
+        # Power-Curve Profile: Per-Appliance Thresholds fuer genauere Erkennung
+        # Jedes Profil definiert spezifische Leistungsschwellen (Watt)
+        self._appliance_power_profiles = appliance_cfg.get("power_profiles", {
+            "washer": {"running": 50, "idle": 5, "peak": 2000, "confirm_minutes": 5},
+            "dryer": {"running": 100, "idle": 10, "peak": 3000, "confirm_minutes": 8},
+            "dishwasher": {"running": 30, "idle": 3, "peak": 2200, "confirm_minutes": 5},
+        })
+
         # Phase 7.1: Morning Briefing Auto-Trigger
         mb_cfg = yaml_config.get("routines", {}).get("morning_briefing", {})
         self._mb_enabled = mb_cfg.get("enabled", True)
@@ -1370,7 +1378,10 @@ class ProactiveManager:
             logger.debug("Aktivitaetslog Geraetekonflikt fehlgeschlagen: %s", e)
 
     async def _check_appliance_power(self, entity_id: str, new_val: str, old_val: str):
-        """Appliance-Erkennung: Setzt idle-Marker bei Power-Drop, bestaetigt nach Wartezeit."""
+        """Appliance-Erkennung: Setzt idle-Marker bei Power-Drop, bestaetigt nach Wartezeit.
+
+        Nutzt per-Appliance Power-Profile wenn vorhanden, ansonsten globale Schwellwerte.
+        """
         appliance = self._match_appliance(entity_id)
         if not appliance:
             return
@@ -1387,23 +1398,30 @@ class ProactiveManager:
         except (ValueError, TypeError):
             return
 
+        # Per-Appliance Power-Profile verwenden (Fallback auf globale Schwellwerte)
+        profile = self._appliance_power_profiles.get(appliance, {})
+        power_high = float(profile.get("running", self._appliance_power_high))
+        power_low = float(profile.get("idle", self._appliance_power_low))
+        confirm_minutes = int(profile.get("confirm_minutes", self._appliance_confirm_minutes))
+
         idle_key = f"mha:appliance:idle_since:{appliance}"
         running_key = f"mha:appliance:was_running:{appliance}"
 
-        if new_num >= self._appliance_power_high:
+        if new_num >= power_high:
             # Geraet laeuft (wieder) — idle-Marker loeschen, running setzen
             await redis_client.set(running_key, entity_id, ex=86400)
             await redis_client.delete(idle_key)
             return
 
-        if new_num < self._appliance_power_low and old_num >= self._appliance_power_high:
+        if new_num < power_low and old_num >= power_high:
             # Power-Drop erkannt — war das Geraet vorher aktiv?
             was_running = await redis_client.get(running_key)
             if not was_running:
                 return
             # Idle-Marker setzen (Timestamp) mit TTL
-            await redis_client.set(idle_key, str(time.time()), ex=self._appliance_confirm_minutes * 60 + 120)
-            logger.debug("Appliance %s: Power-Drop erkannt, Idle-Timer gestartet (%d Min)", appliance, self._appliance_confirm_minutes)
+            await redis_client.set(idle_key, str(time.time()), ex=confirm_minutes * 60 + 120)
+            logger.debug("Appliance %s: Power-Drop erkannt, Idle-Timer gestartet (%d Min, Profil: high=%dW low=%dW)",
+                         appliance, confirm_minutes, power_high, power_low)
 
             # Bestaetigungs-Task starten falls nicht schon laufend
             if not self._appliance_confirm_task or self._appliance_confirm_task.done():

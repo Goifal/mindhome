@@ -2155,7 +2155,7 @@ caring_butler:
   busy_day_threshold: 4          # Termine fuer "voller Tag"
 latency_optimization:
   knowledge_fast_path: true
-  think_control: auto    # auto | off | smart_off | on
+  think_control: deep_on    # deep_on | auto | off | smart_off | on
   upgrade_signal_threshold: 3
   refinement_skip_max_chars: 120
   tools_cache_ttl: 60

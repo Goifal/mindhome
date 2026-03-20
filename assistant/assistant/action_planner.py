@@ -57,6 +57,14 @@ COMPLEX_KEYWORDS = _planner_cfg.get("complex_keywords", _DEFAULT_COMPLEX_KEYWORD
 PLANNER_SYSTEM_PROMPT = """ZUSAETZLICHE PLANUNGS-FAEHIGKEIT:
 Du kannst komplexe Anfragen in mehrere Schritte zerlegen und iterativ ausfuehren.
 
+CHAIN-OF-THOUGHT PLANUNGSPROZESS:
+1. ANALYSE: Was genau will der User? Welche Geraete/Systeme sind betroffen?
+2. INFORMATIONEN: Fehlende Daten zuerst abfragen (Status, Kalender, Wetter).
+3. PLANUNG: Schritte in logischer Reihenfolge planen. Abhaengigkeiten beachten.
+4. AUSFUEHRUNG: Jeden Schritt einzeln ausfuehren und Ergebnis pruefen.
+5. ANPASSUNG: Bei Fehler alternative Loesung suchen statt aufzugeben.
+6. ZUSAMMENFASSUNG: Kurz berichten was getan wurde (2-3 Saetze).
+
 PLANUNGS-REGELN:
 - Nutze die verfuegbaren Tools um Aktionen auszufuehren.
 - Fuehre ALLE noetige Schritte aus, nicht nur den ersten.
@@ -66,6 +74,13 @@ PLANUNGS-REGELN:
 - Bei Szenen und Stimmungen: Nutze den 'transition' Parameter bei set_light
   fuer sanfte Uebergaenge (z.B. transition=5 fuer 5 Sekunden Dimmen).
 - Bei Filmabend/Romantik/etc: Langsame Transitions (5-10s) fuer Atmosphaere.
+
+FEHLERBEHANDLUNG:
+- Wenn ein Schritt fehlschlaegt: Pruefen ob es eine Alternative gibt.
+- Beispiel: Lampe X reagiert nicht → andere Lampe im Raum versuchen.
+- Beispiel: Szene existiert nicht → einzelne Geraete manuell setzen.
+- Nicht einfach aufgeben — kreativ nach Loesungen suchen.
+
 WICHTIG: Du bist und bleibst J.A.R.V.I.S. — auch beim Planen. Dein Ton aendert sich NICHT."""
 
 
@@ -425,18 +440,29 @@ class ActionPlanner:
                     step.result = result
                     step.status = "done" if result.get("success", False) else "failed"
 
-                    # Bei Fehlschlag: Vorherige erfolgreiche Steps zurueckrollen
+                    # Bei Fehlschlag: Re-Planning versuchen, dann ggf. Rollback
                     if step.status == "failed" and len(plan.steps) > 0:
-                        rollback_count = await self._rollback_completed_steps(plan.steps)
-                        if rollback_count > 0:
-                            plan.rollback_performed = True
-                            logger.info(
-                                "Rollback: %d Step(s) nach Fehler in '%s' zurueckgerollt",
-                                rollback_count, func_name,
-                            )
+                        error_msg = result.get("message", "Unbekannter Fehler")
+                        replan_result = await self._attempt_replan(
+                            func_name, func_args, error_msg, plan, planner_messages,
+                        )
+                        if replan_result:
                             tool_results.append(
-                                f"ROLLBACK: {rollback_count} vorherige Aktion(en) zurueckgesetzt"
+                                f"RE-PLAN: {func_name} fehlgeschlagen ({error_msg}). "
+                                f"Alternative: {replan_result}"
                             )
+                        else:
+                            # Kein Re-Planning moeglich — Rollback
+                            rollback_count = await self._rollback_completed_steps(plan.steps)
+                            if rollback_count > 0:
+                                plan.rollback_performed = True
+                                logger.info(
+                                    "Rollback: %d Step(s) nach Fehler in '%s' zurueckgerollt",
+                                    rollback_count, func_name,
+                                )
+                                tool_results.append(
+                                    f"ROLLBACK: {rollback_count} vorherige Aktion(en) zurueckgesetzt"
+                                )
 
                     plan.steps.append(step)
                     all_actions.append({
@@ -746,6 +772,88 @@ Frage am Ende ob der Plan so umgesetzt werden soll."""},
     def clear_plan(self, plan_id: str):
         """Beendet einen Planungs-Dialog."""
         self._pending_plans.pop(plan_id, None)
+
+    # ------------------------------------------------------------------
+    # Failure Re-Planning — Alternative Aktion bei Fehler
+    # ------------------------------------------------------------------
+
+    async def _attempt_replan(
+        self,
+        failed_func: str,
+        failed_args: dict,
+        error_msg: str,
+        plan: "ActionPlan",
+        planner_messages: list[dict],
+    ) -> str | None:
+        """Versucht bei einem fehlgeschlagenen Step eine Alternative zu finden.
+
+        Fragt das LLM nach einer alternativen Aktion und fuehrt diese aus.
+        Wird nur einmal pro fehlgeschlagenem Step versucht (kein Rekursions-Loop).
+
+        Returns:
+            Beschreibung der erfolgreichen Alternative oder None.
+        """
+        replan_prompt = (
+            f"Die Aktion '{failed_func}' mit Parametern {json.dumps(failed_args, ensure_ascii=False)} "
+            f"ist fehlgeschlagen: {error_msg}\n\n"
+            f"Gibt es eine alternative Aktion die das gleiche Ziel erreicht? "
+            f"Wenn ja, fuehre NUR die alternative Aktion aus. "
+            f"Wenn nein, antworte mit 'Keine Alternative moeglich.' ohne Tool-Calls."
+        )
+
+        try:
+            tools = get_assistant_tools()
+            replan_messages = list(planner_messages) + [{
+                "role": "user",
+                "content": replan_prompt,
+            }]
+
+            response = await self.ollama.chat(
+                messages=replan_messages,
+                model=self.model,
+                tools=tools,
+                max_tokens=256,
+                temperature=0.3,
+            )
+
+            alt_text = (response.get("message", {}).get("content") or "").strip()
+            alt_calls = response.get("message", {}).get("tool_calls") or []
+
+            if not alt_calls or "keine alternative" in alt_text.lower():
+                logger.info("Re-Planning: Keine Alternative fuer '%s'", failed_func)
+                return None
+
+            # Maximal eine alternative Aktion ausfuehren
+            tc = alt_calls[0]
+            func = tc.get("function", {})
+            alt_name = func.get("name", "")
+            alt_args = func.get("arguments", {})
+
+            if not alt_name:
+                return None
+
+            logger.info(
+                "Re-Planning: Alternative fuer '%s' -> '%s'(%s)",
+                failed_func, alt_name, alt_args,
+            )
+
+            alt_result = await self.executor.execute(alt_name, alt_args)
+            if alt_result.get("success"):
+                alt_step = PlanStep(
+                    function=alt_name,
+                    args=alt_args,
+                    result=alt_result,
+                    status="done",
+                )
+                plan.steps.append(alt_step)
+                return f"{alt_name}: {alt_result.get('message', 'OK')}"
+
+            logger.info("Re-Planning: Alternative '%s' auch fehlgeschlagen", alt_name)
+            return None
+
+        except Exception as e:
+            logger.warning("Re-Planning Fehler: %s", e)
+            return None
 
     # ------------------------------------------------------------------
     # Rollback-Mechanismus

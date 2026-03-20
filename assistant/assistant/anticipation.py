@@ -56,6 +56,9 @@ class AnticipationEngine:
         # Correction-Memory Integration: unterdrueckt Muster die korrigiert wurden
         self._correction_memory = None
 
+        # Seasonal Insight Integration: Saisonale Daten boosten Pattern-Confidence
+        self._seasonal_engine = None
+
     async def initialize(self, redis_client: Optional[redis.Redis] = None):
         """Initialisiert die Engine."""
         self.redis = redis_client
@@ -68,6 +71,14 @@ class AnticipationEngine:
     def set_notify_callback(self, callback):
         """Setzt den Callback fuer Vorschlaege."""
         self._notify_callback = callback
+
+    def set_seasonal_engine(self, engine):
+        """Verbindet die SeasonalInsightEngine fuer saisonalen Confidence-Boost.
+
+        Muster die zur aktuellen Jahreszeit passen (z.B. Heizmuster im Winter)
+        erhalten einen Confidence-Boost von bis zu +10%.
+        """
+        self._seasonal_engine = engine
 
     async def stop(self):
         """Stoppt die Engine."""
@@ -158,6 +169,10 @@ class AnticipationEngine:
             # 4. Phase 18: Kausale Ketten erkennen (3+ Aktionen als Zusammenhang)
             causal_patterns = self._detect_causal_chains(entries, person=person)
             patterns.extend(causal_patterns)
+
+            # 5. Saisonaler Confidence-Boost: Muster die zur aktuellen
+            # Jahreszeit passen erhalten +5-10% Boost
+            patterns = await self._apply_seasonal_boost(patterns)
 
             return patterns
 
@@ -578,6 +593,82 @@ class AnticipationEngine:
             return actions
 
         return []
+
+    # ------------------------------------------------------------------
+    # Saisonaler Confidence-Boost
+    # ------------------------------------------------------------------
+
+    # Saisonale Aktions-Keywords: Aktionen die typischerweise saisonal sind
+    _SEASONAL_ACTION_KEYWORDS = {
+        "winter": ["heiz", "climate", "temperature", "warm"],
+        "sommer": ["cool", "klima", "ventilat", "lueft", "cover"],
+        "fruehling": ["lueft", "fenster", "cover"],
+        "herbst": ["heiz", "climate", "licht", "light"],
+    }
+
+    _MONTH_TO_SEASON = {
+        12: "winter", 1: "winter", 2: "winter",
+        3: "fruehling", 4: "fruehling", 5: "fruehling",
+        6: "sommer", 7: "sommer", 8: "sommer",
+        9: "herbst", 10: "herbst", 11: "herbst",
+    }
+
+    async def _apply_seasonal_boost(self, patterns: list[dict]) -> list[dict]:
+        """Boosted Confidence fuer Muster die zur aktuellen Jahreszeit passen.
+
+        Muster mit saisonalem Bezug (z.B. Heizmuster im Winter) erhalten
+        einen Confidence-Boost von bis zu +10%. Nutzt SeasonalInsightEngine
+        Daten wenn verfuegbar, ansonsten keyword-basierte Erkennung.
+        """
+        if not patterns:
+            return patterns
+
+        now = datetime.now(_LOCAL_TZ)
+        current_season = self._MONTH_TO_SEASON.get(now.month, "")
+        if not current_season:
+            return patterns
+
+        seasonal_keywords = self._SEASONAL_ACTION_KEYWORDS.get(current_season, [])
+        if not seasonal_keywords:
+            return patterns
+
+        # Optional: Saisonale Aktivitaetsdaten aus SeasonalInsightEngine
+        seasonal_actions = set()
+        if self._seasonal_engine and hasattr(self._seasonal_engine, "redis") and self._seasonal_engine.redis:
+            try:
+                month_key = f"mha:seasonal:monthly:{now.strftime('%Y-%m')}"
+                raw = await self._seasonal_engine.redis.hgetall(month_key)
+                if raw:
+                    seasonal_actions = {
+                        (k.decode() if isinstance(k, bytes) else k)
+                        for k in raw.keys()
+                    }
+            except Exception:
+                pass  # Graceful degradation
+
+        boosted = []
+        for pattern in patterns:
+            action = pattern.get("action", "").lower()
+            confidence = pattern.get("confidence", 0.0)
+
+            boost = 0.0
+            # Keyword-basierter Boost
+            if any(kw in action for kw in seasonal_keywords):
+                boost = 0.05  # +5% fuer saisonale Keywords
+
+            # Daten-basierter Boost: Aktion kommt diesen Monat haeufig vor
+            if action in seasonal_actions:
+                boost = max(boost, 0.08)  # +8% fuer datengestuetzte Saisonalitaet
+
+            if boost > 0:
+                new_confidence = min(1.0, confidence + boost)
+                pattern = dict(pattern)  # Kopie, nicht Original aendern
+                pattern["confidence"] = round(new_confidence, 2)
+                pattern["seasonal_boost"] = round(boost, 2)
+
+            boosted.append(pattern)
+
+        return boosted
 
     # ------------------------------------------------------------------
     # Proaktive Vorschlaege

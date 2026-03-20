@@ -59,9 +59,17 @@ class ModelRouter:
             "deep": deque(maxlen=50),
         }
         self._deep_degraded = False
+        self._smart_degraded = False
         _router_cfg = yaml_config.get("model_router", {})
         self._latency_feedback_enabled = _router_cfg.get("latency_feedback", True)
         self._deep_degradation_threshold = _router_cfg.get("deep_degradation_threshold_s", 8.0)
+        # Per-Tier Timing-Targets (Sekunden) — Warn-Level bei Ueberschreitung
+        self._tier_targets = {
+            "fast": _router_cfg.get("target_fast_s", 0.5),
+            "smart": _router_cfg.get("target_smart_s", 2.0),
+            "deep": _router_cfg.get("target_deep_s", 5.0),
+        }
+        self._smart_degradation_threshold = _router_cfg.get("smart_degradation_threshold_s", 4.0)
 
         # Keywords und Config laden
         self._load_config()
@@ -313,10 +321,14 @@ class ModelRouter:
                          word_count, text[:80], model)
             return model, "deep", True
 
-        # 4. Fragen -> schlaues Modell
+        # 4. Fragen -> schlaues Modell (oder Fast wenn Smart degradiert UND Frage kurz)
         if any(text_lower.startswith(w) for w in [
             "was ", "wie ", "warum ", "wann ", "wo ", "wer ",
         ]):
+            if self._smart_degraded and word_count <= 10 and self._fast_enabled:
+                model = self._cap_model(self.model_fast)
+                logger.debug("SMART→FAST (degradiert) fuer kurze Frage: '%s'", text)
+                return model, "fast", False
             model = self._cap_model(self.model_smart)
             logger.debug("SMART model fuer Frage: '%s' (actual: %s)", text, model)
             return model, "smart", False
@@ -418,6 +430,14 @@ class ModelRouter:
 
         self._latency_history[tier].append(duration_seconds)
 
+        # Timing-Target Warnung (einzelne Calls)
+        target = self._tier_targets.get(tier)
+        if target and duration_seconds > target * 2:
+            logger.warning(
+                "%s-Tier Latenz %.1fs ueberschreitet 2x Target (%.1fs)",
+                tier.upper(), duration_seconds, target,
+            )
+
         # Deep-Degradation pruefen: Durchschnitt der letzten 10 Calls
         if tier == "deep" and len(self._latency_history["deep"]) >= 10:
             recent = list(self._latency_history["deep"])[-10:]
@@ -433,6 +453,22 @@ class ModelRouter:
                 )
             elif not self._deep_degraded and was_degraded:
                 logger.info("Deep-Modell erholt: Durchschnitt %.1fs unter Schwelle.", avg)
+
+        # Smart-Degradation pruefen: Fallback auf Fast
+        if tier == "smart" and len(self._latency_history["smart"]) >= 10:
+            recent = list(self._latency_history["smart"])[-10:]
+            avg = sum(recent) / len(recent)
+            was_degraded = self._smart_degraded
+            self._smart_degraded = avg > self._smart_degradation_threshold
+
+            if self._smart_degraded and not was_degraded:
+                logger.warning(
+                    "Smart-Modell degradiert: Durchschnitt %.1fs > %.1fs Schwelle. "
+                    "Einfache Anfragen werden auf Fast heruntergestuft.",
+                    avg, self._smart_degradation_threshold,
+                )
+            elif not self._smart_degraded and was_degraded:
+                logger.info("Smart-Modell erholt: Durchschnitt %.1fs unter Schwelle.", avg)
 
     def urgency_override(self, mood: str = "", stress_level: float = 0.0) -> str | None:
         """Gibt einen Tier-Override basierend auf Dringlichkeit zurueck.
@@ -466,6 +502,8 @@ class ModelRouter:
             else:
                 stats[tier] = {"count": 0, "avg_s": 0, "min_s": 0, "max_s": 0}
         stats["deep_degraded"] = self._deep_degraded
+        stats["smart_degraded"] = self._smart_degraded
+        stats["tier_targets"] = dict(self._tier_targets)
         return stats
 
     def get_model_info(self) -> dict:

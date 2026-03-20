@@ -136,6 +136,9 @@ class AutonomyManager:
             d: int(l) for d, l in raw_domain.items() if d in AUTONOMY_DOMAINS
         }
 
+        # Outcome Tracker Integration (gesetzt via set_outcome_tracker)
+        self._outcome_tracker = None
+
     def can_act(self, action_type: str, domain: str = "") -> bool:
         """
         Prueft ob der Assistent diese Aktion ausfuehren darf.
@@ -491,6 +494,14 @@ class AutonomyManager:
         """Verbindet den Redis-Client fuer Statistik-Tracking."""
         self._redis = redis_client
 
+    def set_outcome_tracker(self, tracker):
+        """Verbindet den Outcome-Tracker fuer Evolution-Feedback.
+
+        Outcome-Scores fliessen als zusaetzliches Signal in die
+        Evolution-Bewertung ein (max +5% Boost auf Akzeptanzrate).
+        """
+        self._outcome_tracker = tracker
+
     async def track_interaction(self, action_type: str, accepted: bool):
         """Trackt eine Interaktion fuer die Evolution-Bewertung.
 
@@ -565,10 +576,29 @@ class AutonomyManager:
             # Akzeptanzrate berechnen
             acceptance_rate = accepted / max(1, total)
 
+            # Outcome-Tracker Integration: Durchschnittliche Erfolgsrate
+            # aller Aktionstypen als zusaetzliches Signal einbeziehen.
+            # Outcome-Scores (0-1) fliessen gewichtet in die Akzeptanzrate ein.
+            outcome_boost = 0.0
+            outcome_score_avg = None
+            if self._outcome_tracker:
+                try:
+                    all_scores = await self._outcome_tracker.get_all_scores()
+                    if all_scores:
+                        outcome_score_avg = sum(all_scores.values()) / len(all_scores)
+                        # Boost: Wenn Outcome-Score > 0.7, erhoehe Akzeptanzrate leicht
+                        # Max +5% Boost (verhindert Gaming)
+                        if outcome_score_avg > 0.7:
+                            outcome_boost = min(0.05, (outcome_score_avg - 0.7) * 0.167)
+                except Exception as e:
+                    logger.debug("Outcome-Score fuer Evolution nicht verfuegbar: %s", e)
+
+            effective_acceptance = min(1.0, acceptance_rate + outcome_boost)
+
             # Kriterien pruefen
             meets_days = days_active >= criteria["min_days"]
             meets_interactions = total >= criteria["min_interactions"]
-            meets_acceptance = acceptance_rate >= criteria["min_acceptance"]
+            meets_acceptance = effective_acceptance >= criteria["min_acceptance"]
 
             result = {
                 "current_level": self.level,
@@ -576,6 +606,9 @@ class AutonomyManager:
                 "days_active": days_active,
                 "total_interactions": total,
                 "acceptance_rate": round(acceptance_rate, 3),
+                "effective_acceptance_rate": round(effective_acceptance, 3),
+                "outcome_score_avg": round(outcome_score_avg, 3) if outcome_score_avg is not None else None,
+                "outcome_boost": round(outcome_boost, 3),
                 "criteria": criteria,
                 "meets_days": meets_days,
                 "meets_interactions": meets_interactions,

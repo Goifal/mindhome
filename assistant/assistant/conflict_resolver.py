@@ -895,6 +895,86 @@ class ConflictResolver:
                     state_map.get(eid) == "not_home" for eid in person_entities
                 ):
                     matched = True
+            elif ctx == "cooling_and_heating":
+                # Klimaanlage kuehlt waehrend Heizung heizt
+                for eid, val in state_map.items():
+                    if eid.startswith("climate."):
+                        attrs = next((s.get("attributes", {}) for s in ha_states
+                                      if s.get("entity_id") == eid), {})
+                        hvac = attrs.get("hvac_action", val)
+                        if hvac in ("cooling", "heating"):
+                            # Pruefen ob ein anderes Klimageraet das Gegenteil tut
+                            opposite = "heating" if hvac == "cooling" else "cooling"
+                            for eid2, val2 in state_map.items():
+                                if eid2 != eid and eid2.startswith("climate."):
+                                    attrs2 = next((s.get("attributes", {}) for s in ha_states
+                                                    if s.get("entity_id") == eid2), {})
+                                    if attrs2.get("hvac_action", val2) == opposite:
+                                        matched = True
+                                        break
+                        if matched:
+                            break
+            elif ctx == "goodnight_active":
+                matched = any(
+                    state_map.get(eid) == "on"
+                    for eid in state_map
+                    if "goodnight" in eid or "gute_nacht" in eid or "schlafmodus" in eid
+                )
+            elif ctx == "high_wind":
+                for eid, val in state_map.items():
+                    if eid.startswith("sensor.") and ("wind" in eid and "speed" in eid):
+                        try:
+                            if float(val) > 60:
+                                matched = True
+                                break
+                        except (ValueError, TypeError):
+                            continue
+            elif ctx == "door_open":
+                matched = any(
+                    state_map.get(eid) == "on"
+                    for eid in state_map
+                    if eid.startswith("binary_sensor.") and ("door" in eid or "tuer" in eid)
+                )
+            elif ctx == "sleeping_detected":
+                matched = any(
+                    state_map.get(eid) == "on"
+                    for eid in state_map
+                    if "sleep" in eid or "schlaf" in eid or "goodnight" in eid
+                )
+            elif ctx == "rain_detected":
+                weather = state_map.get("weather.home", "")
+                matched = weather in ("rainy", "pouring", "lightning-rainy", "hail")
+            elif ctx == "frost_detected":
+                for eid, val in state_map.items():
+                    if eid.startswith("sensor.") and "temperature" in eid and "outdoor" in eid:
+                        try:
+                            if float(val) < 0:
+                                matched = True
+                                break
+                        except (ValueError, TypeError):
+                            continue
+            elif ctx == "high_energy_price":
+                for eid, val in state_map.items():
+                    if "price" in eid or "tarif" in eid or "strom" in eid:
+                        try:
+                            if float(val) > 0.30:
+                                matched = True
+                                break
+                        except (ValueError, TypeError):
+                            continue
+            elif ctx == "media_playing":
+                matched = any(
+                    state_map.get(eid) == "playing"
+                    for eid in state_map
+                    if eid.startswith("media_player.")
+                )
+            elif ctx == "window_scheduled_open":
+                # Lueften geplant: Timer oder Automation aktiv
+                matched = any(
+                    state_map.get(eid) == "on"
+                    for eid in state_map
+                    if "lueft" in eid or "ventilat" in eid
+                )
 
             if matched:
                 return {
@@ -949,5 +1029,78 @@ _LOGICAL_CONFLICT_RULES = [
         "context": "nobody_home",
         "warning": "Niemand zuhause — Eco-Modus empfohlen",
         "severity": "info",
+    },
+    # --- Erweiterte Konfliktregeln ---
+    {
+        "action": "set_climate",
+        "context": "cooling_and_heating",
+        "warning": "Klimaanlage und Heizung widersprechen sich — bitte Modus pruefen",
+        "severity": "warning",
+    },
+    {
+        "action": "set_light",
+        "context": "goodnight_active",
+        "warning": "Gute-Nacht-Routine aktiv — Licht einschalten widerspricht Schlafmodus",
+        "severity": "info",
+    },
+    {
+        "action": "set_cover",
+        "context": "high_wind",
+        "warning": "Starker Wind — Rolllaeden/Markisen besser geschlossen lassen",
+        "severity": "warning",
+    },
+    {
+        "action": "set_climate",
+        "context": "door_open",
+        "warning": "Tuer offen — Heizen/Kuehlen ineffizient",
+        "severity": "info",
+    },
+    {
+        "action": "play_media",
+        "context": "sleeping_detected",
+        "warning": "Schlafenszeit erkannt — Medien abspielen koennte Bewohner stoeren",
+        "severity": "info",
+    },
+    {
+        "action": "set_light",
+        "context": "nobody_home",
+        "warning": "Niemand zuhause — Licht einschalten unnoetig",
+        "severity": "low",
+    },
+    {
+        "action": "set_cover",
+        "context": "rain_detected",
+        "warning": "Regen erkannt — Markisen/Fenster besser geschlossen halten",
+        "severity": "info",
+    },
+    {
+        "action": "set_cover",
+        "context": "frost_detected",
+        "warning": "Frost — Rolllaeden geschlossen lassen fuer Waermedaemmung",
+        "severity": "info",
+    },
+    {
+        "action": "set_climate",
+        "context": "high_energy_price",
+        "warning": "Strompreis hoch — Klimatisierung vertagen oder reduzieren",
+        "severity": "info",
+    },
+    {
+        "action": "set_vacuum",
+        "context": "sleeping_detected",
+        "warning": "Schlafenszeit erkannt — Staubsauger koennte Bewohner stoeren",
+        "severity": "info",
+    },
+    {
+        "action": "set_light",
+        "context": "media_playing",
+        "warning": "Medien werden abgespielt — helles Licht koennte Filmerlebnis stoeren",
+        "severity": "low",
+    },
+    {
+        "action": "set_climate",
+        "context": "window_scheduled_open",
+        "warning": "Lueften geplant — Heizung vorher reduzieren spart Energie",
+        "severity": "low",
     },
 ]

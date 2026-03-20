@@ -775,6 +775,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Autonomy Evolution: Redis für Interaktions-Tracking
         self.autonomy.set_redis(self.memory.redis)
+        # Outcome-Tracker -> Autonomy Feedback-Loop: Outcome-Scores fliessen
+        # als zusaetzliches Signal in die Evolution-Bewertung ein
+        self.autonomy.set_outcome_tracker(self.outcome_tracker)
 
         # Response Cache + Latency Tracker: Redis-Verbindung setzen
         self.response_cache.set_redis(self.memory.redis)
@@ -1009,6 +1012,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.explainability.set_ollama(self.ollama)
         self.seasonal_insight.set_ollama(self.ollama)
         self.seasonal_insight.set_ha(self.ha)
+        # Seasonal→Anticipation Integration: Saisonale Daten boosten Pattern-Confidence
+        self.anticipation.set_seasonal_engine(self.seasonal_insight)
         self.time_awareness.set_ollama(self.ollama)
         self.music_dj.set_ollama(self.ollama)
         self.visitor_manager.set_ollama(self.ollama)
@@ -9007,6 +9012,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         "offnen": "öffnen", "geoffnet": "geöffnet", "schliessen": "schließen",
         "heiss": "heiß", "draussen": "draußen",
         "stromungskanal": "Strömungskanal", "beleuchtungskorper": "Beleuchtungskörper",
+        "geratе": "Geräte", "gerateraum": "Geräteraum",
+        "lufter": "Lüfter", "aufraumen": "aufräumen", "spulen": "spülen",
+        "mullеimer": "Mülleimer", "flur": "Flur",
+        "bettwasche": "Bettwäsche", "kuhlеr": "Kühler",
+        "warmepumpe": "Wärmepumpe", "fussbodenheizung": "Fußbodenheizung",
+        "aussеn": "außen", "aussensensor": "Außensensor",
+        "schalter": "Schalter", "stromzahler": "Stromzähler",
+        "energieverbrauch": "Energieverbrauch",
         # --- Zusammengeschriebene Smart-Home-Begriffe ---
         "roll laden": "Rollladen", "rolladen": "Rollladen",
         "wohn zimmer": "Wohnzimmer", "schlaf zimmer": "Schlafzimmer",
@@ -9015,18 +9028,32 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         "spul maschine": "Spülmaschine", "saug roboter": "Saugroboter",
         "steck dose": "Steckdose", "laut sprecher": "Lautsprecher",
         "bewegungs melder": "Bewegungsmelder",
+        "rauch melder": "Rauchmelder", "tuerklingel": "Türklingel",
+        "tuer klingel": "Türklingel", "fern seher": "Fernseher",
+        "fern bedienung": "Fernbedienung", "wasser hahn": "Wasserhahn",
+        "klima anlage": "Klimaanlage", "luft filter": "Luftfilter",
+        "staub sauger": "Staubsauger", "geschirr spueler": "Geschirrspüler",
+        "wasche trockner": "Wäschetrockner",
         # --- Whisper-Halluzinationen bei deutschen Befehlen ---
         "ja weiß": "Jarvis", "ja weis": "Jarvis", "jarwis": "Jarvis",
         "dschawis": "Jarvis", "tscharwis": "Jarvis", "dschavis": "Jarvis",
         "javis": "Jarvis", "jarvis,": "Jarvis",
+        "dscharfis": "Jarvis", "tschawis": "Jarvis", "schawis": "Jarvis",
+        "dscharwiss": "Jarvis", "jarfis": "Jarvis", "dschafis": "Jarvis",
         # --- Haeufige Whisper-Fehler bei kurzen Befehlen ---
         "machte": "mach das", "macht": "mach",
         "lichte": "Licht", "lich": "Licht",
         "rolle": "Rollo", "rollos": "Rollos",
+        "dimme": "dimm", "schalte": "schalt",
+        "stoppe": "stopp", "spiele": "spiel",
         # --- Zahlen/Prozent-Korrekturen ---
         "prozent": "%", "grad": "°",
-        # --- Gängige Fehlerkennungen ---
+        # --- Smart-Home-spezifische Fehlerkennungen ---
         "home assistant": "Home Assistant", "homeassistant": "Home Assistant",
+        "zigbee": "Zigbee", "zwave": "Z-Wave", "z-wave": "Z-Wave",
+        "wlan": "WLAN", "wifi": "WiFi",
+        "sonoff": "Sonoff", "shelly": "Shelly", "hue": "Hue",
+        "alexa": "Alexa", "eсho": "Echo",
     }
 
     # Mehrwort-Korrekturen (werden VOR Einzelwort-Korrekturen angewendet)
@@ -9044,6 +9071,19 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         ("steck dose", "Steckdose"),
         ("laut sprecher", "Lautsprecher"),
         ("bewegungs melder", "Bewegungsmelder"),
+        ("rauch melder", "Rauchmelder"),
+        ("tuer klingel", "Türklingel"),
+        ("fern seher", "Fernseher"),
+        ("fern bedienung", "Fernbedienung"),
+        ("wasser hahn", "Wasserhahn"),
+        ("klima anlage", "Klimaanlage"),
+        ("luft filter", "Luftfilter"),
+        ("staub sauger", "Staubsauger"),
+        ("geschirr spueler", "Geschirrspüler"),
+        ("wasche trockner", "Wäschetrockner"),
+        ("fuss boden heizung", "Fußbodenheizung"),
+        ("fussbodenheizung", "Fußbodenheizung"),
+        ("warme pumpe", "Wärmepumpe"),
         ("guten morgen", "Guten Morgen"),
         ("gute nacht", "Gute Nacht"),
         ("ja weiß", "Jarvis"),
@@ -9052,6 +9092,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         ("mach die musik", "mach die Musik"),
         ("wie viel uhr", "wie viel Uhr"),
         ("wie spät", "wie spät"),
+        ("mach die heizung", "mach die Heizung"),
+        ("mach den fernseher", "mach den Fernseher"),
+        ("das übliche", "das Übliche"),
+        ("wie immer", "wie immer"),
+        ("alles aus", "alles aus"),
+        ("alles an", "alles an"),
     ]
 
     def _normalize_stt_text(self, text: str) -> str:

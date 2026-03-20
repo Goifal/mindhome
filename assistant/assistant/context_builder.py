@@ -86,7 +86,39 @@ _INJECTION_PATTERN = re.compile(
     # F-084: HTML Entities (hex UND decimal)
     r'|&#x?[0-9a-fA-F]+;'                       # Beide Entity-Formen
     r'|\\u[0-9a-fA-F]{4}'                       # Unicode Escape Sequences
-    r'|[\x00-\x08\x0b\x0c\x0e-\x1f]',          # Kontrollzeichen (korrekter Char-Class)
+    r'|[\x00-\x08\x0b\x0c\x0e-\x1f]'           # Kontrollzeichen (korrekter Char-Class)
+    # F-090: Deutsche Injection-Patterns
+    r'|IGNORIERE\s+(?:ALLE\s+)?(?:VORHERIGEN\s+)?(?:ANWEISUNGEN|INSTRUKTIONEN)'
+    r'|VERGISS\s+(?:ALLES|DEINE)'               # DE Memory Wipe
+    r'|DU\s+BIST\s+(?:JETZT|AB\s+JETZT)'       # DE Persona-Hijacking
+    r'|NEUE\s+(?:ANWEISUNG|AUFGABE|ROLLE)'      # DE Neue Instruktion
+    r'|TU\s+SO\s+ALS\s+(?:OB|WAERST|WÄRST)'   # DE Pretend
+    r'|SPRICH\s+(?:AB\s+JETZT|NUR\s+NOCH)'     # DE Sprachsteuerung
+    r'|STELLE\s+DIR\s+VOR\s+DU\s+(?:BIST|WAERST)'  # DE Hypothetischer Angriff
+    # F-090: Multilingual Mixed-Language Injection
+    r'|(?:PLEASE|BITTE)\s+(?:IGNORE|IGNORIERE)'  # Mixed DE/EN
+    r'|(?:NOW|JETZT)\s+(?:ACT|AGIERE)\s+AS'    # Mixed DE/EN
+    # F-090: Indirect Injection via Entity-Namen/Attribute
+    r'|entity_id\s*[=:]\s*["\']?(?:system|admin|root|sudo)'  # Entity-ID Hijacking
+    r'|friendly_name\s*[=:]\s*.*(?:SYSTEM|IGNORE|OVERRIDE)'  # HA Attribute Injection
+    # F-090: Advanced Evasion Techniques
+    r'|(?:S\s*Y\s*S\s*T\s*E\s*M)'              # Spaced-out keywords
+    r'|(?:I\s*G\s*N\s*O\s*R\s*E)'              # Spaced-out keywords v2
+    r'|(?:SYS|SYS)(?:TEM|tem)'                  # Mixed-case obfuscation
+    r'|(?:IGN|ign)(?:ORE|ore)'                  # Mixed-case obfuscation v2
+    # F-090: Prompt Leaking via Encoding
+    r'|(?:ROT13|rot13|CAESAR|caesar)\s*\('      # Encoding tricks
+    r'|(?:atob|btoa)\s*\('                       # JS Base64 tricks
+    r'|(?:chr|ord)\s*\('                         # Python char tricks
+    # F-090: Instruction Boundary Attacks
+    r'|={3,}\s*(?:END|BEGIN|NEW)'               # Boundary marker injection
+    r'|\*{3,}\s*(?:SYSTEM|INSTRUCTION)'         # Star-boundary injection
+    r'|>>>+\s*(?:SYSTEM|PROMPT|ADMIN)'          # Arrow-boundary injection
+    r'|```json\s*\{["\']?(?:role|system)'       # JSON role injection in code block
+    # F-090: Tool/Function Injection
+    r'|tool_call\s*[=:]\s*'                      # Direct tool injection
+    r'|function_call\s*[=:]\s*'                  # Direct function injection
+    r'|<tool_use>|<function>',                   # XML tool injection
     re.IGNORECASE,
 )
 
