@@ -559,12 +559,14 @@ class TestHydrationComprehensive:
     @pytest.mark.asyncio
     async def test_hydration_sends_nudge_when_due(self, advisor, activity_mock, redis_mock):
         """Hydration nudge sent when interval elapsed and user active."""
-        old = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+        from assistant.wellness_advisor import _LOCAL_TZ
+        fake_now = datetime(2026, 3, 20, 14, 0, tzinfo=_LOCAL_TZ)
+        # old muss relativ zum gemockten now sein, nicht zur echten Uhrzeit
+        old = (fake_now.astimezone(timezone.utc) - timedelta(hours=3)).isoformat()
         redis_mock.get = AsyncMock(return_value=old)
         activity_mock.detect_activity = AsyncMock(return_value={"activity": "focused"})
         with patch("assistant.wellness_advisor.datetime") as mock_dt:
-            from assistant.wellness_advisor import _LOCAL_TZ
-            mock_dt.now.return_value = datetime(2026, 3, 20, 14, 0, tzinfo=_LOCAL_TZ)
+            mock_dt.now.return_value = fake_now
             mock_dt.fromisoformat = datetime.fromisoformat
             await advisor._check_hydration()
         advisor._notify_callback.assert_called_once()
@@ -574,12 +576,13 @@ class TestHydrationComprehensive:
     async def test_hydration_stressed_short_message(self, advisor, mood_mock, activity_mock, redis_mock):
         """When stressed, hydration message is terse ('Wasser')."""
         mood_mock.get_current_mood.return_value = {"mood": "stressed", "stress_level": 0.7}
-        old = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+        from assistant.wellness_advisor import _LOCAL_TZ
+        fake_now = datetime(2026, 3, 20, 14, 0, tzinfo=_LOCAL_TZ)
+        old = (fake_now.astimezone(timezone.utc) - timedelta(hours=3)).isoformat()
         redis_mock.get = AsyncMock(return_value=old)
         activity_mock.detect_activity = AsyncMock(return_value={"activity": "focused"})
         with patch("assistant.wellness_advisor.datetime") as mock_dt:
-            from assistant.wellness_advisor import _LOCAL_TZ
-            mock_dt.now.return_value = datetime(2026, 3, 20, 14, 0, tzinfo=_LOCAL_TZ)
+            mock_dt.now.return_value = fake_now
             mock_dt.fromisoformat = datetime.fromisoformat
             await advisor._check_hydration()
         call_msg = advisor._notify_callback.call_args[0][1]
