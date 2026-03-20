@@ -45,6 +45,20 @@ except Exception as e:
     logger.warning("room_profiles.yaml nicht geladen: %s", e)
 
 # F-001/F-004/F-013-F-017: Prompt-Injection-Schutz für LLM-Kontext
+# Injection-Config: Modulebene gecacht (Performance: wird in _sanitize_for_prompt ~100x/Context aufgerufen)
+_INJ_CFG = yaml_config.get("prompt_injection", {})
+_INJ_ENABLED: bool = _INJ_CFG.get("enabled", True)
+_INJ_LOG_BLOCKED: bool = _INJ_CFG.get("log_blocked", True)
+
+
+def reload_injection_config():
+    """Aktualisiert die Injection-Config aus yaml_config (Hot-Reload bei UI-Änderungen)."""
+    global _INJ_ENABLED, _INJ_LOG_BLOCKED
+    inj_cfg = yaml_config.get("prompt_injection", {})
+    _INJ_ENABLED = inj_cfg.get("enabled", True)
+    _INJ_LOG_BLOCKED = inj_cfg.get("log_blocked", True)
+    logger.info("Injection-Config reloaded (enabled=%s, log=%s)", _INJ_ENABLED, _INJ_LOG_BLOCKED)
+
 # F-080: Erweiterter Filter mit Unicode-Tricks, Markdown, Base64, Delimiter
 # F-084: Extraction-Attack-Patterns, Decimal HTML Entities, Delimiter Confusion
 _INJECTION_PATTERN = re.compile(
@@ -163,9 +177,9 @@ def _sanitize_for_prompt(text: str, max_len: int = 200, label: str = "") -> str:
     text = re.sub(r'\s{2,}', ' ', text).strip()
     # F-084: Injection-Pattern auf VOLLEM Text prüfen (VOR Truncation!)
     # F-091: Konfigurierbar via settings.yaml → prompt_injection.enabled
-    _inj_cfg = yaml_config.get("prompt_injection", {})
-    if _inj_cfg.get("enabled", True) and _INJECTION_PATTERN.search(text):
-        if _inj_cfg.get("log_blocked", True):
+    # Modulebene-Cache: _INJ_ENABLED / _INJ_LOG_BLOCKED (Performance)
+    if _INJ_ENABLED and _INJECTION_PATTERN.search(text):
+        if _INJ_LOG_BLOCKED:
             logger.warning(
                 "Prompt-Injection-Verdacht in %s blockiert: %.80s",
                 label or "Kontext", text,

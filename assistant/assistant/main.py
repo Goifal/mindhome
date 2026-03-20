@@ -3485,6 +3485,13 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
                             cr._safe_limits[domain][param] = (float(vals[0]), float(vals[1]))
         _try_reload("conflict_resolution", _reload_conflict_resolver)
 
+    # Prompt-Injection-Config: Modulebene-Cache aktualisieren
+    if "prompt_injection" in changed_settings:
+        def _reload_injection():
+            from .context_builder import reload_injection_config
+            reload_injection_config()
+        _try_reload("prompt_injection", _reload_injection)
+
     # AmbientAudio: Sensor-Mappings, Cooldowns, Night-Mode
     if "ambient_audio" in changed_settings and hasattr(brain, "ambient_audio"):
         def _reload_ambient_audio():

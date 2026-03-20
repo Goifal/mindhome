@@ -62,6 +62,24 @@ stt_corrections:
     draussen: draußen
     stromungskanal: Strömungskanal
     beleuchtungskorper: Beleuchtungskörper
+    # Fehlende Umlaute (erweitert)
+    geratе: Geräte
+    gerateraum: Geräteraum
+    lufter: Lüfter
+    aufraumen: aufräumen
+    spulen: spülen
+    mullеimer: Mülleimer
+    flur: Flur
+    bettwasche: Bettwäsche
+    kuhlеr: Kühler
+    warmepumpe: Wärmepumpe
+    fussbodenheizung: Fußbodenheizung
+    aussеn: außen
+    aussensensor: Außensensor
+    schalter: Schalter
+    stromzahler: Stromzähler
+    energieverbrauch: Energieverbrauch
+    # Smart-Home-Begriffe (zusammengeschrieben)
     roll laden: Rollladen
     rolladen: Rollladen
     wohn zimmer: Wohnzimmer
@@ -75,6 +93,18 @@ stt_corrections:
     steck dose: Steckdose
     laut sprecher: Lautsprecher
     bewegungs melder: Bewegungsmelder
+    rauch melder: Rauchmelder
+    tuerklingel: Türklingel
+    tuer klingel: Türklingel
+    fern seher: Fernseher
+    fern bedienung: Fernbedienung
+    wasser hahn: Wasserhahn
+    klima anlage: Klimaanlage
+    luft filter: Luftfilter
+    staub sauger: Staubsauger
+    geschirr spueler: Geschirrspüler
+    wasche trockner: Wäschetrockner
+    # Jarvis-Name-Varianten
     ja weiß: Jarvis
     ja weis: Jarvis
     jarwis: Jarvis
@@ -83,16 +113,40 @@ stt_corrections:
     dschavis: Jarvis
     javis: Jarvis
     jarvis,: Jarvis
+    dscharfis: Jarvis
+    tschawis: Jarvis
+    schawis: Jarvis
+    dscharwiss: Jarvis
+    jarfis: Jarvis
+    dschafis: Jarvis
+    # Kurze Befehle
     machte: mach das
     macht: mach
     lichte: Licht
     lich: Licht
     rolle: Rollo
     rollos: Rollos
+    dimme: dimm
+    schalte: schalt
+    stoppe: stopp
+    spiele: spiel
+    # Zahlen/Prozent
     prozent: '%'
     grad: °
+    # Smart-Home allgemein
     home assistant: Home Assistant
     homeassistant: Home Assistant
+    zigbee: Zigbee
+    zwave: Z-Wave
+    z-wave: Z-Wave
+    wlan: WLAN
+    wifi: WiFi
+    sonoff: Sonoff
+    shelly: Shelly
+    hue: Hue
+    alexa: Alexa
+    netflix: Netflix
+    thermometer: Thermometer
     # Smart-Home-Marken (phonetische Whisper-Varianten)
     tradfri: Tradfri
     trahfri: Tradfri
@@ -152,12 +206,31 @@ stt_corrections:
     steck dose: Steckdose
     laut sprecher: Lautsprecher
     bewegungs melder: Bewegungsmelder
+    rauch melder: Rauchmelder
+    tuer klingel: Türklingel
+    fern seher: Fernseher
+    fern bedienung: Fernbedienung
+    wasser hahn: Wasserhahn
+    klima anlage: Klimaanlage
+    luft filter: Luftfilter
+    staub sauger: Staubsauger
+    geschirr spueler: Geschirrspüler
+    wasche trockner: Wäschetrockner
+    fuss boden heizung: Fußbodenheizung
+    fussbodenheizung: Fußbodenheizung
+    warme pumpe: Wärmepumpe
     guten morgen: Guten Morgen
     gute nacht: Gute Nacht
-    ja weiß: Jarvis
-    ja weis: Jarvis
+    ja weiß,: Jarvis,
+    ja weis,: Jarvis,
     mach das licht: mach das Licht
     mach die musik: mach die Musik
+    mach die heizung: mach die Heizung
+    mach den fernseher: mach den Fernseher
+    das übliche: das Übliche
+    wie immer: wie immer
+    alles aus: alles aus
+    alles an: alles an
     wie viel uhr: wie viel Uhr
     wie spät: wie spät
     # Raum-Varianten und Synonyme

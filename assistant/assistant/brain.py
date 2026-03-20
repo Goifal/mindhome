@@ -502,12 +502,24 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         """Lädt alle konfigurierbaren Daten aus YAML mit Hardcoded-Fallback."""
         # STT-Korrekturen
         stt_cfg = cfg.yaml_config.get("stt_corrections", {})
-        self._stt_word_corrections = stt_cfg.get("word_corrections") or dict(self._STT_WORD_CORRECTIONS)
+        # Merge-Strategie: Hardcoded-Basis + YAML-Overrides (YAML gewinnt bei Konflikten)
+        merged_words = dict(self._STT_WORD_CORRECTIONS)
+        yaml_words = stt_cfg.get("word_corrections")
+        if yaml_words and isinstance(yaml_words, dict):
+            merged_words.update(yaml_words)
+        self._stt_word_corrections = merged_words
+
+        merged_phrases = list(self._STT_PHRASE_CORRECTIONS)
         raw_phrases = stt_cfg.get("phrase_corrections")
         if raw_phrases and isinstance(raw_phrases, dict):
-            self._stt_phrase_corrections = [(k, v) for k, v in raw_phrases.items()]
-        else:
-            self._stt_phrase_corrections = list(self._STT_PHRASE_CORRECTIONS)
+            # YAML-Phrases überschreiben existierende Keys
+            existing_keys = {k for k, _ in merged_phrases}
+            for k, v in raw_phrases.items():
+                if k in existing_keys:
+                    merged_phrases = [(pk, pv) if pk != k else (k, v) for pk, pv in merged_phrases]
+                else:
+                    merged_phrases.append((k, v))
+        self._stt_phrase_corrections = merged_phrases
 
         # Error-Templates + Escalation-Prefixes (aus personality-Sektion)
         pers_cfg = cfg.yaml_config.get("personality", {})
