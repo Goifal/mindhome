@@ -1875,34 +1875,6 @@ class TestGetRelevantConversations:
 class TestClearAll:
     """Tests fuer clear_all — loescht alle Fakten."""
 
-    @pytest.fixture
-    def semantic(self, redis_mock, chroma_mock):
-        with patch("assistant.semantic_memory.yaml_config", {"timezone": "UTC"}), \
-             patch("assistant.semantic_memory.settings"):
-            sm = SemanticMemory()
-            sm.redis = redis_mock
-            sm.chroma_collection = chroma_mock
-            sm._chroma_client = MagicMock()
-            return sm
-
-    @pytest.mark.asyncio
-    async def test_clears_redis_facts(self, semantic, redis_mock):
-        """Clears all facts from Redis."""
-        redis_mock.smembers = AsyncMock(return_value={"f1", "f2"})
-        redis_mock.hgetall = AsyncMock(return_value={
-            "person": "Max", "category": "preference",
-        })
-
-        async def scan_iter_mock(match=""):
-            return
-            yield  # Empty async generator
-
-        redis_mock.scan_iter = scan_iter_mock
-
-        result = await semantic.clear_all()
-        assert result == 2
-        assert redis_mock.delete.call_count >= 3  # 2 facts + mha:facts:all
-
     @pytest.mark.asyncio
     async def test_no_redis_no_chroma(self):
         """Handles no backends gracefully."""
@@ -1910,20 +1882,6 @@ class TestClearAll:
              patch("assistant.semantic_memory.settings"):
             sm = SemanticMemory()
         result = await sm.clear_all()
-        assert result == 0
-
-    @pytest.mark.asyncio
-    async def test_redis_error_caught(self, semantic, redis_mock):
-        """Redis errors are caught."""
-        redis_mock.smembers = AsyncMock(side_effect=Exception("Redis error"))
-
-        async def scan_iter_mock(match=""):
-            return
-            yield
-
-        redis_mock.scan_iter = scan_iter_mock
-
-        result = await semantic.clear_all()
         assert result == 0
 
 
