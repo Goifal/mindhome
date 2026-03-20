@@ -1512,3 +1512,728 @@ class TestFactRetrievalEdgeCases:
         redis_mock.smembers = AsyncMock(side_effect=Exception("Redis down"))
         result = await semantic.get_all_facts()
         assert result == []
+
+
+# =====================================================================
+# verify_consistency Tests
+# =====================================================================
+
+
+class TestVerifyConsistency:
+    """Tests fuer verify_consistency — Redis/ChromaDB Konsistenz-Pruefung."""
+
+    @pytest.fixture
+    def semantic(self, redis_mock, chroma_mock):
+        with patch("assistant.semantic_memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+            sm.redis = redis_mock
+            sm.chroma_collection = chroma_mock
+            return sm
+
+    @pytest.mark.asyncio
+    async def test_no_redis_returns_early(self, chroma_mock):
+        with patch("assistant.semantic_memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+        sm.chroma_collection = chroma_mock
+        await sm.verify_consistency()  # No exception
+
+    @pytest.mark.asyncio
+    async def test_no_chroma_returns_early(self, redis_mock):
+        with patch("assistant.semantic_memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+        sm.redis = redis_mock
+        await sm.verify_consistency()  # No exception
+
+    @pytest.mark.asyncio
+    async def test_empty_redis_returns_early(self, semantic, redis_mock):
+        redis_mock.smembers = AsyncMock(return_value=set())
+        await semantic.verify_consistency()  # No exception
+
+    @pytest.mark.asyncio
+    async def test_reindexes_missing_chroma_facts(self, semantic, redis_mock, chroma_mock):
+        """Facts in Redis but not in ChromaDB are re-indexed."""
+        redis_mock.smembers = AsyncMock(return_value={"fact_1"})
+        chroma_mock.get.return_value = {"ids": []}  # Not in ChromaDB
+        redis_mock.hgetall = AsyncMock(return_value={
+            "content": "Test fact",
+            "category": "preference",
+            "person": "Max",
+            "confidence": "0.8",
+        })
+
+        await semantic.verify_consistency()
+        chroma_mock.add.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cleans_orphaned_redis_ids(self, semantic, redis_mock, chroma_mock):
+        """IDs in Redis index with no data are cleaned up."""
+        redis_mock.smembers = AsyncMock(return_value={"orphan_id"})
+        chroma_mock.get.return_value = {"ids": []}  # Not in ChromaDB
+        redis_mock.hgetall = AsyncMock(return_value={})  # No data either
+
+        await semantic.verify_consistency()
+        redis_mock.srem.assert_called_with("mha:facts:all", "orphan_id")
+
+    @pytest.mark.asyncio
+    async def test_skips_facts_already_in_chroma(self, semantic, redis_mock, chroma_mock):
+        """Facts found in both Redis and ChromaDB are left alone."""
+        redis_mock.smembers = AsyncMock(return_value={"fact_ok"})
+        chroma_mock.get.return_value = {"ids": ["fact_ok"]}
+
+        await semantic.verify_consistency()
+        chroma_mock.add.assert_not_called()
+        redis_mock.srem.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_handles_bytes_fact_ids(self, semantic, redis_mock, chroma_mock):
+        """Bytes fact IDs from Redis are decoded correctly."""
+        redis_mock.smembers = AsyncMock(return_value={b"fact_bytes"})
+        chroma_mock.get.return_value = {"ids": ["fact_bytes"]}
+
+        await semantic.verify_consistency()  # No exception
+
+    @pytest.mark.asyncio
+    async def test_chroma_get_error_skips_fact(self, semantic, redis_mock, chroma_mock):
+        """ChromaDB get error for a fact skips it without crashing."""
+        redis_mock.smembers = AsyncMock(return_value={"fact_err"})
+        chroma_mock.get.side_effect = Exception("ChromaDB error")
+
+        await semantic.verify_consistency()  # No exception
+
+    @pytest.mark.asyncio
+    async def test_outer_exception_caught(self, semantic, redis_mock):
+        """Top-level exception is caught."""
+        redis_mock.smembers = AsyncMock(side_effect=Exception("Redis broken"))
+        await semantic.verify_consistency()  # No exception
+
+
+# =====================================================================
+# get_upcoming_personal_dates Tests
+# =====================================================================
+
+
+class TestGetUpcomingPersonalDates:
+    """Tests fuer get_upcoming_personal_dates."""
+
+    @pytest.fixture
+    def semantic(self, redis_mock, chroma_mock):
+        with patch("assistant.semantic_memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+            sm.redis = redis_mock
+            sm.chroma_collection = chroma_mock
+            return sm
+
+    @pytest.mark.asyncio
+    async def test_no_redis_returns_empty(self):
+        with patch("assistant.semantic_memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+        result = await sm.get_upcoming_personal_dates()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_no_personal_date_facts(self, semantic, redis_mock):
+        redis_mock.smembers = AsyncMock(return_value=set())
+        result = await semantic.get_upcoming_personal_dates()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_finds_upcoming_date(self, semantic, redis_mock):
+        """Finds a personal date within the upcoming days."""
+        redis_mock.smembers = AsyncMock(return_value={"pd_1"})
+
+        # Set date to tomorrow
+        from datetime import datetime, timedelta, timezone
+        tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%m-%d")
+
+        pipe_mock = MagicMock()
+        pipe_mock.hgetall = MagicMock()
+        pipe_mock.execute = AsyncMock(return_value=[{
+            "fact_id": "pd_1",
+            "person": "Lisa",
+            "date_type": "birthday",
+            "date_mm_dd": tomorrow,
+            "date_year": "1990",
+            "date_label": "Geburtstag",
+            "content": f"Lisas Geburtstag ist am {tomorrow}",
+        }])
+        redis_mock.pipeline = MagicMock(return_value=pipe_mock)
+
+        result = await semantic.get_upcoming_personal_dates(days_ahead=7)
+        assert len(result) == 1
+        assert result[0]["person"] == "Lisa"
+        assert result[0]["days_until"] == 1
+
+    @pytest.mark.asyncio
+    async def test_excludes_dates_beyond_range(self, semantic, redis_mock):
+        """Dates beyond days_ahead are excluded."""
+        redis_mock.smembers = AsyncMock(return_value={"pd_1"})
+
+        from datetime import datetime, timedelta, timezone
+        far_future = (datetime.now(timezone.utc) + timedelta(days=60)).strftime("%m-%d")
+
+        pipe_mock = MagicMock()
+        pipe_mock.hgetall = MagicMock()
+        pipe_mock.execute = AsyncMock(return_value=[{
+            "fact_id": "pd_1",
+            "person": "Max",
+            "date_type": "birthday",
+            "date_mm_dd": far_future,
+            "content": "Max birthday",
+        }])
+        redis_mock.pipeline = MagicMock(return_value=pipe_mock)
+
+        result = await semantic.get_upcoming_personal_dates(days_ahead=30)
+        assert len(result) == 0
+
+    @pytest.mark.asyncio
+    async def test_calculates_anniversary_years(self, semantic, redis_mock):
+        """Calculates anniversary years correctly."""
+        redis_mock.smembers = AsyncMock(return_value={"pd_1"})
+
+        from datetime import datetime, timedelta, timezone
+        tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%m-%d")
+
+        pipe_mock = MagicMock()
+        pipe_mock.hgetall = MagicMock()
+        pipe_mock.execute = AsyncMock(return_value=[{
+            "fact_id": "pd_1",
+            "person": "Lisa",
+            "date_type": "birthday",
+            "date_mm_dd": tomorrow,
+            "date_year": "1990",
+            "content": "Birthday",
+        }])
+        redis_mock.pipeline = MagicMock(return_value=pipe_mock)
+
+        result = await semantic.get_upcoming_personal_dates(days_ahead=7)
+        assert len(result) == 1
+        assert result[0]["anniversary_years"] > 30
+
+    @pytest.mark.asyncio
+    async def test_skips_entries_without_date_mm_dd(self, semantic, redis_mock):
+        """Entries without date_mm_dd are skipped."""
+        redis_mock.smembers = AsyncMock(return_value={"pd_1"})
+
+        pipe_mock = MagicMock()
+        pipe_mock.hgetall = MagicMock()
+        pipe_mock.execute = AsyncMock(return_value=[{
+            "fact_id": "pd_1",
+            "person": "Max",
+            "date_type": "birthday",
+            "content": "No date_mm_dd field",
+        }])
+        redis_mock.pipeline = MagicMock(return_value=pipe_mock)
+
+        result = await semantic.get_upcoming_personal_dates()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_handles_invalid_date_format(self, semantic, redis_mock):
+        """Invalid date_mm_dd is skipped gracefully."""
+        redis_mock.smembers = AsyncMock(return_value={"pd_1"})
+
+        pipe_mock = MagicMock()
+        pipe_mock.hgetall = MagicMock()
+        pipe_mock.execute = AsyncMock(return_value=[{
+            "fact_id": "pd_1",
+            "person": "Max",
+            "date_type": "birthday",
+            "date_mm_dd": "invalid",
+            "content": "Bad date",
+        }])
+        redis_mock.pipeline = MagicMock(return_value=pipe_mock)
+
+        result = await semantic.get_upcoming_personal_dates()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_exception_returns_empty(self, semantic, redis_mock):
+        redis_mock.smembers = AsyncMock(side_effect=Exception("Redis down"))
+        result = await semantic.get_upcoming_personal_dates()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_sorted_by_days_until(self, semantic, redis_mock):
+        """Results are sorted by days_until ascending."""
+        redis_mock.smembers = AsyncMock(return_value={"pd_1", "pd_2"})
+
+        from datetime import datetime, timedelta, timezone
+        d1 = (datetime.now(timezone.utc) + timedelta(days=5)).strftime("%m-%d")
+        d2 = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%m-%d")
+
+        pipe_mock = MagicMock()
+        pipe_mock.hgetall = MagicMock()
+        pipe_mock.execute = AsyncMock(return_value=[
+            {"fact_id": "pd_1", "person": "A", "date_type": "birthday", "date_mm_dd": d1, "content": "A"},
+            {"fact_id": "pd_2", "person": "B", "date_type": "birthday", "date_mm_dd": d2, "content": "B"},
+        ])
+        redis_mock.pipeline = MagicMock(return_value=pipe_mock)
+
+        result = await semantic.get_upcoming_personal_dates(days_ahead=30)
+        assert len(result) == 2
+        assert result[0]["days_until"] <= result[1]["days_until"]
+
+
+# =====================================================================
+# get_relevant_conversations Tests
+# =====================================================================
+
+
+class TestGetRelevantConversations:
+    """Tests fuer get_relevant_conversations."""
+
+    @pytest.fixture
+    def semantic(self, redis_mock, chroma_mock):
+        with patch("assistant.semantic_memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+            sm.redis = redis_mock
+            sm.chroma_collection = chroma_mock
+            return sm
+
+    @pytest.mark.asyncio
+    async def test_returns_only_conversation_topic_facts(self, semantic, chroma_mock):
+        """Only returns facts with category conversation_topic."""
+        chroma_mock.query.return_value = {
+            "documents": [["topic fact", "preference fact"]],
+            "metadatas": [[
+                {"category": "conversation_topic", "confidence": "0.9"},
+                {"category": "preference", "confidence": "0.9"},
+            ]],
+            "distances": [[0.2, 0.3]],
+            "ids": [["id1", "id2"]],
+        }
+
+        result = await semantic.get_relevant_conversations("smart home")
+        assert all(r.get("category") == "conversation_topic" for r in result)
+
+    @pytest.mark.asyncio
+    async def test_filters_low_relevance(self, semantic, chroma_mock):
+        """Filters out results with relevance <= 0.3."""
+        chroma_mock.query.return_value = {
+            "documents": [["low relevance topic"]],
+            "metadatas": [[
+                {"category": "conversation_topic", "confidence": "0.9"},
+            ]],
+            "distances": [[0.9]],  # distance 0.9 → relevance 0.1
+            "ids": [["id1"]],
+        }
+
+        result = await semantic.get_relevant_conversations("something")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_limits_results(self, semantic, chroma_mock):
+        """Respects the limit parameter."""
+        docs = [f"topic {i}" for i in range(10)]
+        metas = [{"category": "conversation_topic", "confidence": "0.9"} for _ in range(10)]
+        dists = [0.1 + i * 0.02 for i in range(10)]
+        ids = [f"id_{i}" for i in range(10)]
+
+        chroma_mock.query.return_value = {
+            "documents": [docs],
+            "metadatas": [metas],
+            "distances": [dists],
+            "ids": [ids],
+        }
+
+        result = await semantic.get_relevant_conversations("test", limit=3)
+        assert len(result) <= 3
+
+    @pytest.mark.asyncio
+    async def test_age_bonus_for_recent(self, semantic, chroma_mock):
+        """Recent conversations get higher scores."""
+        now_iso = datetime.now(timezone.utc).isoformat()
+        old_iso = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+
+        chroma_mock.query.return_value = {
+            "documents": [["recent topic", "old topic"]],
+            "metadatas": [[
+                {"category": "conversation_topic", "confidence": "0.9", "created_at": now_iso},
+                {"category": "conversation_topic", "confidence": "0.9", "created_at": old_iso},
+            ]],
+            "distances": [[0.2, 0.2]],
+            "ids": [["id1", "id2"]],
+        }
+
+        result = await semantic.get_relevant_conversations("test", limit=5)
+        # Recent should be ranked first
+        if len(result) >= 2:
+            assert result[0]["_score"] >= result[1]["_score"]
+
+
+# =====================================================================
+# clear_all Tests
+# =====================================================================
+
+
+class TestClearAll:
+    """Tests fuer clear_all — loescht alle Fakten."""
+
+    @pytest.fixture
+    def semantic(self, redis_mock, chroma_mock):
+        with patch("assistant.semantic_memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+            sm.redis = redis_mock
+            sm.chroma_collection = chroma_mock
+            sm._chroma_client = MagicMock()
+            return sm
+
+    @pytest.mark.asyncio
+    async def test_clears_redis_facts(self, semantic, redis_mock):
+        """Clears all facts from Redis."""
+        redis_mock.smembers = AsyncMock(return_value={"f1", "f2"})
+        redis_mock.hgetall = AsyncMock(return_value={
+            "person": "Max", "category": "preference",
+        })
+
+        async def scan_iter_mock(match=""):
+            return
+            yield  # Empty async generator
+
+        redis_mock.scan_iter = scan_iter_mock
+
+        result = await semantic.clear_all()
+        assert result == 2
+        assert redis_mock.delete.call_count >= 3  # 2 facts + mha:facts:all
+
+    @pytest.mark.asyncio
+    async def test_no_redis_no_chroma(self):
+        """Handles no backends gracefully."""
+        with patch("assistant.semantic_memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+        result = await sm.clear_all()
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_redis_error_caught(self, semantic, redis_mock):
+        """Redis errors are caught."""
+        redis_mock.smembers = AsyncMock(side_effect=Exception("Redis error"))
+
+        async def scan_iter_mock(match=""):
+            return
+            yield
+
+        redis_mock.scan_iter = scan_iter_mock
+
+        result = await semantic.clear_all()
+        assert result == 0
+
+
+# =====================================================================
+# refresh_relationship_cache Tests
+# =====================================================================
+
+
+class TestRefreshRelationshipCache:
+    """Tests fuer refresh_relationship_cache."""
+
+    @pytest.fixture
+    def semantic(self, redis_mock, chroma_mock):
+        with patch("assistant.semantic_memory.yaml_config", {
+            "timezone": "UTC",
+            "household": {
+                "primary_user": "Max",
+                "members": [{"name": "Max"}, {"name": "Lisa"}],
+            },
+            "persons": {"titles": {"Max": "Sir"}},
+        }), patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+            sm.redis = redis_mock
+            sm.chroma_collection = chroma_mock
+            return sm
+
+    @pytest.mark.asyncio
+    async def test_no_redis_returns_early(self):
+        with patch("assistant.semantic_memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+        await sm.refresh_relationship_cache()  # No exception
+
+    @pytest.mark.asyncio
+    async def test_builds_relationship_cache(self, semantic, redis_mock):
+        """Builds cache from person facts and known names."""
+        redis_mock.smembers = AsyncMock(return_value={"f1"})
+        pipe_mock = MagicMock()
+        pipe_mock.hgetall = MagicMock()
+        pipe_mock.execute = AsyncMock(return_value=[{
+            "content": "Lisa ist die Frau von Max",
+            "category": "person",
+            "person": "Lisa",
+            "confidence": "0.9",
+        }])
+        redis_mock.pipeline = MagicMock(return_value=pipe_mock)
+
+        await semantic.refresh_relationship_cache()
+
+        assert hasattr(semantic, "_relationship_cache")
+        assert hasattr(semantic, "_relationship_cache_ts")
+
+    @pytest.mark.asyncio
+    async def test_empty_person_facts(self, semantic, redis_mock):
+        """Empty person facts result in empty cache."""
+        redis_mock.smembers = AsyncMock(return_value=set())
+
+        await semantic.refresh_relationship_cache()
+        assert semantic._relationship_cache == {}
+
+    @pytest.mark.asyncio
+    async def test_exception_caught(self, semantic, redis_mock):
+        """Exceptions are caught and logged."""
+        redis_mock.smembers = AsyncMock(side_effect=Exception("Redis down"))
+        await semantic.refresh_relationship_cache()  # No exception
+
+
+# =====================================================================
+# _get_cached_relationship Tests
+# =====================================================================
+
+
+class TestGetCachedRelationship:
+    """Tests fuer _get_cached_relationship."""
+
+    def test_returns_cached_value(self):
+        with patch("assistant.semantic_memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+        import time
+        sm._relationship_cache = {"meine frau": "lisa"}
+        sm._relationship_cache_ts = time.monotonic()
+
+        result = sm._get_cached_relationship("meine frau", [], set())
+        assert result == "lisa"
+
+    def test_returns_empty_for_unknown_pattern(self):
+        with patch("assistant.semantic_memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+        import time
+        sm._relationship_cache = {"meine frau": "lisa"}
+        sm._relationship_cache_ts = time.monotonic()
+
+        result = sm._get_cached_relationship("mein bruder", [], set())
+        assert result == ""
+
+    def test_returns_empty_when_cache_stale(self):
+        with patch("assistant.semantic_memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+        import time
+        sm._relationship_cache = {"meine frau": "lisa"}
+        sm._relationship_cache_ts = time.monotonic() - 400  # Past TTL of 300s
+
+        result = sm._get_cached_relationship("meine frau", [], set())
+        assert result == ""
+
+    def test_returns_empty_when_no_cache(self):
+        with patch("assistant.semantic_memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+        result = sm._get_cached_relationship("meine frau", [], set())
+        assert result == ""
+
+
+# =====================================================================
+# search_by_topic Redis fallback Tests
+# =====================================================================
+
+
+class TestSearchByTopicFallback:
+    """Tests fuer search_by_topic Redis-Fallback."""
+
+    @pytest.fixture
+    def semantic(self, redis_mock):
+        with patch("assistant.semantic_memory.yaml_config", {
+            "timezone": "UTC",
+            "memory": {"min_confidence_for_context": 0.4},
+        }), patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+            sm.redis = redis_mock
+            sm.chroma_collection = None  # Force Redis fallback
+            return sm
+
+    @pytest.mark.asyncio
+    async def test_uses_redis_fallback(self, semantic, redis_mock):
+        """When ChromaDB is None, falls back to Redis."""
+        redis_mock.smembers = AsyncMock(return_value={"f1"})
+        pipe_mock = MagicMock()
+        pipe_mock.hgetall = MagicMock()
+        pipe_mock.execute = AsyncMock(return_value=[{
+            "content": "Max mag Kaffee",
+            "fact_id": "f1",
+            "category": "preference",
+            "person": "Max",
+            "confidence": "0.9",
+            "times_confirmed": "2",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }])
+        redis_mock.pipeline = MagicMock(return_value=pipe_mock)
+
+        result = await semantic.search_by_topic("Kaffee")
+        assert len(result) >= 1
+
+    @pytest.mark.asyncio
+    async def test_no_backends_returns_empty(self):
+        """No ChromaDB and no Redis returns empty list."""
+        with patch("assistant.semantic_memory.yaml_config", {"timezone": "UTC"}), \
+             patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+        result = await sm.search_by_topic("test")
+        assert result == []
+
+
+# =====================================================================
+# forget Redis fallback Tests
+# =====================================================================
+
+
+class TestForgetRedisFallback:
+    """Tests fuer forget() mit Redis fact_id Lookup."""
+
+    @pytest.fixture
+    def semantic(self, redis_mock, chroma_mock):
+        with patch("assistant.semantic_memory.yaml_config", {
+            "timezone": "UTC",
+            "memory": {"min_confidence_for_context": 0.4},
+        }), patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+            sm.redis = redis_mock
+            sm.chroma_collection = chroma_mock
+            return sm
+
+    @pytest.mark.asyncio
+    async def test_forget_with_fact_id_from_search(self, semantic, chroma_mock, redis_mock):
+        """forget() uses fact_id from search_by_topic when available."""
+        chroma_mock.query.return_value = {
+            "documents": [["Max mag Kaffee"]],
+            "metadatas": [[{"category": "preference", "confidence": "0.9"}]],
+            "distances": [[0.1]],
+            "ids": [["fact_coffee"]],
+        }
+        # delete_fact needs lock
+        redis_mock.set = AsyncMock(return_value=True)
+        redis_mock.hgetall = AsyncMock(return_value={
+            "person": "Max", "category": "preference",
+        })
+
+        result = await semantic.forget("Kaffee")
+        assert result >= 1
+
+    @pytest.mark.asyncio
+    async def test_forget_no_matching_facts(self, semantic, chroma_mock):
+        """forget() returns 0 when no facts match."""
+        chroma_mock.query.return_value = {
+            "documents": [["irrelevant"]],
+            "metadatas": [[{"category": "general", "confidence": "0.5"}]],
+            "distances": [[1.2]],  # Low relevance
+            "ids": [["id1"]],
+        }
+
+        result = await semantic.forget("nonexistent")
+        assert result == 0
+
+
+# =====================================================================
+# _search_facts_chromadb recency boost Tests
+# =====================================================================
+
+
+class TestSearchFactsChromaDBRecencyBoost:
+    """Tests fuer Recency-Boost in _search_facts_chromadb."""
+
+    @pytest.fixture
+    def semantic(self, redis_mock, chroma_mock):
+        with patch("assistant.semantic_memory.yaml_config", {
+            "timezone": "UTC",
+            "memory": {"min_confidence_for_context": 0.4},
+        }), patch("assistant.semantic_memory.settings"):
+            sm = SemanticMemory()
+            sm.redis = redis_mock
+            sm.chroma_collection = chroma_mock
+            return sm
+
+    @pytest.mark.asyncio
+    async def test_recent_facts_get_boosted(self, semantic, chroma_mock):
+        """Facts updated recently get a recency boost."""
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        chroma_mock.query.return_value = {
+            "documents": [["recent fact"]],
+            "metadatas": [[{
+                "category": "preference",
+                "person": "Max",
+                "confidence": "0.8",
+                "times_confirmed": "1",
+                "updated_at": now_iso,
+            }]],
+            "distances": [[0.3]],
+        }
+
+        result = await semantic.search_facts("test")
+        assert len(result) == 1
+        # Relevance should be > base (1.0 - 0.3 = 0.7) due to recency boost
+        assert result[0]["relevance"] > 0.7
+
+    @pytest.mark.asyncio
+    async def test_old_facts_no_boost(self, semantic, chroma_mock):
+        """Facts older than 60 days get no recency boost."""
+        old_iso = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+
+        chroma_mock.query.return_value = {
+            "documents": [["old fact"]],
+            "metadatas": [[{
+                "category": "preference",
+                "person": "Max",
+                "confidence": "0.8",
+                "times_confirmed": "1",
+                "updated_at": old_iso,
+            }]],
+            "distances": [[0.3]],
+        }
+
+        result = await semantic.search_facts("test")
+        assert len(result) == 1
+        # Relevance should be exactly base (1.0 - 0.3 = 0.7)
+        assert abs(result[0]["relevance"] - 0.7) < 0.01
+
+    @pytest.mark.asyncio
+    async def test_filters_low_confidence(self, semantic, chroma_mock):
+        """Facts below min_confidence_for_context are filtered out."""
+        chroma_mock.query.return_value = {
+            "documents": [["low confidence"]],
+            "metadatas": [[{
+                "category": "general",
+                "person": "Max",
+                "confidence": "0.2",
+                "times_confirmed": "1",
+            }]],
+            "distances": [[0.1]],
+        }
+
+        result = await semantic.search_facts("test")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_invalid_updated_at_no_crash(self, semantic, chroma_mock):
+        """Invalid updated_at does not crash."""
+        chroma_mock.query.return_value = {
+            "documents": [["fact"]],
+            "metadatas": [[{
+                "category": "general",
+                "person": "Max",
+                "confidence": "0.8",
+                "times_confirmed": "1",
+                "updated_at": "not-a-date",
+            }]],
+            "distances": [[0.3]],
+        }
+
+        result = await semantic.search_facts("test")
+        assert len(result) == 1
