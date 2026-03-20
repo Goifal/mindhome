@@ -230,7 +230,9 @@ class ProactiveManager:
         # Speichert Zeitstempel der letzten Benachrichtigungen (maxlen begrenzt Speicher)
         self._notification_timestamps: collections.deque[float] = collections.deque(maxlen=200)
         # Ignorierte Events pro Typ: zaehlt wie oft User aehnliche Events ignoriert hat
+        # Begrenzt auf max 200 Event-Typen (aelteste werden bei Ueberlauf geloescht)
         self._dismissed_event_types: collections.Counter = collections.Counter()
+        self._dismissed_max_types = 200
         self._salience_lock = threading.Lock()
 
     # ------------------------------------------------------------------
@@ -368,6 +370,12 @@ class ProactiveManager:
         """
         with self._salience_lock:
             self._dismissed_event_types[event_type] += 1
+            # Memory-Leak Schutz: Alte Low-Count Eintraege entfernen
+            if len(self._dismissed_event_types) > self._dismissed_max_types:
+                # Behalte nur die haeufigsten Events
+                self._dismissed_event_types = collections.Counter(
+                    dict(self._dismissed_event_types.most_common(self._dismissed_max_types // 2))
+                )
 
     # ------------------------------------------------------------------
     # LED Status-Indikator: Systemzustand als Lichtfarbe
@@ -3604,11 +3612,9 @@ class ProactiveManager:
             if self._batch_flushing:
                 return
             self._batch_flushing = True
-
-        try:
-            await self._flush_batch_inner()
-        finally:
-            async with self._batch_flush_lock:
+            try:
+                await self._flush_batch_inner()
+            finally:
                 self._batch_flushing = False
 
     async def _flush_batch_inner(self):

@@ -235,7 +235,10 @@ class TestNormalizeSttText:
         assert "über" in result
 
     def test_phrase_corrections(self, brain):
-        brain._stt_phrase_corrections = [("ja weiß", "Jarvis")]
+        import re
+        brain._stt_phrase_compiled = [
+            (re.compile(re.escape("ja weiß"), re.IGNORECASE), "Jarvis"),
+        ]
         result = brain._normalize_stt_text("Ja weiß mach licht an")
         assert "Jarvis" in result
 

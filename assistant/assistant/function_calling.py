@@ -3650,7 +3650,8 @@ class FunctionExecutor:
                     )
                     return {"success": False, "message": _reason}
         except Exception as e:
-            logger.debug("Trust-Check fehlgeschlagen (Graceful Degradation): %s", e)
+            logger.error("Trust-Check fehlgeschlagen (fail-closed): %s", e, exc_info=True)
+            return {"success": False, "message": "Sicherheitspruefung fehlgeschlagen. Bitte erneut versuchen."}
 
         try:
             # Phase 18: Pre-Execution Consequence Check

@@ -4839,6 +4839,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             continue
 
                     # Wiring 2B: Proaktive Konfliktvermeidung (logische Konflikte)
+                    _conflict_warning = None
                     if hasattr(self.conflict_resolver, 'predict_conflict'):
                         try:
                             _predicted = await self.conflict_resolver.predict_conflict(
@@ -4846,12 +4847,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 await self.get_states_cached() if self.ha else [],
                             )
                             if _predicted and _predicted.get("warning"):
-                                _warn_text = _predicted["warning"]
-                                logger.info("Conflict prediction: %s", _warn_text)
-                                # Warnung als Kontext fuer LLM-Antwort merken
-                                # Warnung in Tool-Result einbetten damit LLM sie sieht
-                                if isinstance(results, list) and results:
-                                    results[-1] = str(results[-1]) + f"\n⚠️ {_warn_text}"
+                                _conflict_warning = _predicted["warning"]
+                                logger.info("Conflict prediction: %s", _conflict_warning)
                         except Exception as _pc_err:
                             logger.debug("predict_conflict fehlgeschlagen: %s", _pc_err)
 
@@ -5009,6 +5006,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             logger.info("Tool-Remap: %s -> %s(%s)", func_name, real_name, merged_args)
                             result = await self.executor.execute(real_name, merged_args)
                             func_name = real_name
+
+                    # Konflikt-Warnung in Result einbetten damit LLM sie sieht
+                    if _conflict_warning and isinstance(result, dict):
+                        result["conflict_warning"] = _conflict_warning
 
                     executed_actions.append({
                         "function": func_name,
@@ -9191,7 +9192,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # 4. Mehrwort-Korrekturen (case-insensitive, pre-compiled Regex)
         text_lower = text.lower()
         for pattern, correct in self._stt_phrase_compiled:
-            if pattern.pattern.lower() in text_lower:
+            if pattern.search(text):
                 text = pattern.sub(correct, text)
                 text_lower = text.lower()
 

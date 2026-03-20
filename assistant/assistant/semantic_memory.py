@@ -122,6 +122,9 @@ class SemanticMemory:
         self.redis: Optional[redis.Redis] = None
         self.chroma_collection = None
         self._chroma_client = None
+        self._relationship_cache: dict[str, str] = {}
+        self._relationship_cache_ts: float = 0.0
+        self._relationship_lock = asyncio.Lock()
 
     async def initialize(self, redis_client: Optional[redis.Redis] = None):
         """Initialisiert die Verbindungen."""
@@ -780,8 +783,8 @@ class SemanticMemory:
                     facts.append({
                         "content": content,
                         "fact_id": fact_id,
-                        "category": (data.get("category") or b"general").decode() if isinstance(data.get("category"), bytes) else data.get("category", "general"),
-                        "person": (data.get("person") or b"unknown").decode() if isinstance(data.get("person"), bytes) else data.get("person", "unknown"),
+                        "category": data.get("category", b"general").decode() if isinstance(data.get("category", b"general"), bytes) else (data.get("category") or "general"),
+                        "person": data.get("person", b"unknown").decode() if isinstance(data.get("person", b"unknown"), bytes) else (data.get("person") or "unknown"),
                         "confidence": confidence,
                         "times_confirmed": int(data.get("times_confirmed", 1)),
                         "relevance": min(1.0, total_score * conf_boost),
@@ -853,6 +856,11 @@ class SemanticMemory:
         if not self.redis:
             return
 
+        async with self._relationship_lock:
+            await self._refresh_relationship_cache_inner()
+
+    async def _refresh_relationship_cache_inner(self):
+        """Innere Implementierung von refresh_relationship_cache (unter Lock)."""
         try:
             person_facts = await self.get_facts_by_category("person")
             cache: dict[str, str] = {}

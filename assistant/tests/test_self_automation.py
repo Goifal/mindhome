@@ -1482,6 +1482,7 @@ class TestLoadTemplates:
         from assistant.self_automation import _load_templates_sync
         with patch("assistant.self_automation._TEMPLATES_PATH") as mock_path:
             mock_path.exists.return_value = False
+            mock_path.with_suffix.return_value.exists.return_value = False
             result = _load_templates_sync()
         assert result == {}
 
