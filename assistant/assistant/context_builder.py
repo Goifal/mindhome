@@ -162,11 +162,14 @@ def _sanitize_for_prompt(text: str, max_len: int = 200, label: str = "") -> str:
     # Mehrfach-Leerzeichen komprimieren
     text = re.sub(r'\s{2,}', ' ', text).strip()
     # F-084: Injection-Pattern auf VOLLEM Text prüfen (VOR Truncation!)
-    if _INJECTION_PATTERN.search(text):
-        logger.warning(
-            "Prompt-Injection-Verdacht in %s blockiert: %.80s",
-            label or "Kontext", text,
-        )
+    # F-091: Konfigurierbar via settings.yaml → prompt_injection.enabled
+    _inj_cfg = yaml_config.get("prompt_injection", {})
+    if _inj_cfg.get("enabled", True) and _INJECTION_PATTERN.search(text):
+        if _inj_cfg.get("log_blocked", True):
+            logger.warning(
+                "Prompt-Injection-Verdacht in %s blockiert: %.80s",
+                label or "Kontext", text,
+            )
         return ""
     # Laenge begrenzen (NACH Pattern-Check)
     text = text[:max_len]

@@ -3006,6 +3006,18 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("health_monitor", "hydration_end_hour"): (18, 23),
         # Model Profiles — Wertebereiche fuer LLM-Parameter
         # (Gilt fuer alle Profile: default, qwen3.5, llama, etc.)
+        # Conflict Resolution Thresholds
+        ("conflict_resolution", "context_thresholds", "solar_producing_w"): (10, 5000),
+        ("conflict_resolution", "context_thresholds", "high_lux"): (50, 10000),
+        ("conflict_resolution", "context_thresholds", "high_wind_kmh"): (10, 200),
+        ("conflict_resolution", "context_thresholds", "high_energy_price"): (0.01, 2.0),
+        ("conflict_resolution", "context_thresholds", "frost_below_c"): (-20, 10),
+        # Appliance Monitor
+        ("appliance_monitor", "power_running_threshold"): (1, 500),
+        ("appliance_monitor", "power_idle_threshold"): (0, 100),
+        ("appliance_monitor", "idle_confirm_minutes"): (1, 60),
+        # Self-Automation
+        ("self_automation", "max_per_day"): (1, 20),
     }
     # Model Profiles dynamisch validieren (alle Sub-Profile)
     MP_RANGES = {

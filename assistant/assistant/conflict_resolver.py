@@ -134,6 +134,9 @@ class ConflictResolver:
         self._threshold_frost_c = float(ctx_cfg.get("frost_below_c", 0))
         self._weather_entity = ctx_cfg.get("weather_entity", "weather.home")
 
+        # Konfigurierbare Regel-Toggles: einzelne Regeln deaktivierbar
+        self._rules_enabled: dict[str, bool] = cfg.get("rules_enabled", {})
+
         # Konfigurierbare Safe-Limits (Fallback: hardcoded)
         _DEFAULT_SAFE_LIMITS = {
             "climate": {"temperature": (15.0, 28.0), "offset": (-3.0, 3.0)},
@@ -875,6 +878,11 @@ class ConflictResolver:
                 continue
 
             ctx = rule["context"]
+
+            # Regel deaktiviert? → überspringen
+            if not self._rules_enabled.get(ctx, True):
+                continue
+
             matched = False
 
             if ctx == "window_open":

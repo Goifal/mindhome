@@ -37,6 +37,46 @@ security:
     - "input_boolean.toggle"
     - "input_number.set_value"
     - "input_select.select_option"
+    - "input_text.set_value"
+    - "input_datetime.set_datetime"
+    # Luefter / Staubsauger / Luftbefeuchter
+    - "fan.turn_on"
+    - "fan.turn_off"
+    - "fan.set_percentage"
+    - "vacuum.start"
+    - "vacuum.return_to_base"
+    - "vacuum.stop"
+    - "humidifier.turn_on"
+    - "humidifier.turn_off"
+    - "humidifier.set_humidity"
+    - "water_heater.set_temperature"
+    # Buttons / Nummern / Timer
+    - "button.press"
+    - "number.set_value"
+    - "select.select_option"
+    - "timer.start"
+    - "timer.cancel"
+    # TTS
+    - "tts.speak"
+    # Erweiterte Medien
+    - "media_player.media_next_track"
+    - "media_player.media_previous_track"
+    - "media_player.select_source"
+    - "media_player.play_media"
+    - "media_player.shuffle_set"
+    - "media_player.repeat_set"
+    # Klima erweitert
+    - "climate.set_preset_mode"
+    - "climate.turn_on"
+    - "climate.turn_off"
+    # Rollladen erweitert
+    - "cover.stop_cover"
+    # Benachrichtigungen erweitert
+    - "persistent_notification.create"
+    - "persistent_notification.dismiss"
+    # Sirene (Notfall-Automationen)
+    - "siren.turn_on"
+    - "siren.turn_off"
 
   # Explizit gesperrte Services (Blacklist) — NIEMALS erlaubt
   blocked_services:
@@ -47,11 +87,22 @@ security:
     - "homeassistant.restart"
     - "homeassistant.stop"
     - "homeassistant.reload_all"
+    - "homeassistant.set_location"
+    - "homeassistant.check_config"
     - "automation.turn_off"
     - "automation.turn_on"
     - "automation.trigger"
     - "automation.reload"
     - "lock.unlock"       # Schloesser nie automatisch oeffnen
+    - "lock.lock"
+    - "lock.open"
+    - "hassio.addon_start"
+    - "hassio.addon_stop"
+    - "hassio.addon_restart"
+    - "hassio.addon_update"
+    - "recorder.purge"
+    - "recorder.disable"
+    - "system_log.clear"
 
   # Erlaubte Trigger-Plattformen
   allowed_trigger_platforms:

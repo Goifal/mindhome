@@ -1184,7 +1184,7 @@ function renderCurrentTab() {
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadEmergencyProtocols(); loadKnownDevices(); break;
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); loadAutomations(); break;
       case 'tab-followme': c.innerHTML = renderFollowMe(); break;
-      case 'tab-jarvis': c.innerHTML = renderJarvisFeatures(); renderApplianceDevices(); break;
+      case 'tab-jarvis': c.innerHTML = renderJarvisFeatures(); renderApplianceDevices(); renderPowerProfiles(); break;
       case 'tab-intelligence': c.innerHTML = renderIntelligence(); break;
       case 'tab-declarative-tools': c.innerHTML = renderDeclarativeTools(); loadDeclarativeTools(); _renderDeclSuggestions(); break;
       case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
@@ -2907,6 +2907,66 @@ function selectApplianceEntity(entityId) {
   if (window._appliancePickOverlay) window._appliancePickOverlay.remove();
   renderApplianceDevices();
   toast('Entity "' + entityId + '" hinzugefuegt.', 'success');
+}
+
+// ---- Power Profiles: Per-Geraet Schwellwerte ----
+function renderPowerProfiles() {
+  const c = document.getElementById('powerProfilesContainer');
+  if (!c) return;
+  const devices = getPath(S, 'appliance_monitor.devices') || [];
+  const profiles = getPath(S, 'appliance_monitor.power_profiles') || {};
+  if (!devices.length) {
+    c.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Füge zuerst Geräte oben hinzu, dann erscheinen hier die Power-Profile.</div>';
+    return;
+  }
+  c.innerHTML = devices.map(dev => {
+    const k = dev.key;
+    const p = profiles[k] || {};
+    const label = dev.label || k;
+    return `<div style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:10px;margin-bottom:8px;">
+      <div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#9889; ${esc(label)}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:11px;">Laufend ab (W)</label>
+          <input type="number" class="form-input" style="font-size:12px;" value="${p.running||''}" min="1" max="20000"
+            onchange="setPowerProfile('${k}','running',this.value)">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:11px;">Idle unter (W)</label>
+          <input type="number" class="form-input" style="font-size:12px;" value="${p.idle||''}" min="0" max="500"
+            onchange="setPowerProfile('${k}','idle',this.value)">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:11px;">Standby (W)</label>
+          <input type="number" class="form-input" style="font-size:12px;" value="${p.standby||''}" min="0" max="100"
+            onchange="setPowerProfile('${k}','standby',this.value)">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:11px;">Peak (W)</label>
+          <input type="number" class="form-input" style="font-size:12px;" value="${p.peak||''}" min="10" max="50000"
+            onchange="setPowerProfile('${k}','peak',this.value)">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:11px;">Wartezeit (Min)</label>
+          <input type="number" class="form-input" style="font-size:12px;" value="${p.confirm_minutes||''}" min="1" max="60"
+            onchange="setPowerProfile('${k}','confirm_minutes',this.value)">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:11px;">Hysterese (W)</label>
+          <input type="number" class="form-input" style="font-size:12px;" value="${p.hysteresis||''}" min="0" max="200"
+            onchange="setPowerProfile('${k}','hysteresis',this.value)">
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setPowerProfile(deviceKey, field, value) {
+  const profiles = getPath(S, 'appliance_monitor.power_profiles') || {};
+  if (!profiles[deviceKey]) profiles[deviceKey] = {};
+  profiles[deviceKey][field] = parseFloat(value) || 0;
+  setPath(S, 'appliance_monitor.power_profiles', profiles);
+  markDirty();
 }
 
 // ---- Character-Break Stats Loader ----
@@ -5235,13 +5295,17 @@ function renderJarvisFeatures() {
   ) +
   sectionWrap('&#9889;', 'Geräte-Fertig-Erkennung',
     fInfo('Jarvis erkennt anhand des Stromverbrauchs wann Geräte fertig sind. Das Geraet muss für die eingestellte Wartezeit unter dem Idle-Schwellwert bleiben bevor "fertig" gemeldet wird — das verhindert Fehlalarme bei Zwischenphasen (z.B. zwischen Waschen und Schleudern). Du kannst beliebige Geräte hinzufügen.') +
-    fSubheading('Schwellwerte') +
+    fSubheading('Globale Schwellwerte (Fallback)') +
+    fInfo('Diese Werte gelten nur wenn kein geräte-spezifisches Power-Profil definiert ist.') +
     fRange('appliance_monitor.power_running_threshold', 'Laufend ab (Watt)', 5, 50, 5, {5:'5W',10:'10W',15:'15W',20:'20W',50:'50W'}) +
     fRange('appliance_monitor.power_idle_threshold', 'Idle unter (Watt)', 1, 20, 1, {1:'1W',2:'2W',3:'3W',5:'5W',10:'10W',20:'20W'}) +
     fRange('appliance_monitor.idle_confirm_minutes', 'Wartezeit vor Meldung', 1, 15, 1, {1:'1 Min',2:'2',3:'3',5:'5 Min',10:'10',15:'15 Min'}) +
     fSubheading('Überwachte Geräte') +
     '<div id="applianceDevicesContainer"></div>' +
-    '<button class="btn btn-sm" onclick="addApplianceDevice()" style="margin-top:8px;">+ Geraet hinzufügen</button>'
+    '<button class="btn btn-sm" onclick="addApplianceDevice()" style="margin-top:8px;">+ Geraet hinzufügen</button>' +
+    fSubheading('Geräte-spezifische Power-Profile') +
+    fInfo('Pro Gerät können eigene Schwellwerte definiert werden. Running = ab diesem Watt gilt das Gerät als laufend, Idle = darunter als idle, Hysteresis = Puffer gegen Schwankungen, Confirm = Wartezeit vor Meldung.') +
+    '<div id="powerProfilesContainer"></div>'
   ) +
   sectionWrap('&#9888;', 'Daten-basierter Widerspruch',
     fInfo('Vor einer Aktion prüft Jarvis Live-Daten und warnt konkret — z.B. "Heizung auf 25? Das Bad-Fenster ist offen." Aktion wird trotzdem ausgeführt, aber die Warnung erwähnt.') +
@@ -5500,7 +5564,40 @@ function renderSecurity() {
     fRange('conflict_resolution.safe_limits.cover.position.0', 'Rollladen Min (%)', 0, 50, 5) +
     fRange('conflict_resolution.safe_limits.cover.position.1', 'Rollladen Max (%)', 50, 100, 5) +
     fRange('conflict_resolution.safe_limits.media.volume.0', 'Lautstärke Min (%)', 0, 50, 5) +
-    fRange('conflict_resolution.safe_limits.media.volume.1', 'Lautstärke Max (%)', 50, 100, 5)
+    fRange('conflict_resolution.safe_limits.media.volume.1', 'Lautstärke Max (%)', 50, 100, 5) +
+    fSubheading('Kontext-Schwellwerte') +
+    fInfo('Schwellwerte für die logische Konflikt-Erkennung. Z.B. ab wie viel Watt Solar als "produzierend" gilt.') +
+    fNum('conflict_resolution.context_thresholds.solar_producing_w', 'Solar produziert ab (W)', 10, 1000, 10) +
+    fNum('conflict_resolution.context_thresholds.high_lux', 'Tageslicht ab (Lux)', 100, 5000, 50) +
+    fNum('conflict_resolution.context_thresholds.high_wind_kmh', 'Starker Wind ab (km/h)', 20, 120, 5) +
+    fRange('conflict_resolution.context_thresholds.high_energy_price', 'Strompreis hoch ab (EUR/kWh)', 0.10, 1.00, 0.05, {0.10:'0.10',0.20:'0.20',0.30:'0.30',0.50:'0.50',1.00:'1.00'}) +
+    fNum('conflict_resolution.context_thresholds.frost_below_c', 'Frost unter (°C)', -10, 5, 1) +
+    fSubheading('Aktive Konflikt-Regeln') +
+    fInfo('Einzelne logische Konflikterkennung aktivieren oder deaktivieren.') +
+    fToggle('conflict_resolution.rules_enabled.window_open', 'Fenster offen bei Heizung') +
+    fToggle('conflict_resolution.rules_enabled.solar_producing', 'Solar produziert bei Rollladen schliessen') +
+    fToggle('conflict_resolution.rules_enabled.high_lux', 'Tageslicht bei Licht einschalten') +
+    fToggle('conflict_resolution.rules_enabled.nobody_home', 'Niemand zuhause bei Heizung/Licht') +
+    fToggle('conflict_resolution.rules_enabled.cooling_and_heating', 'Heizen + Kuehlen gleichzeitig') +
+    fToggle('conflict_resolution.rules_enabled.goodnight_active', 'Gute-Nacht-Modus bei Licht an') +
+    fToggle('conflict_resolution.rules_enabled.high_wind', 'Starker Wind bei Rollladen/Markise oeffnen') +
+    fToggle('conflict_resolution.rules_enabled.door_open', 'Tuer offen bei Heizung') +
+    fToggle('conflict_resolution.rules_enabled.sleeping_detected', 'Schlafenszeit bei Medien/Licht/Klima') +
+    fToggle('conflict_resolution.rules_enabled.rain_detected', 'Regen bei Markise/Fenster oeffnen') +
+    fToggle('conflict_resolution.rules_enabled.frost_detected', 'Frost bei Kuehlung/Rollladen oeffnen') +
+    fToggle('conflict_resolution.rules_enabled.high_energy_price', 'Hoher Strompreis bei Klimatisierung') +
+    fToggle('conflict_resolution.rules_enabled.media_playing', 'Medien aktiv bei hellem Licht') +
+    fToggle('conflict_resolution.rules_enabled.window_scheduled_open', 'Lueften geplant bei Heizung')
+  ) +
+  sectionWrap('&#128737;', 'Prompt-Injection-Schutz',
+    fInfo('Schuetzt den LLM-Kontext gegen Prompt-Injection-Angriffe. Prueft alle externen Texte (Entity-Namen, Sensordaten) auf verdächtige Muster bevor sie an das LLM übergeben werden. Deaktivierung nur für Debugging empfohlen.') +
+    fToggle('prompt_injection.enabled', 'Injection-Schutz aktiv') +
+    fToggle('prompt_injection.log_blocked', 'Blockierte Versuche loggen')
+  ) +
+  sectionWrap('&#128295;', 'Self-Automation (Sicherheit)',
+    fInfo('Jarvis kann HA-Automationen aus gelernten Mustern erstellen. Hier wird festgelegt welche Services erlaubt sind. Die vollständige Whitelist/Blacklist wird in config/automation_templates.yaml verwaltet.') +
+    fToggle('self_automation.enabled', 'Self-Automation aktiv') +
+    fRange('self_automation.max_per_day', 'Max. Automationen pro Tag', 1, 20, 1, {1:'1',3:'3',5:'5 (Standard)',10:'10',15:'15',20:'20'})
   ) +
   sectionWrap('&#127911;', 'Audio-Event-Reaktionen',
     fInfo('Standard-Reaktionen auf erkannte Audio-Events (Glasbruch, Rauch, etc.). In settings.yaml unter ambient_audio.default_reactions anpassbar.') +
