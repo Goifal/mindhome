@@ -30,6 +30,23 @@ class NotificationDedup:
 
     def __init__(self, redis_client=None):
         self._redis = redis_client
+        self._similarity_threshold = _SIMILARITY_THRESHOLD
+        self._max_buffer_size = _MAX_BUFFER_SIZE
+        self._default_window = _DEFAULT_WINDOW_MINUTES
+
+    def configure(
+        self,
+        *,
+        similarity_threshold: float = _SIMILARITY_THRESHOLD,
+        buffer_size: int = _MAX_BUFFER_SIZE,
+        window_minutes: int = _DEFAULT_WINDOW_MINUTES,
+        enabled: bool = True,
+    ) -> None:
+        """Konfiguriert Dedup-Parameter (aus settings.yaml)."""
+        self._enabled = enabled
+        self._similarity_threshold = max(0.5, min(0.99, similarity_threshold))
+        self._max_buffer_size = max(5, min(100, buffer_size))
+        self._default_window = max(5, min(120, window_minutes))
 
     def set_redis(self, redis_client) -> None:
         self._redis = redis_client
@@ -39,7 +56,7 @@ class NotificationDedup:
         message: str,
         source: str = "",
         urgency: str = "low",
-        window_minutes: int = _DEFAULT_WINDOW_MINUTES,
+        window_minutes: int = 0,
     ) -> bool:
         """Prueft ob eine semantisch aehnliche Notification kuerzlich gesendet wurde.
 
@@ -48,11 +65,14 @@ class NotificationDedup:
             source: Quelle (z.B. ``insight/weather_windows``, ``anticipation``,
                     ``spontaneous``, ``learning``).
             urgency: Dringlichkeit. ``critical``/``high`` werden nie gefiltert.
-            window_minutes: Zeitfenster fuer Duplikat-Erkennung.
+            window_minutes: Zeitfenster fuer Duplikat-Erkennung (0 = Default aus Config).
 
         Returns:
             ``True`` wenn ein semantisches Duplikat im Buffer liegt.
         """
+        if not getattr(self, "_enabled", True):
+            return False
+
         if urgency in ("critical", "high"):
             return False
 
@@ -71,19 +91,25 @@ class NotificationDedup:
 
             now = time.time()
             new_emb = ef([message])[0]
+            effective_window = (
+                window_minutes if window_minutes > 0 else self._default_window
+            )
+            threshold = self._similarity_threshold
 
-            raw_items = await self._redis.lrange(_BUFFER_KEY, 0, _MAX_BUFFER_SIZE - 1)
+            raw_items = await self._redis.lrange(
+                _BUFFER_KEY, 0, self._max_buffer_size - 1
+            )
             for raw in raw_items:
                 try:
                     item = json.loads(raw)
                     ts = item.get("ts", 0)
-                    if (now - ts) > window_minutes * 60:
+                    if (now - ts) > effective_window * 60:
                         continue
                     old_emb = item.get("emb", [])
                     if not old_emb:
                         continue
                     similarity = compute_cosine_similarity(new_emb, old_emb)
-                    if similarity > _SIMILARITY_THRESHOLD:
+                    if similarity > threshold:
                         old_source = item.get("src", "?")
                         logger.info(
                             "Unified Dedup: Duplikat erkannt (%.2f) — "
@@ -104,8 +130,8 @@ class NotificationDedup:
                 ensure_ascii=False,
             )
             await self._redis.lpush(_BUFFER_KEY, entry)
-            await self._redis.ltrim(_BUFFER_KEY, 0, _MAX_BUFFER_SIZE - 1)
-            await self._redis.expire(_BUFFER_KEY, window_minutes * 60)
+            await self._redis.ltrim(_BUFFER_KEY, 0, self._max_buffer_size - 1)
+            await self._redis.expire(_BUFFER_KEY, effective_window * 60)
 
         except Exception as e:
             logger.debug("Unified Dedup Fehler: %s", e)

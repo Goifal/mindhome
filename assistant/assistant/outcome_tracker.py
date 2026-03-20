@@ -60,6 +60,8 @@ class OutcomeTracker:
         self._cfg = yaml_config.get("outcome_tracker", {})
         self._observation_delay = self._cfg.get("observation_delay_seconds", 180)
         self._max_results = self._cfg.get("max_results", 500)
+        self._calibration_min = self._cfg.get("calibration_min", 0.5)
+        self._calibration_max = self._cfg.get("calibration_max", 1.5)
         self._task_registry = None
         self._background_tasks: set[asyncio.Task] = set()
 
@@ -428,7 +430,10 @@ class OutcomeTracker:
                 calibration[domain] = {
                     "avg_score": round(avg, 3),
                     "total_actions": len(scores),
-                    "calibration_factor": round(max(0.5, min(1.5, factor)), 3),
+                    "calibration_factor": round(
+                        max(self._calibration_min, min(self._calibration_max, factor)),
+                        3,
+                    ),
                 }
 
             return calibration

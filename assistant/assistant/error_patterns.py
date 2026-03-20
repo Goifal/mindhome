@@ -48,6 +48,13 @@ class ErrorPatternTracker:
         self._cfg = yaml_config.get("error_patterns", {})
         self._min_occurrences = self._cfg.get("min_occurrences_for_mitigation", 3)
         self._mitigation_ttl_hours = self._cfg.get("mitigation_ttl_hours", 1)
+        _diag_cfg = self._cfg.get("self_diagnosis", {})
+        self._diag_thresholds = {
+            "timeout": _diag_cfg.get("timeout_threshold", 5),
+            "service_unavailable": _diag_cfg.get("service_unavailable_threshold", 3),
+            "entity_not_found": _diag_cfg.get("entity_not_found_threshold", 3),
+            "model_overloaded": _diag_cfg.get("model_overloaded_threshold", 5),
+        }
 
     async def initialize(self, redis_client):
         """Initialisiert mit Redis Client."""
@@ -293,7 +300,7 @@ class ErrorPatternTracker:
             issues = []
 
             # Timeout-Haeufen → LLM-Performance-Problem
-            if by_type.get("timeout", 0) >= 5:
+            if by_type.get("timeout", 0) >= self._diag_thresholds["timeout"]:
                 issues.append(
                     {
                         "issue": "LLM-Antwortzeiten",
@@ -309,7 +316,10 @@ class ErrorPatternTracker:
                 )
 
             # Service-Ausfaelle → HA-Verbindungsproblem
-            if by_type.get("service_unavailable", 0) >= 3:
+            if (
+                by_type.get("service_unavailable", 0)
+                >= self._diag_thresholds["service_unavailable"]
+            ):
                 issues.append(
                     {
                         "issue": "Home-Assistant-Dienste",
@@ -325,7 +335,10 @@ class ErrorPatternTracker:
                 )
 
             # Entity-not-found → Geraetekonfiguration veraendert
-            if by_type.get("entity_not_found", 0) >= 3:
+            if (
+                by_type.get("entity_not_found", 0)
+                >= self._diag_thresholds["entity_not_found"]
+            ):
                 issues.append(
                     {
                         "issue": "Geraete-Konfiguration",
@@ -341,7 +354,10 @@ class ErrorPatternTracker:
                 )
 
             # Model-Ueberlastung → Ressourcen-Problem
-            if by_type.get("model_overloaded", 0) >= 5:
+            if (
+                by_type.get("model_overloaded", 0)
+                >= self._diag_thresholds["model_overloaded"]
+            ):
                 issues.append(
                     {
                         "issue": "KI-Modell-Kapazitaet",

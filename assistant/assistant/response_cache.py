@@ -51,11 +51,22 @@ class ResponseCache:
         self._invalidation_count = 0
         self._stats_lock = asyncio.Lock()
 
-    def configure(self, *, enabled: bool = True, ttl_overrides: Optional[dict] = None):
+    def configure(
+        self,
+        *,
+        enabled: bool = True,
+        ttl_overrides: Optional[dict] = None,
+        predictive_preload: Optional[dict] = None,
+    ):
         """Konfiguriert den Cache (aus settings.yaml)."""
         self._enabled = enabled
         if ttl_overrides:
             self._ttl_overrides = ttl_overrides
+        pp = predictive_preload or {}
+        self._predictive_enabled = pp.get("enabled", True)
+        self._predictive_lookahead_hours = pp.get("lookahead_hours", 2)
+        self._predictive_ttl = pp.get("preload_ttl_seconds", 300)
+        self._predictive_max = pp.get("max_predictions", 5)
 
     def set_redis(self, redis_client) -> None:
         """Setzt den Redis-Client."""
@@ -277,8 +288,14 @@ class ResponseCache:
         """
         if not self._enabled or not self._redis:
             return 0
+        if not getattr(self, "_predictive_enabled", True):
+            return 0
         if not anticipation_engine:
             return 0
+
+        lookahead = getattr(self, "_predictive_lookahead_hours", 2)
+        preload_ttl = getattr(self, "_predictive_ttl", 300)
+        max_preds = getattr(self, "_predictive_max", 5)
 
         warmed = 0
         try:
@@ -292,12 +309,12 @@ class ResponseCache:
             tz = ZoneInfo("Europe/Berlin")
             now = datetime.now(tz)
 
-            for pred in predictions[:5]:
+            for pred in predictions[:max_preds]:
                 hour = pred.get("hour", 0)
                 hours_ahead = hour - now.hour
                 if hours_ahead < 0:
                     hours_ahead += 24
-                if hours_ahead > 2:
+                if hours_ahead > lookahead:
                     continue
 
                 action = pred.get("action", "")
@@ -315,7 +332,7 @@ class ResponseCache:
                             if ctx:
                                 await self._redis.setex(
                                     f"mha:predictive_preload:{action}",
-                                    300,  # 5 Min TTL
+                                    preload_ttl,
                                     json.dumps(ctx, default=str, ensure_ascii=False),
                                 )
                                 warmed += 1
