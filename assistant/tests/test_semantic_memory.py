@@ -1019,3 +1019,496 @@ class TestUtilities:
     async def test_get_correction_history_no_redis(self, semantic_no_backends):
         result = await semantic_no_backends.get_correction_history()
         assert result == []
+
+
+# =====================================================================
+# FACT_CATEGORIES Completeness
+# =====================================================================
+
+
+class TestFactCategories:
+    """Tests fuer die Definition und Vollstaendigkeit der Fakten-Kategorien."""
+
+    def test_all_9_categories_defined(self):
+        """Alle 10 Kategorien sind definiert (9 Original + scene_preference)."""
+        expected = [
+            "preference", "person", "habit", "health", "work",
+            "personal_date", "intent", "conversation_topic",
+            "general", "scene_preference",
+        ]
+        for cat in expected:
+            assert cat in FACT_CATEGORIES, f"Kategorie '{cat}' fehlt in FACT_CATEGORIES"
+
+    def test_no_duplicate_categories(self):
+        assert len(FACT_CATEGORIES) == len(set(FACT_CATEGORIES))
+
+
+# =====================================================================
+# SemanticFact date_meta
+# =====================================================================
+
+
+class TestSemanticFactDateMeta:
+    """Tests fuer date_meta Felder in SemanticFact."""
+
+    def test_to_dict_with_date_meta(self):
+        fact = SemanticFact(
+            content="Lisas Geburtstag ist am 15. Maerz",
+            category="personal_date",
+            person="Lisa",
+            date_meta={"date_type": "birthday", "date_mm_dd": "03-15", "year": "1992", "label": "Geburtstag"},
+        )
+        d = fact.to_dict()
+        assert d["date_type"] == "birthday"
+        assert d["date_mm_dd"] == "03-15"
+        assert d["date_year"] == "1992"
+        assert d["date_label"] == "Geburtstag"
+
+    def test_to_dict_without_date_meta(self):
+        fact = SemanticFact(content="Normaler Fakt", category="general")
+        d = fact.to_dict()
+        assert "date_type" not in d
+        assert "date_mm_dd" not in d
+
+    def test_from_dict_restores_date_meta(self):
+        data = {
+            "content": "Geburtstag",
+            "category": "personal_date",
+            "date_type": "birthday",
+            "date_mm_dd": "03-15",
+            "date_year": "1992",
+            "date_label": "Geburtstag",
+        }
+        fact = SemanticFact.from_dict(data)
+        assert fact.date_meta is not None
+        assert fact.date_meta["date_type"] == "birthday"
+        assert fact.date_meta["date_mm_dd"] == "03-15"
+
+    def test_from_dict_no_date_meta_when_missing(self):
+        data = {"content": "Normal", "category": "general"}
+        fact = SemanticFact.from_dict(data)
+        assert fact.date_meta is None
+
+
+# =====================================================================
+# store_fact — Backend Failure Scenarios
+# =====================================================================
+
+
+class TestStoreFactEdgeCases:
+    """Tests fuer store_fact bei verschiedenen Fehlerzustaenden."""
+
+    @pytest.mark.asyncio
+    async def test_store_fact_no_backends_returns_false(self, semantic_no_backends):
+        """Ohne Redis und ChromaDB wird False zurueckgegeben."""
+        fact = SemanticFact(content="Test Fakt", category="general")
+        # find_similar_fact returns None (no chroma), no contradiction check
+        result = await semantic_no_backends.store_fact(fact)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_store_fact_redis_error_returns_false(self, semantic, redis_mock, chroma_mock):
+        """Redis-Fehler beim Schreiben fuehrt zu False."""
+        chroma_mock.query = MagicMock(return_value={
+            "documents": [[]], "metadatas": [[]], "distances": [[]], "ids": [[]],
+        })
+
+        # Pipeline execute wirft Exception
+        def _make_failing_pipe():
+            pipe = MagicMock()
+            pipe.hset = MagicMock()
+            pipe.sadd = MagicMock()
+            pipe.execute = AsyncMock(side_effect=Exception("Redis pipeline error"))
+            return pipe
+
+        redis_mock.pipeline = MagicMock(side_effect=_make_failing_pipe)
+
+        fact = SemanticFact(content="Test", category="general")
+        result = await semantic.store_fact(fact)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_store_fact_lock_retry_success(self, semantic, redis_mock, chroma_mock):
+        """Lock wird beim Retry erhalten."""
+        chroma_mock.query = MagicMock(return_value={
+            "documents": [[]], "metadatas": [[]], "distances": [[]], "ids": [[]],
+        })
+
+        # Erster Lock-Versuch schlaegt fehl, zweiter gelingt
+        redis_mock.set = AsyncMock(side_effect=[False, True])
+
+        fact = SemanticFact(content="Lock Retry Test", category="general")
+        result = await semantic.store_fact(fact)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_store_fact_lock_both_retries_fail(self, semantic, redis_mock, chroma_mock):
+        """Lock kann auch nach Retry nicht erhalten werden."""
+        redis_mock.set = AsyncMock(return_value=False)
+
+        fact = SemanticFact(content="Lock Fail Test", category="general")
+        result = await semantic.store_fact(fact)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_store_person_fact_refreshes_cache(self, semantic, redis_mock, chroma_mock):
+        """Person-Fakten triggern einen Relationship-Cache-Refresh."""
+        chroma_mock.query = MagicMock(return_value={
+            "documents": [[]], "metadatas": [[]], "distances": [[]], "ids": [[]],
+        })
+
+        fact = SemanticFact(content="Lisa ist Max' Freundin", category="person", person="Max")
+        with patch.object(semantic, "refresh_relationship_cache", new_callable=AsyncMock) as mock_refresh:
+            await semantic.store_fact(fact)
+            mock_refresh.assert_called_once()
+
+
+# =====================================================================
+# search_facts — Redis Fallback
+# =====================================================================
+
+
+class TestSearchFactsRedisFallback:
+    """Tests fuer die Redis-Fallback-Suche wenn ChromaDB nicht verfuegbar ist."""
+
+    @pytest.mark.asyncio
+    async def test_redis_fallback_keyword_matching(self, redis_mock):
+        """Redis-Fallback findet Fakten per Keyword-Matching."""
+        sm = SemanticMemory()
+        sm.redis = redis_mock
+        sm.chroma_collection = None  # Kein ChromaDB -> Fallback
+
+        redis_mock.smembers = AsyncMock(return_value={"f1", "f2"})
+
+        async def hgetall_side(key):
+            data = {
+                "mha:fact:f1": {
+                    "fact_id": "f1",
+                    "content": "Max bevorzugt Kaffee am Morgen",
+                    "category": "preference",
+                    "person": "Max",
+                    "confidence": "0.8",
+                    "times_confirmed": "1",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+                "mha:fact:f2": {
+                    "fact_id": "f2",
+                    "content": "Lisa mag Tee am Abend",
+                    "category": "preference",
+                    "person": "Lisa",
+                    "confidence": "0.7",
+                    "times_confirmed": "1",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+            }
+            return data.get(key, {})
+
+        redis_mock.hgetall = AsyncMock(side_effect=hgetall_side)
+
+        results = await sm.search_facts("Kaffee Morgen", limit=5)
+        assert len(results) >= 1
+        # Der Kaffee-Fakt sollte gefunden werden
+        assert any("Kaffee" in r["content"] for r in results)
+
+    @pytest.mark.asyncio
+    async def test_redis_fallback_person_filter(self, redis_mock):
+        """Redis-Fallback filtert nach Person."""
+        sm = SemanticMemory()
+        sm.redis = redis_mock
+        sm.chroma_collection = None
+
+        redis_mock.smembers = AsyncMock(return_value={"f1"})
+        redis_mock.hgetall = AsyncMock(return_value={
+            "fact_id": "f1",
+            "content": "Max mag Kaffee",
+            "category": "preference",
+            "person": "Max",
+            "confidence": "0.8",
+            "times_confirmed": "1",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+        results = await sm.search_facts("Kaffee", person="Max")
+        redis_mock.smembers.assert_called_with("mha:facts:person:Max")
+
+    @pytest.mark.asyncio
+    async def test_redis_fallback_filters_low_confidence(self, redis_mock):
+        """Redis-Fallback filtert Fakten mit zu niedriger Confidence."""
+        sm = SemanticMemory()
+        sm.redis = redis_mock
+        sm.chroma_collection = None
+
+        redis_mock.smembers = AsyncMock(return_value={"f1"})
+        redis_mock.hgetall = AsyncMock(return_value={
+            "fact_id": "f1",
+            "content": "Alter verfallener Fakt ueber Kaffee",
+            "category": "general",
+            "person": "Max",
+            "confidence": "0.1",  # Unter min_confidence (0.4)
+            "times_confirmed": "1",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+        results = await sm.search_facts("Kaffee")
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_chroma_failure_falls_back_to_redis(self, semantic, chroma_mock, redis_mock):
+        """Bei ChromaDB-Fehler wird automatisch Redis-Fallback genutzt."""
+        chroma_mock.query = MagicMock(side_effect=Exception("ChromaDB down"))
+        redis_mock.smembers = AsyncMock(return_value=set())
+
+        results = await semantic.search_facts("Test")
+        assert results == []
+        # Redis-Fallback wurde aufgerufen
+        redis_mock.smembers.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_search_no_backends_returns_empty(self, semantic_no_backends):
+        results = await semantic_no_backends.search_facts("Test")
+        assert results == []
+
+
+# =====================================================================
+# search_facts — Confidence Filtering
+# =====================================================================
+
+
+class TestSearchFactsConfidenceFilter:
+    """Tests fuer Confidence-basierte Filterung bei ChromaDB-Suche."""
+
+    @pytest.mark.asyncio
+    async def test_search_filters_low_confidence_facts(self, semantic, chroma_mock):
+        """Fakten unter min_confidence werden nicht zurueckgegeben."""
+        chroma_mock.query = MagicMock(return_value={
+            "documents": [["Fakt mit hoher Conf", "Fakt mit niedriger Conf"]],
+            "metadatas": [[
+                {"category": "preference", "person": "Max", "confidence": "0.8", "times_confirmed": "3"},
+                {"category": "general", "person": "Max", "confidence": "0.1", "times_confirmed": "1"},
+            ]],
+            "distances": [[0.2, 0.3]],
+        })
+
+        results = await semantic.search_facts("Max", limit=5)
+        # Nur der Fakt mit confidence >= 0.4 sollte zurueckgegeben werden
+        assert len(results) == 1
+        assert results[0]["confidence"] == 0.8
+
+
+# =====================================================================
+# parse_date_from_text
+# =====================================================================
+
+
+class TestParseDateFromText:
+    """Tests fuer das Datums-Parsing aus deutschem Text."""
+
+    def test_parse_day_month_name(self):
+        result = SemanticMemory.parse_date_from_text("am 15. Maerz")
+        assert result == "03-15"
+
+    def test_parse_day_month_name_umlaut(self):
+        result = SemanticMemory.parse_date_from_text("am 15. März")
+        assert result == "03-15"
+
+    def test_parse_numeric_format(self):
+        result = SemanticMemory.parse_date_from_text("am 7.6.")
+        assert result == "06-07"
+
+    def test_parse_numeric_with_year(self):
+        result = SemanticMemory.parse_date_from_text("am 15.3.1992")
+        assert result == "03-15"
+
+    def test_parse_no_date_returns_none(self):
+        result = SemanticMemory.parse_date_from_text("Kein Datum hier")
+        assert result is None
+
+    def test_parse_invalid_month_returns_none(self):
+        result = SemanticMemory.parse_date_from_text("am 15.13.")
+        assert result is None
+
+    def test_parse_januar(self):
+        result = SemanticMemory.parse_date_from_text("am 1. Januar")
+        assert result == "01-01"
+
+    def test_parse_dezember(self):
+        result = SemanticMemory.parse_date_from_text("am 24. Dezember")
+        assert result == "12-24"
+
+
+# =====================================================================
+# parse_year_from_text
+# =====================================================================
+
+
+class TestParseYearFromText:
+    """Tests fuer die Jahreszahl-Extraktion."""
+
+    def test_parse_valid_year(self):
+        assert SemanticMemory.parse_year_from_text("geboren 1992 in Berlin") == "1992"
+
+    def test_parse_2000s_year(self):
+        assert SemanticMemory.parse_year_from_text("seit 2020 verheiratet") == "2020"
+
+    def test_parse_no_year(self):
+        assert SemanticMemory.parse_year_from_text("kein Jahr hier") == ""
+
+
+# =====================================================================
+# store_personal_date
+# =====================================================================
+
+
+class TestStorePersonalDate:
+    """Tests fuer das Speichern persoenlicher Daten."""
+
+    @pytest.mark.asyncio
+    async def test_store_birthday(self, semantic, chroma_mock):
+        chroma_mock.query = MagicMock(return_value={
+            "documents": [[]], "metadatas": [[]], "distances": [[]], "ids": [[]],
+        })
+
+        result = await semantic.store_personal_date(
+            date_type="birthday",
+            person_name="Lisa",
+            date_mm_dd="03-15",
+            year="1992",
+        )
+
+        assert result is True
+        meta = chroma_mock.add.call_args[1]["metadatas"][0]
+        assert meta["category"] == "personal_date"
+        assert float(meta["confidence"]) == 1.0
+        assert meta["date_type"] == "birthday"
+        assert meta["date_mm_dd"] == "03-15"
+        content = chroma_mock.add.call_args[1]["documents"][0]
+        assert "Lisa" in content
+        assert "Geburtstag" in content
+
+    @pytest.mark.asyncio
+    async def test_store_anniversary(self, semantic, chroma_mock):
+        chroma_mock.query = MagicMock(return_value={
+            "documents": [[]], "metadatas": [[]], "distances": [[]], "ids": [[]],
+        })
+
+        result = await semantic.store_personal_date(
+            date_type="anniversary",
+            person_name="Max",
+            date_mm_dd="06-20",
+            year="2018",
+            label="Hochzeitstag",
+        )
+
+        assert result is True
+        content = chroma_mock.add.call_args[1]["documents"][0]
+        assert "Hochzeitstag" in content
+        assert "2018" in content
+
+
+# =====================================================================
+# delete_fact Edge Cases
+# =====================================================================
+
+
+class TestDeleteFactEdgeCases:
+    """Zusaetzliche Tests fuer Fakt-Loeschung."""
+
+    @pytest.mark.asyncio
+    async def test_delete_fact_no_redis(self, semantic_no_backends, chroma_mock):
+        """Ohne Redis gibt delete_fact False zurueck."""
+        semantic_no_backends.chroma_collection = chroma_mock
+        result = await semantic_no_backends.delete_fact("fact_123")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_delete_fact_chroma_error_continues(self, semantic, redis_mock, chroma_mock):
+        """ChromaDB-Fehler beim Loeschen verhindert nicht die Redis-Bereinigung."""
+        chroma_mock.delete.side_effect = Exception("ChromaDB error")
+        redis_mock.set = AsyncMock(return_value=True)
+        redis_mock.hgetall = AsyncMock(return_value={
+            "person": "Max",
+            "category": "preference",
+        })
+
+        result = await semantic.delete_fact("fact_456")
+        assert result is True
+        # Redis-Bereinigung wurde trotzdem ausgefuehrt
+        redis_mock.srem.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_delete_lock_not_acquired(self, semantic, redis_mock):
+        """Wenn der Delete-Lock nicht erhalten wird, gibt delete_fact False zurueck."""
+        redis_mock.set = AsyncMock(return_value=False)
+
+        result = await semantic.delete_fact("fact_locked")
+        assert result is False
+
+
+# =====================================================================
+# get_facts_by_person / get_facts_by_category Edge Cases
+# =====================================================================
+
+
+class TestFactRetrievalEdgeCases:
+    """Edge Cases fuer Fakten-Abruf."""
+
+    @pytest.mark.asyncio
+    async def test_get_facts_by_person_empty_set(self, semantic, redis_mock):
+        redis_mock.smembers = AsyncMock(return_value=set())
+        result = await semantic.get_facts_by_person("Unbekannt")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_facts_by_category_empty_set(self, semantic, redis_mock):
+        redis_mock.smembers = AsyncMock(return_value=set())
+        result = await semantic.get_facts_by_category("nonexistent")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_facts_by_person_no_redis_uses_search(self, semantic_no_backends):
+        """Ohne Redis faellt get_facts_by_person auf search_facts zurueck."""
+        result = await semantic_no_backends.get_facts_by_person("Max")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_facts_by_category_no_redis_uses_search(self, semantic_no_backends):
+        """Ohne Redis faellt get_facts_by_category auf search_facts zurueck."""
+        result = await semantic_no_backends.get_facts_by_category("health")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_all_facts_sorted_by_confidence(self, semantic, redis_mock):
+        """get_all_facts sortiert nach Confidence (hoch -> niedrig)."""
+        redis_mock.smembers = AsyncMock(return_value={"f1", "f2"})
+
+        call_count = [0]
+        async def hgetall_side(key):
+            call_count[0] += 1
+            data = {
+                "mha:fact:f1": {
+                    "fact_id": "f1", "content": "Niedrig",
+                    "category": "general", "person": "Max",
+                    "confidence": "0.3", "times_confirmed": "1",
+                    "created_at": "", "updated_at": "",
+                },
+                "mha:fact:f2": {
+                    "fact_id": "f2", "content": "Hoch",
+                    "category": "preference", "person": "Max",
+                    "confidence": "0.9", "times_confirmed": "5",
+                    "created_at": "", "updated_at": "",
+                },
+            }
+            return data.get(key, {})
+
+        redis_mock.hgetall = AsyncMock(side_effect=hgetall_side)
+
+        result = await semantic.get_all_facts()
+        assert len(result) == 2
+        assert result[0]["confidence"] > result[1]["confidence"]
+
+    @pytest.mark.asyncio
+    async def test_get_all_facts_handles_exception(self, semantic, redis_mock):
+        """get_all_facts faengt Exceptions ab und gibt leere Liste zurueck."""
+        redis_mock.smembers = AsyncMock(side_effect=Exception("Redis down"))
+        result = await semantic.get_all_facts()
+        assert result == []

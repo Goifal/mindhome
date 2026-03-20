@@ -29,6 +29,7 @@ from assistant.inner_state import (
     MOOD_IRRITATED,
     VALID_MOODS,
     MOOD_PROMPT_HINTS,
+    MOOD_TRANSITIONS,
     CONFIDENCE_HINTS,
 )
 
@@ -638,3 +639,502 @@ class TestEventSequences:
         await engine.on_action_failure("door.lock", "timeout")
         # Now failed_actions=1, complex_solves=1 but failed>0 -> not proud
         assert engine.mood != MOOD_PROUD
+
+
+# ============================================================
+# User Mood Change
+# ============================================================
+
+class TestUserMoodChange:
+    """Tests fuer on_user_mood_change — empathische Reaktion auf User-Stimmung."""
+
+    @pytest.mark.asyncio
+    async def test_frustrated_user_triggers_concerned(self, engine):
+        await engine.on_user_mood_change("frustrated", "Max")
+        assert engine.mood == MOOD_CONCERNED
+
+    @pytest.mark.asyncio
+    async def test_stressed_user_triggers_concerned(self, engine):
+        await engine.on_user_mood_change("stressed", "Lisa")
+        assert engine.mood == MOOD_CONCERNED
+
+    @pytest.mark.asyncio
+    async def test_good_user_mood_increases_satisfaction(self, engine):
+        initial_sat = engine.satisfaction
+        await engine.on_user_mood_change("good", "Max")
+        assert engine.satisfaction == pytest.approx(initial_sat + 0.1)
+        # Mood should not change directly
+        assert engine.mood == MOOD_NEUTRAL
+
+    @pytest.mark.asyncio
+    async def test_good_user_mood_clamps_satisfaction(self, engine):
+        engine._satisfaction = 0.95
+        await engine.on_user_mood_change("good")
+        assert engine.satisfaction <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_unknown_user_mood_no_change(self, engine):
+        initial_mood = engine.mood
+        initial_sat = engine.satisfaction
+        await engine.on_user_mood_change("bored")
+        assert engine.mood == initial_mood
+        assert engine.satisfaction == initial_sat
+
+    @pytest.mark.asyncio
+    async def test_frustrated_saves_previous_mood(self, engine):
+        engine._mood = MOOD_AMUSED
+        await engine.on_user_mood_change("frustrated")
+        assert engine._previous_mood == MOOD_AMUSED
+        assert engine.mood == MOOD_CONCERNED
+
+    @pytest.mark.asyncio
+    async def test_user_mood_without_person(self, engine):
+        """Person parameter is optional."""
+        await engine.on_user_mood_change("frustrated")
+        assert engine.mood == MOOD_CONCERNED
+
+
+# ============================================================
+# Scene Activation
+# ============================================================
+
+class TestSceneActivation:
+    """Tests fuer on_scene_activated — Szene beeinflusst Stimmung."""
+
+    @pytest.mark.asyncio
+    async def test_party_scene_sets_amused(self, engine):
+        await engine.on_scene_activated("party")
+        assert engine.mood == MOOD_AMUSED
+
+    @pytest.mark.asyncio
+    async def test_gemuetlich_scene_sets_content(self, engine):
+        await engine.on_scene_activated("gemuetlich")
+        assert engine.mood == MOOD_CONTENT
+
+    @pytest.mark.asyncio
+    async def test_filmabend_scene_sets_content(self, engine):
+        await engine.on_scene_activated("filmabend")
+        assert engine.mood == MOOD_CONTENT
+
+    @pytest.mark.asyncio
+    async def test_schlafen_scene_keeps_neutral(self, engine):
+        """If mood is already neutral, scene 'schlafen' should not change it."""
+        assert engine.mood == MOOD_NEUTRAL
+        await engine.on_scene_activated("schlafen")
+        assert engine.mood == MOOD_NEUTRAL
+
+    @pytest.mark.asyncio
+    async def test_scene_changes_previous_mood(self, engine):
+        engine._mood = MOOD_IRRITATED
+        await engine.on_scene_activated("party")
+        assert engine._previous_mood == MOOD_IRRITATED
+        assert engine.mood == MOOD_AMUSED
+
+    @pytest.mark.asyncio
+    async def test_unknown_scene_no_change(self, engine):
+        engine._mood = MOOD_PROUD
+        await engine.on_scene_activated("unknown_scene")
+        assert engine.mood == MOOD_PROUD
+
+    @pytest.mark.asyncio
+    async def test_scene_no_change_if_same_mood(self, engine):
+        """If target mood equals current mood, no transition should happen."""
+        engine._mood = MOOD_CONTENT
+        engine._previous_mood = MOOD_NEUTRAL
+        await engine.on_scene_activated("filmabend")  # also CONTENT
+        assert engine.mood == MOOD_CONTENT
+        # _previous_mood should NOT be updated since no transition occurred
+        assert engine._previous_mood == MOOD_NEUTRAL
+
+    @pytest.mark.asyncio
+    async def test_scene_saves_state_with_redis(self, engine_with_redis):
+        await engine_with_redis.on_scene_activated("party")
+        pipe = engine_with_redis.redis.pipeline()
+        pipe.execute.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_all_scene_mood_map_entries_are_valid(self):
+        """All scene mood targets must be valid moods."""
+        engine = InnerStateEngine()
+        for scene_name, target_mood in engine._SCENE_MOOD_MAP.items():
+            assert target_mood in VALID_MOODS, f"Scene '{scene_name}' maps to invalid mood '{target_mood}'"
+
+
+# ============================================================
+# Mood Transitions
+# ============================================================
+
+class TestMoodTransitions:
+    """Tests fuer get_transition_comment und MOOD_TRANSITIONS."""
+
+    def test_transition_comment_irritated_to_content(self, engine):
+        engine._mood = MOOD_CONTENT
+        engine._previous_mood = MOOD_IRRITATED
+        comment = engine.get_transition_comment()
+        assert comment == "Deutlich besser als vorhin."
+
+    def test_transition_comment_concerned_to_neutral(self, engine):
+        engine._mood = MOOD_NEUTRAL
+        engine._previous_mood = MOOD_CONCERNED
+        comment = engine.get_transition_comment()
+        assert comment == "Problem scheint geloest."
+
+    def test_transition_comment_neutral_to_proud(self, engine):
+        engine._mood = MOOD_PROUD
+        engine._previous_mood = MOOD_NEUTRAL
+        comment = engine.get_transition_comment()
+        assert comment == "Darf ich anmerken — das lief gut."
+
+    def test_no_transition_comment_same_mood(self, engine):
+        engine._mood = MOOD_NEUTRAL
+        engine._previous_mood = MOOD_NEUTRAL
+        comment = engine.get_transition_comment()
+        assert comment is None
+
+    def test_no_transition_comment_unmapped_pair(self, engine):
+        engine._mood = MOOD_CURIOUS
+        engine._previous_mood = MOOD_AMUSED
+        comment = engine.get_transition_comment()
+        assert comment is None
+
+    def test_transition_comment_consumed_once(self, engine):
+        """Transition comment should only be returned once."""
+        engine._mood = MOOD_CONTENT
+        engine._previous_mood = MOOD_IRRITATED
+        comment1 = engine.get_transition_comment()
+        assert comment1 is not None
+        comment2 = engine.get_transition_comment()
+        assert comment2 is None
+
+    def test_all_transition_keys_are_valid_moods(self):
+        """All moods in MOOD_TRANSITIONS keys must be valid."""
+        for (from_mood, to_mood), comment in MOOD_TRANSITIONS.items():
+            assert from_mood in VALID_MOODS, f"Invalid from_mood: {from_mood}"
+            assert to_mood in VALID_MOODS, f"Invalid to_mood: {to_mood}"
+            assert isinstance(comment, str) and len(comment) > 0
+
+    @patch("assistant.inner_state.yaml_config", {"inner_state": {"enabled": True}})
+    def test_transition_comment_included_in_prompt(self, engine):
+        """Transition comment should appear in get_prompt_section output."""
+        engine._mood = MOOD_NEUTRAL
+        engine._previous_mood = MOOD_CONCERNED
+        engine._confidence = 0.5
+        result = engine.get_prompt_section()
+        assert "STIMMUNGSWECHSEL" in result
+        assert "Problem scheint geloest." in result
+
+
+# ============================================================
+# Mood History
+# ============================================================
+
+class TestMoodHistory:
+    """Tests fuer get_mood_history."""
+
+    @pytest.mark.asyncio
+    async def test_no_history_without_redis(self, engine):
+        result = await engine.get_mood_history()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_history_returns_parsed_entries(self, engine_with_redis):
+        import json
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        entry = json.dumps({
+            "mood": "zufrieden",
+            "confidence": 0.8,
+            "satisfaction": 0.7,
+            "hour": now.strftime("%Y-%m-%d-%H"),
+        })
+        engine_with_redis.redis.zrangebyscore = AsyncMock(
+            return_value=[(entry.encode(), now.timestamp())]
+        )
+        result = await engine_with_redis.get_mood_history(days=7)
+        assert len(result) == 1
+        assert result[0]["mood"] == "zufrieden"
+        assert result[0]["confidence"] == 0.8
+        assert "timestamp" in result[0]
+
+    @pytest.mark.asyncio
+    async def test_history_handles_string_entries(self, engine_with_redis):
+        """Redis may return strings instead of bytes."""
+        import json
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        entry = json.dumps({
+            "mood": "neutral",
+            "confidence": 0.5,
+            "satisfaction": 0.5,
+            "hour": "2026-03-20-14",
+        })
+        engine_with_redis.redis.zrangebyscore = AsyncMock(
+            return_value=[(entry, now.timestamp())]  # str, not bytes
+        )
+        result = await engine_with_redis.get_mood_history(days=7)
+        assert len(result) == 1
+        assert result[0]["mood"] == "neutral"
+
+    @pytest.mark.asyncio
+    async def test_history_empty_on_redis_error(self, engine_with_redis):
+        engine_with_redis.redis.zrangebyscore = AsyncMock(
+            side_effect=ConnectionError("down")
+        )
+        result = await engine_with_redis.get_mood_history()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_history_custom_days(self, engine_with_redis):
+        engine_with_redis.redis.zrangebyscore = AsyncMock(return_value=[])
+        await engine_with_redis.get_mood_history(days=30)
+        call_args = engine_with_redis.redis.zrangebyscore.call_args
+        # min_score should be 30 days ago
+        min_score = call_args[0][1]
+        import time
+        expected_min = time.time() - (30 * 86400)
+        assert abs(min_score - expected_min) < 5  # within 5 seconds
+
+
+# ============================================================
+# Mood Summary
+# ============================================================
+
+class TestMoodSummary:
+    """Tests fuer get_mood_summary — kompakte Stimmungs-Zusammenfassung."""
+
+    @pytest.mark.asyncio
+    async def test_empty_summary_without_history(self, engine):
+        result = await engine.get_mood_summary()
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_summary_with_single_mood(self, engine_with_redis):
+        import json
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        entries = []
+        for i in range(5):
+            entry = json.dumps({
+                "mood": "zufrieden",
+                "confidence": 0.8,
+                "satisfaction": 0.7,
+                "hour": f"2026-03-20-{10+i:02d}",
+            })
+            entries.append((entry.encode(), now.timestamp() + i * 3600))
+        engine_with_redis.redis.zrangebyscore = AsyncMock(
+            return_value=entries
+        )
+        result = await engine_with_redis.get_mood_summary(days=7)
+        assert "zufrieden 100%" in result
+        assert "Stimmung letzte 7 Tage" in result
+
+    @pytest.mark.asyncio
+    async def test_summary_with_mixed_moods(self, engine_with_redis):
+        import json
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        moods = ["zufrieden", "zufrieden", "neutral", "besorgt", "zufrieden",
+                 "neutral", "zufrieden", "neutral", "zufrieden", "neutral"]
+        entries = []
+        for i, mood in enumerate(moods):
+            entry = json.dumps({
+                "mood": mood,
+                "confidence": 0.5,
+                "satisfaction": 0.5,
+                "hour": f"2026-03-{15+i//4:02d}-{10+i%4:02d}",
+            })
+            entries.append((entry.encode(), now.timestamp() + i * 3600))
+        engine_with_redis.redis.zrangebyscore = AsyncMock(
+            return_value=entries
+        )
+        result = await engine_with_redis.get_mood_summary(days=7)
+        assert "zufrieden" in result
+        assert "neutral" in result
+        assert "besorgt" in result
+        assert "%" in result
+
+    @pytest.mark.asyncio
+    async def test_summary_trend_positive(self, engine_with_redis):
+        """When second half has more positive moods, trend should be 'positiver'."""
+        import json
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        # First half: mostly neutral; second half: mostly content/amused
+        moods = ["neutral", "neutral", "neutral", "besorgt",
+                 "zufrieden", "zufrieden", "amuesiert", "stolz"]
+        entries = []
+        for i, mood in enumerate(moods):
+            entry = json.dumps({
+                "mood": mood,
+                "confidence": 0.5,
+                "satisfaction": 0.5,
+                "hour": f"2026-03-{16+i//4:02d}-{10+i%4:02d}",
+            })
+            entries.append((entry.encode(), now.timestamp() + i * 3600))
+        engine_with_redis.redis.zrangebyscore = AsyncMock(
+            return_value=entries
+        )
+        result = await engine_with_redis.get_mood_summary(days=7)
+        assert "positiver" in result
+
+    @pytest.mark.asyncio
+    async def test_summary_trend_angespannt(self, engine_with_redis):
+        """When first half has more positive moods, trend should be 'angespannter'."""
+        import json
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        # First half: positive; second half: negative
+        moods = ["zufrieden", "amuesiert", "stolz", "zufrieden",
+                 "neutral", "neutral", "besorgt", "irritiert"]
+        entries = []
+        for i, mood in enumerate(moods):
+            entry = json.dumps({
+                "mood": mood,
+                "confidence": 0.5,
+                "satisfaction": 0.5,
+                "hour": f"2026-03-{16+i//4:02d}-{10+i%4:02d}",
+            })
+            entries.append((entry.encode(), now.timestamp() + i * 3600))
+        engine_with_redis.redis.zrangebyscore = AsyncMock(
+            return_value=entries
+        )
+        result = await engine_with_redis.get_mood_summary(days=7)
+        assert "angespannter" in result
+
+    @pytest.mark.asyncio
+    async def test_summary_trend_stable(self, engine_with_redis):
+        """When both halves are similar, trend should be 'stabil'."""
+        import json
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        moods = ["zufrieden", "neutral", "zufrieden", "neutral",
+                 "zufrieden", "neutral", "zufrieden", "neutral"]
+        entries = []
+        for i, mood in enumerate(moods):
+            entry = json.dumps({
+                "mood": mood,
+                "confidence": 0.5,
+                "satisfaction": 0.5,
+                "hour": f"2026-03-{16+i//4:02d}-{10+i%4:02d}",
+            })
+            entries.append((entry.encode(), now.timestamp() + i * 3600))
+        engine_with_redis.redis.zrangebyscore = AsyncMock(
+            return_value=entries
+        )
+        result = await engine_with_redis.get_mood_summary(days=7)
+        assert "stabil" in result
+
+    @pytest.mark.asyncio
+    async def test_summary_no_trend_with_few_entries(self, engine_with_redis):
+        """With <= 4 entries (mid <= 2), no trend should be calculated."""
+        import json
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        moods = ["zufrieden", "neutral"]
+        entries = []
+        for i, mood in enumerate(moods):
+            entry = json.dumps({
+                "mood": mood,
+                "confidence": 0.5,
+                "satisfaction": 0.5,
+                "hour": f"2026-03-20-{10+i:02d}",
+            })
+            entries.append((entry.encode(), now.timestamp() + i * 3600))
+        engine_with_redis.redis.zrangebyscore = AsyncMock(
+            return_value=entries
+        )
+        result = await engine_with_redis.get_mood_summary(days=7)
+        assert "Tendenz" not in result
+
+
+# ============================================================
+# Additional Edge Cases
+# ============================================================
+
+class TestEdgeCases:
+    """Zusaetzliche Randfaelle und Grenzwert-Tests."""
+
+    @pytest.mark.asyncio
+    async def test_confidence_capped_on_many_successes(self, engine):
+        """Confidence should never exceed 1.0 even after many successes."""
+        for _ in range(50):
+            await engine.on_action_success()
+        assert engine.confidence == 1.0
+
+    @pytest.mark.asyncio
+    async def test_confidence_floored_on_many_failures(self, engine):
+        """Confidence should never go below 0.0 even after many failures."""
+        for _ in range(50):
+            await engine.on_action_failure()
+        assert engine.confidence == 0.0
+
+    @pytest.mark.asyncio
+    async def test_satisfaction_capped_on_many_user_good_moods(self, engine):
+        for _ in range(20):
+            await engine.on_user_mood_change("good")
+        assert engine.satisfaction <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_concurrent_events_do_not_corrupt_state(self, engine):
+        """Multiple events in quick succession should leave valid state."""
+        await engine.on_action_success()
+        await engine.on_action_failure()
+        await engine.on_funny_interaction()
+        await engine.on_warning_ignored()
+        await engine.on_complex_solve()
+        assert engine.mood in VALID_MOODS
+        assert 0.0 <= engine.confidence <= 1.0
+        assert 0.0 <= engine.satisfaction <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_mood_update_stores_previous_mood(self, engine):
+        """When _update_mood changes mood, _previous_mood is updated."""
+        await engine.on_complex_solve()  # Should set PROUD
+        assert engine._previous_mood == MOOD_NEUTRAL
+        assert engine.mood == MOOD_PROUD
+
+    @pytest.mark.asyncio
+    async def test_decay_resets_last_update(self, engine):
+        """After decay, _last_update should be refreshed."""
+        old_time = time.time() - 700
+        engine._last_update = old_time
+        engine._successful_actions = 1
+        await engine._update_mood()
+        assert engine._last_update > old_time
+
+    def test_get_state_reflects_mutations(self, engine):
+        """get_state should always reflect current internal values."""
+        engine._mood = MOOD_IRRITATED
+        engine._confidence = 0.1
+        engine._satisfaction = 0.9
+        state = engine.get_state()
+        assert state["mood"] == MOOD_IRRITATED
+        assert state["confidence"] == 0.1
+        assert state["satisfaction"] == 0.9
+
+    @pytest.mark.asyncio
+    async def test_security_event_overrides_any_mood(self, engine):
+        """on_security_event should override any current mood."""
+        for mood in [MOOD_CONTENT, MOOD_AMUSED, MOOD_PROUD, MOOD_CURIOUS, MOOD_IRRITATED]:
+            engine._mood = mood
+            await engine.on_security_event()
+            assert engine.mood == MOOD_CONCERNED
+
+    @pytest.mark.asyncio
+    async def test_scene_arbeiten_sets_neutral(self, engine):
+        engine._mood = MOOD_AMUSED
+        await engine.on_scene_activated("arbeiten")
+        assert engine.mood == MOOD_NEUTRAL
+
+    @pytest.mark.asyncio
+    async def test_scene_spielen_sets_amused(self, engine):
+        await engine.on_scene_activated("spielen")
+        assert engine.mood == MOOD_AMUSED

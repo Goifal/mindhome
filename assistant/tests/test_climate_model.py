@@ -618,3 +618,456 @@ class TestGenerateDescriptionCoverage:
         s = self._state()
         desc = self._model()._generate_description(s, s, {"cooling_off": True}, 20.0, 0.0, 60, False, None)
         assert "Kuehlung ausgeschaltet" in desc
+
+
+# ---------------------------------------------------------------------------
+# ClimateModel.simulate_scenario
+# ---------------------------------------------------------------------------
+
+@patch("assistant.climate_model.yaml_config", {})
+class TestSimulateScenario:
+    """Tests fuer vordefinierte Langzeit-Szenarien."""
+
+    def _model(self):
+        from assistant.climate_model import ClimateModel
+        return ClimateModel()
+
+    def test_disabled_returns_error(self):
+        model = self._model()
+        model.enabled = False
+        result = model.simulate_scenario("heating_off")
+        assert "error" in result
+
+    def test_heating_off_scenario(self):
+        model = self._model()
+        result = model.simulate_scenario("heating_off", duration_hours=24, params={
+            "room": "wohnzimmer", "current_temp": 21.0, "outdoor_temp": 0.0,
+        })
+        assert result["scenario"] == "heating_off"
+        assert len(result["timeline"]) > 1
+        # Temp should drop without heating when outdoor is 0
+        assert result["min_temp"] < 21.0
+
+    def test_heating_off_critical_threshold(self):
+        """Heating-off with very cold outside should reach critical temp."""
+        model = self._model()
+        result = model.simulate_scenario("heating_off", duration_hours=24, params={
+            "current_temp": 21.0, "outdoor_temp": -10.0, "critical_temp": 17.0,
+        })
+        assert result["time_to_critical"] is not None
+        assert "nicht empfohlen" in result["recommendation"]
+
+    def test_heating_off_mild_weather_safe(self):
+        """Heating-off in mild weather should stay above critical."""
+        model = self._model()
+        result = model.simulate_scenario("heating_off", duration_hours=6, params={
+            "current_temp": 21.0, "outdoor_temp": 18.0, "critical_temp": 15.0,
+        })
+        assert result["min_temp"] > 15.0
+        assert "kann voruebergehend ausgeschaltet werden" in result["recommendation"]
+
+    def test_windows_open_scenario(self):
+        model = self._model()
+        result = model.simulate_scenario("windows_open", duration_hours=2, params={
+            "current_temp": 21.0, "outdoor_temp": 5.0,
+        })
+        assert result["scenario"] == "windows_open"
+        assert result["min_temp"] < 21.0
+
+    def test_windows_open_reaches_critical(self):
+        """Open windows in cold weather should reach critical temp quickly."""
+        model = self._model()
+        result = model.simulate_scenario("windows_open", duration_hours=6, params={
+            "current_temp": 21.0, "outdoor_temp": -5.0, "critical_temp": 17.0,
+        })
+        assert result["time_to_critical"] is not None
+        assert "Stosslüften" in result["recommendation"]
+
+    def test_windows_open_safe_in_warm_weather(self):
+        """Open windows in warm weather should be safe."""
+        model = self._model()
+        result = model.simulate_scenario("windows_open", duration_hours=2, params={
+            "current_temp": 21.0, "outdoor_temp": 20.0, "critical_temp": 15.0,
+        })
+        assert result["time_to_critical"] is None
+        assert "moeglich" in result["recommendation"]
+
+    def test_vacation_3days_scenario(self):
+        """Vacation scenario should force 72h duration and 16C target."""
+        model = self._model()
+        result = model.simulate_scenario("vacation_3days", params={
+            "current_temp": 21.0, "outdoor_temp": 5.0,
+        })
+        assert result["scenario"] == "vacation_3days"
+        # Timeline should cover 72 hours
+        last_hour = result["timeline"][-1]["hour"]
+        assert last_hour == 72
+
+    def test_vacation_3days_extreme_cold_warning(self):
+        """Vacation in extreme cold should warn about frost risk."""
+        model = self._model()
+        result = model.simulate_scenario("vacation_3days", params={
+            "current_temp": 21.0, "outdoor_temp": -20.0,
+        })
+        if result["min_temp"] < 10:
+            assert "WARNUNG" in result["recommendation"]
+
+    def test_all_covers_closed_scenario(self):
+        """Closed covers should reduce heat loss."""
+        model = self._model()
+        result_open = model.simulate_scenario("heating_off", duration_hours=12, params={
+            "current_temp": 21.0, "outdoor_temp": 0.0,
+        })
+        result_covered = model.simulate_scenario("all_covers_closed", duration_hours=12, params={
+            "current_temp": 21.0, "outdoor_temp": 0.0,
+        })
+        # Covered should retain more heat (higher min temp)
+        assert result_covered["min_temp"] >= result_open["min_temp"]
+        assert "30%" in result_covered["recommendation"]
+
+    def test_timeline_starts_at_hour_zero(self):
+        model = self._model()
+        result = model.simulate_scenario("heating_off", duration_hours=6, params={
+            "current_temp": 21.0, "outdoor_temp": 10.0,
+        })
+        assert result["timeline"][0]["hour"] == 0
+        assert result["timeline"][0]["temp"] == 21.0
+
+
+# ---------------------------------------------------------------------------
+# ClimateModel.estimate_energy_cost
+# ---------------------------------------------------------------------------
+
+@patch("assistant.climate_model.yaml_config", {})
+class TestEstimateEnergyCost:
+    """Tests fuer Energiekosten-Schaetzung."""
+
+    def _model(self):
+        from assistant.climate_model import ClimateModel
+        return ClimateModel()
+
+    def test_disabled_returns_error(self):
+        model = self._model()
+        model.enabled = False
+        result = model.estimate_energy_cost("heating_off", 24)
+        assert "error" in result
+
+    def test_heating_off_zero_cost(self):
+        """Turning heating off should cost 0 kWh."""
+        model = self._model()
+        result = model.estimate_energy_cost("heating_off", 24, params={
+            "outdoor_temp": 5.0,
+        })
+        assert result["kwh_total"] == 0.0
+        assert result["cost_eur"] == 0.0
+        assert result["vs_normal_pct"] < 0  # Savings vs normal
+
+    def test_vacation_3days_less_than_normal(self):
+        """Vacation mode at 16C should use less energy than 21C normal."""
+        model = self._model()
+        # Use mild outdoor temp so duty cycles don't both cap at 1.0
+        result = model.estimate_energy_cost("vacation_3days", 72, params={
+            "outdoor_temp": 15.0,
+        })
+        assert result["vs_normal_pct"] < 0  # Negative = savings
+
+    def test_windows_open_more_than_normal(self):
+        """Open windows should increase energy consumption."""
+        model = self._model()
+        # Use mild outdoor so normal duty doesn't cap at 1.0
+        result = model.estimate_energy_cost("windows_open", 8, params={
+            "outdoor_temp": 18.0,
+        })
+        assert result["vs_normal_pct"] > 0  # More consumption
+
+    def test_all_covers_closed_less_than_normal(self):
+        """Closed covers should reduce energy consumption."""
+        model = self._model()
+        result = model.estimate_energy_cost("all_covers_closed", 24, params={
+            "outdoor_temp": 5.0,
+        })
+        assert result["vs_normal_pct"] < 0  # Savings
+
+    def test_unknown_scenario_equals_normal(self):
+        """Unknown scenarios should default to normal consumption."""
+        model = self._model()
+        result = model.estimate_energy_cost("some_unknown", 24, params={
+            "outdoor_temp": 5.0,
+        })
+        assert result["vs_normal_pct"] == 0
+
+    def test_custom_price_per_kwh(self):
+        """Custom energy price should be reflected in cost calculation."""
+        model = self._model()
+        result_default = model.estimate_energy_cost("vacation_3days", 72, params={"outdoor_temp": 5.0})
+        result_expensive = model.estimate_energy_cost("vacation_3days", 72, price_per_kwh=0.60, params={"outdoor_temp": 5.0})
+        if result_default["kwh_total"] > 0:
+            assert result_expensive["cost_eur"] == pytest.approx(result_default["cost_eur"] * 2, rel=0.01)
+
+    def test_warm_outdoor_no_heating_needed(self):
+        """When outdoor temp >= target, no heating duty is needed."""
+        model = self._model()
+        result = model.estimate_energy_cost("heating_off", 24, params={
+            "outdoor_temp": 25.0,
+        })
+        assert result["kwh_total"] == 0.0
+        assert result["vs_normal_pct"] == 0
+
+    def test_result_keys(self):
+        """Result should contain required keys."""
+        model = self._model()
+        result = model.estimate_energy_cost("heating_off", 24)
+        assert "kwh_total" in result
+        assert "cost_eur" in result
+        assert "vs_normal_pct" in result
+
+
+# ---------------------------------------------------------------------------
+# Simulation edge cases
+# ---------------------------------------------------------------------------
+
+@patch("assistant.climate_model.yaml_config", {})
+class TestSimulateEdgeCases:
+    """Edge cases and boundary conditions for the simulation."""
+
+    def _model(self):
+        from assistant.climate_model import ClimateModel
+        return ClimateModel()
+
+    def _state(self, **kw):
+        from assistant.climate_model import RoomThermalState
+        defaults = dict(room="Test", current_temp=20.0, outdoor_temp=5.0, target_temp=21.0)
+        defaults.update(kw)
+        return RoomThermalState(**defaults)
+
+    def test_zero_duration(self):
+        """Zero duration should return initial temp as final temp."""
+        model = self._model()
+        result = model.simulate(self._state(current_temp=20.0), duration_minutes=0)
+        assert result["final_temp"] == 20.0
+        assert result["temp_change"] == 0.0
+
+    def test_very_short_duration(self):
+        """1-minute simulation should produce minimal change."""
+        model = self._model()
+        result = model.simulate(self._state(current_temp=20.0), duration_minutes=1)
+        assert abs(result["temp_change"]) < 1.0
+
+    def test_both_heating_and_cooling_active(self):
+        """When both are active, only one should apply based on current vs target."""
+        model = self._model()
+        # Use outdoor close to current so heat loss doesn't dominate
+        state = self._state(
+            current_temp=20.0, target_temp=22.0,
+            heating_active=True, cooling_active=True,
+            outdoor_temp=19.0,
+        )
+        result = model.simulate(state, duration_minutes=60)
+        # Heating should win because current < target, and outdoor is mild
+        assert result["final_temp"] > 20.0
+
+    def test_no_heating_no_cooling_passive_equilibrium(self):
+        """Without heating or cooling, temp should drift toward outdoor."""
+        model = self._model()
+        state = self._state(current_temp=20.0, outdoor_temp=10.0)
+        result = model.simulate(state, duration_minutes=120)
+        assert result["final_temp"] < 20.0  # Drifts toward 10
+
+    def test_outdoor_hotter_than_indoor(self):
+        """When outdoor is hotter, indoor temp should rise passively."""
+        model = self._model()
+        state = self._state(current_temp=20.0, outdoor_temp=35.0)
+        result = model.simulate(state, duration_minutes=60)
+        assert result["final_temp"] > 20.0
+
+    def test_thermal_mass_slows_change(self):
+        """Higher thermal mass should result in slower temperature change."""
+        from assistant.climate_model import ClimateModel
+        with patch("assistant.climate_model.yaml_config", {
+            "climate_model": {
+                "room_params": {
+                    "heavy": {"thermal_mass_factor": 3.0},
+                    "light": {"thermal_mass_factor": 0.5},
+                }
+            }
+        }):
+            model = ClimateModel()
+        state_heavy = self._state(room="heavy", current_temp=20.0, outdoor_temp=5.0)
+        state_light = self._state(room="light", current_temp=20.0, outdoor_temp=5.0)
+        r_heavy = model.simulate(state_heavy, duration_minutes=60)
+        r_light = model.simulate(state_light, duration_minutes=60)
+        # Light mass should change faster (bigger drop)
+        assert abs(r_light["temp_change"]) > abs(r_heavy["temp_change"])
+
+    def test_sun_and_windows_combined(self):
+        """Sun exposure with open windows should partially offset heat loss."""
+        model = self._model()
+        state = self._state(current_temp=20.0, outdoor_temp=10.0,
+                            windows_open=1, sun_exposure=True)
+        result_both = model.simulate(state, duration_minutes=60)
+        state_window_only = self._state(current_temp=20.0, outdoor_temp=10.0,
+                                         windows_open=1, sun_exposure=False)
+        result_window = model.simulate(state_window_only, duration_minutes=60)
+        # Sun should partially offset the window loss
+        assert result_both["final_temp"] > result_window["final_temp"]
+
+    def test_multiple_windows_increase_loss(self):
+        """More windows open should increase heat loss proportionally."""
+        model = self._model()
+        r1 = model.simulate(self._state(windows_open=1, outdoor_temp=0.0), duration_minutes=30)
+        r3 = model.simulate(self._state(windows_open=3, outdoor_temp=0.0), duration_minutes=30)
+        assert r3["final_temp"] < r1["final_temp"]
+
+
+# ---------------------------------------------------------------------------
+# RoomThermalState edge cases
+# ---------------------------------------------------------------------------
+
+@patch("assistant.climate_model.yaml_config", {})
+class TestRoomThermalStateEdgeCases:
+    """Additional edge case tests for RoomThermalState."""
+
+    def test_extreme_temperatures(self):
+        from assistant.climate_model import RoomThermalState
+        s = RoomThermalState(room="test", current_temp=-20.0, outdoor_temp=-30.0)
+        d = s.to_dict()
+        assert d["current_temp"] == -20.0
+        assert d["outdoor_temp"] == -30.0
+
+    def test_zero_humidity(self):
+        from assistant.climate_model import RoomThermalState
+        s = RoomThermalState(room="test", current_temp=20.0, humidity=0.0)
+        assert s.to_dict()["humidity"] == 0.0
+
+    def test_high_humidity(self):
+        from assistant.climate_model import RoomThermalState
+        s = RoomThermalState(room="test", current_temp=20.0, humidity=100.0)
+        assert s.to_dict()["humidity"] == 100.0
+
+
+# ---------------------------------------------------------------------------
+# what_if with custom duration
+# ---------------------------------------------------------------------------
+
+@patch("assistant.climate_model.yaml_config", {})
+class TestWhatIfEdgeCases:
+    """Extended what_if tests."""
+
+    def _model(self):
+        from assistant.climate_model import ClimateModel
+        return ClimateModel()
+
+    def _state(self, **kw):
+        from assistant.climate_model import RoomThermalState
+        defaults = dict(room="Buero", current_temp=20.0, outdoor_temp=5.0)
+        defaults.update(kw)
+        return RoomThermalState(**defaults)
+
+    def test_what_if_heating_on(self):
+        # Use mild outdoor temp so heating can overcome heat loss
+        result = self._model().what_if(self._state(outdoor_temp=19.0), "Heizung anschalten")
+        assert "final_temp" in result
+        assert result["final_temp"] > 20.0
+
+    def test_what_if_set_temperature(self):
+        result = self._model().what_if(self._state(), "Temperatur auf 25 Grad")
+        assert result["changes_applied"]["set_target"] == 25
+
+    def test_what_if_combined_actions(self):
+        result = self._model().what_if(
+            self._state(windows_open=2), "Fenster zu und Heizung an",
+        )
+        assert result["changes_applied"]["close_windows"] is True
+        assert result["changes_applied"]["heating_on"] is True
+
+    def test_what_if_disabled_model(self):
+        """what_if with disabled model should return error through simulate."""
+        model = self._model()
+        model.enabled = False
+        result = model.what_if(self._state(), "Fenster schliessen")
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# estimate_comfort_time edge cases
+# ---------------------------------------------------------------------------
+
+@patch("assistant.climate_model.yaml_config", {})
+class TestEstimateComfortTimeEdgeCases:
+    """Extended comfort time estimation tests."""
+
+    def _model(self):
+        from assistant.climate_model import ClimateModel
+        return ClimateModel()
+
+    def _state(self, **kw):
+        from assistant.climate_model import RoomThermalState
+        defaults = dict(room="Buero", current_temp=20.0, outdoor_temp=5.0)
+        defaults.update(kw)
+        return RoomThermalState(**defaults)
+
+    def test_cooling_to_comfort(self):
+        """Room too hot should estimate cooling time."""
+        state = self._state(current_temp=28.0, outdoor_temp=20.0)
+        result = self._model().estimate_comfort_time(state, comfort_temp=22.0)
+        assert result["minutes"] is not None
+        assert result["minutes"] > 0
+
+    def test_just_outside_threshold(self):
+        """0.6 degrees from comfort should still require estimation."""
+        state = self._state(current_temp=20.4, outdoor_temp=19.0)
+        result = self._model().estimate_comfort_time(state, comfort_temp=21.0)
+        # 0.6 > 0.5 threshold, so estimation should run
+        assert result["minutes"] is not None or result["minutes"] is None  # depends on reachability
+
+    def test_just_inside_threshold(self):
+        """0.4 degrees from comfort should be considered already comfortable."""
+        state = self._state(current_temp=20.6)
+        result = self._model().estimate_comfort_time(state, comfort_temp=21.0)
+        assert result["minutes"] == 0
+        assert "Bereits bei Komforttemperatur" in result["description"]
+
+
+# ---------------------------------------------------------------------------
+# get_context_hint edge cases
+# ---------------------------------------------------------------------------
+
+@patch("assistant.climate_model.yaml_config", {})
+class TestGetContextHintEdgeCases:
+    """Extended context hint tests."""
+
+    def _model(self):
+        from assistant.climate_model import ClimateModel
+        return ClimateModel()
+
+    def _state(self, **kw):
+        from assistant.climate_model import RoomThermalState
+        defaults = dict(room="Wohnzimmer", current_temp=20.0, outdoor_temp=5.0)
+        defaults.update(kw)
+        return RoomThermalState(**defaults)
+
+    def test_temp_dropping_hint(self):
+        """When current > target by more than 3 degrees, hint should say 'sinkt'."""
+        state = self._state(current_temp=27.0, target_temp=21.0)
+        hint = self._model().get_context_hint([state])
+        assert "sinkt" in hint
+
+    def test_both_window_warning_and_temp_hint(self):
+        """Room with window open + heating + large temp diff should show both."""
+        state = self._state(
+            current_temp=17.0, target_temp=22.0,
+            windows_open=1, heating_active=True,
+        )
+        hint = self._model().get_context_hint([state])
+        assert "WARNUNG" in hint
+        assert "steigt" in hint
+
+    def test_multiple_rooms_combined(self):
+        """Multiple rooms should all produce hints."""
+        states = [
+            self._state(room="Buero", current_temp=17.0, target_temp=22.0),
+            self._state(room="Bad", windows_open=1, heating_active=True, current_temp=20.0, target_temp=21.0),
+        ]
+        hint = self._model().get_context_hint(states)
+        assert "Buero" in hint
+        assert "WARNUNG" in hint

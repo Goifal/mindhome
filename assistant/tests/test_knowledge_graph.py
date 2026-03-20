@@ -276,3 +276,176 @@ class TestStats:
             kg = KnowledgeGraph()
         stats = await kg.get_stats()
         assert stats["connected"] is False
+
+
+# ============================================================
+# Query Context
+# ============================================================
+
+class TestQueryContext:
+    """Tests fuer query_context() — Multi-Attribut-Kontextabfrage."""
+
+    @pytest.mark.asyncio
+    async def test_query_context_basic(self, kg, redis_mock):
+        """Grundlegende query_context liefert Praeferenzen und Geraete-Nutzung."""
+        async def mock_smembers(key):
+            if "out:prefers:person:max" in key:
+                return {"pref:warm"}
+            if "out:uses_often:person:max" in key:
+                return {"device:licht"}
+            return set()
+
+        redis_mock.smembers = mock_smembers
+        redis_mock.hget = AsyncMock(return_value=json.dumps({
+            "weight": 0.8, "relation": "prefers",
+        }))
+
+        results = await kg.query_context("max")
+        assert len(results) >= 2
+        types = {r["type"] for r in results}
+        assert "preference" in types
+        assert "device_usage" in types
+
+    @pytest.mark.asyncio
+    async def test_query_context_room_filter(self, kg, redis_mock):
+        """Ergebnisse mit anderem Raum werden herausgefiltert."""
+        async def mock_smembers(key):
+            if "out:prefers:person:max" in key:
+                return {"pref:warm"}
+            return set()
+
+        redis_mock.smembers = mock_smembers
+        redis_mock.hget = AsyncMock(return_value=json.dumps({
+            "weight": 0.8, "relation": "prefers", "room": "kueche",
+        }))
+
+        results = await kg.query_context("max", room="wohnzimmer")
+        assert len(results) == 0
+
+    @pytest.mark.asyncio
+    async def test_query_context_time_filter(self, kg, redis_mock):
+        """Ergebnisse mit anderem time_slot werden herausgefiltert."""
+        async def mock_smembers(key):
+            if "out:prefers:person:max" in key:
+                return {"pref:warm"}
+            return set()
+
+        redis_mock.smembers = mock_smembers
+        redis_mock.hget = AsyncMock(return_value=json.dumps({
+            "weight": 0.8, "relation": "prefers", "time_slot": "morning",
+        }))
+
+        results = await kg.query_context("max", time_slot="evening")
+        assert len(results) == 0
+
+    @pytest.mark.asyncio
+    async def test_query_context_no_redis(self):
+        """Ohne Redis liefert query_context eine leere Liste."""
+        with patch("assistant.knowledge_graph.yaml_config", {}):
+            kg = KnowledgeGraph()
+        results = await kg.query_context("max")
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_query_context_sorted_by_weight(self, kg, redis_mock):
+        """Ergebnisse sind nach Gewicht absteigend sortiert."""
+        async def mock_smembers(key):
+            if "out:prefers:person:max" in key:
+                return {"pref:a", "pref:b", "pref:c"}
+            return set()
+
+        weights = {"person:max>pref:a": 0.3, "person:max>pref:b": 0.9, "person:max>pref:c": 0.5}
+
+        async def mock_hget(key, edge_key):
+            w = weights.get(edge_key, 0.5)
+            return json.dumps({"weight": w, "relation": "prefers"})
+
+        redis_mock.smembers = mock_smembers
+        redis_mock.hget = mock_hget
+
+        results = await kg.query_context("max")
+        result_weights = [r["weight"] for r in results]
+        assert result_weights == sorted(result_weights, reverse=True)
+        assert result_weights[0] == 0.9
+
+    @pytest.mark.asyncio
+    async def test_query_context_max_20_results(self, kg, redis_mock):
+        """query_context gibt maximal 20 Ergebnisse zurueck."""
+        # 15 Praeferenzen + 10 Geraete = 25, soll auf 20 begrenzt werden
+        prefs = {f"pref:{i}" for i in range(15)}
+        devices = {f"device:{i}" for i in range(10)}
+
+        async def mock_smembers(key):
+            if "out:prefers:person:max" in key:
+                return prefs
+            if "out:uses_often:person:max" in key:
+                return devices
+            return set()
+
+        redis_mock.smembers = mock_smembers
+        redis_mock.hget = AsyncMock(return_value=json.dumps({
+            "weight": 0.5, "relation": "prefers",
+        }))
+
+        results = await kg.query_context("max")
+        assert len(results) <= 20
+
+
+# ============================================================
+# Knowledge Graph Edge Cases
+# ============================================================
+
+class TestKnowledgeGraphEdgeCases:
+    """Edge-Case-Tests fuer KnowledgeGraph."""
+
+    @pytest.mark.asyncio
+    async def test_add_node_without_properties(self, kg, redis_mock):
+        """add_node ohne properties Dict funktioniert fehlerfrei."""
+        redis_mock.scard = AsyncMock(return_value=5)
+        await kg.add_node("person:anna", "person")
+        pipe = redis_mock._pipeline
+        pipe.hset.assert_called()
+        pipe.execute.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_add_edge_with_metadata(self, kg, redis_mock):
+        """add_edge mit metadata Dict — Metadaten werden gespeichert."""
+        await kg.add_edge(
+            "person:max", "prefers", "device:licht",
+            weight=0.7, metadata={"room": "wohnzimmer", "time_slot": "evening"},
+        )
+        pipe = redis_mock._pipeline
+        pipe.hset.assert_called()
+        # Pruefe dass Metadaten im gespeicherten JSON enthalten sind
+        hset_calls = pipe.hset.call_args_list
+        found_meta = False
+        for call in hset_calls:
+            args = call[0] if call[0] else []
+            for arg in args:
+                if isinstance(arg, str) and "wohnzimmer" in arg:
+                    stored = json.loads(arg)
+                    assert stored["room"] == "wohnzimmer"
+                    assert stored["time_slot"] == "evening"
+                    assert abs(stored["weight"] - 0.7) < 0.01
+                    found_meta = True
+        assert found_meta, "Metadaten nicht in hset-Aufrufen gefunden"
+
+    @pytest.mark.asyncio
+    async def test_get_related_no_redis(self):
+        """get_related ohne Redis liefert leere Liste."""
+        with patch("assistant.knowledge_graph.yaml_config", {}):
+            kg = KnowledgeGraph()
+        result = await kg.get_related("person:max", "prefers")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_bytes_handling_in_smembers(self, kg, redis_mock):
+        """smembers mit Bytes werden korrekt zu Strings decodiert."""
+        redis_mock.smembers = AsyncMock(return_value={b"node1", b"node2"})
+        result = await kg.get_related("person:max", "prefers")
+        assert len(result) == 2
+        assert "node1" in result
+        assert "node2" in result
+        # Sicherstellen dass keine Bytes zurueckgegeben werden
+        for item in result:
+            assert isinstance(item, str)

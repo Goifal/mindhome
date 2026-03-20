@@ -308,3 +308,170 @@ class TestShutdownTimeout:
         await reg.shutdown(timeout=0.01)
         assert reg._shutting_down is True
         assert len(reg._tasks) == 0
+
+
+# ---------------------------------------------------------------------------
+# Backpressure / MAX_ACTIVE_TASKS
+# ---------------------------------------------------------------------------
+
+class TestBackpressure:
+    @pytest.mark.asyncio
+    async def test_backpressure_rejects_at_limit(self):
+        """When MAX_ACTIVE_TASKS is reached, new tasks are rejected."""
+        reg = TaskRegistry()
+        reg.MAX_ACTIVE_TASKS = 3
+        reg.create_task(_sleep_forever(), name="bp1")
+        reg.create_task(_sleep_forever(), name="bp2")
+        reg.create_task(_sleep_forever(), name="bp3")
+        with pytest.raises(RuntimeError, match="limit reached"):
+            reg.create_task(_sleep_forever(), name="bp4")
+        # Cleanup
+        for n in ["bp1", "bp2", "bp3"]:
+            reg.cancel(n)
+
+    @pytest.mark.asyncio
+    async def test_backpressure_closes_rejected_coroutine(self):
+        """Rejected coroutine should be closed to avoid ResourceWarning."""
+        reg = TaskRegistry()
+        reg.MAX_ACTIVE_TASKS = 1
+        reg.create_task(_sleep_forever(), name="fill")
+        coro = _noop()
+        with pytest.raises(RuntimeError, match="limit reached"):
+            reg.create_task(coro, name="rejected")
+        # Verify coro was closed
+        with pytest.raises(RuntimeError):
+            coro.send(None)
+        reg.cancel("fill")
+
+    @pytest.mark.asyncio
+    async def test_backpressure_allows_after_done_cleanup(self):
+        """After tasks finish, new ones should be accepted again."""
+        reg = TaskRegistry()
+        reg.MAX_ACTIVE_TASKS = 2
+        t1 = reg.create_task(_noop(), name="fin1")
+        t2 = reg.create_task(_noop(), name="fin2")
+        await t1
+        await t2
+        # Done tasks should be cleaned up, allowing new ones
+        t3 = reg.create_task(_noop(), name="new1")
+        assert isinstance(t3, asyncio.Task)
+        await t3
+
+
+# ---------------------------------------------------------------------------
+# _cleanup_done_tasks
+# ---------------------------------------------------------------------------
+
+class TestCleanupDoneTasks:
+    @pytest.mark.asyncio
+    async def test_cleanup_removes_finished_tasks(self):
+        """Completed tasks should be removed from the internal dict."""
+        reg = TaskRegistry()
+        t = reg.create_task(_noop(), name="clean1")
+        await t
+        assert "clean1" in reg._tasks
+        reg._cleanup_done_tasks()
+        assert "clean1" not in reg._tasks
+
+    @pytest.mark.asyncio
+    async def test_cleanup_keeps_running_tasks(self):
+        """Running tasks should not be removed."""
+        reg = TaskRegistry()
+        reg.create_task(_sleep_forever(), name="alive")
+        reg._cleanup_done_tasks()
+        assert "alive" in reg._tasks
+        reg.cancel("alive")
+
+
+# ---------------------------------------------------------------------------
+# Persistent Tasks / Watchdog
+# ---------------------------------------------------------------------------
+
+class TestPersistentTasks:
+    @pytest.mark.asyncio
+    async def test_create_persistent_registers_factory(self):
+        """Factory should be stored for auto-restart."""
+        reg = TaskRegistry()
+        factory = lambda: _noop()
+        task = reg.create_persistent_task(factory, name="pers1")
+        assert "pers1" in reg._persistent
+        assert reg._restart_counts["pers1"] == 0
+        await task
+
+    @pytest.mark.asyncio
+    async def test_persistent_task_restart_count_increments(self):
+        """Restart count should increase on failure."""
+        reg = TaskRegistry()
+        call_count = 0
+
+        async def _fail_once():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise ValueError("first failure")
+            await asyncio.sleep(3600)
+
+        reg.create_persistent_task(lambda: _fail_once(), name="retry")
+        # Wait for the task to fail and the restart logic to run
+        await asyncio.sleep(0.2)
+        assert reg._restart_counts.get("retry", 0) >= 1
+
+        # Cleanup
+        reg._shutting_down = True
+        reg.cancel("retry")
+
+    @pytest.mark.asyncio
+    async def test_restart_persistent_during_shutdown_does_nothing(self):
+        """_restart_persistent should not restart if shutting down."""
+        reg = TaskRegistry()
+        reg._persistent["gone"] = lambda: _noop()
+        reg._shutting_down = True
+        await reg._restart_persistent("gone")
+        assert "gone" not in reg._tasks
+
+    @pytest.mark.asyncio
+    async def test_restart_persistent_missing_factory(self):
+        """_restart_persistent should handle missing factory gracefully."""
+        reg = TaskRegistry()
+        await reg._restart_persistent("nonexistent")
+        # Should not raise
+
+
+# ---------------------------------------------------------------------------
+# Status edge cases
+# ---------------------------------------------------------------------------
+
+class TestStatusEdgeCases:
+    @pytest.mark.asyncio
+    async def test_status_cancelled_field(self):
+        """Cancelled tasks should show cancelled=True in status."""
+        reg = TaskRegistry()
+        t = reg.create_task(_sleep_forever(), name="canc_status")
+        t.cancel()
+        await asyncio.sleep(0.05)
+        s = reg.status()
+        task_info = next(t for t in s["tasks"] if t["name"] == "canc_status")
+        assert task_info["done"] is True
+        assert task_info["cancelled"] is True
+
+    @pytest.mark.asyncio
+    async def test_status_mixed_tasks(self):
+        """Status with multiple running tasks shows correct active count."""
+        reg = TaskRegistry()
+        reg.create_task(_sleep_forever(), name="running_1")
+        reg.create_task(_sleep_forever(), name="running_2")
+
+        s = reg.status()
+        assert s["total_registered"] == 2
+        assert s["active"] == 2
+        names = [t["name"] for t in s["tasks"]]
+        assert "running_1" in names
+        assert "running_2" in names
+
+        # Cancel one and verify count updates
+        reg.cancel("running_1")
+        await asyncio.sleep(0.05)
+        s2 = reg.status()
+        active_tasks = [t for t in s2["tasks"] if not t["done"]]
+        assert len(active_tasks) == 1
+        reg.cancel("running_2")

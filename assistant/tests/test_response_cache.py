@@ -269,3 +269,376 @@ class TestResponseCache:
         })
         await cache.get("Test", "device_query")
         assert cache._category_hits.get("device_query") == 1
+
+
+# ---------------------------------------------------------------------------
+# Extended Tests: Edge cases, invalidation, error handling
+# ---------------------------------------------------------------------------
+
+
+class TestResponseCacheSetRedis:
+    """Tests for set_redis method."""
+
+    def test_set_redis_stores_client(self):
+        c = ResponseCache()
+        assert c._redis is None
+        mock_redis = AsyncMock()
+        c.set_redis(mock_redis)
+        assert c._redis is mock_redis
+
+    def test_set_redis_replaces_existing(self):
+        c = ResponseCache()
+        old = AsyncMock()
+        new = AsyncMock()
+        c.set_redis(old)
+        c.set_redis(new)
+        assert c._redis is new
+
+
+class TestResponseCacheConfigure:
+    """Tests for configure method."""
+
+    def test_configure_disables_cache(self):
+        c = ResponseCache()
+        assert c._enabled is True
+        c.configure(enabled=False)
+        assert c._enabled is False
+
+    def test_configure_enables_cache(self):
+        c = ResponseCache()
+        c.configure(enabled=False)
+        c.configure(enabled=True)
+        assert c._enabled is True
+
+    def test_configure_ttl_overrides(self):
+        c = ResponseCache()
+        c.configure(ttl_overrides={"device_query": 300, "knowledge": 3600})
+        assert c._ttl_overrides == {"device_query": 300, "knowledge": 3600}
+
+    def test_configure_none_ttl_overrides_not_set(self):
+        c = ResponseCache()
+        c.configure(ttl_overrides=None)
+        assert c._ttl_overrides == {}
+
+
+class TestResponseCacheTTL:
+    """Tests for TTL logic."""
+
+    def test_default_device_query_ttl(self):
+        c = ResponseCache()
+        assert c._get_ttl("device_query") == 45
+
+    def test_default_knowledge_ttl(self):
+        c = ResponseCache()
+        assert c._get_ttl("knowledge") == 86400
+
+    def test_override_ttl_takes_precedence(self):
+        c = ResponseCache()
+        c.configure(ttl_overrides={"device_query": 999})
+        assert c._get_ttl("device_query") == 999
+
+    def test_unknown_category_ttl_is_zero(self):
+        c = ResponseCache()
+        assert c._get_ttl("nonexistent_category") == 0
+
+    @pytest.mark.asyncio
+    async def test_zero_ttl_prevents_caching(self):
+        """A category with zero TTL should not be cached even if cacheable."""
+        c = ResponseCache()
+        c._redis = AsyncMock()
+        c.configure(ttl_overrides={"device_query": 0})
+        await c.put("Test", "device_query", "Response", "model")
+        c._redis.set.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_zero_ttl_prevents_get(self):
+        """A category with zero TTL should return None on get."""
+        c = ResponseCache()
+        c._redis = AsyncMock()
+        c.configure(ttl_overrides={"device_query": 0})
+        result = await c.get("Test", "device_query")
+        assert result is None
+        c._redis.get.assert_not_called()
+
+
+class TestResponseCacheMakeKeyEdgeCases:
+    """Edge cases for cache key generation."""
+
+    def test_whitespace_normalization(self):
+        c = ResponseCache()
+        k1 = c._make_key("wie   warm   ist   es", "device_query")
+        k2 = c._make_key("wie warm ist es", "device_query")
+        assert k1 == k2
+
+    def test_leading_trailing_whitespace(self):
+        c = ResponseCache()
+        k1 = c._make_key("  wie warm ist es  ", "device_query")
+        k2 = c._make_key("wie warm ist es", "device_query")
+        assert k1 == k2
+
+    def test_all_punctuation_stripped(self):
+        c = ResponseCache()
+        k1 = c._make_key("test.,!?;:", "device_query")
+        k2 = c._make_key("test", "device_query")
+        assert k1 == k2
+
+    def test_key_starts_with_prefix(self):
+        c = ResponseCache()
+        key = c._make_key("test", "device_query")
+        assert key.startswith("mha:rcache:")
+
+    def test_key_has_fixed_length_hash(self):
+        c = ResponseCache()
+        key = c._make_key("test", "device_query")
+        # "mha:rcache:" is 11 chars, hash is 16 chars
+        hash_part = key[len("mha:rcache:"):]
+        assert len(hash_part) == 16
+
+    def test_empty_text_produces_valid_key(self):
+        c = ResponseCache()
+        key = c._make_key("", "device_query")
+        assert key.startswith("mha:rcache:")
+
+    def test_different_rooms_different_keys(self):
+        c = ResponseCache()
+        k1 = c._make_key("test", "device_query", room="kueche")
+        k2 = c._make_key("test", "device_query", room="bad")
+        k3 = c._make_key("test", "device_query", room=None)
+        assert k1 != k2
+        assert k1 != k3
+        assert k2 != k3
+
+
+class TestResponseCachePutErrors:
+    """Tests for error handling in put."""
+
+    @pytest.mark.asyncio
+    async def test_put_redis_error_does_not_raise(self):
+        c = ResponseCache()
+        c._redis = AsyncMock()
+        c._redis.set.side_effect = Exception("Redis write failed")
+        # Should not raise
+        await c.put("Test", "device_query", "Response", "model")
+
+    @pytest.mark.asyncio
+    async def test_put_no_redis_is_noop(self):
+        c = ResponseCache()
+        # _redis is None
+        await c.put("Test", "device_query", "Response", "model")
+        # No exception raised
+
+
+class TestResponseCachePreCacheErrors:
+    """Tests for error handling in pre_cache."""
+
+    @pytest.mark.asyncio
+    async def test_pre_cache_redis_error_returns_false(self):
+        c = ResponseCache()
+        c._redis = AsyncMock()
+        c._redis.set.side_effect = Exception("Redis write failed")
+        result = await c.pre_cache("Test", "knowledge", "Response", "model")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_pre_cache_no_redis_returns_false(self):
+        c = ResponseCache()
+        result = await c.pre_cache("Test", "knowledge", "Response", "model")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_pre_cache_zero_ttl_returns_false(self):
+        c = ResponseCache()
+        c._redis = AsyncMock()
+        c.configure(ttl_overrides={"knowledge": 0})
+        result = await c.pre_cache("Test", "knowledge", "Response", "model")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_pre_cache_with_tts(self):
+        c = ResponseCache()
+        c._redis = AsyncMock()
+        tts = {"text": "Hallo", "voice": "jarvis"}
+        result = await c.pre_cache("Test", "knowledge", "Antwort", "model", tts=tts)
+        assert result is True
+        call_args = c._redis.set.call_args
+        data = json.loads(call_args[0][1])
+        assert data["tts"] == tts
+        assert data["_pre_cached"] is True
+
+
+class TestResponseCacheInvalidation:
+    """Tests for invalidate_by_room with mocked scan_iter."""
+
+    @pytest.mark.asyncio
+    async def test_invalidate_deletes_non_precached_entries(self):
+        c = ResponseCache()
+        c._redis = AsyncMock()
+
+        # Mock scan_iter to yield some keys
+        non_precached = json.dumps({"response": "old", "model": "m", "_ts": 1.0})
+        precached = json.dumps({"response": "pre", "model": "m", "_ts": 1.0, "_pre_cached": True})
+
+        async def fake_scan_iter(match=None, count=None):
+            yield "mha:rcache:key1"
+            yield "mha:rcache:key2"
+            yield "mha:rcache:key3"
+
+        c._redis.scan_iter = fake_scan_iter
+        # key1 and key3 are non-precached, key2 is precached
+        call_count = 0
+
+        async def fake_get(key):
+            nonlocal call_count
+            call_count += 1
+            if key == "mha:rcache:key2":
+                return precached
+            return non_precached
+
+        c._redis.get = fake_get
+        c._redis.delete = AsyncMock()
+
+        deleted = await c.invalidate_by_room("wohnzimmer")
+        assert deleted == 2  # key1 and key3 deleted, key2 (precached) kept
+        assert c._redis.delete.call_count == 2
+        assert c._invalidation_count == 2
+
+    @pytest.mark.asyncio
+    async def test_invalidate_none_room_returns_zero(self):
+        c = ResponseCache()
+        c._redis = AsyncMock()
+        result = await c.invalidate_by_room(None)
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_invalidate_scan_error_returns_zero(self):
+        c = ResponseCache()
+        c._redis = AsyncMock()
+
+        async def failing_scan_iter(match=None, count=None):
+            raise Exception("Scan failed")
+            yield  # Make it a generator
+
+        c._redis.scan_iter = failing_scan_iter
+        result = await c.invalidate_by_room("wohnzimmer")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_invalidate_individual_key_error_continues(self):
+        """If one key fails during invalidation, others should still be processed."""
+        c = ResponseCache()
+        c._redis = AsyncMock()
+
+        entry = json.dumps({"response": "ok", "model": "m", "_ts": 1.0})
+
+        async def fake_scan_iter(match=None, count=None):
+            yield "mha:rcache:good1"
+            yield "mha:rcache:bad"
+            yield "mha:rcache:good2"
+
+        c._redis.scan_iter = fake_scan_iter
+
+        call_idx = 0
+
+        async def fake_get(key):
+            nonlocal call_idx
+            call_idx += 1
+            if key == "mha:rcache:bad":
+                raise Exception("Read error")
+            return entry
+
+        c._redis.get = fake_get
+        c._redis.delete = AsyncMock()
+
+        deleted = await c.invalidate_by_room("wohnzimmer")
+        # good1 and good2 should be deleted, bad skipped
+        assert deleted == 2
+
+    @pytest.mark.asyncio
+    async def test_invalidate_empty_scan_returns_zero(self):
+        c = ResponseCache()
+        c._redis = AsyncMock()
+
+        async def empty_scan_iter(match=None, count=None):
+            return
+            yield  # Make it a generator
+
+        c._redis.scan_iter = empty_scan_iter
+        result = await c.invalidate_by_room("wohnzimmer")
+        assert result == 0
+
+
+class TestResponseCacheGetEdgeCases:
+    """Additional edge cases for get."""
+
+    @pytest.mark.asyncio
+    async def test_get_knowledge_category(self):
+        """knowledge is a cacheable category."""
+        c = ResponseCache()
+        c._redis = AsyncMock()
+        stored = json.dumps({
+            "response": "Die Erde ist rund.",
+            "model": "qwen3.5:14b",
+            "_ts": time.time(),
+        })
+        c._redis.get.return_value = stored
+        result = await c.get("Ist die Erde rund?", "knowledge")
+        assert result is not None
+        assert result["response"] == "Die Erde ist rund."
+
+    @pytest.mark.asyncio
+    async def test_get_hit_increments_category_hits(self):
+        c = ResponseCache()
+        c._redis = AsyncMock()
+        stored = json.dumps({"response": "ok", "model": "m", "_ts": time.time()})
+        c._redis.get.return_value = stored
+
+        await c.get("A", "device_query")
+        await c.get("B", "knowledge")
+        await c.get("C", "device_query")
+
+        assert c._category_hits["device_query"] == 2
+        assert c._category_hits["knowledge"] == 1
+
+    @pytest.mark.asyncio
+    async def test_get_miss_does_not_track_category(self):
+        c = ResponseCache()
+        c._redis = AsyncMock()
+        c._redis.get.return_value = None
+        await c.get("Miss", "device_query")
+        assert "device_query" not in c._category_hits
+
+    @pytest.mark.asyncio
+    async def test_multiple_gets_stats_accumulate(self):
+        c = ResponseCache()
+        c._redis = AsyncMock()
+        c._redis.get.return_value = None
+
+        for _ in range(5):
+            await c.get("Test", "device_query")
+
+        assert c._misses == 5
+        assert c._hits == 0
+
+        stats = c.get_hit_rate()
+        assert stats["total"] == 5
+        assert stats["hit_rate"] == 0.0
+
+
+class TestResponseCacheKnowledgeTTL:
+    """Ensure knowledge category uses 24h TTL."""
+
+    @pytest.mark.asyncio
+    async def test_put_knowledge_uses_24h_ttl(self):
+        c = ResponseCache()
+        c._redis = AsyncMock()
+        await c.put("Was ist Python?", "knowledge", "Eine Programmiersprache", "model")
+        call_args = c._redis.set.call_args
+        assert call_args[1]["ex"] == 86400
+
+    @pytest.mark.asyncio
+    async def test_put_device_query_uses_45s_ttl(self):
+        c = ResponseCache()
+        c._redis = AsyncMock()
+        await c.put("Wie warm?", "device_query", "22 Grad", "model")
+        call_args = c._redis.set.call_args
+        assert call_args[1]["ex"] == 45

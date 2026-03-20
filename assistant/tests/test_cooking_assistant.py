@@ -2,8 +2,10 @@
 Tests fuer CookingAssistant — Koch-Session + Redis-Persistenz.
 """
 
+import asyncio
 import json
-from unittest.mock import AsyncMock, MagicMock
+import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -13,6 +15,7 @@ from assistant.cooking_assistant import (
     CookingStep,
     CookingTimer,
 )
+from assistant.constants import MAX_TIMERS_PER_SESSION
 
 
 @pytest.fixture

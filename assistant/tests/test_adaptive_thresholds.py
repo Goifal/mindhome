@@ -507,3 +507,173 @@ class TestGetAdjustmentHistoryJsonError:
         history = await thresholds.get_adjustment_history()
         assert len(history) == 1
         assert history[0]["parameter"] == "test"
+
+
+class TestBoundsEnforcement:
+    """Tests that auto-adjust bounds are properly enforced."""
+
+    def test_auto_bounds_have_required_keys(self):
+        """All entries in _AUTO_BOUNDS must have path, min, max, default, step."""
+        required_keys = {"path", "min", "max", "default", "step"}
+        for name, bounds in _AUTO_BOUNDS.items():
+            missing = required_keys - set(bounds.keys())
+            assert not missing, f"{name} missing keys: {missing}"
+
+    def test_defaults_within_bounds(self):
+        """Default values must be within [min, max] range."""
+        for name, bounds in _AUTO_BOUNDS.items():
+            assert bounds["min"] <= bounds["default"] <= bounds["max"], (
+                f"{name}: default {bounds['default']} not in [{bounds['min']}, {bounds['max']}]"
+            )
+
+    def test_step_positive(self):
+        """Step values must be positive."""
+        for name, bounds in _AUTO_BOUNDS.items():
+            assert bounds["step"] > 0, f"{name}: step must be positive"
+
+    def test_step_smaller_than_range(self):
+        """Step should be smaller than the full range."""
+        for name, bounds in _AUTO_BOUNDS.items():
+            full_range = bounds["max"] - bounds["min"]
+            assert bounds["step"] <= full_range, (
+                f"{name}: step {bounds['step']} >= range {full_range}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_adjustment_never_exceeds_max(self, thresholds):
+        """Even with direction=+1, value must not exceed max bound."""
+        bounds = _AUTO_BOUNDS["insights.cooldown_hours"]
+        thresholds.redis.get = AsyncMock(return_value=None)
+        outcome_tracker = MagicMock()
+        outcome_tracker.get_stats = AsyncMock(return_value={
+            "action": {"total": 30, "negative": 2},
+        })
+
+        with patch("assistant.adaptive_thresholds.yaml_config", {
+            "insights": {"cooldown_hours": bounds["max"]},
+        }):
+            with patch.object(thresholds, '_determine_direction', return_value=1):
+                result = await thresholds._analyze_parameter(
+                    "insights.cooldown_hours", bounds, outcome_tracker, None,
+                )
+        assert result["adjusted"] is False
+        assert result["reason"] == "at_bound"
+
+    @pytest.mark.asyncio
+    async def test_adjustment_never_below_min(self, thresholds):
+        """Even with direction=-1, value must not go below min bound."""
+        bounds = _AUTO_BOUNDS["anticipation.min_confidence"]
+        thresholds.redis.get = AsyncMock(return_value=None)
+        outcome_tracker = MagicMock()
+        outcome_tracker.get_stats = AsyncMock(return_value={
+            "action": {"total": 30, "negative": 2},
+        })
+
+        with patch("assistant.adaptive_thresholds.yaml_config", {
+            "anticipation": {"min_confidence": bounds["min"]},
+        }):
+            with patch.object(thresholds, '_determine_direction', return_value=-1):
+                result = await thresholds._analyze_parameter(
+                    "anticipation.min_confidence", bounds, outcome_tracker, None,
+                )
+        assert result["adjusted"] is False
+        assert result["reason"] == "at_bound"
+
+
+class TestSetRuntimeValueSecurity:
+    """Security tests for _set_runtime_value whitelist."""
+
+    def test_arbitrary_path_blocked(self, thresholds):
+        """Arbitrary paths outside _AUTO_BOUNDS must be rejected."""
+        cfg = {"security": {"admin_password": "secret"}}
+        with patch("assistant.adaptive_thresholds.yaml_config", cfg):
+            thresholds._set_runtime_value(["security", "admin_password"], "hacked")
+        assert cfg["security"]["admin_password"] == "secret"
+
+    def test_all_auto_bounds_paths_are_allowed(self, thresholds):
+        """Every path in _AUTO_BOUNDS should be accepted by _set_runtime_value."""
+        for name, bounds in _AUTO_BOUNDS.items():
+            cfg = {}
+            with patch("assistant.adaptive_thresholds.yaml_config", cfg):
+                thresholds._set_runtime_value(bounds["path"], bounds["default"])
+            # Navigate the config to verify
+            result = cfg
+            for key in bounds["path"]:
+                result = result[key]
+            assert result == bounds["default"]
+
+
+class TestAnalyzeParameterAnomalyEdgeCases:
+    """Edge cases for anomaly detection in _analyze_parameter."""
+
+    @pytest.mark.asyncio
+    async def test_anomaly_check_ignores_small_samples(self, thresholds):
+        """Anomaly check requires total > 20 — smaller samples should pass through."""
+        bounds = _AUTO_BOUNDS["insights.cooldown_hours"]
+        thresholds.redis.get = AsyncMock(return_value=None)
+        outcome_tracker = MagicMock()
+        # 90% negative but only 10 total — should NOT trigger anomaly
+        outcome_tracker.get_stats = AsyncMock(return_value={
+            "action": {"total": 10, "negative": 9},
+        })
+
+        with patch("assistant.adaptive_thresholds.yaml_config", {
+            "insights": {"cooldown_hours": 4},
+        }):
+            with patch.object(thresholds, '_determine_direction', return_value=1):
+                result = await thresholds._analyze_parameter(
+                    "insights.cooldown_hours", bounds, outcome_tracker, None,
+                )
+        assert result["adjusted"] is True
+
+    @pytest.mark.asyncio
+    async def test_anomaly_check_exact_threshold(self, thresholds):
+        """Exactly 80% negative should NOT trigger anomaly (> 0.8 required)."""
+        bounds = _AUTO_BOUNDS["insights.cooldown_hours"]
+        thresholds.redis.get = AsyncMock(return_value=None)
+        outcome_tracker = MagicMock()
+        # Exactly 80% negative — should NOT trigger (check is > 0.8, not >=)
+        outcome_tracker.get_stats = AsyncMock(return_value={
+            "action": {"total": 25, "negative": 20},
+        })
+
+        with patch("assistant.adaptive_thresholds.yaml_config", {
+            "insights": {"cooldown_hours": 4},
+        }):
+            with patch.object(thresholds, '_determine_direction', return_value=1):
+                result = await thresholds._analyze_parameter(
+                    "insights.cooldown_hours", bounds, outcome_tracker, None,
+                )
+        assert result["adjusted"] is True
+
+    @pytest.mark.asyncio
+    async def test_anomaly_with_non_dict_stats_values(self, thresholds):
+        """Stats may contain non-dict values — these should be skipped."""
+        bounds = _AUTO_BOUNDS["insights.cooldown_hours"]
+        thresholds.redis.get = AsyncMock(return_value=None)
+        outcome_tracker = MagicMock()
+        outcome_tracker.get_stats = AsyncMock(return_value={
+            "metadata": "not_a_dict",
+            "action": {"total": 30, "negative": 2},
+        })
+
+        with patch("assistant.adaptive_thresholds.yaml_config", {
+            "insights": {"cooldown_hours": 4},
+        }):
+            with patch.object(thresholds, '_determine_direction', return_value=1):
+                result = await thresholds._analyze_parameter(
+                    "insights.cooldown_hours", bounds, outcome_tracker, None,
+                )
+        assert result["adjusted"] is True
+
+
+class TestGetAdjustmentHistoryNoRedis:
+    """Test get_adjustment_history without Redis."""
+
+    @pytest.mark.asyncio
+    async def test_no_redis_returns_empty(self):
+        with patch("assistant.adaptive_thresholds.yaml_config", {}):
+            t = AdaptiveThresholds()
+        t.redis = None
+        history = await t.get_adjustment_history()
+        assert history == []

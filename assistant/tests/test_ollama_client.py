@@ -267,3 +267,163 @@ class TestIsAvailable:
 
         client = _make_client_with_mock_session(instance)
         assert await client.is_available() is False
+
+
+# ============================================================
+# Chat — Thinking Field
+# ============================================================
+
+class TestChatThinkingField:
+    """Tests fuer das 'thinking' Feld in chat() Ergebnissen bei Think-Tags."""
+
+    @pytest.mark.asyncio
+    async def test_chat_returns_thinking_field(self):
+        """chat() extrahiert Think-Content in result['thinking']."""
+        mock_resp = MagicMock(
+            status=200,
+            json=AsyncMock(return_value={
+                "message": {"content": "<think>reasoning here</think>Answer"},
+            }),
+        )
+        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
+                       __aexit__=AsyncMock(return_value=False))
+        instance = MagicMock()
+        instance.post = MagicMock(return_value=cm)
+
+        client = _make_client_with_mock_session(instance)
+        result = await client.chat(messages=[{"role": "user", "content": "test"}])
+        assert result["thinking"] == "reasoning here"
+        assert result["message"]["content"] == "Answer"
+
+    @pytest.mark.asyncio
+    async def test_chat_no_thinking_without_tags(self):
+        """Kein 'thinking' Feld wenn keine Think-Tags vorhanden."""
+        mock_resp = MagicMock(
+            status=200,
+            json=AsyncMock(return_value={
+                "message": {"content": "Normal answer"},
+            }),
+        )
+        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
+                       __aexit__=AsyncMock(return_value=False))
+        instance = MagicMock()
+        instance.post = MagicMock(return_value=cm)
+
+        client = _make_client_with_mock_session(instance)
+        result = await client.chat(messages=[{"role": "user", "content": "test"}])
+        assert "thinking" not in result
+
+    @pytest.mark.asyncio
+    async def test_chat_thinking_field_empty_think(self):
+        """Leerer Think-Block wird nicht als 'thinking' gespeichert."""
+        mock_resp = MagicMock(
+            status=200,
+            json=AsyncMock(return_value={
+                "message": {"content": "<think></think>Text"},
+            }),
+        )
+        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
+                       __aexit__=AsyncMock(return_value=False))
+        instance = MagicMock()
+        instance.post = MagicMock(return_value=cm)
+
+        client = _make_client_with_mock_session(instance)
+        result = await client.chat(messages=[{"role": "user", "content": "test"}])
+        assert "thinking" not in result
+
+
+# ============================================================
+# Stream Chat — Thinking Collection
+# ============================================================
+
+class TestStreamChatThinking:
+    """Tests fuer stream_chat's _thinking_parts Sammlung."""
+
+    @pytest.mark.asyncio
+    async def test_stream_collects_thinking(self):
+        """stream_chat sammelt Think-Content in _last_stream_thinking."""
+        import json as _json
+
+        chunks = [
+            {"message": {"content": "<think>"}, "done": False},
+            {"message": {"content": "step1"}, "done": False},
+            {"message": {"content": "</think>"}, "done": False},
+            {"message": {"content": "Answer"}, "done": True},
+        ]
+
+        async def make_stream_content():
+            for chunk in chunks:
+                yield _json.dumps(chunk).encode() + b"\n"
+
+        mock_resp = MagicMock(status=200)
+        mock_resp.content = make_stream_content()
+        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
+                       __aexit__=AsyncMock(return_value=False))
+        instance = MagicMock()
+        instance.post = MagicMock(return_value=cm)
+
+        client = _make_client_with_mock_session(instance)
+
+        collected = []
+        async for chunk in client.stream_chat(
+            messages=[{"role": "user", "content": "test"}],
+        ):
+            collected.append(chunk)
+
+        assert any("Answer" in c for c in collected)
+        assert "step1" in client._last_stream_thinking
+
+    @pytest.mark.asyncio
+    async def test_stream_no_thinking_stored(self):
+        """Ohne Think-Tags bleibt _last_stream_thinking leer."""
+        import json as _json
+
+        chunks = [
+            {"message": {"content": "Hello"}, "done": False},
+            {"message": {"content": " World"}, "done": True},
+        ]
+
+        async def make_stream_content():
+            for chunk in chunks:
+                yield _json.dumps(chunk).encode() + b"\n"
+
+        mock_resp = MagicMock(status=200)
+        mock_resp.content = make_stream_content()
+        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
+                       __aexit__=AsyncMock(return_value=False))
+        instance = MagicMock()
+        instance.post = MagicMock(return_value=cm)
+
+        client = _make_client_with_mock_session(instance)
+
+        collected = []
+        async for chunk in client.stream_chat(
+            messages=[{"role": "user", "content": "test"}],
+        ):
+            collected.append(chunk)
+
+        assert client._last_stream_thinking == ""
+
+
+# ============================================================
+# Generate — Uses extract_thinking
+# ============================================================
+
+class TestGenerateUsesExtractThinking:
+    """Tests fuer generate() — Thinking wird gestrippt."""
+
+    @pytest.mark.asyncio
+    async def test_generate_uses_extract_thinking(self):
+        """generate() entfernt Think-Tags via extract_thinking."""
+        mock_resp = MagicMock(
+            status=200,
+            json=AsyncMock(return_value={"response": "<think>thought</think>Result"}),
+        )
+        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
+                       __aexit__=AsyncMock(return_value=False))
+        instance = MagicMock()
+        instance.post = MagicMock(return_value=cm)
+
+        client = _make_client_with_mock_session(instance)
+        result = await client.generate(prompt="test")
+        assert result == "Result"

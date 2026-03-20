@@ -484,3 +484,62 @@ class TestCallbackHumor:
         personality._redis.get = AsyncMock(return_value="1")  # Schon 1 Callback heute
         result = await personality.get_callback_humor("max")
         assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_get_callback_success_path(self, personality):
+        """Erfolgreicher Callback: alt genug, kein Daily-Limit."""
+        import time
+        ctx = json.dumps({
+            "type": "failed_action",
+            "text": "Licht ging nicht an",
+            "timestamp": time.time() - 7200,  # 2h alt — alt genug
+        })
+        personality._redis.lrange = AsyncMock(return_value=[ctx])
+        personality._redis.exists = AsyncMock(return_value=False)
+        personality._redis.setex = AsyncMock()
+        personality._redis.lrem = AsyncMock()
+        result = await personality.get_callback_humor("max")
+        assert result != ""
+        assert "Licht ging nicht an" in result
+        # Daily-Key muss gesetzt werden
+        personality._redis.setex.assert_called_once()
+        # Kontext muss entfernt werden
+        personality._redis.lrem.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_callback_sarcasm_too_low(self, personality):
+        """Kein Callback bei sarcasm_level < 2."""
+        personality.sarcasm_level = 1
+        result = await personality.get_callback_humor("max")
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_get_callback_bold_claim_type(self, personality):
+        """Callback fuer bold_claim Typ."""
+        import time
+        ctx = json.dumps({
+            "type": "bold_claim",
+            "text": "Ich kann das in 5 Minuten",
+            "timestamp": time.time() - 10800,  # 3h alt
+        })
+        personality._redis.lrange = AsyncMock(return_value=[ctx])
+        personality._redis.exists = AsyncMock(return_value=False)
+        personality._redis.setex = AsyncMock()
+        personality._redis.lrem = AsyncMock()
+        result = await personality.get_callback_humor("max")
+        assert result != ""
+        assert "Ich kann das in 5 Minuten" in result
+
+    @pytest.mark.asyncio
+    async def test_get_callback_unknown_type_skipped(self, personality):
+        """Unbekannter Kontext-Typ wird uebersprungen."""
+        import time
+        ctx = json.dumps({
+            "type": "unknown_type",
+            "text": "something",
+            "timestamp": time.time() - 7200,
+        })
+        personality._redis.lrange = AsyncMock(return_value=[ctx])
+        personality._redis.exists = AsyncMock(return_value=False)
+        result = await personality.get_callback_humor("max")
+        assert result == ""

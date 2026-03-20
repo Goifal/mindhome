@@ -1129,3 +1129,621 @@ class TestPhase3APredictFuture:
         call_args = redis_mock.setex.call_args
         new_val = float(call_args[0][2])
         assert new_val > 0.6
+
+
+# ============================================================
+# Calendar-Weather Crossref (get_calendar_weather_crossrefs)
+# ============================================================
+
+class TestCalendarWeatherCrossref:
+    """Tests for calendar x weather cross-reference suggestions.
+
+    NOTE: get_calendar_weather_crossrefs() uses datetime.now(_LOCAL_TZ) which
+    returns a tz-aware datetime, but strips tzinfo from event start times
+    (line 830). The subtraction at line 834 (naive - aware) raises TypeError,
+    caught by the outer except. We patch datetime.now to return a naive datetime
+    to test the intended logic for event-based crossrefs.
+    """
+
+    _CROSSREF_CONFIG = {
+        "anticipation": {"enabled": True, "min_confidence": 0.6,
+                         "thresholds": {"ask": 0.6, "suggest": 0.8, "auto": 0.95}},
+        "predictive_needs": {"enabled": True},
+    }
+
+    def _make_event(self, summary, start_iso):
+        return {"summary": summary, "start": start_iso}
+
+    def _naive_now(self):
+        """Return a naive local-time datetime matching what the code expects."""
+        return datetime.now(_LOCAL_TZ).replace(tzinfo=None)
+
+    @pytest.mark.asyncio
+    async def test_crossref_rain_suggestion(self, anticipation_with_redis):
+        """Rain + upcoming event within 45 min generates umbrella reminder."""
+        fake_now = self._naive_now()
+        event_start = fake_now + timedelta(minutes=20)
+        event = self._make_event("Arzttermin", event_start.isoformat())
+
+        redis = anticipation_with_redis.redis
+
+        async def mock_get(key):
+            if key == "mha:calendar:upcoming":
+                return json.dumps([event])
+            if key == "mha:weather:current_condition":
+                return b"rainy"
+            if key == "mha:weather:forecast":
+                return None
+            if key == "mha:weather:temperature":
+                return None
+            if key.startswith("mha:anticipation:crossref:"):
+                return None
+            return None
+
+        redis.get = AsyncMock(side_effect=mock_get)
+        redis.setex = AsyncMock()
+
+        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG), \
+             patch("assistant.anticipation.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = datetime.fromisoformat
+            result = await anticipation_with_redis.get_calendar_weather_crossrefs()
+
+        assert len(result) >= 1
+        assert result[0]["type"] == "calendar_rain"
+        assert "Schirm" in result[0]["message"]
+
+    @pytest.mark.asyncio
+    async def test_crossref_no_calendar_data(self, anticipation_with_redis):
+        """No crossrefs when calendar data is missing."""
+        redis = anticipation_with_redis.redis
+        redis.get = AsyncMock(return_value=None)
+
+        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG):
+            result = await anticipation_with_redis.get_calendar_weather_crossrefs()
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_crossref_no_weather_data(self, anticipation_with_redis):
+        """No rain/heat crossrefs when weather data is missing."""
+        fake_now = self._naive_now()
+        event_start = fake_now + timedelta(minutes=20)
+        event = self._make_event("Meeting", event_start.isoformat())
+
+        redis = anticipation_with_redis.redis
+
+        async def mock_get(key):
+            if key == "mha:calendar:upcoming":
+                return json.dumps([event])
+            if key == "mha:weather:current_condition":
+                return None  # No weather
+            if key == "mha:weather:forecast":
+                return None
+            if key == "mha:weather:temperature":
+                return None
+            return None
+
+        redis.get = AsyncMock(side_effect=mock_get)
+        redis.setex = AsyncMock()
+
+        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG), \
+             patch("assistant.anticipation.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = datetime.fromisoformat
+            result = await anticipation_with_redis.get_calendar_weather_crossrefs()
+
+        rain_or_heat = [r for r in result if r["type"] in ("calendar_rain", "calendar_heat")]
+        assert len(rain_or_heat) == 0
+
+    @pytest.mark.asyncio
+    async def test_crossref_heat_outdoor_event(self, anticipation_with_redis):
+        """Outdoor event + high temperature generates heat warning."""
+        fake_now = self._naive_now()
+        event_start = fake_now + timedelta(minutes=30)
+        event = self._make_event("Grillen im Garten", event_start.isoformat())
+
+        redis = anticipation_with_redis.redis
+
+        async def mock_get(key):
+            if key == "mha:calendar:upcoming":
+                return json.dumps([event])
+            if key == "mha:weather:current_condition":
+                return b"sunny"
+            if key == "mha:weather:forecast":
+                return None
+            if key == "mha:weather:temperature":
+                return b"36.5"
+            if key.startswith("mha:anticipation:crossref:"):
+                return None
+            return None
+
+        redis.get = AsyncMock(side_effect=mock_get)
+        redis.setex = AsyncMock()
+
+        cfg = {**self._CROSSREF_CONFIG,
+               "predictive_needs": {"enabled": True, "hot_threshold": 33}}
+
+        with patch("assistant.anticipation.yaml_config", cfg), \
+             patch("assistant.anticipation.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = datetime.fromisoformat
+            result = await anticipation_with_redis.get_calendar_weather_crossrefs()
+
+        heat_refs = [r for r in result if r["type"] == "calendar_heat"]
+        assert len(heat_refs) >= 1
+        assert "Sonnenschutz" in heat_refs[0]["message"]
+
+    @pytest.mark.asyncio
+    async def test_crossref_early_morning_event(self, anticipation_with_redis):
+        """Tomorrow early event + late evening generates early-morning hint."""
+        fake_now = self._naive_now().replace(hour=22, minute=30, second=0, microsecond=0)
+        tomorrow = fake_now + timedelta(days=1)
+        event_start = tomorrow.replace(hour=7, minute=0)
+        event = self._make_event("Fruehstueckstreffen", event_start.isoformat())
+
+        redis = anticipation_with_redis.redis
+
+        async def mock_get(key):
+            if key == "mha:calendar:upcoming":
+                return json.dumps([event])
+            if key == "mha:weather:current_condition":
+                return None
+            if key == "mha:weather:forecast":
+                return None
+            if key == "mha:weather:temperature":
+                return None
+            if key.startswith("mha:anticipation:crossref:"):
+                return None
+            return None
+
+        redis.get = AsyncMock(side_effect=mock_get)
+        redis.setex = AsyncMock()
+
+        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG), \
+             patch("assistant.anticipation.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = datetime.fromisoformat
+            result = await anticipation_with_redis.get_calendar_weather_crossrefs()
+
+        early_refs = [r for r in result if r["type"] == "early_morning"]
+        assert len(early_refs) >= 1
+        assert "Feierabend" in early_refs[0]["message"]
+
+    @pytest.mark.asyncio
+    async def test_crossref_preheat_cold(self, anticipation_with_redis):
+        """Cold temperature + someone away generates preheat suggestion."""
+        fake_now = self._naive_now()
+        redis = anticipation_with_redis.redis
+
+        async def mock_get(key):
+            if key == "mha:calendar:upcoming":
+                return json.dumps([])
+            if key == "mha:weather:current_condition":
+                return b"cloudy"
+            if key == "mha:weather:forecast":
+                return None
+            if key == "mha:weather:temperature":
+                return b"2.0"
+            if key == "mha:presence:away_persons":
+                return b'["Max"]'
+            if key.startswith("mha:anticipation:crossref:"):
+                return None
+            return None
+
+        redis.get = AsyncMock(side_effect=mock_get)
+        redis.setex = AsyncMock()
+
+        cfg = {**self._CROSSREF_CONFIG,
+               "predictive_needs": {"enabled": True, "cold_threshold": 5}}
+
+        with patch("assistant.anticipation.yaml_config", cfg), \
+             patch("assistant.anticipation.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = datetime.fromisoformat
+            result = await anticipation_with_redis.get_calendar_weather_crossrefs()
+
+        preheat_refs = [r for r in result if r["type"] == "preheat"]
+        assert len(preheat_refs) >= 1
+        assert "vorheizen" in preheat_refs[0]["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_crossref_no_redis(self, anticipation):
+        """No redis returns empty list."""
+        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG):
+            result = await anticipation.get_calendar_weather_crossrefs()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_crossref_disabled_config(self, anticipation_with_redis):
+        """Disabled predictive_needs returns empty list."""
+        cfg = {**self._CROSSREF_CONFIG,
+               "predictive_needs": {"enabled": False}}
+        with patch("assistant.anticipation.yaml_config", cfg):
+            result = await anticipation_with_redis.get_calendar_weather_crossrefs()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_crossref_cooldown_prevents_duplicate(self, anticipation_with_redis):
+        """Already-sent crossref (cooldown key set) is not repeated."""
+        fake_now = self._naive_now()
+        event_start = fake_now + timedelta(minutes=20)
+        event = self._make_event("Meeting", event_start.isoformat())
+
+        redis = anticipation_with_redis.redis
+
+        async def mock_get(key):
+            if key == "mha:calendar:upcoming":
+                return json.dumps([event])
+            if key == "mha:weather:current_condition":
+                return b"rainy"
+            if key == "mha:weather:forecast":
+                return None
+            if key == "mha:weather:temperature":
+                return None
+            if key.startswith("mha:anticipation:crossref:rain_"):
+                return b"1"  # Already sent — cooldown active
+            return None
+
+        redis.get = AsyncMock(side_effect=mock_get)
+        redis.setex = AsyncMock()
+
+        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG), \
+             patch("assistant.anticipation.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = datetime.fromisoformat
+            result = await anticipation_with_redis.get_calendar_weather_crossrefs()
+
+        rain_refs = [r for r in result if r["type"] == "calendar_rain"]
+        assert len(rain_refs) == 0
+
+    @pytest.mark.asyncio
+    async def test_crossref_event_invalid_start(self, anticipation_with_redis):
+        """Event with invalid start timestamp is skipped gracefully."""
+        fake_now = self._naive_now()
+        event = self._make_event("Bad Event", "not-a-date")
+
+        redis = anticipation_with_redis.redis
+
+        async def mock_get(key):
+            if key == "mha:calendar:upcoming":
+                return json.dumps([event])
+            if key == "mha:weather:current_condition":
+                return b"rainy"
+            if key == "mha:weather:forecast":
+                return None
+            if key == "mha:weather:temperature":
+                return None
+            return None
+
+        redis.get = AsyncMock(side_effect=mock_get)
+        redis.setex = AsyncMock()
+
+        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG), \
+             patch("assistant.anticipation.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = datetime.fromisoformat
+            result = await anticipation_with_redis.get_calendar_weather_crossrefs()
+
+        assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_crossref_exception_in_redis(self, anticipation_with_redis):
+        """Exception during crossref is caught, returns empty list."""
+        redis = anticipation_with_redis.redis
+        redis.get = AsyncMock(side_effect=Exception("Redis exploded"))
+
+        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG):
+            result = await anticipation_with_redis.get_calendar_weather_crossrefs()
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_crossref_event_no_start_key_skipped(self, anticipation_with_redis):
+        """Event missing both 'start' and 'dtstart' is skipped."""
+        fake_now = self._naive_now()
+        event = {"summary": "No start field"}
+
+        redis = anticipation_with_redis.redis
+
+        async def mock_get(key):
+            if key == "mha:calendar:upcoming":
+                return json.dumps([event])
+            if key == "mha:weather:current_condition":
+                return b"rainy"
+            if key == "mha:weather:forecast":
+                return None
+            if key == "mha:weather:temperature":
+                return None
+            return None
+
+        redis.get = AsyncMock(side_effect=mock_get)
+        redis.setex = AsyncMock()
+
+        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG), \
+             patch("assistant.anticipation.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = datetime.fromisoformat
+            result = await anticipation_with_redis.get_calendar_weather_crossrefs()
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_crossref_event_far_future_no_rain_alert(self, anticipation_with_redis):
+        """Event more than 45 min away does not trigger rain alert."""
+        fake_now = self._naive_now()
+        event_start = fake_now + timedelta(minutes=90)
+        event = self._make_event("Spaeter Termin", event_start.isoformat())
+
+        redis = anticipation_with_redis.redis
+
+        async def mock_get(key):
+            if key == "mha:calendar:upcoming":
+                return json.dumps([event])
+            if key == "mha:weather:current_condition":
+                return b"rainy"
+            if key == "mha:weather:forecast":
+                return None
+            if key == "mha:weather:temperature":
+                return None
+            if key.startswith("mha:anticipation:crossref:"):
+                return None
+            return None
+
+        redis.get = AsyncMock(side_effect=mock_get)
+        redis.setex = AsyncMock()
+
+        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG), \
+             patch("assistant.anticipation.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = datetime.fromisoformat
+            result = await anticipation_with_redis.get_calendar_weather_crossrefs()
+
+        rain_refs = [r for r in result if r["type"] == "calendar_rain"]
+        assert len(rain_refs) == 0
+
+    @pytest.mark.asyncio
+    async def test_crossref_non_outdoor_event_no_heat(self, anticipation_with_redis):
+        """Non-outdoor event does not trigger heat warning even when hot."""
+        fake_now = self._naive_now()
+        event_start = fake_now + timedelta(minutes=30)
+        event = self._make_event("Buerobesprechung", event_start.isoformat())
+
+        redis = anticipation_with_redis.redis
+
+        async def mock_get(key):
+            if key == "mha:calendar:upcoming":
+                return json.dumps([event])
+            if key == "mha:weather:current_condition":
+                return b"sunny"
+            if key == "mha:weather:forecast":
+                return None
+            if key == "mha:weather:temperature":
+                return b"38.0"
+            if key.startswith("mha:anticipation:crossref:"):
+                return None
+            return None
+
+        redis.get = AsyncMock(side_effect=mock_get)
+        redis.setex = AsyncMock()
+
+        cfg = {**self._CROSSREF_CONFIG,
+               "predictive_needs": {"enabled": True, "hot_threshold": 33}}
+        with patch("assistant.anticipation.yaml_config", cfg), \
+             patch("assistant.anticipation.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = datetime.fromisoformat
+            result = await anticipation_with_redis.get_calendar_weather_crossrefs()
+
+        heat_refs = [r for r in result if r["type"] == "calendar_heat"]
+        assert len(heat_refs) == 0
+
+
+# ============================================================
+# Crossref integration in get_suggestions
+# ============================================================
+
+class TestCrossrefInGetSuggestions:
+    """Tests that calendar-weather crossrefs are integrated into get_suggestions."""
+
+    @pytest.mark.asyncio
+    async def test_crossref_appears_in_suggestions(self, anticipation_with_redis):
+        """Calendar crossref is appended to suggestions list.
+
+        Note: get_suggestions() returns early if detect_patterns() is empty,
+        so we must provide at least one pattern (even if it won't match the
+        current time) to reach the crossref integration code.
+        """
+        crossref = {
+            "type": "calendar_rain",
+            "message": "Schirm nicht vergessen",
+            "urgency": "medium",
+        }
+        # A pattern that won't match current time (weekday 6, hour 3)
+        dummy_pattern = {
+            "type": "time", "action": "noop", "args": {},
+            "weekday": (datetime.now(_LOCAL_TZ).weekday() + 3) % 7,
+            "hour": 3, "confidence": 0.7, "description": "dummy",
+        }
+
+        anticipation_with_redis.redis.get = AsyncMock(return_value=None)
+
+        with patch.object(anticipation_with_redis, "detect_patterns",
+                          new_callable=AsyncMock, return_value=[dummy_pattern]), \
+             patch.object(anticipation_with_redis, "get_calendar_weather_crossrefs",
+                          new_callable=AsyncMock, return_value=[crossref]):
+            result = await anticipation_with_redis.get_suggestions()
+
+        # Find the crossref suggestion among results
+        crossref_results = [s for s in result if s.get("pattern", {}).get("type") == "calendar_crossref"]
+        assert len(crossref_results) == 1
+        assert crossref_results[0]["action"] == "send_notification"
+        assert crossref_results[0]["description"] == "Schirm nicht vergessen"
+        assert crossref_results[0]["confidence"] == 0.85
+        assert crossref_results[0]["mode"] == "suggest"
+        assert crossref_results[0]["urgency"] == "medium"
+
+    @pytest.mark.asyncio
+    async def test_crossref_exception_does_not_break_suggestions(self, anticipation_with_redis):
+        """Exception in crossref does not prevent other suggestions from returning."""
+        now = datetime.now(_LOCAL_TZ)
+        pattern = {
+            "type": "time",
+            "action": "set_light",
+            "args": {"state": "off"},
+            "weekday": now.weekday(),
+            "hour": now.hour,
+            "confidence": 0.85,
+            "description": "Regular pattern",
+        }
+
+        anticipation_with_redis.redis.get = AsyncMock(return_value=None)
+
+        with patch.object(anticipation_with_redis, "detect_patterns",
+                          new_callable=AsyncMock, return_value=[pattern]), \
+             patch.object(anticipation_with_redis, "get_calendar_weather_crossrefs",
+                          new_callable=AsyncMock, side_effect=Exception("Crossref boom")):
+            result = await anticipation_with_redis.get_suggestions()
+
+        # Regular pattern suggestion still returned despite crossref failure
+        assert len(result) >= 1
+        assert result[0]["action"] == "set_light"
+
+    @pytest.mark.asyncio
+    async def test_crossref_empty_returns_no_extra_suggestions(self, anticipation_with_redis):
+        """Empty crossref list adds nothing beyond matched patterns.
+
+        Note: get_suggestions returns early when detect_patterns is empty,
+        so this test verifies crossref path has no effect with empty crossrefs
+        when patterns exist but don't match.
+        """
+        dummy_pattern = {
+            "type": "time", "action": "noop", "args": {},
+            "weekday": (datetime.now(_LOCAL_TZ).weekday() + 3) % 7,
+            "hour": 3, "confidence": 0.7, "description": "dummy",
+        }
+        anticipation_with_redis.redis.get = AsyncMock(return_value=None)
+
+        with patch.object(anticipation_with_redis, "detect_patterns",
+                          new_callable=AsyncMock, return_value=[dummy_pattern]), \
+             patch.object(anticipation_with_redis, "get_calendar_weather_crossrefs",
+                          new_callable=AsyncMock, return_value=[]):
+            result = await anticipation_with_redis.get_suggestions()
+
+        crossref_results = [s for s in result if s.get("pattern", {}).get("type") == "calendar_crossref"]
+        assert len(crossref_results) == 0
+
+    @pytest.mark.asyncio
+    async def test_no_patterns_means_no_crossrefs(self, anticipation_with_redis):
+        """get_suggestions returns early when detect_patterns is empty,
+        so crossrefs are never reached."""
+        anticipation_with_redis.redis.get = AsyncMock(return_value=None)
+
+        with patch.object(anticipation_with_redis, "detect_patterns",
+                          new_callable=AsyncMock, return_value=[]), \
+             patch.object(anticipation_with_redis, "get_calendar_weather_crossrefs",
+                          new_callable=AsyncMock, return_value=[{"type": "rain", "message": "x", "urgency": "high"}]):
+            result = await anticipation_with_redis.get_suggestions()
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_multiple_crossrefs_in_suggestions(self, anticipation_with_redis):
+        """Multiple crossrefs are all appended to suggestions."""
+        crossrefs = [
+            {"type": "calendar_rain", "message": "Schirm", "urgency": "medium"},
+            {"type": "preheat", "message": "Vorheizen?", "urgency": "low"},
+        ]
+        dummy_pattern = {
+            "type": "time", "action": "noop", "args": {},
+            "weekday": (datetime.now(_LOCAL_TZ).weekday() + 3) % 7,
+            "hour": 3, "confidence": 0.7, "description": "dummy",
+        }
+
+        anticipation_with_redis.redis.get = AsyncMock(return_value=None)
+
+        with patch.object(anticipation_with_redis, "detect_patterns",
+                          new_callable=AsyncMock, return_value=[dummy_pattern]), \
+             patch.object(anticipation_with_redis, "get_calendar_weather_crossrefs",
+                          new_callable=AsyncMock, return_value=crossrefs):
+            result = await anticipation_with_redis.get_suggestions()
+
+        crossref_results = [s for s in result if s.get("pattern", {}).get("type") == "calendar_crossref"]
+        assert len(crossref_results) == 2
+        assert crossref_results[0]["urgency"] == "medium"
+        assert crossref_results[1]["urgency"] == "low"
+
+    @pytest.mark.asyncio
+    async def test_crossref_calendar_data_as_dict(self, anticipation_with_redis):
+        """Calendar data as dict with 'events' key is handled correctly."""
+        fake_now = datetime.now(_LOCAL_TZ).replace(tzinfo=None)
+        event_start = fake_now + timedelta(minutes=15)
+        event = {"summary": "Zahnarzt", "start": event_start.isoformat()}
+        cal_data = {"events": [event]}  # Dict format with events key
+
+        redis = anticipation_with_redis.redis
+
+        async def mock_get(key):
+            if key == "mha:calendar:upcoming":
+                return json.dumps(cal_data)
+            if key == "mha:weather:current_condition":
+                return b"pouring"
+            if key == "mha:weather:forecast":
+                return None
+            if key == "mha:weather:temperature":
+                return None
+            if key.startswith("mha:anticipation:crossref:"):
+                return None
+            return None
+
+        redis.get = AsyncMock(side_effect=mock_get)
+        redis.setex = AsyncMock()
+
+        with patch("assistant.anticipation.yaml_config", {
+            "anticipation": {"enabled": True, "min_confidence": 0.6,
+                             "thresholds": {"ask": 0.6, "suggest": 0.8, "auto": 0.95}},
+            "predictive_needs": {"enabled": True},
+        }), patch("assistant.anticipation.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = datetime.fromisoformat
+            result = await anticipation_with_redis.get_calendar_weather_crossrefs()
+
+        rain_refs = [r for r in result if r["type"] == "calendar_rain"]
+        assert len(rain_refs) >= 1
+
+    @pytest.mark.asyncio
+    async def test_crossref_event_with_dtstart_key(self, anticipation_with_redis):
+        """Event using 'dtstart' key instead of 'start' is parsed."""
+        fake_now = datetime.now(_LOCAL_TZ).replace(tzinfo=None)
+        event_start = fake_now + timedelta(minutes=10)
+        event = {"title": "Einkaufen", "dtstart": event_start.isoformat()}
+
+        redis = anticipation_with_redis.redis
+
+        async def mock_get(key):
+            if key == "mha:calendar:upcoming":
+                return json.dumps([event])
+            if key == "mha:weather:current_condition":
+                return b"lightning-rainy"
+            if key == "mha:weather:forecast":
+                return None
+            if key == "mha:weather:temperature":
+                return None
+            if key.startswith("mha:anticipation:crossref:"):
+                return None
+            return None
+
+        redis.get = AsyncMock(side_effect=mock_get)
+        redis.setex = AsyncMock()
+
+        with patch("assistant.anticipation.yaml_config", {
+            "anticipation": {"enabled": True, "min_confidence": 0.6,
+                             "thresholds": {"ask": 0.6, "suggest": 0.8, "auto": 0.95}},
+            "predictive_needs": {"enabled": True},
+        }), patch("assistant.anticipation.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = datetime.fromisoformat
+            result = await anticipation_with_redis.get_calendar_weather_crossrefs()
+
+        rain_refs = [r for r in result if r["type"] == "calendar_rain"]
+        assert len(rain_refs) >= 1
