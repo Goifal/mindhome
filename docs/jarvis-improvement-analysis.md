@@ -209,3 +209,55 @@
 | 8 | HealthMonitor Hysterese (24) | ~10 Zeilen | Kein Alert-Flapping |
 | 9 | Widerspruch-Nachfrage (35) | ~40 Zeilen | Besseres Gedächtnis |
 | 10 | LearningTransfer aktivieren (1) | ~30 Zeilen | Schnelleres Lernen |
+
+---
+
+## KATEGORIE 9: AUTONOMIE & SICHERHEIT (KRITISCH)
+
+### 39. Threat Playbooks werden NICHT ausgeführt
+- **Datei:** `assistant/assistant/threat_assessment.py` (1011 Zeilen)
+- **Problem:** 5 Emergency-Playbooks (Brand, Einbruch, Wasser, Strom, Notfall) existieren als Pläne, aber es gibt keinen Executor
+- **Impact:** KRITISCH — Bei Feuer plant Jarvis Aktionen, führt sie aber nicht aus
+- **Fix:** `execute_playbook()` implementieren die ha_actions tatsächlich ausführt
+
+### 40. Keine Autonomie-Eskalation bei Notfall
+- **Problem:** Level bleibt gleich bei Normalzustand und Feueralarm
+- **Fix:** Temporärer Level-Boost auf 5 bei Emergency mit Auto-Reset
+
+### 41. Keine Autonomie-De-Eskalation
+- **Problem:** Levels gehen nur hoch, nie runter
+- **Fix:** Bei acceptance <50% für 7 Tage → Level-Reduktion vorschlagen
+
+### 42. Keine temporale Autonomie
+- **Problem:** Gleicher Level Tag und Nacht
+- **Fix:** temporal_profile als Offset (night: -1, day: +0)
+
+### 43. Service-Whitelist dupliziert
+- **Dateien:** `function_validator.py` + `self_automation.py`
+- **Problem:** Separate Whitelist-Listen die auseinanderdriften können
+- **Fix:** Single Source of Truth
+
+### 44. Conflict Resolver nur reaktiv
+- **Problem:** Erkennt Konflikte erst nach beiden Kommandos
+- **Fix:** Prediction basierend auf kürzlichen Aktionen
+
+### 45. Pushback lernt nicht
+- **Problem:** Gleiche Warnung kommt auch nach 10× Override
+- **Fix:** Override-Rate tracken, bei >80% unterdrücken
+
+---
+
+## AKTUALISIERTE TOP 10 NACH IMPACT
+
+| # | Verbesserung | Aufwand | Impact |
+|---|---|---|---|
+| 1 | **Threat Playbook Executor (39)** | ~80 Zeilen | KRITISCH — Sicherheit |
+| 2 | Wetter-Forecast für Antizipation (11) | ~50 Zeilen | Verhindert Wasserschäden |
+| 3 | Notfall-Autonomie-Eskalation (40) | ~40 Zeilen | Sicherheitskritisch |
+| 4 | Outcome→Anticipation Feedback (6) | ~40 Zeilen | Selbstkorrigierende Patterns |
+| 5 | Mood→Personality Reaktion (10) | ~30 Zeilen | Menschlicherer Jarvis |
+| 6 | Think-Ahead implementieren (14) | ~60 Zeilen | MCU-Jarvis-Level |
+| 7 | Routine-Anomalie-Erkennung (12) | ~100 Zeilen | Fürsorge-Feature |
+| 8 | InnerState Mood-Decay (17) | ~20 Zeilen | Realistischere Emotionen |
+| 9 | HealthMonitor Hysterese (24) | ~10 Zeilen | Kein Alert-Flapping |
+| 10 | Service-Whitelist vereinheitlichen (43) | ~20 Zeilen | Code-Qualität |
