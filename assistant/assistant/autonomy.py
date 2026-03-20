@@ -98,7 +98,9 @@ class AutonomyManager:
     """Verwaltet das Autonomie-Level des Assistenten und Trust-Levels pro Person."""
 
     def __init__(self):
-        self.level = settings.autonomy_level
+        # Level aus yaml_config lesen (UI-konfigurierbar), Fallback auf .env Default
+        auto_cfg = yaml_config.get("autonomy", {})
+        self.level = int(auto_cfg.get("level", settings.autonomy_level))
 
         # Phase 10: Trust-Level Konfiguration laden
         trust_cfg = yaml_config.get("trust_levels", {})
