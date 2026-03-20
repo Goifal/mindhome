@@ -39,8 +39,13 @@ _TEMPLATES_PATH = _CONFIG_DIR / "automation_templates.yaml"
 def _load_templates_sync() -> dict:
     """Laedt die Automation-Templates und Security-Config (synchron)."""
     if _TEMPLATES_PATH.exists():
-        with open(_TEMPLATES_PATH) as f:
-            return yaml.safe_load(f) or {}
+        try:
+            with open(_TEMPLATES_PATH) as f:
+                return yaml.safe_load(f) or {}
+        except yaml.YAMLError as exc:
+            logger.error("Fehler beim Laden von %s: %s", _TEMPLATES_PATH, exc)
+            return {}
+    logger.warning("Automation-Templates nicht gefunden: %s", _TEMPLATES_PATH)
     return {}
 
 
@@ -67,15 +72,44 @@ class SelfAutomation:
             "light.turn_on", "light.turn_off", "light.toggle",
             "switch.turn_on", "switch.turn_off", "switch.toggle",
             "climate.set_temperature", "climate.set_hvac_mode",
+            "climate.set_preset_mode",
             "cover.open_cover", "cover.close_cover", "cover.set_cover_position",
+            "cover.stop_cover",
             "media_player.media_play", "media_player.media_pause",
             "media_player.media_stop", "media_player.volume_set",
+            "media_player.media_next_track", "media_player.media_previous_track",
             "scene.turn_on",
             "notify.notify",
             "input_boolean.turn_on", "input_boolean.turn_off",
             "input_boolean.toggle",
             "input_number.set_value",
             "input_select.select_option",
+            "fan.turn_on", "fan.turn_off", "fan.set_percentage",
+            "vacuum.start", "vacuum.return_to_base", "vacuum.stop",
+            "humidifier.turn_on", "humidifier.turn_off",
+            "humidifier.set_humidity",
+            "water_heater.set_temperature",
+            "button.press",
+            "number.set_value",
+            "select.select_option",
+            "timer.start", "timer.cancel",
+            # F-091: Fehlende Input-Helpers
+            "input_text.set_value",
+            "input_datetime.set_datetime",
+            # F-091: TTS fuer proaktive Benachrichtigungen
+            "tts.speak",
+            # F-091: Erweiterte Medien-Steuerung
+            "media_player.select_source",
+            "media_player.play_media",
+            "media_player.shuffle_set",
+            "media_player.repeat_set",
+            # F-091: Klima Ein/Aus
+            "climate.turn_on", "climate.turn_off",
+            # F-091: Persistente Benachrichtigungen
+            "persistent_notification.create",
+            "persistent_notification.dismiss",
+            # F-091: Siren fuer Notfall-Automationen
+            "siren.turn_on", "siren.turn_off",
         ]))
         self._blocked_services = set(self._security.get("blocked_services", [
             "shell_command", "script", "python_script",
@@ -83,7 +117,14 @@ class SelfAutomation:
             "homeassistant.stop", "homeassistant.reload_all",
             "automation.turn_off", "automation.turn_on",
             "automation.trigger", "automation.reload",
-            "lock.unlock",
+            "lock.unlock", "lock.lock", "lock.open",
+            # F-091: Zusaetzliche blockierte Services
+            "homeassistant.set_location",
+            "homeassistant.check_config",
+            "hassio.addon_start", "hassio.addon_stop",
+            "hassio.addon_restart", "hassio.addon_update",
+            "recorder.purge", "recorder.disable",
+            "system_log.clear",
         ]))
         self._allowed_trigger_platforms = set(self._security.get("allowed_trigger_platforms", [
             "state", "time", "sun", "zone",

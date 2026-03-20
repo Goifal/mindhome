@@ -125,6 +125,18 @@ class ConflictResolver:
         # Domain-spezifische Konfiguration
         self._domain_configs: dict[str, dict] = cfg.get("conflict_domains", {})
 
+        # Konfigurierbare Kontext-Schwellwerte (F-090 Review)
+        ctx_cfg = cfg.get("context_thresholds", {})
+        self._threshold_solar_w = float(ctx_cfg.get("solar_producing_w", 100))
+        self._threshold_lux = float(ctx_cfg.get("high_lux", 500))
+        self._threshold_wind_kmh = float(ctx_cfg.get("high_wind_kmh", 60))
+        self._threshold_energy_price = float(ctx_cfg.get("high_energy_price", 0.30))
+        self._threshold_frost_c = float(ctx_cfg.get("frost_below_c", 0))
+        self._weather_entity = ctx_cfg.get("weather_entity", "weather.home")
+
+        # Konfigurierbare Regel-Toggles: einzelne Regeln deaktivierbar
+        self._rules_enabled: dict[str, bool] = cfg.get("rules_enabled", {})
+
         # Konfigurierbare Safe-Limits (Fallback: hardcoded)
         _DEFAULT_SAFE_LIMITS = {
             "climate": {"temperature": (15.0, 28.0), "offset": (-3.0, 3.0)},
@@ -165,6 +177,29 @@ class ConflictResolver:
             "mediation: %s)",
             self.enabled, self._conflict_window, self._mediation_enabled,
         )
+
+    def reload_config(self):
+        """Lädt konfigurierbare Werte aus settings.yaml neu (Hot-Reload bei UI-Änderungen)."""
+        cfg = yaml_config.get("conflict_resolution", {})
+        self.enabled = cfg.get("enabled", True)
+        self._conflict_window = int(cfg.get("conflict_window_seconds", 300))
+        self._use_trust_priority = cfg.get("use_trust_priority", True)
+        self._cooldown_seconds = int(cfg.get("resolution_cooldown_seconds", 120))
+
+        # Kontext-Schwellwerte aktualisieren
+        ctx_cfg = cfg.get("context_thresholds", {})
+        self._threshold_solar_w = float(ctx_cfg.get("solar_producing_w", 100))
+        self._threshold_lux = float(ctx_cfg.get("high_lux", 500))
+        self._threshold_wind_kmh = float(ctx_cfg.get("high_wind_kmh", 60))
+        self._threshold_energy_price = float(ctx_cfg.get("high_energy_price", 0.30))
+        self._threshold_frost_c = float(ctx_cfg.get("frost_below_c", 0))
+        self._weather_entity = ctx_cfg.get("weather_entity", "weather.home")
+
+        # Regel-Toggles aktualisieren
+        self._rules_enabled = cfg.get("rules_enabled", {})
+
+        logger.info("ConflictResolver config reloaded (enabled=%s, rules_enabled=%d custom)",
+                     self.enabled, len(self._rules_enabled))
 
     async def initialize(self, redis_client=None):
         """Initialisiert den Resolver mit Redis-Anbindung."""
@@ -850,9 +885,14 @@ class ConflictResolver:
         if not self.enabled:
             return None
 
+        if not isinstance(ha_states, list):
+            return None
+
         # Index fuer schnellen Zugriff
         state_map: dict[str, str] = {}
         for s in ha_states:
+            if not isinstance(s, dict):
+                continue
             eid = s.get("entity_id", "")
             state_map[eid] = s.get("state", "")
 
@@ -861,6 +901,11 @@ class ConflictResolver:
                 continue
 
             ctx = rule["context"]
+
+            # Regel deaktiviert? → überspringen
+            if not self._rules_enabled.get(ctx, True):
+                continue
+
             matched = False
 
             if ctx == "window_open":
@@ -873,7 +918,7 @@ class ConflictResolver:
                 for eid, val in state_map.items():
                     if eid.startswith("sensor.") and "solar" in eid:
                         try:
-                            if float(val) > 100:
+                            if float(val) > self._threshold_solar_w:
                                 matched = True
                                 break
                         except (ValueError, TypeError):
@@ -882,7 +927,7 @@ class ConflictResolver:
                 for eid, val in state_map.items():
                     if eid.startswith("sensor.") and "lux" in eid:
                         try:
-                            if float(val) > 500:
+                            if float(val) > self._threshold_lux:
                                 matched = True
                                 break
                         except (ValueError, TypeError):
@@ -895,6 +940,87 @@ class ConflictResolver:
                     state_map.get(eid) == "not_home" for eid in person_entities
                 ):
                     matched = True
+            elif ctx == "cooling_and_heating":
+                # Klimaanlage kuehlt waehrend Heizung heizt — nur im gleichen Bereich
+                # Bereich wird aus friendly_name oder area extrahiert
+                climate_actions = {}  # area_hint -> list of (eid, hvac_action)
+                for eid, val in state_map.items():
+                    if eid.startswith("climate."):
+                        attrs = next((s.get("attributes", {}) for s in ha_states
+                                      if s.get("entity_id") == eid), {})
+                        hvac = attrs.get("hvac_action", val)
+                        if hvac in ("cooling", "heating"):
+                            # Bereich-Hint aus Entity-ID oder Area extrahieren
+                            area = attrs.get("area_id", "") or eid.split(".")[-1].rsplit("_", 1)[0]
+                            climate_actions.setdefault(area, []).append((eid, hvac))
+                # Konflikt nur wenn im gleichen Bereich gegenläufig
+                for area, devices in climate_actions.items():
+                    actions_set = {hvac for _, hvac in devices}
+                    if "cooling" in actions_set and "heating" in actions_set:
+                        matched = True
+                        break
+            elif ctx == "goodnight_active":
+                matched = any(
+                    state_map.get(eid) == "on"
+                    for eid in state_map
+                    if "goodnight" in eid or "gute_nacht" in eid or "schlafmodus" in eid
+                )
+            elif ctx == "high_wind":
+                for eid, val in state_map.items():
+                    if eid.startswith("sensor.") and ("wind" in eid and "speed" in eid):
+                        try:
+                            if float(val) > self._threshold_wind_kmh:
+                                matched = True
+                                break
+                        except (ValueError, TypeError):
+                            continue
+            elif ctx == "door_open":
+                matched = any(
+                    state_map.get(eid) == "on"
+                    for eid in state_map
+                    if eid.startswith("binary_sensor.") and ("door" in eid or "tuer" in eid)
+                )
+            elif ctx == "sleeping_detected":
+                matched = any(
+                    state_map.get(eid) == "on"
+                    for eid in state_map
+                    if "sleep" in eid or "schlaf" in eid or "goodnight" in eid
+                    or "gute_nacht" in eid or "bett" in eid or "nachtmodus" in eid
+                )
+            elif ctx == "rain_detected":
+                weather = state_map.get(self._weather_entity, "")
+                matched = weather in ("rainy", "pouring", "lightning-rainy", "hail", "rain", "thunderstorm")
+            elif ctx == "frost_detected":
+                for eid, val in state_map.items():
+                    if eid.startswith("sensor.") and "temperature" in eid and ("outdoor" in eid or "aussen" in eid or "außen" in eid):
+                        try:
+                            if float(val) < self._threshold_frost_c:
+                                matched = True
+                                break
+                        except (ValueError, TypeError):
+                            continue
+            elif ctx == "high_energy_price":
+                for eid, val in state_map.items():
+                    if "price" in eid or "tarif" in eid or "strom" in eid:
+                        try:
+                            if float(val) > self._threshold_energy_price:
+                                matched = True
+                                break
+                        except (ValueError, TypeError):
+                            continue
+            elif ctx == "media_playing":
+                matched = any(
+                    state_map.get(eid) == "playing"
+                    for eid in state_map
+                    if eid.startswith("media_player.")
+                )
+            elif ctx == "window_scheduled_open":
+                # Lueften geplant: Timer oder Automation aktiv
+                matched = any(
+                    state_map.get(eid) == "on"
+                    for eid in state_map
+                    if "lueft" in eid or "ventilat" in eid
+                )
 
             if matched:
                 return {
@@ -949,5 +1075,115 @@ _LOGICAL_CONFLICT_RULES = [
         "context": "nobody_home",
         "warning": "Niemand zuhause — Eco-Modus empfohlen",
         "severity": "info",
+    },
+    # --- Erweiterte Konfliktregeln ---
+    {
+        "action": "set_climate",
+        "context": "cooling_and_heating",
+        "warning": "Klimaanlage und Heizung widersprechen sich — bitte Modus pruefen",
+        "severity": "warning",
+    },
+    {
+        "action": "set_light",
+        "context": "goodnight_active",
+        "warning": "Gute-Nacht-Routine aktiv — Licht einschalten widerspricht Schlafmodus",
+        "severity": "info",
+    },
+    {
+        "action": "set_cover",
+        "context": "high_wind",
+        "warning": "Starker Wind — Rolllaeden/Markisen besser geschlossen lassen",
+        "severity": "warning",
+    },
+    {
+        "action": "set_climate",
+        "context": "door_open",
+        "warning": "Tuer offen — Heizen/Kuehlen ineffizient",
+        "severity": "info",
+    },
+    {
+        "action": "play_media",
+        "context": "sleeping_detected",
+        "warning": "Schlafenszeit erkannt — Medien abspielen koennte Bewohner stoeren",
+        "severity": "info",
+    },
+    {
+        "action": "set_light",
+        "context": "nobody_home",
+        "warning": "Niemand zuhause — Licht einschalten unnoetig",
+        "severity": "low",
+    },
+    {
+        "action": "set_cover",
+        "context": "rain_detected",
+        "warning": "Regen erkannt — Markisen/Fenster besser geschlossen halten",
+        "severity": "info",
+    },
+    {
+        "action": "set_cover",
+        "context": "frost_detected",
+        "warning": "Frost — Rolllaeden geschlossen lassen fuer Waermedaemmung",
+        "severity": "info",
+    },
+    {
+        "action": "set_climate",
+        "context": "high_energy_price",
+        "warning": "Strompreis hoch — Klimatisierung vertagen oder reduzieren",
+        "severity": "info",
+    },
+    {
+        "action": "set_vacuum",
+        "context": "sleeping_detected",
+        "warning": "Schlafenszeit erkannt — Staubsauger koennte Bewohner stoeren",
+        "severity": "info",
+    },
+    {
+        "action": "set_light",
+        "context": "media_playing",
+        "warning": "Medien werden abgespielt — helles Licht koennte Filmerlebnis stoeren",
+        "severity": "low",
+    },
+    {
+        "action": "set_climate",
+        "context": "window_scheduled_open",
+        "warning": "Lueften geplant — Heizung vorher reduzieren spart Energie",
+        "severity": "low",
+    },
+    # --- Neue Regeln: Schlaf, Energie, Komfort ---
+    {
+        "action": "set_climate",
+        "context": "sleeping_detected",
+        "warning": "Schlafenszeit erkannt — Temperaturänderung koennte Bewohner stoeren",
+        "severity": "info",
+    },
+    {
+        "action": "set_cover",
+        "context": "media_playing",
+        "warning": "Medien werden abgespielt — Rollladen oeffnen koennte Filmerlebnis stoeren",
+        "severity": "low",
+    },
+    {
+        "action": "set_vacuum",
+        "context": "media_playing",
+        "warning": "Medien werden abgespielt — Staubsauger koennte stoeren",
+        "severity": "info",
+    },
+    {
+        "action": "set_light",
+        "context": "sleeping_detected",
+        "warning": "Schlafenszeit erkannt — Licht einschalten koennte Bewohner wecken",
+        "severity": "info",
+    },
+    {
+        "action": "set_climate",
+        "context": "frost_detected",
+        "warning": "Frost erkannt — Kuehlen nicht sinnvoll, Heizschutz beachten",
+        "severity": "warning",
+    },
+    {
+        "action": "set_cover",
+        "context": "nobody_home",
+        "warning": "Niemand zuhause — Rollladen oeffnen koennte Sicherheitsrisiko sein",
+        "severity": "low",
     },
 ]

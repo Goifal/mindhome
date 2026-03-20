@@ -34,7 +34,7 @@ import re
 import socket
 import threading
 import time
-from typing import Optional
+import unicodedata
 from urllib.parse import urlparse
 
 import aiohttp
@@ -68,7 +68,11 @@ _BLOCKED_NETWORKS = [
 
 _BLOCKED_HOSTNAMES = frozenset(
     {"localhost", "redis", "chromadb", "ollama", "homeassistant", "ha",
-     "metadata.google.internal", "metadata.azure.internal"}  # Cloud Metadata
+     # Cloud Metadata Endpunkte (SSRF-Standardziele)
+     "metadata.google.internal", "metadata.azure.internal",
+     "instance-data.ec2.internal",  # F-093: AWS EC2 Metadata
+     "metadata.internal",           # F-093: Generischer Metadata-Hostname
+     }
 )
 
 
@@ -169,17 +173,103 @@ async def _resolve_and_check(hostname: str) -> bool:
     return True
 
 
+async def _resolve_and_pin(hostname: str) -> list[dict]:
+    """F-093: DNS aufloesen, IPs pruefen, und sichere IPs zurueckgeben.
+
+    Kombiniert DNS-Aufloesung + IP-Pruefung in einem Schritt.
+    Die zurueckgegebenen IPs koennen direkt an _PinnedResolver uebergeben
+    werden, um TOCTOU-DNS-Rebinding zu verhindern.
+
+    Returns:
+        Liste von {host, port, family, proto, flags} Dicts fuer aiohttp,
+        oder leere Liste wenn blockiert.
+    """
+    if not hostname or hostname in _BLOCKED_HOSTNAMES:
+        return []
+    # IP-Literal — kein DNS noetig
+    try:
+        addr = ipaddress.ip_address(hostname)
+        if _is_ip_blocked(addr):
+            return []
+        family = socket.AF_INET6 if isinstance(addr, ipaddress.IPv6Address) else socket.AF_INET
+        return [{"hostname": hostname, "host": str(addr), "port": 0,
+                 "family": family, "proto": 0, "flags": socket.AI_NUMERICHOST}]
+    except ValueError:
+        pass
+    # DNS-Aufloesung im Thread-Pool
+    loop = asyncio.get_running_loop()
+    try:
+        infos = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM),
+            ),
+            timeout=_DNS_RESOLVE_TIMEOUT,
+        )
+    except (asyncio.TimeoutError, socket.gaierror):
+        return []
+    if not infos:
+        return []
+    safe_ips: list[dict] = []
+    for family, _type, proto, _canonname, sockaddr in infos:
+        ip_str = sockaddr[0]
+        try:
+            addr = ipaddress.ip_address(ip_str)
+            if _is_ip_blocked(addr):
+                logger.warning(
+                    "DNS-Rebinding-Schutz: '%s' → blockierte IP %s", hostname, ip_str,
+                )
+                return []  # Eine blockierte IP → alles blockieren
+        except ValueError:
+            return []
+        safe_ips.append({
+            "hostname": hostname, "host": ip_str, "port": 0,
+            "family": family, "proto": proto, "flags": socket.AI_NUMERICHOST,
+        })
+    return safe_ips
+
+
+class _PinnedResolver:
+    """F-093: aiohttp-Resolver der ausschliesslich vorgepinnte IPs zurueckgibt.
+
+    Verhindert TOCTOU-DNS-Rebinding: Der HTTP-Request nutzt exakt
+    die IPs die bereits durch _resolve_and_pin() validiert wurden.
+    """
+
+    def __init__(self, hostname: str, resolved: list[dict]):
+        self._hostname = hostname.lower()
+        self._resolved = resolved
+
+    async def resolve(self, host: str, port: int = 0, family: int = socket.AF_INET) -> list[dict]:
+        if host.lower() == self._hostname:
+            # Port in die vorgepinnten Ergebnisse einsetzen
+            return [{**r, "port": port} for r in self._resolved]
+        raise OSError(f"DNS blockiert: {host} nicht in gepinnter Aufloesung")
+
+    async def close(self) -> None:
+        pass
+
+    @classmethod
+    def create_connector(cls, hostname: str, resolved: list[dict]) -> aiohttp.TCPConnector:
+        """Erstellt einen TCPConnector mit gepinntem Resolver."""
+        resolver = cls(hostname, resolved)
+        return aiohttp.TCPConnector(resolver=resolver)
+
+
 async def _safe_read_json(resp: aiohttp.ClientResponse, max_bytes: int = _MAX_RESPONSE_BYTES) -> dict | None:
     """F-071 + F-072: Sichere JSON-Antwort lesen mit Size-Limit und Content-Type-Check.
 
     Returns:
         Parsed JSON dict oder None bei Fehler/Ueberschreitung.
     """
-    # F-072: Content-Type pruefen (tolerant: "application/json" oder "application/json; charset=utf-8")
+    # F-072: Content-Type pruefen — nur application/json akzeptieren
+    # F-093: Verschaerft: "json" in ct ist zu permissiv (matcht "text/html; json" etc.)
     content_type = resp.headers.get("Content-Type", "")
-    if "json" not in content_type.lower():
+    # Extrahiere MIME-Type vor optionalem "; charset=..." Suffix
+    mime_type = content_type.split(";")[0].strip().lower()
+    if mime_type not in ("application/json", "text/json"):
         logger.warning(
-            "Content-Type-Schutz: Erwartet JSON, erhalten '%s'",
+            "Content-Type-Schutz: Erwartet application/json, erhalten '%s'",
             content_type[:80],
         )
         return None
@@ -221,21 +311,38 @@ class WebSearch:
     )
 
     # F-089: SearXNG Bang-Operatoren die Privacy-Schutz umgehen koennen
-    _BANG_PATTERN = re.compile(r'![a-zA-Z]{1,20}\b')
+    # F-093: Erweitert: auch numerische Bangs (!123), Doppel-Bangs (!!g)
+    _BANG_PATTERN = re.compile(r'!{1,2}[a-zA-Z0-9]{1,20}\b')
+
+    # F-093: SearXNG-Steuer-Operatoren die Privacy/Security umgehen koennen
+    # engines: → erzwingt bestimmte Engine, site: → Scope-Einschraenkung,
+    # lang: → Sprachsteuerung (harmlos aber unnoetig)
+    _SEARXNG_OPERATOR_PATTERN = re.compile(
+        r'\b(?:engines?|categories|language|lang|time_range):\S+',
+        re.IGNORECASE,
+    )
 
     def __init__(self):
         # Konfiguration
         ws_cfg = yaml_config.get("web_search", {})
         self.enabled = ws_cfg.get("enabled", False)
-        self.engine = ws_cfg.get("engine", "searxng")  # searxng oder duckduckgo
+        # F-093: Engine whitelisten — nur bekannte Engines zulassen
+        engine_raw = ws_cfg.get("engine", "searxng")
+        if engine_raw not in ("searxng", "duckduckgo"):
+            logger.warning("Unbekannte Search-Engine '%s' — Fallback auf searxng", engine_raw)
+            engine_raw = "searxng"
+        self.engine = engine_raw
         self.searxng_url = ws_cfg.get("searxng_url", "http://localhost:8888")
-        self.max_results = ws_cfg.get("max_results", 5)
+        # F-093: max_results begrenzen (1-20) — verhindert OOM bei hohem Config-Wert
+        self.max_results = max(1, min(int(ws_cfg.get("max_results", 5)), 20))
         self.timeout = ws_cfg.get("timeout_seconds", 10)
 
         # F-075: Rate-Limiting Konfiguration
         self._rate_limit_max = ws_cfg.get("rate_limit_max", 10)       # Max Suchen
         self._rate_limit_window = ws_cfg.get("rate_limit_window", 60) # pro N Sekunden
         self._rate_timestamps: list[float] = []
+        # F-093: Lock fuer Rate-Timestamps (Race Condition bei concurrent async calls)
+        self._rate_lock = threading.Lock()
 
         # F-079: Ergebnis-Cache (query_hash → {ts, result})
         self._cache: dict[str, dict] = {}
@@ -266,23 +373,26 @@ class WebSearch:
     def _check_rate_limit(self) -> bool:
         """F-075: Prueft ob das Rate-Limit ueberschritten wurde.
 
+        F-093: Thread-safe via Lock (verhindert Race Condition bei concurrent calls).
+
         Returns:
             True wenn die Suche erlaubt ist, False wenn blockiert.
         """
         now = time.monotonic()
-        # Alte Timestamps entfernen
-        cutoff = now - self._rate_limit_window
-        self._rate_timestamps = [ts for ts in self._rate_timestamps if ts > cutoff]
-        if len(self._rate_timestamps) >= self._rate_limit_max:
-            logger.warning(
-                "Rate-Limit erreicht: %d Suchen in %ds (max %d)",
-                len(self._rate_timestamps),
-                self._rate_limit_window,
-                self._rate_limit_max,
-            )
-            return False
-        self._rate_timestamps.append(now)
-        return True
+        with self._rate_lock:
+            # Alte Timestamps entfernen
+            cutoff = now - self._rate_limit_window
+            self._rate_timestamps = [ts for ts in self._rate_timestamps if ts > cutoff]
+            if len(self._rate_timestamps) >= self._rate_limit_max:
+                logger.warning(
+                    "Rate-Limit erreicht: %d Suchen in %ds (max %d)",
+                    len(self._rate_timestamps),
+                    self._rate_limit_window,
+                    self._rate_limit_max,
+                )
+                return False
+            self._rate_timestamps.append(now)
+            return True
 
     def _sanitize_query(self, query: str) -> str | None:
         """F-077: Prueft und bereinigt die Suchanfrage.
@@ -292,6 +402,9 @@ class WebSearch:
         """
         if not query or not isinstance(query, str):
             return None
+        # F-093: Unicode-Normalisierung ZUERST — verhindert Fullwidth-Bypasses
+        # z.B. "ｆｉｌｅ：//" → "file://" BEVOR Blacklist prueft
+        query = unicodedata.normalize('NFKC', query)
         # Kontrollzeichen entfernen
         query = query.replace('\x00', '').replace('\r', ' ').replace('\n', ' ')
         query = re.sub(r'\s{2,}', ' ', query).strip()
@@ -304,9 +417,13 @@ class WebSearch:
         if self._QUERY_BLACKLIST_PATTERN.search(query):
             logger.warning("Query-Blacklist blockiert: %.80s", query)
             return None
-        # F-089: SearXNG Bang-Operatoren entfernen (!g, !bing, etc.)
+        # F-089: SearXNG Bang-Operatoren entfernen (!g, !bing, !!g, !123, etc.)
         # Diese leiten Suchen an externe Engines weiter und umgehen Privacy-Schutz
-        query = self._BANG_PATTERN.sub('', query).strip()
+        query = self._BANG_PATTERN.sub('', query)
+        # F-093: SearXNG-Steuer-Operatoren entfernen (engines:, categories:, etc.)
+        query = self._SEARXNG_OPERATOR_PATTERN.sub('', query)
+        # F-093: Doppel-Leerzeichen nach Operator-Entfernung komprimieren
+        query = re.sub(r'\s{2,}', ' ', query).strip()
         if len(query) < 3:
             return None
         return query
@@ -383,7 +500,7 @@ class WebSearch:
                 results = await self._search_duckduckgo(clean_query)
 
             if not results:
-                result = {"success": True, "message": f"Keine Ergebnisse gefunden."}
+                result = {"success": True, "message": "Keine Ergebnisse gefunden."}
                 self._set_cached(clean_query, result)
                 return result
 
@@ -445,7 +562,14 @@ class WebSearch:
                 if data is None:
                     return []
                 results = []
-                for r in data.get("results", [])[:self.max_results]:
+                # F-093: Type-Check fuer results (kompromittierter SearXNG koennte Non-List liefern)
+                raw_results = data.get("results", [])
+                if not isinstance(raw_results, list):
+                    logger.warning("SearXNG results ist kein Array: %s", type(raw_results).__name__)
+                    return []
+                for r in raw_results[:self.max_results]:
+                    if not isinstance(r, dict):
+                        continue
                     # F-074: URLs in Suchergebnissen validieren
                     result_url = r.get("url", "")
                     if result_url and not _is_safe_url(result_url):
@@ -468,13 +592,17 @@ class WebSearch:
             "skip_disambig": 1,
         }
 
-        # F-069: DNS-Rebinding-Schutz — vor dem Request pruefen
+        # F-069 + F-093: DNS-Rebinding-Schutz mit IP-Pinning
+        # Hostname aufloesen → IPs pruefen → Connector mit gepinnter IP erstellen
+        # Verhindert TOCTOU: DNS-Check und HTTP-Request nutzen dieselbe Aufloesung
         hostname = urlparse(url).hostname or ""
-        if not await _resolve_and_check(hostname):
+        resolved_ips = await _resolve_and_pin(hostname)
+        if not resolved_ips:
             logger.warning("DNS-Rebinding-Schutz: DuckDuckGo-Host '%s' blockiert", hostname)
             return []
 
-        async with aiohttp.ClientSession() as session:
+        connector = _PinnedResolver.create_connector(hostname, resolved_ips)
+        async with aiohttp.ClientSession(connector=connector) as session:
             # F-070: allow_redirects=False verhindert SSRF via Redirect
             async with session.get(
                 url, params=params,

@@ -415,10 +415,11 @@ class OllamaClient:
 
         # Thinking Mode bestimmen (via Model Profile + settings.yaml)
         # Konfigurierbar via latency_optimization.think_control:
-        #   "auto"  = Modell entscheidet (Default)
-        #   "off"   = Thinking komplett deaktiviert
+        #   "deep_on" = Thinking nur fuer Deep-Tier aktiviert (Fast+Smart aus)
+        #   "auto"    = Modell entscheidet (Default)
+        #   "off"     = Thinking komplett deaktiviert
         #   "smart_off" = Thinking nur fuer Smart-Tier aus (Fast immer aus, Deep auto)
-        #   "on"    = Thinking immer aktiviert
+        #   "on"      = Thinking immer aktiviert
         from .config import yaml_config as _yaml_cfg
         _think_cfg = (_yaml_cfg.get("latency_optimization") or {}).get("think_control", "smart_off")
 
@@ -433,6 +434,10 @@ class OllamaClient:
             think_enabled = False
         elif _think_cfg in ("on", "always_on"):
             think_enabled = True
+        elif _think_cfg == "deep_on":
+            # Deep-Tier: Thinking explizit aktivieren — nutzt Qwen3.5 Hybrid Reasoning
+            # Fast+Smart: Thinking deaktiviert fuer schnelle Antworten
+            think_enabled = True if tier == "deep" else False
         elif _think_cfg == "smart_off" and tier == "smart":
             # Smart-Tier: Thinking deaktivieren — spart 500-2000 Reasoning-Tokens
             # und halbiert die Latenz. Deep-Tier behaelt Thinking fuer komplexe Aufgaben.
@@ -555,6 +560,8 @@ class OllamaClient:
             think_enabled = False
         elif _think_cfg in ("on", "always_on"):
             think_enabled = True
+        elif _think_cfg == "deep_on":
+            think_enabled = True if tier == "deep" else False
         elif _think_cfg == "smart_off" and tier == "smart":
             think_enabled = False
         else:

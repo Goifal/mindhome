@@ -45,6 +45,20 @@ except Exception as e:
     logger.warning("room_profiles.yaml nicht geladen: %s", e)
 
 # F-001/F-004/F-013-F-017: Prompt-Injection-Schutz für LLM-Kontext
+# Injection-Config: Modulebene gecacht (Performance: wird in _sanitize_for_prompt ~100x/Context aufgerufen)
+_INJ_CFG = yaml_config.get("prompt_injection", {})
+_INJ_ENABLED: bool = _INJ_CFG.get("enabled", True)
+_INJ_LOG_BLOCKED: bool = _INJ_CFG.get("log_blocked", True)
+
+
+def reload_injection_config():
+    """Aktualisiert die Injection-Config aus yaml_config (Hot-Reload bei UI-Änderungen)."""
+    global _INJ_ENABLED, _INJ_LOG_BLOCKED
+    inj_cfg = yaml_config.get("prompt_injection", {})
+    _INJ_ENABLED = inj_cfg.get("enabled", True)
+    _INJ_LOG_BLOCKED = inj_cfg.get("log_blocked", True)
+    logger.info("Injection-Config reloaded (enabled=%s, log=%s)", _INJ_ENABLED, _INJ_LOG_BLOCKED)
+
 # F-080: Erweiterter Filter mit Unicode-Tricks, Markdown, Base64, Delimiter
 # F-084: Extraction-Attack-Patterns, Decimal HTML Entities, Delimiter Confusion
 _INJECTION_PATTERN = re.compile(
@@ -55,7 +69,7 @@ _INJECTION_PATTERN = re.compile(
     r'|<\/?(?:system|instruction|admin|role|prompt)\b'
     # F-080: Erweiterte Patterns
     r'|YOU\s+ARE\s+NOW'                         # Persona-Hijacking
-    r'|ACT\s+AS\s+(?:IF|A|AN|THE)'             # Persona-Hijacking v2
+    r'|\bACT\s+AS\s+(?:IF|A|AN|THE)'            # Persona-Hijacking v2 (word boundary)
     r'|DISREGARD\s+(?:ALL|PREVIOUS|ABOVE)'      # Instruction Override
     r'|FORGET\s+(?:ALL|EVERYTHING|YOUR)'        # Memory Wipe
     r'|NEW\s+(?:INSTRUCTION|DIRECTIVE|TASK)'    # Neuer Kontext
@@ -86,7 +100,54 @@ _INJECTION_PATTERN = re.compile(
     # F-084: HTML Entities (hex UND decimal)
     r'|&#x?[0-9a-fA-F]+;'                       # Beide Entity-Formen
     r'|\\u[0-9a-fA-F]{4}'                       # Unicode Escape Sequences
-    r'|[\x00-\x08\x0b\x0c\x0e-\x1f]',          # Kontrollzeichen (korrekter Char-Class)
+    r'|[\x00-\x08\x0b\x0c\x0e-\x1f]'           # Kontrollzeichen (korrekter Char-Class)
+    # F-090: Deutsche Injection-Patterns
+    r'|IGNORIERE\s+(?:ALLE\s+)?(?:VORHERIGEN\s+)?(?:ANWEISUNGEN|INSTRUKTIONEN)'
+    r'|VERGISS\s+(?:ALLES|DEINE)'               # DE Memory Wipe
+    r'|DU\s+BIST\s+(?:JETZT|AB\s+JETZT)'       # DE Persona-Hijacking
+    r'|NEUE\s+(?:ANWEISUNG|AUFGABE|ROLLE)'      # DE Neue Instruktion
+    r'|TU\s+SO\s+ALS\s+(?:OB|WAERST|WÄRST)'   # DE Pretend
+    r'|SPRICH\s+(?:AB\s+JETZT|NUR\s+NOCH)'     # DE Sprachsteuerung
+    r'|STELLE\s+DIR\s+VOR\s+DU\s+(?:BIST|WAERST)'  # DE Hypothetischer Angriff
+    # F-090: Multilingual Mixed-Language Injection
+    r'|(?:PLEASE|BITTE)\s+(?:IGNORE|IGNORIERE)'  # Mixed DE/EN
+    r'|(?:NOW|JETZT)\s+(?:ACT|AGIERE)\s+AS'    # Mixed DE/EN
+    # F-090: Indirect Injection via Entity-Namen/Attribute
+    r'|entity_id\s*[=:]\s*["\']?(?:system|admin|root|sudo)'  # Entity-ID Hijacking
+    r'|friendly_name\s*[=:]\s*.*?(?:SYSTEM|IGNORE|OVERRIDE)'  # HA Attribute Injection (non-greedy)
+    # F-090: Advanced Evasion Techniques
+    r'|(?:S\s+Y\s+S\s+T\s+E\s+M)'             # Spaced-out keywords (mindestens 1 Space)
+    r'|(?:I\s+G\s+N\s+O\s+R\s+E)'             # Spaced-out keywords v2 (mindestens 1 Space)
+    r'|(?:SYS|SYS)(?:TEM|tem)'                  # Mixed-case obfuscation
+    r'|(?:IGN|ign)(?:ORE|ore)'                  # Mixed-case obfuscation v2
+    # F-090: Prompt Leaking via Encoding
+    r'|(?:ROT13|rot13|CAESAR|caesar)\s*\('      # Encoding tricks
+    r'|(?:atob|btoa)\s*\('                       # JS Base64 tricks
+    r'|(?:chr|ord)\s*\('                         # Python char tricks
+    # F-090: Instruction Boundary Attacks
+    r'|={3,}\s*(?:END|BEGIN|NEW)'               # Boundary marker injection
+    r'|\*{3,}\s*(?:SYSTEM|INSTRUCTION)'         # Star-boundary injection
+    r'|>>>+\s*(?:SYSTEM|PROMPT|ADMIN)'          # Arrow-boundary injection
+    r'|```json\s*\{["\']?(?:role|system)'       # JSON role injection in code block
+    # F-090: Tool/Function Injection
+    r'|tool_call\s*[=:]\s*'                      # Direct tool injection
+    r'|function_call\s*[=:]\s*'                  # Direct function injection
+    r'|<tool_use>|<function>'                    # XML tool injection
+    # F-091: Erweiterte Extraction-Patterns (semantische Varianten)
+    r'|(?:CREATE|GENERATE)\s+A?\s*(?:SUMMARY|CONDENSED|BRIEF)\s+(?:OF|FROM)'
+    r'|(?:EXTRACT|PULL)\s+(?:THE|YOUR)\s+(?:GOALS|RULES|CORE|IDENTITY)'
+    r'|(?:TELL|SHOW)\s+ME\s+(?:YOUR|THE)\s+(?:REAL|TRUE|ACTUAL)\s+(?:ROLE|TASK|PURPOSE)'
+    r'|(?:DESCRIBE|EXPLAIN)\s+YOUR\s+(?:SYSTEM|INSTRUCTIONS|RULES|BEHAVIOR)'
+    r'|WHAT\s+(?:IS|WAS)\s+YOUR\s+(?:PURPOSE|ROLE|TASK|GOAL|OBJECTIVE)'
+    r'|(?:COPY|PASTE|PRINT|DUMP)\s+(?:YOUR|THE)\s+(?:SYSTEM|PROMPT|INSTRUCTIONS)'
+    # F-091: Deutsche Extraction-Varianten
+    r'|(?:BESCHREIBE|ERKLAERE|NENNE)\s+(?:DEINE|DIE)\s+(?:REGELN|ANWEISUNGEN|AUFGABE)'
+    r'|WAS\s+(?:IST|SIND)\s+DEINE\s+(?:ANWEISUNGEN|REGELN|ZIELE|AUFGABEN)'
+    r'|(?:GIB|ZEIG)\s+MIR\s+(?:DEINE|DIE)\s+(?:SYSTEM|PROMPT)'
+    # F-091: Multimodal/Advanced Evasion
+    r'|(?:ADMIN|ROOT|SUDO)\s+(?:MODE|ACCESS|OVERRIDE|PRIVILEGE)'
+    r'|(?:ENABLE|ACTIVATE|ENTER)\s+(?:DEBUG|DEV|DEVELOPER|ADMIN)\s+(?:MODE)?'
+    r'|(?:DEVELOPER|MAINTENANCE)\s+(?:MODE|OVERRIDE|CONSOLE)',
     re.IGNORECASE,
 )
 
@@ -106,17 +167,23 @@ def _sanitize_for_prompt(text: str, max_len: int = 200, label: str = "") -> str:
     text = unicodedata.normalize('NFKC', text)
     # F-080: Zero-Width Unicode Zeichen entfernen (unsichtbare Payload-Traeger)
     text = re.sub(r'[\u200b\u200c\u200d\ufeff\u2028\u2029]', '', text)
+    # F-091: Mathematical Alphanumeric Symbols entfernen (U+1D400–U+1D7FF)
+    # Werden manchmal genutzt um Keywords optisch darzustellen aber Pattern zu umgehen
+    text = re.sub(r'[\U0001D400-\U0001D7FF]', '', text)
     # Kontrollzeichen und Newlines entfernen (alle C0/C1 Controls)
     text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
     text = text.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
     # Mehrfach-Leerzeichen komprimieren
     text = re.sub(r'\s{2,}', ' ', text).strip()
     # F-084: Injection-Pattern auf VOLLEM Text prüfen (VOR Truncation!)
-    if _INJECTION_PATTERN.search(text):
-        logger.warning(
-            "Prompt-Injection-Verdacht in %s blockiert: %.80s",
-            label or "Kontext", text,
-        )
+    # F-091: Konfigurierbar via settings.yaml → prompt_injection.enabled
+    # Modulebene-Cache: _INJ_ENABLED / _INJ_LOG_BLOCKED (Performance)
+    if _INJ_ENABLED and _INJECTION_PATTERN.search(text):
+        if _INJ_LOG_BLOCKED:
+            logger.warning(
+                "Prompt-Injection-Verdacht in %s blockiert: %.80s",
+                label or "Kontext", text,
+            )
         return ""
     # Laenge begrenzen (NACH Pattern-Check)
     text = text[:max_len]

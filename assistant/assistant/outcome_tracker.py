@@ -244,6 +244,40 @@ class OutcomeTracker:
 
         return stats
 
+    async def get_all_scores(self) -> dict[str, float]:
+        """Gibt alle globalen Outcome-Scores zurueck.
+
+        Returns:
+            Dict mit action_type -> score (0.0-1.0)
+        """
+        if not self.redis:
+            return {}
+
+        scores = {}
+        cursor = 0
+        try:
+            while True:
+                cursor, keys = await self.redis.scan(
+                    cursor, match="mha:outcome:score:*", count=50
+                )
+                for key in keys:
+                    key_str = key.decode() if isinstance(key, bytes) else key
+                    parts = key_str.split(":")
+                    # Nur globale Scores (4 Teile), nicht per-person (6 Teile)
+                    if len(parts) != 4:
+                        continue
+                    action_type = parts[3]
+                    val = await self.redis.get(key)
+                    if val is not None:
+                        val = val.decode() if isinstance(val, bytes) else val
+                        scores[action_type] = float(val)
+                if cursor == 0:
+                    break
+        except Exception as e:
+            logger.warning("get_all_scores SCAN failed: %s", e)
+
+        return scores
+
     async def get_recent_failures(self, limit: int = 3) -> list[dict]:
         """Gibt die letzten fehlgeschlagenen Aktionen zurueck (fuer LLM-Context).
 

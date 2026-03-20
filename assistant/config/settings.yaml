@@ -62,6 +62,24 @@ stt_corrections:
     draussen: draußen
     stromungskanal: Strömungskanal
     beleuchtungskorper: Beleuchtungskörper
+    # Fehlende Umlaute (erweitert)
+    geratе: Geräte
+    gerateraum: Geräteraum
+    lufter: Lüfter
+    aufraumen: aufräumen
+    spulen: spülen
+    mullеimer: Mülleimer
+    flur: Flur
+    bettwasche: Bettwäsche
+    kuhlеr: Kühler
+    warmepumpe: Wärmepumpe
+    fussbodenheizung: Fußbodenheizung
+    aussеn: außen
+    aussensensor: Außensensor
+    schalter: Schalter
+    stromzahler: Stromzähler
+    energieverbrauch: Energieverbrauch
+    # Smart-Home-Begriffe (zusammengeschrieben)
     roll laden: Rollladen
     rolladen: Rollladen
     wohn zimmer: Wohnzimmer
@@ -75,6 +93,18 @@ stt_corrections:
     steck dose: Steckdose
     laut sprecher: Lautsprecher
     bewegungs melder: Bewegungsmelder
+    rauch melder: Rauchmelder
+    tuerklingel: Türklingel
+    tuer klingel: Türklingel
+    fern seher: Fernseher
+    fern bedienung: Fernbedienung
+    wasser hahn: Wasserhahn
+    klima anlage: Klimaanlage
+    luft filter: Luftfilter
+    staub sauger: Staubsauger
+    geschirr spueler: Geschirrspüler
+    wasche trockner: Wäschetrockner
+    # Jarvis-Name-Varianten
     ja weiß: Jarvis
     ja weis: Jarvis
     jarwis: Jarvis
@@ -83,16 +113,85 @@ stt_corrections:
     dschavis: Jarvis
     javis: Jarvis
     jarvis,: Jarvis
+    dscharfis: Jarvis
+    tschawis: Jarvis
+    schawis: Jarvis
+    dscharwiss: Jarvis
+    jarfis: Jarvis
+    dschafis: Jarvis
+    # Kurze Befehle
     machte: mach das
     macht: mach
     lichte: Licht
     lich: Licht
     rolle: Rollo
     rollos: Rollos
+    dimme: dimm
+    schalte: schalt
+    stoppe: stopp
+    spiele: spiel
+    # Zahlen/Prozent
     prozent: '%'
     grad: °
+    # Smart-Home allgemein
     home assistant: Home Assistant
     homeassistant: Home Assistant
+    zigbee: Zigbee
+    zwave: Z-Wave
+    z-wave: Z-Wave
+    wlan: WLAN
+    wifi: WiFi
+    sonoff: Sonoff
+    shelly: Shelly
+    hue: Hue
+    alexa: Alexa
+    netflix: Netflix
+    thermometer: Thermometer
+    # Smart-Home-Marken (phonetische Whisper-Varianten)
+    tradfri: Tradfri
+    trahfri: Tradfri
+    trafri: Tradfri
+    tradri: Tradfri
+    traffri: Tradfri
+    aqara: Aqara
+    aquara: Aqara
+    ackara: Aqara
+    tuya: Tuya
+    tuja: Tuya
+    tuija: Tuya
+    fibaro: Fibaro
+    fibarro: Fibaro
+    homematic: Homematic
+    homeatic: Homematic
+    homematik: Homematic
+    tasmota: Tasmota
+    tasmotta: Tasmota
+    deconz: deCONZ
+    dekonz: deCONZ
+    mqtt: MQTT
+    emqtt: MQTT
+    # Medien-Dienste
+    spottify: Spotify
+    spotifei: Spotify
+    jutube: YouTube
+    jutub: YouTube
+    netflicks: Netflix
+    amazone: Amazon
+    preim: Prime
+    # Raum-Synonyme
+    wohnstube: Wohnzimmer
+    stube: Wohnzimmer
+    gaestezimmer: Gästezimmer
+    gastezimmer: Gästezimmer
+    waschkueche: Waschküche
+    waschkuche: Waschküche
+    abstellraum: Abstellraum
+    abstellkammer: Abstellkammer
+    # Geraete-Typen
+    termometer: Thermometer
+    higrometer: Hygrometer
+    terasse: Terrasse
+    markiese: Markise
   phrase_corrections:
     roll laden: Rollladen
     wohn zimmer: Wohnzimmer
@@ -107,14 +206,51 @@ stt_corrections:
     steck dose: Steckdose
     laut sprecher: Lautsprecher
     bewegungs melder: Bewegungsmelder
+    rauch melder: Rauchmelder
+    tuer klingel: Türklingel
+    fern seher: Fernseher
+    fern bedienung: Fernbedienung
+    wasser hahn: Wasserhahn
+    klima anlage: Klimaanlage
+    luft filter: Luftfilter
+    staub sauger: Staubsauger
+    geschirr spueler: Geschirrspüler
+    wasche trockner: Wäschetrockner
+    fuss boden heizung: Fußbodenheizung
+    fussbodenheizung: Fußbodenheizung
+    warme pumpe: Wärmepumpe
     guten morgen: Guten Morgen
     gute nacht: Gute Nacht
-    ja weiß: Jarvis
-    ja weis: Jarvis
+    ja weiß,: Jarvis,
+    ja weis,: Jarvis,
     mach das licht: mach das Licht
     mach die musik: mach die Musik
+    mach die heizung: mach die Heizung
+    mach den fernseher: mach den Fernseher
+    das übliche: das Übliche
+    wie immer: wie immer
+    alles aus: alles aus
+    alles an: alles an
     wie viel uhr: wie viel Uhr
     wie spät: wie spät
+    # Raum-Varianten und Synonyme
+    wohn stube: Wohnzimmer
+    gaeste wc: Gäste-WC
+    gäste wc: Gäste-WC
+    gäste toilette: Gäste-WC
+    gaeste toilette: Gäste-WC
+    wasch kueche: Waschküche
+    wasch küche: Waschküche
+    ess zimmer: Esszimmer
+    arbeits zimmer: Arbeitszimmer
+    gaeste zimmer: Gästezimmer
+    gäste zimmer: Gästezimmer
+    haus flur: Hausflur
+    # Geraete-Befehle
+    mach die rolladen: mach die Rolladen
+    mach den rollladen: mach den Rollladen
+    mach die jalousie: mach die Jalousie
+    mach die markise: mach die Markise
 command_detection:
   device_nouns:
   - rollladen
@@ -1259,6 +1395,111 @@ appliance_monitor:
     - dishwasher
     - geschirrspueler
     - spuelmaschine
+  - key: oven
+    label: Backofen
+    patterns:
+    - oven
+    - ofen
+    - backofen
+    - herd
+  - key: coffee_machine
+    label: Kaffeemaschine
+    patterns:
+    - coffee
+    - kaffee
+    - kaffeemaschine
+    - espresso
+  - key: ev_charger
+    label: Wallbox
+    patterns:
+    - ev_charger
+    - wallbox
+    - ladestation
+    - charger
+  - key: heat_pump
+    label: Waermepumpe
+    patterns:
+    - heat_pump
+    - waermepumpe
+    - warmepumpe
+  - key: 3d_printer
+    label: 3D-Drucker
+    patterns:
+    - 3d_printer
+    - 3d_drucker
+    - printer_3d
+  - key: robot_vacuum
+    label: Saugroboter
+    patterns:
+    - robot_vacuum
+    - saugroboter
+    - roborock
+    - roomba
+  # Per-Geraet Power-Profile: Schwellwerte fuer genauere Fertig-Erkennung
+  power_profiles:
+    washer:
+      running: 50
+      idle: 5
+      standby: 3
+      peak: 2000
+      confirm_minutes: 5
+      hysteresis: 5
+    dryer:
+      running: 100
+      idle: 10
+      standby: 5
+      peak: 3000
+      confirm_minutes: 8
+      hysteresis: 10
+    dishwasher:
+      running: 30
+      idle: 3
+      standby: 2
+      peak: 2200
+      confirm_minutes: 5
+      hysteresis: 3
+    oven:
+      running: 800
+      idle: 20
+      standby: 5
+      peak: 3500
+      confirm_minutes: 10
+      hysteresis: 20
+    coffee_machine:
+      running: 200
+      idle: 5
+      standby: 2
+      peak: 1200
+      confirm_minutes: 3
+      hysteresis: 10
+    ev_charger:
+      running: 1000
+      idle: 50
+      standby: 10
+      peak: 11000
+      confirm_minutes: 15
+      hysteresis: 50
+    heat_pump:
+      running: 500
+      idle: 30
+      standby: 10
+      peak: 5000
+      confirm_minutes: 20
+      hysteresis: 30
+    3d_printer:
+      running: 50
+      idle: 8
+      standby: 5
+      peak: 400
+      confirm_minutes: 5
+      hysteresis: 5
+    robot_vacuum:
+      running: 20
+      idle: 3
+      standby: 2
+      peak: 50
+      confirm_minutes: 3
+      hysteresis: 3
 time_awareness:
   enabled: true
   check_interval_minutes: 5
@@ -1815,6 +2056,34 @@ conflict_resolution:
       volume:
       - 0
       - 100
+  # Schwellwerte fuer logische Konflikt-Regeln
+  context_thresholds:
+    solar_producing_w: 100
+    high_lux: 500
+    high_wind_kmh: 60
+    high_energy_price: 0.30
+    frost_below_c: 0
+    weather_entity: weather.home
+  # Einzelne Konflikt-Regeln aktivieren/deaktivieren
+  rules_enabled:
+    window_open: true
+    solar_producing: true
+    high_lux: true
+    nobody_home: true
+    cooling_and_heating: true
+    goodnight_active: true
+    high_wind: true
+    door_open: true
+    sleeping_detected: true
+    rain_detected: true
+    frost_detected: true
+    high_energy_price: true
+    media_playing: true
+    window_scheduled_open: true
+# Injection-Schutz (Prompt-Injection-Filter im Context-Builder)
+prompt_injection:
+  enabled: true
+  log_blocked: true
 maintenance:
   enabled: true
   config_file: config/maintenance.yaml
@@ -2155,7 +2424,7 @@ caring_butler:
   busy_day_threshold: 4          # Termine fuer "voller Tag"
 latency_optimization:
   knowledge_fast_path: true
-  think_control: auto    # auto | off | smart_off | on
+  think_control: deep_on    # deep_on | auto | off | smart_off | on
   upgrade_signal_threshold: 3
   refinement_skip_max_chars: 120
   tools_cache_ttl: 60

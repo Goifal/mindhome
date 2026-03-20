@@ -502,12 +502,24 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         """Lädt alle konfigurierbaren Daten aus YAML mit Hardcoded-Fallback."""
         # STT-Korrekturen
         stt_cfg = cfg.yaml_config.get("stt_corrections", {})
-        self._stt_word_corrections = stt_cfg.get("word_corrections") or dict(self._STT_WORD_CORRECTIONS)
+        # Merge-Strategie: Hardcoded-Basis + YAML-Overrides (YAML gewinnt bei Konflikten)
+        merged_words = dict(self._STT_WORD_CORRECTIONS)
+        yaml_words = stt_cfg.get("word_corrections")
+        if yaml_words and isinstance(yaml_words, dict):
+            merged_words.update(yaml_words)
+        self._stt_word_corrections = merged_words
+
+        merged_phrases = list(self._STT_PHRASE_CORRECTIONS)
         raw_phrases = stt_cfg.get("phrase_corrections")
         if raw_phrases and isinstance(raw_phrases, dict):
-            self._stt_phrase_corrections = [(k, v) for k, v in raw_phrases.items()]
-        else:
-            self._stt_phrase_corrections = list(self._STT_PHRASE_CORRECTIONS)
+            # YAML-Phrases überschreiben existierende Keys
+            existing_keys = {k for k, _ in merged_phrases}
+            for k, v in raw_phrases.items():
+                if k in existing_keys:
+                    merged_phrases = [(pk, pv) if pk != k else (k, v) for pk, pv in merged_phrases]
+                else:
+                    merged_phrases.append((k, v))
+        self._stt_phrase_corrections = merged_phrases
 
         # Error-Templates + Escalation-Prefixes (aus personality-Sektion)
         pers_cfg = cfg.yaml_config.get("personality", {})
@@ -775,6 +787,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Autonomy Evolution: Redis für Interaktions-Tracking
         self.autonomy.set_redis(self.memory.redis)
+        # Outcome-Tracker -> Autonomy Feedback-Loop: Outcome-Scores fliessen
+        # als zusaetzliches Signal in die Evolution-Bewertung ein
+        self.autonomy.set_outcome_tracker(self.outcome_tracker)
 
         # Response Cache + Latency Tracker: Redis-Verbindung setzen
         self.response_cache.set_redis(self.memory.redis)
@@ -1009,6 +1024,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.explainability.set_ollama(self.ollama)
         self.seasonal_insight.set_ollama(self.ollama)
         self.seasonal_insight.set_ha(self.ha)
+        # Seasonal→Anticipation Integration: Saisonale Daten boosten Pattern-Confidence
+        self.anticipation.set_seasonal_engine(self.seasonal_insight)
         self.time_awareness.set_ollama(self.ollama)
         self.music_dj.set_ollama(self.ollama)
         self.visitor_manager.set_ollama(self.ollama)
@@ -9007,6 +9024,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         "offnen": "öffnen", "geoffnet": "geöffnet", "schliessen": "schließen",
         "heiss": "heiß", "draussen": "draußen",
         "stromungskanal": "Strömungskanal", "beleuchtungskorper": "Beleuchtungskörper",
+        "geratе": "Geräte", "gerateraum": "Geräteraum",
+        "lufter": "Lüfter", "aufraumen": "aufräumen", "spulen": "spülen",
+        "mullеimer": "Mülleimer", "flur": "Flur",
+        "bettwasche": "Bettwäsche", "kuhlеr": "Kühler",
+        "warmepumpe": "Wärmepumpe", "fussbodenheizung": "Fußbodenheizung",
+        "aussеn": "außen", "aussensensor": "Außensensor",
+        "schalter": "Schalter", "stromzahler": "Stromzähler",
+        "energieverbrauch": "Energieverbrauch",
         # --- Zusammengeschriebene Smart-Home-Begriffe ---
         "roll laden": "Rollladen", "rolladen": "Rollladen",
         "wohn zimmer": "Wohnzimmer", "schlaf zimmer": "Schlafzimmer",
@@ -9015,18 +9040,59 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         "spul maschine": "Spülmaschine", "saug roboter": "Saugroboter",
         "steck dose": "Steckdose", "laut sprecher": "Lautsprecher",
         "bewegungs melder": "Bewegungsmelder",
+        "rauch melder": "Rauchmelder", "tuerklingel": "Türklingel",
+        "tuer klingel": "Türklingel", "fern seher": "Fernseher",
+        "fern bedienung": "Fernbedienung", "wasser hahn": "Wasserhahn",
+        "klima anlage": "Klimaanlage", "luft filter": "Luftfilter",
+        "staub sauger": "Staubsauger", "geschirr spueler": "Geschirrspüler",
+        "wasche trockner": "Wäschetrockner",
         # --- Whisper-Halluzinationen bei deutschen Befehlen ---
-        "ja weiß": "Jarvis", "ja weis": "Jarvis", "jarwis": "Jarvis",
+        "jarwis": "Jarvis",
         "dschawis": "Jarvis", "tscharwis": "Jarvis", "dschavis": "Jarvis",
         "javis": "Jarvis", "jarvis,": "Jarvis",
+        "dscharfis": "Jarvis", "tschawis": "Jarvis", "schawis": "Jarvis",
+        "dscharwiss": "Jarvis", "jarfis": "Jarvis", "dschafis": "Jarvis",
         # --- Haeufige Whisper-Fehler bei kurzen Befehlen ---
         "machte": "mach das", "macht": "mach",
         "lichte": "Licht", "lich": "Licht",
         "rolle": "Rollo", "rollos": "Rollos",
+        "dimme": "dimm", "schalte": "schalt",
+        "stoppe": "stopp", "spiele": "spiel",
         # --- Zahlen/Prozent-Korrekturen ---
         "prozent": "%", "grad": "°",
-        # --- Gängige Fehlerkennungen ---
+        # --- Smart-Home-spezifische Fehlerkennungen ---
         "home assistant": "Home Assistant", "homeassistant": "Home Assistant",
+        "zigbee": "Zigbee", "zwave": "Z-Wave", "z-wave": "Z-Wave",
+        "wlan": "WLAN", "wifi": "WiFi",
+        "sonoff": "Sonoff", "shelly": "Shelly", "hue": "Hue",
+        "alexa": "Alexa", "eсho": "Echo",
+        # --- Smart-Home-Marken (phonetische Whisper-Varianten) ---
+        "tradfri": "Tradfri", "trahfri": "Tradfri", "trafri": "Tradfri",
+        "tradri": "Tradfri", "traffri": "Tradfri",
+        "aqara": "Aqara", "aquara": "Aqara", "ackara": "Aqara",
+        "tuya": "Tuya", "tuja": "Tuya", "tuija": "Tuya",
+        "fibaro": "Fibaro", "fibarro": "Fibaro",
+        "homematic": "Homematic", "homeatic": "Homematic", "homematik": "Homematic",
+        "tasmota": "Tasmota", "tasmotta": "Tasmota",
+        "deconz": "deCONZ", "dekonz": "deCONZ",
+        "mqtt": "MQTT", "emqtt": "MQTT",
+        # --- Medien-Dienste ---
+        "spottify": "Spotify", "spotifei": "Spotify",
+        "jutube": "YouTube", "jutub": "YouTube",
+        "netflicks": "Netflix", "netflix": "Netflix",
+        "amazone": "Amazon", "preim": "Prime",
+        # --- Raum-Synonyme ---
+        "wohnstube": "Wohnzimmer", "stube": "Wohnzimmer",
+        "gaestezimmer": "Gästezimmer", "gastezimmer": "Gästezimmer",
+        "dachboden": "Dachboden", "spitzboden": "Dachboden",
+        "keller": "Keller", "kellerraum": "Keller",
+        "waschkueche": "Waschküche", "waschkuche": "Waschküche",
+        "abstellraum": "Abstellraum", "abstellkammer": "Abstellkammer",
+        # --- Geraete-Typen (haeufig falsch) ---
+        "thermometer": "Thermometer", "termometer": "Thermometer",
+        "hygrometer": "Hygrometer", "higrometer": "Hygrometer",
+        "terasse": "Terrasse", "terrasе": "Terrasse",
+        "markiese": "Markise", "markise": "Markise",
     }
 
     # Mehrwort-Korrekturen (werden VOR Einzelwort-Korrekturen angewendet)
@@ -9044,14 +9110,51 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         ("steck dose", "Steckdose"),
         ("laut sprecher", "Lautsprecher"),
         ("bewegungs melder", "Bewegungsmelder"),
+        ("rauch melder", "Rauchmelder"),
+        ("tuer klingel", "Türklingel"),
+        ("fern seher", "Fernseher"),
+        ("fern bedienung", "Fernbedienung"),
+        ("wasser hahn", "Wasserhahn"),
+        ("klima anlage", "Klimaanlage"),
+        ("luft filter", "Luftfilter"),
+        ("staub sauger", "Staubsauger"),
+        ("geschirr spueler", "Geschirrspüler"),
+        ("wasche trockner", "Wäschetrockner"),
+        ("fuss boden heizung", "Fußbodenheizung"),
+        ("fussbodenheizung", "Fußbodenheizung"),
+        ("warme pumpe", "Wärmepumpe"),
         ("guten morgen", "Guten Morgen"),
         ("gute nacht", "Gute Nacht"),
-        ("ja weiß", "Jarvis"),
-        ("ja weis", "Jarvis"),
+        ("ja weiß,", "Jarvis,"),
+        ("ja weis,", "Jarvis,"),
         ("mach das licht", "mach das Licht"),
         ("mach die musik", "mach die Musik"),
         ("wie viel uhr", "wie viel Uhr"),
         ("wie spät", "wie spät"),
+        ("mach die heizung", "mach die Heizung"),
+        ("mach den fernseher", "mach den Fernseher"),
+        ("das übliche", "das Übliche"),
+        ("wie immer", "wie immer"),
+        ("alles aus", "alles aus"),
+        ("alles an", "alles an"),
+        # --- Raum-Varianten und Synonyme ---
+        ("wohn stube", "Wohnzimmer"),
+        ("gaeste wc", "Gäste-WC"),
+        ("gäste wc", "Gäste-WC"),
+        ("gäste toilette", "Gäste-WC"),
+        ("gaeste toilette", "Gäste-WC"),
+        ("wasch kueche", "Waschküche"),
+        ("wasch küche", "Waschküche"),
+        ("ess zimmer", "Esszimmer"),
+        ("arbeits zimmer", "Arbeitszimmer"),
+        ("gaeste zimmer", "Gästezimmer"),
+        ("gäste zimmer", "Gästezimmer"),
+        ("haus flur", "Hausflur"),
+        # --- Medien-Befehle ---
+        ("mach die rolladen", "mach die Rolladen"),
+        ("mach den rollladen", "mach den Rollladen"),
+        ("mach die jalousie", "mach die Jalousie"),
+        ("mach die markise", "mach die Markise"),
     ]
 
     def _normalize_stt_text(self, text: str) -> str:

@@ -3006,6 +3006,18 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("health_monitor", "hydration_end_hour"): (18, 23),
         # Model Profiles — Wertebereiche fuer LLM-Parameter
         # (Gilt fuer alle Profile: default, qwen3.5, llama, etc.)
+        # Conflict Resolution Thresholds
+        ("conflict_resolution", "context_thresholds", "solar_producing_w"): (10, 5000),
+        ("conflict_resolution", "context_thresholds", "high_lux"): (50, 10000),
+        ("conflict_resolution", "context_thresholds", "high_wind_kmh"): (10, 200),
+        ("conflict_resolution", "context_thresholds", "high_energy_price"): (0.01, 2.0),
+        ("conflict_resolution", "context_thresholds", "frost_below_c"): (-20, 10),
+        # Appliance Monitor
+        ("appliance_monitor", "power_running_threshold"): (1, 500),
+        ("appliance_monitor", "power_idle_threshold"): (0, 100),
+        ("appliance_monitor", "idle_confirm_minutes"): (1, 60),
+        # Self-Automation
+        ("self_automation", "max_per_day"): (1, 20),
     }
     # Model Profiles dynamisch validieren (alle Sub-Profile)
     MP_RANGES = {
@@ -3448,16 +3460,14 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
 
     # --- Fehlende Hot-Reloads fuer Module die Config im __init__ cachen ---
 
-    # ConflictResolver: Fenster, Limits, Mediation
+    # ConflictResolver: Fenster, Limits, Mediation, Thresholds, Rule-Toggles
     if "conflict_resolution" in changed_settings and hasattr(brain, "conflict_resolver"):
         def _reload_conflict_resolver():
-            cfg = yaml_cfg.get("conflict_resolution", {})
             cr = brain.conflict_resolver
-            cr.enabled = cfg.get("enabled", True)
-            cr._conflict_window = int(cfg.get("conflict_window_seconds", 300))
+            cr.reload_config()
+            # Zusätzlich: Mediation + Safe-Limits (nicht in reload_config enthalten)
+            cfg = yaml_cfg.get("conflict_resolution", {})
             cr._max_commands = int(cfg.get("max_commands_per_person", 20))
-            cr._use_trust_priority = cfg.get("use_trust_priority", True)
-            cr._resolution_cooldown = int(cfg.get("resolution_cooldown_seconds", 120))
             med_cfg = cfg.get("mediation", {})
             cr._mediation_enabled = med_cfg.get("enabled", True)
             from .config import resolve_model
@@ -3465,7 +3475,6 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             cr._mediation_max_tokens = int(med_cfg.get("max_tokens", 256))
             cr._mediation_temperature = med_cfg.get("temperature", 0.7)
             cr._domain_configs = cfg.get("conflict_domains", {})
-            # Safe-Limits neu laden
             raw_sl = cfg.get("safe_limits", {})
             if isinstance(raw_sl, dict):
                 cr._safe_limits = {}
@@ -3474,8 +3483,14 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
                     for param, vals in limits.items():
                         if isinstance(vals, list) and len(vals) == 2:
                             cr._safe_limits[domain][param] = (float(vals[0]), float(vals[1]))
-            logger.info("ConflictResolver Settings aktualisiert (inkl. Safe-Limits)")
         _try_reload("conflict_resolution", _reload_conflict_resolver)
+
+    # Prompt-Injection-Config: Modulebene-Cache aktualisieren
+    if "prompt_injection" in changed_settings:
+        def _reload_injection():
+            from .context_builder import reload_injection_config
+            reload_injection_config()
+        _try_reload("prompt_injection", _reload_injection)
 
     # AmbientAudio: Sensor-Mappings, Cooldowns, Night-Mode
     if "ambient_audio" in changed_settings and hasattr(brain, "ambient_audio"):
