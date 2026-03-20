@@ -301,6 +301,79 @@ Aber der Code ist noch auf die alte "alle identisch 35B"-Konfiguration optimiert
 
 ---
 
+## Bereich 10: Code-Review — Bugs, Races & Test-Infrastruktur
+
+> Deep-Dive über 10 Module. 62 Funde, davon 11 kritisch.
+
+### 10.1 KRITISCHE Funde (11)
+
+| # | Modul | Bug | Beschreibung |
+|---|-------|-----|-------------|
+| 1 | `settings.yaml` | Hardcoded API-Key | `searxng.api_key: "mindhome_secret_key_2024"` — Credential im Repo |
+| 2 | `main.py` | Audio OOM-DoS | `/api/audio` liest gesamte Datei in RAM ohne Size-Limit |
+| 3 | `proactive.py` | Batch-Flush Race | `_flush_batch()` nicht gegen concurrent Calls geschützt → doppelte Delivery |
+| 4 | `semantic_memory.py` | Fact-Lock Timeout | 5s Lock-Timeout bei ChromaDB ~2-3s Latenz → Lock-Expiry unter Last |
+| 5 | `semantic_memory.py` | Update Race | `update_fact()` hat Read-Modify-Write ohne Lock → verlorene Updates |
+| 6 | `ollama_client.py` | Stream-Protokoll | `for line in response.content` iteriert Bytes statt Zeilen → kaputtes Streaming |
+| 7 | `ollama_client.py` | Response-Parsing | JSON-Parsing nach Regex-Strip statt robustem Parser |
+| 8 | `ha_connection.py` | WS Handler Race | `_ws` Write ohne Lock → korrupte Frames bei Concurrency |
+| 9 | `ha_connection.py` | Timer-Leak | `_ping_timer` wird nie gecancelt bei Reconnect |
+| 10 | `conftest.py` | Stateless Redis-Mock | `mock.get` gibt immer `None` zurück → Redis-Bugs unsichtbar |
+| 11 | `brain.py` | Memory-Leak | `_active_tasks` Set wächst ohne Bound bei langlebiger Instanz |
+
+### 10.2 HOHE Funde (17)
+
+| Modul | Bug |
+|-------|-----|
+| `function_calling.py` | `_skip_depth` Counter Race (shared int, kein Lock) |
+| `function_calling.py` | `_scene_cooldowns` nie bereinigt → unbounded Dict |
+| `personality.py` | `sarcasm_level` Bounds-Check fehlt (>5 / <1 möglich) |
+| `personality.py` | `_build_humor_section()` → `random.choice([])` crasht bei leerer Liste |
+| `automation_engine.py` | Infinite-Loop-Risiko bei zirkulären Trigger-Ketten |
+| `pattern_engine.py` | Mutable Cache Corruption (Dict-Referenz statt Copy) |
+| `event_bus.py` | Handler ohne Timeout → ein hängender Handler blockiert alle |
+| `brain.py` | Lock-over-I/O in 3+ Methoden (CLAUDE.md-Regel verletzt) |
+| `proactive.py` | Lock-over-I/O in Notification-Delivery |
+| `proactive.py` | `_predicted_warnings` Liste ohne Cap → unbounded Growth |
+| `memory.py` | ChromaDB Partial Failure bei Batch-Upsert nicht gehandelt |
+| `brain.py` | `_response_times` Deque(maxlen=100) aber `_upgrade_history` unbounded |
+| `settings.yaml` | 130+ Settings nur ~10 validiert (Settings-Validator unvollständig) |
+| `function_calling.py` | `_scene_cooldowns` SET statt DEL → Cooldown nie aktiv |
+| Tests | 4 Module mit 0% Coverage (constants, settings_validator, person_preferences, core_identity) |
+| Tests | 41 async Tests fehlt `@pytest.mark.asyncio` Marker |
+| Tests | Keine Netzwerk-Fehler-Simulation (ha_mock, ollama_mock immer erfolgreich) |
+
+### 10.3 MITTLERE Funde (24)
+
+Inkl. Dead Code, fehlende Validierung, Counter-Overflows, inkonsistente Error-Handling-Patterns, fehlende Security-Tests (0 Tests für Command/SQL Injection, CSRF, XXE).
+
+### 10.4 Umsetzung in 3 Sprints
+
+**Sprint 1 — Quick Wins (1-10 Zeilen je):**
+- API-Key aus settings.yaml entfernen/externalisieren
+- Audio Size-Limit (10MB) in main.py
+- Sarcasm Bounds-Check in personality.py
+- `_predicted_warnings` Cap (1000) in proactive.py
+- Scene Cooldown SET→DEL Fix in function_calling.py
+- Dead Code entfernen (inner_state.py unused callback)
+
+**Sprint 2 — Race Conditions (20-50 Zeilen je):**
+- Batch-Flush Guard → asyncio.Lock in proactive.py
+- Fact-Lock Timeout 5s→15s + Update-Lock in semantic_memory.py
+- Stream-Iteration → `aiter_lines()` in ollama_client.py
+- WS Write Lock in ha_connection.py
+- Timer-Leak Fix (cancel bei Reconnect) in ha_connection.py
+- `_skip_depth` → asyncio.Lock in function_calling.py
+
+**Sprint 3 — Architektur (50-100 Zeilen je):**
+- Lock-over-I/O Pattern fixen (brain.py, proactive.py)
+- Settings-Validator auf alle 130+ Settings erweitern
+- Redis-Mock stateful machen (conftest.py)
+- `_active_tasks` Cleanup-Mechanismus in brain.py
+- Test-Coverage für 4 ungetestete Module
+
+---
+
 ## Umsetzungsreihenfolge
 
 | Phase | Bereich | Aufwand | Impact | Risiko |
