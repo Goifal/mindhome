@@ -59,14 +59,22 @@ class AnticipationEngine:
         # Seasonal Insight Integration: Saisonale Daten boosten Pattern-Confidence
         self._seasonal_engine = None
 
+        # Climate Model Integration: Predictive Comfort (proaktive Vorheizung)
+        self._climate_model = None
+        self._ha_client = None
+
     async def initialize(self, redis_client: Optional[redis.Redis] = None):
         """Initialisiert die Engine."""
         self.redis = redis_client
         if self.enabled and self.redis:
             self._running = True
             self._task = asyncio.create_task(self._check_loop())
-            self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
-            logger.info("AnticipationEngine initialisiert (History: %d Tage)", self.history_days)
+            self._task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
+            )
+            logger.info(
+                "AnticipationEngine initialisiert (History: %d Tage)", self.history_days
+            )
 
     def set_notify_callback(self, callback):
         """Setzt den Callback fuer Vorschlaege."""
@@ -79,6 +87,16 @@ class AnticipationEngine:
         erhalten einen Confidence-Boost von bis zu +10%.
         """
         self._seasonal_engine = engine
+
+    def set_climate_model(self, climate_model, ha_client=None):
+        """Verbindet das ClimateModel fuer Predictive Comfort.
+
+        Ermoeglicht proaktive Vorheizungsvorschlaege: Wenn ein Temperatur-Pattern
+        erkannt wird, berechnet das Thermosimulations-Modell wann die Heizung
+        starten muss, damit die Zieltemperatur rechtzeitig erreicht ist.
+        """
+        self._climate_model = climate_model
+        self._ha_client = ha_client
 
     async def stop(self):
         """Stoppt die Engine."""
@@ -94,8 +112,9 @@ class AnticipationEngine:
     # Action-Logging
     # ------------------------------------------------------------------
 
-    async def log_action(self, action: str, args: dict, person: str = "",
-                         weather_condition: str = ""):
+    async def log_action(
+        self, action: str, args: dict, person: str = "", weather_condition: str = ""
+    ):
         """Loggt eine ausgefuehrte Aktion fuer Pattern-Detection.
 
         weather_condition wird automatisch mitgeloggt (z.B. 'rainy', 'sunny')
@@ -150,7 +169,10 @@ class AnticipationEngine:
             if len(raw_entries) < 10:
                 return []  # Zu wenig Daten
 
-            entries = [json.loads(e.decode() if isinstance(e, bytes) else e) for e in raw_entries]
+            entries = [
+                json.loads(e.decode() if isinstance(e, bytes) else e)
+                for e in raw_entries
+            ]
 
             patterns = []
 
@@ -180,8 +202,9 @@ class AnticipationEngine:
             logger.error("Fehler bei Pattern-Detection: %s", e)
             return []
 
-    def _detect_time_patterns(self, entries: list[dict],
-                              person: str = "") -> list[dict]:
+    def _detect_time_patterns(
+        self, entries: list[dict], person: str = ""
+    ) -> list[dict]:
         """Erkennt zeitbasierte Muster (gleiche Aktion zur gleichen Zeit).
 
         Neuere Aktionen werden staerker gewichtet als aeltere (Recency-Weighting).
@@ -243,11 +266,20 @@ class AnticipationEngine:
                     typical_args = "{}"
 
                 weekday_names = [
-                    "Montag", "Dienstag", "Mittwoch", "Donnerstag",
-                    "Freitag", "Samstag", "Sonntag",
+                    "Montag",
+                    "Dienstag",
+                    "Mittwoch",
+                    "Donnerstag",
+                    "Freitag",
+                    "Samstag",
+                    "Sonntag",
                 ]
                 wd_idx = int(weekday) if weekday.isdigit() else -1
-                wd_name = weekday_names[wd_idx] if 0 <= wd_idx < len(weekday_names) else weekday
+                wd_name = (
+                    weekday_names[wd_idx]
+                    if 0 <= wd_idx < len(weekday_names)
+                    else weekday
+                )
 
                 pattern_entry = {
                     "type": "time",
@@ -265,8 +297,9 @@ class AnticipationEngine:
 
         return patterns
 
-    def _detect_sequence_patterns(self, entries: list[dict],
-                                  person: str = "") -> list[dict]:
+    def _detect_sequence_patterns(
+        self, entries: list[dict], person: str = ""
+    ) -> list[dict]:
         """Erkennt Sequenz-Muster (A -> B innerhalb von 5 Minuten).
 
         Args:
@@ -316,7 +349,9 @@ class AnticipationEngine:
 
             if confidence >= self.min_confidence:
                 args_counter = Counter(pair_args[pair])
-                typical_args = args_counter.most_common(1)[0][0] if args_counter else "{}"
+                typical_args = (
+                    args_counter.most_common(1)[0][0] if args_counter else "{}"
+                )
 
                 pattern_entry = {
                     "type": "sequence",
@@ -333,8 +368,9 @@ class AnticipationEngine:
 
         return patterns
 
-    def _detect_context_patterns(self, entries: list[dict],
-                                 person: str = "") -> list[dict]:
+    def _detect_context_patterns(
+        self, entries: list[dict], person: str = ""
+    ) -> list[dict]:
         """Erkennt kontextbasierte Muster (Wetter, Tageszeit-Kombination).
 
         Sucht nach Aktionen die immer unter bestimmten Kontextbedingungen
@@ -388,9 +424,13 @@ class AnticipationEngine:
                 if ratio >= 0.7:
                     # Typische Args
                     args_counter = Counter(
-                        e.get("args", "{}") for e in cluster_entries if e.get("action") == action
+                        e.get("args", "{}")
+                        for e in cluster_entries
+                        if e.get("action") == action
                     )
-                    typical_args = args_counter.most_common(1)[0][0] if args_counter else "{}"
+                    typical_args = (
+                        args_counter.most_common(1)[0][0] if args_counter else "{}"
+                    )
 
                     ctx_entry = {
                         "type": "context",
@@ -399,7 +439,7 @@ class AnticipationEngine:
                         "args": json.loads(typical_args),
                         "confidence": round(min(1.0, ratio * (cluster_count / 10)), 2),
                         "occurrences": cluster_count,
-                        "description": f"{action} wird zu {ratio*100:.0f}% {cluster_labels[cluster_name]} ausgefuehrt",
+                        "description": f"{action} wird zu {ratio * 100:.0f}% {cluster_labels[cluster_name]} ausgefuehrt",
                     }
                     if person:
                         ctx_entry["person"] = person
@@ -433,9 +473,13 @@ class AnticipationEngine:
                 ratio = w_count / total
                 if ratio >= 0.6:  # 60%+ bei diesem Wetter
                     w_args_counter = Counter(
-                        e.get("args", "{}") for e in w_entries if e.get("action") == action
+                        e.get("args", "{}")
+                        for e in w_entries
+                        if e.get("action") == action
                     )
-                    typical_args = w_args_counter.most_common(1)[0][0] if w_args_counter else "{}"
+                    typical_args = (
+                        w_args_counter.most_common(1)[0][0] if w_args_counter else "{}"
+                    )
                     label = weather_labels.get(weather_cond, weather_cond)
                     w_entry = {
                         "type": "context",
@@ -444,7 +488,7 @@ class AnticipationEngine:
                         "args": json.loads(typical_args),
                         "confidence": round(min(1.0, ratio * (w_count / 10)), 2),
                         "occurrences": w_count,
-                        "description": f"{action} wird zu {ratio*100:.0f}% {label} ausgefuehrt",
+                        "description": f"{action} wird zu {ratio * 100:.0f}% {label} ausgefuehrt",
                     }
                     if person:
                         w_entry["person"] = person
@@ -456,8 +500,9 @@ class AnticipationEngine:
     # Phase 18: Kausale Ketten-Erkennung
     # ------------------------------------------------------------------
 
-    def _detect_causal_chains(self, entries: list[dict],
-                              person: str = "") -> list[dict]:
+    def _detect_causal_chains(
+        self, entries: list[dict], person: str = ""
+    ) -> list[dict]:
         """Erkennt kausale Ketten: Kontext-Trigger → Multi-Step-Folge.
 
         Erweitert die Sequenz-Erkennung: Statt nur A→B werden Ketten aus
@@ -512,12 +557,17 @@ class AnticipationEngine:
             # Nur Cluster mit 3+ verschiedenen Aktionen
             if len(cluster) >= 3:
                 actions = tuple(e.get("action", "") for e in cluster if e.get("action"))
-                unique_actions = tuple(dict.fromkeys(actions))  # Reihenfolge erhalten, Duplikate weg
+                unique_actions = tuple(
+                    dict.fromkeys(actions)
+                )  # Reihenfolge erhalten, Duplikate weg
                 if len(unique_actions) >= 3:
                     chain_key = "|".join(unique_actions)
                     chain_counter[chain_key] += 1
                     # Kontext der ersten Aktion als Trigger
-                    ctx = cluster[0].get("weather", "") or f"hour:{cluster[0].get('hour', 0)}"
+                    ctx = (
+                        cluster[0].get("weather", "")
+                        or f"hour:{cluster[0].get('hour', 0)}"
+                    )
                     chain_contexts[chain_key].append(ctx)
 
             i = j if j > i + 1 else i + 1
@@ -530,7 +580,9 @@ class AnticipationEngine:
             actions = chain_key.split("|")
             # Dominanter Kontext bestimmen
             ctx_counter = Counter(chain_contexts.get(chain_key, []))
-            dominant_ctx = ctx_counter.most_common(1)[0][0] if ctx_counter else "unbekannt"
+            dominant_ctx = (
+                ctx_counter.most_common(1)[0][0] if ctx_counter else "unbekannt"
+            )
 
             confidence = min(1.0, count / max(1, len(sorted_entries) / 20))
             if confidence < self.min_confidence:
@@ -571,23 +623,38 @@ class AnticipationEngine:
         if not intent_cfg:
             # Fallback: Hardcoded Defaults
             intent_cfg = {
-                "entspannen": ["Rollladen runter", "Licht dimmen", "Temperatur senken", "Ambient-Musik"],
+                "entspannen": [
+                    "Rollladen runter",
+                    "Licht dimmen",
+                    "Temperatur senken",
+                    "Ambient-Musik",
+                ],
                 "arbeiten": ["Rollladen hoch", "Licht hell", "Temperatur normal"],
-                "schlafen": ["Tueren verriegeln", "Alle Lichter aus", "Heizung Eco", "Alarm scharf"],
-                "gaeste": ["Angenehme Beleuchtung", "Angenehme Temperatur", "Hintergrundmusik"],
+                "schlafen": [
+                    "Tueren verriegeln",
+                    "Alle Lichter aus",
+                    "Heizung Eco",
+                    "Alarm scharf",
+                ],
+                "gaeste": [
+                    "Angenehme Beleuchtung",
+                    "Angenehme Temperatur",
+                    "Hintergrundmusik",
+                ],
             }
 
         # Fuzzy-Match mit Wort-Grenzen und Negations-Check
         import re
+
         intent_lower = intent.lower().strip()
         # Negation erkennen
         negation_patterns = ("nicht ", "kein ", "ohne ", "nie ")
         for key, actions in intent_cfg.items():
-            match = re.search(rf'\b{re.escape(key)}\b', intent_lower)
+            match = re.search(rf"\b{re.escape(key)}\b", intent_lower)
             if not match:
                 continue
             # Pruefen ob Negation vor dem Keyword steht
-            before = intent_lower[:match.start()]
+            before = intent_lower[: match.start()]
             if any(before.rstrip().endswith(neg.strip()) for neg in negation_patterns):
                 continue
             return actions
@@ -607,10 +674,18 @@ class AnticipationEngine:
     }
 
     _MONTH_TO_SEASON = {
-        12: "winter", 1: "winter", 2: "winter",
-        3: "fruehling", 4: "fruehling", 5: "fruehling",
-        6: "sommer", 7: "sommer", 8: "sommer",
-        9: "herbst", 10: "herbst", 11: "herbst",
+        12: "winter",
+        1: "winter",
+        2: "winter",
+        3: "fruehling",
+        4: "fruehling",
+        5: "fruehling",
+        6: "sommer",
+        7: "sommer",
+        8: "sommer",
+        9: "herbst",
+        10: "herbst",
+        11: "herbst",
     }
 
     async def _apply_seasonal_boost(self, patterns: list[dict]) -> list[dict]:
@@ -634,14 +709,17 @@ class AnticipationEngine:
 
         # Optional: Saisonale Aktivitaetsdaten aus SeasonalInsightEngine
         seasonal_actions = set()
-        if self._seasonal_engine and hasattr(self._seasonal_engine, "redis") and self._seasonal_engine.redis:
+        if (
+            self._seasonal_engine
+            and hasattr(self._seasonal_engine, "redis")
+            and self._seasonal_engine.redis
+        ):
             try:
                 month_key = f"mha:seasonal:monthly:{now.strftime('%Y-%m')}"
                 raw = await self._seasonal_engine.redis.hgetall(month_key)
                 if raw:
                     seasonal_actions = {
-                        (k.decode() if isinstance(k, bytes) else k)
-                        for k in raw.keys()
+                        (k.decode() if isinstance(k, bytes) else k) for k in raw.keys()
                     }
             except Exception:
                 pass  # Graceful degradation
@@ -674,7 +752,9 @@ class AnticipationEngine:
     # Proaktive Vorschlaege
     # ------------------------------------------------------------------
 
-    async def get_suggestions(self, person: str = "", outcome_tracker=None) -> list[dict]:
+    async def get_suggestions(
+        self, person: str = "", outcome_tracker=None
+    ) -> list[dict]:
         """Prueft ob gerade ein Muster zutrifft und gibt Vorschlaege zurueck.
 
         Args:
@@ -697,11 +777,14 @@ class AnticipationEngine:
                 continue
 
             # Before suggesting: Check correction memory
-            if hasattr(self, '_correction_memory') and self._correction_memory:
+            if hasattr(self, "_correction_memory") and self._correction_memory:
                 try:
-                    action_type = pattern.get("action", pattern.get("follow_action", ""))
+                    action_type = pattern.get(
+                        "action", pattern.get("follow_action", "")
+                    )
                     rules = await self._correction_memory.get_active_rules(
-                        action_type, person=person,
+                        action_type,
+                        person=person,
                     )
                     if rules:  # Active correction rule exists -> suppress this pattern
                         continue
@@ -710,7 +793,8 @@ class AnticipationEngine:
 
             # Wurde dieser Vorschlag kuerzlich schon gemacht?
             import hashlib as _hl
-            _desc = pattern.get('description', '')[:200]
+
+            _desc = pattern.get("description", "")[:200]
             _desc_hash = _hl.sha256(_desc.encode()).hexdigest()[:16]
             pattern_key = f"mha:anticipation:suggested:{_desc_hash}"
             already_suggested = await self.redis.get(pattern_key)
@@ -761,18 +845,21 @@ class AnticipationEngine:
                     cluster = ctx.split(":")[1]
                     hour = now.hour
                     current_cluster = (
-                        "morning" if 5 <= hour < 12
-                        else "afternoon" if 12 <= hour < 17
-                        else "evening" if 17 <= hour < 22
+                        "morning"
+                        if 5 <= hour < 12
+                        else "afternoon"
+                        if 12 <= hour < 17
+                        else "evening"
+                        if 17 <= hour < 22
                         else "night"
                     )
-                    match = (cluster == current_cluster)
+                    match = cluster == current_cluster
 
                 elif ctx.startswith("weather:"):
                     # Wetter-Kontext: Aktuelles Wetter pruefen
                     pattern_weather = ctx.split(":")[1]
                     current_weather = await self._get_current_weather()
-                    match = (current_weather == pattern_weather)
+                    match = current_weather == pattern_weather
 
                 if match:
                     suggestion = {
@@ -784,17 +871,34 @@ class AnticipationEngine:
                     }
 
             if suggestion:
-                # Outcome-Feedback-Loop: Wenn die Aktion oft fehlschlaegt,
-                # Confidence senken. Score 0.5 = neutral, <0.4 = schlecht.
+                # Bidirektionaler Outcome-Feedback-Loop:
+                # Score < 0.4 = schlecht → Confidence senken (30% Penalty)
+                # Score > 0.7 = gut → Confidence boosten (15% Bonus)
+                # Score 0.4-0.7 = neutral → keine Aenderung
                 if outcome_tracker:
                     try:
                         _action = suggestion.get("action", "")
                         _score = await outcome_tracker.get_success_score(
-                            f"anticipation:{_action}", person=person,
+                            f"anticipation:{_action}",
+                            person=person,
                         )
                         if _score < 0.4:
                             suggestion["confidence"] *= 0.7  # 30% Penalty
-                            logger.debug("Outcome penalty fuer %s: score=%.2f", _action, _score)
+                            logger.debug(
+                                "Outcome penalty fuer %s: score=%.2f", _action, _score
+                            )
+                        elif _score > 0.7:
+                            # Positive Reinforcement: Erfolgreiche Aktionen boosten
+                            boost = min(1.15, 1.0 + (_score - 0.7) * 0.5)
+                            suggestion["confidence"] = min(
+                                0.98, suggestion["confidence"] * boost
+                            )
+                            logger.debug(
+                                "Outcome boost fuer %s: score=%.2f, boost=%.2f",
+                                _action,
+                                _score,
+                                boost,
+                            )
                     except Exception as e:
                         logger.debug("Outcome-Score Abruf fehlgeschlagen: %s", e)
 
@@ -811,11 +915,14 @@ class AnticipationEngine:
                 try:
                     from .state_change_log import StateChangeLog
                     import assistant.main as main_module
+
                     if hasattr(main_module, "brain"):
                         _states = await main_module.brain.ha.get_states() or []
                         _fn = suggestion.get("function", "")
                         _args = suggestion.get("args", {})
-                        _dep_hints = StateChangeLog.check_action_dependencies(_fn, _args, _states)
+                        _dep_hints = StateChangeLog.check_action_dependencies(
+                            _fn, _args, _states
+                        )
                         if _dep_hints:
                             suggestion["dependency_warnings"] = _dep_hints
                             # Modus herabstufen: auto→suggest, suggest→ask
@@ -835,15 +942,17 @@ class AnticipationEngine:
         try:
             crossrefs = await self.get_calendar_weather_crossrefs()
             for xref in crossrefs:
-                suggestions.append({
-                    "pattern": {"type": "calendar_crossref"},
-                    "action": "send_notification",
-                    "args": {"message": xref.get("message", "")},
-                    "confidence": 0.85,
-                    "description": xref.get("message", ""),
-                    "mode": "suggest",
-                    "urgency": xref.get("urgency", "medium"),
-                })
+                suggestions.append(
+                    {
+                        "pattern": {"type": "calendar_crossref"},
+                        "action": "send_notification",
+                        "args": {"message": xref.get("message", "")},
+                        "confidence": 0.85,
+                        "description": xref.get("message", ""),
+                        "mode": "suggest",
+                        "urgency": xref.get("urgency", "medium"),
+                    }
+                )
         except Exception as e:
             logger.debug("Kalender-Crossref fehlgeschlagen: %s", e)
 
@@ -855,7 +964,11 @@ class AnticipationEngine:
             if self.redis:
                 cached = await self.redis.get("mha:weather:current_condition")
                 if cached:
-                    return cached.decode("utf-8", errors="ignore") if isinstance(cached, bytes) else str(cached)
+                    return (
+                        cached.decode("utf-8", errors="ignore")
+                        if isinstance(cached, bytes)
+                        else str(cached)
+                    )
         except Exception as e:
             logger.debug("Weather cache retrieval failed: %s", e)
         return ""
@@ -891,15 +1004,23 @@ class AnticipationEngine:
             cal_raw = await self.redis.get("mha:calendar:upcoming")
             if not cal_raw:
                 return []
-            cal_data = json.loads(cal_raw if isinstance(cal_raw, str) else cal_raw.decode())
-            events = cal_data if isinstance(cal_data, list) else cal_data.get("events", [])
+            cal_data = json.loads(
+                cal_raw if isinstance(cal_raw, str) else cal_raw.decode()
+            )
+            events = (
+                cal_data if isinstance(cal_data, list) else cal_data.get("events", [])
+            )
 
             # Wetter-Daten
             current_weather = await self._get_current_weather()
             weather_raw = await self.redis.get("mha:weather:forecast")
             forecast = {}
             if weather_raw:
-                forecast = json.loads(weather_raw if isinstance(weather_raw, str) else weather_raw.decode())
+                forecast = json.loads(
+                    weather_raw
+                    if isinstance(weather_raw, str)
+                    else weather_raw.decode()
+                )
 
             temp_raw = await self.redis.get("mha:weather:temperature")
             current_temp = float(temp_raw) if temp_raw else None
@@ -928,24 +1049,41 @@ class AnticipationEngine:
                 if 0 < minutes_until < 45 and current_weather in rain_conditions:
                     _ck = f"mha:anticipation:crossref:rain_{start_str[:10]}"
                     if not await self.redis.get(_ck):
-                        crossrefs.append({
-                            "type": "calendar_rain",
-                            "message": f"In {int(minutes_until)} Minuten steht '{event.get('summary', 'Termin')}' an — draussen regnet es. Schirm nicht vergessen.",
-                            "urgency": "medium",
-                        })
+                        crossrefs.append(
+                            {
+                                "type": "calendar_rain",
+                                "message": f"In {int(minutes_until)} Minuten steht '{event.get('summary', 'Termin')}' an — draussen regnet es. Schirm nicht vergessen.",
+                                "urgency": "medium",
+                            }
+                        )
                         await self.redis.setex(_ck, 7200, "1")
 
                 # Outdoor-Keywords + Hitze
-                outdoor_keywords = {"garten", "grillen", "joggen", "laufen", "wandern", "park", "outdoor", "terrasse", "schwimmen"}
+                outdoor_keywords = {
+                    "garten",
+                    "grillen",
+                    "joggen",
+                    "laufen",
+                    "wandern",
+                    "park",
+                    "outdoor",
+                    "terrasse",
+                    "schwimmen",
+                }
                 if current_temp and current_temp > hot_threshold:
-                    if any(kw in summary for kw in outdoor_keywords) and 0 < minutes_until < 120:
+                    if (
+                        any(kw in summary for kw in outdoor_keywords)
+                        and 0 < minutes_until < 120
+                    ):
                         _ck = f"mha:anticipation:crossref:heat_{start_str[:10]}"
                         if not await self.redis.get(_ck):
-                            crossrefs.append({
-                                "type": "calendar_heat",
-                                "message": f"'{event.get('summary', 'Termin')}' bei {current_temp:.0f}°C — Sonnenschutz und Wasser einpacken.",
-                                "urgency": "medium",
-                            })
+                            crossrefs.append(
+                                {
+                                    "type": "calendar_heat",
+                                    "message": f"'{event.get('summary', 'Termin')}' bei {current_temp:.0f}°C — Sonnenschutz und Wasser einpacken.",
+                                    "urgency": "medium",
+                                }
+                            )
                             await self.redis.setex(_ck, 7200, "1")
 
                 # Termin morgen frueh + spaet abends → Gute Nacht
@@ -953,11 +1091,13 @@ class AnticipationEngine:
                     if start_dt.hour < 9 and now.hour >= 22:
                         _ck = f"mha:anticipation:crossref:early_{start_str[:10]}"
                         if not await self.redis.get(_ck):
-                            crossrefs.append({
-                                "type": "early_morning",
-                                "message": f"Morgen um {start_dt.strftime('%H:%M')} steht '{event.get('summary', 'Termin')}' an. Vielleicht Zeit fuer Feierabend.",
-                                "urgency": "low",
-                            })
+                            crossrefs.append(
+                                {
+                                    "type": "early_morning",
+                                    "message": f"Morgen um {start_dt.strftime('%H:%M')} steht '{event.get('summary', 'Termin')}' an. Vielleicht Zeit fuer Feierabend.",
+                                    "urgency": "low",
+                                }
+                            )
                             await self.redis.setex(_ck, 21600, "1")  # 6h cooldown
 
             # Heimkehr + Kalt → Vorheizen
@@ -967,11 +1107,13 @@ class AnticipationEngine:
                 if away_raw:
                     _ck = "mha:anticipation:crossref:preheat"
                     if not await self.redis.get(_ck):
-                        crossrefs.append({
-                            "type": "preheat",
-                            "message": f"Es sind {current_temp:.0f}°C draussen. Soll ich vorheizen?",
-                            "urgency": "low",
-                        })
+                        crossrefs.append(
+                            {
+                                "type": "preheat",
+                                "message": f"Es sind {current_temp:.0f}°C draussen. Soll ich vorheizen?",
+                                "urgency": "low",
+                            }
+                        )
                         await self.redis.setex(_ck, 7200, "1")
 
         except Exception as e:
@@ -1005,12 +1147,14 @@ class AnticipationEngine:
                 feedback["rejected"] += 1
                 # Exponentieller Cooldown bei Ablehnung
                 rejections = feedback["rejected"]
-                cooldown_hours = min(24, 2 ** rejections)
+                cooldown_hours = min(24, 2**rejections)
                 cooldown_key = f"mha:anticipation:suggested:{pattern_description}"
                 await self.redis.setex(cooldown_key, cooldown_hours * 3600, "1")
                 logger.info(
                     "Anticipation: '%s' abgelehnt (%dx) -> Cooldown %dh",
-                    pattern_description, rejections, cooldown_hours,
+                    pattern_description,
+                    rejections,
+                    cooldown_hours,
                 )
 
             await self.redis.setex(key, 30 * 86400, json.dumps(feedback))
@@ -1044,7 +1188,9 @@ class AnticipationEngine:
         # Autonomy-Level pruefen (brain.autonomy.level oder Fallback)
         autonomy_level = getattr(getattr(brain, "autonomy", None), "level", 0)
         if autonomy_level < 3:
-            logger.debug("Auto-Execute uebersprungen: Autonomy-Level %d < 3", autonomy_level)
+            logger.debug(
+                "Auto-Execute uebersprungen: Autonomy-Level %d < 3", autonomy_level
+            )
             return
 
         patterns = await self.detect_patterns()
@@ -1055,7 +1201,11 @@ class AnticipationEngine:
         current_weather = await self._get_current_weather()
 
         # Abgelaufene Cooldowns entfernen (aelter als 30 Min)
-        expired = [k for k, ts in self._pre_executed.items() if (now - ts).total_seconds() > 1800]
+        expired = [
+            k
+            for k, ts in self._pre_executed.items()
+            if (now - ts).total_seconds() > 1800
+        ]
         for k in expired:
             del self._pre_executed[k]
 
@@ -1069,6 +1219,7 @@ class AnticipationEngine:
 
             # Cooldown-Check (30 Min)
             import hashlib as _hl
+
             p_desc = pattern.get("description", "")[:200]
             p_hash = _hl.sha256(p_desc.encode()).hexdigest()[:16]
 
@@ -1084,9 +1235,13 @@ class AnticipationEngine:
 
             # Task erstellen und ausfuehren
             try:
-                task_registry = getattr(brain, "_task_registry", None) or getattr(brain, "task_registry", None)
+                task_registry = getattr(brain, "_task_registry", None) or getattr(
+                    brain, "task_registry", None
+                )
                 if task_registry is None:
-                    logger.warning("Auto-Execute: Kein task_registry auf brain gefunden")
+                    logger.warning(
+                        "Auto-Execute: Kein task_registry auf brain gefunden"
+                    )
                     return
 
                 # Coroutine fuer die Ausfuehrung bauen
@@ -1095,7 +1250,9 @@ class AnticipationEngine:
                     if hasattr(brain, "execute_action"):
                         await brain.execute_action(a, ar)
                     elif hasattr(brain, "ha") and hasattr(brain.ha, "call_service"):
-                        await brain.ha.call_service(a, **ar if isinstance(ar, dict) else {})
+                        await brain.ha.call_service(
+                            a, **ar if isinstance(ar, dict) else {}
+                        )
 
                 task_registry.create_task(
                     _execute_action(),
@@ -1107,14 +1264,17 @@ class AnticipationEngine:
 
                 logger.info(
                     "Auto-Execute: '%s' ausgefuehrt (Confidence: %.0f%%, Autonomy: %d)",
-                    p_desc, pattern["confidence"] * 100, autonomy_level,
+                    p_desc,
+                    pattern["confidence"] * 100,
+                    autonomy_level,
                 )
 
             except Exception as e:
                 logger.error("Auto-Execute fehlgeschlagen fuer '%s': %s", p_desc, e)
 
-    def _pattern_matches_current_context(self, pattern: dict, now: datetime,
-                                         current_weather: str) -> bool:
+    def _pattern_matches_current_context(
+        self, pattern: dict, now: datetime, current_weather: str
+    ) -> bool:
         """Prueft ob ein Pattern zum aktuellen Kontext (Zeit, Wochentag, Wetter) passt.
 
         Args:
@@ -1126,8 +1286,10 @@ class AnticipationEngine:
 
         if p_type == "time":
             # Wochentag und Stunde muessen passen
-            return (pattern.get("weekday") == now.weekday()
-                    and pattern.get("hour") == now.hour)
+            return (
+                pattern.get("weekday") == now.weekday()
+                and pattern.get("hour") == now.hour
+            )
 
         elif p_type == "context":
             ctx = pattern.get("context", "")
@@ -1135,9 +1297,12 @@ class AnticipationEngine:
                 cluster = ctx.split(":")[1]
                 hour = now.hour
                 current_cluster = (
-                    "morning" if 5 <= hour < 12
-                    else "afternoon" if 12 <= hour < 17
-                    else "evening" if 17 <= hour < 22
+                    "morning"
+                    if 5 <= hour < 12
+                    else "afternoon"
+                    if 12 <= hour < 17
+                    else "evening"
+                    if 17 <= hour < 22
                     else "night"
                 )
                 return cluster == current_cluster
@@ -1185,7 +1350,10 @@ class AnticipationEngine:
             if len(raw_entries) < 10:
                 return []
 
-            entries = [json.loads(e.decode() if isinstance(e, bytes) else e) for e in raw_entries]
+            entries = [
+                json.loads(e.decode() if isinstance(e, bytes) else e)
+                for e in raw_entries
+            ]
 
             # In zwei Zeitraeume aufteilen
             recent_start = now - timedelta(days=7)
@@ -1221,22 +1389,26 @@ class AnticipationEngine:
 
                 # Verschwundene Muster: War vorher da, jetzt nicht mehr
                 if p_stats and not r_stats:
-                    drifts.append({
-                        "type": "disappeared",
-                        "action": action,
-                        "old_count": p_stats["count"],
-                        "message": f"Du machst seit einer Woche kein {action} mehr",
-                    })
+                    drifts.append(
+                        {
+                            "type": "disappeared",
+                            "action": action,
+                            "old_count": p_stats["count"],
+                            "message": f"Du machst seit einer Woche kein {action} mehr",
+                        }
+                    )
                     continue
 
                 # Neue Muster: Jetzt da, vorher nicht
                 if r_stats and not p_stats:
-                    drifts.append({
-                        "type": "new",
-                        "action": action,
-                        "new_count": r_stats["count"],
-                        "message": f"Neu seit einer Woche: {action} ({r_stats['count']}x)",
-                    })
+                    drifts.append(
+                        {
+                            "type": "new",
+                            "action": action,
+                            "new_count": r_stats["count"],
+                            "message": f"Neu seit einer Woche: {action} ({r_stats['count']}x)",
+                        }
+                    )
                     continue
 
                 # Zeitverschiebung: Durchschnittszeit vergleichen
@@ -1265,16 +1437,19 @@ class AnticipationEngine:
                         else:
                             direction = "frueher"
 
-                        drifts.append({
-                            "type": "time_shift",
-                            "action": action,
-                            "old_time": old_time,
-                            "new_time": new_time,
-                            "shift_minutes": round(diff_minutes),
-                            "message": f"Du gehst seit einer Woche {direction} ins Bett"
-                            if "schlaf" in action.lower() or "light" in action.lower()
-                            else f"{action} hat sich um {round(diff_minutes)} Min verschoben ({old_time} → {new_time})",
-                        })
+                        drifts.append(
+                            {
+                                "type": "time_shift",
+                                "action": action,
+                                "old_time": old_time,
+                                "new_time": new_time,
+                                "shift_minutes": round(diff_minutes),
+                                "message": f"Du gehst seit einer Woche {direction} ins Bett"
+                                if "schlaf" in action.lower()
+                                or "light" in action.lower()
+                                else f"{action} hat sich um {round(diff_minutes)} Min verschoben ({old_time} → {new_time})",
+                            }
+                        )
 
             return drifts
 
@@ -1329,6 +1504,7 @@ class AnticipationEngine:
                 # Quiet Hours: Pattern-Detection komplett ueberspringen.
                 # Spart CPU und vermeidet Log-Spam (Suggestions werden eh unterdrueckt).
                 from .config import yaml_config
+
                 quiet_cfg = yaml_config.get("ambient_presence", {})
                 quiet_start = int(quiet_cfg.get("quiet_start", 22))
                 quiet_end = int(quiet_cfg.get("quiet_end", 7))
@@ -1382,13 +1558,19 @@ class AnticipationEngine:
 
         try:
             raw_entries = await self.redis.lrange("mha:action_log", 0, 999)
-            entries = [json.loads(e.decode() if isinstance(e, bytes) else e) for e in raw_entries]
+            entries = [
+                json.loads(e.decode() if isinstance(e, bytes) else e)
+                for e in raw_entries
+            ]
 
             for person in persons_away:
                 # Alle Ankunfts-Events dieser Person sammeln
                 arrival_hours = []
                 for entry in entries:
-                    if entry.get("action") == "person_arrived" and entry.get("person") == person:
+                    if (
+                        entry.get("action") == "person_arrived"
+                        and entry.get("person") == person
+                    ):
                         ts_str = entry.get("timestamp", "")
                         if ts_str:
                             try:
@@ -1402,21 +1584,27 @@ class AnticipationEngine:
 
                 avg_hour = sum(arrival_hours) / len(arrival_hours)
                 # Standardabweichung
-                variance = sum((h - avg_hour) ** 2 for h in arrival_hours) / len(arrival_hours)
-                std_dev = variance ** 0.5
+                variance = sum((h - avg_hour) ** 2 for h in arrival_hours) / len(
+                    arrival_hours
+                )
+                std_dev = variance**0.5
 
                 # Erwartete Ankunftszeit + Toleranz (max 90 Min nach Durchschnitt)
-                expected_hour = avg_hour + max(std_dev, 0.5)  # Mindestens 30 Min Toleranz
+                expected_hour = avg_hour + max(
+                    std_dev, 0.5
+                )  # Mindestens 30 Min Toleranz
                 current_hour = now.hour + now.minute / 60.0
 
                 delay_minutes = int((current_hour - expected_hour) * 60)
                 if delay_minutes >= 90:
                     expected_time = f"{int(avg_hour)}:{int((avg_hour % 1) * 60):02d}"
-                    deviations.append({
-                        "person": person,
-                        "expected_time": expected_time,
-                        "delay_minutes": delay_minutes,
-                    })
+                    deviations.append(
+                        {
+                            "person": person,
+                            "expected_time": expected_time,
+                            "delay_minutes": delay_minutes,
+                        }
+                    )
 
         except Exception as e:
             logger.debug("Routine-Deviation Fehler: %s", e)
@@ -1453,12 +1641,15 @@ class AnticipationEngine:
             entries = []
             for e in raw_entries:
                 try:
-                    entries.append(json.loads(e.decode() if isinstance(e, bytes) else e))
+                    entries.append(
+                        json.loads(e.decode() if isinstance(e, bytes) else e)
+                    )
                 except (json.JSONDecodeError, TypeError):
                     continue
 
             # Zeitmuster pro Aktion+Wochentag+Stunde zaehlen
             from collections import defaultdict
+
             pattern_counts: dict[tuple, int] = defaultdict(int)
             for entry in entries:
                 action = entry.get("action", "")
@@ -1491,14 +1682,16 @@ class AnticipationEngine:
                     if confidence < threshold:
                         continue
 
-                    predictions.append({
-                        "day": target_day.strftime("%Y-%m-%d"),
-                        "weekday": target_weekday,
-                        "hour": hour,
-                        "action": action,
-                        "confidence": round(confidence, 2),
-                        "description": f"{action.replace('_', ' ').title()} um {hour}:00",
-                    })
+                    predictions.append(
+                        {
+                            "day": target_day.strftime("%Y-%m-%d"),
+                            "weekday": target_weekday,
+                            "hour": hour,
+                            "action": action,
+                            "confidence": round(confidence, 2),
+                            "description": f"{action.replace('_', ' ').title()} um {hour}:00",
+                        }
+                    )
 
             # Sortieren: Naechste Aktion zuerst
             predictions.sort(key=lambda p: (p["day"], p["hour"]))
@@ -1570,7 +1763,11 @@ class AnticipationEngine:
 
         # Personenspezifische Aktionen filtern
         person_lower = person.lower().strip()
-        return [p for p in all_preds if p.get("person", "").lower() == person_lower or not p.get("person")]
+        return [
+            p
+            for p in all_preds
+            if p.get("person", "").lower() == person_lower or not p.get("person")
+        ]
 
     async def _get_adaptive_threshold(self, pattern_hash: str) -> float:
         """Gibt die adaptive Konfidenz-Schwelle fuer ein Muster zurueck.
@@ -1608,8 +1805,124 @@ class AnticipationEngine:
 
             key = f"mha:anticipation:threshold:{pattern_hash}"
             await self.redis.setex(key, 90 * 86400, str(round(new_threshold, 2)))
-            logger.debug("Adaptive Schwelle '%s': %.2f → %.2f (%s)",
-                         pattern_hash, current, new_threshold,
-                         "akzeptiert" if accepted else "abgelehnt")
+            logger.debug(
+                "Adaptive Schwelle '%s': %.2f → %.2f (%s)",
+                pattern_hash,
+                current,
+                new_threshold,
+                "akzeptiert" if accepted else "abgelehnt",
+            )
         except Exception as e:
             logger.debug("Adaptive threshold update Fehler: %s", e)
+
+    async def get_predictive_comfort_suggestions(self) -> list[dict]:
+        """Predictive Comfort: Berechnet proaktive Vorheizungsvorschlaege.
+
+        Verbindet die Anticipation-Pattern-Erkennung mit dem ClimateModel:
+        1. Schaut voraus welche Klima-Aktionen bald erwartet werden
+        2. Nutzt das Thermosimulationsmodell um zu berechnen wann
+           die Heizung starten muss damit es rechtzeitig warm ist
+        3. Gibt Vorschlaege mit Lead-Time zurueck
+
+        Returns:
+            Liste von Vorschlaegen mit ``action``, ``room``, ``preheat_minutes``,
+            ``current_temp``, ``target_temp``, ``confidence``.
+        """
+        if not self._climate_model or not self._ha_client or not self.redis:
+            return []
+
+        try:
+            from .climate_model import RoomThermalState
+
+            # Nur Aktionen der naechsten 2 Stunden
+            predictions = await self.predict_future_needs(days_ahead=1)
+            now = datetime.now(_LOCAL_TZ)
+            climate_preds = []
+
+            for pred in predictions:
+                action = pred.get("action", "")
+                if (
+                    "climate" not in action
+                    and "heat" not in action
+                    and "temp" not in action
+                ):
+                    continue
+                pred_hour = pred.get("hour", 0)
+                hours_ahead = pred_hour - now.hour
+                if hours_ahead < 0:
+                    hours_ahead += 24
+                if hours_ahead > 2 or hours_ahead < 0:
+                    continue
+                climate_preds.append(pred)
+
+            if not climate_preds:
+                return []
+
+            # HA-States fuer aktuelle Raumtemperaturen holen
+            states = await self._ha_client.get_states() or []
+            temp_by_room: dict[str, float] = {}
+            outdoor_temp = 10.0
+            for s in states:
+                eid = s.get("entity_id", "")
+                state_val = s.get("state", "")
+                if eid.startswith("sensor.") and "temperature" in eid:
+                    try:
+                        val = float(state_val)
+                        if "outdoor" in eid or "aussen" in eid or "outside" in eid:
+                            outdoor_temp = val
+                        else:
+                            # Raumname aus Entity extrahieren
+                            parts = eid.replace("sensor.", "").split("_")
+                            room_name = parts[0] if parts else ""
+                            if room_name and 5.0 < val < 40.0:
+                                temp_by_room[room_name] = val
+                    except (ValueError, TypeError):
+                        pass
+
+            suggestions = []
+            for pred in climate_preds:
+                action = pred.get("action", "")
+                # Raum aus Aktion extrahieren (z.B. "set_climate_wohnzimmer")
+                room = ""
+                for part in action.split("_"):
+                    if part in temp_by_room:
+                        room = part
+                        break
+                if not room and temp_by_room:
+                    room = next(iter(temp_by_room))
+
+                current = temp_by_room.get(room, 20.0)
+                target = 21.0  # Standard-Komforttemperatur
+
+                room_state = RoomThermalState(
+                    room=room,
+                    current_temp=current,
+                    target_temp=target,
+                    outdoor_temp=outdoor_temp,
+                    heating_active=False,
+                    windows_open=0,
+                )
+                comfort = self._climate_model.estimate_comfort_time(room_state, target)
+                preheat_min = comfort.get("minutes")
+
+                if preheat_min and preheat_min > 5:
+                    suggestions.append(
+                        {
+                            "action": action,
+                            "room": room,
+                            "preheat_minutes": preheat_min,
+                            "current_temp": current,
+                            "target_temp": target,
+                            "confidence": pred.get("confidence", 0.6),
+                            "description": (
+                                f"Vorheizung {room}: {current:.1f}°C → {target}°C "
+                                f"braucht ca. {preheat_min} Min. Jetzt starten?"
+                            ),
+                        }
+                    )
+
+            return suggestions
+
+        except Exception as e:
+            logger.debug("Predictive Comfort Fehler: %s", e)
+            return []

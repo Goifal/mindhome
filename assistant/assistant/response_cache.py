@@ -86,7 +86,10 @@ class ResponseCache:
         return _DEFAULT_TTL.get(category, 0)
 
     async def get(
-        self, text: str, category: str, room: Optional[str] = None,
+        self,
+        text: str,
+        category: str,
+        room: Optional[str] = None,
     ) -> Optional[dict]:
         """Sucht eine gecachte Antwort.
 
@@ -107,12 +110,16 @@ class ResponseCache:
             if raw:
                 async with self._stats_lock:
                     self._hits += 1
-                    self._category_hits[category] = self._category_hits.get(category, 0) + 1
+                    self._category_hits[category] = (
+                        self._category_hits.get(category, 0) + 1
+                    )
                 data = json.loads(raw)
                 age_ms = round((time.time() - data.get("_ts", 0)) * 1000)
                 logger.info(
                     "ResponseCache HIT [%s] age=%dms key=%s",
-                    category, age_ms, key[-8:],
+                    category,
+                    age_ms,
+                    key[-8:],
                 )
                 return data
         except Exception as e:
@@ -151,7 +158,9 @@ class ResponseCache:
             data["tts"] = tts
         try:
             await self._redis.set(key, json.dumps(data), ex=ttl)
-            logger.debug("ResponseCache PUT [%s] ttl=%ds key=%s", category, ttl, key[-8:])
+            logger.debug(
+                "ResponseCache PUT [%s] ttl=%ds key=%s", category, ttl, key[-8:]
+            )
         except Exception as e:
             logger.debug("ResponseCache put Fehler: %s", e)
 
@@ -193,7 +202,9 @@ class ResponseCache:
             await self._redis.set(key, json.dumps(data), ex=ttl)
             async with self._stats_lock:
                 self._pre_cache_count += 1
-            logger.debug("ResponseCache PRE-CACHE [%s] ttl=%ds key=%s", category, ttl, key[-8:])
+            logger.debug(
+                "ResponseCache PRE-CACHE [%s] ttl=%ds key=%s", category, ttl, key[-8:]
+            )
             return True
         except Exception as e:
             logger.debug("ResponseCache pre_cache Fehler: %s", e)
@@ -221,7 +232,9 @@ class ResponseCache:
             if deleted:
                 async with self._stats_lock:
                     self._invalidation_count += deleted
-                logger.debug("ResponseCache invalidated %d entries for room '%s'", deleted, room)
+                logger.debug(
+                    "ResponseCache invalidated %d entries for room '%s'", deleted, room
+                )
             return deleted
         except Exception as e:
             logger.debug("ResponseCache invalidate Fehler: %s", e)
@@ -239,3 +252,83 @@ class ResponseCache:
             "invalidations": self._invalidation_count,
             "category_hits": dict(self._category_hits),
         }
+
+    # ------------------------------------------------------------------
+    # Predictive Context Preload: Antizipatorisches Cache-Warming
+    # ------------------------------------------------------------------
+
+    async def warm_predictive_cache(
+        self,
+        anticipation_engine=None,
+        context_builder=None,
+    ) -> int:
+        """Waermt den Cache basierend auf vorhergesagten User-Aktionen vor.
+
+        Nutzt die AnticipationEngine um zu bestimmen welche Fragen/Aktionen
+        in den naechsten 1-2 Stunden wahrscheinlich kommen und laedt den
+        Kontext dafuer vorab.
+
+        Args:
+            anticipation_engine: AnticipationEngine-Instanz fuer Vorhersagen.
+            context_builder: ContextBuilder-Instanz fuer Kontext-Laden.
+
+        Returns:
+            Anzahl der vorgewarmten Cache-Eintraege.
+        """
+        if not self._enabled or not self._redis:
+            return 0
+        if not anticipation_engine:
+            return 0
+
+        warmed = 0
+        try:
+            predictions = await anticipation_engine.predict_future_needs(days_ahead=1)
+            if not predictions:
+                return 0
+
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+
+            tz = ZoneInfo("Europe/Berlin")
+            now = datetime.now(tz)
+
+            for pred in predictions[:5]:
+                hour = pred.get("hour", 0)
+                hours_ahead = hour - now.hour
+                if hours_ahead < 0:
+                    hours_ahead += 24
+                if hours_ahead > 2:
+                    continue
+
+                action = pred.get("action", "")
+                # Status-Queries vorladen: typische Fragen zu Raum/Domain
+                query_templates = [
+                    f"status {action.replace('_', ' ')}",
+                    f"wie ist {action.replace('_', ' ')}",
+                ]
+                for query in query_templates:
+                    key = self._make_key(query, "device_query")
+                    exists = await self._redis.exists(key)
+                    if not exists and context_builder:
+                        try:
+                            ctx = await context_builder._get_mindhome_data()
+                            if ctx:
+                                await self._redis.setex(
+                                    f"mha:predictive_preload:{action}",
+                                    300,  # 5 Min TTL
+                                    json.dumps(ctx, default=str, ensure_ascii=False),
+                                )
+                                warmed += 1
+                        except Exception as e:
+                            logger.debug(
+                                "Predictive preload Fehler fuer %s: %s", action, e
+                            )
+                        break  # Ein Preload pro Action reicht
+
+            if warmed:
+                logger.info("Predictive Cache: %d Eintraege vorgeladen", warmed)
+
+        except Exception as e:
+            logger.debug("Predictive Cache Warming Fehler: %s", e)
+
+        return warmed

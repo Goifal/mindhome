@@ -31,11 +31,21 @@ logger = logging.getLogger(__name__)
 
 # ── Zentrale Device-Dependency Pruefung fuer call_service ──────────
 # Domains die physische Geraete steuern (nicht TTS, Automationen etc.)
-_ACTION_DOMAINS = frozenset({
-    "light", "climate", "cover", "switch", "lock",
-    "alarm_control_panel", "media_player", "vacuum",
-    "fan", "humidifier", "water_heater",
-})
+_ACTION_DOMAINS = frozenset(
+    {
+        "light",
+        "climate",
+        "cover",
+        "switch",
+        "lock",
+        "alarm_control_panel",
+        "media_player",
+        "vacuum",
+        "fan",
+        "humidifier",
+        "water_heater",
+    }
+)
 # Rate-Limiter: gleiche Entity nicht oefter als alle 30s pruefen
 _dep_check_cache: dict[str, float] = {}
 _DEP_CHECK_INTERVAL = 30.0
@@ -99,7 +109,10 @@ class HomeAssistantClient:
         """Alle Entity-States von HA holen (mit kurzem Cache gegen N+1 Queries)."""
         async with self._states_lock:
             now = time.monotonic()
-            if self._states_cache is not None and (now - self._states_cache_ts) < self._STATES_CACHE_TTL:
+            if (
+                self._states_cache is not None
+                and (now - self._states_cache_ts) < self._STATES_CACHE_TTL
+            ):
                 return self._states_cache
             result = await self._get_ha("/api/states") or []
             if result:  # Nur nicht-leere Ergebnisse cachen
@@ -125,15 +138,20 @@ class HomeAssistantClient:
         if isinstance(result, list):
             return result
         # Endpoint existiert nicht in allen HA-Versionen → States-Fallback
-        logger.debug("Automation-Config-Endpoint nicht verfuegbar, nutze States-Fallback")
+        logger.debug(
+            "Automation-Config-Endpoint nicht verfuegbar, nutze States-Fallback"
+        )
         states = await self.get_states()
         return [
-            s for s in (states or [])
+            s
+            for s in (states or [])
             if s.get("entity_id", "").startswith("automation.")
         ]
 
     async def get_history(
-        self, entity_id: str, hours: int = 24,
+        self,
+        entity_id: str,
+        hours: int = 24,
     ) -> Optional[list]:
         """Holt die History einer Entity von der HA REST API.
 
@@ -169,7 +187,9 @@ class HomeAssistantClient:
             Bild-Bytes (JPEG) oder None
         """
         if not ha_breaker.is_available:
-            logger.debug("HA Circuit Breaker OPEN — Camera Snapshot %s uebersprungen", entity_id)
+            logger.debug(
+                "HA Circuit Breaker OPEN — Camera Snapshot %s uebersprungen", entity_id
+            )
             return None
         session = await self._get_session()
         try:
@@ -206,7 +226,9 @@ class HomeAssistantClient:
         if domain == "light":
             logger.debug(
                 "LIGHT AUDIT: %s.%s data=%s",
-                domain, service, data,
+                domain,
+                service,
+                data,
             )
 
         # ── Unavailable-Check: Geraet erreichbar? ──────────────────
@@ -217,10 +239,14 @@ class HomeAssistantClient:
                 if _state and _state.get("state") == "unavailable":
                     logger.warning(
                         "Geraet nicht erreichbar: %s (state=unavailable), Aktion %s.%s wird trotzdem versucht",
-                        _eid, domain, service,
+                        _eid,
+                        domain,
+                        service,
                     )
             except Exception as e:
-                logger.warning("Geraetezustand-Pruefung fehlgeschlagen fuer %s: %s", _eid, e)
+                logger.warning(
+                    "Geraetezustand-Pruefung fehlgeschlagen fuer %s: %s", _eid, e
+                )
 
         # ── Zentrale Device-Dependency Pruefung ──────────────────
         # Nur fuer physische Geraete-Domains, rate-limited pro Entity.
@@ -229,9 +255,7 @@ class HomeAssistantClient:
         if domain in _ACTION_DOMAINS and not getattr(self, "_skip_dep_check_depth", 0):
             await self._check_dependency_conflicts(domain, service, data)
 
-        result = await self._post_ha(
-            f"/api/services/{domain}/{service}", data or {}
-        )
+        result = await self._post_ha(f"/api/services/{domain}/{service}", data or {})
         return result is not None
 
     async def call_service_with_response(
@@ -247,7 +271,10 @@ class HomeAssistantClient:
         )
 
     async def _check_dependency_conflicts(
-        self, domain: str, service: str, data: Optional[dict] = None,
+        self,
+        domain: str,
+        service: str,
+        data: Optional[dict] = None,
     ) -> None:
         """Zentraler Device-Dependency Check fuer ALLE call_service Aufrufe.
 
@@ -304,6 +331,7 @@ class HomeAssistantClient:
                     state_val = "on"  # Volume-Set = Geraet aktiv
 
             from .state_change_log import StateChangeLog
+
             states = await self.get_states() or []
 
             # Action-Args zusammenbauen fuer praeziseres Matching
@@ -321,7 +349,10 @@ class HomeAssistantClient:
             if hints:
                 logger.info(
                     "Dependency-Konflikt: %s.%s(%s) → %s",
-                    domain, service, entity_id, hints[0],
+                    domain,
+                    service,
+                    entity_id,
+                    hints[0],
                 )
         except Exception as e:
             # Dependency-Check darf NIEMALS die Aktion verhindern
@@ -340,9 +371,7 @@ class HomeAssistantClient:
         Returns:
             True bei Erfolg
         """
-        result = await self._post_ha(
-            f"/api/events/{event_type}", event_data or {}
-        )
+        result = await self._post_ha(f"/api/events/{event_type}", event_data or {})
         return result is not None
 
     async def is_available(self) -> bool:
@@ -395,8 +424,8 @@ class HomeAssistantClient:
         return await self._get_mindhome_cached("/api/patterns")
 
     async def get_health_dashboard(self) -> Optional[dict]:
-        """Gesundheits-Dashboard von MindHome."""
-        return await self._get_mindhome("/api/health/dashboard")
+        """Gesundheits-Dashboard von MindHome (cached)."""
+        return await self._get_mindhome_cached("/api/health/dashboard")
 
     async def get_day_phases(self) -> Optional[dict]:
         """Tagesphasen von MindHome."""
@@ -405,15 +434,18 @@ class HomeAssistantClient:
     async def search_devices(self, domain: str = "", room: str = "") -> Optional[list]:
         """Geraete ueber MindHome Device-DB suchen (schneller als alle HA-States laden)."""
         import re as _re
+
         params = {}
         if domain:
             # S4: Input-Validation gegen Injection
-            if not _re.match(r'^[a-z0-9_]+$', domain):
-                logger.warning("search_devices: Invalid domain rejected: %s", domain[:50])
+            if not _re.match(r"^[a-z0-9_]+$", domain):
+                logger.warning(
+                    "search_devices: Invalid domain rejected: %s", domain[:50]
+                )
                 return []
             params["domain"] = domain
         if room:
-            if not _re.match(r'^[a-zA-Z0-9_\s\-,.()äöüÄÖÜß]+$', room):
+            if not _re.match(r"^[a-zA-Z0-9_\s\-,.()äöüÄÖÜß]+$", room):
                 logger.warning("search_devices: Invalid room rejected: %s", room[:50])
                 return []
             params["room"] = room
@@ -424,7 +456,9 @@ class HomeAssistantClient:
         """Oeffentlicher GET auf die MindHome Add-on API (z.B. /api/covers/configs)."""
         return await self._get_mindhome(path)
 
-    async def mindhome_post(self, path: str, data: dict, retries: int = 0, timeout: float | None = None) -> Any:
+    async def mindhome_post(
+        self, path: str, data: dict, retries: int = 0, timeout: float | None = None
+    ) -> Any:
         """POST auf die MindHome Add-on API mit Circuit Breaker."""
         if not mindhome_breaker.is_available:
             logger.debug("MindHome Circuit Breaker OPEN — POST %s uebersprungen", path)
@@ -445,22 +479,33 @@ class HomeAssistantClient:
                         mindhome_breaker.record_success()
                         return await resp.json()
                     body = await resp.text()
-                    logger.warning("MindHome POST %s -> %d: %s", path, resp.status, body[:300])
+                    logger.warning(
+                        "MindHome POST %s -> %d: %s", path, resp.status, body[:300]
+                    )
                     last_err = f"HTTP {resp.status}"
                     if 400 <= resp.status < 500:
                         break  # Client-Error: nicht retrybar
             except Exception as e:
                 err_detail = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
-                logger.warning("MindHome POST %s fehlgeschlagen (Versuch %d): %s", path, attempt + 1, err_detail)
+                logger.warning(
+                    "MindHome POST %s fehlgeschlagen (Versuch %d): %s",
+                    path,
+                    attempt + 1,
+                    err_detail,
+                )
                 last_err = err_detail
             if attempt < retries:
                 await asyncio.sleep(1.5)
         if last_err:
             mindhome_breaker.record_failure()
-            logger.warning("MindHome POST %s endgueltig fehlgeschlagen: %s", path, last_err)
+            logger.warning(
+                "MindHome POST %s endgueltig fehlgeschlagen: %s", path, last_err
+            )
         return None
 
-    async def log_actions(self, actions: list, user_text: str = "", response_text: str = "") -> None:
+    async def log_actions(
+        self, actions: list, user_text: str = "", response_text: str = ""
+    ) -> None:
         """Jarvis-Aktionen an MindHome Add-on ActionLog melden."""
         if not actions:
             return
@@ -486,14 +531,22 @@ class HomeAssistantClient:
             "user_text": str(user_text or ""),
             "response": str(response_text or ""),
         }
-        logger.info("log_actions: %d Aktionen melden (%s)",
-                     len(safe_actions),
-                     [a["function"] for a in safe_actions])
-        result = await self.mindhome_post("/api/action-log", payload, retries=0, timeout=10)
+        logger.info(
+            "log_actions: %d Aktionen melden (%s)",
+            len(safe_actions),
+            [a["function"] for a in safe_actions],
+        )
+        result = await self.mindhome_post(
+            "/api/action-log", payload, retries=0, timeout=10
+        )
         if result is None:
-            logger.warning("log_actions: POST /api/action-log fehlgeschlagen (result=None)")
+            logger.warning(
+                "log_actions: POST /api/action-log fehlgeschlagen (result=None)"
+            )
         else:
-            logger.info("log_actions: Erfolgreich %d Aktionen geloggt", len(safe_actions))
+            logger.info(
+                "log_actions: Erfolgreich %d Aktionen geloggt", len(safe_actions)
+            )
 
     async def log_activity(
         self,
@@ -510,16 +563,27 @@ class HomeAssistantClient:
         payload = {
             "action_type": action_type,
             "reason": reason[:200] if reason else "",
-            "actions": [{
-                "function": function,
-                "arguments": arguments or {},
-                "result": {"success": True, "message": result[:500] if result else ""},
-            }],
+            "actions": [
+                {
+                    "function": function,
+                    "arguments": arguments or {},
+                    "result": {
+                        "success": True,
+                        "message": result[:500] if result else "",
+                    },
+                }
+            ],
         }
         try:
-            resp = await self.mindhome_post("/api/action-log", payload, retries=0, timeout=10)
+            resp = await self.mindhome_post(
+                "/api/action-log", payload, retries=0, timeout=10
+            )
             if resp is None:
-                logger.debug("log_activity: POST fehlgeschlagen fuer %s/%s", action_type, function)
+                logger.debug(
+                    "log_activity: POST fehlgeschlagen fuer %s/%s",
+                    action_type,
+                    function,
+                )
         except Exception as e:
             logger.debug("log_activity Fehler: %s", e)
 
@@ -558,7 +622,9 @@ class HomeAssistantClient:
     async def mindhome_delete(self, path: str, retries: int = 3) -> Any:
         """DELETE auf die MindHome Add-on API mit Circuit Breaker und Retry."""
         if not mindhome_breaker.is_available:
-            logger.debug("MindHome Circuit Breaker OPEN — DELETE %s uebersprungen", path)
+            logger.debug(
+                "MindHome Circuit Breaker OPEN — DELETE %s uebersprungen", path
+            )
             return None
 
         for attempt in range(retries):
@@ -613,27 +679,38 @@ class HomeAssistantClient:
                         log_fn = logger.debug if resp.status == 404 else logger.warning
                         log_fn(
                             "HA GET %s -> %d (Client-Fehler): %s",
-                            path, resp.status, body[:200],
+                            path,
+                            resp.status,
+                            body[:200],
                         )
                         return None
                     # Server-Fehler: retrien
                     body = await resp.text()
                     logger.warning(
                         "HA GET %s -> %d (Versuch %d/%d): %s",
-                        path, resp.status, attempt + 1, MAX_RETRIES, body[:200],
+                        path,
+                        resp.status,
+                        attempt + 1,
+                        MAX_RETRIES,
+                        body[:200],
                     )
                     last_error = f"HTTP {resp.status}"
             except aiohttp.ClientError as e:
                 last_error = str(e)
                 logger.warning(
                     "HA GET %s fehlgeschlagen (Versuch %d/%d): %s",
-                    path, attempt + 1, MAX_RETRIES, e,
+                    path,
+                    attempt + 1,
+                    MAX_RETRIES,
+                    e,
                 )
             except asyncio.TimeoutError:
                 last_error = "Timeout"
                 logger.warning(
                     "HA GET %s Timeout (Versuch %d/%d)",
-                    path, attempt + 1, MAX_RETRIES,
+                    path,
+                    attempt + 1,
+                    MAX_RETRIES,
                 )
 
             if attempt < MAX_RETRIES - 1:
@@ -669,26 +746,37 @@ class HomeAssistantClient:
                         body = await resp.text()
                         logger.warning(
                             "HA POST %s -> %d (Client-Fehler): %s",
-                            path, resp.status, body[:200],
+                            path,
+                            resp.status,
+                            body[:200],
                         )
                         return None
                     body = await resp.text()
                     logger.warning(
                         "HA POST %s -> %d (Versuch %d/%d): %s",
-                        path, resp.status, attempt + 1, MAX_RETRIES, body[:200],
+                        path,
+                        resp.status,
+                        attempt + 1,
+                        MAX_RETRIES,
+                        body[:200],
                     )
                     last_error = f"HTTP {resp.status}"
             except aiohttp.ClientError as e:
                 last_error = str(e)
                 logger.warning(
                     "HA POST %s fehlgeschlagen (Versuch %d/%d): %s",
-                    path, attempt + 1, MAX_RETRIES, e,
+                    path,
+                    attempt + 1,
+                    MAX_RETRIES,
+                    e,
                 )
             except asyncio.TimeoutError:
                 last_error = "Timeout"
                 logger.warning(
                     "HA POST %s Timeout (Versuch %d/%d)",
-                    path, attempt + 1, MAX_RETRIES,
+                    path,
+                    attempt + 1,
+                    MAX_RETRIES,
                 )
 
             if attempt < MAX_RETRIES - 1:
@@ -721,26 +809,37 @@ class HomeAssistantClient:
                         body = await resp.text()
                         logger.warning(
                             "HA PUT %s -> %d (Client-Fehler): %s",
-                            path, resp.status, body[:200],
+                            path,
+                            resp.status,
+                            body[:200],
                         )
                         return None
                     body = await resp.text()
                     logger.warning(
                         "HA PUT %s -> %d (Versuch %d/%d): %s",
-                        path, resp.status, attempt + 1, MAX_RETRIES, body[:200],
+                        path,
+                        resp.status,
+                        attempt + 1,
+                        MAX_RETRIES,
+                        body[:200],
                     )
                     last_error = f"HTTP {resp.status}"
             except aiohttp.ClientError as e:
                 last_error = str(e)
                 logger.warning(
                     "HA PUT %s fehlgeschlagen (Versuch %d/%d): %s",
-                    path, attempt + 1, MAX_RETRIES, e,
+                    path,
+                    attempt + 1,
+                    MAX_RETRIES,
+                    e,
                 )
             except asyncio.TimeoutError:
                 last_error = "Timeout"
                 logger.warning(
                     "HA PUT %s Timeout (Versuch %d/%d)",
-                    path, attempt + 1, MAX_RETRIES,
+                    path,
+                    attempt + 1,
+                    MAX_RETRIES,
                 )
 
             if attempt < MAX_RETRIES - 1:
@@ -772,26 +871,37 @@ class HomeAssistantClient:
                         body = await resp.text()
                         logger.warning(
                             "HA DELETE %s -> %d (Client-Fehler): %s",
-                            path, resp.status, body[:200],
+                            path,
+                            resp.status,
+                            body[:200],
                         )
                         return False
                     body = await resp.text()
                     logger.warning(
                         "HA DELETE %s -> %d (Versuch %d/%d): %s",
-                        path, resp.status, attempt + 1, MAX_RETRIES, body[:200],
+                        path,
+                        resp.status,
+                        attempt + 1,
+                        MAX_RETRIES,
+                        body[:200],
                     )
                     last_error = f"HTTP {resp.status}"
             except aiohttp.ClientError as e:
                 last_error = str(e)
                 logger.warning(
                     "HA DELETE %s fehlgeschlagen (Versuch %d/%d): %s",
-                    path, attempt + 1, MAX_RETRIES, e,
+                    path,
+                    attempt + 1,
+                    MAX_RETRIES,
+                    e,
                 )
             except asyncio.TimeoutError:
                 last_error = "Timeout"
                 logger.warning(
                     "HA DELETE %s Timeout (Versuch %d/%d)",
-                    path, attempt + 1, MAX_RETRIES,
+                    path,
+                    attempt + 1,
+                    MAX_RETRIES,
                 )
 
             if attempt < MAX_RETRIES - 1:
@@ -830,9 +940,7 @@ class HomeAssistantClient:
         Returns:
             True bei Erfolg
         """
-        return await self._delete_ha(
-            f"/api/config/{config_type}/config/{config_id}"
-        )
+        return await self._delete_ha(f"/api/config/{config_type}/config/{config_id}")
 
     async def _get_mindhome(self, path: str) -> Any:
         """GET-Request an MindHome Add-on mit Retry, Logging und Circuit Breaker."""
@@ -856,26 +964,37 @@ class HomeAssistantClient:
                         body = await resp.text()
                         logger.warning(
                             "MindHome GET %s -> %d (Client-Fehler): %s",
-                            path, resp.status, body[:200],
+                            path,
+                            resp.status,
+                            body[:200],
                         )
                         return None
                     body = await resp.text()
                     logger.warning(
                         "MindHome GET %s -> %d (Versuch %d/%d): %s",
-                        path, resp.status, attempt + 1, MAX_RETRIES, body[:200],
+                        path,
+                        resp.status,
+                        attempt + 1,
+                        MAX_RETRIES,
+                        body[:200],
                     )
                     last_error = f"HTTP {resp.status}"
             except aiohttp.ClientError as e:
                 last_error = str(e)
                 logger.warning(
                     "MindHome GET %s fehlgeschlagen (Versuch %d/%d): %s",
-                    path, attempt + 1, MAX_RETRIES, e,
+                    path,
+                    attempt + 1,
+                    MAX_RETRIES,
+                    e,
                 )
             except asyncio.TimeoutError:
                 last_error = "Timeout"
                 logger.warning(
                     "MindHome GET %s Timeout (Versuch %d/%d)",
-                    path, attempt + 1, MAX_RETRIES,
+                    path,
+                    attempt + 1,
+                    MAX_RETRIES,
                 )
 
             if attempt < MAX_RETRIES - 1:
@@ -885,6 +1004,8 @@ class HomeAssistantClient:
         mindhome_breaker.record_failure()
         logger.error(
             "MindHome GET %s endgueltig fehlgeschlagen nach %d Versuchen: %s",
-            path, MAX_RETRIES, last_error,
+            path,
+            MAX_RETRIES,
+            last_error,
         )
         return None

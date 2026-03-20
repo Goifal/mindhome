@@ -108,6 +108,7 @@ from .calendar_intelligence import CalendarIntelligence
 from .explainability import ExplainabilityEngine
 from .state_change_log import StateChangeLog
 from .learning_transfer import LearningTransfer
+from .notification_dedup import NotificationDedup
 from .dialogue_state import DialogueStateManager
 from .climate_model import ClimateModel
 from .llm_enhancer import LLMEnhancer
@@ -447,6 +448,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.dialogue_state = DialogueStateManager()
         self.climate_model = ClimateModel()
         self.predictive_maintenance = PredictiveMaintenance()
+
+        # Unified Notification Dedup (Cross-Module Duplikat-Erkennung)
+        self.notification_dedup = NotificationDedup()
 
         # Phase 17: Situation Model (Delta-Tracking zwischen Gespraechen)
         self.situation_model = SituationModel()
@@ -1026,6 +1030,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             self.anticipation.set_outcome_tracker(self.outcome_tracker)
         if hasattr(self.anticipation, 'set_correction_memory'):
             self.anticipation.set_correction_memory(self.correction_memory)
+
+        # Predictive Comfort: ClimateModel an Anticipation anbinden
+        if hasattr(self.anticipation, 'set_climate_model'):
+            self.anticipation.set_climate_model(self.climate_model, self.ha)
+
+        # Unified Notification Dedup: Redis anbinden
+        self.notification_dedup.set_redis(self.memory.redis)
 
         # 1D: SelfOptimization Notify-Callback
         if hasattr(self.self_optimization, 'set_notify_callback'):
@@ -8125,6 +8136,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             return
         # LLM-Polish: Variation statt immer gleicher Template-Text
         message = await self._polish_learning_suggestion(message, alert)
+        # Unified Dedup: Cross-Module Duplikat-Erkennung
+        if await self.notification_dedup.is_duplicate(message, source="learning"):
+            logger.info("Learning-Vorschlag unterdrückt (Unified Dedup): %s", message[:80])
+            return
         formatted = await self._safe_format(message, "low")
         await self._speak_and_emit(formatted)
         logger.info("Learning -> Vorschlag: %s", formatted)
@@ -8263,6 +8278,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             return
         if not await self._callback_should_speak(urgency, source=f"Wellness/{nudge_type}"):
             return
+        # Unified Dedup: Cross-Module Duplikat-Erkennung
+        if await self.notification_dedup.is_duplicate(message, source=f"wellness/{nudge_type}", urgency=urgency):
+            logger.info("Wellness unterdrückt (Unified Dedup): %s", message[:80])
+            return
         formatted = await self._format_callback_with_escalation(
             message, urgency, f"wellness_{nudge_type}",
         )
@@ -8275,6 +8294,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if not insight:
             return
         if not await self._callback_should_speak("low", source="SelfOpt"):
+            return
+        # Unified Dedup: Cross-Module Duplikat-Erkennung
+        if await self.notification_dedup.is_duplicate(insight, source="self_optimization"):
+            logger.info("SelfOpt unterdrückt (Unified Dedup): %s", insight[:80])
             return
         formatted = await self._format_callback_with_escalation(
             insight, "low", "self_optimization",
@@ -8294,6 +8317,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if not message:
             return
         if not await self._callback_should_speak("low", source="MusicDJ"):
+            return
+        # Unified Dedup: Cross-Module Duplikat-Erkennung
+        if await self.notification_dedup.is_duplicate(message, source="music_dj"):
+            logger.info("Musik-Vorschlag unterdrückt (Unified Dedup): %s", message[:80])
             return
         formatted = await self._safe_format(message, "low")
         await self._speak_and_emit(formatted, room=room)
@@ -12108,6 +12135,10 @@ Regeln:
         if not await self._callback_should_speak(urgency, source=f"Insight/{check}"):
             logger.info("Insight unterdrückt (Silence Matrix): [%s] %s", check, message[:500])
             return
+        # Unified Dedup: Cross-Module Duplikat-Erkennung
+        if await self.notification_dedup.is_duplicate(message, source=f"insight/{check}", urgency=urgency):
+            logger.info("Insight unterdrückt (Unified Dedup): [%s] %s", check, message[:80])
+            return
         formatted = await self._safe_format(message, urgency)
         await self._speak_and_emit(formatted)
         self._remember_exchange("[proaktiv: Insight]", formatted)
@@ -12148,6 +12179,11 @@ Regeln:
         urgency = observation.get("urgency", "low")
         if not await self._callback_should_speak(urgency, source="SpontaneousObserver"):
             logger.info("Spontane Beobachtung unterdrückt: %s", message[:500])
+            return
+        # Unified Dedup: Cross-Module Duplikat-Erkennung
+        obs_type = observation.get("type", "observation")
+        if await self.notification_dedup.is_duplicate(message, source=f"spontaneous/{obs_type}", urgency=urgency):
+            logger.info("Spontane Beobachtung unterdrückt (Unified Dedup): %s", message[:80])
             return
         formatted = await self._safe_format(message, urgency)
         await self._speak_and_emit(formatted)
