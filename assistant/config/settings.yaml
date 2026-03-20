@@ -2261,9 +2261,9 @@ weather_warnings:
   - hail
   - exceptional
 web_search:
-  enabled: false
+  enabled: true
   engine: searxng
-  searxng_url: http://localhost:8888
+  searxng_url: http://searxng:8080
   max_results: 5
   timeout_seconds: 10
 visitor_management:
