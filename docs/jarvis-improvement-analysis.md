@@ -672,6 +672,387 @@ _clamp("inner_state.mood_decay_minutes", 10, 120)
 _clamp("health_monitor.hysteresis_pct", 1, 10)
 ```
 
+---
+
+### FEHLENDE UI-KONFIGURATION für Verbesserungen 1-38
+
+> Die folgenden Verbesserungen brauchen ebenfalls konfigurierbare Settings.
+> Gruppiert nach Tab/Sektion — keine Duplikate mit bereits geplanten Settings.
+> Reine Code-Fixes ohne sinnvolle Konfiguration sind mit ⚙️ KEIN UI markiert.
+
+---
+
+#### TAB: Autonomie → Sektion "Lern-System & Selbstoptimierung" erweitern
+
+**#7 OutcomeTracker → LearningObserver (nach bestehendem Wirkungstracker):**
+
+```javascript
+fSubheading('Outcome → Lern-Feedback') +
+fInfo('Erfolgreiche automatische Aktionen stärken das Vertrauen in erkannte Muster. Fehlschläge reduzieren es. Verbindet Wirkungstracker mit dem Lern-System.') +
+fToggle('outcome_tracker.learning_observer_feedback', 'Learning-Observer Feedback') +
+fRange('outcome_tracker.learning_boost', 'Boost bei Erfolg', 0.05, 0.2, 0.01,
+  {0.05:'0.05',0.1:'0.1 (Standard)',0.15:'0.15',0.2:'0.2'})
+```
+
+```yaml
+outcome_tracker:
+  learning_observer_feedback: true
+  learning_boost: 0.1
+```
+
+**#8 CorrectionMemory cross-domain (unter bestehendem "Korrektur-Gedächtnis"):**
+
+```javascript
+fToggle('correction_memory.cross_domain_rules', 'Domain-uebergreifende Regeln') +
+fInfo('Korrekturen gelten auch fuer aehnliche Bereiche: "Raumverwechslung bei Licht" wird auch auf Klima und Medien angewendet.')
+```
+
+```yaml
+correction_memory:
+  cross_domain_rules: true
+```
+
+**#9 FeedbackTracker Smoothing (unter bestehendem "Feedback-System"):**
+
+```javascript
+fToggle('feedback.smoothing_enabled', 'Score-Smoothing (EMA)') +
+fInfo('Verhindert dass einzelne Events den Score stark bewegen. Exponential Moving Average: 70% alter Wert + 30% neuer Wert.') +
+fRange('feedback.smoothing_factor', 'Smoothing-Faktor (Neuer Anteil)', 0.1, 0.5, 0.05,
+  {0.1:'0.1 (stabil)',0.2:'0.2',0.3:'0.3 (Standard)',0.4:'0.4',0.5:'0.5 (reaktiv)'})
+```
+
+```yaml
+feedback:
+  smoothing_enabled: true
+  smoothing_factor: 0.3
+```
+
+---
+
+#### TAB: Jarvis-Features → Sektion "Stil & Charakter" erweitern
+
+**#18 Emotion Blending:**
+
+```javascript
+fSubheading('Emotionen') +
+fToggle('inner_state.emotion_blending', 'Emotion-Blending (Mischung statt Einzelwert)') +
+fInfo('Jarvis kann mehrere Emotionen gleichzeitig empfinden — z.B. 60% stolz + 30% amuesiert. Ohne Blending: nur eine dominante Stimmung.')
+```
+
+```yaml
+inner_state:
+  emotion_blending: false
+```
+
+**#21 Transition-Kommentare:**
+
+```javascript
+fToggle('personality.transition_comments', 'Uebergangs-Kommentare (z.B. "Hm, wo war ich...")') +
+fInfo('Natuerliche Denkpausen und Uebergangsphrasen in Antworten. Macht Jarvis menschlicher, kann aber auch nerven.')
+```
+
+```yaml
+personality:
+  transition_comments: false
+```
+
+---
+
+#### TAB: Jarvis-Features → Sektion "Charakter-Entwicklung" erweitern
+
+**#20 Trait-Unlocks über Zeit:**
+
+```javascript
+fToggle('personality.trait_unlocks_enabled', 'Stage-basierte Trait-Unlocks') +
+fInfo('Neue Humor-Stile und Persoenlichkeits-Facetten werden erst nach einer Eingewoehnungsphase freigeschaltet. Level 1: sachlich, Level 3: Insider-Witze, Level 5: ironische Kommentare.') +
+fNum('personality.trait_unlock_days_per_stage', 'Tage pro Stage', 7, 60, 7)
+```
+
+```yaml
+personality:
+  trait_unlocks_enabled: false
+  trait_unlock_days_per_stage: 14
+```
+
+---
+
+#### TAB: Jarvis-Features → Sektion "Stimmungs-Erkennung" erweitern
+
+**#13 Proaktive Nachrichten mit Persönlichkeit:**
+
+```javascript
+fToggle('proactive.personality_filter', 'Proaktive Nachrichten durch Persoenlichkeit filtern') +
+fInfo('Statt generischer Templates werden proaktive Nachrichten im Jarvis-Stil formuliert. Sarkasmus, Humor und Stimmung fliessen ein.')
+```
+
+```yaml
+proactive:
+  personality_filter: true
+```
+
+---
+
+#### TAB: Intelligenz → Sektion "Dialogführung" erweitern
+
+**#38 DialogueState max Referenzen:**
+
+```javascript
+fNum('dialogue.max_references', 'Max. gespeicherte Referenzen', 10, 50, 5) +
+fInfo('Wie viele Geraete/Raeume sich Jarvis im Gespraech merkt. Bei langen Gespraechen gehen fruehere Referenzen sonst verloren.')
+```
+
+```yaml
+dialogue:
+  max_references: 20
+```
+
+---
+
+#### TAB: Intelligenz → Sektion "Kausalketten-Erkennung" erweitern
+
+**#16 Implizite Bedürfnis-Erkennung:**
+
+```javascript
+fSubheading('Implizite Beduerfnisse') +
+fInfo('Erkennt Beduerfnisse auch ohne bekanntes Pattern — z.B. "Es ist dunkel und kalt" → Licht + Heizung vorschlagen, ohne dass der User das je so gemacht hat.') +
+fToggle('anticipation.implicit_needs_enabled', 'Implizite Beduerfnis-Erkennung') +
+fRange('anticipation.implicit_needs_min_confidence', 'Min. Konfidenz', 0.5, 0.9, 0.05,
+  {0.5:'50%',0.6:'60%',0.7:'70% (Standard)',0.8:'80%',0.9:'90%'})
+```
+
+```yaml
+anticipation:
+  implicit_needs_enabled: false
+  implicit_needs_min_confidence: 0.7
+```
+
+---
+
+#### TAB: Intelligenz → Sektion "Klima-Modell" erweitern
+
+**#15 What-If Reasoning proaktiv:**
+
+```javascript
+fSubheading('Proaktive Was-Waere-Wenn') +
+fToggle('whatif_simulation.proactive_enabled', 'Proaktiv vorschlagen') +
+fInfo('Jarvis bietet aktiv Was-Waere-Wenn-Szenarien an wenn die Konfidenz hoch genug ist. Z.B. "Wenn du das Fenster schliesst, wird es in 20 Min. 22°C haben."') +
+fRange('whatif_simulation.proactive_min_confidence', 'Min. Konfidenz', 0.5, 0.9, 0.05,
+  {0.5:'50%',0.6:'60%',0.7:'70% (Standard)',0.8:'80%',0.9:'90%'})
+```
+
+```yaml
+whatif_simulation:
+  proactive_enabled: false
+  proactive_min_confidence: 0.7
+```
+
+---
+
+#### TAB: Intelligenz → Sektion "Prädiktive Wartung" erweitern
+
+**#23 DeviceHealth saisonale Baseline:**
+
+```javascript
+fToggle('predictive_maintenance.seasonal_baseline', 'Saisonale Baselines') +
+fInfo('Baselines werden pro Monat/Saison getrennt gespeichert. Verhindert Fehlalarme wenn sich z.B. Heizungsverbrauch zwischen Winter und Sommer unterscheidet.')
+```
+
+```yaml
+predictive_maintenance:
+  seasonal_baseline: true
+```
+
+---
+
+#### TAB: Intelligenz → Sektion "3D+ Insight Checks" erweitern
+
+**#36 InsightEngine Deduplizierung:**
+
+```javascript
+fToggle('insight_checks.deduplication', 'Alert-Deduplizierung') +
+fInfo('Verhindert mehrfache Alerts fuer die gleiche Entity bei verschiedenen Insight-Checks. Z.B. ein offenes Fenster loest nicht "Heizung vs Fenster" UND "Nacht-Sicherheit" gleichzeitig aus.')
+```
+
+```yaml
+insight_checks:
+  deduplication: true
+```
+
+---
+
+#### TAB: Intelligenz → Sektion "Unaufgeforderte Beobachtungen" erweitern
+
+**#37 WellnessAdvisor Away-Check:**
+
+```javascript
+fToggle('wellness.suppress_when_away', 'Wellness-Hinweise bei Abwesenheit unterdruecken') +
+fInfo('Keine Trink-/Pausen-Erinnerungen wenn niemand zuhause ist.')
+```
+
+```yaml
+wellness:
+  suppress_when_away: true
+```
+
+---
+
+#### TAB: Gedächtnis (`tab-memory`) → Sektion "Semantisches Gedächtnis" erweitern
+
+**#34 Fakt-Versionierung:**
+
+```javascript
+fToggle('semantic_memory.fact_versioning', 'Fakt-Versionierung') +
+fInfo('Alte Fakten werden nicht geloescht sondern versioniert. Jarvis kann sagen: "Frueher mochtest du 20°C, seit 3 Monaten bevorzugst du 22°C."')
+```
+
+```yaml
+semantic_memory:
+  fact_versioning: false
+```
+
+**#35 Widersprüche aktiv nachfragen:**
+
+```javascript
+fToggle('semantic_memory.contradiction_query', 'Bei Widerspruechen nachfragen') +
+fInfo('Wenn ein neuer Fakt einem gespeicherten widerspricht, fragt Jarvis aktiv nach statt still zu ueberschreiben.')
+```
+
+```yaml
+semantic_memory:
+  contradiction_query: true
+```
+
+---
+
+#### TAB: Haus-Status → Sektion "Gesundheits-Monitor" erweitern
+
+**#25 HealthMonitor raumspezifisch:**
+
+```javascript
+fSubheading('Raum-spezifische Schwellen') +
+fToggle('health_monitor.room_overrides_enabled', 'Raum-Overrides aktiv') +
+fInfo('Unterschiedliche Schwellen pro Raum. Z.B. hoehere CO2-Toleranz in der Kueche, niedrigere im Schlafzimmer.') +
+fTextarea('health_monitor.room_overrides', 'Raum-Overrides (JSON)',
+  'Format: {"schlafzimmer": {"co2_warn": 800}, "kueche": {"co2_warn": 1200}}')
+```
+
+```yaml
+health_monitor:
+  room_overrides_enabled: false
+  room_overrides: {}
+```
+
+---
+
+#### TAB: Haus-Status → Sektion "Energie" erweitern
+
+**#28 Energie Preis-Vorhersage + #30 Solar-Vorhersage:**
+
+```javascript
+fSubheading('Vorhersagen') +
+fToggle('energy.price_forecast_enabled', 'Strompreis-Vorhersage') +
+fInfo('Erkennt Preis-Trends und empfiehlt flexible Lasten (Waschmaschine, Trockner) zu guenstigen Zeiten.') +
+fText('energy.price_entity', 'Strompreis-Entity', 'z.B. sensor.electricity_price') +
+fToggle('energy.solar_forecast_enabled', 'Solar-Vorhersage') +
+fInfo('Nutzt Wetter-Forecast um Solarertrag vorherzusagen und Empfehlungen zu geben.') +
+fText('energy.solar_entity', 'Solar-Entity', 'z.B. sensor.solar_power')
+```
+
+```yaml
+energy:
+  price_forecast_enabled: false
+  price_entity: ''
+  solar_forecast_enabled: false
+  solar_entity: ''
+```
+
+---
+
+#### TAB: Intelligenz → Sektion "Proaktiver Sequenz-Planner" erweitern
+
+**#33 Vacation-Simulation pattern-basiert:**
+
+```javascript
+fToggle('vacation_simulation.use_learned_patterns', 'Gelernte Muster statt Zufall') +
+fInfo('Urlaubssimulation spielt echte gelernte Verhaltensmuster nach (mit Zeitversatz) statt zufaellige Licht-An/Aus-Zyklen.')
+```
+
+```yaml
+vacation_simulation:
+  use_learned_patterns: true
+```
+
+---
+
+#### TAB: Allgemein/System → Kontext-Cache
+
+**#22 HA-States Cache:**
+
+```javascript
+// In renderGeneral() oder renderSystem() — wo Context-Builder Settings sind
+fSubheading('Kontext-Cache') +
+fInfo('Cached HA-States fuer kurze Zeit um wiederholte API-Aufrufe zu vermeiden. Event-basierte Invalidierung sorgt fuer Aktualitaet.') +
+fRange('context.state_cache_ttl_seconds', 'Cache-Dauer (Sekunden)', 3, 30, 1,
+  {3:'3s',5:'5s (Standard)',10:'10s',15:'15s',30:'30s'})
+```
+
+```yaml
+context:
+  state_cache_ttl_seconds: 5
+```
+
+---
+
+#### VERBESSERUNGEN OHNE UI-KONFIGURATION (Reine Code-Fixes)
+
+Die folgenden Verbesserungen sind reine Code-Änderungen ohne sinnvolle User-Konfiguration:
+
+| # | Verbesserung | Grund kein UI |
+|---|---|---|
+| 4 | ConversationMemory Threads nutzen | Code-Integration, kein konfigurierbarer Parameter |
+| 5 | KEY_ABSTRACT_CONCEPTS | Toter Code entfernen/implementieren |
+| 19 | InnerState Trigger Gewichtung | Interne Logik-Verbesserung |
+| 26 | CalendarIntelligence Pendel-Zeit | Bereits konfigurierbar (`commute_minutes`) |
+| 27 | Activity Confidence-Scoring | Interne Architektur-Änderung |
+| 29 | Load-Empfehlung Status-Check | Bug-Fix, kein Parameter |
+| 31 | Core Identity Enforcement | Sicherheits-Validierung, kein User-Toggle |
+| 32 | ProactivePlanner Rollback | Bereits konfiguriert (`proactive_planner.*`) |
+| 43 | Service-Whitelist vereinheitlichen | Code-Refactoring, kein UI |
+
+---
+
+### AKTUALISIERTE ZUSAMMENFASSUNG UI-ÄNDERUNGEN
+
+| Tab | Sektion | Aktion | Neue Settings | Verbesserung # |
+|-----|---------|--------|---------------|----------------|
+| Security | Notfall-Protokolle | Erweitern | `threat_assessment.*` (8) | 39, 40 |
+| Security | Sicherheit | Erweitern | `pushback.learning_*` (3) | 45 |
+| Security | Konflikt-Grenzen | Erweitern | `conflict_resolution.prediction_*` (3) | 44 |
+| Autonomie | Autonomie-Stufen | Erweitern | `autonomy.temporal.*`, `deescalation.*` (7) | 41, 42 |
+| Autonomie | Lern-System | Erweitern | `outcome_tracker.*` (5), `correction_memory.*` (1), `feedback.*` (2) | 6, 7, 8, 9 |
+| Jarvis | Stimmungs-Stile | Erweitern | `mood_reaction.*` (3) | 10 |
+| Jarvis | Stil & Charakter | Erweitern | `inner_state.*` (4), `personality.*` (2) | 17, 18, 21 |
+| Jarvis | Charakter-Entwicklung | Erweitern | `personality.trait_*` (2) | 20 |
+| Jarvis | Stimmungs-Erkennung | Erweitern | `proactive.personality_filter` (1) | 13 |
+| Intelligenz | Erklärbarkeit | Erweitern | `explainability.*` (4) | Kat. 9 |
+| Intelligenz | NEU: Routine-Anomalie | Neue Sektion | `routine_anomaly.*` (5) | 12 |
+| Intelligenz | Saisonale Intelligenz | Erweitern | `weather_forecast.*` (3) | 11 |
+| Intelligenz | Dialogführung | Erweitern | `dialogue.max_references` (1) | 38 |
+| Intelligenz | Kausalketten | Erweitern | `anticipation.implicit_*` (2) | 16 |
+| Intelligenz | Klima-Modell | Erweitern | `whatif_simulation.proactive_*` (2) | 15 |
+| Intelligenz | Prädiktive Wartung | Erweitern | `predictive_maintenance.seasonal_*` (1) | 23 |
+| Intelligenz | 3D+ Insight Checks | Erweitern | `insight_checks.deduplication` (1) | 36 |
+| Intelligenz | Beobachtungen | Erweitern | `wellness.suppress_when_away` (1) | 37 |
+| Intelligenz | Sequenz-Planner | Erweitern | `vacation_simulation.*` (1) | 33 |
+| Gedächtnis | Semantisches Gedächtnis | Erweitern | `semantic_memory.*` (2) | 34, 35 |
+| Haus-Status | HealthMonitor | Erweitern | `health_monitor.*` (4) | 24, 25 |
+| Haus-Status | Energie | Erweitern | `energy.*` (4) | 28, 30 |
+| Allgemein | Kontext | Erweitern | `context.state_cache_*` (1) | 22 |
+
+**Gesamt: 71 neue konfigurierbare Settings verteilt auf 7 Tabs, 23 Sektionen (22 erweitert, 1 neu)**
+**9 Verbesserungen sind reine Code-Fixes ohne UI**
+**Alle 45 Verbesserungen sind abgedeckt**
+
 ### Implementierungsreihenfolge
 
 1. **settings.yaml.example** — Alle neuen Defaults eintragen
