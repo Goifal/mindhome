@@ -499,3 +499,70 @@ class TestInitialize:
         redis = AsyncMock()
         await observer.initialize(redis)
         assert observer.redis == redis
+
+
+# =====================================================================
+# Phase 4.2: Temporal Auto-Clustering
+# =====================================================================
+
+
+class TestTemporalClustering:
+    """Tests fuer _check_temporal_cluster() — automatische Cluster-Erkennung."""
+
+    @pytest.fixture
+    def observer(self):
+        o = LearningObserver()
+        o.redis = AsyncMock()
+        o.enabled = True
+        o.min_repetitions = 3
+        o._notify_callback = AsyncMock()
+        return o
+
+    @pytest.mark.asyncio
+    async def test_cluster_with_recent_actions(self, observer):
+        """Mehrere manuelle Aktionen in 5 Min werden als Cluster erkannt."""
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        two_min_ago = (now - __import__("datetime").timedelta(seconds=120)).isoformat()
+        three_min_ago = (now - __import__("datetime").timedelta(seconds=180)).isoformat()
+        now_iso = now.isoformat()
+
+        recent1 = json.dumps({
+            "entity_id": "light.wohnzimmer",
+            "new_state": "on",
+            "domain": "light",
+            "timestamp": two_min_ago,
+        })
+        recent2 = json.dumps({
+            "entity_id": "cover.kueche",
+            "new_state": "closed",
+            "domain": "cover",
+            "timestamp": three_min_ago,
+        })
+        observer.redis.lrange = AsyncMock(return_value=[recent1, recent2])
+        observer.redis.incr = AsyncMock(return_value=1)
+
+        action = {
+            "entity_id": "cover.wohnzimmer",
+            "new_state": "closed",
+            "domain": "cover",
+            "timestamp": now_iso,
+        }
+        await observer._check_temporal_cluster(action, person="max")
+        observer.redis.incr.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_no_cluster_with_single_action(self, observer):
+        """Nur 1 kuerzliche Aktion reicht nicht fuer einen Cluster."""
+        observer.redis.lrange = AsyncMock(return_value=["invalid_json"])
+
+        action = {
+            "entity_id": "light.wohnzimmer",
+            "new_state": "on",
+            "domain": "light",
+            "timestamp": __import__("datetime").datetime.now(
+                __import__("datetime").timezone.utc,
+            ).isoformat(),
+        }
+        await observer._check_temporal_cluster(action)
+        observer.redis.incr.assert_not_called()

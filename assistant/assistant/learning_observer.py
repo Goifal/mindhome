@@ -163,6 +163,10 @@ class LearningObserver:
 
             # Wochentag-spezifischer Pattern-Check
             await self._check_weekday_pattern(action_key, time_slot, weekday, entity_id, new_state, person=person)
+
+            # Temporal Auto-Clustering: Automatisch Cluster erkennen
+            # wenn mehrere manuelle Aktionen innerhalb von 5 Minuten passieren
+            await self._check_temporal_cluster(action, person=person)
         except Exception as e:
             logger.warning("Learning Observer state_change Fehler: %s", e)
 
@@ -291,6 +295,96 @@ class LearningObserver:
                 "count": count,
                 "person": person,
             })
+
+    async def _check_temporal_cluster(self, action: dict, person: str = ""):
+        """Erkennt automatisch zeitliche Cluster von manuellen Aktionen.
+
+        Wenn innerhalb von 5 Minuten 2+ manuelle Aktionen passieren,
+        wird das als potenzieller Cluster gespeichert. Nach 3+ Wiederholungen
+        des gleichen Clusters wird er als abstraktes Konzept erkannt —
+        auch ohne expliziten trigger_text vom User.
+        """
+        try:
+            # Letzte 10 Aktionen laden
+            recent_raw = await self.redis.lrange(KEY_MANUAL_ACTIONS, 0, 9)
+            if len(recent_raw) < 2:
+                return
+
+            recent = []
+            for raw in recent_raw:
+                try:
+                    entry = json.loads(raw)
+                    recent.append(entry)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+
+            if len(recent) < 2:
+                return
+
+            # Aktionen innerhalb von 5 Minuten gruppieren
+            now_ts = datetime.fromisoformat(action["timestamp"])
+            cluster_actions = []
+            for entry in recent:
+                ts_str = entry.get("timestamp", "")
+                if not ts_str:
+                    continue
+                ts = datetime.fromisoformat(ts_str)
+                if abs((now_ts - ts).total_seconds()) <= 300:  # 5 Min
+                    action_key = f"{entry['entity_id']}:{entry['new_state']}"
+                    if action_key not in cluster_actions:
+                        cluster_actions.append(action_key)
+
+            if len(cluster_actions) < 2:
+                return
+
+            # Cluster-Signatur erstellen (sortiert fuer Konsistenz)
+            cluster_sig = "|".join(sorted(cluster_actions))
+            cluster_key = f"mha:learning:temporal_clusters:{person or 'global'}"
+            time_slot = action.get("time_slot", "")
+
+            # Cluster-Observation zaehlen
+            import hashlib
+            sig_hash = hashlib.sha256(cluster_sig.encode()).hexdigest()[:12]
+            count_key = f"{cluster_key}:{sig_hash}"
+            count = await self.redis.incr(count_key)
+            if count == 1:
+                await self.redis.expire(count_key, 90 * 86400)  # 90 Tage TTL
+                # Cluster-Details speichern
+                cluster_data = json.dumps({
+                    "actions": cluster_actions,
+                    "time_slot": time_slot,
+                    "person": person,
+                    "first_seen": action["timestamp"],
+                })
+                await self.redis.hset(f"{cluster_key}:details", sig_hash, cluster_data)
+                await self.redis.expire(f"{cluster_key}:details", 90 * 86400)
+
+            # Ab 3 Wiederholungen: Als abstraktes Konzept vorschlagen
+            if count == self.min_repetitions:
+                # Auto-Name aus Domains ableiten
+                domains = set()
+                for a in cluster_actions:
+                    domain = a.split(".")[0] if "." in a else a
+                    domains.add(domain)
+                auto_name = "_".join(sorted(domains)) + f"_routine_{time_slot.replace(':', '')}"
+
+                logger.info(
+                    "Temporal Cluster erkannt: %d Aktionen, %d Wiederholungen, Signatur: %s",
+                    len(cluster_actions), count, auto_name,
+                )
+
+                # Notify-Callback wenn vorhanden
+                if hasattr(self, '_notify_callback') and self._notify_callback:
+                    await self._notify_callback({
+                        "type": "temporal_cluster",
+                        "actions": cluster_actions,
+                        "cluster_name": auto_name,
+                        "count": count,
+                        "time_slot": time_slot,
+                        "person": person,
+                    })
+        except Exception as e:
+            logger.debug("Temporal Cluster Check fehlgeschlagen: %s", e)
 
     async def handle_response(self, entity_id: str, time_slot: str,
                               accepted: bool, weekday: int = -1,

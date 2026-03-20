@@ -1058,3 +1058,70 @@ class TestPhase2AEmotionalBoundaries:
         """Root-Cause wird in Redis gespeichert."""
         await detector._store_root_cause("max", "zeitdruck")
         detector.redis.setex.assert_called()
+
+
+# =====================================================================
+# Phase 1/5: Ironie-Erkennung (_detect_irony)
+# =====================================================================
+
+
+class TestIronyDetection:
+    """Tests fuer _detect_irony() — Ironie-/Sarkasmus-Erkennung."""
+
+    @pytest.fixture
+    def detector(self):
+        d = MoodDetector()
+        d.redis = AsyncMock()
+        return d
+
+    def test_irony_marker_with_negative_history(self, detector):
+        """'Na super' nach negativen Interaktionen = ironisch."""
+        from collections import deque
+        detector._interaction_sentiments = deque(["negative", "negative", "neutral"])
+        assert detector._detect_irony("na super, laeuft ja", "max") is True
+
+    def test_irony_marker_without_negative_history(self, detector):
+        """'Na super' ohne negative History = nicht ironisch."""
+        from collections import deque
+        detector._interaction_sentiments = deque(["neutral", "neutral", "neutral"])
+        assert detector._detect_irony("na super, das freut mich", "max") is False
+
+    def test_exaggeration_with_high_negatives(self, detector):
+        """'Mega toll' nach 2+ negativen Sentiments = ironisch."""
+        from collections import deque
+        detector._interaction_sentiments = deque(["negative", "impatient", "negative"])
+        assert detector._detect_irony("mega toll das ergebnis", "max") is True
+
+    def test_exaggeration_without_negatives(self, detector):
+        """'Mega toll' ohne negative History = echt gemeint."""
+        from collections import deque
+        detector._interaction_sentiments = deque(["neutral", "neutral"])
+        assert detector._detect_irony("mega toll das ergebnis", "max") is False
+
+    def test_frustrated_short_positive(self, detector):
+        """Kurzes 'super toll' bei hoher Frustration + Stress = ironisch."""
+        from collections import deque
+        detector._frustration_count = 3
+        detector._stress_level = 0.6
+        detector._interaction_sentiments = deque(["neutral"])
+        assert detector._detect_irony("super toll", "max") is True
+
+    def test_normal_positive_not_ironic(self, detector):
+        """Normales positives Feedback wird nicht als Ironie erkannt."""
+        from collections import deque
+        detector._frustration_count = 0
+        detector._stress_level = 0.0
+        detector._interaction_sentiments = deque(["neutral", "neutral"])
+        assert detector._detect_irony("danke das ist gut", "max") is False
+
+    def test_ja_klar_marker(self, detector):
+        """'Ja klar' nach negativem Sentiment = ironisch."""
+        from collections import deque
+        detector._interaction_sentiments = deque(["negative"])
+        assert detector._detect_irony("ja klar macht sinn", "max") is True
+
+    def test_ganz_grosses_kino_marker(self, detector):
+        """'Ganz grosses Kino' nach negativem Sentiment = ironisch."""
+        from collections import deque
+        detector._interaction_sentiments = deque(["impatient"])
+        assert detector._detect_irony("ganz grosses kino wirklich", "max") is True

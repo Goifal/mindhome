@@ -7,7 +7,49 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from assistant.ollama_client import OllamaClient, strip_think_tags
+from assistant.ollama_client import OllamaClient, strip_think_tags, extract_thinking
+
+
+class TestExtractThinking:
+    """Tests fuer extract_thinking() — Think-Content extrahieren statt verwerfen."""
+
+    def test_no_think_tags(self):
+        cleaned, thinking = extract_thinking("Hello World")
+        assert cleaned == "Hello World"
+        assert thinking == ""
+
+    def test_single_think_block(self):
+        text = "<think>Ich denke nach...</think>Die Antwort ist 42."
+        cleaned, thinking = extract_thinking(text)
+        assert cleaned == "Die Antwort ist 42."
+        assert "Ich denke nach" in thinking
+
+    def test_multiple_think_blocks(self):
+        text = "<think>Erstens</think>Hallo <think>Zweitens</think>Welt"
+        cleaned, thinking = extract_thinking(text)
+        assert cleaned == "Hallo Welt"
+        assert "Erstens" in thinking
+        assert "Zweitens" in thinking
+
+    def test_empty_think_block(self):
+        cleaned, thinking = extract_thinking("<think></think>Ergebnis")
+        assert cleaned == "Ergebnis"
+        assert thinking == ""
+
+    def test_none_input(self):
+        cleaned, thinking = extract_thinking(None)
+        assert cleaned is None
+        assert thinking == ""
+
+    def test_empty_string(self):
+        cleaned, thinking = extract_thinking("")
+        assert cleaned == ""
+        assert thinking == ""
+
+    def test_only_think_block_returns_original(self):
+        text = "<think>Nur Gedanken</think>"
+        cleaned, thinking = extract_thinking(text)
+        assert "Nur Gedanken" in thinking
 
 
 class TestStripThinkTags:

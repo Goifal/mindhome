@@ -3287,6 +3287,67 @@ def _get_assistant_tools_static() -> list:
             },
         },
     },
+    # Phase 1.5: Memory-Augmented Reasoning — LLM kann aktiv Fakten abrufen
+    {
+        "type": "function",
+        "function": {
+            "name": "retrieve_memory",
+            "description": "Durchsucht das Langzeitgedaechtnis nach gespeicherten Fakten ueber Personen, Vorlieben, Gewohnheiten oder fruehere Gespraeche. Nutze dieses Tool wenn dir Kontext fehlt, z.B. bei 'Wie mag Max sein Licht?', 'Was ist Julias Lieblingstemperatur?' oder wenn du unsicher bist ob ein Fakt bekannt ist.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Suchbegriff oder Frage an das Gedaechtnis.",
+                    },
+                    "person": {
+                        "type": "string",
+                        "description": "Optional: Nur Fakten dieser Person suchen.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "retrieve_history",
+            "description": "Ruft die letzten Aktionen und Gespraeche ab. Nutze dieses Tool wenn du wissen musst was zuletzt passiert ist, z.B. 'Was habe ich gerade gemacht?', 'Welche Geraete wurden zuletzt gesteuert?' oder um Kontext fuer Folgefragen zu bekommen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Anzahl der letzten Eintraege (Standard: 5, Max: 20).",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    # Phase 1.3: Verification Tool — LLM kann Geraetezustand nach Aktion pruefen
+    {
+        "type": "function",
+        "function": {
+            "name": "verify_device_state",
+            "description": "Prueft den aktuellen Zustand eines Geraets nach einer Aktion. Nutze dieses Tool um zu verifizieren ob eine Aktion (Licht, Heizung, Rollladen etc.) tatsaechlich gewirkt hat. Gibt den aktuellen State und relevante Attribute zurueck.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "entity_id": {
+                        "type": "string",
+                        "description": "Die HA Entity-ID des Geraets (z.B. light.wohnzimmer, climate.schlafzimmer).",
+                    },
+                    "expected_state": {
+                        "type": "string",
+                        "description": "Optional: Erwarteter Zustand (on/off/heat/cool etc.) zum Vergleich.",
+                    },
+                },
+                "required": ["entity_id"],
+            },
+        },
+    },
 ]
     return _ASSISTANT_TOOLS_STATIC
 
@@ -3410,6 +3471,7 @@ class FunctionExecutor:
         "delete_declarative_tool", "run_declarative_tool",
         "suggest_declarative_tools",
         "search_history", "debug_automation",
+        "retrieve_memory", "retrieve_history", "verify_device_state",
     })
 
     # LLMs übersetzen deutsche Raumnamen manchmal ins Englische
@@ -9854,3 +9916,121 @@ class FunctionExecutor:
             "message": "\n".join(lines),
             "suggestions": suggestions,
         }
+
+    # ------------------------------------------------------------------
+    # Phase 1.5: Memory-Augmented Reasoning Tools
+    # ------------------------------------------------------------------
+
+    async def _exec_retrieve_memory(self, args: dict) -> dict:
+        """Durchsucht semantisches Langzeitgedaechtnis nach Fakten."""
+        query = args.get("query", "")
+        if not query:
+            return {"success": False, "message": "Kein Suchbegriff angegeben."}
+
+        person = args.get("person")
+        try:
+            import assistant.main as main_module
+            brain = getattr(main_module, "brain", None)
+            if not brain or not hasattr(brain, "semantic_memory"):
+                return {"success": False, "message": "Gedaechtnis nicht verfuegbar."}
+
+            facts = await brain.semantic_memory.search_facts(
+                query, limit=5, person=person,
+            )
+            if not facts:
+                return {"success": True, "message": f"Keine Fakten zu '{query}' gefunden."}
+
+            lines = [f"Gefundene Fakten zu '{query}':"]
+            for f in facts:
+                content = f.get("content", "")
+                confidence = f.get("confidence", 0)
+                category = f.get("category", "")
+                person_tag = f.get("person", "")
+                meta = f" [{category}]" if category else ""
+                person_info = f" (Person: {person_tag})" if person_tag else ""
+                lines.append(f"- {content}{meta}{person_info} (Konfidenz: {confidence:.0%})")
+
+            return {"success": True, "message": "\n".join(lines)}
+        except Exception as e:
+            logger.error("retrieve_memory fehlgeschlagen: %s", e)
+            return {"success": False, "message": "Gedaechtnissuche fehlgeschlagen."}
+
+    async def _exec_retrieve_history(self, args: dict) -> dict:
+        """Ruft die letzten Aktionen und Gespraeche ab."""
+        limit = min(args.get("limit", 5), 20)
+        try:
+            import assistant.main as main_module
+            brain = getattr(main_module, "brain", None)
+            if not brain or not brain.memory:
+                return {"success": False, "message": "Gedaechtnis nicht verfuegbar."}
+
+            conversations = await brain.memory.get_recent_conversations(limit=limit)
+            if not conversations:
+                return {"success": True, "message": "Keine aktuellen Gespraeche gefunden."}
+
+            lines = [f"Letzte {len(conversations)} Interaktionen:"]
+            for conv in conversations:
+                role = conv.get("role", "?")
+                content = conv.get("content", "")[:200]
+                ts = conv.get("timestamp", "")
+                time_str = ts.split("T")[1][:5] if "T" in ts else ts[:16]
+                lines.append(f"- [{time_str}] {role}: {content}")
+
+            return {"success": True, "message": "\n".join(lines)}
+        except Exception as e:
+            logger.error("retrieve_history fehlgeschlagen: %s", e)
+            return {"success": False, "message": "Verlaufsabfrage fehlgeschlagen."}
+
+    # ------------------------------------------------------------------
+    # Phase 1.3: Verification Tool — State nach Aktion pruefen
+    # ------------------------------------------------------------------
+
+    async def _exec_verify_device_state(self, args: dict) -> dict:
+        """Prueft den aktuellen Zustand eines Geraets nach einer Aktion."""
+        entity_id = args.get("entity_id", "")
+        if not entity_id:
+            return {"success": False, "message": "Keine entity_id angegeben."}
+
+        expected = args.get("expected_state")
+
+        try:
+            state = await self.ha.get_state(entity_id)
+            if not state:
+                return {"success": False, "message": f"Entity {entity_id} nicht gefunden."}
+
+            current = state.get("state", "unknown")
+            attrs = state.get("attributes", {})
+
+            info_parts = [f"Entity: {entity_id}", f"Zustand: {current}"]
+
+            # Relevante Attribute je nach Domain
+            if entity_id.startswith("light."):
+                brightness = attrs.get("brightness")
+                if brightness is not None:
+                    info_parts.append(f"Helligkeit: {round(brightness / 255 * 100)}%")
+            elif entity_id.startswith("climate."):
+                temp = attrs.get("temperature")
+                current_temp = attrs.get("current_temperature")
+                if temp is not None:
+                    info_parts.append(f"Zieltemperatur: {temp}°C")
+                if current_temp is not None:
+                    info_parts.append(f"Aktuelle Temperatur: {current_temp}°C")
+            elif entity_id.startswith("cover."):
+                position = attrs.get("current_position")
+                if position is not None:
+                    info_parts.append(f"Position: {position}%")
+
+            result = {"success": True, "message": " | ".join(info_parts), "state": current}
+
+            if expected:
+                if current == expected:
+                    result["verified"] = True
+                    result["message"] += f" ✓ (erwartet: {expected})"
+                else:
+                    result["verified"] = False
+                    result["message"] += f" ✗ (erwartet: {expected}, tatsaechlich: {current})"
+
+            return result
+        except Exception as e:
+            logger.error("verify_device_state fehlgeschlagen: %s", e)
+            return {"success": False, "message": f"State-Abfrage fehlgeschlagen: {e}"}

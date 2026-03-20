@@ -382,3 +382,54 @@ class TestPhase2CLatencyFeedback:
         info = router.get_model_info()
         assert "deep_degraded" in info
         assert "latency_feedback" in info
+
+
+# ============================================================
+# select_model_tier_reasoning Tests
+# ============================================================
+
+class TestSelectModelTierReasoning:
+    """Tests fuer select_model_tier_reasoning() — 3-Tupel mit Reasoning-Flag."""
+
+    @pytest.fixture
+    def router(self):
+        with patch("assistant.model_router.settings") as mock_settings, \
+             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {"latency_feedback": True}}):
+            mock_settings.model_fast = MODEL_FAST
+            mock_settings.model_smart = MODEL_SMART
+            mock_settings.model_deep = MODEL_DEEP
+            from assistant.model_router import ModelRouter
+            r = ModelRouter()
+            r._available_models = [MODEL_FAST, MODEL_SMART, MODEL_DEEP]
+            r._deep_available = True
+            r._smart_available = True
+            return r
+
+    def test_fast_no_reasoning(self, router):
+        model, tier, requires = router.select_model_tier_reasoning("Licht an")
+        assert tier == "fast"
+        assert requires is False
+
+    def test_deep_keyword_with_reasoning(self, router):
+        model, tier, requires = router.select_model_tier_reasoning(
+            "Analysiere meinen Energieverbrauch der letzten Woche detailliert"
+        )
+        assert tier == "deep"
+        assert requires is True
+
+    def test_smart_no_reasoning(self, router):
+        model, tier, requires = router.select_model_tier_reasoning("Wie ist das Wetter morgen?")
+        assert tier == "smart"
+        assert requires is False
+
+    def test_long_text_deep_with_reasoning(self, router):
+        long_text = "Ich moechte gerne wissen ob du mir helfen kannst die ganzen Lichter und Steckdosen im Haus gleichzeitig auszuschalten damit Strom gespart wird"
+        model, tier, requires = router.select_model_tier_reasoning(long_text)
+        assert tier == "deep"
+        assert requires is True
+
+    def test_degraded_deep_returns_smart(self, router):
+        router._deep_degraded = True
+        model, tier, requires = router.select_model_tier_reasoning("Erklaere mir Quantenphysik")
+        assert tier == "smart"
+        assert requires is False  # Smart braucht kein Reasoning

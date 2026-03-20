@@ -425,3 +425,62 @@ class TestPhase2AGagEvolution:
         result = await personality.build_evolved_gag("thermostat_war", "Max")
         assert result is not None
         assert "Episode" in result or "statistisch" in result
+
+
+# ============================================================
+# Phase 5.1: Delayed Callback Humor
+# ============================================================
+
+class TestCallbackHumor:
+    """Tests fuer store_humor_context() und get_callback_humor()."""
+
+    @pytest.fixture
+    def personality(self):
+        from assistant.personality import PersonalityEngine
+        with patch("assistant.personality.yaml_config", {
+            "personality": {"sarcasm_level": 3},
+        }):
+            p = PersonalityEngine()
+            p._redis = AsyncMock()
+            return p
+
+    @pytest.mark.asyncio
+    async def test_store_humor_context(self, personality):
+        """Humor-Kontext wird in Redis gespeichert."""
+        await personality.store_humor_context("max", "failed_action", "Licht ging nicht an")
+        personality._redis.lpush.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_get_callback_no_contexts(self, personality):
+        """Ohne gespeicherte Kontexte kommt kein Callback."""
+        personality._redis.lrange = AsyncMock(return_value=[])
+        result = await personality.get_callback_humor("max")
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_get_callback_too_recent(self, personality):
+        """Kontexte unter 1 Stunde alt werden nicht verwendet."""
+        import time
+        ctx = json.dumps({
+            "type": "failed_action",
+            "text": "Licht ging nicht an",
+            "timestamp": time.time() - 600,  # 10 Min — zu frisch
+        })
+        personality._redis.lrange = AsyncMock(return_value=[ctx])
+        personality._redis.get = AsyncMock(return_value=None)
+        result = await personality.get_callback_humor("max")
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_get_callback_daily_limit(self, personality):
+        """Maximal 1 Callback pro Tag."""
+        import time
+        ctx = json.dumps({
+            "type": "failed_action",
+            "text": "Licht ging nicht an",
+            "timestamp": time.time() - 7200,  # 2h her — alt genug
+        })
+        personality._redis.lrange = AsyncMock(return_value=[ctx])
+        personality._redis.get = AsyncMock(return_value="1")  # Schon 1 Callback heute
+        result = await personality.get_callback_humor("max")
+        assert result == ""
