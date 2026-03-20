@@ -3460,16 +3460,14 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
 
     # --- Fehlende Hot-Reloads fuer Module die Config im __init__ cachen ---
 
-    # ConflictResolver: Fenster, Limits, Mediation
+    # ConflictResolver: Fenster, Limits, Mediation, Thresholds, Rule-Toggles
     if "conflict_resolution" in changed_settings and hasattr(brain, "conflict_resolver"):
         def _reload_conflict_resolver():
-            cfg = yaml_cfg.get("conflict_resolution", {})
             cr = brain.conflict_resolver
-            cr.enabled = cfg.get("enabled", True)
-            cr._conflict_window = int(cfg.get("conflict_window_seconds", 300))
+            cr.reload_config()
+            # Zusätzlich: Mediation + Safe-Limits (nicht in reload_config enthalten)
+            cfg = yaml_cfg.get("conflict_resolution", {})
             cr._max_commands = int(cfg.get("max_commands_per_person", 20))
-            cr._use_trust_priority = cfg.get("use_trust_priority", True)
-            cr._resolution_cooldown = int(cfg.get("resolution_cooldown_seconds", 120))
             med_cfg = cfg.get("mediation", {})
             cr._mediation_enabled = med_cfg.get("enabled", True)
             from .config import resolve_model
@@ -3477,7 +3475,6 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             cr._mediation_max_tokens = int(med_cfg.get("max_tokens", 256))
             cr._mediation_temperature = med_cfg.get("temperature", 0.7)
             cr._domain_configs = cfg.get("conflict_domains", {})
-            # Safe-Limits neu laden
             raw_sl = cfg.get("safe_limits", {})
             if isinstance(raw_sl, dict):
                 cr._safe_limits = {}
@@ -3486,7 +3483,6 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
                     for param, vals in limits.items():
                         if isinstance(vals, list) and len(vals) == 2:
                             cr._safe_limits[domain][param] = (float(vals[0]), float(vals[1]))
-            logger.info("ConflictResolver Settings aktualisiert (inkl. Safe-Limits)")
         _try_reload("conflict_resolution", _reload_conflict_resolver)
 
     # AmbientAudio: Sensor-Mappings, Cooldowns, Night-Mode

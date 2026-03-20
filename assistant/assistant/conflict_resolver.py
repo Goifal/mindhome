@@ -178,6 +178,29 @@ class ConflictResolver:
             self.enabled, self._conflict_window, self._mediation_enabled,
         )
 
+    def reload_config(self):
+        """Lädt konfigurierbare Werte aus settings.yaml neu (Hot-Reload bei UI-Änderungen)."""
+        cfg = yaml_config.get("conflict_resolution", {})
+        self.enabled = cfg.get("enabled", True)
+        self._conflict_window = int(cfg.get("conflict_window_seconds", 300))
+        self._use_trust_priority = cfg.get("use_trust_priority", True)
+        self._cooldown_seconds = int(cfg.get("resolution_cooldown_seconds", 120))
+
+        # Kontext-Schwellwerte aktualisieren
+        ctx_cfg = cfg.get("context_thresholds", {})
+        self._threshold_solar_w = float(ctx_cfg.get("solar_producing_w", 100))
+        self._threshold_lux = float(ctx_cfg.get("high_lux", 500))
+        self._threshold_wind_kmh = float(ctx_cfg.get("high_wind_kmh", 60))
+        self._threshold_energy_price = float(ctx_cfg.get("high_energy_price", 0.30))
+        self._threshold_frost_c = float(ctx_cfg.get("frost_below_c", 0))
+        self._weather_entity = ctx_cfg.get("weather_entity", "weather.home")
+
+        # Regel-Toggles aktualisieren
+        self._rules_enabled = cfg.get("rules_enabled", {})
+
+        logger.info("ConflictResolver config reloaded (enabled=%s, rules_enabled=%d custom)",
+                     self.enabled, len(self._rules_enabled))
+
     async def initialize(self, redis_client=None):
         """Initialisiert den Resolver mit Redis-Anbindung."""
         self._redis = redis_client

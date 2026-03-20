@@ -1136,6 +1136,17 @@ function mergeCurrentTabIntoS() {
 async function loadSettings() {
   try {
     S = await api('/api/ui/settings');
+    // Defaults fuer rules_enabled (alle aktiv wenn nicht in Config)
+    const _reDefaults = {window_open:true,solar_producing:true,high_lux:true,nobody_home:true,
+      cooling_and_heating:true,goodnight_active:true,high_wind:true,door_open:true,
+      sleeping_detected:true,rain_detected:true,frost_detected:true,high_energy_price:true,
+      media_playing:true,window_scheduled_open:true};
+    const re = getPath(S,'conflict_resolution.rules_enabled');
+    if (!re || typeof re !== 'object') {
+      setPath(S,'conflict_resolution.rules_enabled', _reDefaults);
+    } else {
+      for (const [k,v] of Object.entries(_reDefaults)) { if (re[k] === undefined) re[k] = v; }
+    }
     // Room-Profiles + Ollama-Modelle parallel laden
     const [rp, ml] = await Promise.all([
       api('/api/ui/room-profiles').catch(() => ({})),
@@ -2821,10 +2832,18 @@ function removeApplianceDevice(idx) {
   const devices = getPath(S, 'appliance_monitor.devices') || [];
   const dev = devices[idx];
   if (!confirm('Geraet "' + (dev.label || dev.key) + '" entfernen?')) return;
+  // Orphaned Power-Profile aufräumen
+  const profiles = getPath(S, 'appliance_monitor.power_profiles') || {};
+  if (dev.key && profiles[dev.key]) {
+    delete profiles[dev.key];
+    setPath(S, 'appliance_monitor.power_profiles', profiles);
+  }
   devices.splice(idx, 1);
   setPath(S, 'appliance_monitor.devices', devices);
   renderApplianceDevices();
+  renderPowerProfiles();
   markDirty();
+  scheduleAutoSave();
 }
 
 function rmAppliancePattern(devIdx, el) {
@@ -2920,7 +2939,8 @@ function renderPowerProfiles() {
     return;
   }
   c.innerHTML = devices.map(dev => {
-    const k = dev.key;
+    const k = String(dev.key || '').replace(/[^a-zA-Z0-9_]/g, '');
+    if (!k) return '';
     const p = profiles[k] || {};
     const label = dev.label || k;
     return `<div style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:10px;margin-bottom:8px;">
@@ -2962,11 +2982,15 @@ function renderPowerProfiles() {
 }
 
 function setPowerProfile(deviceKey, field, value) {
+  // Sanitize device key (nur alphanumerisch + Underscore)
+  const safeKey = String(deviceKey).replace(/[^a-zA-Z0-9_]/g, '');
+  if (!safeKey) return;
   const profiles = getPath(S, 'appliance_monitor.power_profiles') || {};
-  if (!profiles[deviceKey]) profiles[deviceKey] = {};
-  profiles[deviceKey][field] = parseFloat(value) || 0;
+  if (!profiles[safeKey]) profiles[safeKey] = {};
+  profiles[safeKey][field] = parseFloat(value) || 0;
   setPath(S, 'appliance_monitor.power_profiles', profiles);
   markDirty();
+  scheduleAutoSave();
 }
 
 // ---- Character-Break Stats Loader ----

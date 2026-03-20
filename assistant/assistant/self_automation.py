@@ -39,8 +39,13 @@ _TEMPLATES_PATH = _CONFIG_DIR / "automation_templates.yaml"
 def _load_templates_sync() -> dict:
     """Laedt die Automation-Templates und Security-Config (synchron)."""
     if _TEMPLATES_PATH.exists():
-        with open(_TEMPLATES_PATH) as f:
-            return yaml.safe_load(f) or {}
+        try:
+            with open(_TEMPLATES_PATH) as f:
+                return yaml.safe_load(f) or {}
+        except yaml.YAMLError as exc:
+            logger.error("Fehler beim Laden von %s: %s", _TEMPLATES_PATH, exc)
+            return {}
+    logger.warning("Automation-Templates nicht gefunden: %s", _TEMPLATES_PATH)
     return {}
 
 

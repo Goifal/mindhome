@@ -1450,7 +1450,14 @@ class ProactiveManager:
 
     async def _appliance_confirm_loop(self):
         """Prueft periodisch ob idle-Marker abgelaufen sind und meldet Geraete als fertig."""
-        await asyncio.sleep(self._appliance_confirm_minutes * 60)
+        # Kuerzesten confirm_minutes aller Profile bestimmen fuer initialen Sleep
+        min_confirm = self._appliance_confirm_minutes
+        for profile in self._appliance_power_profiles.values():
+            cm = int(profile.get("confirm_minutes", self._appliance_confirm_minutes))
+            if cm < min_confirm:
+                min_confirm = cm
+        await asyncio.sleep(min_confirm * 60)
+
         redis_client = getattr(getattr(self.brain, "memory", None), "redis", None)
         if not redis_client:
             return
@@ -1469,8 +1476,12 @@ class ProactiveManager:
             except (ValueError, TypeError):
                 continue
 
+            # Per-device confirm_minutes aus Power-Profile (Fallback: global)
+            profile = self._appliance_power_profiles.get(appliance, {})
+            dev_confirm = int(profile.get("confirm_minutes", self._appliance_confirm_minutes))
+
             elapsed = time.time() - idle_since
-            if elapsed < self._appliance_confirm_minutes * 60:
+            if elapsed < dev_confirm * 60:
                 continue
 
             # Cooldown pruefen (keine Doppel-Meldung innerhalb 1h)
@@ -1480,11 +1491,14 @@ class ProactiveManager:
 
             # Bestaetigt: Geraet ist fertig
             event_type = f"{appliance}_done"
-            await self._notify(event_type, MEDIUM, {"appliance": appliance})
+            try:
+                await self._notify(event_type, MEDIUM, {"appliance": appliance})
+            except Exception as exc:
+                logger.warning("Appliance %s: Notification failed: %s", appliance, exc)
             await redis_client.set(cooldown_key, "1", ex=3600)
             await redis_client.delete(idle_key)
             await redis_client.delete(running_key)
-            logger.info("Appliance %s: Fertig-Meldung gesendet (idle seit %.0fs)", appliance, elapsed)
+            logger.info("Appliance %s: Fertig-Meldung gesendet (idle seit %.0fs, confirm=%dmin)", appliance, elapsed, dev_confirm)
 
     async def _check_power_close(self, entity_id: str, new_val: str, old_val: str):
         """Echtzeit-Reaktion: Rollladen schliessen/oeffnen bei Stromverbrauch-Aenderung."""
