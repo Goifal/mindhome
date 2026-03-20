@@ -1158,3 +1158,434 @@ class TestMultipleApplianceTypes:
         )
         assert result is not None
         assert result["device"] == "dishwasher"
+
+
+# =====================================================================
+# _run_checks — full integration covering all appliance branches
+# =====================================================================
+
+
+class TestRunChecksIntegration:
+    """Cover the remaining _run_checks branches: iron, washer, dryer,
+    dishwasher, lights, pc_session alert appends, and _send_alert loop."""
+
+    @pytest.fixture
+    def ta_int(self, ha_mock, redis_mock):
+        cfg = {
+            "time_awareness": {
+                "enabled": True,
+                "check_interval_minutes": 5,
+                "thresholds": {
+                    "oven": 60, "iron": 30, "light_empty_room": 30,
+                    "window_open_cold": 120, "pc_no_break": 360,
+                    "washer": 180, "dryer": 150, "dishwasher": 180,
+                },
+                "counters": {"coffee_machine": True},
+            },
+            "lighting": {"enabled": True},
+            "multi_room": {"room_motion_sensors": {}},
+            "activity": {"entities": {"pc_sensors": ["sensor.pc_active"]}},
+        }
+        with patch("assistant.time_awareness.yaml_config", cfg):
+            ta = TimeAwareness(ha_mock)
+        ta.redis = redis_mock
+        ta._notify_callback = AsyncMock()
+        return ta
+
+    @pytest.mark.asyncio
+    async def test_run_checks_iron_alert(self, ta_int, ha_mock, redis_mock):
+        """Iron running over threshold via _run_checks sends alert."""
+        past_ts = str(datetime.now().timestamp() - 35 * 60)
+        redis_mock.get.return_value = past_ts
+        redis_mock.exists.return_value = 0
+        ha_mock.get_states = AsyncMock(return_value=[
+            {"entity_id": "switch.buegeleisen", "state": "on"},
+        ])
+        with patch("assistant.config.get_room_profiles", return_value={"rooms": {}}):
+            await ta_int._run_checks()
+        ta_int._notify_callback.assert_called()
+        alert = ta_int._notify_callback.call_args[0][0]
+        assert alert["device"] == "iron"
+
+    @pytest.mark.asyncio
+    async def test_run_checks_washer_alert(self, ta_int, ha_mock, redis_mock):
+        """Washer running over threshold via _run_checks sends alert."""
+        past_ts = str(datetime.now().timestamp() - 185 * 60)
+        redis_mock.get.return_value = past_ts
+        redis_mock.exists.return_value = 0
+        ha_mock.get_states = AsyncMock(return_value=[
+            {"entity_id": "switch.waschmaschine", "state": "on"},
+        ])
+        with patch("assistant.config.get_room_profiles", return_value={"rooms": {}}):
+            await ta_int._run_checks()
+        ta_int._notify_callback.assert_called()
+        alert = ta_int._notify_callback.call_args[0][0]
+        assert alert["device"] == "washer"
+
+    @pytest.mark.asyncio
+    async def test_run_checks_dryer_alert(self, ta_int, ha_mock, redis_mock):
+        """Dryer running over threshold via _run_checks sends alert."""
+        past_ts = str(datetime.now().timestamp() - 155 * 60)
+        redis_mock.get.return_value = past_ts
+        redis_mock.exists.return_value = 0
+        ha_mock.get_states = AsyncMock(return_value=[
+            {"entity_id": "switch.trockner", "state": "active"},
+        ])
+        with patch("assistant.config.get_room_profiles", return_value={"rooms": {}}):
+            await ta_int._run_checks()
+        ta_int._notify_callback.assert_called()
+        alert = ta_int._notify_callback.call_args[0][0]
+        assert alert["device"] == "dryer"
+
+    @pytest.mark.asyncio
+    async def test_run_checks_dishwasher_alert(self, ta_int, ha_mock, redis_mock):
+        """Dishwasher running over threshold via _run_checks sends alert."""
+        past_ts = str(datetime.now().timestamp() - 185 * 60)
+        redis_mock.get.return_value = past_ts
+        redis_mock.exists.return_value = 0
+        ha_mock.get_states = AsyncMock(return_value=[
+            {"entity_id": "switch.geschirrspueler", "state": "on"},
+        ])
+        with patch("assistant.config.get_room_profiles", return_value={"rooms": {}}):
+            await ta_int._run_checks()
+        ta_int._notify_callback.assert_called()
+        alert = ta_int._notify_callback.call_args[0][0]
+        assert alert["device"] == "dishwasher"
+
+    @pytest.mark.asyncio
+    async def test_run_checks_pc_session_alert(self, ta_int, ha_mock, redis_mock):
+        """PC session over threshold via _run_checks sends alert."""
+        from assistant.time_awareness import KEY_COUNTER_DATE, _LOCAL_TZ
+        past_ts = str(datetime.now().timestamp() - 7 * 3600)
+        today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
+        redis_mock.get.side_effect = lambda key: {
+            KEY_COUNTER_DATE: today,
+        }.get(key, past_ts)
+        redis_mock.exists.return_value = 0
+        ha_mock.get_states = AsyncMock(return_value=[
+            {"entity_id": "sensor.pc_active", "state": "on"},
+        ])
+        # Must also patch yaml_config during _run_checks so _check_pc_session
+        # reads the right pc_sensors list
+        run_cfg = {
+            "time_awareness": {"enabled": True, "thresholds": {}, "counters": {}},
+            "lighting": {"enabled": True},
+            "multi_room": {"room_motion_sensors": {}},
+            "activity": {"entities": {"pc_sensors": ["sensor.pc_active"]}},
+        }
+        with patch("assistant.config.get_room_profiles", return_value={"rooms": {}}), \
+             patch("assistant.function_calling.is_heating_relevant_opening", return_value=False), \
+             patch("assistant.time_awareness.yaml_config", run_cfg):
+            await ta_int._run_checks()
+        ta_int._notify_callback.assert_called()
+        alert = ta_int._notify_callback.call_args[0][0]
+        assert alert["type"] == "pc_no_break"
+
+    @pytest.mark.asyncio
+    async def test_run_checks_light_alerts_extended(self, ta_int, ha_mock, redis_mock):
+        """Light alerts from _check_lights_empty_rooms are added to alerts list."""
+        redis_mock.get.return_value = None
+        ha_mock.get_states = AsyncMock(return_value=[
+            {"entity_id": "switch.nothing", "state": "off"},
+        ])
+        light_alert = {"type": "light_empty_room", "device": "light_kitchen",
+                        "message": "Light on", "urgency": "low"}
+        with patch.object(ta_int, "_check_lights_empty_rooms",
+                          new_callable=AsyncMock, return_value=[light_alert]):
+            await ta_int._run_checks()
+        ta_int._notify_callback.assert_called()
+        sent = ta_int._notify_callback.call_args[0][0]
+        assert sent["type"] == "light_empty_room"
+
+
+# =====================================================================
+# _check_lights_empty_rooms — deeper branch coverage
+# =====================================================================
+
+
+class TestCheckLightsEmptyRoomsDeep:
+    """Cover uncovered branches: invalid auto_off_minutes, motion_to_room
+    mapping, heuristic motion sensor detection, person zone, manual override,
+    and auto-off service failure fallback."""
+
+    @pytest.fixture
+    def ta_ld(self, ha_mock, redis_mock):
+        cfg = {
+            "time_awareness": {
+                "enabled": True,
+                "thresholds": {"light_empty_room": 30},
+            },
+            "lighting": {"enabled": True},
+            "multi_room": {"room_motion_sensors": {
+                "kitchen": "binary_sensor.motion_kitchen",
+            }},
+            "activity": {"entities": {"pc_sensors": []}},
+        }
+        with patch("assistant.time_awareness.yaml_config", cfg):
+            ta = TimeAwareness(ha_mock)
+        ta.redis = redis_mock
+        return ta
+
+    @pytest.mark.asyncio
+    async def test_invalid_auto_off_minutes_falls_back(self, ta_ld, redis_mock):
+        """Invalid auto_off_empty_room_minutes value falls back to threshold."""
+        past_ts = str(datetime.now().timestamp() - 2400)
+        redis_mock.get.return_value = past_ts
+        redis_mock.exists.return_value = 0
+        states = [
+            {"entity_id": "light.bad_main", "state": "on",
+             "attributes": {"friendly_name": "Bad Licht"}},
+        ]
+        cfg = {
+            "lighting": {"enabled": True, "auto_off_empty_room_minutes": "not_a_number"},
+            "multi_room": {"room_motion_sensors": {}},
+        }
+        with patch("assistant.time_awareness.yaml_config") as mock_cfg, \
+             patch("assistant.config.get_room_profiles",
+                   return_value={"rooms": {}}):
+            mock_cfg.get.side_effect = lambda k, default=None: cfg.get(k, default)
+            alerts = await ta_ld._check_lights_empty_rooms(states)
+        # Should still produce alert using fallback threshold
+        assert len(alerts) == 1
+        assert alerts[0]["type"] == "light_empty_room"
+
+    @pytest.mark.asyncio
+    async def test_motion_sensor_room_mapping(self, ta_ld, redis_mock):
+        """Configured motion sensor maps to room correctly — light not alerted."""
+        states = [
+            {"entity_id": "binary_sensor.motion_kitchen", "state": "on"},
+            {"entity_id": "light.kitchen_lamp", "state": "on",
+             "attributes": {"friendly_name": "Kitchen Lamp"}},
+        ]
+        cfg = {
+            "lighting": {"enabled": True},
+            "multi_room": {"room_motion_sensors": {
+                "kitchen": "binary_sensor.motion_kitchen",
+            }},
+        }
+        with patch("assistant.time_awareness.yaml_config") as mock_cfg, \
+             patch("assistant.config.get_room_profiles",
+                   return_value={"rooms": {"kitchen": {"light_entities": ["light.kitchen_lamp"]}}}):
+            mock_cfg.get.side_effect = lambda k, default=None: cfg.get(k, default)
+            alerts = await ta_ld._check_lights_empty_rooms(states)
+        assert alerts == []
+
+    @pytest.mark.asyncio
+    async def test_heuristic_motion_sensor_detection(self, ta_ld, redis_mock):
+        """binary_sensor.motion_* without config still detects active room."""
+        states = [
+            {"entity_id": "binary_sensor.motion_garage", "state": "on"},
+            {"entity_id": "light.garage_ceiling", "state": "on",
+             "attributes": {"friendly_name": "Garage Ceiling"}},
+        ]
+        cfg = {
+            "lighting": {"enabled": True},
+            "multi_room": {"room_motion_sensors": {}},
+        }
+        with patch("assistant.time_awareness.yaml_config") as mock_cfg, \
+             patch("assistant.config.get_room_profiles",
+                   return_value={"rooms": {"garage": {"light_entities": ["light.garage_ceiling"]}}}):
+            mock_cfg.get.side_effect = lambda k, default=None: cfg.get(k, default)
+            alerts = await ta_ld._check_lights_empty_rooms(states)
+        assert alerts == []
+
+    @pytest.mark.asyncio
+    async def test_person_zone_active_room(self, ta_ld, redis_mock):
+        """Person zone attribute marks room as active."""
+        states = [
+            {"entity_id": "person.user1", "state": "home",
+             "attributes": {"zone": "Office"}},
+            {"entity_id": "light.office_desk", "state": "on",
+             "attributes": {"friendly_name": "Office Desk Light"}},
+        ]
+        cfg = {
+            "lighting": {"enabled": True},
+            "multi_room": {"room_motion_sensors": {}},
+        }
+        with patch("assistant.time_awareness.yaml_config") as mock_cfg, \
+             patch("assistant.config.get_room_profiles",
+                   return_value={"rooms": {"office": {"light_entities": ["light.office_desk"]}}}):
+            mock_cfg.get.side_effect = lambda k, default=None: cfg.get(k, default)
+            alerts = await ta_ld._check_lights_empty_rooms(states)
+        assert alerts == []
+
+    @pytest.mark.asyncio
+    async def test_manual_override_skips_light(self, ta_ld, redis_mock):
+        """Light with manual override active should be skipped."""
+        past_ts = str(datetime.now().timestamp() - 2400)
+        redis_mock.get.return_value = past_ts
+        redis_mock.exists.return_value = 0
+        states = [
+            {"entity_id": "light.living_manual", "state": "on",
+             "attributes": {"friendly_name": "Living Manual"}},
+        ]
+        cfg = {
+            "lighting": {"enabled": True},
+            "multi_room": {"room_motion_sensors": {}},
+        }
+        # Mock light engine with manual override
+        mock_le = AsyncMock()
+        mock_le.is_manual_override_active = AsyncMock(return_value=True)
+        ta_ld._light_engine = mock_le
+        with patch("assistant.time_awareness.yaml_config") as mock_cfg, \
+             patch("assistant.config.get_room_profiles",
+                   return_value={"rooms": {}}):
+            mock_cfg.get.side_effect = lambda k, default=None: cfg.get(k, default)
+            alerts = await ta_ld._check_lights_empty_rooms(states)
+        assert alerts == []
+
+    @pytest.mark.asyncio
+    async def test_manual_override_exception_continues(self, ta_ld, redis_mock):
+        """Exception in manual override check is caught — light still checked."""
+        past_ts = str(datetime.now().timestamp() - 2400)
+        redis_mock.get.return_value = past_ts
+        redis_mock.exists.return_value = 0
+        states = [
+            {"entity_id": "light.study_lamp", "state": "on",
+             "attributes": {"friendly_name": "Study Lamp"}},
+        ]
+        cfg = {
+            "lighting": {"enabled": True},
+            "multi_room": {"room_motion_sensors": {}},
+        }
+        mock_le = AsyncMock()
+        mock_le.is_manual_override_active = AsyncMock(side_effect=RuntimeError("LE error"))
+        ta_ld._light_engine = mock_le
+        with patch("assistant.time_awareness.yaml_config") as mock_cfg, \
+             patch("assistant.config.get_room_profiles",
+                   return_value={"rooms": {}}):
+            mock_cfg.get.side_effect = lambda k, default=None: cfg.get(k, default)
+            alerts = await ta_ld._check_lights_empty_rooms(states)
+        # Light should still produce alert despite LE error
+        assert len(alerts) == 1
+
+    @pytest.mark.asyncio
+    async def test_auto_off_service_failure_fallback(self, ta_ld, ha_mock, redis_mock):
+        """call_service failure during auto-off falls back to hint alert."""
+        past_ts = str(datetime.now().timestamp() - 2400)
+        redis_mock.get.return_value = past_ts
+        redis_mock.exists.return_value = 0
+        ha_mock.call_service = AsyncMock(side_effect=RuntimeError("HA down"))
+        states = [
+            {"entity_id": "light.kitchen_spot", "state": "on",
+             "attributes": {"friendly_name": "Kitchen Spot"}},
+        ]
+        cfg = {
+            "lighting": {"enabled": True, "auto_off_empty_room_minutes": 20, "default_transition": 2},
+            "multi_room": {"room_motion_sensors": {}},
+        }
+        with patch("assistant.time_awareness.yaml_config") as mock_cfg, \
+             patch("assistant.config.get_room_profiles",
+                   return_value={"rooms": {}}):
+            mock_cfg.get.side_effect = lambda k, default=None: cfg.get(k, default)
+            alerts = await ta_ld._check_lights_empty_rooms(states)
+        assert len(alerts) == 1
+        assert alerts[0]["type"] == "light_empty_room"
+
+    @pytest.mark.asyncio
+    async def test_motion_sensor_null_skipped(self, ta_ld, redis_mock):
+        """Motion sensor with None value in config is skipped."""
+        states = [
+            {"entity_id": "light.hallway_light", "state": "on",
+             "attributes": {"friendly_name": "Hallway"}},
+        ]
+        cfg = {
+            "lighting": {"enabled": True},
+            "multi_room": {"room_motion_sensors": {"hallway": None}},
+        }
+        redis_mock.get.return_value = None  # first check
+        with patch("assistant.time_awareness.yaml_config") as mock_cfg, \
+             patch("assistant.config.get_room_profiles",
+                   return_value={"rooms": {}}):
+            mock_cfg.get.side_effect = lambda k, default=None: cfg.get(k, default)
+            alerts = await ta_ld._check_lights_empty_rooms(states)
+        # Under threshold (first check), no alert
+        assert alerts == []
+
+
+# =====================================================================
+# _check_windows_cold — outdoor temp sensor parsing edge case
+# =====================================================================
+
+
+class TestCheckWindowsColdDeep:
+    """Cover outdoor_temperature parsing and invalid temp values."""
+
+    @pytest.fixture
+    def ta_wd(self, ha_mock, redis_mock):
+        cfg = {
+            "time_awareness": {
+                "enabled": True,
+                "thresholds": {"window_open_cold": 120},
+            },
+            "activity": {"entities": {"pc_sensors": []}},
+        }
+        with patch("assistant.time_awareness.yaml_config", cfg):
+            ta = TimeAwareness(ha_mock)
+        ta.redis = redis_mock
+        return ta
+
+    @pytest.mark.asyncio
+    async def test_outdoor_temp_invalid_value(self, ta_wd, redis_mock):
+        """Invalid outdoor temperature value is handled gracefully."""
+        states = [
+            {"entity_id": "sensor.outdoor_temperature", "state": "unavailable"},
+            {"entity_id": "binary_sensor.window_kitchen", "state": "on",
+             "attributes": {"friendly_name": "Kuechenfenster"}},
+        ]
+        # No weather entity, outdoor temp is invalid -> outside_temp stays None -> no alert
+        alerts = await ta_wd._check_windows_cold(states)
+        assert alerts == []
+
+    @pytest.mark.asyncio
+    async def test_outdoor_temp_cold_with_sensor(self, ta_wd, redis_mock):
+        """Outdoor temp sensor below 10 triggers window check."""
+        past_ts = str(datetime.now().timestamp() - 8000)
+        redis_mock.get.return_value = past_ts
+        redis_mock.exists.return_value = 0
+        states = [
+            {"entity_id": "sensor.outdoor_temperature", "state": "5.0"},
+            {"entity_id": "binary_sensor.window_bath", "state": "on",
+             "attributes": {"friendly_name": "Badfenster"}},
+        ]
+        with patch("assistant.function_calling.is_heating_relevant_opening", return_value=True), \
+             patch("assistant.function_calling.get_opening_type", return_value="window"):
+            alerts = await ta_wd._check_windows_cold(states)
+        assert len(alerts) == 1
+        assert "5.0°C" in alerts[0]["message"]
+
+
+# =====================================================================
+# _check_loop — real loop with error handling
+# =====================================================================
+
+
+class TestCheckLoopBehavior:
+    @pytest.mark.asyncio
+    async def test_check_loop_error_recovery(self, ta):
+        """_check_loop catches errors from _run_checks and continues."""
+        call_count = 0
+
+        async def failing_checks():
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 1:
+                raise RuntimeError("HA unreachable")
+            # Stop loop on second call
+            ta._running = False
+
+        ta._running = True
+        ta.check_interval = 0
+        with patch.object(ta, "_run_checks", side_effect=failing_checks):
+            await ta._check_loop()
+        # Loop ran twice: first error was caught, second stopped loop
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_check_loop_stops_when_not_running(self, ta):
+        """_check_loop exits immediately when _running is False."""
+        ta._running = False
+        ta.check_interval = 0
+        with patch.object(ta, "_run_checks", new_callable=AsyncMock) as mock_checks:
+            await ta._check_loop()
+        mock_checks.assert_not_called()

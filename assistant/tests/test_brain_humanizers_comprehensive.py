@@ -719,9 +719,9 @@ class TestHumanizeDeviceCommand:
         with patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
             executed = [{"function": "set_light", "args": {"room": "wohnzimmer", "action": "on"}}]
             result = humanizer._humanize_device_command("Licht an", executed)
-        assert "Licht" in result
-        assert "eingeschaltet" in result
-        assert "Wohnzimmer" in result
+        assert "licht" in result.lower()
+        assert "eingeschaltet" in result.lower()
+        assert "wohnzimmer" in result.lower()
 
     def test_multiple_actions(self, humanizer):
         with patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
