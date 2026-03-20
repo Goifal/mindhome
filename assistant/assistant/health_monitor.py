@@ -266,11 +266,12 @@ class HealthMonitor:
                 if alert:
                     alerts.append(alert)
 
-            # Temperatur-Check deaktiviert — zu viele Fehlalarme bei normaler
-            # Raumtemperatur. Heizungs-/Klimasteuerung erfolgt ueber die
-            # Climate-Domain und Circadian Engine.
-            # elif device_class == "temperature":
-            #     ...
+            # F7: Temperatur-Check nur fuer Extremwerte (Frost/Hitze)
+            # Normale Raumtemperatur wird von Climate-Domain gesteuert.
+            elif device_class == "temperature":
+                alert = self._check_temperature(entity_id, friendly_name, value)
+                if alert:
+                    alerts.append(alert)
 
         return alerts
 

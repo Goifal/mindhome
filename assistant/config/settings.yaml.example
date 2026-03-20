@@ -594,13 +594,13 @@ memory:
   episode_min_words: 3
   default_confidence: 0.7
   category_confidence:
-    health: 0.9
-    person: 0.85
-    preference: 0.75
-    habit: 0.7
-    work: 0.7
-    intent: 0.6
-    general: 0.5
+    health: 0.95
+    person: 0.9
+    preference: 0.85
+    habit: 0.8
+    work: 0.8
+    intent: 0.7
+    general: 0.7
 planner:
   max_iterations: 8
   model: qwen3.5:9b
@@ -1261,6 +1261,11 @@ notifications:
     # push:
     #   preferred: false
     #   urgency_min: medium
+  dedup:
+    enabled: true
+    similarity_threshold: 0.85    # Cosinus-Schwelle (0.7-0.95)
+    buffer_size: 20               # Max. Eintraege im Vergleichs-Buffer
+    window_minutes: 30            # Zeitfenster fuer Duplikat-Erkennung
 # --- Urlaubs-Simulation ---
 vacation_simulation:
   morning_hour: 7

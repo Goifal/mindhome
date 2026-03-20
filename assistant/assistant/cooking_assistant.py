@@ -569,6 +569,33 @@ class CookingAssistant:
             parts.append(f"  - {ing}")
         return "\n".join(parts)
 
+    async def add_ingredients_to_shopping(self, smart_shopping=None) -> str:
+        """Fuegt fehlende Zutaten der aktuellen Session zur Einkaufsliste hinzu.
+
+        Integration mit SmartShopping: Prueft welche Zutaten bereits auf der
+        Einkaufsliste stehen und fuegt nur fehlende hinzu.
+        """
+        if not self.session:
+            return "Keine aktive Koch-Session."
+        if not self.session.ingredients:
+            return "Keine Zutaten vorhanden."
+        if not smart_shopping:
+            return "Einkaufslisten-Modul nicht verfuegbar."
+
+        try:
+            result = await smart_shopping.add_missing_ingredients(self.session.ingredients)
+            added = result.get("added", [])
+            already = result.get("already_on_list", [])
+            parts = []
+            if added:
+                parts.append(f"{len(added)} Zutaten zur Einkaufsliste hinzugefuegt: {', '.join(added)}")
+            if already:
+                parts.append(f"{len(already)} waren bereits auf der Liste")
+            return " | ".join(parts) if parts else "Alle Zutaten sind bereits auf der Liste."
+        except Exception as e:
+            logger.warning("Zutaten zur Einkaufsliste hinzufuegen fehlgeschlagen: %s", e)
+            return "Fehler beim Hinzufuegen zur Einkaufsliste."
+
     async def _adjust_portions(self, new_portions: int) -> str:
         """Passt die Portionen an (einfache Skalierung)."""
         if not self.session:

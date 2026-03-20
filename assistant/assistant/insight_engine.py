@@ -63,6 +63,7 @@ class InsightEngine:
     def __init__(self, ha: HomeAssistantClient, activity=None):
         self.ha = ha
         self.activity = activity
+        self.learning_observer = None  # E5: LearningObserver-Integration
         self.redis: Optional[aioredis.Redis] = None
         self._task: Optional[asyncio.Task] = None
         self._running = False
@@ -507,6 +508,14 @@ class InsightEngine:
         data = await self._gather_data()
         if not data["states"]:
             return []
+
+        # E5: Gelernte Muster aus LearningObserver einbeziehen
+        if self.learning_observer and hasattr(self.learning_observer, 'get_learning_report'):
+            try:
+                report = await self.learning_observer.get_learning_report()
+                data["learned_patterns"] = report.get("active_patterns", [])
+            except Exception as e:
+                logger.debug("LearningObserver-Daten fuer Insights fehlgeschlagen: %s", e)
 
         insights = []
 

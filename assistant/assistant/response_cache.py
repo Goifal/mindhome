@@ -51,18 +51,33 @@ class ResponseCache:
         self._invalidation_count = 0
         self._stats_lock = asyncio.Lock()
 
-    def configure(self, *, enabled: bool = True, ttl_overrides: Optional[dict] = None):
+    def configure(
+        self,
+        *,
+        enabled: bool = True,
+        ttl_overrides: Optional[dict] = None,
+        predictive_preload: Optional[dict] = None,
+    ):
         """Konfiguriert den Cache (aus settings.yaml)."""
         self._enabled = enabled
         if ttl_overrides:
             self._ttl_overrides = ttl_overrides
+        pp = predictive_preload or {}
+        self._predictive_enabled = pp.get("enabled", True)
+        self._predictive_lookahead_hours = pp.get("lookahead_hours", 2)
+        self._predictive_ttl = pp.get("preload_ttl_seconds", 300)
+        self._predictive_max = pp.get("max_predictions", 5)
 
     def set_redis(self, redis_client) -> None:
         """Setzt den Redis-Client."""
         self._redis = redis_client
 
     def _make_key(self, text: str, category: str, room: Optional[str] = None) -> str:
-        """Erzeugt einen Cache-Key aus normalisiertem Text + Kategorie."""
+        """Erzeugt einen Cache-Key aus normalisiertem Text + Kategorie.
+
+        Room wird als Prefix im Key eingebettet, damit invalidate_by_room()
+        gezielt nur Keys eines bestimmten Raums loeschen kann.
+        """
         # Normalisierung: lowercase, Whitespace komprimieren, Satzzeichen entfernen
         normalized = " ".join(text.lower().split())
         for ch in ".,!?;:":
@@ -72,7 +87,8 @@ class ResponseCache:
             parts.append(room.lower())
         raw = "|".join(parts)
         h = hashlib.sha256(raw.encode()).hexdigest()[:16]
-        return f"mha:rcache:{h}"
+        room_tag = room.lower().replace(" ", "_") if room else "_global"
+        return f"mha:rcache:{room_tag}:{h}"
 
     def _get_ttl(self, category: str) -> int:
         """Gibt TTL fuer eine Kategorie zurueck."""
@@ -81,7 +97,10 @@ class ResponseCache:
         return _DEFAULT_TTL.get(category, 0)
 
     async def get(
-        self, text: str, category: str, room: Optional[str] = None,
+        self,
+        text: str,
+        category: str,
+        room: Optional[str] = None,
     ) -> Optional[dict]:
         """Sucht eine gecachte Antwort.
 
@@ -102,12 +121,16 @@ class ResponseCache:
             if raw:
                 async with self._stats_lock:
                     self._hits += 1
-                    self._category_hits[category] = self._category_hits.get(category, 0) + 1
+                    self._category_hits[category] = (
+                        self._category_hits.get(category, 0) + 1
+                    )
                 data = json.loads(raw)
                 age_ms = round((time.time() - data.get("_ts", 0)) * 1000)
                 logger.info(
                     "ResponseCache HIT [%s] age=%dms key=%s",
-                    category, age_ms, key[-8:],
+                    category,
+                    age_ms,
+                    key[-8:],
                 )
                 return data
         except Exception as e:
@@ -146,7 +169,9 @@ class ResponseCache:
             data["tts"] = tts
         try:
             await self._redis.set(key, json.dumps(data), ex=ttl)
-            logger.debug("ResponseCache PUT [%s] ttl=%ds key=%s", category, ttl, key[-8:])
+            logger.debug(
+                "ResponseCache PUT [%s] ttl=%ds key=%s", category, ttl, key[-8:]
+            )
         except Exception as e:
             logger.debug("ResponseCache put Fehler: %s", e)
 
@@ -188,17 +213,19 @@ class ResponseCache:
             await self._redis.set(key, json.dumps(data), ex=ttl)
             async with self._stats_lock:
                 self._pre_cache_count += 1
-            logger.debug("ResponseCache PRE-CACHE [%s] ttl=%ds key=%s", category, ttl, key[-8:])
+            logger.debug(
+                "ResponseCache PRE-CACHE [%s] ttl=%ds key=%s", category, ttl, key[-8:]
+            )
             return True
         except Exception as e:
             logger.debug("ResponseCache pre_cache Fehler: %s", e)
             return False
 
     async def invalidate_by_room(self, room: str) -> int:
-        """Invalidiert device_query-Cache fuer einen bestimmten Raum.
+        """Invalidiert Cache-Eintraege fuer einen bestimmten Raum.
 
-        Wird aufgerufen wenn sich ein State im Raum aendert,
-        damit gecachte Antworten nicht veraltet sind.
+        Room ist im Redis-Key als Prefix eingebettet (mha:rcache:<room>:<hash>),
+        sodass gezielt nur Keys dieses Raums geloescht werden.
 
         Returns: Anzahl geloeschter Keys.
         """
@@ -206,29 +233,19 @@ class ResponseCache:
             return 0
 
         try:
-            # Scan nach Cache-Keys die diesen Raum betreffen
-            pattern = "mha:rcache:*"
+            room_tag = room.lower().replace(" ", "_")
+            pattern = f"mha:rcache:{room_tag}:*"
             deleted = 0
             async for key in self._redis.scan_iter(match=pattern, count=100):
-                try:
-                    raw = await self._redis.get(key)
-                    if not raw:
-                        continue
-                    # Key-Struktur: category|text|room -> SHA256
-                    # Wir koennen den Raum nicht aus dem Hash rekonstruieren,
-                    # daher loeschen wir alle device_query-Caches (kurzer TTL, schnell rebuilt)
-                    data = json.loads(raw)
-                    if not data.get("_pre_cached"):
-                        await self._redis.delete(key)
-                        deleted += 1
-                except Exception as e:
-                    logger.debug("Cache-Eintrag Invalidierung fehlgeschlagen: %s", e)
-                    continue
+                await self._redis.delete(key)
+                deleted += 1
 
             if deleted:
                 async with self._stats_lock:
                     self._invalidation_count += deleted
-                logger.debug("ResponseCache invalidated %d entries for room '%s'", deleted, room)
+                logger.debug(
+                    "ResponseCache invalidated %d entries for room '%s'", deleted, room
+                )
             return deleted
         except Exception as e:
             logger.debug("ResponseCache invalidate Fehler: %s", e)
@@ -246,3 +263,89 @@ class ResponseCache:
             "invalidations": self._invalidation_count,
             "category_hits": dict(self._category_hits),
         }
+
+    # ------------------------------------------------------------------
+    # Predictive Context Preload: Antizipatorisches Cache-Warming
+    # ------------------------------------------------------------------
+
+    async def warm_predictive_cache(
+        self,
+        anticipation_engine=None,
+        context_builder=None,
+    ) -> int:
+        """Waermt den Cache basierend auf vorhergesagten User-Aktionen vor.
+
+        Nutzt die AnticipationEngine um zu bestimmen welche Fragen/Aktionen
+        in den naechsten 1-2 Stunden wahrscheinlich kommen und laedt den
+        Kontext dafuer vorab.
+
+        Args:
+            anticipation_engine: AnticipationEngine-Instanz fuer Vorhersagen.
+            context_builder: ContextBuilder-Instanz fuer Kontext-Laden.
+
+        Returns:
+            Anzahl der vorgewarmten Cache-Eintraege.
+        """
+        if not self._enabled or not self._redis:
+            return 0
+        if not getattr(self, "_predictive_enabled", True):
+            return 0
+        if not anticipation_engine:
+            return 0
+
+        lookahead = getattr(self, "_predictive_lookahead_hours", 2)
+        preload_ttl = getattr(self, "_predictive_ttl", 300)
+        max_preds = getattr(self, "_predictive_max", 5)
+
+        warmed = 0
+        try:
+            predictions = await anticipation_engine.predict_future_needs(days_ahead=1)
+            if not predictions:
+                return 0
+
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+
+            tz = ZoneInfo("Europe/Berlin")
+            now = datetime.now(tz)
+
+            for pred in predictions[:max_preds]:
+                hour = pred.get("hour", 0)
+                hours_ahead = hour - now.hour
+                if hours_ahead < 0:
+                    hours_ahead += 24
+                if hours_ahead > lookahead:
+                    continue
+
+                action = pred.get("action", "")
+                # Status-Queries vorladen: typische Fragen zu Raum/Domain
+                query_templates = [
+                    f"status {action.replace('_', ' ')}",
+                    f"wie ist {action.replace('_', ' ')}",
+                ]
+                for query in query_templates:
+                    key = self._make_key(query, "device_query")
+                    exists = await self._redis.exists(key)
+                    if not exists and context_builder:
+                        try:
+                            ctx = await context_builder._get_mindhome_data()
+                            if ctx:
+                                await self._redis.setex(
+                                    f"mha:predictive_preload:{action}",
+                                    preload_ttl,
+                                    json.dumps(ctx, default=str, ensure_ascii=False),
+                                )
+                                warmed += 1
+                        except Exception as e:
+                            logger.debug(
+                                "Predictive preload Fehler fuer %s: %s", action, e
+                            )
+                        break  # Ein Preload pro Action reicht
+
+            if warmed:
+                logger.info("Predictive Cache: %d Eintraege vorgeladen", warmed)
+
+        except Exception as e:
+            logger.debug("Predictive Cache Warming Fehler: %s", e)
+
+        return warmed

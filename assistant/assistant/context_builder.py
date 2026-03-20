@@ -57,97 +57,100 @@ def reload_injection_config():
     inj_cfg = yaml_config.get("prompt_injection", {})
     _INJ_ENABLED = inj_cfg.get("enabled", True)
     _INJ_LOG_BLOCKED = inj_cfg.get("log_blocked", True)
-    logger.info("Injection-Config reloaded (enabled=%s, log=%s)", _INJ_ENABLED, _INJ_LOG_BLOCKED)
+    logger.info(
+        "Injection-Config reloaded (enabled=%s, log=%s)", _INJ_ENABLED, _INJ_LOG_BLOCKED
+    )
+
 
 # F-080: Erweiterter Filter mit Unicode-Tricks, Markdown, Base64, Delimiter
 # F-084: Extraction-Attack-Patterns, Decimal HTML Entities, Delimiter Confusion
 _INJECTION_PATTERN = re.compile(
     # Originale Patterns
-    r'\[(?:SYSTEM|INSTRUCTION|OVERRIDE|ADMIN|COMMAND|PROMPT|ROLE)\b'
-    r'|IGNORE\s+(?:ALL\s+)?(?:PREVIOUS\s+)?INSTRUCTIONS'
-    r'|SYSTEM\s*(?:MODE|OVERRIDE|INSTRUCTION)'
-    r'|<\/?(?:system|instruction|admin|role|prompt)\b'
+    r"\[(?:SYSTEM|INSTRUCTION|OVERRIDE|ADMIN|COMMAND|PROMPT|ROLE)\b"
+    r"|IGNORE\s+(?:ALL\s+)?(?:PREVIOUS\s+)?INSTRUCTIONS"
+    r"|SYSTEM\s*(?:MODE|OVERRIDE|INSTRUCTION)"
+    r"|<\/?(?:system|instruction|admin|role|prompt)\b"
     # F-080: Erweiterte Patterns
-    r'|YOU\s+ARE\s+NOW'                         # Persona-Hijacking
-    r'|\bACT\s+AS\s+(?:IF|A|AN|THE)'            # Persona-Hijacking v2 (word boundary)
-    r'|DISREGARD\s+(?:ALL|PREVIOUS|ABOVE)'      # Instruction Override
-    r'|FORGET\s+(?:ALL|EVERYTHING|YOUR)'        # Memory Wipe
-    r'|NEW\s+(?:INSTRUCTION|DIRECTIVE|TASK)'    # Neuer Kontext
-    r'|BEGIN\s+(?:NEW\s+)?(?:SESSION|CONVERSATION)'  # Session-Reset
-    r'|END\s+(?:OF\s+)?(?:SYSTEM|CONTEXT)'      # Kontext-Abschluss-Trick
-    r'|```\s*(?:system|admin|instruction)'       # Markdown Code-Block Trick
-    r'|IMPORTANT\s*:\s*(?:IGNORE|OVERRIDE|FORGET)' # Dringlichkeits-Trick
-    r'|DO\s+NOT\s+(?:FOLLOW|OBEY|LISTEN)'       # Negations-Trick
-    r'|PRETEND\s+(?:YOU|THAT|THIS)'             # Pretend-Angriff
-    r'|(?:JAILBREAK|ESCAPE)\s'                   # Explizite Angriffs-Keywords
-    r'|BYPASS\s+(?:FILTER|SAFETY|SECURITY|RULE|RESTRICTION|LIMIT)'  # Bypass nur mit Kontext
-    r'|ASSISTANT\s*:\s'                          # Fake-Rollenuebernahme
-    r'|USER\s*:\s'                               # Fake-User-Nachricht
-    r'|HUMAN\s*:\s'                              # Fake-Human-Nachricht
-    r'|\b(?:BASE64|DECODE|EVAL)\s*\('           # Code-Execution Tricks
-    r'|---+\s*(?:SYSTEM|END|NEW)'               # Delimiter-Injection
+    r"|YOU\s+ARE\s+NOW"  # Persona-Hijacking
+    r"|\bACT\s+AS\s+(?:IF|A|AN|THE)"  # Persona-Hijacking v2 (word boundary)
+    r"|DISREGARD\s+(?:ALL|PREVIOUS|ABOVE)"  # Instruction Override
+    r"|FORGET\s+(?:ALL|EVERYTHING|YOUR)"  # Memory Wipe
+    r"|NEW\s+(?:INSTRUCTION|DIRECTIVE|TASK)"  # Neuer Kontext
+    r"|BEGIN\s+(?:NEW\s+)?(?:SESSION|CONVERSATION)"  # Session-Reset
+    r"|END\s+(?:OF\s+)?(?:SYSTEM|CONTEXT)"  # Kontext-Abschluss-Trick
+    r"|```\s*(?:system|admin|instruction)"  # Markdown Code-Block Trick
+    r"|IMPORTANT\s*:\s*(?:IGNORE|OVERRIDE|FORGET)"  # Dringlichkeits-Trick
+    r"|DO\s+NOT\s+(?:FOLLOW|OBEY|LISTEN)"  # Negations-Trick
+    r"|PRETEND\s+(?:YOU|THAT|THIS)"  # Pretend-Angriff
+    r"|(?:JAILBREAK|ESCAPE)\s"  # Explizite Angriffs-Keywords
+    r"|BYPASS\s+(?:FILTER|SAFETY|SECURITY|RULE|RESTRICTION|LIMIT)"  # Bypass nur mit Kontext
+    r"|ASSISTANT\s*:\s"  # Fake-Rollenuebernahme
+    r"|USER\s*:\s"  # Fake-User-Nachricht
+    r"|HUMAN\s*:\s"  # Fake-Human-Nachricht
+    r"|\b(?:BASE64|DECODE|EVAL)\s*\("  # Code-Execution Tricks
+    r"|---+\s*(?:SYSTEM|END|NEW)"  # Delimiter-Injection
     # F-084: Extraction-Attack-Patterns
-    r'|REPEAT\s+(?:YOUR|THE|ALL|ABOVE|EVERYTHING)'  # Extraction
-    r'|SUMMARIZE\s+(?:THE\s+)?(?:ABOVE|SYSTEM|PREVIOUS)'  # Extraction v2
-    r'|WHAT\s+ARE\s+YOUR\s+(?:INSTRUCTIONS|RULES)'  # Extraction v3
-    r'|OUTPUT\s+(?:THE|YOUR)\s+(?:PREVIOUS|SYSTEM)'  # Extraction v4
-    r'|TRANSLATE\s+(?:THE\s+)?ABOVE'            # Extraction via Translation
-    r'|SHOW\s+(?:ME\s+)?(?:YOUR|THE)\s+(?:SYSTEM|PROMPT)'  # Extraction v5
+    r"|REPEAT\s+(?:YOUR|THE|ALL|ABOVE|EVERYTHING)"  # Extraction
+    r"|SUMMARIZE\s+(?:THE\s+)?(?:ABOVE|SYSTEM|PREVIOUS)"  # Extraction v2
+    r"|WHAT\s+ARE\s+YOUR\s+(?:INSTRUCTIONS|RULES)"  # Extraction v3
+    r"|OUTPUT\s+(?:THE|YOUR)\s+(?:PREVIOUS|SYSTEM)"  # Extraction v4
+    r"|TRANSLATE\s+(?:THE\s+)?ABOVE"  # Extraction via Translation
+    r"|SHOW\s+(?:ME\s+)?(?:YOUR|THE)\s+(?:SYSTEM|PROMPT)"  # Extraction v5
     # F-084: Delimiter Confusion (erweitert)
-    r'|<\|(?:im_start|im_end|endoftext|user|system)\|?>'  # Model-spezifische Tokens
-    r'|\[\/(?:INST|SYS)\]'                      # Llama-spezifische Tags
-    r'|#\s+(?:SYSTEM|NEW)\s+(?:INSTRUCTIONS|PROMPT)'  # Markdown-Header Injection
+    r"|<\|(?:im_start|im_end|endoftext|user|system)\|?>"  # Model-spezifische Tokens
+    r"|\[\/(?:INST|SYS)\]"  # Llama-spezifische Tags
+    r"|#\s+(?:SYSTEM|NEW)\s+(?:INSTRUCTIONS|PROMPT)"  # Markdown-Header Injection
     # F-084: HTML Entities (hex UND decimal)
-    r'|&#x?[0-9a-fA-F]+;'                       # Beide Entity-Formen
-    r'|\\u[0-9a-fA-F]{4}'                       # Unicode Escape Sequences
-    r'|[\x00-\x08\x0b\x0c\x0e-\x1f]'           # Kontrollzeichen (korrekter Char-Class)
+    r"|&#x?[0-9a-fA-F]+;"  # Beide Entity-Formen
+    r"|\\u[0-9a-fA-F]{4}"  # Unicode Escape Sequences
+    r"|[\x00-\x08\x0b\x0c\x0e-\x1f]"  # Kontrollzeichen (korrekter Char-Class)
     # F-090: Deutsche Injection-Patterns
-    r'|IGNORIERE\s+(?:ALLE\s+)?(?:VORHERIGEN\s+)?(?:ANWEISUNGEN|INSTRUKTIONEN)'
-    r'|VERGISS\s+(?:ALLES|DEINE)'               # DE Memory Wipe
-    r'|DU\s+BIST\s+(?:JETZT|AB\s+JETZT)'       # DE Persona-Hijacking
-    r'|NEUE\s+(?:ANWEISUNG|AUFGABE|ROLLE)'      # DE Neue Instruktion
-    r'|TU\s+SO\s+ALS\s+(?:OB|WAERST|WÄRST)'   # DE Pretend
-    r'|SPRICH\s+(?:AB\s+JETZT|NUR\s+NOCH)'     # DE Sprachsteuerung
-    r'|STELLE\s+DIR\s+VOR\s+DU\s+(?:BIST|WAERST)'  # DE Hypothetischer Angriff
+    r"|IGNORIERE\s+(?:ALLE\s+)?(?:VORHERIGEN\s+)?(?:ANWEISUNGEN|INSTRUKTIONEN)"
+    r"|VERGISS\s+(?:ALLES|DEINE)"  # DE Memory Wipe
+    r"|DU\s+BIST\s+(?:JETZT|AB\s+JETZT)"  # DE Persona-Hijacking
+    r"|NEUE\s+(?:ANWEISUNG|AUFGABE|ROLLE)"  # DE Neue Instruktion
+    r"|TU\s+SO\s+ALS\s+(?:OB|WAERST|WÄRST)"  # DE Pretend
+    r"|SPRICH\s+(?:AB\s+JETZT|NUR\s+NOCH)"  # DE Sprachsteuerung
+    r"|STELLE\s+DIR\s+VOR\s+DU\s+(?:BIST|WAERST)"  # DE Hypothetischer Angriff
     # F-090: Multilingual Mixed-Language Injection
-    r'|(?:PLEASE|BITTE)\s+(?:IGNORE|IGNORIERE)'  # Mixed DE/EN
-    r'|(?:NOW|JETZT)\s+(?:ACT|AGIERE)\s+AS'    # Mixed DE/EN
+    r"|(?:PLEASE|BITTE)\s+(?:IGNORE|IGNORIERE)"  # Mixed DE/EN
+    r"|(?:NOW|JETZT)\s+(?:ACT|AGIERE)\s+AS"  # Mixed DE/EN
     # F-090: Indirect Injection via Entity-Namen/Attribute
     r'|entity_id\s*[=:]\s*["\']?(?:system|admin|root|sudo)'  # Entity-ID Hijacking
-    r'|friendly_name\s*[=:]\s*.*?(?:SYSTEM|IGNORE|OVERRIDE)'  # HA Attribute Injection (non-greedy)
+    r"|friendly_name\s*[=:]\s*.*?(?:SYSTEM|IGNORE|OVERRIDE)"  # HA Attribute Injection (non-greedy)
     # F-090: Advanced Evasion Techniques
-    r'|(?:S\s+Y\s+S\s+T\s+E\s+M)'             # Spaced-out keywords (mindestens 1 Space)
-    r'|(?:I\s+G\s+N\s+O\s+R\s+E)'             # Spaced-out keywords v2 (mindestens 1 Space)
-    r'|(?:SYS|SYS)(?:TEM|tem)'                  # Mixed-case obfuscation
-    r'|(?:IGN|ign)(?:ORE|ore)'                  # Mixed-case obfuscation v2
+    r"|(?:S\s+Y\s+S\s+T\s+E\s+M)"  # Spaced-out keywords (mindestens 1 Space)
+    r"|(?:I\s+G\s+N\s+O\s+R\s+E)"  # Spaced-out keywords v2 (mindestens 1 Space)
+    r"|(?:SYS|SYS)(?:TEM|tem)"  # Mixed-case obfuscation
+    r"|(?:IGN|ign)(?:ORE|ore)"  # Mixed-case obfuscation v2
     # F-090: Prompt Leaking via Encoding
-    r'|(?:ROT13|rot13|CAESAR|caesar)\s*\('      # Encoding tricks
-    r'|(?:atob|btoa)\s*\('                       # JS Base64 tricks
-    r'|(?:chr|ord)\s*\('                         # Python char tricks
+    r"|(?:ROT13|rot13|CAESAR|caesar)\s*\("  # Encoding tricks
+    r"|(?:atob|btoa)\s*\("  # JS Base64 tricks
+    r"|(?:chr|ord)\s*\("  # Python char tricks
     # F-090: Instruction Boundary Attacks
-    r'|={3,}\s*(?:END|BEGIN|NEW)'               # Boundary marker injection
-    r'|\*{3,}\s*(?:SYSTEM|INSTRUCTION)'         # Star-boundary injection
-    r'|>>>+\s*(?:SYSTEM|PROMPT|ADMIN)'          # Arrow-boundary injection
-    r'|```json\s*\{["\']?(?:role|system)'       # JSON role injection in code block
+    r"|={3,}\s*(?:END|BEGIN|NEW)"  # Boundary marker injection
+    r"|\*{3,}\s*(?:SYSTEM|INSTRUCTION)"  # Star-boundary injection
+    r"|>>>+\s*(?:SYSTEM|PROMPT|ADMIN)"  # Arrow-boundary injection
+    r'|```json\s*\{["\']?(?:role|system)'  # JSON role injection in code block
     # F-090: Tool/Function Injection
-    r'|tool_call\s*[=:]\s*'                      # Direct tool injection
-    r'|function_call\s*[=:]\s*'                  # Direct function injection
-    r'|<tool_use>|<function>'                    # XML tool injection
+    r"|tool_call\s*[=:]\s*"  # Direct tool injection
+    r"|function_call\s*[=:]\s*"  # Direct function injection
+    r"|<tool_use>|<function>"  # XML tool injection
     # F-091: Erweiterte Extraction-Patterns (semantische Varianten)
-    r'|(?:CREATE|GENERATE)\s+A?\s*(?:SUMMARY|CONDENSED|BRIEF)\s+(?:OF|FROM)'
-    r'|(?:EXTRACT|PULL)\s+(?:THE|YOUR)\s+(?:GOALS|RULES|CORE|IDENTITY)'
-    r'|(?:TELL|SHOW)\s+ME\s+(?:YOUR|THE)\s+(?:REAL|TRUE|ACTUAL)\s+(?:ROLE|TASK|PURPOSE)'
-    r'|(?:DESCRIBE|EXPLAIN)\s+YOUR\s+(?:SYSTEM|INSTRUCTIONS|RULES|BEHAVIOR)'
-    r'|WHAT\s+(?:IS|WAS)\s+YOUR\s+(?:PURPOSE|ROLE|TASK|GOAL|OBJECTIVE)'
-    r'|(?:COPY|PASTE|PRINT|DUMP)\s+(?:YOUR|THE)\s+(?:SYSTEM|PROMPT|INSTRUCTIONS)'
+    r"|(?:CREATE|GENERATE)\s+A?\s*(?:SUMMARY|CONDENSED|BRIEF)\s+(?:OF|FROM)"
+    r"|(?:EXTRACT|PULL)\s+(?:THE|YOUR)\s+(?:GOALS|RULES|CORE|IDENTITY)"
+    r"|(?:TELL|SHOW)\s+ME\s+(?:YOUR|THE)\s+(?:REAL|TRUE|ACTUAL)\s+(?:ROLE|TASK|PURPOSE)"
+    r"|(?:DESCRIBE|EXPLAIN)\s+YOUR\s+(?:SYSTEM|INSTRUCTIONS|RULES|BEHAVIOR)"
+    r"|WHAT\s+(?:IS|WAS)\s+YOUR\s+(?:PURPOSE|ROLE|TASK|GOAL|OBJECTIVE)"
+    r"|(?:COPY|PASTE|PRINT|DUMP)\s+(?:YOUR|THE)\s+(?:SYSTEM|PROMPT|INSTRUCTIONS)"
     # F-091: Deutsche Extraction-Varianten
-    r'|(?:BESCHREIBE|ERKLAERE|NENNE)\s+(?:DEINE|DIE)\s+(?:REGELN|ANWEISUNGEN|AUFGABE)'
-    r'|WAS\s+(?:IST|SIND)\s+DEINE\s+(?:ANWEISUNGEN|REGELN|ZIELE|AUFGABEN)'
-    r'|(?:GIB|ZEIG)\s+MIR\s+(?:DEINE|DIE)\s+(?:SYSTEM|PROMPT)'
+    r"|(?:BESCHREIBE|ERKLAERE|NENNE)\s+(?:DEINE|DIE)\s+(?:REGELN|ANWEISUNGEN|AUFGABE)"
+    r"|WAS\s+(?:IST|SIND)\s+DEINE\s+(?:ANWEISUNGEN|REGELN|ZIELE|AUFGABEN)"
+    r"|(?:GIB|ZEIG)\s+MIR\s+(?:DEINE|DIE)\s+(?:SYSTEM|PROMPT)"
     # F-091: Multimodal/Advanced Evasion
-    r'|(?:ADMIN|ROOT|SUDO)\s+(?:MODE|ACCESS|OVERRIDE|PRIVILEGE)'
-    r'|(?:ENABLE|ACTIVATE|ENTER)\s+(?:DEBUG|DEV|DEVELOPER|ADMIN)\s+(?:MODE)?'
-    r'|(?:DEVELOPER|MAINTENANCE)\s+(?:MODE|OVERRIDE|CONSOLE)',
+    r"|(?:ADMIN|ROOT|SUDO)\s+(?:MODE|ACCESS|OVERRIDE|PRIVILEGE)"
+    r"|(?:ENABLE|ACTIVATE|ENTER)\s+(?:DEBUG|DEV|DEVELOPER|ADMIN)\s+(?:MODE)?"
+    r"|(?:DEVELOPER|MAINTENANCE)\s+(?:MODE|OVERRIDE|CONSOLE)",
     re.IGNORECASE,
 )
 
@@ -164,17 +167,17 @@ def _sanitize_for_prompt(text: str, max_len: int = 200, label: str = "") -> str:
     # F-084: NFKC Unicode-Normalisierung als ERSTER Schritt
     # Wandelt Homoglyphen, Fullwidth-Zeichen, mathematische Symbole in ASCII um
     # z.B. ᏚYSTEM → SYSTEM, ＳYSTEM → SYSTEM
-    text = unicodedata.normalize('NFKC', text)
+    text = unicodedata.normalize("NFKC", text)
     # F-080: Zero-Width Unicode Zeichen entfernen (unsichtbare Payload-Traeger)
-    text = re.sub(r'[\u200b\u200c\u200d\ufeff\u2028\u2029]', '', text)
+    text = re.sub(r"[\u200b\u200c\u200d\ufeff\u2028\u2029]", "", text)
     # F-091: Mathematical Alphanumeric Symbols entfernen (U+1D400–U+1D7FF)
     # Werden manchmal genutzt um Keywords optisch darzustellen aber Pattern zu umgehen
-    text = re.sub(r'[\U0001D400-\U0001D7FF]', '', text)
+    text = re.sub(r"[\U0001D400-\U0001D7FF]", "", text)
     # Kontrollzeichen und Newlines entfernen (alle C0/C1 Controls)
-    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
-    text = text.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", text)
+    text = text.replace("\n", " ").replace("\r", " ").replace("\t", " ")
     # Mehrfach-Leerzeichen komprimieren
-    text = re.sub(r'\s{2,}', ' ', text).strip()
+    text = re.sub(r"\s{2,}", " ", text).strip()
     # F-084: Injection-Pattern auf VOLLEM Text prüfen (VOR Truncation!)
     # F-091: Konfigurierbar via settings.yaml → prompt_injection.enabled
     # Modulebene-Cache: _INJ_ENABLED / _INJ_LOG_BLOCKED (Performance)
@@ -182,7 +185,8 @@ def _sanitize_for_prompt(text: str, max_len: int = 200, label: str = "") -> str:
         if _INJ_LOG_BLOCKED:
             logger.warning(
                 "Prompt-Injection-Verdacht in %s blockiert: %.80s",
-                label or "Kontext", text,
+                label or "Kontext",
+                text,
             )
         return ""
     # Laenge begrenzen (NACH Pattern-Check)
@@ -192,9 +196,18 @@ def _sanitize_for_prompt(text: str, max_len: int = 200, label: str = "") -> str:
 
 # Relevante Entity-Typen für den Kontext
 RELEVANT_DOMAINS = [
-    "light", "climate", "cover", "scene", "person",
-    "weather", "sensor", "binary_sensor", "media_player",
-    "lock", "alarm_control_panel", "remote",
+    "light",
+    "climate",
+    "cover",
+    "scene",
+    "person",
+    "weather",
+    "sensor",
+    "binary_sensor",
+    "media_player",
+    "lock",
+    "alarm_control_panel",
+    "remote",
 ]
 
 
@@ -239,7 +252,10 @@ class ContextBuilder:
         self._calendar_intelligence = calendar_intelligence
 
     async def build(
-        self, trigger: str = "voice", user_text: str = "", person: str = "",
+        self,
+        trigger: str = "voice",
+        user_text: str = "",
+        person: str = "",
         profile=None,
     ) -> dict:
         """
@@ -284,23 +300,31 @@ class ContextBuilder:
 
         # Health-Trend-Indikatoren (Raumklima-Trends aus Snapshots)
         if self._health_monitor:
-            parallel_tasks.append(("health_trend", self._health_monitor.get_trend_summary()))
+            parallel_tasks.append(
+                ("health_trend", self._health_monitor.get_trend_summary())
+            )
 
         # S8#7: Energie-Status als Kontext (Preis, Solar, Verbrauch)
         if self._energy_optimizer:
-            parallel_tasks.append(("energy", self._energy_optimizer.get_energy_report()))
+            parallel_tasks.append(
+                ("energy", self._energy_optimizer.get_energy_report())
+            )
 
         # S8#8: Kalender-Kontext (Konflikte, Gewohnheiten)
         # get_context_hint() ist sync — in async wrappen
         if self._calendar_intelligence:
+
             async def _get_cal_hint():
                 return self._calendar_intelligence.get_context_hint()
+
             parallel_tasks.append(("calendar_hint", _get_cal_hint()))
 
         # Semantisches Gedaechtnis — Guest-Mode-Check + Fakten parallel holen
         need_memories = not profile or profile.need_memories
         if need_memories and self._redis:
-            parallel_tasks.append(("guest_mode", self._redis.get("mha:routine:guest_mode")))
+            parallel_tasks.append(
+                ("guest_mode", self._redis.get("mha:routine:guest_mode"))
+            )
 
         if parallel_tasks:
             _keys, _coros = zip(*parallel_tasks)
@@ -371,9 +395,11 @@ class ContextBuilder:
             # Device-Dependency-Konflikte als LLM-Kontext
             try:
                 from .state_change_log import StateChangeLog
+
                 _state_dict = {
                     s["entity_id"]: s.get("state", "")
-                    for s in states if "entity_id" in s
+                    for s in states
+                    if "entity_id" in s
                 }
                 _scl = StateChangeLog.__new__(StateChangeLog)
                 _conflicts = _scl.detect_conflicts(_state_dict)
@@ -399,7 +425,11 @@ class ContextBuilder:
                 if _redis:
                     _active_scene = await _redis.get("mha:scene:active")
                     if _active_scene:
-                        _active_scene = _active_scene.decode() if isinstance(_active_scene, bytes) else _active_scene
+                        _active_scene = (
+                            _active_scene.decode()
+                            if isinstance(_active_scene, bytes)
+                            else _active_scene
+                        )
                         context["house"]["active_mood_scene"] = _active_scene
             except Exception as e:
                 logger.debug("Aktive Szene aus Redis laden fehlgeschlagen: %s", e)
@@ -452,9 +482,7 @@ class ContextBuilder:
 
         return context
 
-    async def _get_relevant_memories(
-        self, user_text: str, person: str = ""
-    ) -> dict:
+    async def _get_relevant_memories(self, user_text: str, person: str = "") -> dict:
         """Holt relevante Fakten aus dem semantischen Gedaechtnis."""
         memories = {"relevant_facts": [], "person_facts": []}
 
@@ -476,19 +504,32 @@ class ContextBuilder:
                 query=user_text, limit=max_relevant, person=None
             )
             memories["relevant_facts"] = [
-                sanitized for f in relevant
+                sanitized
+                for f in relevant
                 if f.get("relevance", 0) > 0.35
-                and (sanitized := _sanitize_for_prompt(f["content"], 500, "semantic_fact"))
+                and (
+                    sanitized := _sanitize_for_prompt(
+                        f["content"], 500, "semantic_fact"
+                    )
+                )
             ]
 
             # Fakten ueber die erwaehnte Person (z.B. "Was mag Lisa?")
             if mentioned_person and mentioned_person.lower() != (person or "").lower():
-                mentioned_facts = await self.semantic.get_facts_by_person(mentioned_person)
+                mentioned_facts = await self.semantic.get_facts_by_person(
+                    mentioned_person
+                )
                 for f in mentioned_facts[:max_person]:
                     content = f.get("content", "")
-                    if (f.get("confidence", 0) >= min_confidence
-                            and (sanitized := _sanitize_for_prompt(content, 500, "person_fact"))
-                            and sanitized not in memories["relevant_facts"]):
+                    if (
+                        f.get("confidence", 0) >= min_confidence
+                        and (
+                            sanitized := _sanitize_for_prompt(
+                                content, 500, "person_fact"
+                            )
+                        )
+                        and sanitized not in memories["relevant_facts"]
+                    ):
                         memories["relevant_facts"].append(sanitized)
 
             # Allgemeine Fakten über den fragenden User (Praeferenzen)
@@ -497,9 +538,14 @@ class ContextBuilder:
             if person and person.lower() not in ("unknown", "unbekannt"):
                 person_facts = await self.semantic.get_facts_by_person(person)
                 memories["person_facts"] = [
-                    sanitized for f in person_facts[:max_person]
+                    sanitized
+                    for f in person_facts[:max_person]
                     if f.get("confidence", 0) >= min_confidence
-                    and (sanitized := _sanitize_for_prompt(f["content"], 500, "person_fact"))
+                    and (
+                        sanitized := _sanitize_for_prompt(
+                            f["content"], 500, "person_fact"
+                        )
+                    )
                 ]
         except Exception as e:
             logger.error("Fehler beim Laden semantischer Erinnerungen: %s", e)
@@ -556,7 +602,9 @@ class ContextBuilder:
                 # Semantisches Gedaechtnis nach Beziehungs-Fakten durchsuchen
                 if self.semantic:
                     try:
-                        person_facts = self.semantic._get_cached_relationship(pattern, keywords, known_names)
+                        person_facts = self.semantic._get_cached_relationship(
+                            pattern, keywords, known_names
+                        )
                         if person_facts:
                             return person_facts
                     except Exception as e:
@@ -605,11 +653,17 @@ class ContextBuilder:
                 if mh_room:
                     room = _sanitize_for_prompt(mh_room, 50, "climate_name")
                 else:
-                    room = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "climate_name")
+                    room = _sanitize_for_prompt(
+                        attrs.get("friendly_name", entity_id), 50, "climate_name"
+                    )
                 if room:
                     # Duplikat-Schutz: bei gleichem Key Entity-Suffix anhaengen
                     if room in house["temperatures"]:
-                        suffix = entity_id.split(".", 1)[-1] if "." in entity_id else entity_id
+                        suffix = (
+                            entity_id.split(".", 1)[-1]
+                            if "." in entity_id
+                            else entity_id
+                        )
                         room = f"{room} ({suffix})"
                     house["temperatures"][room] = {
                         "current": current_temp,
@@ -624,7 +678,9 @@ class ContextBuilder:
                 if mh_room:
                     name = _sanitize_for_prompt(mh_room, 50, "light_name")
                 else:
-                    name = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "light_name")
+                    name = _sanitize_for_prompt(
+                        attrs.get("friendly_name", entity_id), 50, "light_name"
+                    )
                 if not name:
                     continue
                 brightness = attrs.get("brightness")
@@ -636,7 +692,9 @@ class ContextBuilder:
 
             # Personen
             elif domain == "person":
-                name = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "person_name")
+                name = _sanitize_for_prompt(
+                    attrs.get("friendly_name", entity_id), 50, "person_name"
+                )
                 if not name:
                     continue
                 if s == "home":
@@ -660,14 +718,16 @@ class ContextBuilder:
                 if forecast:
                     upcoming = []
                     for entry in forecast[:4]:
-                        upcoming.append({
-                            "time": entry.get("datetime", ""),
-                            "temp": entry.get("temperature"),
-                            "condition": _sanitize_for_prompt(
-                                entry.get("condition", ""), 50, "forecast_condition"
-                            ),
-                            "precipitation": entry.get("precipitation"),
-                        })
+                        upcoming.append(
+                            {
+                                "time": entry.get("datetime", ""),
+                                "temp": entry.get("temperature"),
+                                "condition": _sanitize_for_prompt(
+                                    entry.get("condition", ""), 50, "forecast_condition"
+                                ),
+                                "precipitation": entry.get("precipitation"),
+                            }
+                        )
                     house["weather"]["forecast"] = upcoming
 
             # Sun Entity (sun.sun — exakte Sonnenauf-/-untergangszeiten)
@@ -677,7 +737,7 @@ class ContextBuilder:
                     "sunrise": attrs.get("next_rising", ""),
                     "sunset": attrs.get("next_setting", ""),
                     "elevation": attrs.get("elevation"),
-                    "azimuth": attrs.get("azimuth"),   # Phase 11: Sonnenrichtung
+                    "azimuth": attrs.get("azimuth"),  # Phase 11: Sonnenrichtung
                 }
 
             # Alarm
@@ -686,8 +746,12 @@ class ContextBuilder:
 
             # Medien
             elif domain == "media_player" and s == "playing":
-                name = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "media_name")
-                title = _sanitize_for_prompt(attrs.get("media_title", ""), 100, "media_title")
+                name = _sanitize_for_prompt(
+                    attrs.get("friendly_name", entity_id), 50, "media_name"
+                )
+                title = _sanitize_for_prompt(
+                    attrs.get("media_title", ""), 100, "media_title"
+                )
                 if name:
                     house["media"].append(f"{name}: {title}" if title else name)
 
@@ -696,14 +760,22 @@ class ContextBuilder:
                 last_changed = state.get("last_changed", "")
                 if last_changed:
                     try:
-                        changed_dt = datetime.fromisoformat(last_changed.replace("Z", "+00:00"))
+                        changed_dt = datetime.fromisoformat(
+                            last_changed.replace("Z", "+00:00")
+                        )
                         # P06c DL3-CP8: Einheitliche TZ-Behandlung — immer aware
                         now_dt = datetime.now(timezone.utc)
                         diff_s = (now_dt - changed_dt).total_seconds()
                         if 0 <= diff_s < 7200:  # letzte 2 Stunden
                             name = _sanitize_for_prompt(
-                                attrs.get("friendly_name", entity_id.replace("scene.", "").replace("_", " ").title()),
-                                50, "scene_name",
+                                attrs.get(
+                                    "friendly_name",
+                                    entity_id.replace("scene.", "")
+                                    .replace("_", " ")
+                                    .title(),
+                                ),
+                                50,
+                                "scene_name",
                             )
                             if name:
                                 house["active_scenes"].append(name)
@@ -724,8 +796,12 @@ class ContextBuilder:
                     if pos is not None:
                         house["covers"].append(f"{name}: {pos}%")
                     else:
-                        state_de = {"open": "offen", "closed": "geschlossen",
-                                    "opening": "oeffnet", "closing": "schliesst"}.get(s, s)
+                        state_de = {
+                            "open": "offen",
+                            "closed": "geschlossen",
+                            "opening": "oeffnet",
+                            "closing": "schliesst",
+                        }.get(s, s)
                         house["covers"].append(f"{name}: {state_de}")
 
             # Annotierte Switches (vom User im UI markierte Schalter)
@@ -742,14 +818,22 @@ class ContextBuilder:
                         desc = _sanitize_for_prompt(desc, 50, "switch_desc")
                     if desc:
                         switch_text = "an" if s == "on" else "aus"
-                        house.setdefault("switches", []).append(f"{desc}: {switch_text}")
+                        house.setdefault("switches", []).append(
+                            f"{desc}: {switch_text}"
+                        )
 
             # Fernbedienungen (Harmony etc.)
             elif domain == "remote":
-                name = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "remote_name")
+                name = _sanitize_for_prompt(
+                    attrs.get("friendly_name", entity_id), 50, "remote_name"
+                )
                 if name:
                     activity = attrs.get("current_activity", "PowerOff")
-                    info = f"{name}: {activity}" if activity and activity != "PowerOff" else f"{name}: aus"
+                    info = (
+                        f"{name}: {activity}"
+                        if activity and activity != "PowerOff"
+                        else f"{name}: aus"
+                    )
                     house.setdefault("remotes", []).append(info)
 
             # Energie-Sensoren (Strom-Verbrauch)
@@ -775,11 +859,13 @@ class ContextBuilder:
                         desc = _sanitize_for_prompt(desc, 60, "sensor_desc")
                     if desc:
                         val_str = f"{s} {unit}".strip() if unit else s
-                        house.setdefault("annotated_sensors", []).append({
-                            "text": f"{desc}: {val_str}",
-                            "_role": role,
-                            "_state": s,
-                        })
+                        house.setdefault("annotated_sensors", []).append(
+                            {
+                                "text": f"{desc}: {val_str}",
+                                "_role": role,
+                                "_state": s,
+                            }
+                        )
 
             # Nur explizit annotierte Binary-Sensoren (User waehlt im UI aus)
             elif domain == "binary_sensor" and s not in ("unavailable", "unknown"):
@@ -796,33 +882,47 @@ class ContextBuilder:
                     if desc:
                         # Menschenlesbare Zustaende je nach Rolle
                         _BINARY_STATE_MAP_ON = {
-                            "window_contact": "offen", "door_contact": "offen",
-                            "garage_door": "offen", "gate": "offen",
-                            "motion": "Bewegung erkannt", "occupancy": "belegt",
-                            "presence": "anwesend", "vibration": "Vibration erkannt",
-                            "water_leak": "WASSER ERKANNT", "smoke": "RAUCH ERKANNT",
-                            "gas": "GAS ERKANNT", "co": "CO ERKANNT",
-                            "tamper": "MANIPULATION ERKANNT", "alarm": "ALARM AKTIV",
+                            "window_contact": "offen",
+                            "door_contact": "offen",
+                            "garage_door": "offen",
+                            "gate": "offen",
+                            "motion": "Bewegung erkannt",
+                            "occupancy": "belegt",
+                            "presence": "anwesend",
+                            "vibration": "Vibration erkannt",
+                            "water_leak": "WASSER ERKANNT",
+                            "smoke": "RAUCH ERKANNT",
+                            "gas": "GAS ERKANNT",
+                            "co": "CO ERKANNT",
+                            "tamper": "MANIPULATION ERKANNT",
+                            "alarm": "ALARM AKTIV",
                             "connectivity": "verbunden",
-                            "running": "laeuft", "problem": "PROBLEM",
-                            "update": "Update verfügbar", "doorbell": "klingelt",
+                            "running": "laeuft",
+                            "problem": "PROBLEM",
+                            "update": "Update verfügbar",
+                            "doorbell": "klingelt",
                             "rain_sensor": "Regen erkannt",
                         }
                         _BINARY_STATE_MAP_OFF = {
-                            "window_contact": "geschlossen", "door_contact": "geschlossen",
-                            "garage_door": "geschlossen", "gate": "geschlossen",
+                            "window_contact": "geschlossen",
+                            "door_contact": "geschlossen",
+                            "garage_door": "geschlossen",
+                            "gate": "geschlossen",
                             "connectivity": "getrennt",
-                            "running": "aus", "rain_sensor": "kein Regen",
+                            "running": "aus",
+                            "rain_sensor": "kein Regen",
                         }
                         if s == "on":
                             state_text = _BINARY_STATE_MAP_ON.get(role, "aktiv")
                         else:
                             state_text = _BINARY_STATE_MAP_OFF.get(role, "inaktiv")
-                        house.setdefault("annotated_sensors", []).append({
-                            "text": f"{desc}: {state_text}",
-                            "_role": role,
-                            "_state": s,
-                        })
+                        house.setdefault("annotated_sensors", []).append(
+                            {
+                                "text": f"{desc}: {state_text}",
+                                "_role": role,
+                                "_state": s,
+                            }
+                        )
 
             # Schlösser (Lock-Status) — alle lock.* Entities
             elif domain == "lock" and s in ("locked", "unlocked"):
@@ -845,9 +945,12 @@ class ContextBuilder:
                 )
                 if name:
                     _vac_de = {
-                        "cleaning": "saugt", "docked": "Ladestation",
-                        "returning": "faehrt zurück", "paused": "pausiert",
-                        "idle": "bereit", "error": "FEHLER",
+                        "cleaning": "saugt",
+                        "docked": "Ladestation",
+                        "returning": "faehrt zurück",
+                        "paused": "pausiert",
+                        "idle": "bereit",
+                        "error": "FEHLER",
                     }
                     status = _vac_de.get(s, s)
                     battery = attrs.get("battery_level")
@@ -885,26 +988,56 @@ class ContextBuilder:
         # Niedrige Zahl = höhere Prioritaet (wird zuerst angezeigt)
         _ROLE_PRIORITY = {
             # Alarme & Sicherheit (immer zuerst!)
-            "water_leak": 0, "smoke": 0, "gas": 0, "co": 0,
-            "tamper": 0, "alarm": 0,
+            "water_leak": 0,
+            "smoke": 0,
+            "gas": 0,
+            "co": 0,
+            "tamper": 0,
+            "alarm": 0,
             # Oeffnungen (offene Fenster/Türen wichtig)
-            "window_contact": 1, "door_contact": 1,
-            "garage_door": 1, "gate": 1, "lock": 1, "doorbell": 1,
+            "window_contact": 1,
+            "door_contact": 1,
+            "garage_door": 1,
+            "gate": 1,
+            "lock": 1,
+            "doorbell": 1,
             # Aktivitaet
-            "motion": 2, "presence": 2, "occupancy": 2,
+            "motion": 2,
+            "presence": 2,
+            "occupancy": 2,
             # Temperatur
-            "outdoor_temp": 3, "indoor_temp": 4, "water_temp": 4, "soil_temp": 5,
+            "outdoor_temp": 3,
+            "indoor_temp": 4,
+            "water_temp": 4,
+            "soil_temp": 5,
             # Raumklima
-            "humidity": 5, "co2": 5, "voc": 5, "pm25": 5, "pm10": 5,
-            "air_quality": 5, "pressure": 6,
+            "humidity": 5,
+            "co2": 5,
+            "voc": 5,
+            "pm25": 5,
+            "pm10": 5,
+            "air_quality": 5,
+            "pressure": 6,
             # Wetter
-            "wind_speed": 6, "rain": 6, "rain_sensor": 6, "uv_index": 6,
+            "wind_speed": 6,
+            "rain": 6,
+            "rain_sensor": 6,
+            "uv_index": 6,
             # Energie
-            "solar": 7, "power_meter": 7, "energy": 7, "ev_charger": 7,
+            "solar": 7,
+            "power_meter": 7,
+            "energy": 7,
+            "ev_charger": 7,
             # Geräte-Status
-            "running": 8, "problem": 8, "connectivity": 8, "update": 8,
+            "running": 8,
+            "problem": 8,
+            "connectivity": 8,
+            "update": 8,
             # Sonstiges
-            "light_level": 9, "vibration": 9, "battery": 9, "noise": 9,
+            "light_level": 9,
+            "vibration": 9,
+            "battery": 9,
+            "noise": 9,
         }
         _CRITICAL_ROLES = {"water_leak", "smoke", "gas", "co", "tamper", "alarm"}
         if house.get("annotated_sensors"):
@@ -913,9 +1046,12 @@ class ContextBuilder:
             )
             sensor_limit = yaml_config.get("sensor_context_limit", 20)
             # Critical alarm sensors (active) are always included
-            critical = [e for e in house["annotated_sensors"]
-                        if e.get("_role") in _CRITICAL_ROLES
-                        and e.get("_state") in ("on", "detected", "aktiv")]
+            critical = [
+                e
+                for e in house["annotated_sensors"]
+                if e.get("_role") in _CRITICAL_ROLES
+                and e.get("_state") in ("on", "detected", "aktiv")
+            ]
             rest = [e for e in house["annotated_sensors"] if e not in critical]
             remaining_slots = max(sensor_limit - len(critical), 0)
             combined = critical + rest[:remaining_slots]
@@ -934,7 +1070,9 @@ class ContextBuilder:
                 except (ValueError, TypeError):
                     pass
             if sensor_temps:
-                house["avg_temperature"] = round(sum(sensor_temps) / len(sensor_temps), 1)
+                house["avg_temperature"] = round(
+                    sum(sensor_temps) / len(sensor_temps), 1
+                )
 
         return house
 
@@ -947,9 +1085,7 @@ class ContextBuilder:
                     # Entity-ID-Mapping hat Vorrang (zuverlaessiger als friendly_name)
                     name = resolve_person_by_entity(eid)
                     if not name:
-                        name = state.get("attributes", {}).get(
-                            "friendly_name", "User"
-                        )
+                        name = state.get("attributes", {}).get("friendly_name", "User")
                     return {"name": name, "last_room": "unbekannt"}
         return {"name": "User", "last_room": "unbekannt"}
 
@@ -960,18 +1096,19 @@ class ContextBuilder:
 
         for state in states:
             entity_id = state.get("entity_id", "")
-            if (
-                "motion" in entity_id
-                and state.get("state") == "on"
-            ):
+            if "motion" in entity_id and state.get("state") == "on":
                 last_changed = state.get("last_changed", "")
                 try:
-                    if not latest_motion or datetime.fromisoformat(last_changed) > datetime.fromisoformat(latest_motion):
+                    if not latest_motion or datetime.fromisoformat(
+                        last_changed
+                    ) > datetime.fromisoformat(latest_motion):
                         latest_motion = last_changed
                         name = state.get("attributes", {}).get(
                             "friendly_name", entity_id
                         )
-                        latest_room = name.replace("Bewegung ", "").replace(" Motion", "")
+                        latest_room = name.replace("Bewegung ", "").replace(
+                            " Motion", ""
+                        )
                 except (ValueError, TypeError):
                     if not latest_motion:
                         latest_motion = last_changed
@@ -981,8 +1118,12 @@ class ContextBuilder:
     def _check_weather_warnings(self, states: list[dict]) -> list[str]:
         """Prueft Wetter-Daten auf Warnwuerdiges (5-Min-Cache)."""
         import time as _time
+
         now = _time.time()
-        if self._weather_cache_ts and (now - self._weather_cache_ts) < self._WEATHER_CACHE_TTL:
+        if (
+            self._weather_cache_ts
+            and (now - self._weather_cache_ts) < self._WEATHER_CACHE_TTL
+        ):
             return self._weather_cache
 
         warnings = []
@@ -993,9 +1134,15 @@ class ContextBuilder:
         temp_warn_high = float(weather_cfg.get("temp_high", 35))
         temp_warn_low = float(weather_cfg.get("temp_low", -5))
         wind_warn = float(weather_cfg.get("wind_speed_high", 60))
-        warn_conditions = weather_cfg.get("warn_conditions", [
-            "lightning", "lightning-rainy", "hail", "exceptional",
-        ])
+        warn_conditions = weather_cfg.get(
+            "warn_conditions",
+            [
+                "lightning",
+                "lightning-rainy",
+                "hail",
+                "exceptional",
+            ],
+        )
 
         for state in states:
             if not state.get("entity_id", "").startswith("weather."):
@@ -1038,7 +1185,9 @@ class ContextBuilder:
                 if fc_cond in warn_conditions:
                     fc_time = fc.get("datetime", "bald")
                     label = self._translate_weather_warning(fc_cond)
-                    warnings.append(f"Wettervorwarnung: {label} erwartet ({fc_time[:16]})")
+                    warnings.append(
+                        f"Wettervorwarnung: {label} erwartet ({fc_time[:16]})"
+                    )
                     break  # Nur eine Vorwarnung
 
             break  # Nur erste Weather-Entity
@@ -1061,6 +1210,7 @@ class ContextBuilder:
     def _extract_alerts(self, states: list[dict]) -> list[str]:
         """Extrahiert aktive Warnungen."""
         from .function_calling import is_window_or_door, get_opening_type
+
         alerts = []
         for state in states:
             entity_id = state.get("entity_id", "")
@@ -1069,17 +1219,13 @@ class ContextBuilder:
             # Rauchmelder, Wassermelder, etc.
             if any(x in entity_id for x in ["smoke", "water_leak", "gas"]):
                 if s == "on":
-                    name = state.get("attributes", {}).get(
-                        "friendly_name", entity_id
-                    )
+                    name = state.get("attributes", {}).get("friendly_name", entity_id)
                     alerts.append(f"ALARM: {name}")
 
             # Fenster/Türen offen — kategorisiert (Fenster/Tür vs Tor)
             if is_window_or_door(entity_id, state):
                 if s == "on":
-                    name = state.get("attributes", {}).get(
-                        "friendly_name", entity_id
-                    )
+                    name = state.get("attributes", {}).get("friendly_name", entity_id)
                     opening_type = get_opening_type(entity_id, state)
                     label = "Tor offen" if opening_type == "gate" else "Offen"
                     alerts.append(f"{label}: {name}")
@@ -1120,7 +1266,9 @@ class ContextBuilder:
                 changed_dt = None
 
             # Waschmaschine/Trockner laenger als 3 Stunden aktiv
-            if changed_dt and any(kw in eid for kw in ("washer", "dryer", "wasch", "trockner")):
+            if changed_dt and any(
+                kw in eid for kw in ("washer", "dryer", "wasch", "trockner")
+            ):
                 if s in ("on", "running", "paused"):
                     hours = (now - changed_dt).total_seconds() / 3600
                     if hours >= 3:
@@ -1144,13 +1292,29 @@ class ContextBuilder:
         return anomalies[:3]  # Max 3 Anomalien im Kontext
 
     async def _get_mindhome_data(self) -> Optional[dict]:
-        """Holt optionale MindHome-Daten (parallel für Geschwindigkeit)."""
+        """Holt optionale MindHome-Daten (parallel fuer Geschwindigkeit).
+
+        Cross-Domain Bridge: Neben Presence + Energy werden jetzt auch
+        Comfort-Scores, Patterns, Security-Status und Health-Dashboard
+        vom Add-on geholt, damit der Assistant die Engine-Daten nutzen kann.
+        """
         import asyncio
 
         try:
-            presence, energy = await asyncio.gather(
+            (
+                presence,
+                energy,
+                comfort,
+                patterns,
+                security,
+                health,
+            ) = await asyncio.gather(
                 self.ha.get_presence(),
                 self.ha.get_energy(),
+                self.ha.get_comfort(),
+                self.ha.get_patterns(),
+                self.ha.get_security(),
+                self.ha.get_health_dashboard(),
                 return_exceptions=True,
             )
             data = {}
@@ -1158,6 +1322,14 @@ class ContextBuilder:
                 data["presence"] = presence
             if isinstance(energy, dict):
                 data["energy"] = energy
+            if isinstance(comfort, (dict, list)):
+                data["comfort"] = comfort
+            if isinstance(patterns, (dict, list)):
+                data["patterns"] = patterns
+            if isinstance(security, dict):
+                data["security"] = security
+            if isinstance(health, dict):
+                data["health"] = health
             return data if data else None
         except Exception as e:
             logger.debug("MindHome nicht verfügbar: %s", e)
@@ -1178,8 +1350,13 @@ class ContextBuilder:
     @staticmethod
     def _weekday_german(weekday: int) -> str:
         days = [
-            "Montag", "Dienstag", "Mittwoch", "Donnerstag",
-            "Freitag", "Samstag", "Sonntag",
+            "Montag",
+            "Dienstag",
+            "Mittwoch",
+            "Donnerstag",
+            "Freitag",
+            "Samstag",
+            "Sonntag",
         ]
         return days[weekday]
 
@@ -1280,19 +1457,25 @@ class ContextBuilder:
                 data = {}
             data.setdefault("rooms", {})[room_lower] = profile
             import tempfile
+
             tmp_fd, tmp_path = tempfile.mkstemp(
-                dir=str(room_file.parent), suffix=".yaml.tmp",
+                dir=str(room_file.parent),
+                suffix=".yaml.tmp",
             )
             try:
                 with os.fdopen(tmp_fd, "w") as tmp_f:
-                    yaml.safe_dump(data, tmp_f, allow_unicode=True, default_flow_style=False)
+                    yaml.safe_dump(
+                        data, tmp_f, allow_unicode=True, default_flow_style=False
+                    )
                 os.replace(tmp_path, str(room_file))
             except Exception as e:
                 logger.debug("Raum-Override Datei schreiben fehlgeschlagen: %s", e)
                 if os.path.exists(tmp_path):
                     os.unlink(tmp_path)
                 raise
-            logger.info("Raum-Override gelernt: %s.%s = %s", room_lower, override_type, value)
+            logger.info(
+                "Raum-Override gelernt: %s.%s = %s", room_lower, override_type, value
+            )
         except Exception as e:
             logger.error("Fehler beim Speichern des Raum-Overrides: %s", e)
 
@@ -1444,7 +1627,9 @@ class ContextBuilder:
             "speakers_by_room": room_speakers or {},
         }
 
-    def get_person_room(self, person_name: str, states: list[dict] = None) -> Optional[str]:
+    def get_person_room(
+        self, person_name: str, states: list[dict] = None
+    ) -> Optional[str]:
         """Ermittelt in welchem Raum eine Person wahrscheinlich ist.
 
         Für Phase 10.2: Delegations-Routing.
@@ -1502,7 +1687,9 @@ class ContextBuilder:
                 eid = state.get("entity_id", "")
                 # Aussentemperatur vom Wetter-Entity
                 if eid.startswith("weather."):
-                    seasonal_data["outside_temp"] = state.get("attributes", {}).get("temperature")
+                    seasonal_data["outside_temp"] = state.get("attributes", {}).get(
+                        "temperature"
+                    )
                 # Echte Sonnenzeiten von sun.sun
                 elif eid == "sun.sun":
                     sun_attrs = state.get("attributes", {})
@@ -1518,7 +1705,9 @@ class ContextBuilder:
                             pass
                     if setting:
                         try:
-                            s_time = datetime.fromisoformat(setting.replace("Z", "+00:00"))
+                            s_time = datetime.fromisoformat(
+                                setting.replace("Z", "+00:00")
+                            )
                             # UTC → Lokalzeit konvertieren
                             s_local = s_time.astimezone()
                             seasonal_data["sunset_approx"] = s_local.strftime("%H:%M")
@@ -1533,5 +1722,7 @@ class ContextBuilder:
             return ""
         lines = []
         for f in facts[:limit]:
-            lines.append(f"- {f.get('fact', '')} (Konfidenz: {f.get('confidence', 0):.0%})")
+            lines.append(
+                f"- {f.get('fact', '')} (Konfidenz: {f.get('confidence', 0):.0%})"
+            )
         return "Kuerzlich gelernt:\n" + "\n".join(lines)

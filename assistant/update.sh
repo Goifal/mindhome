@@ -151,17 +151,24 @@ update_code() {
         info "Branch-Wechsel: $CURRENT_BRANCH -> $TARGET_BRANCH"
     fi
 
-    # User-Konfiguration in-memory sichern (settings.yaml + .env)
-    SETTINGS_BACKUP=""
-    ENV_BACKUP=""
-    if [ -f "$MHA_DIR/config/settings.yaml" ]; then
-        SETTINGS_BACKUP=$(cat "$MHA_DIR/config/settings.yaml")
-        success "settings.yaml gesichert"
-    fi
-    if [ -f "$MHA_DIR/.env" ]; then
-        ENV_BACKUP=$(cat "$MHA_DIR/.env")
-        success ".env gesichert"
-    fi
+    # User-Konfiguration in-memory sichern
+    # Alle user-editierbaren Config-Dateien (nicht mehr git-getrackt, nur .example)
+    declare -A CONFIG_BACKUPS
+    _USER_CONFIGS=(
+        "$MHA_DIR/config/settings.yaml"
+        "$MHA_DIR/config/room_profiles.yaml"
+        "$MHA_DIR/config/automation_templates.yaml"
+        "$MHA_DIR/config/easter_eggs.yaml"
+        "$MHA_DIR/config/opinion_rules.yaml"
+        "$MHA_DIR/config/maintenance.yaml"
+        "$MHA_DIR/.env"
+    )
+    for cfg in "${_USER_CONFIGS[@]}"; do
+        if [ -f "$cfg" ]; then
+            CONFIG_BACKUPS["$cfg"]=$(cat "$cfg")
+            success "$(basename "$cfg") gesichert"
+        fi
+    done
 
     # Lokale Aenderungen pruefen und stashen
     if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
@@ -259,19 +266,27 @@ update_code() {
 
 # Hilfsfunktion: User-Config wiederherstellen
 _restore_configs() {
-    for cfg_name in settings.yaml .env; do
-        case "$cfg_name" in
-            settings.yaml) BACKUP="$SETTINGS_BACKUP"; CFG_PATH="$MHA_DIR/config/settings.yaml" ;;
-            .env)          BACKUP="$ENV_BACKUP";      CFG_PATH="$MHA_DIR/.env" ;;
-        esac
-        [ -z "$BACKUP" ] && continue
+    for cfg_path in "${!CONFIG_BACKUPS[@]}"; do
+        local backup="${CONFIG_BACKUPS[$cfg_path]}"
+        local cfg_name
+        cfg_name=$(basename "$cfg_path")
+        [ -z "$backup" ] && continue
 
-        if echo "$BACKUP" > "$CFG_PATH" 2>/dev/null; then
+        if echo "$backup" > "$cfg_path" 2>/dev/null; then
             success "$cfg_name wiederhergestellt"
-        elif echo "$BACKUP" | sudo tee "$CFG_PATH" > /dev/null 2>&1; then
+        elif echo "$backup" | sudo tee "$cfg_path" > /dev/null 2>&1; then
             success "$cfg_name wiederhergestellt (sudo)"
         else
             warn "$cfg_name konnte nicht wiederhergestellt werden (Berechtigung)"
+        fi
+    done
+
+    # Fehlende Configs aus .example erstellen (z.B. nach erstem Clone)
+    for example in "$MHA_DIR"/config/*.yaml.example; do
+        local target="${example%.example}"
+        if [ ! -f "$target" ]; then
+            cp "$example" "$target"
+            success "$(basename "$target") aus .example erstellt"
         fi
     done
 }

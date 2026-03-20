@@ -40,6 +40,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      searxng:
+        condition: service_healthy
     extra_hosts:
     - host.docker.internal:host-gateway
     environment:
@@ -47,6 +49,7 @@ services:
     - OLLAMA_URL=http://host.docker.internal:11434
     - REDIS_URL=redis://redis:6379
     - CHROMA_URL=http://chromadb:8000
+    - SEARXNG_URL=http://searxng:8080
     logging: &id001
       driver: json-file
       options:
@@ -93,6 +96,30 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
+    logging: *id001
+  searxng:
+    image: searxng/searxng:latest
+    container_name: mha-searxng
+    restart: unless-stopped
+    mem_limit: 512m
+    ports:
+    - 127.0.0.1:8888:8080
+    volumes:
+    - ${DATA_DIR:-./data}/searxng:/etc/searxng
+    environment:
+    - SEARXNG_BASE_URL=http://searxng:8080/
+    - SEARXNG_SECRET=${SEARXNG_SECRET:-mindhome-searxng-secret}
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - --spider
+      - -q
+      - http://localhost:8080/healthz
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     logging: *id001
   whisper:
     build:

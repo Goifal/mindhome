@@ -285,6 +285,8 @@ class AutonomyManager:
             if temp is not None:
                 try:
                     temp = float(temp)
+                    if temp != temp:  # NaN check (math.isnan equivalent)
+                        raise ValueError("NaN")
                 except (ValueError, TypeError):
                     return {"allowed": False, "reason": "Ungueltige Temperaturangabe."}
                 if temp < caps["min_temperature"]:

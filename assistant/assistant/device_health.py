@@ -53,6 +53,7 @@ class DeviceHealthMonitor:
         self._task: Optional[asyncio.Task] = None
         self._running = False
         self._notify_callback = None
+        self.predictive_maintenance = None  # E3: Wired by Brain
 
         cfg = yaml_config.get("device_health", {})
         self.enabled = cfg.get("enabled", True)
@@ -186,6 +187,22 @@ class DeviceHealthMonitor:
                 )
                 if alert:
                     alerts.append(alert)
+
+        # E3: Daten an PredictiveMaintenance weiterleiten
+        if self.predictive_maintenance and alerts:
+            for alert in alerts:
+                try:
+                    eid = alert.get("entity_id", "")
+                    atype = alert.get("alert_type", "")
+                    data = alert.get("data", {})
+                    if atype == "stale_device":
+                        days = data.get("days_unchanged", 0)
+                        await self.predictive_maintenance.record_device_offline(eid, days * 24)
+                    elif atype == "value_anomaly" and "battery" in eid:
+                        val = data.get("current_value", 0)
+                        await self.predictive_maintenance.record_battery_level(eid, float(val))
+                except Exception as e:
+                    logger.debug("PredictiveMaintenance Feed fehlgeschlagen: %s", e)
 
         return alerts
 

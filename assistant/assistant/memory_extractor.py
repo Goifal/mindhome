@@ -221,7 +221,7 @@ class MemoryExtractor:
             # Letzte Fakten fuer diese Person aus Semantic Memory holen
             if not self.semantic:
                 return False
-            recent_facts = await self.semantic.search(user_text, person=person, limit=3)
+            recent_facts = await self.semantic.search_facts(user_text, person=person, limit=3)
             if not recent_facts:
                 return False
 

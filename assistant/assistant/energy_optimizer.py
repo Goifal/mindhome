@@ -48,6 +48,7 @@ class EnergyOptimizer:
         self.ha = ha_client
         self.redis: Optional[aioredis.Redis] = None
         self._ollama = None  # LLM fuer personalisierte Empfehlungen
+        self.seasonal_insight = None  # E4: Saisonale Kontext-Integration
 
         # Konfiguration
         energy_cfg = yaml_config.get("energy", {})
@@ -152,6 +153,46 @@ class EnergyOptimizer:
 
         return {"success": True, "message": "\n".join(parts)}
 
+    async def get_energy_narrative(self) -> Optional[str]:
+        """G4: Erzeugt eine menschliche Energie-Geschichte fuer das Morgen-Briefing.
+
+        Statt Zahlen: verstaendliche Vergleiche und Trends.
+        z.B. "Gestern hat dein Haus 12 kWh verbraucht — 20% weniger als letzte Woche."
+        """
+        if not self.redis or not self.enabled:
+            return None
+
+        try:
+            # Tagesverbraeuche der letzten 7 Tage holen
+            from datetime import datetime as dt, timedelta as td
+            today = dt.now(_LOCAL_TZ)
+            costs = []
+            for d in range(1, 8):
+                day_str = (today - td(days=d)).strftime("%Y-%m-%d")
+                raw = await self.redis.hget("mha:energy:daily", day_str)
+                if raw:
+                    data = json.loads(raw if isinstance(raw, str) else raw.decode())
+                    costs.append(data.get("consumption_kwh", 0))
+
+            if len(costs) < 2:
+                return None
+
+            yesterday = costs[0]
+            week_avg = sum(costs) / len(costs)
+            trend_pct = ((yesterday - week_avg) / week_avg * 100) if week_avg > 0 else 0
+
+            parts = [f"Gestern: {yesterday:.1f} kWh"]
+            if abs(trend_pct) > 5:
+                direction = "mehr" if trend_pct > 0 else "weniger"
+                parts.append(f"({abs(trend_pct):.0f}% {direction} als der Wochenschnitt)")
+            else:
+                parts.append("(im Wochenschnitt)")
+
+            return " ".join(parts)
+        except Exception as e:
+            logger.debug("Energie-Narrative fehlgeschlagen: %s", e)
+            return None
+
     @property
     def has_configured_entities(self) -> bool:
         """True wenn mindestens ein Energie-Entity explizit konfiguriert ist."""
@@ -230,6 +271,25 @@ class EnergyOptimizer:
                     "message": anomaly_msg,
                     "urgency": "medium",
                 })
+
+        # E4: Saisonale Kontext-Anreicherung
+        if alerts and self.seasonal_insight:
+            try:
+                seasonal_status = await self.seasonal_insight.get_status()
+                if seasonal_status.get("months_with_data", 0) >= 3:
+                    # Saisonalen Kontext an Anomalie-Alerts anhaengen
+                    from datetime import datetime
+                    month = datetime.now().month
+                    seasons = {12: "Winter", 1: "Winter", 2: "Winter",
+                               3: "Fruehling", 4: "Fruehling", 5: "Fruehling",
+                               6: "Sommer", 7: "Sommer", 8: "Sommer",
+                               9: "Herbst", 10: "Herbst", 11: "Herbst"}
+                    season = seasons.get(month, "")
+                    for alert in alerts:
+                        if alert["type"] == "energy_anomaly" and season:
+                            alert["seasonal_context"] = season
+            except Exception as e:
+                logger.debug("Saisonaler Kontext fuer Energie fehlgeschlagen: %s", e)
 
         return alerts
 
@@ -549,21 +609,31 @@ class EnergyOptimizer:
         # Fallback: Mittelwert der konfigurierten Schwellwerte
         return (self.price_low + self.price_high) / 2.0
 
-    @staticmethod
-    def _estimate_cheap_windows(now: datetime, duration_h: float) -> list[str]:
-        """Schaetzt guenstige Zeitfenster basierend auf typischen Preis-Mustern.
+    # Default guenstige Slots (Stunde, Prioritaet) — konfigurierbar via settings.yaml
+    _DEFAULT_CHEAP_SLOTS = [(13, 1), (12, 2), (14, 3), (2, 4), (3, 5), (1, 6)]
 
-        Typische guenstige Zeiten (dynamische Tarife):
+    def _estimate_cheap_windows(self, now: datetime, duration_h: float) -> list[str]:
+        """Schaetzt guenstige Zeitfenster basierend auf Preis-Mustern.
+
+        Nutzt konfigurierte Slots aus settings.yaml (energy.cheap_hours)
+        oder die Default-Heuristik (typische dynamische Tarife).
+
+        Typische guenstige Zeiten:
         - Nachts: 01:00-05:00 (niedrige Nachfrage)
         - Mittags: 12:00-14:00 (hohe Solar-Einspeisung drueckt Preise)
 
         Returns:
             Liste von Zeitfenster-Strings (z.B. ["14:00-16:00"])
         """
-        windows = []
-        # Guenstige Slots (Stunde, Prioritaet)
-        cheap_slots = [(13, 1), (12, 2), (14, 3), (2, 4), (3, 5), (1, 6)]
+        # F1: Konfigurierbare Slots statt Hardcoded
+        energy_cfg = yaml_config.get("energy", {})
+        custom_hours = energy_cfg.get("cheap_hours")
+        if custom_hours and isinstance(custom_hours, list):
+            cheap_slots = [(h, i + 1) for i, h in enumerate(custom_hours)]
+        else:
+            cheap_slots = self._DEFAULT_CHEAP_SLOTS
 
+        windows = []
         for start_hour, _prio in cheap_slots:
             slot_start = now.replace(hour=start_hour, minute=0, second=0, microsecond=0)
             # Wenn Slot heute schon vorbei, naechsten Tag nehmen

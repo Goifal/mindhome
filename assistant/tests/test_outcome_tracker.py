@@ -108,9 +108,10 @@ class TestClassifyOutcome:
         assert tracker._classify_outcome(after, now, "set_light") == OUTCOME_NEGATIVE
 
     def test_changed_attributes_is_partial(self, tracker):
-        # 1 of 3 non-meta attrs changed = 33% < 50% = PARTIAL
-        after = {"state": "on", "attributes": {"brightness": 100, "color_temp": 300, "rgb_color": [255, 255, 255]}}
-        now = {"state": "on", "attributes": {"brightness": 50, "color_temp": 300, "rgb_color": [255, 255, 255]}}
+        # 1 of 3 non-volatile attrs changed = 33% < 50% = PARTIAL
+        # Note: brightness/color_temp are volatile attrs and are skipped
+        after = {"state": "on", "attributes": {"effect": "rainbow", "rgb_color": [255, 255, 255], "transition": 2}}
+        now = {"state": "on", "attributes": {"effect": "none", "rgb_color": [255, 255, 255], "transition": 2}}
         assert tracker._classify_outcome(after, now, "set_light") == OUTCOME_PARTIAL
 
     def test_empty_states_neutral(self, tracker):

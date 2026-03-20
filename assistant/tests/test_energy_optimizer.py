@@ -488,9 +488,14 @@ class TestCheckCloudForecast:
 class TestEstimateCheapWindows:
     """Tests fuer _estimate_cheap_windows()."""
 
+    def _make_optimizer(self):
+        ha = MagicMock()
+        return EnergyOptimizer(ha)
+
     def test_returns_windows(self):
         now = datetime(2026, 3, 20, 10, 0)
-        result = EnergyOptimizer._estimate_cheap_windows(now, 2.0)
+        eo = self._make_optimizer()
+        result = eo._estimate_cheap_windows(now, 2.0)
         assert len(result) > 0
         # Jedes Window hat Format "HH:MM-HH:MM"
         for w in result:
@@ -503,14 +508,16 @@ class TestEstimateCheapWindows:
     def test_past_slots_pushed_to_next_day(self):
         """Slots die heute schon vorbei sind, werden auf morgen verschoben."""
         now = datetime(2026, 3, 20, 23, 0)
-        result = EnergyOptimizer._estimate_cheap_windows(now, 2.0)
+        eo = self._make_optimizer()
+        result = eo._estimate_cheap_windows(now, 2.0)
         # Alle vorgeschlagenen Slots muessen in der Zukunft liegen (naechster Tag)
         assert len(result) > 0
 
     def test_window_duration_matches(self):
         """Zeitfenster-Dauer entspricht der angegebenen duration_h."""
         now = datetime(2026, 3, 20, 8, 0)
-        result = EnergyOptimizer._estimate_cheap_windows(now, 3.0)
+        eo = self._make_optimizer()
+        result = eo._estimate_cheap_windows(now, 3.0)
         # Pruefe erstes Window
         first = result[0]
         start_str, end_str = first.split("-")

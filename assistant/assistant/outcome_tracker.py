@@ -60,6 +60,8 @@ class OutcomeTracker:
         self._cfg = yaml_config.get("outcome_tracker", {})
         self._observation_delay = self._cfg.get("observation_delay_seconds", 180)
         self._max_results = self._cfg.get("max_results", 500)
+        self._calibration_min = self._cfg.get("calibration_min", 0.5)
+        self._calibration_max = self._cfg.get("calibration_max", 1.5)
         self._task_registry = None
         self._background_tasks: set[asyncio.Task] = set()
 
@@ -69,11 +71,20 @@ class OutcomeTracker:
         self.ha = ha_client
         self._task_registry = task_registry
         self.enabled = self._cfg.get("enabled", True) and self.redis is not None
-        logger.info("OutcomeTracker initialisiert (enabled=%s, delay=%ds)",
-                     self.enabled, self._observation_delay)
+        logger.info(
+            "OutcomeTracker initialisiert (enabled=%s, delay=%ds)",
+            self.enabled,
+            self._observation_delay,
+        )
 
-    async def track_action(self, action_type: str, args: dict, result: dict,
-                           person: str = "", room: str = ""):
+    async def track_action(
+        self,
+        action_type: str,
+        args: dict,
+        result: dict,
+        person: str = "",
+        room: str = "",
+    ):
         """Snapshot nach Aktion + Delayed Check starten."""
         if not self.enabled or not self.redis or not self.ha:
             return
@@ -91,7 +102,12 @@ class OutcomeTracker:
             entity_id = args.get("entity_id", "")
         if not entity_id:
             r = args.get("room", room or "")
-            if r and action_type in ("set_light", "set_cover", "set_climate", "set_switch"):
+            if r and action_type in (
+                "set_light",
+                "set_cover",
+                "set_climate",
+                "set_switch",
+            ):
                 domain = action_type.replace("set_", "")
                 entity_id = f"{domain}.{r.lower().replace(' ', '_')}"
 
@@ -139,8 +155,9 @@ class OutcomeTracker:
             self._background_tasks.add(task)
             task.add_done_callback(self._background_tasks.discard)
 
-    async def record_verbal_feedback(self, feedback_type: str, action_type: str = "",
-                                     person: str = ""):
+    async def record_verbal_feedback(
+        self, feedback_type: str, action_type: str = "", person: str = ""
+    ):
         """Manuelles Feedback: 'Danke' = POSITIVE, Korrektur = NEGATIVE."""
         if not self.enabled or not self.redis:
             return
@@ -194,7 +211,9 @@ class OutcomeTracker:
         total_int = int(total)
         computed_score = positive / total_int if total_int > 0 else DEFAULT_SCORE
         # Score cachen fuer schnelleren Zugriff
-        await self.redis.set(f"mha:outcome:score:{action_type}", str(round(computed_score, 4)))
+        await self.redis.set(
+            f"mha:outcome:score:{action_type}", str(round(computed_score, 4))
+        )
         return computed_score
 
     async def get_person_score(self, action_type: str, person: str) -> float:
@@ -202,9 +221,7 @@ class OutcomeTracker:
         if not self.redis or not person:
             return DEFAULT_SCORE
 
-        score = await self.redis.get(
-            f"mha:outcome:score:{action_type}:person:{person}"
-        )
+        score = await self.redis.get(f"mha:outcome:score:{action_type}:person:{person}")
         if score is not None:
             score = score.decode() if isinstance(score, bytes) else score
         return float(score) if score is not None else DEFAULT_SCORE
@@ -230,13 +247,18 @@ class OutcomeTracker:
                         continue
                     action_type = parts[3]
                     raw = await self.redis.hgetall(f"mha:outcome:stats:{action_type}")
-                    data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()}
+                    data = {
+                        (k.decode() if isinstance(k, bytes) else k): (
+                            v.decode() if isinstance(v, bytes) else v
+                        )
+                        for k, v in raw.items()
+                    }
                     score = await self.redis.get(f"mha:outcome:score:{action_type}")
                     score = score.decode() if isinstance(score, bytes) else score
-                    stats[action_type] = {
-                        k: int(v) for k, v in data.items()
-                    }
-                    stats[action_type]["score"] = float(score) if score else DEFAULT_SCORE
+                    stats[action_type] = {k: int(v) for k, v in data.items()}
+                    stats[action_type]["score"] = (
+                        float(score) if score else DEFAULT_SCORE
+                    )
                 if cursor == 0:
                     break
         except Exception as e:
@@ -292,11 +314,13 @@ class OutcomeTracker:
             for entry in raw:
                 data = json.loads(entry)
                 if data.get("outcome") == OUTCOME_NEGATIVE:
-                    failures.append({
-                        "action_type": data.get("action_type", "unbekannt"),
-                        "reason": data.get("room", ""),
-                        "timestamp": data.get("timestamp", ""),
-                    })
+                    failures.append(
+                        {
+                            "action_type": data.get("action_type", "unbekannt"),
+                            "reason": data.get("room", ""),
+                            "timestamp": data.get("timestamp", ""),
+                        }
+                    )
                     if len(failures) >= limit:
                         break
             return failures
@@ -316,6 +340,7 @@ class OutcomeTracker:
 
         # Ergebnisse nach Woche und Aktionstyp gruppieren
         from collections import defaultdict
+
         weekly = defaultdict(lambda: defaultdict(list))
         for item in raw:
             try:
@@ -340,6 +365,141 @@ class OutcomeTracker:
             trends[action] = trend
 
         return trends
+
+    # ------------------------------------------------------------------
+    # Per-Domain Confidence Calibration
+    # ------------------------------------------------------------------
+
+    async def get_domain_calibration(self) -> dict[str, dict]:
+        """Berechnet Kalibrierungsdaten pro Domain.
+
+        Aggregiert alle Outcome-Scores nach Domain (climate, light, cover,
+        media, security, etc.) und gibt fuer jede Domain:
+        - ``avg_score``: Durchschnittlicher Erfolgs-Score
+        - ``total_actions``: Gesamtzahl der Aktionen
+        - ``calibration_factor``: Faktor fuer Confidence-Anpassung
+          (>1.0 = Domain uebertrifft, <1.0 = Domain unterperformt)
+
+        Returns:
+            Dict[domain_name, {avg_score, total_actions, calibration_factor}]
+        """
+        if not self.redis:
+            return {}
+
+        try:
+            domain_data: dict[str, list[float]] = {}
+
+            cursor = 0
+            while True:
+                cursor, keys = await self.redis.scan(
+                    cursor,
+                    match="mha:outcome:score:*",
+                    count=50,
+                )
+                for key in keys:
+                    key_str = key.decode() if isinstance(key, bytes) else key
+                    parts = key_str.split(":")
+                    if len(parts) != 4:
+                        continue
+                    action_type = parts[3]
+
+                    # Domain aus action_type extrahieren
+                    domain = self._extract_domain(action_type)
+                    if not domain:
+                        continue
+
+                    val = await self.redis.get(key)
+                    if val is not None:
+                        val_str = val.decode() if isinstance(val, bytes) else val
+                        domain_data.setdefault(domain, []).append(float(val_str))
+                if cursor == 0:
+                    break
+
+            # Kalibrierung berechnen
+            calibration = {}
+            global_avg = DEFAULT_SCORE
+            all_scores = [s for scores in domain_data.values() for s in scores]
+            if all_scores:
+                global_avg = sum(all_scores) / len(all_scores)
+
+            for domain, scores in domain_data.items():
+                avg = sum(scores) / len(scores) if scores else DEFAULT_SCORE
+                # Calibration Factor: relative Performance vs. Durchschnitt
+                # 1.0 = durchschnittlich, >1.0 = besser, <1.0 = schlechter
+                factor = avg / global_avg if global_avg > 0 else 1.0
+                calibration[domain] = {
+                    "avg_score": round(avg, 3),
+                    "total_actions": len(scores),
+                    "calibration_factor": round(
+                        max(self._calibration_min, min(self._calibration_max, factor)),
+                        3,
+                    ),
+                }
+
+            return calibration
+
+        except Exception as e:
+            logger.debug("Domain calibration Fehler: %s", e)
+            return {}
+
+    async def get_calibrated_score(
+        self,
+        action_type: str,
+        person: str = "",
+    ) -> tuple[float, float]:
+        """Gibt den kalibrierten Outcome-Score zurueck.
+
+        Kombiniert den Roh-Score mit dem Domain-spezifischen
+        Kalibrierungsfaktor.
+
+        Returns:
+            Tuple (raw_score, calibrated_score)
+        """
+        raw_score = await self.get_success_score(action_type, person)
+        domain = self._extract_domain(action_type)
+
+        if not domain:
+            return raw_score, raw_score
+
+        calibration = await self.get_domain_calibration()
+        domain_cal = calibration.get(domain, {})
+        factor = domain_cal.get("calibration_factor", 1.0)
+
+        calibrated = max(0.0, min(1.0, raw_score * factor))
+        return raw_score, round(calibrated, 4)
+
+    @staticmethod
+    def _extract_domain(action_type: str) -> str:
+        """Extrahiert die Domain aus einem Aktionstyp.
+
+        Beispiele:
+            ``anticipation:set_climate`` -> ``climate``
+            ``set_light_brightness`` -> ``light``
+            ``turn_on_cover`` -> ``cover``
+        """
+        # Anticipation-Prefix entfernen
+        at = action_type
+        if at.startswith("anticipation:"):
+            at = at[len("anticipation:") :]
+
+        # Bekannte Domain-Patterns
+        domain_keywords = {
+            "climate": "climate",
+            "light": "light",
+            "cover": "cover",
+            "media": "media",
+            "lock": "security",
+            "alarm": "security",
+            "security": "security",
+            "switch": "switch",
+            "fan": "fan",
+            "scene": "scene",
+        }
+        at_lower = at.lower()
+        for keyword, domain in domain_keywords.items():
+            if keyword in at_lower:
+                return domain
+        return ""
 
     # --- Private Methoden ---
 
@@ -368,11 +528,17 @@ class OutcomeTracker:
             outcome = self._classify_outcome(state_after, state_now, action_type)
             person = pending.get("person", "")
 
-            await self._store_outcome(action_type, outcome, person,
-                                      room=pending.get("room", ""))
+            await self._store_outcome(
+                action_type, outcome, person, room=pending.get("room", "")
+            )
 
-            logger.info("Outcome [%s]: %s (Entity: %s, Person: %s)",
-                        outcome, action_type, entity_id, person or "unbekannt")
+            logger.info(
+                "Outcome [%s]: %s (Entity: %s, Person: %s)",
+                outcome,
+                action_type,
+                entity_id,
+                person or "unbekannt",
+            )
 
         except asyncio.CancelledError:
             pass
@@ -384,9 +550,43 @@ class OutcomeTracker:
             if self.redis:
                 await self.redis.delete(f"mha:outcome:pending:{obs_id}")
 
-    def _classify_outcome(self, state_after: dict, state_now: dict,
-                          action_type: str) -> str:
-        """Vergleicht State: Rueckgaengig = NEGATIVE, angepasst = PARTIAL, gleich = NEUTRAL."""
+    # Aktionstypen bei denen State-Aenderungen nach dem Delay normal sind
+    # (Timer laufen aus, Klima-Schedules, circadiane Beleuchtung etc.)
+    _EXPECTED_CHANGE_ACTIONS = frozenset(
+        {
+            "set_temperature",
+            "set_hvac_mode",
+            "climate_set",
+            "timer_start",
+            "timer_set",
+            "set_sleep_timer",
+            "set_brightness",
+            "set_color_temp",  # circadian dimming
+            "cover_set_position",  # auto-schedules
+        }
+    )
+
+    # Attribute die sich durch Automatisierungen/Schedules normal aendern
+    _VOLATILE_ATTRS = frozenset(
+        {
+            "current_temperature",
+            "temperature",
+            "hvac_action",
+            "color_temp",
+            "brightness",
+            "position",
+            "current_position",
+        }
+    )
+
+    def _classify_outcome(
+        self, state_after: dict, state_now: dict, action_type: str
+    ) -> str:
+        """Vergleicht State: Rueckgaengig = NEGATIVE, angepasst = PARTIAL, gleich = NEUTRAL.
+
+        Beruecksichtigt erwartete Aenderungen (Timer, Schedules, circadiane Beleuchtung)
+        und volatile Attribute um False-Negatives zu vermeiden.
+        """
         if not state_after or not state_now:
             return OUTCOME_NEUTRAL
 
@@ -395,6 +595,9 @@ class OutcomeTracker:
 
         # State komplett rueckgaengig gemacht (z.B. Licht wieder aus)
         if after_state != now_state:
+            # Bei Aktionen mit erwartetem State-Wechsel (Timer, Klima) ist das normal
+            if action_type in self._EXPECTED_CHANGE_ACTIONS:
+                return OUTCOME_NEUTRAL
             return OUTCOME_NEGATIVE
 
         # Attribute vergleichen (z.B. Helligkeit geaendert)
@@ -405,6 +608,9 @@ class OutcomeTracker:
         total_attrs = 0
         for key in set(after_attrs.keys()) | set(now_attrs.keys()):
             if key in ("friendly_name", "icon", "supported_features"):
+                continue
+            # Volatile Attribute (Temperatur, Position) aendern sich natuerlich
+            if key in self._VOLATILE_ATTRS:
                 continue
             total_attrs += 1
             if after_attrs.get(key) != now_attrs.get(key):
@@ -420,8 +626,9 @@ class OutcomeTracker:
 
         return OUTCOME_NEUTRAL
 
-    async def _store_outcome(self, action_type: str, outcome: str,
-                             person: str = "", room: str = ""):
+    async def _store_outcome(
+        self, action_type: str, outcome: str, person: str = "", room: str = ""
+    ):
         """Speichert Outcome in Redis und aktualisiert Scores."""
         if not self.redis:
             return
@@ -431,9 +638,12 @@ class OutcomeTracker:
         try:
             from .state_change_log import StateChangeLog
             import assistant.main as main_module
+
             if hasattr(main_module, "brain"):
                 _states = await main_module.brain.ha.get_states() or []
-                _hints = StateChangeLog.check_action_dependencies(action_type, {}, _states)
+                _hints = StateChangeLog.check_action_dependencies(
+                    action_type, {}, _states
+                )
                 if _hints:
                     _dep_influenced = True
         except Exception as e:
@@ -511,9 +721,13 @@ class OutcomeTracker:
 
         # EMA: Score = alpha * new + (1-alpha) * old
         alpha = 0.1
-        target = 1.0 if outcome == OUTCOME_POSITIVE else (
-            0.5 if outcome == OUTCOME_NEUTRAL else (
-                0.3 if outcome == OUTCOME_PARTIAL else 0.0
+        target = (
+            1.0
+            if outcome == OUTCOME_POSITIVE
+            else (
+                0.5
+                if outcome == OUTCOME_NEUTRAL
+                else (0.3 if outcome == OUTCOME_PARTIAL else 0.0)
             )
         )
         new_score = alpha * target + (1 - alpha) * current_score
@@ -535,9 +749,16 @@ def _extract_state_key(state) -> dict:
         return {
             "state": state.get("state", ""),
             "attributes": {
-                k: v for k, v in state.get("attributes", {}).items()
-                if k not in ("friendly_name", "icon", "supported_features",
-                             "entity_picture", "device_class")
+                k: v
+                for k, v in state.get("attributes", {}).items()
+                if k
+                not in (
+                    "friendly_name",
+                    "icon",
+                    "supported_features",
+                    "entity_picture",
+                    "device_class",
+                )
             },
         }
     # State-Objekt mit .state und .attributes

@@ -22,13 +22,21 @@ logger = logging.getLogger(__name__)
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Bekannte Fehler-Typen
-ERROR_TYPES = ("timeout", "service_unavailable", "entity_not_found",
-               "bad_params", "model_overloaded", "unknown")
+ERROR_TYPES = (
+    "timeout",
+    "service_unavailable",
+    "entity_not_found",
+    "bad_params",
+    "model_overloaded",
+    "unknown",
+)
 
 # Mitigation-Typen
 MITIGATION_USE_FALLBACK = "use_fallback"
 MITIGATION_WARN_USER = "warn_user"
 MITIGATION_SKIP_ENTITY = "skip_entity"
+MITIGATION_RETRY_DELAY = "retry_delay"
+MITIGATION_FIX_PARAMS = "fix_params"
 
 
 class ErrorPatternTracker:
@@ -40,6 +48,13 @@ class ErrorPatternTracker:
         self._cfg = yaml_config.get("error_patterns", {})
         self._min_occurrences = self._cfg.get("min_occurrences_for_mitigation", 3)
         self._mitigation_ttl_hours = self._cfg.get("mitigation_ttl_hours", 1)
+        _diag_cfg = self._cfg.get("self_diagnosis", {})
+        self._diag_thresholds = {
+            "timeout": _diag_cfg.get("timeout_threshold", 5),
+            "service_unavailable": _diag_cfg.get("service_unavailable_threshold", 3),
+            "entity_not_found": _diag_cfg.get("entity_not_found_threshold", 3),
+            "model_overloaded": _diag_cfg.get("model_overloaded_threshold", 5),
+        }
 
     async def initialize(self, redis_client):
         """Initialisiert mit Redis Client."""
@@ -47,8 +62,9 @@ class ErrorPatternTracker:
         self.enabled = self._cfg.get("enabled", True) and self.redis is not None
         logger.info("ErrorPatternTracker initialisiert (enabled=%s)", self.enabled)
 
-    async def record_error(self, error_type: str, action_type: str = "",
-                           model: str = "", context: str = ""):
+    async def record_error(
+        self, error_type: str, action_type: str = "", model: str = "", context: str = ""
+    ):
         """Speichert einen Fehler und prueft auf Muster."""
         if not self.enabled or not self.redis:
             return
@@ -57,14 +73,17 @@ class ErrorPatternTracker:
             error_type = "unknown"
 
         now = time.time()
-        entry = json.dumps({
-            "error_type": error_type,
-            "action_type": action_type,
-            "model": model,
-            "context": context[:200] if context else "",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "ts": now,
-        }, ensure_ascii=False)
+        entry = json.dumps(
+            {
+                "error_type": error_type,
+                "action_type": action_type,
+                "model": model,
+                "context": context[:200] if context else "",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "ts": now,
+            },
+            ensure_ascii=False,
+        )
 
         # In Recent-Liste speichern
         await self.redis.lpush("mha:errors:recent", entry)
@@ -87,12 +106,20 @@ class ErrorPatternTracker:
 
         # Mitigation aktivieren wenn Schwelle erreicht
         if count >= self._min_occurrences or model_count >= self._min_occurrences:
-            await self._activate_mitigation(error_type, action_type, model, max(count, model_count))
+            await self._activate_mitigation(
+                error_type, action_type, model, max(count, model_count)
+            )
 
-        logger.debug("Error recorded: %s/%s (count this hour: %s)", error_type, action_type, count)
+        logger.debug(
+            "Error recorded: %s/%s (count this hour: %s)",
+            error_type,
+            action_type,
+            count,
+        )
 
-    async def get_mitigation(self, action_type: str = "",
-                             model: str = "") -> Optional[dict]:
+    async def get_mitigation(
+        self, action_type: str = "", model: str = ""
+    ) -> Optional[dict]:
         """Prueft ob eine aktive Mitigation existiert."""
         if not self.enabled or not self.redis:
             return None
@@ -164,8 +191,9 @@ class ErrorPatternTracker:
 
     # --- Private Methoden ---
 
-    async def _activate_mitigation(self, error_type: str, action_type: str,
-                                   model: str, count: int):
+    async def _activate_mitigation(
+        self, error_type: str, action_type: str, model: str, count: int
+    ):
         """Aktiviert eine temporaere Mitigation."""
         if not self.redis:
             return
@@ -181,8 +209,12 @@ class ErrorPatternTracker:
             }
             key = f"mha:errors:mitigation:model:{model}"
             await self.redis.setex(key, ttl, json.dumps(mitigation, ensure_ascii=False))
-            logger.info("Mitigation aktiviert: use_fallback fuer %s (TTL: %dh, Grund: %dx timeout)",
-                        model, self._mitigation_ttl_hours, count)
+            logger.info(
+                "Mitigation aktiviert: use_fallback fuer %s (TTL: %dh, Grund: %dx timeout)",
+                model,
+                self._mitigation_ttl_hours,
+                count,
+            )
 
         elif error_type == "service_unavailable" and action_type:
             mitigation = {
@@ -193,8 +225,11 @@ class ErrorPatternTracker:
             }
             key = f"mha:errors:mitigation:{action_type}"
             await self.redis.setex(key, ttl, json.dumps(mitigation, ensure_ascii=False))
-            logger.info("Mitigation aktiviert: warn_user fuer %s (TTL: %dh)",
-                        action_type, self._mitigation_ttl_hours)
+            logger.info(
+                "Mitigation aktiviert: warn_user fuer %s (TTL: %dh)",
+                action_type,
+                self._mitigation_ttl_hours,
+            )
 
         elif error_type == "entity_not_found" and action_type:
             mitigation = {
@@ -206,3 +241,147 @@ class ErrorPatternTracker:
             key = f"mha:errors:mitigation:{action_type}"
             await self.redis.setex(key, ttl, json.dumps(mitigation, ensure_ascii=False))
             logger.info("Mitigation aktiviert: skip_entity fuer %s", action_type)
+
+        elif error_type == "model_overloaded" and model:
+            mitigation = {
+                "type": MITIGATION_RETRY_DELAY,
+                "reason": f"{count}x model_overloaded fuer {model} in letzter Stunde",
+                "original_model": model,
+                "retry_delay_seconds": min(30 * count, 120),
+                "activated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            key = f"mha:errors:mitigation:model:{model}"
+            await self.redis.setex(key, ttl, json.dumps(mitigation, ensure_ascii=False))
+            logger.info(
+                "Mitigation aktiviert: retry_delay fuer %s (TTL: %dh, %dx overloaded)",
+                model,
+                self._mitigation_ttl_hours,
+                count,
+            )
+
+        elif error_type == "bad_params" and action_type:
+            mitigation = {
+                "type": MITIGATION_FIX_PARAMS,
+                "reason": f"{count}x bad_params bei {action_type}",
+                "action_type": action_type,
+                "activated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            key = f"mha:errors:mitigation:{action_type}"
+            await self.redis.setex(key, ttl, json.dumps(mitigation, ensure_ascii=False))
+            logger.info(
+                "Mitigation aktiviert: fix_params fuer %s (TTL: %dh)",
+                action_type,
+                self._mitigation_ttl_hours,
+            )
+
+    # ------------------------------------------------------------------
+    # Self-Diagnosis: Proaktive Fehleranalyse + Korrektur-Kommunikation
+    # ------------------------------------------------------------------
+
+    async def get_self_diagnosis(self) -> Optional[dict]:
+        """Analysiert aktuelle Fehlermuster und generiert eine Selbstdiagnose.
+
+        Prueft ob wiederholte Fehler auf ein systemisches Problem hindeuten
+        und gibt strukturierte Korrekturinformationen zurueck.
+
+        Returns:
+            Dict mit ``issue``, ``severity``, ``affected``, ``mitigation``,
+            ``user_message`` oder ``None`` wenn alles OK.
+        """
+        if not self.enabled or not self.redis:
+            return None
+
+        try:
+            stats = await self.get_stats()
+            if stats.get("last_24h", 0) < 3:
+                return None
+
+            by_type = stats.get("by_type", {})
+            issues = []
+
+            # Timeout-Haeufen → LLM-Performance-Problem
+            if by_type.get("timeout", 0) >= self._diag_thresholds["timeout"]:
+                issues.append(
+                    {
+                        "issue": "LLM-Antwortzeiten",
+                        "severity": "medium",
+                        "affected": "Sprachverarbeitung",
+                        "mitigation": "Automatischer Fallback auf schnelleres Modell aktiv",
+                        "user_message": (
+                            "Mir ist aufgefallen, dass meine Antworten heute etwas "
+                            "langsamer waren als gewoehnlich. Ich habe temporaer "
+                            "auf ein schnelleres Modell umgestellt."
+                        ),
+                    }
+                )
+
+            # Service-Ausfaelle → HA-Verbindungsproblem
+            if (
+                by_type.get("service_unavailable", 0)
+                >= self._diag_thresholds["service_unavailable"]
+            ):
+                issues.append(
+                    {
+                        "issue": "Home-Assistant-Dienste",
+                        "severity": "high",
+                        "affected": "Geraetesteuerung",
+                        "mitigation": "Betroffene Aktionen werden temporaer uebersprungen",
+                        "user_message": (
+                            "Einige Geraete-Dienste waren heute zeitweise nicht erreichbar. "
+                            "Ich habe betroffene Kommandos voruebergehend deaktiviert "
+                            "und versuche es spaeter erneut."
+                        ),
+                    }
+                )
+
+            # Entity-not-found → Geraetekonfiguration veraendert
+            if (
+                by_type.get("entity_not_found", 0)
+                >= self._diag_thresholds["entity_not_found"]
+            ):
+                issues.append(
+                    {
+                        "issue": "Geraete-Konfiguration",
+                        "severity": "low",
+                        "affected": "Automatisierungen",
+                        "mitigation": "Unbekannte Entitaeten werden uebersprungen",
+                        "user_message": (
+                            "Einige Geraete-IDs scheinen sich geaendert zu haben. "
+                            "Meine Automatisierungen fuer diese Geraete sind pausiert. "
+                            "Moechtest du die Zuordnung aktualisieren?"
+                        ),
+                    }
+                )
+
+            # Model-Ueberlastung → Ressourcen-Problem
+            if (
+                by_type.get("model_overloaded", 0)
+                >= self._diag_thresholds["model_overloaded"]
+            ):
+                issues.append(
+                    {
+                        "issue": "KI-Modell-Kapazitaet",
+                        "severity": "medium",
+                        "affected": "Antwortqualitaet",
+                        "mitigation": "Verzoegerter Retry + Lastverteilung aktiv",
+                        "user_message": (
+                            "Das KI-System war heute mehrfach ueberlastet. "
+                            "Ich habe automatisch Wartezeiten eingefuegt und "
+                            "weniger komplexe Anfragen auf das schnelle Modell umgeleitet."
+                        ),
+                    }
+                )
+
+            if not issues:
+                return None
+
+            # Schwerwiegendstes Issue zurueckgeben
+            severity_order = {"high": 3, "medium": 2, "low": 1}
+            issues.sort(
+                key=lambda x: severity_order.get(x["severity"], 0), reverse=True
+            )
+            return issues[0]
+
+        except Exception as e:
+            logger.debug("Self-Diagnosis Fehler: %s", e)
+            return None

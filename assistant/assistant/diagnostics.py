@@ -535,6 +535,11 @@ class DiagnosticsEngine:
     def _load_maintenance_tasks(self) -> list[dict]:
         """Laedt Wartungsaufgaben aus YAML."""
         try:
+            if not self._maintenance_file.exists():
+                example = self._maintenance_file.with_suffix(".yaml.example")
+                if example.exists():
+                    import shutil
+                    shutil.copy2(example, self._maintenance_file)
             if self._maintenance_file.exists():
                 with open(self._maintenance_file) as f:
                     data = yaml.safe_load(f)

@@ -25,16 +25,40 @@ REDIS_KEY_LAST_ACTION = "mha:explainability:last_action"
 # Kontrafaktische Regeln: (domain, context_key) -> Template
 # Erklaert was OHNE Jarvis' Eingreifen passiert waere.
 _COUNTERFACTUAL_RULES: dict[tuple[str, str], str] = {
-    ("climate", "window_open"): "Ohne Eingreifen: Heizkosten von ca. {cost}€/h verschwendet.",
-    ("climate", "empty_room"): "Ohne Eingreifen: Leerer Raum waere auf {temp}°C geheizt worden.",
-    ("climate", "high_temp"): "Ohne Eingreifen: Raumtemperatur waere auf {temp}°C gestiegen.",
-    ("cover", "wind_warning"): "Ohne Eingreifen: Markise bei {wind_speed} km/h Windboeen beschaedigt.",
+    (
+        "climate",
+        "window_open",
+    ): "Ohne Eingreifen: Heizkosten von ca. {cost}€/h verschwendet.",
+    (
+        "climate",
+        "empty_room",
+    ): "Ohne Eingreifen: Leerer Raum waere auf {temp}°C geheizt worden.",
+    (
+        "climate",
+        "high_temp",
+    ): "Ohne Eingreifen: Raumtemperatur waere auf {temp}°C gestiegen.",
+    (
+        "cover",
+        "wind_warning",
+    ): "Ohne Eingreifen: Markise bei {wind_speed} km/h Windboeen beschaedigt.",
     ("cover", "rain_warning"): "Ohne Eingreifen: Terrassenmoebel waeren nass geworden.",
-    ("light", "empty_room"): "Ohne Eingreifen: Unnoetiger Stromverbrauch von ~{watts}W.",
+    (
+        "light",
+        "empty_room",
+    ): "Ohne Eingreifen: Unnoetiger Stromverbrauch von ~{watts}W.",
     ("light", "daylight"): "Ohne Eingreifen: Licht haette trotz Tageslicht gebrannt.",
-    ("security", "door_unlocked"): "Ohne Eingreifen: Haustuer waere ueber Nacht unverschlossen geblieben.",
-    ("security", "alarm_triggered"): "Ohne Eingreifen: Keine sofortige Benachrichtigung.",
-    ("lock", "night_unlocked"): "Ohne Eingreifen: Schloss waere bis morgen offen geblieben.",
+    (
+        "security",
+        "door_unlocked",
+    ): "Ohne Eingreifen: Haustuer waere ueber Nacht unverschlossen geblieben.",
+    (
+        "security",
+        "alarm_triggered",
+    ): "Ohne Eingreifen: Keine sofortige Benachrichtigung.",
+    (
+        "lock",
+        "night_unlocked",
+    ): "Ohne Eingreifen: Schloss waere bis morgen offen geblieben.",
 }
 
 
@@ -48,7 +72,9 @@ class ExplainabilityEngine:
         cfg = yaml_config.get("explainability", {})
         self.enabled = cfg.get("enabled", True)
         self.max_history = cfg.get("max_history", 50)
-        self.detail_level = cfg.get("detail_level", "normal")  # minimal, normal, verbose
+        self.detail_level = cfg.get(
+            "detail_level", "normal"
+        )  # minimal, normal, verbose
         self.auto_explain = cfg.get("auto_explain", False)
 
         # In-Memory Decision Log (FIFO)
@@ -63,8 +89,11 @@ class ExplainabilityEngine:
         self.redis = redis_client
         if self.redis and self.enabled:
             await self._load_decisions()
-        logger.info("ExplainabilityEngine initialisiert (enabled: %s, detail: %s)",
-                     self.enabled, self.detail_level)
+        logger.info(
+            "ExplainabilityEngine initialisiert (enabled: %s, detail: %s)",
+            self.enabled,
+            self.detail_level,
+        )
 
     async def _load_decisions(self):
         """Laedt gespeicherte Entscheidungen aus Redis."""
@@ -120,9 +149,19 @@ class ExplainabilityEngine:
         if context and self.detail_level in ("normal", "verbose"):
             # Kontext komprimieren
             decision["context"] = {
-                k: v for k, v in (context or {}).items()
-                if k in ("room", "sensor_values", "rule", "pattern", "mood",
-                         "autonomy_level", "weather", "calendar_event")
+                k: v
+                for k, v in (context or {}).items()
+                if k
+                in (
+                    "room",
+                    "sensor_values",
+                    "rule",
+                    "pattern",
+                    "mood",
+                    "autonomy_level",
+                    "weather",
+                    "calendar_event",
+                )
             }
 
         # Kontrafaktische Ergebnisse: explizit oder automatisch generiert
@@ -138,7 +177,9 @@ class ExplainabilityEngine:
         # In Redis persistieren
         if self.redis:
             try:
-                await self.redis.lpush(REDIS_KEY_DECISIONS, json.dumps(decision, ensure_ascii=False))
+                await self.redis.lpush(
+                    REDIS_KEY_DECISIONS, json.dumps(decision, ensure_ascii=False)
+                )
                 await self.redis.ltrim(REDIS_KEY_DECISIONS, 0, self.max_history - 1)
                 await self.redis.expire(REDIS_KEY_DECISIONS, 86400 * 7)  # 7 Tage
                 # Letzte Aktion fuer schnellen Zugriff
@@ -165,16 +206,14 @@ class ExplainabilityEngine:
 
     def explain_by_domain(self, domain: str, n: int = 5) -> list[dict]:
         """Gibt Entscheidungen fuer eine bestimmte Domaene zurueck."""
-        return [
-            d for d in reversed(self._decisions)
-            if d.get("domain") == domain
-        ][:n]
+        return [d for d in reversed(self._decisions) if d.get("domain") == domain][:n]
 
     def explain_by_action(self, action_keyword: str, n: int = 5) -> list[dict]:
         """Sucht Entscheidungen die ein bestimmtes Keyword enthalten."""
         kw = action_keyword.lower()
         return [
-            d for d in reversed(self._decisions)
+            d
+            for d in reversed(self._decisions)
             if kw in d.get("action", "").lower() or kw in d.get("reason", "").lower()
         ][:n]
 
@@ -236,6 +275,7 @@ class ExplainabilityEngine:
         try:
             import asyncio
             from .config import settings, get_person_title
+
             title = get_person_title()
 
             response = await asyncio.wait_for(
@@ -273,7 +313,7 @@ class ExplainabilityEngine:
             if "<think>" in content:
                 think_end = content.find("</think>")
                 if think_end != -1:
-                    content = content[think_end + 8:].strip()
+                    content = content[think_end + 8 :].strip()
 
             if content and len(content) > 10:
                 return content
@@ -364,9 +404,7 @@ class ExplainabilityEngine:
         if age > 300:  # Aelter als 5 Min -> nicht erwaehnen
             return ""
 
-        hint = (
-            f"Letzte automatische Aktion: '{d['action']}' (Grund: {d['reason']}). "
-        )
+        hint = f"Letzte automatische Aktion: '{d['action']}' (Grund: {d['reason']}). "
 
         # Kontrafaktische Daten hinzufuegen
         alt_outcomes = d.get("alternative_outcomes", [])
@@ -408,3 +446,276 @@ class ExplainabilityEngine:
             "domains": domains,
             "triggers": triggers,
         }
+
+    # ------------------------------------------------------------------
+    # Deep Causal Reasoning: Multi-Level Why-Chains
+    # ------------------------------------------------------------------
+
+    # Kausale Regeln: (trigger_type, context_key) → naechste Ebene
+    # Jede Kette beschreibt: "Warum X?" → "Weil Y" → "Warum Y?" → "Weil Z"
+    _CAUSAL_CHAINS: dict[str, list[dict]] = {
+        "climate_window_open": [
+            {
+                "level": 1,
+                "cause": "Fenster offen erkannt",
+                "sensor": "binary_sensor.*window*",
+            },
+            {
+                "level": 2,
+                "cause": "Heizenergie wird verschwendet",
+                "metric": "energy_waste",
+            },
+            {
+                "level": 3,
+                "cause": "Waermeverlust: {loss_rate}°C/Stunde bei {delta_temp}°C Differenz",
+            },
+        ],
+        "climate_empty_room": [
+            {
+                "level": 1,
+                "cause": "Raum als leer erkannt (kein Bewegungsmelder-Signal)",
+            },
+            {"level": 2, "cause": "Heizen eines leeren Raums ist Energieverschwendung"},
+            {
+                "level": 3,
+                "cause": "Praesenz-Sensor meldet seit {minutes} Min keine Bewegung",
+            },
+        ],
+        "climate_frost": [
+            {
+                "level": 1,
+                "cause": "Frostgefahr erkannt (Vorhersage: {forecast_temp}°C)",
+            },
+            {
+                "level": 2,
+                "cause": "Wasserleitungen und Pflanzen koennten Schaden nehmen",
+            },
+            {
+                "level": 3,
+                "cause": "Wetterdienst meldet Frost fuer die naechsten {hours} Stunden",
+            },
+        ],
+        "cover_storm": [
+            {
+                "level": 1,
+                "cause": "Sturmwarnung: Windgeschwindigkeit {wind_speed} km/h",
+            },
+            {"level": 2, "cause": "Markise/Rollladen koennte beschaedigt werden"},
+            {
+                "level": 3,
+                "cause": "Schwellwert {threshold} km/h ueberschritten (Wetterstation)",
+            },
+        ],
+        "light_daylight": [
+            {"level": 1, "cause": "Ausreichend Tageslicht vorhanden"},
+            {
+                "level": 2,
+                "cause": "Sonnenstand: Elevation {sun_elevation}°, Helligkeit genuegt",
+            },
+            {
+                "level": 3,
+                "cause": "Astronomischer Sensor: Sonnenauf-/untergangsberechnung",
+            },
+        ],
+        "security_night_unlock": [
+            {"level": 1, "cause": "Naechtliches Entriegeln ist ein Sicherheitsrisiko"},
+            {
+                "level": 2,
+                "cause": "Uhrzeit {hour}:00 liegt in der Sicherheitszone (22-06 Uhr)",
+            },
+            {
+                "level": 3,
+                "cause": "Konfigurierte Sicherheitsregel: Nachtverriegelung aktiv",
+            },
+        ],
+        "energy_peak": [
+            {"level": 1, "cause": "Hoher Strompreis erkannt ({price}€/kWh)"},
+            {
+                "level": 2,
+                "cause": "Flexible Verbraucher sollten auf guenstigere Zeiten verschoben werden",
+            },
+            {
+                "level": 3,
+                "cause": "Stromboerse meldet Peak-Tarif fuer die naechsten {hours} Stunden",
+            },
+        ],
+        "anticipation_pattern": [
+            {
+                "level": 1,
+                "cause": "Wiederkehrendes Muster erkannt (Confidence: {confidence}%)",
+            },
+            {
+                "level": 2,
+                "cause": "Aktion wurde {count}x zur selben Uhrzeit/Wochentag beobachtet",
+            },
+            {"level": 3, "cause": "Datengrundlage: {weeks} Wochen Aktionshistorie"},
+        ],
+    }
+
+    async def build_why_chain(
+        self,
+        action: str,
+        domain: str = "",
+        context: dict = None,
+        max_depth: int = 3,
+    ) -> list[dict]:
+        """Baut eine mehrstufige Why-Chain fuer eine Entscheidung.
+
+        Beispiel-Ausgabe::
+
+            [
+                {"level": 1, "why": "Heizung wurde reduziert", "because": "Fenster offen erkannt"},
+                {"level": 2, "why": "Fenster offen ist relevant", "because": "Heizenergie wird verschwendet"},
+                {"level": 3, "why": "Verschwendung entsteht", "because": "Waermeverlust: 2.1°C/Stunde..."},
+            ]
+
+        Args:
+            action: Die ausgefuehrte Aktion.
+            domain: Die Domaene (climate, cover, light, security...).
+            context: Kontext-Daten (Sensoren, Wetter, Regeln).
+            max_depth: Maximale Tiefe der Kette (1-3).
+
+        Returns:
+            Liste von Why-Chain-Ebenen.
+        """
+        ctx = context or {}
+        chain = []
+
+        # 1. Passende kausale Kette finden
+        chain_key = self._find_chain_key(domain, ctx)
+        if chain_key and chain_key in self._CAUSAL_CHAINS:
+            template_chain = self._CAUSAL_CHAINS[chain_key]
+            for step in template_chain[:max_depth]:
+                cause = step["cause"]
+                # Template-Variablen ersetzen
+                try:
+                    cause = cause.format(**ctx)
+                except (KeyError, ValueError):
+                    pass  # Fehlende Variablen bleiben als Platzhalter
+                chain.append(
+                    {
+                        "level": step["level"],
+                        "because": cause,
+                    }
+                )
+
+        # 2. Letzte Entscheidung aus History anreichern
+        last = self._find_related_decision(action, domain)
+        if last and not chain:
+            chain.append(
+                {
+                    "level": 1,
+                    "because": last.get("reason", "Kein Grund protokolliert"),
+                }
+            )
+            alt = last.get("alternative_outcomes", [])
+            if alt:
+                chain.append(
+                    {
+                        "level": 2,
+                        "because": f"Alternative: {alt[0]}",
+                    }
+                )
+
+        # 3. Wenn immer noch leer: LLM-Fallback
+        if not chain and self._ollama:
+            llm_reason = await self._generate_why_chain_llm(action, domain, ctx)
+            if llm_reason:
+                chain = llm_reason
+
+        return chain
+
+    def _find_chain_key(self, domain: str, context: dict) -> Optional[str]:
+        """Findet den passenden Causal-Chain-Schluessel basierend auf Domain + Kontext."""
+        # Direkte Kontext-Schluessel pruefen
+        for ctx_key in (
+            "window_open",
+            "empty_room",
+            "frost",
+            "storm",
+            "daylight",
+            "night_unlock",
+            "peak",
+            "pattern",
+        ):
+            full_key = f"{domain}_{ctx_key}"
+            if full_key in self._CAUSAL_CHAINS:
+                # Pruefen ob Kontext passt
+                if ctx_key in context or any(
+                    ctx_key in str(v) for v in context.values()
+                ):
+                    return full_key
+
+        # Fallback: Domain-basiert
+        for key in self._CAUSAL_CHAINS:
+            if key.startswith(f"{domain}_"):
+                return key
+
+        # Anticipation-Pattern als Fallback
+        if context.get("trigger") == "anticipation" or context.get("confidence"):
+            return "anticipation_pattern"
+
+        return None
+
+    def _find_related_decision(self, action: str, domain: str) -> Optional[dict]:
+        """Sucht die letzte verwandte Entscheidung in der History."""
+        for d in reversed(self._decisions):
+            if (
+                d.get("domain") == domain
+                or action.lower() in d.get("action", "").lower()
+            ):
+                return d
+        return None
+
+    async def _generate_why_chain_llm(
+        self,
+        action: str,
+        domain: str,
+        context: dict,
+    ) -> list[dict]:
+        """LLM-basierte Why-Chain fuer Faelle ohne vordefinierte Regeln."""
+        if not self._ollama:
+            return []
+        try:
+            prompt = (
+                f"Erklaere in GENAU 3 Schritten warum ein Smart-Home-Assistent "
+                f"die Aktion '{action}' (Domain: {domain}) ausgefuehrt hat.\n"
+                f"Kontext: {json.dumps(context, ensure_ascii=False, default=str)[:500]}\n\n"
+                f"Antwort als JSON-Liste: "
+                f'[{{"level": 1, "because": "..."}}, {{"level": 2, "because": "..."}}, '
+                f'{{"level": 3, "because": "..."}}]'
+            )
+            response = await self._ollama.generate(prompt, model_tier="fast")
+            text = (
+                response.get("response", "")
+                if isinstance(response, dict)
+                else str(response)
+            )
+
+            # JSON aus Antwort extrahieren
+            import re
+
+            match = re.search(r"\[.*\]", text, re.DOTALL)
+            if match:
+                return json.loads(match.group())
+        except Exception as e:
+            logger.debug("LLM Why-Chain Fehler: %s", e)
+        return []
+
+    def format_why_chain(self, chain: list[dict]) -> str:
+        """Formatiert eine Why-Chain als lesbaren Text.
+
+        Beispiel::
+
+            Warum? → Fenster offen erkannt
+              └─ Weil: Heizenergie wird verschwendet
+                  └─ Weil: Waermeverlust: 2.1°C/Stunde bei 12°C Differenz
+        """
+        if not chain:
+            return "Keine Begruendungskette verfuegbar."
+        lines = []
+        for step in chain:
+            level = step.get("level", 1)
+            indent = "  " * (level - 1) + ("└─ Weil: " if level > 1 else "Warum? → ")
+            lines.append(f"{indent}{step.get('because', '?')}")
+        return "\n".join(lines)

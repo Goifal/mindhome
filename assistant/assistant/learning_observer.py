@@ -562,6 +562,72 @@ class LearningObserver:
     # Feature 8: Lern-Transparenz — "Was hast du gelernt?"
     # ------------------------------------------------------------------
 
+    async def detect_potential_scenes(self) -> list[dict]:
+        """G1: Erkennt wiederkehrende Geraete-Kombinationen als potenzielle Szenen.
+
+        Analysiert manuelle Aktionen und findet Gruppen von Geraeten
+        die haeufig innerhalb von 2 Minuten zusammen geschaltet werden.
+        """
+        if not self.redis:
+            return []
+
+        try:
+            raw_actions = await self.redis.lrange(KEY_MANUAL_ACTIONS, 0, 499)
+            if len(raw_actions) < 6:
+                return []
+
+            # Aktionen chronologisch parsen
+            actions = []
+            for raw in raw_actions:
+                try:
+                    a = json.loads(raw if isinstance(raw, str) else raw.decode())
+                    ts = datetime.fromisoformat(a.get("timestamp", ""))
+                    actions.append({"entity_id": a.get("entity_id", ""),
+                                    "ts": ts.timestamp(),
+                                    "new_state": a.get("new_state", "")})
+                except (json.JSONDecodeError, ValueError):
+                    continue
+
+            if not actions:
+                return []
+
+            # Gruppen finden: Aktionen innerhalb von 120s
+            groups = []
+            current_group = [actions[0]]
+            for a in actions[1:]:
+                if a["ts"] - current_group[-1]["ts"] <= 120:
+                    current_group.append(a)
+                else:
+                    if len(current_group) >= 2:
+                        groups.append(current_group)
+                    current_group = [a]
+            if len(current_group) >= 2:
+                groups.append(current_group)
+
+            # Haeufige Kombinationen finden
+            combo_counts: dict[str, int] = {}
+            for group in groups:
+                entities = tuple(sorted(set(a["entity_id"] for a in group)))
+                if len(entities) >= 2:
+                    key = "|".join(entities)
+                    combo_counts[key] = combo_counts.get(key, 0) + 1
+
+            # Nur Kombinationen die >= 3x vorkamen
+            scenes = []
+            for combo, count in combo_counts.items():
+                if count >= self.min_repetitions:
+                    entities = combo.split("|")
+                    scenes.append({
+                        "entities": entities,
+                        "count": count,
+                        "suggestion": f"Diese {len(entities)} Geraete werden oft zusammen geschaltet. Szene erstellen?",
+                    })
+
+            return sorted(scenes, key=lambda s: s["count"], reverse=True)[:5]
+        except Exception as e:
+            logger.warning("Szenen-Erkennung fehlgeschlagen: %s", e)
+            return []
+
     async def get_learning_report(self, period: str = "week") -> dict:
         """Erstellt einen Lern-Bericht ueber erkannte Muster und Vorschlaege.
 

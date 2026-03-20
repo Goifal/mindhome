@@ -72,7 +72,9 @@ class HabitDriftDetector:
                     previous_offsets = []
                     for s in samples:
                         try:
-                            ts = datetime.fromisoformat(s.get("timestamp", ""))
+                            ts = datetime.fromisoformat(s.get("timestamp", "").replace("Z", "+00:00"))
+                            if ts.tzinfo is None:
+                                ts = ts.replace(tzinfo=timezone.utc)
                             offset = s.get("offset_min", 0)
                             if ts >= recent_start:
                                 recent_offsets.append(offset)

@@ -85,7 +85,7 @@ const _searchIndex = [
   {tab:'tab-routines', title:'Benannte Protokolle', keywords:'protokoll multi-step sequenz filmabend sprache', icon:'&#128221;'},
   {tab:'tab-routines', title:'"Das Übliche"', keywords:'übliche wie immer muster gewohnheit tageszeit', icon:'&#128260;'},
   // Proaktiv (tab-proactive)
-  {tab:'tab-proactive', title:'Proaktive Meldungen', keywords:'proaktiv meldungen cooldown autonomie', icon:'&#128276;'},
+  {tab:'tab-proactive', title:'Proaktive Meldungen', keywords:'proaktiv meldungen cooldown autonomie dedup duplikat erkennung', icon:'&#128276;'},
   {tab:'tab-proactive', title:'Zeitgefühl', keywords:'ofen vergessen bügeleisen licht fenster pc pause', icon:'&#9200;'},
   {tab:'tab-proactive', title:'Vorausdenken', keywords:'anticipation gewohnheiten lernen vorhersage konfidenz', icon:'&#128300;'},
   {tab:'tab-proactive', title:'Rückkehr-Briefing', keywords:'abwesenheit rückkehr briefing klingel waschmaschine', icon:'&#128218;'},
@@ -1714,6 +1714,10 @@ const HELP_TEXTS = {
   // === PROAKTIV ===
   'proactive.enabled': {title:'Proaktive Meldungen', text:'Assistent meldet sich von allein bei wichtigen Ereignissen.'},
   'proactive.cooldown_seconds': {title:'Meldungs-Abstand', text:'Mindestzeit zwischen proaktiven Meldungen.'},
+  'notifications.dedup.enabled': {title:'Duplikat-Erkennung', text:'Semantische Duplikat-Erkennung ueber alle Module hinweg. Verhindert doppelte Meldungen.'},
+  'notifications.dedup.similarity_threshold': {title:'Aehnlichkeits-Schwelle', text:'Cosinus-Aehnlichkeit ab der zwei Meldungen als Duplikat gelten. 0.85 = aehnlich formuliert, 0.95 = fast identisch.'},
+  'notifications.dedup.buffer_size': {title:'Buffer-Groesse', text:'Wie viele kuerzliche Meldungen im Vergleichs-Buffer gehalten werden.'},
+  'notifications.dedup.window_minutes': {title:'Dedup-Zeitfenster', text:'Wie weit zurueck nach Duplikaten gesucht wird (Minuten).'},
   'proactive.music_follow_cooldown_minutes': {title:'Musik-Pause', text:'Wartezeit bevor Musik dem Raumwechsel folgt.'},
   'proactive.min_autonomy_level': {title:'Min. Autonomie', text:'Ab welchem Level proaktive Meldungen erlaubt sind.'},
   'proactive.silence_scenes': {title:'Nicht stören', text:'Szenen in denen nicht gestört wird (Film, Schlaf, Meditation).'},
@@ -1919,6 +1923,8 @@ const HELP_TEXTS = {
   'outcome_tracker.enabled': {title:'Wirkungstracker', text:'Beobachtet ob Aktionen rückgängig gemacht oder angepasst werden. Rolling Score 0-1 pro Aktionstyp.'},
   'outcome_tracker.observation_delay_seconds': {title:'Beobachtungs-Verzögerung', text:'Wartezeit bevor geprüft wird ob der User die Aktion geändert hat.'},
   'outcome_tracker.max_results': {title:'Max. Ergebnisse', text:'Wie viele Outcome-Ergebnisse in Redis gespeichert werden.'},
+  'outcome_tracker.calibration_min': {title:'Min. Kalibrierungsfaktor', text:'Untere Grenze fuer Domain-Kalibrierung. Niedrigerer Wert = staerkere Daempfung bei schlecht bewerteten Domains (z.B. Klima).'},
+  'outcome_tracker.calibration_max': {title:'Max. Kalibrierungsfaktor', text:'Obere Grenze fuer Domain-Kalibrierung. Hoeherer Wert = staerkerer Boost bei gut bewerteten Domains.'},
   'correction_memory.enabled': {title:'Korrektur-Gedächtnis', text:'Speichert User-Korrekturen strukturiert und injiziert relevante bei ähnlichen Aktionen.'},
   'correction_memory.max_entries': {title:'Max. Einträge', text:'Maximale Anzahl gespeicherter Korrekturen.'},
   'correction_memory.max_context_entries': {title:'Max. Kontext-Einträge', text:'Wie viele relevante Korrekturen dem LLM als Kontext mitgegeben werden.'},
@@ -1928,6 +1934,10 @@ const HELP_TEXTS = {
   'error_patterns.enabled': {title:'Fehlermuster-Erkennung', text:'Erkennt wiederkehrende Fehler und reagiert proaktiv (z.B. Fallback-Modell nutzen).'},
   'error_patterns.min_occurrences_for_mitigation': {title:'Min. Fehler für Reaktion', text:'Wie oft ein Fehler auftreten muss bevor proaktiv reagiert wird.'},
   'error_patterns.mitigation_ttl_hours': {title:'Reaktions-Dauer', text:'Wie lange eine Fehlermuster-Reaktion aktiv bleibt (Stunden).'},
+  'error_patterns.self_diagnosis.timeout_threshold': {title:'Timeout-Schwelle', text:'Ab wie vielen LLM-Timeouts in 24h Jarvis eine Selbstdiagnose ausspricht.'},
+  'error_patterns.self_diagnosis.service_unavailable_threshold': {title:'Service-Ausfall-Schwelle', text:'Ab wie vielen HA-Service-Ausfaellen in 24h eine Diagnose ausgeloest wird.'},
+  'error_patterns.self_diagnosis.entity_not_found_threshold': {title:'Entity-Schwelle', text:'Ab wie vielen fehlenden Entitaeten in 24h Jarvis warnt (Geraete umbenannt?).'},
+  'error_patterns.self_diagnosis.model_overloaded_threshold': {title:'Modell-Ueberlast-Schwelle', text:'Ab wie vielen Ueberlastungen in 24h Jarvis auf Lastverteilung hinweist.'},
   'self_report.enabled': {title:'Selbst-Report', text:'Woechentlicher Bericht über alle Lernsysteme. Per Chat abrufbar.'},
   'self_report.model': {title:'Report-Modell', text:'KI-Modell für die Selbst-Report-Generierung.'},
   'adaptive_thresholds.enabled': {title:'Lernende Schwellwerte', text:'Passt Parameter automatisch an basierend auf Outcome-Daten. Nur innerhalb enger Grenzen, nur zur Laufzeit.'},
@@ -3280,6 +3290,11 @@ function renderPersonality() {
     fInfo('Cached LLM-Antworten für wiederkehrende Status-Abfragen (z.B. "Wie warm ist es?"). Wenn die gleiche Frage innerhalb des TTL-Fensters erneut gestellt wird, kommt die Antwort sofort aus dem Cache statt über das LLM. Spart 2-8 Sekunden. Nur Status-Abfragen werden gecacht — Befehle wie "Licht an" niemals.') +
     fRange('response_cache.ttl.device_query', 'Cache-Dauer Status-Abfragen (Sekunden)', 0, 120, 5, {0:'Aus',15:'15s',30:'30s',45:'45s (Standard)',60:'1 Min',120:'2 Min'}) +
     fInfo('Wie lange gecachte Status-Antworten gueltig bleiben. Kurz = aktuellere Daten, mehr LLM-Calls. Lang = schnellere Antworten, aber Werte koennen veraltet sein. 45s ist ein guter Kompromiss — Temperaturen ändern sich nicht in 45 Sekunden.') +
+    fToggle('response_cache.predictive_preload.enabled', 'Predictive Preload aktiv') +
+    fInfo('Laedt Kontext-Daten fuer vorhergesagte Anfragen vorab in den Cache. Basiert auf der AnticipationEngine — wenn Jarvis weiss, dass du um 7 Uhr nach dem Wetter fragst, bereitet er die Antwort schon vor.') +
+    fRange('response_cache.predictive_preload.lookahead_hours', 'Vorausschau-Fenster (Stunden)', 1, 6, 1, {1:'1h',2:'2h (Standard)',3:'3h',4:'4h',6:'6h'}) +
+    fRange('response_cache.predictive_preload.preload_ttl_seconds', 'Preload-TTL (Sekunden)', 60, 900, 60, {60:'1 Min',300:'5 Min (Standard)',600:'10 Min',900:'15 Min'}) +
+    fNum('response_cache.predictive_preload.max_predictions', 'Max. Vorhersagen pro Durchlauf', 1, 15) +
     fSubheading('Inkrementeller LLM-Start') +
     fToggle('incremental_llm.enabled', 'Fast-Gather für einfache Befehle') +
     fInfo('Bei einfachen Geraetebefehlen ("Licht an") und Status-Abfragen ("Wie warm?") wird der Kontext-Gather mit kurzerem Timeout ausgeführt. Subsysteme die nicht rechtzeitig antworten (Anticipation, Patterns, Insights) werden übersprungen — das LLM startet frueher. Spart 500-1500ms bei einfachen Anfragen.') +
@@ -4927,6 +4942,12 @@ function renderProactive() {
     fRange('proactive.music_follow_cooldown_minutes', 'Musik-Nachfolge Pause', 1, 30, 1) +
     fRange('proactive.min_autonomy_level', 'Ab Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
     fToggle('proactive.departure_shopping_reminder', 'Einkaufsliste beim Verlassen erwaehnen') +
+    fSubheading('Duplikat-Erkennung (Cross-Module)') +
+    fToggle('notifications.dedup.enabled', 'Semantische Duplikat-Erkennung aktiv') +
+    fInfo('Verhindert dass mehrere Module (Insights, Anticipation, Spontan, Wellness, Musik...) die gleiche Meldung senden. Vergleicht per KI-Embedding ob eine aehnliche Nachricht kuerzlich gesendet wurde. CRITICAL/HIGH-Meldungen werden nie gefiltert.') +
+    fRange('notifications.dedup.similarity_threshold', 'Aehnlichkeits-Schwelle', 0.70, 0.95, 0.05, {0.70:'0.70 (aggressiv)',0.80:'0.80',0.85:'0.85 (Standard)',0.90:'0.90',0.95:'0.95 (nur exakte)'}) +
+    fNum('notifications.dedup.buffer_size', 'Buffer-Groesse', 5, 50) +
+    fRange('notifications.dedup.window_minutes', 'Zeitfenster (Minuten)', 5, 120, 5, {5:'5 Min',15:'15 Min',30:'30 Min (Standard)',60:'1 Std',120:'2 Std'}) +
     `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
       <span class="info-icon">&#127916;</span>"Nicht stören"-Szenen und Aktivitäts-Zuordnung werden jetzt zentral im <strong>Szenen</strong>-Tab verwaltet. Klicke hier um dorthin zu wechseln.
     </div>`
@@ -6077,6 +6098,9 @@ function renderAutonomie() {
     fToggle('outcome_tracker.enabled', 'Wirkungstracker aktiv') +
     fRange('outcome_tracker.observation_delay_seconds', 'Beobachtungs-Verzögerung', 60, 600, 30, {60:'1 Min',120:'2 Min',180:'3 Min',300:'5 Min',600:'10 Min'}) +
     fNum('outcome_tracker.max_results', 'Max. gespeicherte Ergebnisse', 100, 2000, 100) +
+    fRange('outcome_tracker.calibration_min', 'Min. Kalibrierungsfaktor', 0.3, 0.8, 0.05, {0.3:'0.3 (aggressiv)',0.5:'0.5 (Standard)',0.7:'0.7',0.8:'0.8 (konservativ)'}) +
+    fRange('outcome_tracker.calibration_max', 'Max. Kalibrierungsfaktor', 1.2, 2.0, 0.1, {1.2:'1.2',1.5:'1.5 (Standard)',1.8:'1.8',2.0:'2.0 (aggressiv)'}) +
+    fInfo('Domain-Kalibrierung passt die Konfidenz pro Bereich (Licht, Klima, Medien...) an. Domains mit hohem Erfolgs-Score bekommen einen Boost, schlechte werden gedaempft. Min/Max begrenzt den Faktor — enger = stabiler, weiter = adaptiver.') +
 
     fSubheading('Korrektur-Gedächtnis') +
     fToggle('correction_memory.enabled', 'Korrektur-Gedächtnis aktiv') +
@@ -6102,6 +6126,11 @@ function renderAutonomie() {
     fToggle('error_patterns.enabled', 'Fehlermuster-Erkennung aktiv') +
     fNum('error_patterns.min_occurrences_for_mitigation', 'Min. Fehler für Reaktion', 2, 10) +
     fNum('error_patterns.mitigation_ttl_hours', 'Reaktions-Dauer (Stunden)', 1, 24) +
+    fInfo('Selbstdiagnose: Jarvis erkennt systemische Probleme anhand der Fehlermuster und informiert proaktiv. Die Schwellwerte bestimmen ab wie vielen Fehlern pro Typ in 24h eine Diagnose ausgeloest wird.') +
+    fNum('error_patterns.self_diagnosis.timeout_threshold', 'Timeout-Schwelle (24h)', 2, 20) +
+    fNum('error_patterns.self_diagnosis.service_unavailable_threshold', 'Service-Ausfall-Schwelle (24h)', 2, 10) +
+    fNum('error_patterns.self_diagnosis.entity_not_found_threshold', 'Entity-nicht-gefunden-Schwelle (24h)', 2, 10) +
+    fNum('error_patterns.self_diagnosis.model_overloaded_threshold', 'Modell-Ueberlast-Schwelle (24h)', 2, 20) +
 
     fSubheading('Woechentlicher Selbst-Report') +
     fToggle('self_report.enabled', 'Selbst-Report aktiv') +

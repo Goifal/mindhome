@@ -150,6 +150,7 @@ class SpeakerRecognition:
         self._profiles: dict[str, SpeakerProfile] = {}
         self._last_speaker: Optional[str] = None
         self._last_embedding: Optional[list[float]] = None  # C-1: Cache fuer Embedding-Lernen
+        self._embedding_lock = asyncio.Lock()
         self._save_lock = asyncio.Lock()
 
         if self.enabled:
@@ -298,7 +299,8 @@ class SpeakerRecognition:
                 sample_rate=audio_metadata.get("sample_rate", 16000),
             )
         if embedding:
-            self._last_embedding = embedding
+            async with self._embedding_lock:
+                self._last_embedding = embedding
         if embedding and self._profiles:
             emb_result = await self.identify_by_embedding(embedding)
             if emb_result:
@@ -673,8 +675,9 @@ class SpeakerRecognition:
             return
 
         # C-1 Fix: Gecachtes Embedding aus identify() verwenden (wurde dort schon gelesen)
-        embedding = self._last_embedding
-        self._last_embedding = None  # Nur einmal verwenden
+        async with self._embedding_lock:
+            embedding = self._last_embedding
+            self._last_embedding = None  # Nur einmal verwenden
 
         # Fallback 1: Wyoming-Embedding aus Redis (falls identify() keins hatte)
         if not embedding:
