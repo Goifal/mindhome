@@ -12,11 +12,40 @@ Testet:
 - Formality-Stufen
 - Person-Profile
 - Reload Config
+- System Prompt Generation (build_system_prompt, build_minimal_system_prompt)
+- Person-specific adaptations (_build_person_addressing)
+- Mood-dependent response style (get_mood_response_config, _build_empathy_section)
+- Butler humor generation (_build_humor_section)
+- Opinion engine (check_opinion, check_opinion_with_context, check_pushback)
+- Dynamic sarcasm levels (track_sarcasm_streak, sarcasm fatigue)
+- Confirmation message selection (get_varied_confirmation, _get_contextual_confirmation)
+- Curiosity questions (check_curiosity)
+- Urgency detection (_build_urgency_section, _is_crisis_alert)
+- Complexity classification (classify_request_complexity, get_mood_complexity_sentences)
+- Time-of-day logic (get_time_of_day, get_time_style, get_max_sentences)
+- Self-irony management (_build_self_irony_section, try_reserve_self_irony)
+- Formality system (_build_formality_section, get_formality_score, decay_formality)
+- Personality evolution (_get_personality_stage, get_personality_drift)
+- Next-step hints (build_next_step_hint)
+- Learned rules (build_learned_rules_section)
+- Device narration (narrate_device_event, _get_device_nickname)
+- Scene adjustments (get_scene_adjustment)
+- Error responses (get_error_response)
+- Progress messages (get_progress_message)
+- Notification and routine prompts (build_notification_prompt, build_routine_prompt)
+- Context formatting (_format_context)
+- Warning deduplication (track_warning_given, was_warning_given, get_warning_dedup_notes)
+- Existential hints (get_existential_hint)
+- Confidence section (_build_confidence_section)
+- Contextual silence (_build_contextual_silence_section)
 """
 
 import json
+import time
 import pytest
+import random
 from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime
 
 from assistant.personality import (
     PersonalityEngine,
@@ -26,6 +55,13 @@ from assistant.personality import (
     FORMALITY_PROMPTS,
     CONFIRMATIONS_SUCCESS,
     CONFIRMATIONS_FAILED,
+    CONFIRMATIONS_SUCCESS_SNARKY,
+    CONFIRMATIONS_PARTIAL,
+    CONFIRMATIONS_FAILED_SNARKY,
+    CONTEXTUAL_HUMOR_TRIGGERS,
+    HUMOR_CATEGORIES,
+    DIAGNOSTIC_OPENERS,
+    CASUAL_WARNINGS,
 )
 
 

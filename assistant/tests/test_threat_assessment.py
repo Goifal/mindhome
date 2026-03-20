@@ -28,6 +28,17 @@ def threat_no_redis():
     return t
 
 
+@pytest.fixture
+def threat_with_cooldown():
+    """ThreatAssessment mit aktivem Cooldown (wurde bereits benachrichtigt)."""
+    ha = AsyncMock()
+    t = ThreatAssessment(ha)
+    t.redis = AsyncMock()
+    # _was_notified returns True -> already notified, cooldown active
+    t.redis.get.return_value = b"1"
+    return t
+
+
 class TestCheckSmokeFire:
     """Tests fuer _check_smoke_fire()."""
 
