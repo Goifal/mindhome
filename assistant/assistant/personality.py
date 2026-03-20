@@ -860,7 +860,12 @@ class PersonalityEngine:
         """Lädt Easter Eggs aus config/easter_eggs.yaml."""
         path = Path(__file__).parent.parent / "config" / "easter_eggs.yaml"
         if not path.exists():
-            return []
+            example = path.with_suffix(".yaml.example")
+            if example.exists():
+                import shutil
+                shutil.copy2(example, path)
+            else:
+                return []
         try:
             with open(path) as f:
                 data = yaml.safe_load(f)
@@ -892,7 +897,12 @@ class PersonalityEngine:
         """Lädt Opinion Rules aus config/opinion_rules.yaml."""
         path = Path(__file__).parent.parent / "config" / "opinion_rules.yaml"
         if not path.exists():
-            return []
+            example = path.with_suffix(".yaml.example")
+            if example.exists():
+                import shutil
+                shutil.copy2(example, path)
+            else:
+                return []
         try:
             with open(path) as f:
                 data = yaml.safe_load(f)

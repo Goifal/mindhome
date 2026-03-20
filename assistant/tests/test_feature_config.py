@@ -205,6 +205,9 @@ class TestSelfAutomationYamlHandling:
         """Fehlende YAML-Datei → leeres Dict, kein Crash."""
         with patch("assistant.self_automation._TEMPLATES_PATH") as mock_path:
             mock_path.exists.return_value = False
+            mock_example = MagicMock()
+            mock_example.exists.return_value = False
+            mock_path.with_suffix.return_value = mock_example
             from assistant.self_automation import _load_templates_sync
             result = _load_templates_sync()
             assert result == {}

@@ -2080,7 +2080,9 @@ class PresenceModeManager:
                 override_ts = session.query(SystemSetting).filter_by(key="presence_manual_override_ts").first()
                 if override_ts:
                     try:
-                        ts = datetime.fromisoformat(override_ts.value)
+                        ts = datetime.fromisoformat(override_ts.value.replace("Z", "+00:00"))
+                        if ts.tzinfo is None:
+                            ts = ts.replace(tzinfo=timezone.utc)
                         if (now - ts).total_seconds() > 4 * 3600:
                             override.value = "false"
                             session.commit()

@@ -38,6 +38,11 @@ _TEMPLATES_PATH = _CONFIG_DIR / "automation_templates.yaml"
 
 def _load_templates_sync() -> dict:
     """Laedt die Automation-Templates und Security-Config (synchron)."""
+    if not _TEMPLATES_PATH.exists():
+        example = _TEMPLATES_PATH.with_suffix(".yaml.example")
+        if example.exists():
+            import shutil
+            shutil.copy2(example, _TEMPLATES_PATH)
     if _TEMPLATES_PATH.exists():
         try:
             with open(_TEMPLATES_PATH) as f:

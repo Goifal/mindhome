@@ -337,6 +337,11 @@ def get_room_profiles() -> dict:
         if _room_profiles_cache and (time.time() - _room_profiles_ts) < _ROOM_PROFILES_TTL:
             return _room_profiles_cache
         try:
+            if not _ROOM_PROFILES_PATH.exists():
+                example = _ROOM_PROFILES_PATH.with_suffix(".yaml.example")
+                if example.exists():
+                    import shutil
+                    shutil.copy2(example, _ROOM_PROFILES_PATH)
             if _ROOM_PROFILES_PATH.exists():
                 with open(_ROOM_PROFILES_PATH) as f:
                     _room_profiles_cache = yaml.safe_load(f) or {}
