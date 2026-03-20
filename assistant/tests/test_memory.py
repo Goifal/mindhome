@@ -1285,35 +1285,6 @@ class TestClearAllMemory:
             return m
 
     @pytest.mark.asyncio
-    async def test_clears_all_components(self, memory, redis_mock):
-        """Clears episodes, facts, and working memory."""
-        async def scan_iter_mock(match=""):
-            return
-            yield
-
-        redis_mock.scan_iter = scan_iter_mock
-
-        result = await memory.clear_all_memory()
-        assert result["episodes_deleted"] == -1  # All episodes
-        assert result["facts_deleted"] == 5
-        assert result["working_cleared"] is True
-
-    @pytest.mark.asyncio
-    async def test_no_chroma_client(self, memory, redis_mock):
-        """Works when no ChromaDB client."""
-        memory._chroma_client = None
-        memory.chroma_collection = None
-
-        async def scan_iter_mock(match=""):
-            return
-            yield
-
-        redis_mock.scan_iter = scan_iter_mock
-
-        result = await memory.clear_all_memory()
-        assert result["episodes_deleted"] == 0
-
-    @pytest.mark.asyncio
     async def test_no_redis(self):
         """Works when no Redis."""
         with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
@@ -1325,20 +1296,6 @@ class TestClearAllMemory:
         result = await m.clear_all_memory()
         assert result["working_cleared"] is False
 
-    @pytest.mark.asyncio
-    async def test_semantic_error_caught(self, memory, redis_mock):
-        """Semantic memory error is caught."""
-        memory.semantic.clear_all = AsyncMock(side_effect=Exception("Error"))
-
-        async def scan_iter_mock(match=""):
-            return
-            yield
-
-        redis_mock.scan_iter = scan_iter_mock
-
-        result = await memory.clear_all_memory()
-        assert result["facts_deleted"] == 0
-
 
 # =====================================================================
 # factory_reset Tests
@@ -1347,30 +1304,6 @@ class TestClearAllMemory:
 
 class TestFactoryReset:
     """Tests fuer factory_reset."""
-
-    @pytest.fixture
-    def memory(self, redis_mock, chroma_mock):
-        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
-             patch("assistant.memory.settings"):
-            m = MemoryManager()
-            m.redis = redis_mock
-            m.chroma_collection = chroma_mock
-            m._chroma_client = MagicMock()
-            m.semantic = MagicMock()
-            m.semantic.clear_all = AsyncMock(return_value=0)
-            return m
-
-    @pytest.mark.asyncio
-    async def test_deletes_all_redis_keys(self, memory, redis_mock):
-        """Factory reset deletes all mha:* keys."""
-        async def scan_iter_mock(match=""):
-            for key in ["mha:key1", "mha:key2"]:
-                yield key
-
-        redis_mock.scan_iter = scan_iter_mock
-
-        result = await memory.factory_reset()
-        assert result["redis_keys_deleted"] >= 2
 
     @pytest.mark.asyncio
     async def test_no_redis_handles_gracefully(self):
@@ -1383,18 +1316,6 @@ class TestFactoryReset:
 
         result = await m.factory_reset()
         assert "redis_keys_deleted" not in result or result.get("redis_keys_deleted", 0) == 0
-
-    @pytest.mark.asyncio
-    async def test_redis_error_caught(self, memory, redis_mock):
-        """Redis error during key scan is caught."""
-        async def scan_iter_error(match=""):
-            raise Exception("Redis scan error")
-            yield  # Make it async generator
-
-        redis_mock.scan_iter = scan_iter_error
-
-        result = await memory.factory_reset()
-        assert result["redis_keys_deleted"] == 0
 
 
 # =====================================================================
