@@ -1177,3 +1177,44 @@ class TestMigrateYamlBirthdays:
             result = await engine.migrate_yaml_birthdays(MagicMock())
         assert result == 0
         redis_mock.set.assert_called()  # Flag set even if no birthdays
+
+    @pytest.mark.asyncio
+    async def test_migrate_with_birthdays(self, engine, redis_mock):
+        """Successfully migrates YAML birthdays to semantic memory."""
+        redis_mock.get = AsyncMock(return_value=None)
+        sm = AsyncMock()
+        sm.store_personal_date = AsyncMock(return_value=True)
+        with patch("assistant.routine_engine.yaml_config", {
+            "persons": {"birthdays": {"Max": "1990-06-15", "Anna": "1985-12-01"}},
+        }):
+            result = await engine.migrate_yaml_birthdays(sm)
+        assert result == 2
+        assert sm.store_personal_date.call_count == 2
+        redis_mock.set.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_migrate_with_short_date_format(self, engine, redis_mock):
+        """Handles MM-DD date format without year."""
+        redis_mock.get = AsyncMock(return_value=None)
+        sm = AsyncMock()
+        sm.store_personal_date = AsyncMock(return_value=True)
+        with patch("assistant.routine_engine.yaml_config", {
+            "persons": {"birthdays": {"Max": "06-15"}},
+        }):
+            result = await engine.migrate_yaml_birthdays(sm)
+        assert result == 1
+        call_kwargs = sm.store_personal_date.call_args[1]
+        assert call_kwargs["year"] == ""
+        assert call_kwargs["date_mm_dd"] == "06-15"
+
+    @pytest.mark.asyncio
+    async def test_migrate_partial_failure(self, engine, redis_mock):
+        """Counts only successful migrations."""
+        redis_mock.get = AsyncMock(return_value=None)
+        sm = AsyncMock()
+        sm.store_personal_date = AsyncMock(side_effect=[True, False])
+        with patch("assistant.routine_engine.yaml_config", {
+            "persons": {"birthdays": {"Max": "1990-06-15", "Anna": "1985-12-01"}},
+        }):
+            result = await engine.migrate_yaml_birthdays(sm)
+        assert result == 1
