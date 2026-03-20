@@ -523,7 +523,8 @@ async def test_search_duckduckgo_dns_blocked():
     }):
         ws = WebSearch()
 
-    with patch("assistant.web_search._resolve_and_check", new_callable=AsyncMock, return_value=False):
+    # F-093: _resolve_and_pin statt _resolve_and_check (TOCTOU-Fix)
+    with patch("assistant.web_search._resolve_and_pin", new_callable=AsyncMock, return_value=[]):
         results = await ws._search_duckduckgo("test")
     assert results == []
 
@@ -557,7 +558,10 @@ async def test_search_duckduckgo_with_results():
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("assistant.web_search._resolve_and_check", new_callable=AsyncMock, return_value=True), \
+    # F-093: _resolve_and_pin statt _resolve_and_check mocken (TOCTOU-Fix)
+    fake_resolved = [{"hostname": "api.duckduckgo.com", "host": "52.142.124.215",
+                      "port": 0, "family": 2, "proto": 0, "flags": 0}]
+    with patch("assistant.web_search._resolve_and_pin", new_callable=AsyncMock, return_value=fake_resolved), \
          patch("aiohttp.ClientSession", return_value=mock_session), \
          patch("assistant.web_search._safe_read_json", new_callable=AsyncMock, return_value=mock_data):
         results = await ws._search_duckduckgo("python")
@@ -594,7 +598,10 @@ async def test_search_duckduckgo_unsafe_url():
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("assistant.web_search._resolve_and_check", new_callable=AsyncMock, return_value=True), \
+    # F-093: _resolve_and_pin statt _resolve_and_check (TOCTOU-Fix)
+    fake_resolved = [{"hostname": "api.duckduckgo.com", "host": "52.142.124.215",
+                      "port": 0, "family": 2, "proto": 0, "flags": 0}]
+    with patch("assistant.web_search._resolve_and_pin", new_callable=AsyncMock, return_value=fake_resolved), \
          patch("aiohttp.ClientSession", return_value=mock_session), \
          patch("assistant.web_search._safe_read_json", new_callable=AsyncMock, return_value=mock_data):
         results = await ws._search_duckduckgo("test")
@@ -648,3 +655,184 @@ async def test_search_searxng_filters_unsafe_result_urls():
     # Unsafe URL should be cleared
     unsafe = [r for r in results if r["url"] == "" and r["title"] == "Unsafe"]
     assert len(unsafe) == 1
+
+
+# ============================================================
+# F-093: Security Hardening Tests
+# ============================================================
+
+
+class TestF093ContentTypeHardening:
+    """F-093: Content-Type-Validierung verschaerft — nur application/json."""
+
+    @pytest.mark.asyncio
+    async def test_rejects_text_html_with_json_substring(self):
+        """'text/html; json' darf nicht als JSON akzeptiert werden."""
+        resp = AsyncMock()
+        resp.headers = {"Content-Type": "text/html; json"}
+        resp.content_length = 10
+        assert await _safe_read_json(resp) is None
+
+    @pytest.mark.asyncio
+    async def test_rejects_application_not_json(self):
+        """'application/not-json-really' wird abgelehnt."""
+        resp = AsyncMock()
+        resp.headers = {"Content-Type": "application/not-json-really"}
+        resp.content_length = 10
+        assert await _safe_read_json(resp) is None
+
+    @pytest.mark.asyncio
+    async def test_accepts_application_json_with_charset(self):
+        """'application/json; charset=utf-8' wird akzeptiert."""
+        resp = AsyncMock()
+        resp.headers = {"Content-Type": "application/json; charset=utf-8"}
+        resp.content_length = 10
+        resp.content.read = AsyncMock(return_value=b'{"ok": true}')
+        result = await _safe_read_json(resp)
+        assert result == {"ok": True}
+
+    @pytest.mark.asyncio
+    async def test_accepts_text_json(self):
+        """'text/json' wird als Legacy-MIME akzeptiert."""
+        resp = AsyncMock()
+        resp.headers = {"Content-Type": "text/json"}
+        resp.content_length = 10
+        resp.content.read = AsyncMock(return_value=b'{"ok": true}')
+        result = await _safe_read_json(resp)
+        assert result == {"ok": True}
+
+
+class TestF093UnicodeQueryBypass:
+    """F-093: Unicode-Normalisierung verhindert Fullwidth-Bypasses."""
+
+    def _make_ws(self):
+        with patch("assistant.web_search.yaml_config", {"web_search": {}}):
+            return WebSearch()
+
+    def test_fullwidth_file_scheme_blocked(self):
+        """Fullwidth 'ｆｉｌｅ://' wird nach NFKC zu 'file://' → blockiert."""
+        ws = self._make_ws()
+        assert ws._sanitize_query("\uff46\uff49\uff4c\uff45://etc/passwd") is None
+
+    def test_fullwidth_script_tag_blocked(self):
+        """Fullwidth '<script' wird nach NFKC normalisiert → blockiert."""
+        ws = self._make_ws()
+        assert ws._sanitize_query("\uff1cscript\uff1e") is None
+
+    def test_normal_unicode_passes(self):
+        """Normaler Unicode (Umlaute etc.) passiert unbeschaedigt."""
+        ws = self._make_ws()
+        result = ws._sanitize_query("Wetter in München heute")
+        assert result is not None
+        assert "München" in result
+
+
+class TestF093BangPatternHardening:
+    """F-093: Erweiterte Bang-Pattern-Erkennung."""
+
+    def _make_ws(self):
+        with patch("assistant.web_search.yaml_config", {"web_search": {}}):
+            return WebSearch()
+
+    def test_numeric_bang_removed(self):
+        """Numerische Bangs wie !123 werden entfernt."""
+        ws = self._make_ws()
+        result = ws._sanitize_query("!123 python tutorial")
+        assert "!123" not in result
+        assert "python tutorial" in result
+
+    def test_double_bang_removed(self):
+        """Doppel-Bangs wie !!g werden entfernt."""
+        ws = self._make_ws()
+        result = ws._sanitize_query("!!google test query")
+        assert "!!google" not in result
+        assert "test query" in result
+
+    def test_searxng_engine_operator_removed(self):
+        """SearXNG engines: Operator wird entfernt."""
+        ws = self._make_ws()
+        result = ws._sanitize_query("python tutorial engines:google")
+        assert "engines:" not in result
+        assert "python tutorial" in result
+
+    def test_searxng_categories_operator_removed(self):
+        """SearXNG categories: Operator wird entfernt."""
+        ws = self._make_ws()
+        result = ws._sanitize_query("categories:science python")
+        assert "categories:" not in result
+
+    def test_no_double_spaces_after_removal(self):
+        """Nach Operator-Entfernung bleiben keine Doppel-Leerzeichen."""
+        ws = self._make_ws()
+        result = ws._sanitize_query("test !bing more engines:foo words")
+        assert "  " not in result
+
+
+class TestF093ResolveAndPin:
+    """F-093: TOCTOU-sicheres DNS-Pinning."""
+
+    @pytest.mark.asyncio
+    async def test_blocked_hostname_returns_empty(self):
+        """Geblockte Hostnames geben leere Liste zurueck."""
+        from assistant.web_search import _resolve_and_pin
+        result = await _resolve_and_pin("localhost")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_blocked_ip_literal_returns_empty(self):
+        """Geblockte IP-Literals geben leere Liste zurueck."""
+        from assistant.web_search import _resolve_and_pin
+        result = await _resolve_and_pin("127.0.0.1")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_public_ip_literal_returns_resolved(self):
+        """Oeffentliche IP-Literals werden direkt zurueckgegeben."""
+        from assistant.web_search import _resolve_and_pin
+        result = await _resolve_and_pin("8.8.8.8")
+        assert len(result) == 1
+        assert result[0]["host"] == "8.8.8.8"
+
+    @pytest.mark.asyncio
+    async def test_dns_resolves_to_blocked_returns_empty(self):
+        """DNS der auf blockierte IP aufloest → leere Liste."""
+        from assistant.web_search import _resolve_and_pin
+        infos = [(2, 1, 6, "", ("127.0.0.1", 0))]
+        with patch("assistant.web_search.asyncio.wait_for", return_value=infos):
+            result = await _resolve_and_pin("evil.example.com")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_dns_resolves_to_safe_returns_ips(self):
+        """DNS der auf sichere IP aufloest → IP-Liste."""
+        from assistant.web_search import _resolve_and_pin
+        infos = [(2, 1, 6, "", ("93.184.216.34", 0))]
+        with patch("assistant.web_search.asyncio.wait_for", return_value=infos):
+            result = await _resolve_and_pin("example.com")
+        assert len(result) == 1
+        assert result[0]["host"] == "93.184.216.34"
+
+
+class TestF093PinnedResolver:
+    """F-093: PinnedResolver liefert nur vorgepinnte IPs."""
+
+    @pytest.mark.asyncio
+    async def test_resolves_pinned_hostname(self):
+        """Gepinnter Hostname gibt vorgepinnte IPs zurueck."""
+        from assistant.web_search import _PinnedResolver
+        resolver = _PinnedResolver("example.com", [
+            {"hostname": "example.com", "host": "93.184.216.34",
+             "port": 0, "family": 2, "proto": 0, "flags": 0},
+        ])
+        result = await resolver.resolve("example.com", 443)
+        assert len(result) == 1
+        assert result[0]["host"] == "93.184.216.34"
+        assert result[0]["port"] == 443
+
+    @pytest.mark.asyncio
+    async def test_rejects_unknown_hostname(self):
+        """Unbekannter Hostname wirft OSError."""
+        from assistant.web_search import _PinnedResolver
+        resolver = _PinnedResolver("example.com", [])
+        with pytest.raises(OSError, match="DNS blockiert"):
+            await resolver.resolve("evil.com", 443)
