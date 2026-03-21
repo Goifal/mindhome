@@ -470,42 +470,94 @@ Bevor du die Ergebnis-Datei schreibst, gehe **jede einzelne Erkenntnis** aus Pha
 
 Markiere jede Erkenntnis die sich bei der Gegenprüfung geändert hat mit `[KORRIGIERT]` und erkläre was und warum.
 
-### Schritt 2: Ergebnis-Datei erstellen
+### Schritt 2: Ergebnis-Datei erstellen ODER aktualisieren
 
-Erstelle die Datei **`docs/prompts/jarvis-mcu-implementation-plan.md`** — das ist das finale Umsetzungsdokument.
+Die Datei heißt **`docs/prompts/jarvis-mcu-implementation-plan.md`** — das ist das **lebende Umsetzungsdokument**.
+
+#### Erster Durchlauf (Datei existiert noch nicht)
+Erstelle die Datei neu mit der vollständigen Struktur unten.
+
+#### Wiederholte Durchläufe (Datei existiert bereits)
+**LIES ZUERST die bestehende Datei komplett.** Dann:
+1. **Erledigtes markieren:** Prüfe jede Aufgabe gegen den aktuellen Code. Wenn die Aufgabe umgesetzt wurde:
+   - Ändere den Status von `[ ]` zu `[x]`
+   - Füge hinzu: `✅ Erledigt am [Datum] — Durchlauf #X`
+   - Aktualisiere die Prozent-Bewertung der Kategorie
+   - Prüfe ob die Akzeptanzkriterien tatsächlich erfüllt sind (nicht blind abhaken!)
+2. **Teilweise Erledigtes markieren:** Wenn eine Aufgabe nur teilweise umgesetzt wurde:
+   - Markiere mit `[~]` und beschreibe was fehlt: `[~] Teilweise erledigt — [Was noch fehlt]`
+3. **Neue Erkenntnisse ergänzen:** Wenn du bei der Code-Analyse neue Verbesserungsmöglichkeiten findest:
+   - Füge sie als neue Aufgaben in den passenden Sprint ein (oder erstelle einen neuen Sprint)
+   - Markiere neue Aufgaben mit `🆕 Hinzugefügt in Durchlauf #X`
+   - Neue Aufgaben bekommen die nächste freie Nummer (z.B. Sprint 3 hat 3.1-3.4, neue Aufgabe wird 3.5)
+4. **Veraltetes entfernen/anpassen:** Wenn sich Code seit dem letzten Durchlauf geändert hat:
+   - Aktualisiere Zeilenreferenzen
+   - Wenn eine Aufgabe durch andere Änderungen obsolet wurde: Markiere mit `⏭️ Obsolet — [Grund]`
+5. **Gesamtübersicht aktualisieren:** Berechne den neuen gewichteten Gesamt-Score basierend auf dem aktuellen Code
+6. **Changelog am Ende der Datei ergänzen** (siehe Struktur unten)
+
+**NIEMALS bestehende Einträge löschen** — nur Status-Updates, Ergänzungen und Markierungen. Die Datei ist das Protokoll aller Durchläufe.
+
+#### Datei-Struktur
 
 Diese Datei muss **vollständig eigenständig** sein. Ein Claude Code Agent der NUR diese Datei liest (ohne den Analyse-Prompt, ohne Kontext, ohne vorherige Gespräche) muss in der Lage sein, **jeden einzelnen Punkt umzusetzen**.
 
-Die Datei muss folgende Struktur haben:
-
 ```markdown
 # J.A.R.V.I.S. MCU-Level Implementation Plan
-> Generiert am [Datum] | Aktueller Stand: XX% | Ziel: ≥90% MCU-Level
+> Erstellt am [Datum] | Letzter Durchlauf: #X am [Datum]
+> Aktueller Stand: XX% | Ziel: ≥90% gewichteter MCU-Score
 > Dieses Dokument ist die Single Source of Truth für alle MCU-Level Verbesserungen.
+> Es wird bei jedem Analyse-Durchlauf aktualisiert — nie manuell editieren.
+
+## Status-Legende
+- `[ ]` — Offen, noch nicht umgesetzt
+- `[~]` — Teilweise erledigt (Details stehen dabei)
+- `[x]` — Vollständig erledigt und verifiziert
+- `⏭️` — Obsolet (Grund steht dabei)
+- `🆕` — Neu hinzugefügt in diesem Durchlauf
+- `🔄` — Aktualisiert in diesem Durchlauf (Zeilenreferenz, Beschreibung, etc.)
+
+## Fortschritts-Tracker
+| Durchlauf | Datum | Gewichteter Score | Aufgaben Offen | Erledigt | Neu hinzugefügt |
+|-----------|-------|-------------------|----------------|----------|-----------------|
+| #1        | [Datum] | XX%             | XX             | 0        | XX              |
+| #2        | [Datum] | XX%             | XX             | XX       | XX              |
+| ...       | ...   | ...               | ...            | ...      | ...             |
 
 ## Anweisungen für den umsetzenden Agenten
 
 Du bist ein Code-Agent der diesen Plan umsetzt. Folge diesen Regeln:
 - Arbeite die Sprints in Reihenfolge ab — überspringe keinen Sprint
+- Überspringe Aufgaben die als `[x]` oder `⏭️` markiert sind
+- Aufgaben mit `[~]` müssen fertiggestellt werden — lies was noch fehlt
 - Prüfe nach jeder Aufgabe die Akzeptanzkriterien
 - Wenn ein Akzeptanzkriterium nicht erfüllt werden kann, dokumentiere warum und gehe weiter
 - Ändere NIEMALS sicherheitskritische Logik (Trust-Level, Autonomie, Security-Zones) ohne explizite Freigabe
 - Führe nach jedem Sprint die Tests aus: `cd assistant && python -m pytest --tb=short -q`
 - Committe nach jedem Sprint mit einer beschreibenden Commit-Message
 - Dieses System läuft produktiv — teste alles gründlich
+- Achte auf die Schutzliste (Besser-als-MCU Features) — diese dürfen NICHT beschädigt werden
 
 ## Kontext: Was ist MindHome/Jarvis?
 [Kurze Beschreibung des Projekts, Architektur, Tech-Stack — genug dass ein Agent ohne Vorwissen versteht was er bearbeitet]
 
-## Gesamtübersicht
-[Die Tabelle aus Phase 4 mit allen Kategorien, Prozenten, Status-Tags]
+## Schutzliste — Besser als MCU (NICHT beschädigen!)
+| Feature | Was es kann | Warum schützenswert |
+|---------|-------------|---------------------|
+| ...     | ...         | ...                 |
+
+## Gesamtübersicht (gewichtet)
+[Die Tabelle aus Phase 4 mit allen Kategorien, Prozenten, Status-Tags, Gewichten]
+[Bei Folge-Durchläufen: Spalte "Vorheriger Durchlauf" hinzufügen für Trend-Vergleich]
 
 ## Sprint 1: [Titel]
+**Status:** [ ] Offen | [~] In Arbeit | [x] Abgeschlossen
 **Ziel:** [Was MCU-Level sein soll nach diesem Sprint]
-**Vorher → Nachher:** XX% → XX%
+**Vorher → Nachher:** XX% → XX% (Ziel) | Tatsächlich: XX% (nach Durchlauf #X)
 **Betroffene Dateien:** [Vollständige Liste aller Dateien die angefasst werden]
 
 ### Aufgabe 1.1: [Titel]
+**Status:** [ ] Offen
 **Datei:** `vollständiger/pfad/zur/datei.py`
 **Betroffene Funktion(en):** `funktionsname()` (Zeile XX-YY)
 
@@ -541,6 +593,7 @@ Du bist ein Code-Agent der diesen Plan umsetzt. Folge diesen Regeln:
 - [ ] `python -m pytest --tb=short -q` — alle Tests grün
 - [ ] `ruff check --select=E9,F63,F7,F82 --ignore=F823 assistant/` — kein Fehler
 - [ ] Kein Breaking Change an bestehender Funktionalität
+- [ ] Schutzliste geprüft — kein Feature beschädigt
 
 ---
 
@@ -561,7 +614,25 @@ Du bist ein Code-Agent der diesen Plan umsetzt. Folge diesen Regeln:
 - [ ] Alle Akzeptanzkriterien erfüllt
 - [ ] Alle Tests grün
 - [ ] Kein Regressions-Bruch
+- [ ] Schutzliste verifiziert
 - [ ] Commit + Push aller Änderungen
+
+---
+
+## Changelog
+### Durchlauf #1 — [Datum]
+- Initiale Analyse erstellt
+- XX Aufgaben in X Sprints identifiziert
+- Gewichteter MCU-Score: XX%
+
+### Durchlauf #2 — [Datum]
+- XX Aufgaben als erledigt markiert
+- XX neue Aufgaben hinzugefügt
+- XX Zeilenreferenzen aktualisiert
+- Gewichteter MCU-Score: XX% (vorher: XX%, Δ: +XX%)
+- Neue Erkenntnisse: [Kurze Zusammenfassung was sich geändert hat]
+
+[... weitere Durchläufe ...]
 ```
 
 ### Qualitätskriterien für die Ergebnis-Datei
@@ -573,23 +644,9 @@ Die Datei ist **NUR dann akzeptabel** wenn:
 - [ ] Ein Agent der NUR diese Datei liest, jeden Punkt umsetzen kann
 - [ ] Keine vagen Formulierungen ("verbessere", "optimiere") — nur konkrete Anweisungen
 - [ ] Alle Erkenntnisse durch die Gegenprüfung in Schritt 1 bestätigt wurden
-
----
-
-## Phase 6: Re-Validierung (nach Implementierung)
-
-> **Diesen Abschnitt NACH der Umsetzung der Sprints als separaten Prompt verwenden.**
-
-Wenn die Verbesserungen implementiert sind, führe diesen Prompt erneut aus mit dem Zusatz:
-
-"Ich habe die Verbesserungen aus der vorherigen Analyse implementiert. Führe jetzt eine **Re-Validierung** durch:
-1. Prüfe jeden Sprint — sind alle Akzeptanzkriterien erfüllt?
-2. Berechne die neuen Prozent-Werte pro Kategorie
-3. Gibt es neue Lücken die durch die Änderungen sichtbar geworden sind?
-4. Was fehlt noch zum MCU-Level?
-5. Aktualisiere `docs/prompts/jarvis-mcu-implementation-plan.md` mit den neuen Erkenntnissen
-6. Erstelle einen neuen Sprint-Plan für die verbleibenden Lücken."
+- [ ] Bei Folge-Durchläufen: Alle Status-Updates korrekt, keine Einträge gelöscht, Changelog aktualisiert
 
 ---
 
 *Dieser Prompt wurde erstellt am 2026-03-21 für das MindHome J.A.R.V.I.S. Projekt.*
+*Designed für iterative Durchläufe — die Plan-Datei wächst und reift mit jedem Durchlauf.*
