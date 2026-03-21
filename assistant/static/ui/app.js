@@ -111,7 +111,7 @@ const _searchIndex = [
   // Follow-Me (tab-followme)
   {tab:'tab-followme', title:'Follow-Me', keywords:'raum folgen musik licht temperatur person profil', icon:'&#128694;'},
   // Intelligenz (tab-intelligence)
-  {tab:'tab-intelligence', title:'Domain-spezifische Autonomie', keywords:'domain autonomie klima licht medien sicherheit', icon:'&#127919;'},
+  {tab:'tab-autonomie', title:'Domain-spezifische Autonomie', keywords:'domain autonomie klima licht medien sicherheit', icon:'&#127919;'},
   {tab:'tab-intelligence', title:'Kalender-Intelligenz', keywords:'kalender gewohnheit konflikt pendelzeit termin per route pendel', icon:'&#128197;'},
   {tab:'tab-intelligence', title:'Erklärbarkeit', keywords:'erklaerbarkeit warum aktion begründung entscheidung', icon:'&#128161;'},
   {tab:'tab-intelligence', title:'Lern-Transfer', keywords:'transfer präferenz raum ähnlich vorschlag benachrichtigung notify', icon:'&#129504;'},
@@ -2082,6 +2082,107 @@ function fTextarea(path, label, hint='') {
     <textarea data-path="${path}" data-type="${dtype}">${esc(txt)}</textarea>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
 }
 
+// Aktions-Berechtigungen Editor (visuell statt JSON)
+const ACTION_PERMISSION_LABELS = {
+  respond_to_command: 'Auf Befehle reagieren',
+  execute_function_call: 'Geräte steuern',
+  proactive_info: 'Proaktive Info',
+  morning_briefing: 'Morgen-Briefing',
+  security_alert: 'Sicherheits-Alarm',
+  adjust_temperature_small: 'Temperatur anpassen (klein)',
+  create_automation: 'Automation erstellen'
+};
+
+function fActionPermissionsEditor(path) {
+  const perms = getPath(S, path) || {};
+  const levelNames = {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'};
+  let rows = '';
+  for (const [action, level] of Object.entries(perms)) {
+    const label = ACTION_PERMISSION_LABELS[action] || action;
+    const id = `ap_${action}`;
+    let opts = '';
+    for (let i = 1; i <= 5; i++) {
+      opts += `<option value="${i}" ${level==i?'selected':''}>${i} — ${levelNames[i]}</option>`;
+    }
+    rows += `<div class="perm-row" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg-secondary);border-radius:6px;margin-bottom:4px;">
+      <span style="flex:1;font-size:13px;" title="${action}">${label}</span>
+      <select id="${id}" style="width:auto;min-width:160px;font-size:12px;" onchange="updActionPerm('${path}','${action}',this.value)">${opts}</select>
+      <span class="perm-rm" style="cursor:pointer;color:var(--text-muted);font-size:14px;" onclick="rmActionPerm('${path}','${action}',this)" title="Entfernen">&#10005;</span>
+    </div>`;
+  }
+  return `<div id="action-perms-list">${rows}</div>
+    <div style="display:flex;gap:6px;margin-top:6px;align-items:center;">
+      <input id="new-action-key" type="text" placeholder="Neue Aktion (z.B. adjust_light)" style="flex:1;font-size:12px;">
+      <select id="new-action-level" style="width:auto;min-width:120px;font-size:12px;">
+        <option value="1">1 — Assistent</option><option value="2">2 — Butler</option>
+        <option value="3" selected>3 — Mitbewohner</option><option value="4">4 — Vertrauter</option><option value="5">5 — Autopilot</option>
+      </select>
+      <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" onclick="addActionPerm('${path}')">+ Hinzufuegen</button>
+    </div>`;
+}
+function updActionPerm(path, action, val) {
+  mergeCurrentTabIntoS();
+  const perms = getPath(S, path) || {};
+  perms[action] = parseInt(val);
+  setPath(S, path, perms);
+  scheduleAutoSave();
+}
+function rmActionPerm(path, action, el) {
+  mergeCurrentTabIntoS();
+  const perms = getPath(S, path) || {};
+  delete perms[action];
+  setPath(S, path, perms);
+  scheduleAutoSave();
+  el.closest('.perm-row').remove();
+}
+function addActionPerm(path) {
+  mergeCurrentTabIntoS();
+  const keyEl = document.getElementById('new-action-key');
+  const lvlEl = document.getElementById('new-action-level');
+  const key = keyEl.value.trim();
+  if (!key) return;
+  const perms = getPath(S, path) || {};
+  setPath(S, path, perms);
+  scheduleAutoSave();
+  keyEl.value = '';
+  renderCurrentTab();
+}
+
+// Evolution-Kriterien Editor (visuell statt JSON)
+function fEvolutionCriteriaEditor(path) {
+  const criteria = getPath(S, path) || {};
+  const levelNames = {2:'Butler',3:'Mitbewohner',4:'Vertrauter'};
+  let rows = '';
+  for (const lvl of [2, 3, 4]) {
+    const c = criteria[String(lvl)] || criteria[lvl] || {};
+    const name = levelNames[lvl] || `Level ${lvl}`;
+    rows += `<div style="padding:10px 12px;background:var(--bg-secondary);border-radius:6px;margin-bottom:6px;border-left:3px solid var(--accent);">
+      <div style="font-weight:600;font-size:13px;margin-bottom:8px;">Level ${lvl} — ${name}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+        <div class="form-group" style="margin:0;"><label style="font-size:11px;">Min. Tage</label>
+          <input type="number" value="${c.min_days||''}" min="1" max="365" style="font-size:12px;"
+            onchange="updEvoCrit('${path}',${lvl},'min_days',this.value)"></div>
+        <div class="form-group" style="margin:0;"><label style="font-size:11px;">Min. Interaktionen</label>
+          <input type="number" value="${c.min_interactions||''}" min="10" max="10000" style="font-size:12px;"
+            onchange="updEvoCrit('${path}',${lvl},'min_interactions',this.value)"></div>
+        <div class="form-group" style="margin:0;"><label style="font-size:11px;">Min. Akzeptanzrate</label>
+          <input type="number" value="${c.min_acceptance||''}" min="0" max="1" step="0.05" style="font-size:12px;"
+            onchange="updEvoCrit('${path}',${lvl},'min_acceptance',this.value)"></div>
+      </div>
+    </div>`;
+  }
+  return rows;
+}
+function updEvoCrit(path, level, key, val) {
+  mergeCurrentTabIntoS();
+  const criteria = getPath(S, path) || {};
+  const lvlKey = String(level);
+  if (!criteria[lvlKey]) criteria[lvlKey] = {};
+  criteria[lvlKey][key] = parseFloat(val);
+  setPath(S, path, criteria);
+  scheduleAutoSave();
+}
+
 // Klickbare Chip-Auswahl (vordefinierte Optionen zum An/Abklicken)
 function fChipSelect(path, label, options, hint='') {
   const arr = getPath(S, path) || [];
@@ -2837,7 +2938,7 @@ function confirmAddApplianceDevice() {
   devices.push({key: cleanKey, label: label, patterns: patterns});
   setPath(S, 'appliance_monitor.devices', devices);
   renderApplianceDevices();
-  markDirty();
+  scheduleAutoSave();
   toast('Geraet "' + label + '" hinzugefuegt.');
 }
 
@@ -2855,7 +2956,7 @@ function removeApplianceDevice(idx) {
   setPath(S, 'appliance_monitor.devices', devices);
   renderApplianceDevices();
   renderPowerProfiles();
-  markDirty();
+  scheduleAutoSave();
   scheduleAutoSave();
 }
 
@@ -2869,7 +2970,7 @@ function rmAppliancePattern(devIdx, el) {
   devices[devIdx].patterns = patterns;
   setPath(S, 'appliance_monitor.devices', devices);
   renderApplianceDevices();
-  markDirty();
+  scheduleAutoSave();
 }
 
 async function pickEntityForAppliance(devIdx) {
@@ -2934,7 +3035,7 @@ function selectApplianceEntity(entityId) {
     patterns.push(shortId);
     devices[devIdx].patterns = patterns;
     setPath(S, 'appliance_monitor.devices', devices);
-    markDirty();
+    scheduleAutoSave();
   }
   if (window._appliancePickOverlay) window._appliancePickOverlay.remove();
   renderApplianceDevices();
@@ -3002,7 +3103,7 @@ function setPowerProfile(deviceKey, field, value) {
   if (!profiles[safeKey]) profiles[safeKey] = {};
   profiles[safeKey][field] = parseFloat(value) || 0;
   setPath(S, 'appliance_monitor.power_profiles', profiles);
-  markDirty();
+  scheduleAutoSave();
   scheduleAutoSave();
 }
 
@@ -6099,18 +6200,34 @@ async function regenerateRecoveryKey() {
 let SNAPSHOTS = [];
 
 function renderAutonomie() {
+  // --- Group 0: Domain-spezifische Autonomie ---
+  return sectionWrap('&#127919;', 'Domain-spezifische Autonomie',
+    fInfo('Unterschiedliche Autonomie-Level pro Bereich. Z.B. Level 4 bei Klima (darf Temperatur selbst anpassen), aber Level 2 bei Sicherheit (nur informieren). Wenn deaktiviert gilt das globale Level für alle Bereiche.') +
+    fToggle('autonomy.domain_levels_enabled', 'Domain-Autonomie aktivieren') +
+    fSubheading('Level pro Domaene') +
+    fRange('autonomy.domain_levels.climate', 'Klima & Heizung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.light', 'Licht & Beleuchtung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.media', 'Medien & Musik', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.cover', 'Rollläden', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.security', 'Sicherheit', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.automation', 'Automationen & Routinen', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.notification', 'Benachrichtigungen', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
+  ) +
+
   // --- Group 1: Autonomie-Stufen & Berechtigungen ---
-  return sectionWrap('&#9889;', 'Autonomie-Stufen &amp; Berechtigungen',
+  sectionWrap('&#9889;', 'Autonomie-Stufen &amp; Berechtigungen',
     fInfo('Alles rund um Autonomie-Level, Berechtigungen, Evolution und geschuetzte Bereiche. Bestimmt WAS der Assistent eigenstaendig tun darf und welche Grenzen gelten.') +
 
     fSubheading('Autonomie') +
     fRange('autonomy.level', 'Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
 
     fSubheading('Aktions-Berechtigungen') +
-    fTextarea('autonomy.action_permissions', 'Berechtigungen (JSON)', 'Format: {"aktion": level}. z.B. {"proactive_info": 2, "adjust_temperature_small": 3}') +
+    fInfo('Definiere welches Autonomie-Level fuer jede Aktion mindestens erforderlich ist.') +
+    fActionPermissionsEditor('autonomy.action_permissions') +
 
     fSubheading('Evolution-Kriterien') +
-    fTextarea('autonomy.evolution_criteria', 'Kriterien (JSON)', 'Format: {"2": {"min_days": 30, "min_interactions": 200, "min_acceptance": 0.7}}') +
+    fInfo('Ab welchen Schwellwerten darf Jarvis auf das naechste Autonomie-Level aufsteigen?') +
+    fEvolutionCriteriaEditor('autonomy.evolution_criteria') +
     fSubheading('Automatische Evolution') +
     fToggle('autonomy.evolution.enabled', 'Automatischer Autonomie-Aufstieg') +
     fRange('autonomy.evolution.max_level', 'Max. automatisches Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
@@ -11871,19 +11988,7 @@ function rejectAllDeclSuggestions() {
 
 // ---- Tab: Intelligenz — Quick Wins ----
 function renderIntelligence() {
-  return sectionWrap('&#127919;', 'Domain-spezifische Autonomie',
-    fInfo('Unterschiedliche Autonomie-Level pro Bereich. Z.B. Level 4 bei Klima (darf Temperatur selbst anpassen), aber Level 2 bei Sicherheit (nur informieren). Wenn deaktiviert gilt das globale Level für alle Bereiche.') +
-    fToggle('autonomy.domain_levels_enabled', 'Domain-Autonomie aktivieren') +
-    fSubheading('Level pro Domaene') +
-    fRange('autonomy.domain_levels.climate', 'Klima & Heizung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
-    fRange('autonomy.domain_levels.light', 'Licht & Beleuchtung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
-    fRange('autonomy.domain_levels.media', 'Medien & Musik', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
-    fRange('autonomy.domain_levels.cover', 'Rollläden', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
-    fRange('autonomy.domain_levels.security', 'Sicherheit', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
-    fRange('autonomy.domain_levels.automation', 'Automationen & Routinen', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
-    fRange('autonomy.domain_levels.notification', 'Benachrichtigungen', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
-  ) +
-  sectionWrap('&#128197;', 'Kalender-Intelligenz',
+  return sectionWrap('&#128197;', 'Kalender-Intelligenz',
     fInfo('Erkennt Gewohnheiten aus wiederkehrenden Terminen, warnt bei Zeitkonflikten (Pendelzeit vs. Meeting) und zeigt freie Zeitfenster an.') +
     fToggle('calendar_intelligence.enabled', 'Kalender-Intelligenz aktiv') +
     fNum('calendar_intelligence.commute_minutes', 'Pendelzeit (Minuten)', 5, 120, 5) +
