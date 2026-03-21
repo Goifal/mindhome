@@ -2047,6 +2047,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         async def _save():
             await self.memory.add_conversation("user", user_text)
             await self.memory.add_conversation("assistant", assistant_text)
+            # Emotional Tagging: Stimmung an Nachricht koppeln
+            if hasattr(self, "conversation_memory") and self.conversation_memory:
+                import time as _t
+
+                msg_id = str(int(_t.time() * 1000))
+                mood_data = getattr(self, "_last_mood_data", None)
+                await self.conversation_memory._tag_emotional_context(
+                    msg_id, user_text, role="user", mood_data=mood_data,
+                )
 
         self._task_registry.create_task(_save(), name="memory_exchange")
 
@@ -2570,6 +2579,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 _ref_result = self.dialogue_state.resolve_references(
                     text, person or "", room or ""
                 )
+                # Cross-Session Referenzen laden falls In-Memory leer
+                if not _ref_result.get("had_references"):
+                    _xref_hint = await self.dialogue_state._resolve_cross_session(
+                        text.lower(), person or ""
+                    )
+                    if _xref_hint:
+                        _ref_result["had_references"] = True
+                        _ref_result["context_hint"] = _xref_hint
                 if _ref_result.get("had_references"):
                     # Referenz-Hinweis wird im Kontext-Prompt eingebaut (siehe context assembly)
                     logger.info(
@@ -4655,6 +4672,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             return val
 
         mood_result = _safe_get("mood")
+        # Emotional Tagging: Mood-Daten fuer _remember_exchange bereitstellen
+        self._last_mood_data = mood_result if isinstance(mood_result, dict) else None
         formality_score = _safe_get(
             "formality"
         )  # None → personality nutzt formality_start
@@ -16224,6 +16243,10 @@ Regeln:
                     correction_text=fact_text,
                     person=person,
                 )
+
+                # Pattern Invalidation: Korrektur invalidiert zugehoerige Patterns
+                if _corr_action and hasattr(self.anticipation, "invalidate_pattern"):
+                    await self.anticipation.invalidate_pattern(_corr_action)
 
                 # Self-Improvement: Outcome Tracker — Korrektur = NEGATIVE
                 await self.outcome_tracker.record_verbal_feedback(

@@ -547,6 +547,13 @@ class InsightEngine:
             except Exception as e:
                 logger.warning("Check %s fehlgeschlagen: %s", method.__name__, e)
 
+        # Kreuzreferenz mit LearningObserver
+        try:
+            learning_insights = await self._check_learning_pattern_insights()
+            insights.extend(learning_insights)
+        except Exception as e:
+            logger.debug("Learning insight check: %s", e)
+
         return insights
 
     @staticmethod
@@ -2230,6 +2237,86 @@ class InsightEngine:
             "Wetter-Aktions-Vorschlaege: %d Vorschlaege generiert", len(suggestions)
         )
         return suggestions
+
+    async def _get_weather_forecast(self) -> dict:
+        """Holt die aktuelle Wettervorhersage aus HA-States."""
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return {}
+            for s in states:
+                eid = s.get("entity_id", "")
+                if eid.startswith("weather."):
+                    attrs = s.get("attributes", {})
+                    return {
+                        "condition": s.get("state", ""),
+                        "temp": attrs.get("temperature"),
+                        "humidity": attrs.get("humidity"),
+                        "forecast": attrs.get("forecast", [])[:5],
+                    }
+        except Exception:
+            pass
+        return {}
+
+    async def _check_learning_pattern_insights(self) -> list[dict]:
+        """Kreuz-referenziert InsightEngine Checks mit LearningObserver Mustern.
+
+        Erkennt: Muster die auf Insight-Warnungen reagieren koennten.
+        Beispiel: User schliesst immer Fenster wenn Regen kommt -> Auto-Vorschlag.
+        """
+        if not self.learning_observer:
+            return []
+
+        insights = []
+        try:
+            # Hole gelernte Muster die mit Insight-Checks korrelieren
+            if hasattr(self.learning_observer, "get_person_patterns"):
+                patterns = await self.learning_observer.get_person_patterns("", limit=20)
+            else:
+                return []
+
+            # Korrelation: Fenster-Muster + Wetter-Insights
+            window_patterns = [
+                p for p in patterns
+                if "cover" in p.get("entity", "") or "window" in p.get("entity", "")
+            ]
+            if window_patterns:
+                weather = await self._get_weather_forecast()
+                if weather:
+                    condition = str(weather.get("condition", "")).lower()
+                    if condition in ("rainy", "pouring", "lightning-rainy"):
+                        for wp in window_patterns[:2]:
+                            insights.append({
+                                "type": "pattern_weather_correlation",
+                                "message": (
+                                    f"Du schliesst {wp['entity']} regelmaessig bei Regen. "
+                                    f"Soll ich das automatisieren?"
+                                ),
+                                "confidence": min(wp.get("count", 0) / 10, 0.9),
+                                "urgency": "low",
+                            })
+
+            # Korrelation: Licht-Muster + Abwesenheit
+            light_off_patterns = [
+                p for p in patterns
+                if "light" in p.get("entity", "") and p.get("state") == "off"
+            ]
+            if light_off_patterns and len(light_off_patterns) >= 3:
+                insights.append({
+                    "type": "pattern_automation_suggestion",
+                    "message": (
+                        f"Du schaltest regelmaessig Lichter aus "
+                        f"({len(light_off_patterns)} Muster erkannt). "
+                        f"Soll ich eine Automatisierung vorschlagen?"
+                    ),
+                    "confidence": 0.7,
+                    "urgency": "low",
+                })
+
+        except Exception as e:
+            logger.debug("Learning-Insight Kreuzreferenz Fehler: %s", e)
+
+        return insights
 
     async def get_status(self) -> dict:
         """Gibt den aktuellen Status der Engine zurueck."""

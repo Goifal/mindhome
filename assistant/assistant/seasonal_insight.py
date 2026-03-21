@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 
 import redis.asyncio as aioredis
 
+from .circuit_breaker import registry as cb_registry
 from .config import yaml_config, get_person_title
 
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
@@ -387,6 +388,12 @@ class SeasonalInsightEngine:
             except Exception as e:
                 logger.debug("HA-Status fuer saisonalen Kontext fehlgeschlagen: %s", e)
 
+        # Circuit Breaker Pruefung vor LLM-Aufruf
+        cb = cb_registry.get("seasonal_insight")
+        if cb and not cb.is_available:
+            logger.debug("SeasonalInsight: Circuit Breaker OPEN — LLM-Aufruf uebersprungen")
+            return None
+
         try:
             from .config import settings
             response = await asyncio.wait_for(
@@ -425,12 +432,17 @@ class SeasonalInsightEngine:
                     content = content[think_end + 8:].strip()
 
             if content and len(content) > 20:
+                if cb:
+                    cb.record_success()
                 return content
 
         except asyncio.TimeoutError:
-            pass
+            if cb:
+                cb.record_failure()
         except Exception as e:
             logger.debug("Seasonal LLM-Tipp Fehler: %s", e)
+            if cb:
+                cb.record_failure()
 
         return None
 

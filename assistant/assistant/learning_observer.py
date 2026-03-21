@@ -701,7 +701,70 @@ class LearningObserver:
 
         # Nach Count sortieren (haeufigste zuerst)
         patterns.sort(key=lambda p: p["count"], reverse=True)
+
+        # Confidence Decay anwenden
+        patterns = await self._apply_confidence_decay(patterns)
+
         return patterns[:20]  # Max 20
+
+    async def _apply_confidence_decay(self, patterns: list[dict]) -> list[dict]:
+        """Wendet Confidence-Decay auf Patterns an basierend auf Redis-Key-Alter.
+
+        Aeltere Patterns die nicht mehr bestaetigt wurden verlieren an
+        Confidence. Nutzt die verbleibende TTL der Redis-Keys um das
+        Alter zu bestimmen.
+
+        Returns:
+            Gefilterte und mit Confidence-Scores angereicherte Pattern-Liste.
+        """
+        if not self.redis or not patterns:
+            return patterns
+
+        cfg = yaml_config.get("learning", {}).get("confidence_decay", {})
+        if not cfg.get("enabled", True):
+            return patterns
+
+        decay_per_day = cfg.get("decay_per_day", 0.03)  # 3% pro Tag
+        min_confidence = cfg.get("minimum_confidence", 0.2)
+        max_expected_count = cfg.get("max_expected_count", 20)
+
+        result = []
+        for pattern in patterns:
+            count = pattern.get("count", 0)
+
+            # Rohzaehler in 0.0-1.0 Confidence normalisieren
+            base_confidence = min(1.0, count / max_expected_count)
+
+            # Alter per TTL schaetzen
+            age_days = 0.0
+            try:
+                entity_action = pattern.get("action", "")
+                time_slot = pattern.get("time_slot", "")
+                person = pattern.get("person", "")
+                weekday = pattern.get("weekday", -1)
+
+                if weekday >= 0:
+                    key = f"{KEY_WEEKDAY_PATTERNS}:{person + ':' if person else ''}{entity_action}:{time_slot}:{weekday}"
+                    max_ttl = 60 * 86400  # 60 Tage
+                else:
+                    key = f"{KEY_PATTERNS}:{person + ':' if person else ''}{entity_action}:{time_slot}"
+                    max_ttl = 365 * 86400  # 365 Tage
+
+                ttl = await self.redis.ttl(key)
+                if ttl and ttl > 0:
+                    age_days = (max_ttl - ttl) / 86400
+            except Exception:
+                pass
+
+            # Decay anwenden
+            decayed = base_confidence - (age_days * decay_per_day)
+            confidence = max(min_confidence, min(1.0, decayed))
+
+            if confidence >= min_confidence:
+                pattern["confidence"] = round(confidence, 3)
+                result.append(pattern)
+
+        return result
 
     # ------------------------------------------------------------------
     # Feature 8: Lern-Transparenz — "Was hast du gelernt?"
@@ -1350,3 +1413,77 @@ class LearningObserver:
 
         except Exception as e:
             logger.debug("[16] Scene-Device-Learning Fehler: %s", e)
+
+    async def get_person_patterns(self, person: str, limit: int = 10) -> list[dict]:
+        """Gibt gelernte Muster fuer eine bestimmte Person zurueck.
+
+        Args:
+            person: Person-Name
+            limit: Max Anzahl Muster
+
+        Returns:
+            Liste von Pattern-Dicts mit entity, time_slot, count, weekday_info
+        """
+        if not self.redis or not person:
+            return []
+
+        patterns = []
+        try:
+            cursor = 0
+            while True:
+                cursor, keys = await self.redis.scan(
+                    cursor, match=f"{KEY_PATTERNS}:{person}:*", count=100
+                )
+                for key in keys:
+                    key_str = key.decode() if isinstance(key, bytes) else key
+                    count = await self.redis.get(key_str)
+                    count = int(count.decode() if isinstance(count, bytes) else count) if count else 0
+
+                    # Parse key: mha:learning:patterns:person:entity:state:HH:MM
+                    parts = key_str.replace(f"{KEY_PATTERNS}:{person}:", "").split(":")
+                    if len(parts) >= 3:
+                        entity = parts[0]
+                        state = parts[1] if len(parts) > 1 else ""
+                        time_slot = ":".join(parts[-2:]) if len(parts) >= 3 else ""
+                        patterns.append({
+                            "entity": entity,
+                            "state": state,
+                            "time_slot": time_slot,
+                            "count": count,
+                            "person": person,
+                        })
+                if cursor == 0:
+                    break
+
+            # Nach Haeufigkeit sortieren
+            patterns.sort(key=lambda x: x["count"], reverse=True)
+            return patterns[:limit]
+        except Exception as e:
+            logger.warning("get_person_patterns Fehler: %s", e)
+            return []
+
+    async def get_person_pattern_diff(self, person_a: str, person_b: str) -> dict:
+        """Vergleicht gelernte Muster zwischen zwei Personen.
+
+        Returns:
+            Dict mit shared_patterns, unique_a, unique_b
+        """
+        patterns_a = await self.get_person_patterns(person_a, limit=50)
+        patterns_b = await self.get_person_patterns(person_b, limit=50)
+
+        # Patterns zu Sets konvertieren (entity:time_slot als Key)
+        set_a = {f"{p['entity']}:{p['time_slot']}" for p in patterns_a}
+        set_b = {f"{p['entity']}:{p['time_slot']}" for p in patterns_b}
+
+        shared = set_a & set_b
+        unique_a = set_a - set_b
+        unique_b = set_b - set_a
+
+        return {
+            "shared_patterns": len(shared),
+            "unique_to_a": len(unique_a),
+            "unique_to_b": len(unique_b),
+            "examples_shared": list(shared)[:5],
+            "examples_unique_a": list(unique_a)[:5],
+            "examples_unique_b": list(unique_b)[:5],
+        }

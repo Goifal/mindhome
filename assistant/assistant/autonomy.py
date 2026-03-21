@@ -102,12 +102,12 @@ class AutonomyManager:
 
     def __init__(self):
         # Level aus yaml_config lesen (UI-konfigurierbar), Fallback auf .env Default
-        auto_cfg = yaml_config.get("autonomy", {})
-        self.level = int(auto_cfg.get("level", settings.autonomy_level))
+        auto_cfg = yaml_config.get("autonomy", {}) or {}
+        self.level = int(auto_cfg.get("level") or settings.autonomy_level)
 
         # Phase 10: Trust-Level Konfiguration laden
-        trust_cfg = yaml_config.get("trust_levels", {})
-        self._default_trust = int(trust_cfg.get("default", 0))
+        trust_cfg = yaml_config.get("trust_levels", {}) or {}
+        self._default_trust = int(trust_cfg.get("default") or 0)
         raw_persons = trust_cfg.get("persons", {}) or {}
         self._person_trust: dict[str, int] = {
             name: int(level) for name, level in raw_persons.items()
@@ -148,18 +148,18 @@ class AutonomyManager:
         self._emergency_escalation: dict | None = None
 
         # Temporal autonomy config (#42)
-        temporal_cfg = auto_cfg.get("temporal", {})
-        self._temporal_enabled = temporal_cfg.get("enabled", False)
-        self._temporal_night_start = int(temporal_cfg.get("night_start_hour", 22))
-        self._temporal_night_end = int(temporal_cfg.get("night_end_hour", 6))
-        self._temporal_night_offset = int(temporal_cfg.get("night_offset", -1))
-        self._temporal_day_offset = int(temporal_cfg.get("day_offset", 0))
+        temporal_cfg = auto_cfg.get("temporal", {}) or {}
+        self._temporal_enabled = temporal_cfg.get("enabled", False) or False
+        self._temporal_night_start = int(temporal_cfg.get("night_start_hour") or 22)
+        self._temporal_night_end = int(temporal_cfg.get("night_end_hour") or 6)
+        self._temporal_night_offset = int(temporal_cfg.get("night_offset") if temporal_cfg.get("night_offset") is not None else -1)
+        self._temporal_day_offset = int(temporal_cfg.get("day_offset") or 0)
 
         # De-escalation config (#41)
-        deesc_cfg = auto_cfg.get("deescalation", {})
-        self._deescalation_enabled = deesc_cfg.get("enabled", False)
-        self._deescalation_min_acceptance = float(deesc_cfg.get("min_acceptance_rate", 0.5))
-        self._deescalation_eval_days = int(deesc_cfg.get("evaluation_days", 14))
+        deesc_cfg = auto_cfg.get("deescalation", {}) or {}
+        self._deescalation_enabled = deesc_cfg.get("enabled", False) or False
+        self._deescalation_min_acceptance = float(deesc_cfg.get("min_acceptance_rate") or 0.5)
+        self._deescalation_eval_days = int(deesc_cfg.get("evaluation_days") or 14)
 
     def can_act(self, action_type: str, domain: str = "") -> bool:
         """

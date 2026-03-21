@@ -160,6 +160,9 @@ class InnerStateEngine:
         # #18: Emotion Blending — gewichtete Mischung aus Emotionen
         self._emotion_weights: dict[str, float] = {MOOD_NEUTRAL: 1.0}
 
+        # Lock fuer Mood/Emotion-Mutationen (async-safe)
+        self._mood_lock = asyncio.Lock()
+
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis und laedt gespeicherten Zustand."""
         self.redis = redis_client
@@ -257,43 +260,46 @@ class InnerStateEngine:
         - frustrated/stressed → besorgt
         - good → leicht zufriedener
         """
-        if mood in ("frustrated", "stressed"):
+        async with self._mood_lock:
+            if mood in ("frustrated", "stressed"):
+                self._previous_mood = self._mood
+                self._blend_emotion(MOOD_CONCERNED)
+                self._mood = MOOD_CONCERNED
+                self._last_mood_change = time.time()
+                logger.info(
+                    "Inner-State: → %s (User '%s' ist %s)",
+                    MOOD_CONCERNED,
+                    person or "?",
+                    mood,
+                )
+                await self._save_state()
+            elif mood == "good":
+                self._satisfaction = min(1.0, self._satisfaction + 0.1)
+                logger.info(
+                    "Inner-State: satisfaction +0.1 (User '%s' gut gelaunt)", person or "?"
+                )
+                await self._save_state()
+
+    async def on_security_event(self):
+        """Sicherheitsrelevantes Event erkannt."""
+        async with self._mood_lock:
             self._previous_mood = self._mood
             self._blend_emotion(MOOD_CONCERNED)
             self._mood = MOOD_CONCERNED
             self._last_mood_change = time.time()
-            logger.info(
-                "Inner-State: → %s (User '%s' ist %s)",
-                MOOD_CONCERNED,
-                person or "?",
-                mood,
-            )
+            self._satisfaction = max(0.0, self._satisfaction - 0.1)
             await self._save_state()
-        elif mood == "good":
-            self._satisfaction = min(1.0, self._satisfaction + 0.1)
-            logger.info(
-                "Inner-State: satisfaction +0.1 (User '%s' gut gelaunt)", person or "?"
-            )
-            await self._save_state()
-
-    async def on_security_event(self):
-        """Sicherheitsrelevantes Event erkannt."""
-        self._previous_mood = self._mood
-        self._blend_emotion(MOOD_CONCERNED)
-        self._mood = MOOD_CONCERNED
-        self._last_mood_change = time.time()
-        self._satisfaction = max(0.0, self._satisfaction - 0.1)
-        await self._save_state()
 
     async def on_house_optimal(self):
         """Haus laeuft optimal (keine Alerts, gute Werte)."""
-        self._satisfaction = min(1.0, self._satisfaction + 0.02)
-        if self._mood == MOOD_NEUTRAL and self._satisfaction > 0.7:
-            self._previous_mood = self._mood
-            self._blend_emotion(MOOD_CONTENT)
-            self._mood = MOOD_CONTENT
-            self._last_mood_change = time.time()
-            await self._save_state()
+        async with self._mood_lock:
+            self._satisfaction = min(1.0, self._satisfaction + 0.02)
+            if self._mood == MOOD_NEUTRAL and self._satisfaction > 0.7:
+                self._previous_mood = self._mood
+                self._blend_emotion(MOOD_CONTENT)
+                self._mood = MOOD_CONTENT
+                self._last_mood_change = time.time()
+                await self._save_state()
 
     # Scene → Jarvis-Stimmung
     _SCENE_MOOD_MAP = {
@@ -312,16 +318,17 @@ class InnerStateEngine:
 
     async def on_scene_activated(self, scene_name: str):
         """Szenen-Aktivierung beeinflusst Jarvis' Stimmung."""
-        target_mood = self._SCENE_MOOD_MAP.get(scene_name)
-        if target_mood and target_mood != self._mood:
-            self._previous_mood = self._mood
-            self._blend_emotion(target_mood)
-            self._mood = target_mood
-            self._last_mood_change = time.time()
-            logger.info(
-                "Inner-State: → %s (Szene '%s' aktiviert)", target_mood, scene_name
-            )
-            await self._save_state()
+        async with self._mood_lock:
+            target_mood = self._SCENE_MOOD_MAP.get(scene_name)
+            if target_mood and target_mood != self._mood:
+                self._previous_mood = self._mood
+                self._blend_emotion(target_mood)
+                self._mood = target_mood
+                self._last_mood_change = time.time()
+                logger.info(
+                    "Inner-State: → %s (Szene '%s' aktiviert)", target_mood, scene_name
+                )
+                await self._save_state()
 
     # ------------------------------------------------------------------
     # Emotion Blending (#18)
@@ -354,28 +361,29 @@ class InnerStateEngine:
 
     async def _update_mood(self):
         """Berechnet den inneren Zustand aus akkumulierten Events."""
-        # Prioritaet: Sicherheit > Irritation > Stolz > Amuesiert > Zufrieden > Neutral
-        if self._ignored_warnings >= 3:
-            new_mood = MOOD_IRRITATED
-        elif self._complex_solves >= 1 and self._failed_actions == 0:
-            new_mood = MOOD_PROUD
-        elif self._funny_interactions >= 2:
-            new_mood = MOOD_AMUSED
-        elif self._satisfaction > 0.7 and self._failed_actions == 0:
-            new_mood = MOOD_CONTENT
-        elif self._failed_actions >= 2:
-            new_mood = MOOD_CONCERNED
-        else:
-            new_mood = MOOD_NEUTRAL
+        async with self._mood_lock:
+            # Prioritaet: Sicherheit > Irritation > Stolz > Amuesiert > Zufrieden > Neutral
+            if self._ignored_warnings >= 3:
+                new_mood = MOOD_IRRITATED
+            elif self._complex_solves >= 1 and self._failed_actions == 0:
+                new_mood = MOOD_PROUD
+            elif self._funny_interactions >= 2:
+                new_mood = MOOD_AMUSED
+            elif self._satisfaction > 0.7 and self._failed_actions == 0:
+                new_mood = MOOD_CONTENT
+            elif self._failed_actions >= 2:
+                new_mood = MOOD_CONCERNED
+            else:
+                new_mood = MOOD_NEUTRAL
 
-        if new_mood != self._mood:
-            logger.info("Inner-State: %s → %s", self._mood, new_mood)
-            self._previous_mood = self._mood
-            self._blend_emotion(new_mood)
-            self._mood = new_mood
-            self._last_mood_change = time.time()
+            if new_mood != self._mood:
+                logger.info("Inner-State: %s → %s", self._mood, new_mood)
+                self._previous_mood = self._mood
+                self._blend_emotion(new_mood)
+                self._mood = new_mood
+                self._last_mood_change = time.time()
 
-        await self._save_state()
+            await self._save_state()
 
         # Decay: Counter langsam zuruecksetzen
         elapsed = time.time() - self._last_update

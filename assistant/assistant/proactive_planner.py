@@ -166,7 +166,7 @@ class ProactiveSequencePlanner:
             "person": person,
             "actions": actions,
             "message": f"{title} kommt nach Hause. Soll ich {actions_desc}?",
-            "auto_message": f"Willkommen, {title}. {actions_desc} — erledigt.",
+            "auto_message": self._build_narrative(actions, person, "person_arrived"),
         }
 
     async def _plan_weather_sequence(self, context: dict) -> Optional[dict]:
@@ -204,7 +204,7 @@ class ProactiveSequencePlanner:
             "trigger": "weather_changed",
             "actions": actions,
             "message": f"{title}, Wetter aendert sich ({condition}). Soll ich {actions_desc}?",
-            "auto_message": f"Wetter-Anpassung: {actions_desc}.",
+            "auto_message": self._build_narrative(actions, "", "weather_changed"),
         }
 
     async def _plan_guest_sequence(self, context: dict) -> Optional[dict]:
@@ -237,7 +237,7 @@ class ProactiveSequencePlanner:
             "trigger": "calendar_event_soon",
             "actions": actions,
             "message": f"{title}, Gaeste kommen bald. Soll ich {actions_desc} vorbereiten?",
-            "auto_message": f"Gaeste-Vorbereitung: {actions_desc}.",
+            "auto_message": self._build_narrative(actions, "", "calendar_event_soon"),
         }
 
     async def _plan_departure_sequence(self, context: dict) -> Optional[dict]:
@@ -252,6 +252,24 @@ class ProactiveSequencePlanner:
                 "type": "set_light",
                 "args": {"state": "off"},
                 "description": "Alle Lichter ausschalten",
+            })
+
+        # Offene Fenster schliessen
+        open_windows = house.get("open_windows", [])
+        if open_windows:
+            actions.append({
+                "type": "notify",
+                "args": {"message": f"Noch offene Fenster: {', '.join(open_windows[:3])}"},
+                "description": f"Fenster-Warnung ({len(open_windows)} offen)",
+            })
+
+        # Medien stoppen
+        active_media = house.get("media_playing", [])
+        if active_media:
+            actions.append({
+                "type": "media_stop",
+                "args": {},
+                "description": "Laufende Medien stoppen",
             })
 
         # Klima auf Eco
@@ -270,7 +288,7 @@ class ProactiveSequencePlanner:
             "trigger": "person_left",
             "actions": actions,
             "message": f"{title} geht. Soll ich {actions_desc}?",
-            "auto_message": f"Abwesenheitsmodus: {actions_desc}.",
+            "auto_message": self._build_narrative(actions, "", "person_left"),
         }
 
     async def _plan_energy_sequence(self, context: dict) -> Optional[dict]:
@@ -288,6 +306,14 @@ class ProactiveSequencePlanner:
                 "description": "Guenstiger Strom — energieintensive Geraete starten",
             })
 
+        elif price > energy.get("high_threshold", 0.35):
+            # Teurer Strom — verschiebbare Lasten pausieren
+            actions.append({
+                "type": "notify",
+                "args": {"message": f"Strom teuer ({price:.2f} EUR/kWh) — verschiebbare Geraete pausieren empfohlen"},
+                "description": "Strompreis-Warnung — Lasten verschieben",
+            })
+
         if not actions:
             return None
 
@@ -295,7 +321,7 @@ class ProactiveSequencePlanner:
             "trigger": "energy_price_changed",
             "actions": actions,
             "message": actions[0]["description"],
-            "auto_message": actions[0]["description"],
+            "auto_message": self._build_narrative(actions, "", "energy_price_changed"),
         }
 
     async def _plan_bedtime_sequence(self, context: dict) -> Optional[dict]:
@@ -317,14 +343,140 @@ class ProactiveSequencePlanner:
                 "description": "Offene Tueren melden",
             })
 
+        # Offene Fenster melden
+        open_windows = house.get("open_windows", [])
+        if open_windows:
+            actions.append({
+                "type": "notify",
+                "args": {"message": f"Noch offene Fenster: {', '.join(open_windows[:3])}"},
+                "description": "Offene Fenster vor dem Schlafengehen",
+            })
+
+        # Medien stoppen
+        active_media = house.get("media_playing", [])
+        if active_media:
+            actions.append({
+                "type": "media_stop",
+                "args": {},
+                "description": "Laufende Medien stoppen",
+            })
+
         title = get_person_title()
         actions_desc = ", ".join(a["description"] for a in actions)
         return {
             "trigger": "bedtime_approaching",
             "actions": actions,
             "message": f"Gute Nacht, {title}. Soll ich {actions_desc}?",
-            "auto_message": f"Gute Nacht. {actions_desc} — erledigt.",
+            "auto_message": self._build_narrative(actions, "", "bedtime"),
         }
+
+    # ------------------------------------------------------------------
+    # Narrative Builder — natuerliche Sprachausgabe fuer Sequenzen
+    # ------------------------------------------------------------------
+
+    # Verb-Mapping: Action-Type → deutscher Satzanfang
+    _ACTION_VERBS: dict[str, str] = {
+        "set_light": "schalte die Beleuchtung",
+        "set_climate": "stelle die Heizung",
+        "set_cover": "fahre die Rollaeden",
+        "play_media": "starte die Musik",
+        "media_stop": "stoppe die laufenden Medien",
+        "notify": "",  # Benachrichtigungen separat
+        "lock": "sichere die Schloeser",
+    }
+
+    def _build_narrative(self, actions: list[dict], person: str = "", trigger: str = "") -> str:
+        """Baut eine natuerliche deutsche Narration fuer eine Multi-Step Sequenz.
+
+        Verwandelt eine Liste von Aktionen in einen flüssigen Satz den
+        Jarvis sprechen wuerde.
+
+        Args:
+            actions: Liste von Action-Dicts mit type, args, description
+            person: Person fuer personalisierten Titel
+            trigger: Trigger-Typ fuer kontextbezogenes Intro
+
+        Returns:
+            Natuerlicher deutscher Satz, z.B.
+            "Sehr wohl, Sir. Ich schalte die Beleuchtung ein,
+             stelle die Heizung auf Home-Modus und fahre die Rollaeden runter."
+        """
+        title = get_person_title(person)
+
+        # Intro je nach Trigger
+        intros = {
+            "person_arrived": f"Willkommen zurueck, {title}.",
+            "person_left": f"Abwesenheitsmodus aktiviert, {title}.",
+            "weather_changed": f"Wetter-Anpassung, {title}.",
+            "calendar_event_soon": f"Gaeste-Vorbereitung, {title}.",
+            "bedtime": f"Gute Nacht, {title}.",
+            "energy_price_changed": f"Energieoptimierung, {title}.",
+        }
+        intro = intros.get(trigger, f"Sehr wohl, {title}.")
+
+        # Aktionen in Satzteile umwandeln (notify-Aktionen separat)
+        parts = []
+        notifications = []
+
+        for action in actions:
+            action_type = action.get("type", "")
+            desc = action.get("description", "")
+
+            if action_type == "notify":
+                notifications.append(desc)
+                continue
+
+            verb = self._ACTION_VERBS.get(action_type, "")
+            if verb:
+                # Spezifische Args auswerten
+                args = action.get("args", {})
+                if action_type == "set_light":
+                    if args.get("state") == "off":
+                        parts.append("schalte die Lichter aus")
+                    elif args.get("brightness"):
+                        parts.append(f"dimme das Licht auf {args['brightness']}%")
+                    else:
+                        parts.append("schalte die Beleuchtung ein")
+                elif action_type == "set_climate":
+                    preset = args.get("preset_mode", "")
+                    if preset:
+                        parts.append(f"stelle die Heizung auf {preset.title()}-Modus")
+                    else:
+                        parts.append(desc.lower())
+                elif action_type == "set_cover":
+                    pos = args.get("position")
+                    if pos == 0:
+                        parts.append("fahre die Rollaeden runter")
+                    elif pos == 100:
+                        parts.append("fahre die Rollaeden hoch")
+                    else:
+                        parts.append(desc.lower())
+                else:
+                    parts.append(verb)
+            elif desc:
+                parts.append(desc.lower())
+
+        if not parts:
+            # Nur Benachrichtigungen — kein "erledigt" noetig
+            if notifications:
+                return f"{intro} Hinweis: {'; '.join(notifications)}."
+            return f"{intro} {', '.join(a.get('description', '') for a in actions)}."
+
+        # Natuerliche Verkettung: "A, B und C"
+        if len(parts) == 1:
+            actions_text = parts[0]
+        elif len(parts) == 2:
+            actions_text = f"{parts[0]} und {parts[1]}"
+        else:
+            actions_text = ", ".join(parts[:-1]) + f" und {parts[-1]}"
+
+        narrative = f"{intro} Ich {actions_text}."
+
+        # Notifications als Hinweis anhaengen
+        if notifications:
+            narrative += f" Hinweis: {'; '.join(notifications)}."
+
+        return narrative
 
     async def _enrich_plan_from_patterns(
         self, plan: dict, trigger: str, context: dict,

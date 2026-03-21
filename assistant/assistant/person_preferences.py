@@ -63,7 +63,7 @@ class PersonPreferences:
         if val is None:
             return default
         spec = KNOWN_PREFERENCES.get(key)
-        if spec and spec["type"] is float:
+        if spec and spec["type"] == float:
             try:
                 return float(val)
             except (ValueError, TypeError):
@@ -78,7 +78,7 @@ class PersonPreferences:
         result = {}
         for k, v in raw.items():
             spec = KNOWN_PREFERENCES.get(k)
-            if spec and spec["type"] is float:
+            if spec and spec["type"] == float:
                 try:
                     result[k] = float(v)
                 except (ValueError, TypeError):
@@ -93,7 +93,7 @@ class PersonPreferences:
             return False
         spec = KNOWN_PREFERENCES.get(key)
         if spec:
-            if spec["type"] is float:
+            if spec["type"] == float:
                 try:
                     value = float(value)
                 except (ValueError, TypeError):
@@ -112,7 +112,7 @@ class PersonPreferences:
 
         # Preference Evolution: Numerische Aenderungen historisch tracken
         spec = KNOWN_PREFERENCES.get(key)
-        if spec and spec["type"] is float:
+        if spec and spec["type"] == float:
             await self._record_history(person, key, float(value))
 
         logger.info("PersonPrefs: %s.%s = %s", person, key, value)
@@ -263,7 +263,7 @@ class PersonPreferences:
         """Gibt Trends fuer alle numerischen Praeferenzen einer Person zurueck."""
         trends = {}
         for key, spec in KNOWN_PREFERENCES.items():
-            if spec["type"] is float:
+            if spec["type"] == float:
                 trend = await self.get_preference_trend(person, key)
                 if trend and trend["direction"] != "stable":
                     trends[key] = trend

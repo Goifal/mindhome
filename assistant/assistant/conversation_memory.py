@@ -33,6 +33,8 @@ _KEY_FOLLOWUPS = "mha:memory:followups"              # Hash: followup_id -> JSON
 # Phase 3B: Gesprächs-Threads
 _KEY_THREADS = "mha:memory:threads"                  # Hash: thread_id -> JSON
 _KEY_THREAD_INDEX = "mha:memory:thread_index"        # Hash: keyword -> thread_id
+# Phase 3C: Emotionales Context-Tagging
+_KEY_EMOTIONAL_CONTEXT = "mha:memory:emotional_context"  # Hash: msg_id -> JSON
 
 # Defaults
 _DEFAULT_MAX_PROJECTS = 20
@@ -948,3 +950,190 @@ class ConversationMemory:
         }
         words = text.lower().split()
         return [w for w in words if len(w) >= 3 and w not in _STOP_WORDS][:10]
+
+    async def get_recent_topics(self, person: str = "", days: int = 7, limit: int = 10) -> list[dict]:
+        """Gibt die haeufigsten Gespraechsthemen der letzten Tage zurueck.
+
+        Aggregiert aus Tageszusammenfassungen und Thread-Index.
+
+        Args:
+            person: Person-Filter (optional)
+            days: Zeitraum in Tagen
+            limit: Max Anzahl Themen
+
+        Returns:
+            Liste von {topic, count, last_discussed, contexts}
+        """
+        if not self.redis or not self.enabled:
+            return []
+
+        topics: dict[str, dict] = {}
+
+        try:
+            # Aus Tageszusammenfassungen
+            now = datetime.now(timezone.utc)
+            for day_offset in range(days):
+                date_key = (now - timedelta(days=day_offset)).strftime("%Y-%m-%d")
+                summary_raw = await self.redis.get(f"{_KEY_DAILY_SUMMARY}{date_key}")
+                if not summary_raw:
+                    continue
+                summary_str = summary_raw.decode() if isinstance(summary_raw, bytes) else summary_raw
+                summary = json.loads(summary_str)
+
+                for topic in summary.get("topics", []):
+                    topic_name = topic if isinstance(topic, str) else topic.get("name", "")
+                    if not topic_name:
+                        continue
+                    topic_lower = topic_name.lower()
+                    if topic_lower not in topics:
+                        topics[topic_lower] = {
+                            "topic": topic_name,
+                            "count": 0,
+                            "last_discussed": date_key,
+                            "contexts": [],
+                        }
+                    topics[topic_lower]["count"] += 1
+
+            # Aus Thread-Index
+            thread_index = await self.redis.hgetall(_KEY_THREAD_INDEX)
+            for keyword, thread_id in thread_index.items():
+                kw = keyword.decode() if isinstance(keyword, bytes) else keyword
+                kw_lower = kw.lower()
+                if kw_lower not in topics:
+                    topics[kw_lower] = {
+                        "topic": kw,
+                        "count": 1,
+                        "last_discussed": "",
+                        "contexts": [],
+                    }
+                else:
+                    topics[kw_lower]["count"] += 1
+
+        except Exception as e:
+            logger.debug("get_recent_topics Fehler: %s", e)
+
+        # Sortieren nach Haeufigkeit
+        sorted_topics = sorted(topics.values(), key=lambda x: x["count"], reverse=True)
+        return sorted_topics[:limit]
+
+    async def get_topic_context(self, topic: str, person: str = "") -> str:
+        """Gibt Kontext zu einem bestimmten Thema zurueck fuer LLM-Prompt.
+
+        Sucht in Threads und Zusammenfassungen nach dem Thema.
+        """
+        if not self.redis or not self.enabled or not topic:
+            return ""
+
+        try:
+            # Thread-Suche
+            thread_id = await self.redis.hget(_KEY_THREAD_INDEX, topic.lower())
+            if thread_id:
+                tid = thread_id.decode() if isinstance(thread_id, bytes) else thread_id
+                thread_raw = await self.redis.hget(_KEY_THREADS, tid)
+                if thread_raw:
+                    t_str = thread_raw.decode() if isinstance(thread_raw, bytes) else thread_raw
+                    thread = json.loads(t_str)
+                    messages = thread.get("messages", [])[-3:]
+                    if messages:
+                        return f"Vorheriges Gespraech zu '{topic}': " + " | ".join(
+                            m.get("summary", m.get("text", ""))[:100] for m in messages
+                        )
+        except Exception as e:
+            logger.debug("get_topic_context Fehler: %s", e)
+
+        return ""
+
+    # ------------------------------------------------------------------
+    # Phase 3C: Emotionales Context-Tagging
+    # ------------------------------------------------------------------
+
+    _EMOTION_KEYWORDS: dict[str, list[str]] = {
+        "good": ["super", "toll", "klasse", "prima", "freue", "geil", "perfekt", "danke", "liebe"],
+        "stressed": ["stress", "eile", "schnell", "dringend", "sofort", "hektisch", "muss"],
+        "frustrated": ["nerv", "aerger", "mist", "scheisse", "klappt nicht", "geht nicht", "funktioniert nicht", "schon wieder"],
+        "tired": ["muede", "schlaf", "erschoepft", "kaputt", "fertig", "gaehn", "pennen"],
+    }
+
+    def _detect_emotion(self, text: str) -> dict:
+        """Erkennt Emotion aus Text per Keyword-Analyse.
+
+        Leichtgewichtige Erkennung ohne LLM-Aufruf, als Fallback
+        wenn mood_detector nicht verfuegbar ist.
+
+        Returns:
+            Dict mit mood (str) und intensity (float 0.0-1.0).
+        """
+        if not text:
+            return {"mood": "neutral", "intensity": 0.0}
+
+        text_lower = text.lower()
+        scores: dict[str, int] = {}
+
+        for mood, keywords in self._EMOTION_KEYWORDS.items():
+            count = sum(1 for kw in keywords if kw in text_lower)
+            if count > 0:
+                scores[mood] = count
+
+        if not scores:
+            return {"mood": "neutral", "intensity": 0.0}
+
+        best_mood = max(scores, key=scores.get)  # type: ignore[arg-type]
+        intensity = min(1.0, scores[best_mood] / 3.0)
+        return {"mood": best_mood, "intensity": round(intensity, 2)}
+
+    async def _tag_emotional_context(
+        self,
+        message_id: str,
+        text: str,
+        role: str = "user",
+        mood_data: Optional[dict] = None,
+    ) -> None:
+        """Taggt eine Nachricht mit emotionalem Kontext.
+
+        Speichert das erkannte Emotionsprofil in Redis, verknuepft
+        mit der Nachricht-ID. Kann spaeter fuer stimmungsbasierte
+        Zusammenfassungen oder empathische Antworten genutzt werden.
+
+        Args:
+            message_id: Eindeutige Nachricht-ID (z.B. Timestamp)
+            text: Nachrichtentext
+            role: "user" oder "assistant"
+            mood_data: Optionale Mood-Daten von mood_detector (ueberschreibt Keyword-Erkennung)
+        """
+        if not self.redis or not self.enabled or not text:
+            return
+
+        try:
+            # Mood-Daten nutzen falls vorhanden, sonst Keyword-Fallback
+            if mood_data and mood_data.get("mood"):
+                emotion = {
+                    "mood": mood_data["mood"],
+                    "intensity": mood_data.get("stress_level", mood_data.get("intensity", 0.5)),
+                    "signals": mood_data.get("signals", []),
+                    "source": "mood_detector",
+                }
+            else:
+                detected = self._detect_emotion(text)
+                emotion = {
+                    "mood": detected["mood"],
+                    "intensity": detected["intensity"],
+                    "signals": [],
+                    "source": "keyword_fallback",
+                }
+
+            emotion["role"] = role
+            emotion["timestamp"] = datetime.now(timezone.utc).isoformat()
+
+            await self.redis.hset(
+                _KEY_EMOTIONAL_CONTEXT,
+                message_id,
+                json.dumps(emotion, ensure_ascii=False),
+            )
+
+            # TTL fuer das gesamte Hash setzen (14 Tage)
+            ttl = await self.redis.ttl(_KEY_EMOTIONAL_CONTEXT)
+            if not ttl or ttl < 0:
+                await self.redis.expire(_KEY_EMOTIONAL_CONTEXT, 14 * 86400)
+
+        except Exception as e:
+            logger.debug("Emotional context tagging Fehler: %s", e)
