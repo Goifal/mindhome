@@ -38,7 +38,7 @@ const _searchIndex = [
   {tab:'tab-jarvis', title:'MCU-Persönlichkeit', keywords:'rückbezüge callbacks lern-bestätigung vorhersage wetter selbst-bewusstsein humor', icon:'&#127917;'},
   {tab:'tab-jarvis', title:'Echte Empathie', keywords:'empathie emotion Verständnis stimmung mitfühlen', icon:'&#129505;'},
   {tab:'tab-jarvis', title:'Charakter-Schutz', keywords:'character lock filter retry llm rolle floskeln', icon:'&#128274;'},
-  {tab:'tab-jarvis', title:'Persönlichkeits-Kern', keywords:'identität timing improvisation kreativ narrativ innerer zustand confidence', icon:'&#129504;'},
+  {tab:'tab-jarvis', title:'Persönlichkeits-Kern', keywords:'identität timing improvisation kreativ narrativ innerer zustand confidence domain gewichtet stimmung', icon:'&#129504;'},
   {tab:'tab-jarvis', title:'Geräte-Persönlichkeit', keywords:'spitznamen device narration waschmaschine saugroboter', icon:'&#128374;'},
   {tab:'tab-jarvis', title:'Geräte-Fertig-Erkennung', keywords:'waschmaschine trockner Geschirrspüler fertig watt power idle strom verbrauch', icon:'&#9889;'},
   {tab:'tab-jarvis', title:'Daten-basierter Widerspruch', keywords:'pushback warnung fenster offen heizung eskalation', icon:'&#9888;'},
@@ -112,9 +112,9 @@ const _searchIndex = [
   {tab:'tab-followme', title:'Follow-Me', keywords:'raum folgen musik licht temperatur person profil', icon:'&#128694;'},
   // Intelligenz (tab-intelligence)
   {tab:'tab-intelligence', title:'Domain-spezifische Autonomie', keywords:'domain autonomie klima licht medien sicherheit', icon:'&#127919;'},
-  {tab:'tab-intelligence', title:'Kalender-Intelligenz', keywords:'kalender gewohnheit konflikt pendelzeit termin', icon:'&#128197;'},
+  {tab:'tab-intelligence', title:'Kalender-Intelligenz', keywords:'kalender gewohnheit konflikt pendelzeit termin per route pendel', icon:'&#128197;'},
   {tab:'tab-intelligence', title:'Erklärbarkeit', keywords:'erklaerbarkeit warum aktion begründung entscheidung', icon:'&#128161;'},
-  {tab:'tab-intelligence', title:'Lern-Transfer', keywords:'transfer präferenz raum ähnlich vorschlag', icon:'&#129504;'},
+  {tab:'tab-intelligence', title:'Lern-Transfer', keywords:'transfer präferenz raum ähnlich vorschlag benachrichtigung notify', icon:'&#129504;'},
   {tab:'tab-intelligence', title:'Think-Ahead Hinweise', keywords:'think ahead nächster schritt vorschlag vorausdenken', icon:'&#128161;'},
   {tab:'tab-intelligence', title:'Kausalketten-Erkennung', keywords:'kausal kette handlung wiederholend muster', icon:'&#128279;'},
   {tab:'tab-intelligence', title:'3D+ Insight Checks', keywords:'gäste vorbereitung alarm abwesenheit sicherheit feuchtigkeit nacht', icon:'&#128200;'},
@@ -3368,7 +3368,9 @@ function renderPersonality() {
     fToggle('inner_state.mood_decay_enabled', 'Mood-Decay aktiv') +
     fRange('inner_state.mood_decay_minutes', 'Zerfallszeit (Minuten)', 10, 120, 10, {10:'10',20:'20',30:'30 (Standard)',60:'60',120:'120'}) +
     fToggle('inner_state.emotion_blending', 'Emotion-Blending (Mischung statt Einzelwert)') +
-    fInfo('Jarvis kann mehrere Emotionen gleichzeitig empfinden — z.B. 60% stolz + 30% amuesiert.')
+    fInfo('Jarvis kann mehrere Emotionen gleichzeitig empfinden — z.B. 60% stolz + 30% amuesiert.') +
+    fToggle('inner_state.domain_weighted_mood', 'Domain-gewichtete Stimmung') +
+    fInfo('Sicherheits-Events beeinflussen die Stimmung staerker als Routine-Aenderungen wie Lichtsteuerung.')
   ) +
   sectionWrap('&#128200;', 'Charakter-Entwicklung',
     fInfo('Der Assistent wird mit der Zeit weniger formell — wie ein echter Butler, der seinen Herrn kennenlernt.') +
@@ -6275,7 +6277,10 @@ function renderAutonomie() {
     fSubheading('Kontext-Kompaktierung') +
     fRange('context_compaction.threshold', 'Kompaktierungs-Schwelle', 0.5, 0.95, 0.05, {0.5:'50%',0.6:'60%',0.7:'70% (Standard)',0.8:'80%',0.9:'90%',0.95:'95%'}) +
     fToggle('context_compaction.prefer_llm', 'LLM-Kompaktierung bevorzugen') +
-    fToggle('pre_compaction_flush.enabled', 'Pre-Compaction Flush (Fakten sichern)')
+    fToggle('pre_compaction_flush.enabled', 'Pre-Compaction Flush (Fakten sichern)') +
+    fSubheading('Kontext-Quellen') +
+    fToggle('context_builder.include_threads', 'Gesprächs-Threads im Kontext') +
+    fInfo('Aktive Gespraechs-Threads werden dem LLM-Kontext hinzugefuegt fuer bessere Kontinuitaet ueber mehrere Nachrichten.')
   ) +
 
   // --- Group 5: Automationen & Rollback ---
@@ -11887,7 +11892,9 @@ function renderIntelligence() {
     fSubheading('Erkennungs-Module') +
     fToggle('calendar_intelligence.habit_detection', 'Gewohnheits-Erkennung') +
     fToggle('calendar_intelligence.conflict_detection', 'Konflikt-Erkennung') +
-    fToggle('calendar_intelligence.break_detection', 'Pausen-Erkennung')
+    fToggle('calendar_intelligence.break_detection', 'Pausen-Erkennung') +
+    fToggle('calendar_intelligence.per_route_commute', 'Per-Route Pendelzeiten lernen') +
+    fInfo('Lernt individuelle Pendelzeiten pro Ziel statt eines globalen Durchschnittswerts.')
   ) +
   sectionWrap('&#128161;', 'Erklärbarkeit',
     fInfo('Jarvis erklaert auf Nachfrage warum er etwas getan hat. Jede automatische Aktion wird mit Begründung geloggt. Frage z.B. "Warum hast du das Licht eingeschaltet?"') +
@@ -11913,6 +11920,8 @@ function renderIntelligence() {
     fInfo('Überträgt Präferenzen zwischen ähnlichen Räumen. Wenn du warmes Licht in der Küche bevorzugst, schlägt Jarvis das auch für das Esszimmer vor.') +
     fToggle('learning_transfer.enabled', 'Lern-Transfer aktiv') +
     fToggle('learning_transfer.auto_suggest', 'Automatische Vorschläge') +
+    fToggle('learning_transfer.notify_user', 'Über Transfers benachrichtigen') +
+    fInfo('Benachrichtigt wenn Praeferenzen zwischen Raeumen uebertragen werden, z.B. "Lichteinstellung aus Kueche auf Esszimmer uebertragen."') +
     fNum('learning_transfer.min_observations', 'Min. Beobachtungen vor Transfer', 2, 10) +
     fRange('learning_transfer.transfer_confidence', 'Transfer-Konfidenz', 0.3, 1.0, 0.05, {0.3:'0.3',0.5:'0.5',0.7:'0.7',0.8:'0.8',0.9:'0.9',1.0:'1.0'}) +
     fSubheading('Aktive Domaenen') +
@@ -11927,7 +11936,9 @@ function renderIntelligence() {
   ) +
   sectionWrap('&#128161;', 'Think-Ahead Hinweise',
     fInfo('Nach einer Aktion schlägt Jarvis einen logischen nächsten Schritt vor. Z.B. nach "Licht im Flur an" → "Soll ich auch die Heizung im Flur hochdrehen?" Statisch, kein LLM-Overhead.') +
-    fToggle('next_step_hints.enabled', 'Think-Ahead aktiv')
+    fToggle('next_step_hints.enabled', 'Think-Ahead aktiv') +
+    fToggle('brain.think_ahead_enabled', 'Kontext-basierte Folgeaktionen') +
+    fInfo('Analysiert den aktuellen Kontext (Raum, Tageszeit, offene Fenster) und schlaegt passende Folgeaktionen vor — z.B. "Fenster ist offen, soll ich die Heizung pausieren?"')
   ) +
   // --- Antizipation & Erkennung ---
   '<div class="cat-header">&#128268; Antizipation &amp; Mustererkennung</div>' +
@@ -11985,6 +11996,8 @@ function renderIntelligence() {
     fToggle('seasonal_insights.enabled', 'Saisonale Intelligenz aktiv') +
     fNum('seasonal_insights.check_interval_hours', 'Prüf-Intervall (Stunden)', 6, 48, 6) +
     fNum('seasonal_insights.min_history_months', 'Min. Historie (Monate)', 1, 12) +
+    fToggle('seasonal_insight.hybrid_detection', 'Hybrid-Erkennung (Temp + Tageslicht)') +
+    fInfo('Nutzt Temperatur + Tageslichtdauer + Monat statt nur den Kalendermonat fuer praezisere Jahreszeit-Erkennung.') +
     fSubheading('Wetter-Vorhersage') +
     fInfo('Nutzt die HA Wetter-Forecast-API fuer vorausschauende Aktionen: Rolllaeden schliessen bevor Sturm kommt, Heizung hochdrehen bevor es kalt wird.') +
     fToggle('weather_forecast.enabled', 'Wetter-Vorhersage aktiv') +
