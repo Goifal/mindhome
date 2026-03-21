@@ -47,11 +47,33 @@ Bewerte für jeden Vergleichspunkt, wie weit der reale Jarvis im Vergleich zum M
 
 Sei **ehrlich und kritisch**, nicht schmeichelnd. Der Entwickler will die Wahrheit, nicht Lob.
 
+### Regel 5: Gezielte Feature-Lücken-Suche
+Gehe nicht nur die vorgegebenen Kategorien durch — **suche aktiv nach Features die komplett fehlen:**
+1. Schau dir jede MCU-Szene/Fähigkeit an und frage: "Gibt es dafür IRGENDWAS in der Codebase?" Durchsuche aktiv mit verschiedenen Suchbegriffen — nicht nur dem offensichtlichen Namen.
+2. Wenn du **nichts findest**: Markiere es klar als `[FEHLT KOMPLETT]` und beschreibe genau was gebaut werden müsste.
+3. Wenn du etwas findest das **nur ein Stub/Platzhalter** ist (leere Methoden, `pass`, `NotImplementedError`, TODO-Kommentare): Markiere als `[STUB/UNFERTIG]` mit genauer Stelle im Code.
+4. Suche auch nach MCU-Fähigkeiten die in **keiner der vordefinierten Kategorien** stehen — erstelle dafür neue Kategorien.
+
+### Regel 6: Verbesserungsprüfung bei vorhandenen Features
+Für jedes Feature das **bereits existiert**, prüfe gezielt:
+1. **Vollständigkeit:** Ist es zu Ende implementiert oder fehlen Teile? Gibt es auskommentierte Codeblöcke, Branches die nie erreicht werden, oder Konfigurationsoptionen die nichts tun?
+2. **Qualität:** Ist die Implementierung robust oder fragil? Race Conditions, fehlende Error-Handles, hartcodierte Werte die konfigurierbar sein sollten?
+3. **Nutzung:** Wird das Feature tatsächlich aktiv verwendet? Wird es im Brain aufgerufen? Gibt es Routes/Endpoints dafür? Oder ist es toter Code?
+4. **Verknüpfung:** Arbeitet es mit anderen Modulen zusammen wie es sollte? MCU-Jarvis hat alles nahtlos integriert — prüfe ob Features isoliert arbeiten statt vernetzt.
+5. **Konfiguration:** Sind sinnvolle Defaults gesetzt? Ist es in `settings.yaml` aktiviert? Sind die Schwellwerte sinnvoll oder willkürlich?
+6. **MCU-Gap:** Was genau müsste an diesem Feature verbessert werden um näher an MCU-Level zu kommen? Sei konkret — "Funktion X in Datei Y müsste um Z erweitert werden."
+
+Markiere jedes vorhandene Feature mit einem Status:
+- `[OK]` — Feature funktioniert gut, kaum Verbesserungsbedarf
+- `[VERBESSERBAR]` — Feature existiert, hat aber klare Schwächen oder ungenutztes Potenzial
+- `[UNTERVERBUNDEN]` — Feature existiert, ist aber nicht ausreichend mit anderen Modulen vernetzt
+- `[VERALTET]` — Feature existiert, nutzt aber veraltete Patterns oder ist nicht mehr zeitgemäß
+
 ---
 
 ## Vergleichskategorien
 
-Analysiere **mindestens** diese Kategorien (füge weitere hinzu wenn du welche findest):
+Analysiere **mindestens** diese Kategorien (füge weitere hinzu wenn du welche findest — **das ist keine Aufforderung zur Höflichkeit, du MUSST aktiv nach weiteren suchen**):
 
 ### 1. Natürliche Konversation & Sprachverständnis
 **MCU-Referenz:** Jarvis versteht Kontext über lange Gespräche, ironische Bemerkungen, implizite Anweisungen ("mach mal alles fertig"), Unterbrechungen, und spricht flüssig natürliches Englisch mit perfekter Prosodie.
