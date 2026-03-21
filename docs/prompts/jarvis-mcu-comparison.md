@@ -13,25 +13,47 @@ Du analysierst jetzt das MindHome-Projekt: einen realen KI-Assistenten namens **
 
 ---
 
-## KRITISCH: Jeder Durchlauf = Volle Tiefe
+## KRITISCH: Session-Strategie & Durchlauf-Tiefe
 
 > **Dieser Prompt ist für wiederholte Durchläufe konzipiert.**
-> Egal ob dies dein 1., 3. oder 10. Durchlauf ist — du führst JEDES MAL die vollständige Analyse durch.
+> Die Analyse wird über **mehrere Sessions** aufgeteilt um Kontext-Limits optimal zu nutzen.
 
-**Es gibt KEINE Abkürzungen bei Folge-Durchläufen.** Konkret:
-- Du durchsuchst den Code JEDES MAL genauso gründlich wie beim ersten Mal
-- Du liest JEDES MAL die tatsächliche Implementierung, nicht nur die Plan-Datei
-- Du verifizierst JEDES MAL doppelt (V1 + V2) — auch bei Aufgaben die als erledigt markiert sind
-- Du prüfst JEDES MAL alle Kategorien — auch die die letztes Mal gut waren (Code kann sich verschlechtert haben)
-- Du suchst JEDES MAL aktiv nach neuen Lücken, neuen Verbesserungsmöglichkeiten, neuen Problemen
+### Session-Aufteilung (empfohlen)
 
-**Warum:** Zwischen den Durchläufen wird Code geändert. Neue Bugs entstehen, Abhängigkeiten verschieben sich, Zeilenreferenzen stimmen nicht mehr, Features die letztens "OK" waren können durch Änderungen schlechter geworden sein. Nur eine vollständige Neuanalyse fängt das auf.
+Die vollständige Analyse aller 12+ Kategorien mit doppelter Verifizierung sprengt in einer einzigen Session die Kontext-Grenzen. Teile die Arbeit deshalb so auf:
 
-**Was sich bei Folge-Durchläufen ZUSÄTZLICH ändert (aber die Grundanalyse NICHT ersetzt):**
-- Du liest die bestehende Plan-Datei und aktualisierst den Status (erledigt/offen/teilweise)
-- Du vergleichst deine neuen Erkenntnisse mit den alten — hat sich was verbessert oder verschlechtert?
-- Du ergänzt neue Aufgaben die dir bei der frischen Analyse auffallen
-- Du schreibst den Changelog-Eintrag
+| Session | Inhalt | Kategorien | Begründung |
+|---------|--------|------------|------------|
+| **Session 1** | Kern-Analyse (×3 & ×2.5 Gewicht) | 1. Natürliche Konversation, 2. Persönlichkeit & Humor, 3. Proaktives Handeln, 4. Butler-Qualitäten | Höchste Gewichtung = größter Impact auf Gesamt-Score. Volle Tiefe mit V1+V2. |
+| **Session 2** | Erweiterte Analyse (×2 & ×1.5 Gewicht) | 5. Situationsbewusstsein, 6. Lernfähigkeit, 7. Sprecherkennung, 8. Krisenmanagement, 9. Sicherheit | Mittlere Gewichtung. V1 Pflicht, V2 bei auffälligen Lücken. |
+| **Session 3** | Basis-Analyse (×1 Gewicht) + Roadmap | 10. Multi-Room, 11. Energiemanagement, 12. Erklärbarkeit + Phase 2-4 (Roadmap, Sprints, Gesamtübersicht) | Niedrigste Gewichtung. V1 reicht. Danach Roadmap erstellen. |
+| **Session 4** | Gegenprüfung & Finalisierung | Phase 5: Alle Erkenntnisse gegen Code verifizieren, Plan-Datei finalisieren | Separater Durchlauf mit frischem Kontext für maximale Prüftiefe. |
+
+**Wichtig:** Jede Session schreibt ihre Ergebnisse **sofort** in `docs/prompts/jarvis-mcu-implementation-plan.md`. So geht nichts verloren und die nächste Session kann darauf aufbauen.
+
+**Alternative:** Wenn du Claude Code nutzt, kannst du unabhängige Kategorien über **Sub-Agents parallel analysieren** lassen (z.B. Agent 1 prüft Kategorie 1+2, Agent 2 prüft Kategorie 3+4). Die Ergebnisse werden danach zusammengeführt.
+
+### Tiefe pro Durchlauf
+
+Jeder Durchlauf analysiert den Code gründlich — es gibt keine Abkürzungen:
+- Du durchsuchst den Code gründlich nach der tatsächlichen Implementierung
+- Du liest die echte Logik, nicht nur die Plan-Datei
+- Du verifizierst gemäß dem Gewicht der Kategorie (siehe Regel 2)
+- Du prüfst alle dir zugewiesenen Kategorien — auch wenn sie beim letzten Mal gut waren
+- Du suchst aktiv nach neuen Lücken und Problemen
+
+**Warum:** Zwischen den Durchläufen wird Code geändert. Neue Bugs entstehen, Abhängigkeiten verschieben sich, Zeilenreferenzen stimmen nicht mehr. Nur eine gründliche Analyse fängt das auf.
+
+### Folge-Durchläufe (inkrementell)
+
+Bei Folge-Durchläufen (die Plan-Datei existiert bereits) arbeite **inkrementell statt komplett neu**:
+
+1. **Lies die bestehende Plan-Datei** und identifiziere den aktuellen Stand
+2. **Prüfe per `git diff`** welche Dateien sich seit dem letzten Durchlauf geändert haben: `git diff --name-only HEAD~X` (wobei X = Anzahl Commits seit letztem Durchlauf)
+3. **Kategorien mit Code-Änderungen:** Volle Neuanalyse dieser Kategorien (V1+V2 gemäß Gewicht)
+4. **Kategorien ohne Code-Änderungen:** Stichproben-Prüfung (V1 für 2-3 Schlüsselstellen), Status beibehalten wenn nichts auffällt
+5. **Immer:** Erledigtes markieren, neue Erkenntnisse ergänzen, Changelog schreiben
+6. **Gesamtübersicht:** Score neu berechnen basierend auf aktuellem Code-Stand
 
 ---
 
@@ -42,13 +64,25 @@ Ignoriere alles aus dem MCU, was physisch unmöglich oder irrelevant für ein Sm
 - **IGNORIEREN:** Iron Man Suit steuern, Waffen, Hologramm-Displays, Vibranium-Forschung, Quantenphysik, SHIELD-Hacking, Ultron-Erschaffung, fliegende Drohnen bauen
 - **RELEVANT:** Natürliche Konversation, Sarkasmus & Humor, proaktives Handeln, Situationsbewusstsein, Sicherheitsüberwachung, Energiemanagement, Haussteuerung, Persönlichkeit & Loyalität, Antizipation von Bedürfnissen, Multi-Room-Awareness, Sprecherkennung, Krisenmanagement, kontextuelle Intelligenz, Butler-Qualitäten
 
-### Regel 2: Doppelte Code-Verifizierung
-Für **jeden einzelnen Punkt** deiner Analyse:
-1. **Erste Verifizierung:** Durchsuche die Codebase gezielt nach der relevanten Funktionalität. Lies die tatsächliche Implementierung — nicht nur Dateinamen oder Klassennamen. Schau in die Methoden rein, prüfe die Logik, lies die Bedingungen.
-2. **Zweite Verifizierung:** Gehe den Code ein zweites Mal durch, diesmal aus einem anderen Blickwinkel. Suche nach Edge Cases, fehlenden Features, unvollständigen Implementierungen, TODOs, auskommentiertem Code, oder Stellen wo die Funktion zwar existiert aber nicht aufgerufen wird.
-3. **Dokumentiere beide Verifizierungen** bei jedem Punkt:
+### Regel 2: Gewichtsbasierte Code-Verifizierung
+Die Verifizierungstiefe richtet sich nach dem **Gewicht der Kategorie** — so wird der Kontext optimal genutzt:
+
+#### Kategorien mit Gewicht ×3 und ×2.5 — Volle Doppelverifizierung (V1+V2)
+1. **V1 — Erste Verifizierung:** Durchsuche die Codebase gezielt nach der relevanten Funktionalität. Lies die tatsächliche Implementierung — nicht nur Dateinamen oder Klassennamen. Schau in die Methoden rein, prüfe die Logik, lies die Bedingungen.
+2. **V2 — Zweite Verifizierung:** Gehe den Code ein zweites Mal durch, diesmal aus einem anderen Blickwinkel. Suche nach Edge Cases, fehlenden Features, unvollständigen Implementierungen, TODOs, auskommentiertem Code, oder Stellen wo die Funktion zwar existiert aber nicht aufgerufen wird.
+3. **Dokumentiere beide Verifizierungen:**
    - `[V1]` — Was du beim ersten Durchgang gefunden hast (Dateien, Zeilen, Funktionen)
    - `[V2]` — Was du beim zweiten Durchgang zusätzlich entdeckt hast
+
+#### Kategorien mit Gewicht ×2 und ×1.5 — Einzelverifizierung + Stichproben (V1+V2 bei Auffälligkeiten)
+1. **V1 — Vollständige Verifizierung:** Wie oben — gründliche Erstanalyse ist Pflicht.
+2. **V2 — Nur bei Auffälligkeiten:** Führe V2 nur durch, wenn V1 Verdachtsmomente liefert (unvollständige Implementierung, verdächtige TODOs, Code der nie aufgerufen wird). Dokumentiere: `[V2 übersprungen — V1 unauffällig]` oder `[V2 durchgeführt — Grund: ...]`
+
+#### Kategorien mit Gewicht ×1 — Solide Einzelverifizierung (nur V1)
+1. **V1 — Solide Verifizierung:** Gründliche Erstanalyse, Dokumentation wie oben.
+2. V2 wird nicht durchgeführt. Dokumentiere: `[V2 entfällt — Gewicht ×1]`
+
+> **Warum diese Abstufung:** Eine oberflächliche V2 bei allen 12 Kategorien bringt weniger als eine gründliche V2 bei den 4 wichtigsten. Kontext-Budget ist begrenzt — investiere es dort wo der Impact am höchsten ist.
 
 ### Regel 3: Tiefenanalyse — kein Oberflächliches Scannen
 - Lies nicht nur die Datei-Header oder Klassen-Definitionen — **lies die tatsächliche Logik**
@@ -146,6 +180,8 @@ Die Codebase ist riesig (brain.py ~629KB, function_calling.py ~419KB, proactive.
 3. **Notizen machen** — Schreibe nach jeder Kategorie deine Erkenntnisse sofort auf (in die Ergebnis-Datei). So verlierst du nichts wenn älterer Kontext komprimiert wird.
 4. **Priorität bei der Analyse:** Die Kategorien mit Gewicht ×3 und ×2.5 zuerst und am gründlichsten analysieren. Bei Kategorien mit Gewicht ×1 reicht eine solide aber nicht erschöpfende Analyse.
 5. **Bei großen Dateien:** Suche erst nach Klassen-/Funktionsnamen, dann lies gezielt die relevanten Methoden. Nicht von oben nach unten durchscrollen.
+6. **Session-Aufteilung nutzen** — Folge der empfohlenen Session-Aufteilung oben. Lieber 3-4 gründliche Sessions als eine oberflächliche Mega-Session.
+7. **Sub-Agents für Parallelisierung** (Claude Code) — Unabhängige Kategorien können parallel über Sub-Agents analysiert werden. Beispiel: Ein Agent analysiert "Natürliche Konversation", ein anderer parallel "Persönlichkeit & Humor". Ergebnisse werden danach in die Plan-Datei zusammengeführt. Nutze dafür den `Explore`-Agent-Typ für die Code-Recherche.
 
 ---
 
@@ -480,15 +516,22 @@ Fokus auf Kategorien mit hohem Gewicht (×3, ×2.5) — dort bringt jede Verbess
 
 ## Phase 5: Finale Gegenprüfung & Ergebnis-Datei
 
-> **Diese Phase ist NICHT optional. Sie ist der letzte Schritt bevor du fertig bist.**
+> **Diese Phase sollte in einer SEPARATEN Session durchgeführt werden** (siehe Session-Aufteilung oben, Session 4).
+> Der Grund: Nach Phase 1-4 ist der Kontext bereits stark beansprucht. Eine Gegenprüfung mit frischem Kontext ist deutlich gründlicher.
 
-### Schritt 1: Alle Erkenntnisse nochmal gegen den Code prüfen
-Bevor du die Ergebnis-Datei schreibst, gehe **jede einzelne Erkenntnis** aus Phase 1-4 nochmal durch:
+### Vorbereitung
+1. **Lies die Plan-Datei** `docs/prompts/jarvis-mcu-implementation-plan.md` komplett durch
+2. **Lies diesen Prompt** um die Regeln und Kriterien im Kontext zu haben
 
-1. **Für jeden "fehlt"-Punkt:** Suche ein letztes Mal mit alternativen Suchbegriffen. Vielleicht heißt die Funktion anders, liegt in einer unerwarteten Datei, oder ist in einem Helper versteckt. Erst wenn du 3+ verschiedene Suchversuche gemacht hast und nichts gefunden hast, bestätige `[FEHLT KOMPLETT]`.
-2. **Für jeden Verbesserungsvorschlag:** Prüfe nochmal ob die Datei/Funktion die du referenzierst tatsächlich existiert und ob deine Zeilenangaben stimmen. Code kann sich seit Phase 1 geändert haben.
-3. **Für jede Prozent-Bewertung:** Lies die relevanten Code-Stellen ein drittes Mal und frage dich: "Bin ich fair? Habe ich etwas übersehen das die Bewertung ändert?"
+### Schritt 1: Erkenntnisse gegen den Code prüfen
+Gehe die Plan-Datei Kategorie für Kategorie durch und prüfe gegen den **aktuellen Code**:
+
+1. **Für jeden "fehlt"-Punkt:** Suche mit **3+ verschiedenen Suchbegriffen** (Synonyme, alternative Funktionsnamen, andere Dateien). Erst wenn alle Suchversuche leer sind, bestätige `[FEHLT KOMPLETT]`.
+2. **Für jeden Verbesserungsvorschlag:** Prüfe ob die referenzierte Datei/Funktion existiert und ob Zeilenangaben noch stimmen.
+3. **Für jede Prozent-Bewertung:** Lies die relevanten Code-Stellen nochmal und frage: "Bin ich fair? Habe ich etwas übersehen?"
 4. **Für jeden Sprint-Task:** Prüfe ob die vorgeschlagene Änderung keine bestehende Funktionalität bricht. Schau nach Abhängigkeiten, Aufrufer, Tests.
+
+> **Tipp für Claude Code:** Nutze Sub-Agents für die Gegenprüfung — z.B. ein Agent pro Kategorie-Gruppe. So wird der Kontext nicht durch alle Kategorien gleichzeitig belastet.
 
 Markiere jede Erkenntnis die sich bei der Gegenprüfung geändert hat mit `[KORRIGIERT]` und erkläre was und warum.
 
