@@ -479,14 +479,17 @@ class PersonalityEngine:
             try:
                 import asyncio
 
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    task = asyncio.create_task(self.refresh_relationship_days())
-                    task.add_done_callback(
-                        lambda t: t.exception() if not t.cancelled() else None
+                loop = asyncio.get_running_loop()
+                task = loop.create_task(self.refresh_relationship_days())
+                task.add_done_callback(
+                    lambda t: logger.warning(
+                        "refresh_relationship_days failed: %s", t.exception()
                     )
+                    if not t.cancelled() and t.exception()
+                    else None
+                )
             except RuntimeError:
-                pass
+                pass  # Kein laufender Event-Loop
         return 0
 
     async def refresh_relationship_days(self):
