@@ -662,6 +662,109 @@ class AnticipationEngine:
         return []
 
     # ------------------------------------------------------------------
+    # Implicit Needs Detection
+    # ------------------------------------------------------------------
+
+    async def detect_implicit_needs(self, context: dict) -> list[dict]:
+        """Erkennt implizite Beduerfnisse aus dem aktuellen Kontext.
+
+        Analysiert Umgebungsbedingungen (Licht, Temperatur, Tageszeit,
+        Aktivitaet) und leitet daraus Vorschlaege ab, ohne dass explizite
+        Muster vorliegen muessen.
+
+        Args:
+            context: Dict mit Schluesseln wie ``time``, ``temperature``,
+                ``light_level``, ``activity``, ``room``, ``weather``,
+                ``persons_home`` etc.
+
+        Returns:
+            Liste von Suggestion-Dicts mit ``suggestion``, ``confidence``
+            und ``reason``.
+        """
+        cfg = yaml_config.get("anticipation", {})
+        if not cfg.get("implicit_needs_enabled", False):
+            return []
+
+        min_conf = float(cfg.get("implicit_needs_min_confidence", 0.7))
+        suggestions: list[dict] = []
+
+        hour = None
+        time_val = context.get("time")
+        if isinstance(time_val, str):
+            try:
+                hour = int(time_val.split(":")[0])
+            except (ValueError, IndexError):
+                pass
+        elif isinstance(time_val, (int, float)):
+            hour = int(time_val)
+        if hour is None:
+            try:
+                hour = datetime.now(_LOCAL_TZ).hour
+            except Exception:
+                hour = 12
+
+        temp = context.get("temperature")
+        light_level = context.get("light_level")
+        activity = (context.get("activity") or "").lower()
+        weather = (context.get("weather") or "").lower()
+        persons_home = context.get("persons_home", [])
+
+        # Dunkel + kalt -> Licht + Heizung
+        if light_level is not None and temp is not None:
+            try:
+                if float(light_level) < 30 and float(temp) < 19:
+                    suggestions.append({
+                        "suggestion": "light_and_heating",
+                        "confidence": 0.85,
+                        "reason": "Dunkel und kalt — Licht und Heizung empfohlen",
+                    })
+            except (ValueError, TypeError):
+                pass
+
+        # Spaet + Kuechenaktivitaet -> Kochassistent
+        if hour is not None and hour >= 17 and "kueche" in activity:
+            suggestions.append({
+                "suggestion": "cooking_assistant",
+                "confidence": 0.75,
+                "reason": "Abends in der Kueche — Kochassistent koennte helfen",
+            })
+
+        # Morgens + alle noch da -> Abfahrt-Check
+        if hour is not None and 6 <= hour <= 9 and persons_home:
+            suggestions.append({
+                "suggestion": "departure_check",
+                "confidence": 0.7,
+                "reason": "Morgens, noch niemand gegangen — Abfahrt-Check vorschlagen",
+            })
+
+        # Sturm/Regen + Fenster-Kontext
+        if weather in ("rain", "storm", "regen", "sturm", "gewitter"):
+            suggestions.append({
+                "suggestion": "close_windows",
+                "confidence": 0.9,
+                "reason": "Schlechtes Wetter — Fenster-Check empfohlen",
+            })
+
+        # Spaetabends -> Gute-Nacht Routine
+        if hour is not None and hour >= 22:
+            suggestions.append({
+                "suggestion": "goodnight_routine",
+                "confidence": 0.7,
+                "reason": "Spaeter Abend — Gute-Nacht-Routine vorschlagen",
+            })
+
+        # Lange Abwesenheit + Geraete an
+        devices_on = context.get("devices_on", [])
+        if not persons_home and devices_on:
+            suggestions.append({
+                "suggestion": "away_device_check",
+                "confidence": 0.8,
+                "reason": "Niemand zu Hause, Geraete noch aktiv",
+            })
+
+        return [s for s in suggestions if s["confidence"] >= min_conf]
+
+    # ------------------------------------------------------------------
     # Saisonaler Confidence-Boost
     # ------------------------------------------------------------------
 

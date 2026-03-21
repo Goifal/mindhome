@@ -2866,8 +2866,8 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("personality", "formality_start"): (0, 100),
         ("personality", "formality_min"): (0, 100),
         ("personality", "formality_decay_per_day"): (0, 5),
-        ("threat_assessment", "night_start_hour"): (0, 23),
-        ("threat_assessment", "night_end_hour"): (0, 23),
+        ("threat_assessment", "night_start_hour"): (18, 23),
+        ("threat_assessment", "night_end_hour"): (4, 10),
         ("health_monitor", "co2_warn"): (400, 5000),
         ("health_monitor", "co2_critical"): (400, 10000),
         ("health_monitor", "temp_low"): (5, 22),
@@ -3018,6 +3018,49 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("appliance_monitor", "idle_confirm_minutes"): (1, 60),
         # Self-Automation
         ("self_automation", "max_per_day"): (1, 20),
+        # Threat Assessment (extended)
+        ("threat_assessment", "motion_cooldown_minutes"): (5, 60),
+        ("threat_assessment", "state_max_age_minutes"): (5, 30),
+        ("threat_assessment", "emergency_boost_duration_min"): (5, 60),
+        # Pushback Learning
+        ("pushback", "suppress_after_overrides"): (3, 20),
+        ("pushback", "suppress_duration_days"): (7, 90),
+        # Conflict Prediction
+        ("conflict_resolution", "prediction_window_seconds"): (60, 600),
+        # Temporal Autonomy
+        ("autonomy", "temporal", "night_offset"): (-3, 0),
+        ("autonomy", "temporal", "day_offset"): (0, 2),
+        # Deescalation
+        ("autonomy", "deescalation", "min_acceptance_rate"): (0.3, 0.7),
+        ("autonomy", "deescalation", "evaluation_days"): (3, 14),
+        # Outcome Feedback
+        ("outcome_tracker", "success_confidence_boost"): (0.05, 0.2),
+        ("outcome_tracker", "failure_confidence_penalty"): (0.05, 0.3),
+        ("outcome_tracker", "learning_boost"): (0.05, 0.2),
+        # Routine Anomaly
+        ("routine_anomaly", "min_confidence"): (0.6, 0.95),
+        ("routine_anomaly", "grace_period_minutes"): (10, 60),
+        ("routine_anomaly", "max_daily_checks"): (1, 5),
+        ("routine_anomaly", "min_pattern_days"): (7, 30),
+        # Weather Forecast
+        ("weather_forecast", "lookahead_hours"): (2, 24),
+        # Mood Reaction
+        ("mood_reaction", "frustration_sarcasm_reduction"): (0, 3),
+        ("mood_reaction", "frustration_threshold"): (1, 3),
+        # Inner State
+        ("inner_state", "mood_decay_minutes"): (10, 120),
+        # Health Monitor (extended)
+        ("health_monitor", "hysteresis_pct"): (1, 10),
+        # Feedback
+        ("feedback", "smoothing_factor"): (0.1, 0.5),
+        # Anticipation
+        ("anticipation", "implicit_needs_min_confidence"): (0.5, 0.9),
+        # Dialogue
+        ("dialogue", "max_references"): (10, 50),
+        # Personality (extended)
+        ("personality", "trait_unlock_days_per_stage"): (7, 60),
+        # What-If Simulation (extended)
+        ("whatif_simulation", "proactive_min_confidence"): (0.5, 0.9),
     }
     # Model Profiles dynamisch validieren (alle Sub-Profile)
     MP_RANGES = {
@@ -3108,6 +3151,8 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("speech", "stt_model"): ["tiny", "base", "small", "medium", "large-v3-turbo"],
         ("speech", "stt_compute"): ["int8", "float16", "float32"],
         ("speech", "stt_device"): ["cpu", "cuda"],
+        # Explainability
+        ("explainability", "explanation_style"): ["template", "llm", "auto"],
     }
     for path_keys, (min_val, max_val) in RANGE_RULES.items():
         # path_keys kann 2-Tupel ("section", "key") oder 3-Tupel ("section", "sub", "key") sein

@@ -375,7 +375,7 @@ class TestResolveByRoomPresence:
 
 
 class TestPredictConflict:
-    """Tests fuer predict_conflict() — logische Konflikterkennung."""
+    """Tests fuer predict_logical_conflict() — logische Konflikterkennung."""
 
     @pytest.mark.asyncio
     async def test_window_open_climate_conflict(self, resolver):
@@ -383,7 +383,7 @@ class TestPredictConflict:
         ha_states = [
             {"entity_id": "binary_sensor.wohnzimmer_window", "state": "on"},
         ]
-        result = await resolver.predict_conflict("set_climate", {}, ha_states)
+        result = await resolver.predict_logical_conflict("set_climate", {}, ha_states)
         assert result is not None
         assert result["type"] == "window_open"
         assert result["severity"] == "info"
@@ -394,7 +394,7 @@ class TestPredictConflict:
         ha_states = [
             {"entity_id": "binary_sensor.wohnzimmer_window", "state": "off"},
         ]
-        result = await resolver.predict_conflict("set_climate", {}, ha_states)
+        result = await resolver.predict_logical_conflict("set_climate", {}, ha_states)
         assert result is None
 
     @pytest.mark.asyncio
@@ -403,7 +403,7 @@ class TestPredictConflict:
         ha_states = [
             {"entity_id": "sensor.solar_power", "state": "500"},
         ]
-        result = await resolver.predict_conflict("set_cover", {}, ha_states)
+        result = await resolver.predict_logical_conflict("set_cover", {}, ha_states)
         assert result is not None
         assert result["type"] == "solar_producing"
 
@@ -413,7 +413,7 @@ class TestPredictConflict:
         ha_states = [
             {"entity_id": "sensor.solar_power", "state": "50"},
         ]
-        result = await resolver.predict_conflict("set_cover", {}, ha_states)
+        result = await resolver.predict_logical_conflict("set_cover", {}, ha_states)
         assert result is None
 
     @pytest.mark.asyncio
@@ -422,7 +422,7 @@ class TestPredictConflict:
         ha_states = [
             {"entity_id": "sensor.outdoor_lux", "state": "800"},
         ]
-        result = await resolver.predict_conflict("set_light", {}, ha_states)
+        result = await resolver.predict_logical_conflict("set_light", {}, ha_states)
         assert result is not None
         assert result["type"] == "high_lux"
         assert result["severity"] == "low"
@@ -434,7 +434,7 @@ class TestPredictConflict:
             {"entity_id": "person.max", "state": "not_home"},
             {"entity_id": "person.anna", "state": "not_home"},
         ]
-        result = await resolver.predict_conflict("set_climate", {}, ha_states)
+        result = await resolver.predict_logical_conflict("set_climate", {}, ha_states)
         # window_open rule matches first if no window sensor, but nobody_home should match
         # With these states there is no window sensor "on", so window_open does not match.
         # nobody_home should match.
@@ -448,7 +448,7 @@ class TestPredictConflict:
             {"entity_id": "person.max", "state": "home"},
             {"entity_id": "person.anna", "state": "not_home"},
         ]
-        result = await resolver.predict_conflict("set_climate", {}, ha_states)
+        result = await resolver.predict_logical_conflict("set_climate", {}, ha_states)
         assert result is None
 
     @pytest.mark.asyncio
@@ -458,13 +458,13 @@ class TestPredictConflict:
         ha_states = [
             {"entity_id": "binary_sensor.wohnzimmer_window", "state": "on"},
         ]
-        result = await resolver.predict_conflict("set_climate", {}, ha_states)
+        result = await resolver.predict_logical_conflict("set_climate", {}, ha_states)
         assert result is None
 
     @pytest.mark.asyncio
     async def test_empty_states_no_conflict(self, resolver):
         """Leere HA-States loesen keinen Konflikt aus."""
-        result = await resolver.predict_conflict("set_climate", {}, [])
+        result = await resolver.predict_logical_conflict("set_climate", {}, [])
         assert result is None
 
     @pytest.mark.asyncio
@@ -473,7 +473,7 @@ class TestPredictConflict:
         ha_states = [
             {"entity_id": "binary_sensor.wohnzimmer_window", "state": "on"},
         ]
-        result = await resolver.predict_conflict("unknown_action", {}, ha_states)
+        result = await resolver.predict_logical_conflict("unknown_action", {}, ha_states)
         assert result is None
 
     @pytest.mark.asyncio
@@ -482,7 +482,7 @@ class TestPredictConflict:
         ha_states = [
             {"entity_id": "sensor.solar_power", "state": "unavailable"},
         ]
-        result = await resolver.predict_conflict("set_cover", {}, ha_states)
+        result = await resolver.predict_logical_conflict("set_cover", {}, ha_states)
         assert result is None
 
 

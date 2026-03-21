@@ -38,7 +38,7 @@ const _searchIndex = [
   {tab:'tab-jarvis', title:'MCU-Persönlichkeit', keywords:'rückbezüge callbacks lern-bestätigung vorhersage wetter selbst-bewusstsein humor', icon:'&#127917;'},
   {tab:'tab-jarvis', title:'Echte Empathie', keywords:'empathie emotion Verständnis stimmung mitfühlen', icon:'&#129505;'},
   {tab:'tab-jarvis', title:'Charakter-Schutz', keywords:'character lock filter retry llm rolle floskeln', icon:'&#128274;'},
-  {tab:'tab-jarvis', title:'Persönlichkeits-Kern', keywords:'identität timing improvisation kreativ narrativ innerer zustand confidence', icon:'&#129504;'},
+  {tab:'tab-jarvis', title:'Persönlichkeits-Kern', keywords:'identität timing improvisation kreativ narrativ innerer zustand confidence domain gewichtet stimmung', icon:'&#129504;'},
   {tab:'tab-jarvis', title:'Geräte-Persönlichkeit', keywords:'spitznamen device narration waschmaschine saugroboter', icon:'&#128374;'},
   {tab:'tab-jarvis', title:'Geräte-Fertig-Erkennung', keywords:'waschmaschine trockner Geschirrspüler fertig watt power idle strom verbrauch', icon:'&#9889;'},
   {tab:'tab-jarvis', title:'Daten-basierter Widerspruch', keywords:'pushback warnung fenster offen heizung eskalation', icon:'&#9888;'},
@@ -112,18 +112,20 @@ const _searchIndex = [
   {tab:'tab-followme', title:'Follow-Me', keywords:'raum folgen musik licht temperatur person profil', icon:'&#128694;'},
   // Intelligenz (tab-intelligence)
   {tab:'tab-intelligence', title:'Domain-spezifische Autonomie', keywords:'domain autonomie klima licht medien sicherheit', icon:'&#127919;'},
-  {tab:'tab-intelligence', title:'Kalender-Intelligenz', keywords:'kalender gewohnheit konflikt pendelzeit termin', icon:'&#128197;'},
+  {tab:'tab-intelligence', title:'Kalender-Intelligenz', keywords:'kalender gewohnheit konflikt pendelzeit termin per route pendel', icon:'&#128197;'},
   {tab:'tab-intelligence', title:'Erklärbarkeit', keywords:'erklaerbarkeit warum aktion begründung entscheidung', icon:'&#128161;'},
-  {tab:'tab-intelligence', title:'Lern-Transfer', keywords:'transfer präferenz raum ähnlich vorschlag', icon:'&#129504;'},
-  {tab:'tab-intelligence', title:'Think-Ahead Hinweise', keywords:'think ahead nächster schritt vorschlag', icon:'&#128161;'},
+  {tab:'tab-intelligence', title:'Lern-Transfer', keywords:'transfer präferenz raum ähnlich vorschlag benachrichtigung notify', icon:'&#129504;'},
+  {tab:'tab-intelligence', title:'Think-Ahead Hinweise', keywords:'think ahead nächster schritt vorschlag vorausdenken', icon:'&#128161;'},
   {tab:'tab-intelligence', title:'Kausalketten-Erkennung', keywords:'kausal kette handlung wiederholend muster', icon:'&#128279;'},
   {tab:'tab-intelligence', title:'3D+ Insight Checks', keywords:'gäste vorbereitung alarm abwesenheit sicherheit feuchtigkeit nacht', icon:'&#128200;'},
   {tab:'tab-intelligence', title:'LLM Kausal-Analyse', keywords:'llm kausal insight korrelation ungewöhnlich muster', icon:'&#129504;'},
   {tab:'tab-intelligence', title:'Prozedurales Lernen', keywords:'prozedural sequenz multi step automation kette', icon:'&#128279;'},
   {tab:'tab-intelligence', title:'Routine-Abweichungen', keywords:'routine abweichung deviation ungewöhnlich anders', icon:'&#128270;'},
+  {tab:'tab-intelligence', title:'Routine-Anomalie-Erkennung', keywords:'routine anomalie abwesenheit check nachfrage sorge muster erwartung', icon:'&#128680;'},
   {tab:'tab-intelligence', title:'Proaktiver Sequenz-Planner', keywords:'sequenz planner ankunft wetter aktion kette', icon:'&#128736;'},
-  {tab:'tab-intelligence', title:'Saisonale Intelligenz', keywords:'saison jahreszeit heizung vergleich muster', icon:'&#127808;'},
+  {tab:'tab-intelligence', title:'Saisonale Intelligenz', keywords:'saison jahreszeit heizung vergleich muster hybrid erkennung tageslicht', icon:'&#127808;'},
   {tab:'tab-intelligence', title:'Dialogführung', keywords:'dialog referenz auflösen klärung mehrdeutigkeit', icon:'&#128172;'},
+  {tab:'tab-intelligence', title:'Kontext-Threads', keywords:'context builder threads gesprächs kontext kontinuität', icon:'&#128172;'},
   {tab:'tab-intelligence', title:'Klima-Modell', keywords:'klima digitaler zwilling simulation wärmeverlust fenster', icon:'&#127777;'},
   {tab:'tab-intelligence', title:'Prädiktive Wartung', keywords:'wartung batterie lebensdauer health score vorhersage', icon:'&#128295;'},
   {tab:'tab-intelligence', title:'Konsequenz-Bewusstsein', keywords:'konsequenz kontext sinnvoll warnung hinweis', icon:'&#9888;'},
@@ -161,6 +163,7 @@ const _searchIndex = [
   {tab:'tab-security', title:'Netzwerk-Geräte', keywords:'netzwerk geraet device tracker bekannt unbekannt warnung wlan wifi', icon:'&#128225;'},
   {tab:'tab-security', title:'Kameras & Vision', keywords:'kamera vision llava ocr bild snapshot tuerklingel sicherheit objekterkennung', icon:'&#128247;'},
   {tab:'tab-security', title:'Notfall-Protokolle', keywords:'notfall feuer rauch einbruch wasser sirene', icon:'&#127752;'},
+  {tab:'tab-security', title:'Bedrohungserkennung', keywords:'bedrohung threat nacht bewegung einbruch eskalation notfall playbook cooldown sensor', icon:'&#128680;'},
   {tab:'tab-security', title:'Interrupt-Queue', keywords:'interrupt critical notfall unterbrechung tts', icon:'&#9889;'},
   // System (tab-system)
   {tab:'tab-system', title:'System & Updates', keywords:'system update version neustart backup', icon:'&#128296;'},
@@ -3359,14 +3362,27 @@ function renderPersonality() {
     fRange('personality.sarcasm_level', 'Sarkasmus-Level', 1, 5, 1, {1:'Sachlich',2:'Gelegentl. trocken',3:'Standard Butler',4:'Häufig',5:'Vollgas Ironie'}) +
     fRange('personality.opinion_intensity', 'Meinungs-Intensität', 0, 3, 1, {0:'Still',1:'Selten',2:'Gelegentlich',3:'Redselig'}) +
     fToggle('personality.self_irony_enabled', 'Selbstironie aktiviert') +
-    fRange('personality.self_irony_max_per_day', 'Max. Selbstironie pro Tag', 0, 20, 1)
+    fRange('personality.self_irony_max_per_day', 'Max. Selbstironie pro Tag', 0, 20, 1) +
+    fSubheading('Emotionaler Zerfall') +
+    fInfo('Jarvis-Stimmungen klingen natuerlich ab statt abrupt zu wechseln. Ein stolzer Jarvis wird langsam wieder neutral.') +
+    fToggle('inner_state.mood_decay_enabled', 'Mood-Decay aktiv') +
+    fRange('inner_state.mood_decay_minutes', 'Zerfallszeit (Minuten)', 10, 120, 10, {10:'10',20:'20',30:'30 (Standard)',60:'60',120:'120'}) +
+    fToggle('inner_state.emotion_blending', 'Emotion-Blending (Mischung statt Einzelwert)') +
+    fInfo('Jarvis kann mehrere Emotionen gleichzeitig empfinden — z.B. 60% stolz + 30% amuesiert.') +
+    fToggle('inner_state.domain_weighted_mood', 'Domain-gewichtete Stimmung') +
+    fInfo('Sicherheits-Events beeinflussen die Stimmung staerker als Routine-Aenderungen wie Lichtsteuerung.')
   ) +
   sectionWrap('&#128200;', 'Charakter-Entwicklung',
     fInfo('Der Assistent wird mit der Zeit weniger formell — wie ein echter Butler, der seinen Herrn kennenlernt.') +
     fToggle('personality.character_evolution', 'Charakter entwickelt sich über Zeit') +
     fRange('personality.formality_start', 'Formalität am Anfang', 0, 100, 5, {0:'Sehr locker',25:'Locker',50:'Normal',75:'Formell',100:'Sehr formell'}) +
     fRange('personality.formality_min', 'Minimale Formalität', 0, 100, 5, {0:'Sehr locker',25:'Locker',50:'Normal',75:'Formell',100:'Sehr formell'}) +
-    fRange('personality.formality_decay_per_day', 'Abbau pro Tag', 0, 5, 0.1)
+    fRange('personality.formality_decay_per_day', 'Abbau pro Tag', 0, 5, 0.1) +
+    fToggle('personality.transition_comments', 'Uebergangs-Kommentare') +
+    fInfo('Natuerliche Denkpausen und Uebergangsphrasen in Antworten ("Hm, wo war ich...", "Moment..."). Macht Jarvis menschlicher.') +
+    fToggle('personality.trait_unlocks_enabled', 'Stage-basierte Trait-Unlocks') +
+    fInfo('Neue Humor-Stile und Persoenlichkeits-Facetten werden erst nach einer Eingewoehnungsphase freigeschaltet.') +
+    fNum('personality.trait_unlock_days_per_stage', 'Tage pro Stage', 7, 60, 7)
   ) +
   sectionWrap('&#128336;', 'Tageszeit-Stile',
     fInfo('Der Assistent passt seinen Stil je nach Tageszeit an. Waehle für jede Zeit einen passenden Stil und maximale Satzlaenge.') +
@@ -3522,7 +3538,11 @@ function renderMemory() {
     fRange('memory.category_confidence.habit', 'Gewohnheiten', 0, 1, 0.05) +
     fRange('memory.category_confidence.work', 'Arbeit', 0, 1, 0.05) +
     fRange('memory.category_confidence.intent', 'Absichten/Plaene', 0, 1, 0.05) +
-    fRange('memory.category_confidence.general', 'Allgemein', 0, 1, 0.05)
+    fRange('memory.category_confidence.general', 'Allgemein', 0, 1, 0.05) +
+    fToggle('semantic_memory.fact_versioning', 'Fakt-Versionierung') +
+    fInfo('Alte Fakten werden versioniert statt geloescht. Jarvis kann sagen: "Frueher mochtest du 20°C, seit 3 Monaten bevorzugst du 22°C."') +
+    fToggle('semantic_memory.contradiction_query', 'Bei Widerspruechen nachfragen') +
+    fInfo('Wenn ein neuer Fakt einem gespeicherten widerspricht, fragt Jarvis aktiv nach.')
   ) +
   sectionWrap('&#128218;', 'Wissensdatenbank (RAG)',
     fInfo('Eigene Dokumente als Wissensquelle. Dateien in config/knowledge/ werden automatisch eingelesen.') +
@@ -3563,7 +3583,10 @@ function renderMemory() {
     fRange('context.recent_conversations', 'Gespräche merken (normal)', 1, 30, 1) +
     fRange('context.conversation_mode_timeout', 'Gesprächsmodus aktiv (Sek.)', 60, 900, 30, {60:'1 Min',120:'2 Min',180:'3 Min',300:'5 Min (Standard)',600:'10 Min',900:'15 Min'}) +
     fRange('context.api_timeout', 'HA-API Timeout (Sek.)', 1, 30, 1) +
-    fRange('context.llm_timeout', 'LLM Timeout (Sek.)', 15, 120, 5, {15:'15s',30:'30s',45:'45s',60:'60s',90:'90s',120:'2 Min'})
+    fRange('context.llm_timeout', 'LLM Timeout (Sek.)', 15, 120, 5, {15:'15s',30:'30s',45:'45s',60:'60s',90:'90s',120:'2 Min'}) +
+    fSubheading('Kontext-Cache') +
+    fInfo('Cached HA-States kurzzeitig um wiederholte API-Aufrufe zu vermeiden. Event-basierte Invalidierung sorgt fuer Aktualitaet.') +
+    fRange('context.state_cache_ttl_seconds', 'Cache-Dauer (Sekunden)', 3, 30, 1, {3:'3s',5:'5s (Standard)',10:'10s',15:'15s',30:'30s'})
   ) +
   sectionWrap('&#127874;', 'Persönliche Daten',
     fInfo('Geburtstage, Jahrestage und andere wichtige Daten. Der Assistent erinnert proaktiv am Vorabend und integriert sie ins Morgen-Briefing. Du kannst Daten auch per Sprache hinzufügen: "Merk dir Lisas Geburtstag ist am 15. Maerz".') +
@@ -3784,6 +3807,13 @@ function renderMood() {
     fInfo('Verknüpft die erkannte Stimm-Emotion (fröhlich, traurig, ärgerlich, nervös, müde) direkt mit der Stimmungserkennung. So reagiert Jarvis nicht nur auf Worte, sondern auch auf den Tonfall.') +
     fToggle('mood.voice_mood_integration', 'Voice-Emotion in Stimmung einbeziehen') +
     fToggle('mood.llm_sentiment', 'LLM-Sentiment (Text-Stimmungsanalyse per KI)')
+  ) +
+  sectionWrap('&#128566;', 'Stimmungs-Reaktion',
+    fSubheading('Stimmungs-Reaktion') +
+    fInfo('Jarvis passt seinen Kommunikationsstil an die erkannte Stimmung an. Bei Frustration: weniger Sarkasmus, klarere Sprache. Bei guter Laune: mehr Humor.') +
+    fToggle('mood_reaction.enabled', 'Stimmungs-Reaktion aktiv') +
+    fRange('mood_reaction.frustration_sarcasm_reduction', 'Sarkasmus-Reduktion bei Stress', 0, 3, 1, {0:'Keine',1:'-1 Level',2:'-2 Level (Standard)',3:'-3 Level'}) +
+    fRange('mood_reaction.frustration_threshold', 'Frustrations-Schwelle', 1, 3, 1, {1:'Leicht',2:'Mittel (Standard)',3:'Stark'})
   );
 }
 
@@ -4097,7 +4127,15 @@ function renderHouseStatus() {
     fSubheading('Trinkerinnerungen') +
     fRange('health_monitor.hydration_interval_hours', 'Trink-Intervall (Stunden)', 1, 4, 0.5, {1:'1 Std',1.5:'90 Min',2:'2 Std',3:'3 Std',4:'4 Std'}) +
     fRange('health_monitor.hydration_start_hour', 'Trink-Start (Uhr)', 6, 12, 1, {6:'6 Uhr',7:'7 Uhr',8:'8 Uhr',9:'9 Uhr',10:'10 Uhr'}) +
-    fRange('health_monitor.hydration_end_hour', 'Trink-Ende (Uhr)', 18, 23, 1, {18:'18 Uhr',20:'20 Uhr',22:'22 Uhr',23:'23 Uhr'})
+    fRange('health_monitor.hydration_end_hour', 'Trink-Ende (Uhr)', 18, 23, 1, {18:'18 Uhr',20:'20 Uhr',22:'22 Uhr',23:'23 Uhr'}) +
+    fSubheading('Alert-Hysterese') +
+    fInfo('Verhindert Alert-Flapping an Grenzwerten. Warnung bei Ueberschreitung, Entwarnung erst bei (Schwelle - Puffer). Verhindert "CO2 hoch/normal/hoch" alle 2 Minuten.') +
+    fToggle('health_monitor.hysteresis_enabled', 'Hysterese aktiv') +
+    fRange('health_monitor.hysteresis_pct', 'Puffer (%)', 1, 10, 1, {1:'1%',2:'2% (Standard)',3:'3%',5:'5%',10:'10%'}) +
+    fSubheading('Raum-spezifische Schwellen') +
+    fToggle('health_monitor.room_overrides_enabled', 'Raum-Overrides aktiv') +
+    fInfo('Unterschiedliche Schwellen pro Raum. Z.B. hoehere CO2-Toleranz in der Kueche.') +
+    fTextarea('health_monitor.room_overrides', 'Raum-Overrides (JSON)', 'Format: {"schlafzimmer": {"co2_warn": 800}, "kueche": {"co2_warn": 1200}}')
   ) +
   sectionWrap('&#129505;', 'Wellness-Advisor',
     fInfo('Ganzheitlicher Wellness-Check: Trinkerinnerungen, PC-Pausen, Mahlzeit-Erinnerungen und Spaetabend-Hinweise. Unabhaengig vom Health Monitor.') +
@@ -4942,6 +4980,8 @@ function renderProactive() {
     fRange('proactive.music_follow_cooldown_minutes', 'Musik-Nachfolge Pause', 1, 30, 1) +
     fRange('proactive.min_autonomy_level', 'Ab Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
     fToggle('proactive.departure_shopping_reminder', 'Einkaufsliste beim Verlassen erwaehnen') +
+    fToggle('proactive.personality_filter', 'Proaktive Nachrichten durch Persoenlichkeit filtern') +
+    fInfo('Proaktive Nachrichten werden im Jarvis-Stil formuliert statt generischer Templates.') +
     fSubheading('Duplikat-Erkennung (Cross-Module)') +
     fToggle('notifications.dedup.enabled', 'Semantische Duplikat-Erkennung aktiv') +
     fInfo('Verhindert dass mehrere Module (Insights, Anticipation, Spontan, Wellness, Musik...) die gleiche Meldung senden. Vergleicht per KI-Embedding ob eine aehnliche Nachricht kuerzlich gesendet wurde. CRITICAL/HIGH-Meldungen werden nie gefiltert.') +
@@ -5066,7 +5106,14 @@ function renderProactive() {
     fRange('energy.thresholds.price_low_cent', 'Günstiger Strom unter', 5, 30, 1, {5:'5 ct',10:'10 ct',15:'15 ct',20:'20 ct',25:'25 ct',30:'30 ct'}) +
     fRange('energy.thresholds.price_high_cent', 'Teurer Strom über', 20, 60, 1, {20:'20 ct',25:'25 ct',30:'30 ct',35:'35 ct',40:'40 ct',50:'50 ct',60:'60 ct'}) +
     fRange('energy.thresholds.solar_high_watts', 'Solar-Überschuss ab', 500, 10000, 500, {500:'500 W',1000:'1 kW',2000:'2 kW',3000:'3 kW',5000:'5 kW',10000:'10 kW'}) +
-    fRange('energy.thresholds.anomaly_increase_percent', 'Anomalie-Schwelle', 10, 100, 5, {10:'10%',20:'20%',30:'30%',50:'50%',100:'100%'})
+    fRange('energy.thresholds.anomaly_increase_percent', 'Anomalie-Schwelle', 10, 100, 5, {10:'10%',20:'20%',30:'30%',50:'50%',100:'100%'}) +
+    fSubheading('Vorhersagen') +
+    fToggle('energy.price_forecast_enabled', 'Strompreis-Vorhersage') +
+    fInfo('Erkennt Preis-Trends und empfiehlt flexible Lasten zu guenstigen Zeiten.') +
+    fText('energy.price_entity', 'Strompreis-Entity', 'z.B. sensor.electricity_price') +
+    fToggle('energy.solar_forecast_enabled', 'Solar-Vorhersage') +
+    fInfo('Nutzt Wetter-Forecast um Solarertrag vorherzusagen.') +
+    fText('energy.solar_entity', 'Solar-Entity', 'z.B. sensor.solar_power')
   ) +
   sectionWrap('&#129504;', 'Konversations-Gedächtnis++',
     fInfo('Jarvis merkt sich laufende Projekte, offene Fragen und erstellt Tages-Zusammenfassungen. Sage z.B. "Merke dir: Projekt Gartenhaus — Fundament ist fertig" oder "Merke dir die Frage: Wann muss die TUeV-Plakette erneuert werden?"') +
@@ -5495,7 +5542,14 @@ function renderSecurity() {
       fRange('security.climate_limits.min', 'Temperatur Min (°C)', 5, 25, 0.5) +
       fRange('security.climate_limits.max', 'Temperatur Max (°C)', 20, 35, 0.5)
     : fInfo('Im Heizkurven-Modus gelten die Offset-Grenzen (Räume &rarr; Heizung).')
-    )
+    ) +
+    fSubheading('Pushback-Verhalten') +
+    fInfo('Pushback sind Warnungen wenn eine Aktion im Kontext problematisch ist (z.B. "Heizung an bei offenem Fenster"). Lernfunktion: Wenn du eine Warnung oft ignorierst, wird sie seltener angezeigt.') +
+    fToggle('pushback.learning_enabled', 'Pushback-Lernfunktion') +
+    fRange('pushback.suppress_after_overrides', 'Unterdruecken nach X Overrides', 3, 20, 1,
+      {3:'3',5:'5 (Standard)',10:'10',15:'15',20:'20'}) +
+    fRange('pushback.suppress_duration_days', 'Unterdrueckungsdauer (Tage)', 7, 90, 7,
+      {7:'1 Woche',14:'2 Wochen',30:'1 Monat (Standard)',60:'2 Monate',90:'3 Monate'})
   ) +
   sectionWrap('&#128273;', 'API Key (Netzwerk-Schutz)',
     fInfo('Schuetzt die Assistant-API gegen unbefugte Netzwerkzugriffe. Diesen Key im HA-Addon und in der HA-Integration eintragen, DANN Prüfung aktivieren.') +
@@ -5589,6 +5643,21 @@ function renderSecurity() {
     fInfo('Bei CRITICAL Events (Rauch, Einbruch, Wasser) werden automatisch Aktionen ausgeführt. Jedes Protokoll kann einzeln aktiviert werden. Geräte werden über die Rollenzuweisung zugeordnet.') +
     '<div id="emergencyProtocolsContainer" style="color:var(--text-muted);font-size:12px;padding:8px;">Lade Notfall-Protokolle...</div>'
   ) +
+  sectionWrap('&#128680;', 'Bedrohungserkennung',
+    fInfo('Konfiguriert wann und wie Jarvis Bedrohungen erkennt. Die Nacht-Stunden definieren den Zeitraum fuer erhoehte Wachsamkeit bei Bewegungserkennung.') +
+    fToggle('threat_assessment.enabled', 'Bedrohungserkennung aktiv') +
+    fToggle('threat_assessment.auto_execute_playbooks', 'Playbooks automatisch ausfuehren') +
+    fRange('threat_assessment.night_start_hour', 'Nacht-Start (Uhr)', 20, 23, 1,
+      {20:'20:00',21:'21:00',22:'22:00 (Standard)',23:'23:00'}) +
+    fRange('threat_assessment.night_end_hour', 'Nacht-Ende (Uhr)', 5, 8, 1,
+      {5:'05:00',6:'06:00 (Standard)',7:'07:00',8:'08:00'}) +
+    fNum('threat_assessment.motion_cooldown_minutes', 'Bewegungs-Cooldown (Min.)', 5, 60, 5) +
+    fNum('threat_assessment.state_max_age_minutes', 'Max. Sensor-Alter (Min.)', 5, 30, 5) +
+    fSubheading('Eskalation') +
+    fToggle('threat_assessment.emergency_autonomy_boost', 'Autonomie-Boost bei Notfall (&rarr; Level 5)') +
+    fRange('threat_assessment.emergency_boost_duration_min', 'Boost-Dauer (Min.)', 5, 60, 5,
+      {5:'5',10:'10',15:'15 (Standard)',30:'30',60:'60'})
+  ) +
   // --- Interrupt-Queue ---
   sectionWrap('&#9889;', 'Interrupt-Queue',
     fInfo('CRITICAL-Meldungen unterbrechen sofort alle laufenden Aktionen (TTS, Streaming). Ohne Interrupt geht die Meldung den normalen Weg über das LLM.') +
@@ -5632,7 +5701,12 @@ function renderSecurity() {
     fToggle('conflict_resolution.rules_enabled.frost_detected', 'Frost bei Kuehlung/Rollladen oeffnen') +
     fToggle('conflict_resolution.rules_enabled.high_energy_price', 'Hoher Strompreis bei Klimatisierung') +
     fToggle('conflict_resolution.rules_enabled.media_playing', 'Medien aktiv bei hellem Licht') +
-    fToggle('conflict_resolution.rules_enabled.window_scheduled_open', 'Lueften geplant bei Heizung')
+    fToggle('conflict_resolution.rules_enabled.window_scheduled_open', 'Lueften geplant bei Heizung') +
+    fSubheading('Konflikt-Vorhersage') +
+    fInfo('Warnt proaktiv wenn eine gerade gegebene Anweisung mit einer kuerzlichen Aktion kollidieren wird. Z.B. "Achtung: Anna hat vor 2 Min. runtergekuehlt."') +
+    fToggle('conflict_resolution.prediction_enabled', 'Konflikt-Vorhersage') +
+    fRange('conflict_resolution.prediction_window_seconds', 'Vorhersage-Zeitfenster (Sek.)', 60, 600, 30,
+      {60:'1 Min',120:'2 Min',180:'3 Min (Standard)',300:'5 Min',600:'10 Min'})
   ) +
   sectionWrap('&#128737;', 'Prompt-Injection-Schutz',
     fInfo('Schuetzt den LLM-Kontext gegen Prompt-Injection-Angriffe. Prueft alle externen Texte (Entity-Namen, Sensordaten) auf verdächtige Muster bevor sie an das LLM übergeben werden. Deaktivierung nur für Debugging empfohlen.') +
@@ -6041,6 +6115,20 @@ function renderAutonomie() {
     fToggle('autonomy.evolution.enabled', 'Automatischer Autonomie-Aufstieg') +
     fRange('autonomy.evolution.max_level', 'Max. automatisches Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
 
+    fSubheading('Temporale Autonomie') +
+    fInfo('Unterschiedlicher Autonomie-Level je nach Tageszeit. Offset wird auf das aktuelle Level addiert. "-1" nachts bedeutet z.B. Level 3 &rarr; Level 2 zwischen 22-7 Uhr.') +
+    fToggle('autonomy.temporal.enabled', 'Temporale Autonomie aktiv') +
+    fRange('autonomy.temporal.night_offset', 'Nacht-Offset (22-7 Uhr)', -3, 0, 1,
+      {'-3':'-3','-2':'-2','-1':'-1 (Standard)','0':'Aus'}) +
+    fRange('autonomy.temporal.day_offset', 'Tag-Offset (7-22 Uhr)', 0, 2, 1,
+      {'0':'\u00b10 (Standard)','1':'+1','2':'+2'}) +
+    fSubheading('De-Eskalation') +
+    fInfo('Automatische Level-Reduktion wenn die Akzeptanzrate dauerhaft niedrig ist. Jarvis schlaegt dann eine Rueckstufung vor — fuehrt sie nie selbst durch.') +
+    fToggle('autonomy.deescalation.enabled', 'De-Eskalation aktiv') +
+    fRange('autonomy.deescalation.min_acceptance_rate', 'Schwelle Akzeptanzrate', 0.3, 0.7, 0.05,
+      {0.3:'30%',0.4:'40%',0.5:'50% (Standard)',0.6:'60%',0.7:'70%'}) +
+    fNum('autonomy.deescalation.evaluation_days', 'Bewertungszeitraum (Tage)', 3, 14, 1) +
+
     fSubheading('Geschuetzte Bereiche (Immutable)') +
     fChipSelect('self_optimization.immutable_keys', 'Geschuetzte Bereiche (nicht änderbar durch KI)', [
       'security','trust_levels','response_filter.banned_phrases',
@@ -6102,10 +6190,23 @@ function renderAutonomie() {
     fRange('outcome_tracker.calibration_max', 'Max. Kalibrierungsfaktor', 1.2, 2.0, 0.1, {1.2:'1.2',1.5:'1.5 (Standard)',1.8:'1.8',2.0:'2.0 (aggressiv)'}) +
     fInfo('Domain-Kalibrierung passt die Konfidenz pro Bereich (Licht, Klima, Medien...) an. Domains mit hohem Erfolgs-Score bekommen einen Boost, schlechte werden gedaempft. Min/Max begrenzt den Faktor — enger = stabiler, weiter = adaptiver.') +
 
+    fSubheading('Feedback-Loops') +
+    fInfo('Verbindet den Wirkungstracker mit der Antizipation und dem Lern-Observer: Fehlgeschlagene Vorhersagen verlieren Konfidenz, erfolgreiche werden gestaerkt.') +
+    fToggle('outcome_tracker.anticipation_feedback', 'Anticipation-Feedback aktiv') +
+    fRange('outcome_tracker.success_confidence_boost', 'Erfolgs-Boost', 0.05, 0.2, 0.01,
+      {0.05:'0.05',0.1:'0.1 (Standard)',0.15:'0.15',0.2:'0.2'}) +
+    fRange('outcome_tracker.failure_confidence_penalty', 'Fehl-Penalty', 0.05, 0.3, 0.01,
+      {0.05:'0.05',0.1:'0.1',0.15:'0.15 (Standard)',0.2:'0.2',0.3:'0.3'}) +
+    fToggle('outcome_tracker.learning_observer_feedback', 'Learning-Observer Feedback') +
+    fRange('outcome_tracker.learning_boost', 'Lern-Boost bei Erfolg', 0.05, 0.2, 0.01,
+      {0.05:'0.05',0.1:'0.1 (Standard)',0.15:'0.15',0.2:'0.2'}) +
+
     fSubheading('Korrektur-Gedächtnis') +
     fToggle('correction_memory.enabled', 'Korrektur-Gedächtnis aktiv') +
     fNum('correction_memory.max_entries', 'Max. Einträge', 50, 500, 50) +
     fNum('correction_memory.max_context_entries', 'Max. Kontext-Einträge', 1, 10) +
+    fToggle('correction_memory.cross_domain_rules', 'Domain-uebergreifende Regeln') +
+    fInfo('Korrekturen gelten auch fuer aehnliche Bereiche: "Raumverwechslung bei Licht" wird auch auf Klima und Medien angewendet.') +
 
     fSubheading('Lernende Schwellwerte (Adaptive Thresholds)') +
     fToggle('adaptive_thresholds.enabled', 'Lernende Schwellwerte aktiv') +
@@ -6147,7 +6248,13 @@ function renderAutonomie() {
     fRange('feedback.score_suppress', 'Unterdrücken unter', 0, 1, 0.05) +
     fRange('feedback.score_reduce', 'Reduzieren unter', 0, 1, 0.05) +
     fRange('feedback.score_normal', 'Normal ab', 0, 1, 0.05) +
-    fRange('feedback.score_boost', 'Boost ab', 0, 1, 0.05)
+    fRange('feedback.score_boost', 'Boost ab', 0, 1, 0.05) +
+
+    fSubheading('Score-Smoothing') +
+    fToggle('feedback.smoothing_enabled', 'Score-Smoothing (EMA)') +
+    fInfo('Verhindert dass einzelne Events den Score stark bewegen. Exponential Moving Average: 70% alter Wert + 30% neuer Wert.') +
+    fRange('feedback.smoothing_factor', 'Smoothing-Faktor (Neuer Anteil)', 0.1, 0.5, 0.05,
+      {0.1:'0.1 (stabil)',0.2:'0.2',0.3:'0.3 (Standard)',0.4:'0.4',0.5:'0.5 (reaktiv)'})
   ) +
 
   // --- Group 4: Erweiterte KI & Prompt-Optimierung ---
@@ -6170,7 +6277,10 @@ function renderAutonomie() {
     fSubheading('Kontext-Kompaktierung') +
     fRange('context_compaction.threshold', 'Kompaktierungs-Schwelle', 0.5, 0.95, 0.05, {0.5:'50%',0.6:'60%',0.7:'70% (Standard)',0.8:'80%',0.9:'90%',0.95:'95%'}) +
     fToggle('context_compaction.prefer_llm', 'LLM-Kompaktierung bevorzugen') +
-    fToggle('pre_compaction_flush.enabled', 'Pre-Compaction Flush (Fakten sichern)')
+    fToggle('pre_compaction_flush.enabled', 'Pre-Compaction Flush (Fakten sichern)') +
+    fSubheading('Kontext-Quellen') +
+    fToggle('context_builder.include_threads', 'Gesprächs-Threads im Kontext') +
+    fInfo('Aktive Gespraechs-Threads werden dem LLM-Kontext hinzugefuegt fuer bessere Kontinuitaet ueber mehrere Nachrichten.')
   ) +
 
   // --- Group 5: Automationen & Rollback ---
@@ -11782,7 +11892,9 @@ function renderIntelligence() {
     fSubheading('Erkennungs-Module') +
     fToggle('calendar_intelligence.habit_detection', 'Gewohnheits-Erkennung') +
     fToggle('calendar_intelligence.conflict_detection', 'Konflikt-Erkennung') +
-    fToggle('calendar_intelligence.break_detection', 'Pausen-Erkennung')
+    fToggle('calendar_intelligence.break_detection', 'Pausen-Erkennung') +
+    fToggle('calendar_intelligence.per_route_commute', 'Per-Route Pendelzeiten lernen') +
+    fInfo('Lernt individuelle Pendelzeiten pro Ziel statt eines globalen Durchschnittswerts.')
   ) +
   sectionWrap('&#128161;', 'Erklärbarkeit',
     fInfo('Jarvis erklaert auf Nachfrage warum er etwas getan hat. Jede automatische Aktion wird mit Begründung geloggt. Frage z.B. "Warum hast du das Licht eingeschaltet?"') +
@@ -11793,12 +11905,23 @@ function renderIntelligence() {
       {v:'verbose', l:'Ausführlich (+ Konfidenz, Sensordaten)'}
     ]) +
     fToggle('explainability.auto_explain', 'Automatisch erwaehnen') +
-    fNum('explainability.max_history', 'Max. gespeicherte Entscheidungen', 10, 200, 10)
+    fNum('explainability.max_history', 'Max. gespeicherte Entscheidungen', 10, 200, 10) +
+    fSubheading('Erweiterte Erklaerungen') +
+    fToggle('explainability.counterfactual_enabled', 'Was-waere-wenn Erklaerungen') +
+    fToggle('explainability.reasoning_chains', 'Kausalketten anzeigen') +
+    fToggle('explainability.confidence_display', 'Konfidenz in Erklaerungen') +
+    fSelect('explainability.explanation_style', 'Erklaerungs-Stil', [
+      {v:'template', l:'Template (schnell, deterministisch)'},
+      {v:'llm', l:'LLM (natuerlich, Butler-Stil)'},
+      {v:'auto', l:'Auto (Template fuer einfach, LLM fuer komplex)'}
+    ])
   ) +
   sectionWrap('&#129504;', 'Lern-Transfer',
     fInfo('Überträgt Präferenzen zwischen ähnlichen Räumen. Wenn du warmes Licht in der Küche bevorzugst, schlägt Jarvis das auch für das Esszimmer vor.') +
     fToggle('learning_transfer.enabled', 'Lern-Transfer aktiv') +
     fToggle('learning_transfer.auto_suggest', 'Automatische Vorschläge') +
+    fToggle('learning_transfer.notify_user', 'Über Transfers benachrichtigen') +
+    fInfo('Benachrichtigt wenn Praeferenzen zwischen Raeumen uebertragen werden, z.B. "Lichteinstellung aus Kueche auf Esszimmer uebertragen."') +
     fNum('learning_transfer.min_observations', 'Min. Beobachtungen vor Transfer', 2, 10) +
     fRange('learning_transfer.transfer_confidence', 'Transfer-Konfidenz', 0.3, 1.0, 0.05, {0.3:'0.3',0.5:'0.5',0.7:'0.7',0.8:'0.8',0.9:'0.9',1.0:'1.0'}) +
     fSubheading('Aktive Domaenen') +
@@ -11813,14 +11936,20 @@ function renderIntelligence() {
   ) +
   sectionWrap('&#128161;', 'Think-Ahead Hinweise',
     fInfo('Nach einer Aktion schlägt Jarvis einen logischen nächsten Schritt vor. Z.B. nach "Licht im Flur an" → "Soll ich auch die Heizung im Flur hochdrehen?" Statisch, kein LLM-Overhead.') +
-    fToggle('next_step_hints.enabled', 'Think-Ahead aktiv')
+    fToggle('next_step_hints.enabled', 'Think-Ahead aktiv') +
+    fToggle('brain.think_ahead_enabled', 'Kontext-basierte Folgeaktionen') +
+    fInfo('Analysiert den aktuellen Kontext (Raum, Tageszeit, offene Fenster) und schlaegt passende Folgeaktionen vor — z.B. "Fenster ist offen, soll ich die Heizung pausieren?"')
   ) +
   // --- Antizipation & Erkennung ---
   '<div class="cat-header">&#128268; Antizipation &amp; Mustererkennung</div>' +
   sectionWrap('&#128279;', 'Kausalketten-Erkennung',
     fInfo('Jarvis erkennt wiederkehrende Handlungsketten: Wenn du 3x hintereinander "Licht an, Heizung hoch, Musik an" machst, schlägt er beim nächsten Mal die gesamte Kette vor.') +
     fNum('anticipation.causal_chain_window_min', 'Erkennungsfenster (Minuten)', 5, 30) +
-    fNum('anticipation.causal_chain_min_occurrences', 'Min. Wiederholungen', 2, 10)
+    fNum('anticipation.causal_chain_min_occurrences', 'Min. Wiederholungen', 2, 10) +
+    fSubheading('Implizite Beduerfnisse') +
+    fInfo('Erkennt Beduerfnisse auch ohne bekanntes Pattern — z.B. "Es ist dunkel und kalt" ergibt Licht + Heizung vorschlagen.') +
+    fToggle('anticipation.implicit_needs_enabled', 'Implizite Beduerfnis-Erkennung') +
+    fRange('anticipation.implicit_needs_min_confidence', 'Min. Konfidenz', 0.5, 0.9, 0.05, {0.5:'50%',0.6:'60%',0.7:'70% (Standard)',0.8:'80%',0.9:'90%'})
   ) +
   sectionWrap('&#128200;', '3D+ Insight Checks',
     fInfo('Mehrdimensionale Kreuzreferenz-Prüfungen: Kalender x Sicherheit x Hausstatus. Erkennt z.B. "Gäste kommen in 2h aber Haus nicht vorbereitet" oder "Alle weg aber Alarm nicht scharf".') +
@@ -11830,7 +11959,9 @@ function renderIntelligence() {
     fToggle('insight_checks.humidity_contradiction', 'Feuchtigkeits-Widerspruch (Geräte x Wetter)') +
     fToggle('insight_checks.night_security', 'Nacht-Sicherheit (Uhrzeit x Fenster x Türen)') +
     fToggle('insight_checks.heating_vs_sun', 'Heizung vs Sonne (Klima x Wetter x Rollladen)') +
-    fToggle('insight_checks.forgotten_devices', 'Vergessene Geräte (Media x Abwesenheit)')
+    fToggle('insight_checks.forgotten_devices', 'Vergessene Geräte (Media x Abwesenheit)') +
+    fToggle('insight_checks.deduplication', 'Alert-Deduplizierung') +
+    fInfo('Verhindert mehrfache Alerts fuer die gleiche Entity bei verschiedenen Insight-Checks.')
   ) +
   sectionWrap('&#129504;', 'LLM Kausal-Analyse',
     fInfo('Das LLM analysiert Sensordaten der letzten Stunden und sucht nach ungewöhnlichen Korrelationen die kein Mensch als Regel kodiert haette. Z.B. "Temperatur sinkt obwohl Heizung laeuft — Fenster offen?"') +
@@ -11845,16 +11976,33 @@ function renderIntelligence() {
     fInfo('Erkennt wenn jemand von seiner normalen Routine abweicht — z.B. "Max ist normalerweise um 18 Uhr zuhause, heute nicht." Nutzt Presence-Tracker und Kalender.') +
     fToggle('routine_deviation.enabled', 'Routine-Abweichungen erkennen')
   ) +
+  sectionWrap('&#128680;', 'Routine-Anomalie-Erkennung',
+    fInfo('Erkennt wenn erwartete Routinen ausbleiben und fragt sanft nach. Z.B. "Du gehst normalerweise um 7:30 aus dem Haus — heute nicht. Alles okay?" Nur bei hoher Konfidenz und nie nachts.') +
+    fToggle('routine_anomaly.enabled', 'Anomalie-Erkennung aktiv') +
+    fRange('routine_anomaly.min_confidence', 'Min. Konfidenz', 0.6, 0.95, 0.05, {0.6:'60%',0.7:'70%',0.8:'80% (Standard)',0.9:'90%',0.95:'95%'}) +
+    fRange('routine_anomaly.grace_period_minutes', 'Toleranz (Minuten)', 10, 60, 5, {10:'10',15:'15',20:'20',30:'30 (Standard)',45:'45',60:'60'}) +
+    fNum('routine_anomaly.max_daily_checks', 'Max. Nachfragen pro Tag', 1, 5, 1) +
+    fNum('routine_anomaly.min_pattern_days', 'Min. Tage fuer Routine', 7, 30, 1)
+  ) +
   sectionWrap('&#128736;', 'Proaktiver Sequenz-Planner',
     fInfo('Bei Kontext-Änderungen (Ankunft, Wetterwechsel, Kalender-Event) plant Jarvis automatisch mehrstufige Aktionsketten. Z.B. Ankunft → Licht + Heizung + Musik. Sicherheitsaktionen NIE automatisch.') +
     fToggle('proactive_planner.enabled', 'Sequenz-Planner aktiv') +
-    fRange('proactive_planner.min_autonomy_for_auto', 'Min. Autonomie für Auto-Ausführung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
+    fRange('proactive_planner.min_autonomy_for_auto', 'Min. Autonomie für Auto-Ausführung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fToggle('vacation_simulation.use_learned_patterns', 'Urlaubs-Simulation mit gelernten Mustern') +
+    fInfo('Spielt gelernte Verhaltensmuster im Urlaub nach statt zufaelliger Licht-An/Aus-Zyklen.')
   ) +
   sectionWrap('&#127808;', 'Saisonale Intelligenz',
     fInfo('Jarvis lernt jahreszeitlich wiederkehrende Muster: "Letztes Jahr um diese Zeit hast du die Heizung früher eingeschaltet." Vergleicht Verhalten über Jahre und gibt saisonale Tipps.') +
     fToggle('seasonal_insights.enabled', 'Saisonale Intelligenz aktiv') +
     fNum('seasonal_insights.check_interval_hours', 'Prüf-Intervall (Stunden)', 6, 48, 6) +
-    fNum('seasonal_insights.min_history_months', 'Min. Historie (Monate)', 1, 12)
+    fNum('seasonal_insights.min_history_months', 'Min. Historie (Monate)', 1, 12) +
+    fToggle('seasonal_insight.hybrid_detection', 'Hybrid-Erkennung (Temp + Tageslicht)') +
+    fInfo('Nutzt Temperatur + Tageslichtdauer + Monat statt nur den Kalendermonat fuer praezisere Jahreszeit-Erkennung.') +
+    fSubheading('Wetter-Vorhersage') +
+    fInfo('Nutzt die HA Wetter-Forecast-API fuer vorausschauende Aktionen: Rolllaeden schliessen bevor Sturm kommt, Heizung hochdrehen bevor es kalt wird.') +
+    fToggle('weather_forecast.enabled', 'Wetter-Vorhersage aktiv') +
+    fNum('weather_forecast.lookahead_hours', 'Vorhersage-Horizont (Stunden)', 2, 24, 2) +
+    fText('weather_forecast.entity', 'Wetter-Entity', 'z.B. weather.home')
   ) +
   // --- Medium Effort Features ---
   '<div class="cat-header">&#9889; Kontext &amp; Vorhersage</div>' +
@@ -11864,7 +12012,9 @@ function renderIntelligence() {
     fToggle('dialogue.auto_resolve_references', 'Referenzen automatisch auflösen') +
     fToggle('dialogue.clarification_enabled', 'Klärungsfragen stellen') +
     fNum('dialogue.timeout_seconds', 'Dialog-Timeout (Sek.)', 60, 600, 30) +
-    fNum('dialogue.max_clarification_options', 'Max. Optionen bei Klärung', 2, 10)
+    fNum('dialogue.max_clarification_options', 'Max. Optionen bei Klärung', 2, 10) +
+    fNum('dialogue.max_references', 'Max. gespeicherte Referenzen', 10, 50, 5) +
+    fInfo('Wie viele Geraete/Raeume sich Jarvis im Gespraech merkt. Bei langen Gespraechen gehen fruehere Referenzen sonst verloren.')
   ) +
   sectionWrap('&#127777;', 'Klima-Modell (Digitaler Zwilling)',
     fInfo('Einfaches thermisches Modell für Was-wäre-wenn-Fragen: "Wenn ich das Fenster schliesse, wie warm wird es in 30 Min?" Basiert auf Wärmeverlust, Heizleistung und Fensterzustand.') +
@@ -11878,14 +12028,20 @@ function renderIntelligence() {
     fSubheading('Was-Waere-Wenn Energiepreise') +
     fInfo('Preise für Energie-Berechnungen in Was-Waere-Wenn Szenarien (z.B. "Was kostet es wenn ich 2h alle Fenster offen lasse?").') +
     fRange('whatif_simulation.strompreis_kwh', 'Strompreis (€/kWh)', 0.1, 0.6, 0.01, {0.1:'0.10€',0.2:'0.20€',0.3:'0.30€',0.4:'0.40€',0.5:'0.50€',0.6:'0.60€'}) +
-    fRange('whatif_simulation.gaspreis_kwh', 'Gaspreis (€/kWh)', 0.03, 0.2, 0.01, {0.03:'0.03€',0.05:'0.05€',0.08:'0.08€',0.1:'0.10€',0.15:'0.15€',0.2:'0.20€'})
+    fRange('whatif_simulation.gaspreis_kwh', 'Gaspreis (€/kWh)', 0.03, 0.2, 0.01, {0.03:'0.03€',0.05:'0.05€',0.08:'0.08€',0.1:'0.10€',0.15:'0.15€',0.2:'0.20€'}) +
+    fSubheading('Proaktive Was-Waere-Wenn') +
+    fToggle('whatif_simulation.proactive_enabled', 'Proaktiv vorschlagen') +
+    fInfo('Jarvis bietet aktiv Was-Waere-Wenn-Szenarien an wenn die Konfidenz hoch genug ist.') +
+    fRange('whatif_simulation.proactive_min_confidence', 'Min. Konfidenz', 0.5, 0.9, 0.05, {0.5:'50%',0.6:'60%',0.7:'70% (Standard)',0.8:'80%',0.9:'90%'})
   ) +
   sectionWrap('&#128295;', 'Prädiktive Wartung',
     fInfo('Vorhersage von Geräteausfaellen: Batterie-Drain-Rate, Lebensdauer-Tracking, Health-Score pro Geraet. Warnt z.B. "Batterie von Bewegungsmelder Flur in 14 Tagen leer".') +
     fToggle('predictive_maintenance.enabled', 'Prädiktive Wartung aktiv') +
     fNum('predictive_maintenance.lookback_days', 'Analyse-Zeitraum (Tage)', 30, 365, 30) +
     fRange('predictive_maintenance.failure_probability_threshold', 'Warnschwelle', 0.3, 1.0, 0.05, {0.3:'Empfindlich',0.5:'Mittel',0.7:'Standard',0.9:'Nur kritisch'}) +
-    fNum('predictive_maintenance.battery_drain_alert_pct_per_week', 'Batterie-Drain Warnung (%/Woche)', 1, 20, 1)
+    fNum('predictive_maintenance.battery_drain_alert_pct_per_week', 'Batterie-Drain Warnung (%/Woche)', 1, 20, 1) +
+    fToggle('predictive_maintenance.seasonal_baseline', 'Saisonale Baselines') +
+    fInfo('Baselines werden pro Saison getrennt. Verhindert Fehlalarme wenn sich z.B. Heizungsverbrauch zwischen Winter und Sommer unterscheidet.')
   ) +
   // --- Proaktive Intelligenz ---
   '<div class="cat-header">&#129504; Proaktive Intelligenz</div>' +
@@ -11897,7 +12053,8 @@ function renderIntelligence() {
     fInfo('Jarvis prüft periodisch den Haus-Zustand und teilt relevante Beobachtungen mit: Licht brennt in leerem Raum, Fenster offen bei Heizung, Alarm seit Tagen nicht aktiviert, Batterie-Warnungen.') +
     fToggle('observation_loop.enabled', 'Beobachtungen aktiv') +
     fNum('observation_loop.interval_hours', 'Prüf-Intervall (Stunden)', 1, 12) +
-    fNum('observation_loop.max_daily', 'Max. Beobachtungen pro Tag', 1, 5)
+    fNum('observation_loop.max_daily', 'Max. Beobachtungen pro Tag', 1, 5) +
+    fToggle('wellness.suppress_when_away', 'Wellness-Hinweise bei Abwesenheit unterdruecken')
   ) +
   // --- Fortgeschrittene Intelligenz ---
   '<div class="cat-header">&#129504; Fortgeschrittene Intelligenz</div>' +

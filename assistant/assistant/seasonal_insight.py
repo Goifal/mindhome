@@ -60,6 +60,10 @@ class SeasonalInsightEngine:
         self.check_interval = cfg.get("check_interval_hours", 24) * 3600
         self.min_history_months = cfg.get("min_history_months", 2)
 
+        # Hybrid detection: combine month-based season with outdoor temp + daylight
+        si_cfg = yaml_config.get("seasonal_insight", {})
+        self._hybrid_detection = si_cfg.get("hybrid_detection", False)
+
     def set_ollama(self, ollama_client):
         """Setzt den OllamaClient fuer LLM-basierte Saisontipps."""
         self._ollama = ollama_client
@@ -67,6 +71,119 @@ class SeasonalInsightEngine:
     def set_ha(self, ha_client):
         """Setzt den HA-Client fuer Haus-Status-Kontext."""
         self._ha = ha_client
+
+    async def get_current_season(self) -> tuple[str, float]:
+        """Returns (season_name, confidence) using hybrid detection if enabled."""
+        if self._hybrid_detection:
+            return await self._detect_season_hybrid()
+        now = datetime.now(_LOCAL_TZ)
+        season = _SEASONS.get(now.month, "unbekannt")
+        return season, 1.0
+
+    async def _detect_season_hybrid(self) -> tuple[str, float]:
+        """Hybrid season detection combining month, outdoor temp, and daylight hours.
+
+        Returns:
+            Tuple of (season_name, confidence 0.0-1.0).
+            Falls back to month-based detection if HA data unavailable.
+        """
+        now = datetime.now(_LOCAL_TZ)
+        month_season = _SEASONS.get(now.month, "unbekannt")
+        confidence = 1.0
+
+        if not self._ha:
+            return month_season, confidence
+
+        # Temperature-based season hints
+        _TEMP_SEASON_HINTS = {
+            "winter": (-10, 8),    # typical winter range
+            "fruehling": (5, 18),
+            "sommer": (18, 40),
+            "herbst": (5, 16),
+        }
+
+        outdoor_temp: Optional[float] = None
+        daylight_hours: Optional[float] = None
+
+        try:
+            states = await self._ha.get_states()
+            if not states:
+                return month_season, confidence
+
+            for s in states:
+                eid = s.get("entity_id", "")
+                state_val = s.get("state", "")
+
+                # Outdoor temperature sensor
+                if (
+                    "outdoor" in eid.lower()
+                    or "aussen" in eid.lower()
+                    or "outside" in eid.lower()
+                ) and eid.startswith("sensor.") and "temperature" in eid.lower():
+                    try:
+                        outdoor_temp = float(state_val)
+                    except (ValueError, TypeError):
+                        pass
+
+                # Sunrise/sunset for daylight calculation
+                if eid == "sun.sun":
+                    attrs = s.get("attributes", {})
+                    sunrise = attrs.get("next_rising", "")
+                    sunset = attrs.get("next_setting", "")
+                    if sunrise and sunset:
+                        try:
+                            rise_dt = datetime.fromisoformat(sunrise.replace("Z", "+00:00"))
+                            set_dt = datetime.fromisoformat(sunset.replace("Z", "+00:00"))
+                            # Approximate daylight hours
+                            diff = (set_dt - rise_dt).total_seconds() / 3600
+                            if 0 < diff < 24:
+                                daylight_hours = diff
+                        except (ValueError, TypeError):
+                            pass
+
+        except Exception as e:
+            logger.debug("Hybrid season HA-Abfrage fehlgeschlagen: %s", e)
+            return month_season, confidence
+
+        # Evaluate: does outdoor temp agree with month-based season?
+        if outdoor_temp is not None:
+            expected_range = _TEMP_SEASON_HINTS.get(month_season)
+            if expected_range:
+                low, high = expected_range
+                if low <= outdoor_temp <= high:
+                    # Temperature confirms month-based season
+                    confidence = min(1.0, confidence + 0.05)
+                else:
+                    # Temperature disagrees — check which season fits better
+                    confidence = max(0.5, confidence - 0.2)
+                    for season, (s_low, s_high) in _TEMP_SEASON_HINTS.items():
+                        if s_low <= outdoor_temp <= s_high and season != month_season:
+                            # Temperature suggests different season (transitional period)
+                            logger.debug(
+                                "Hybrid detection: month=%s, temp=%.1f°C suggests %s",
+                                month_season, outdoor_temp, season,
+                            )
+                            # Don't override, just reduce confidence
+                            break
+
+        # Daylight hours as additional signal
+        # Winter: <10h, Spring: 10-14h, Summer: >14h, Autumn: 10-14h
+        if daylight_hours is not None:
+            _DAYLIGHT_SEASONS = {
+                "winter": (0, 10),
+                "fruehling": (10, 14),
+                "sommer": (14, 24),
+                "herbst": (10, 14),
+            }
+            expected_daylight = _DAYLIGHT_SEASONS.get(month_season)
+            if expected_daylight:
+                d_low, d_high = expected_daylight
+                if d_low <= daylight_hours <= d_high:
+                    confidence = min(1.0, confidence + 0.05)
+                else:
+                    confidence = max(0.4, confidence - 0.15)
+
+        return month_season, round(confidence, 2)
 
     async def initialize(
         self,
@@ -364,6 +481,7 @@ class SeasonalInsightEngine:
             "enabled": self.enabled,
             "running": self._running,
             "check_interval_hours": self.check_interval // 3600,
+            "hybrid_detection": self._hybrid_detection,
         }
 
         if self.redis:

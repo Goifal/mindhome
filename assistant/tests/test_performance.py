@@ -206,10 +206,10 @@ class TestDeviceHealthPipeline:
 
         await monitor._add_sample("sensor.test", 22.5)
 
-        redis_mock.pipeline.assert_called_once()
-        pipe_mock.rpush.assert_called_once()
-        pipe_mock.expire.assert_called_once()
-        pipe_mock.execute.assert_called_once()
+        assert redis_mock.pipeline.call_count >= 1  # regular + optional seasonal sample
+        assert pipe_mock.rpush.call_count >= 1
+        assert pipe_mock.expire.call_count >= 1
+        assert pipe_mock.execute.call_count >= 1
 
     @pytest.mark.asyncio
     async def test_recalculate_baseline_uses_pipeline(self):

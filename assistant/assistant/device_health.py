@@ -67,9 +67,7 @@ class DeviceHealthMonitor:
             "stddev_multiplier", DEFAULTS["stddev_multiplier"]
         )
         self.min_samples = cfg.get("min_samples", DEFAULTS["min_samples"])
-        self.stale_days = cfg.get(
-            "stale_sensor_days", DEFAULTS["stale_sensor_days"]
-        )
+        self.stale_days = cfg.get("stale_sensor_days", DEFAULTS["stale_sensor_days"])
         self.hvac_timeout = cfg.get(
             "hvac_timeout_minutes", DEFAULTS["hvac_timeout_minutes"]
         )
@@ -79,9 +77,7 @@ class DeviceHealthMonitor:
         self.alert_cooldown = cfg.get(
             "alert_cooldown_minutes", DEFAULTS["alert_cooldown_minutes"]
         )
-        self.track_domains = cfg.get(
-            "track_domains", DEFAULTS["track_domains"]
-        )
+        self.track_domains = cfg.get("track_domains", DEFAULTS["track_domains"])
         self.exclude_patterns = cfg.get(
             "exclude_patterns", DEFAULTS["exclude_patterns"]
         )
@@ -91,13 +87,19 @@ class DeviceHealthMonitor:
         # Whitelist: Wenn gesetzt, NUR diese Entities überwachen
         self.monitored_entities: list[str] = cfg.get("monitored_entities", [])
 
+        # Seasonal baselines: compare against same-season baseline
+        pm_cfg = yaml_config.get("predictive_maintenance", {})
+        self.seasonal_baseline_enabled = pm_cfg.get("seasonal_baseline", True)
+
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis-Verbindung."""
         self.redis = redis_client
         logger.info(
             "DeviceHealthMonitor initialisiert (Intervall: %d Min., "
             "Baseline: %d Tage, Schwelle: %.1fσ)",
-            self.check_interval, self.baseline_days, self.stddev_multiplier,
+            self.check_interval,
+            self.baseline_days,
+            self.stddev_multiplier,
         )
 
     def set_notify_callback(self, callback):
@@ -111,7 +113,9 @@ class DeviceHealthMonitor:
             return
         self._running = True
         self._task = asyncio.create_task(self._check_loop())
-        self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        self._task.add_done_callback(
+            lambda t: t.exception() if not t.cancelled() else None
+        )
         logger.info("DeviceHealthMonitor gestartet")
 
     async def stop(self):
@@ -138,9 +142,7 @@ class DeviceHealthMonitor:
                 for alert in alerts:
                     await self._send_alert(alert)
                 if alerts:
-                    logger.info(
-                        "DeviceHealth: %d Anomalie(n) erkannt", len(alerts)
-                    )
+                    logger.info("DeviceHealth: %d Anomalie(n) erkannt", len(alerts))
             except Exception as e:
                 logger.error("DeviceHealth check error: %s", e)
             await asyncio.sleep(self.check_interval * 60)
@@ -182,9 +184,7 @@ class DeviceHealthMonitor:
                 except (ValueError, TypeError):
                     continue
 
-                alert = await self._check_value_anomaly(
-                    entity_id, value, state
-                )
+                alert = await self._check_value_anomaly(entity_id, value, state)
                 if alert:
                     alerts.append(alert)
 
@@ -197,10 +197,14 @@ class DeviceHealthMonitor:
                     data = alert.get("data", {})
                     if atype == "stale_device":
                         days = data.get("days_unchanged", 0)
-                        await self.predictive_maintenance.record_device_offline(eid, days * 24)
+                        await self.predictive_maintenance.record_device_offline(
+                            eid, days * 24
+                        )
                     elif atype == "value_anomaly" and "battery" in eid:
                         val = data.get("current_value", 0)
-                        await self.predictive_maintenance.record_battery_level(eid, float(val))
+                        await self.predictive_maintenance.record_battery_level(
+                            eid, float(val)
+                        )
                 except Exception as e:
                     logger.debug("PredictiveMaintenance Feed fehlgeschlagen: %s", e)
 
@@ -217,7 +221,13 @@ class DeviceHealthMonitor:
         if not self.redis:
             return None
 
-        baseline = await self._get_baseline(entity_id)
+        # Prefer seasonal baseline if enabled and available
+        baseline = None
+        if self.seasonal_baseline_enabled:
+            month = datetime.now(_LOCAL_TZ).month
+            baseline = await self._get_seasonal_baseline_data(entity_id, month)
+        if not baseline or baseline.get("samples", 0) < self.min_samples:
+            baseline = await self._get_baseline(entity_id)
 
         # Sample immer hinzufuegen (für zukuenftige Baseline)
         await self._add_sample(entity_id, current_value)
@@ -275,18 +285,14 @@ class DeviceHealthMonitor:
     # Check 2: Stale Sensor (Bewegungsmelder, Türkontakte)
     # ------------------------------------------------------------------
 
-    async def _check_stale_sensor(
-        self, entity_id: str, state: dict
-    ) -> Optional[dict]:
+    async def _check_stale_sensor(self, entity_id: str, state: dict) -> Optional[dict]:
         """Prueft ob ein Binary-Sensor seit Tagen unverändert ist."""
         last_changed = state.get("last_changed", "")
         if not last_changed:
             return None
 
         try:
-            last_dt = datetime.fromisoformat(
-                last_changed.replace("Z", "+00:00")
-            )
+            last_dt = datetime.fromisoformat(last_changed.replace("Z", "+00:00"))
             # Sicherstellen dass timezone-aware
             if last_dt.tzinfo is None:
                 last_dt = last_dt.replace(tzinfo=timezone.utc)
@@ -310,9 +316,7 @@ class DeviceHealthMonitor:
         else:
             hint = "Batterie oder Verbindung prüfen."
 
-        message = (
-            f"{name}: Seit {int(age_days)} Tagen unverändert. {hint}"
-        )
+        message = f"{name}: Seit {int(age_days)} Tagen unverändert. {hint}"
 
         await self._mark_notified(entity_id)
 
@@ -382,9 +386,7 @@ class DeviceHealthMonitor:
         try:
             if isinstance(start_raw, bytes):
                 start_raw = start_raw.decode()
-            start_dt = datetime.fromisoformat(
-                start_raw.replace("Z", "+00:00")
-            )
+            start_dt = datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
             if start_dt.tzinfo is None:
                 start_dt = start_dt.replace(tzinfo=timezone.utc)
         except (ValueError, TypeError):
@@ -402,20 +404,25 @@ class DeviceHealthMonitor:
         # z.B. Heizung erreicht Ziel nicht weil Fenster offen = kein Alarm
         try:
             from .state_change_log import StateChangeLog
+
             _role = StateChangeLog._get_entity_role(entity_id)
             _room = StateChangeLog._get_entity_room(entity_id)
             if _role in ("thermostat", "climate") and _room:
                 import assistant.main as main_module
+
                 if hasattr(main_module, "brain"):
                     _states = await main_module.brain.ha.get_states() or []
                     for s in _states:
                         _s_eid = s.get("entity_id", "")
-                        if (StateChangeLog._get_entity_role(_s_eid) == "window_contact"
-                                and s.get("state") == "on"
-                                and StateChangeLog._get_entity_room(_s_eid) == _room):
+                        if (
+                            StateChangeLog._get_entity_role(_s_eid) == "window_contact"
+                            and s.get("state") == "on"
+                            and StateChangeLog._get_entity_room(_s_eid) == _room
+                        ):
                             logger.debug(
                                 "HVAC-Ineffizienz %s unterdrueckt: Fenster offen in %s",
-                                entity_id, _room,
+                                entity_id,
+                                _room,
                             )
                             return None
         except Exception as _dep_err:
@@ -460,7 +467,9 @@ class DeviceHealthMonitor:
             if not data:
                 return None
             decoded = {
-                (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
+                (k.decode() if isinstance(k, bytes) else k): (
+                    v.decode() if isinstance(v, bytes) else v
+                )
                 for k, v in data.items()
             }
             return {
@@ -477,15 +486,28 @@ class DeviceHealthMonitor:
         if not self.redis:
             return
         try:
-            today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
+            now = datetime.now(_LOCAL_TZ)
+            today = now.strftime("%Y-%m-%d")
             sample_key = f"mha:device:sample:{entity_id}:{today}"
 
             pipe = self.redis.pipeline()
             pipe.rpush(sample_key, str(value))
             pipe.expire(sample_key, self.baseline_days * 86400 + 86400)
+
+            # Seasonal sample: store additionally tagged by season
+            if self.seasonal_baseline_enabled:
+                season_info = self._get_seasonal_baseline(entity_id, now.month)
+                if season_info:
+                    seasonal_key = f"mha:device:sample_seasonal:{entity_id}:{season_info['season']}:{today}"
+                    pipe.rpush(seasonal_key, str(value))
+                    pipe.expire(seasonal_key, 120 * 86400)  # ~4 months
+
             await pipe.execute()
 
             await self._recalculate_baseline(entity_id)
+
+            if self.seasonal_baseline_enabled:
+                await self._recalculate_seasonal_baseline(entity_id, now.month)
         except Exception as e:
             logger.debug("Sample add error [%s]: %s", entity_id, e)
 
@@ -506,9 +528,11 @@ class DeviceHealthMonitor:
             results = await pipe.execute()
 
             for samples in results:
-                for s in (samples or []):
+                for s in samples or []:
                     try:
-                        all_values.append(float(s.decode() if isinstance(s, bytes) else s))
+                        all_values.append(
+                            float(s.decode() if isinstance(s, bytes) else s)
+                        )
                     except (ValueError, TypeError):
                         continue
 
@@ -531,11 +555,89 @@ class DeviceHealthMonitor:
                     "last_updated": now.isoformat(),
                 },
             )
-            await self.redis.expire(
-                baseline_key, (self.baseline_days + 7) * 86400
-            )
+            await self.redis.expire(baseline_key, (self.baseline_days + 7) * 86400)
         except Exception as e:
             logger.debug("Baseline recalc error [%s]: %s", entity_id, e)
+
+    async def _recalculate_seasonal_baseline(self, entity_id: str, month: int):
+        """Berechnet saisonale Baseline aus Samples der aktuellen Jahreszeit."""
+        if not self.redis:
+            return
+        season_info = self._get_seasonal_baseline(entity_id, month)
+        if not season_info:
+            return
+        try:
+            all_values = []
+            now = datetime.now(_LOCAL_TZ)
+            pipe = self.redis.pipeline()
+            for day_offset in range(self.baseline_days + 1):
+                day = (now - timedelta(days=day_offset)).strftime("%Y-%m-%d")
+                key = f"mha:device:sample_seasonal:{entity_id}:{season_info['season']}:{day}"
+                pipe.lrange(key, 0, -1)
+            results = await pipe.execute()
+
+            for samples in results:
+                for s in samples or []:
+                    try:
+                        all_values.append(
+                            float(s.decode() if isinstance(s, bytes) else s)
+                        )
+                    except (ValueError, TypeError):
+                        continue
+
+            if len(all_values) < 2:
+                return
+
+            mean = sum(all_values) / len(all_values)
+            variance = sum((v - mean) ** 2 for v in all_values) / max(
+                1, len(all_values) - 1
+            )
+            stddev = math.sqrt(variance)
+
+            baseline_key = season_info["baseline_key"]
+            await self.redis.hset(
+                baseline_key,
+                mapping={
+                    "mean": str(round(mean, 4)),
+                    "stddev": str(round(stddev, 4)),
+                    "samples": str(len(all_values)),
+                    "season": season_info["season"],
+                    "month": str(month),
+                    "last_updated": now.isoformat(),
+                },
+            )
+            await self.redis.expire(baseline_key, 150 * 86400)
+        except Exception as e:
+            logger.debug("Seasonal baseline recalc error [%s]: %s", entity_id, e)
+
+    async def _get_seasonal_baseline_data(
+        self, entity_id: str, month: int
+    ) -> Optional[dict]:
+        """Holt die saisonale Baseline (Mean + Stddev) fuer ein Entity."""
+        if not self.redis:
+            return None
+        season_info = self._get_seasonal_baseline(entity_id, month)
+        if not season_info:
+            return None
+        try:
+            data = await self.redis.hgetall(season_info["baseline_key"])
+            if not data:
+                return None
+            decoded = {
+                (k.decode() if isinstance(k, bytes) else k): (
+                    v.decode() if isinstance(v, bytes) else v
+                )
+                for k, v in data.items()
+            }
+            return {
+                "mean": float(decoded.get("mean", 0)),
+                "stddev": float(decoded.get("stddev", 0)),
+                "samples": int(decoded.get("samples", 0)),
+                "season": decoded.get("season", ""),
+            }
+        except Exception as e:
+            logger.debug("Seasonal baseline fetch error [%s]: %s", entity_id, e)
+            return None
 
     # ------------------------------------------------------------------
     # Cooldown & Notification
@@ -580,7 +682,9 @@ class DeviceHealthMonitor:
             if count > 1:
                 logger.info(
                     "F-057: Alert-Cooldown eskaliert für %s: %dx (Alert #%d)",
-                    entity_id, multiplier, count,
+                    entity_id,
+                    multiplier,
+                    count,
                 )
         except Exception as e:
             logger.debug("Notified mark error [%s]: %s", entity_id, e)
@@ -638,12 +742,16 @@ class DeviceHealthMonitor:
 
         try:
             baseline_keys = [
-                key async for key in self.redis.scan_iter(
-                    match="mha:device:baseline:*", count=100)
+                key
+                async for key in self.redis.scan_iter(
+                    match="mha:device:baseline:*", count=100
+                )
             ]
             notified_keys = [
-                key async for key in self.redis.scan_iter(
-                    match="mha:device:notified:*", count=100)
+                key
+                async for key in self.redis.scan_iter(
+                    match="mha:device:notified:*", count=100
+                )
             ]
 
             return {
@@ -763,10 +871,18 @@ class DeviceHealthMonitor:
             Dict mit season-Name und angepassten Parametern, oder None.
         """
         season_map = {
-            12: "winter", 1: "winter", 2: "winter",
-            3: "spring", 4: "spring", 5: "spring",
-            6: "summer", 7: "summer", 8: "summer",
-            9: "fall", 10: "fall", 11: "fall",
+            12: "winter",
+            1: "winter",
+            2: "winter",
+            3: "spring",
+            4: "spring",
+            5: "spring",
+            6: "summer",
+            7: "summer",
+            8: "summer",
+            9: "fall",
+            10: "fall",
+            11: "fall",
         }
         season = season_map.get(month)
         if not season:
@@ -800,7 +916,11 @@ class DeviceHealthMonitor:
             # Vergleiche mit gespeichertem historischen Mittelwert
             hist_key = f"mha:device:baseline_history:{entity_id}"
             prev_raw = await self.redis.get(hist_key)
-            prev_mean = float(prev_raw.decode() if isinstance(prev_raw, bytes) else prev_raw) if prev_raw else None
+            prev_mean = (
+                float(prev_raw.decode() if isinstance(prev_raw, bytes) else prev_raw)
+                if prev_raw
+                else None
+            )
 
             # Speichere aktuellen Mittelwert fuer naechsten Vergleich
             await self.redis.set(hist_key, str(current["mean"]), ex=30 * 86400)

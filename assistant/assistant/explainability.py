@@ -76,9 +76,35 @@ class ExplainabilityEngine:
             "detail_level", "normal"
         )  # minimal, normal, verbose
         self.auto_explain = cfg.get("auto_explain", False)
+        self.counterfactual_enabled = cfg.get("counterfactual_enabled", True)
+        self.reasoning_chains = cfg.get("reasoning_chains", False)
+        self.confidence_display = cfg.get("confidence_display", False)
+        self.explanation_style = cfg.get("explanation_style", "auto")
 
         # In-Memory Decision Log (FIFO)
         self._decisions: deque[dict] = deque(maxlen=self.max_history)
+
+    def reload_config(self):
+        """Laedt die Konfiguration aus yaml_config neu (Hot-Reload)."""
+        cfg = yaml_config.get("explainability", {})
+        self.enabled = cfg.get("enabled", True)
+        self.max_history = cfg.get("max_history", 50)
+        self.detail_level = cfg.get("detail_level", "normal")
+        self.auto_explain = cfg.get("auto_explain", False)
+        self.counterfactual_enabled = cfg.get("counterfactual_enabled", True)
+        self.reasoning_chains = cfg.get("reasoning_chains", False)
+        self.confidence_display = cfg.get("confidence_display", False)
+        self.explanation_style = cfg.get("explanation_style", "auto")
+        if self._decisions.maxlen != self.max_history:
+            old_items = list(self._decisions)
+            self._decisions.clear()
+            # Erstelle neue Deque mit neuem maxlen
+            self._decisions = deque(old_items[-self.max_history:], maxlen=self.max_history)
+        logger.info(
+            "ExplainabilityEngine config reloaded (enabled: %s, style: %s)",
+            self.enabled,
+            self.explanation_style,
+        )
 
     def set_ollama(self, ollama_client):
         """Setzt den OllamaClient fuer LLM-basierte Erklaerungen."""
@@ -167,7 +193,7 @@ class ExplainabilityEngine:
         # Kontrafaktische Ergebnisse: explizit oder automatisch generiert
         if alternative_outcomes:
             decision["alternative_outcomes"] = alternative_outcomes
-        else:
+        elif self.counterfactual_enabled:
             counterfactual = self._build_counterfactual(domain, context or {})
             if counterfactual:
                 decision["alternative_outcomes"] = [counterfactual]
@@ -243,7 +269,17 @@ class ExplainabilityEngine:
         }
         trigger_text = trigger_labels.get(trigger, "")
 
-        parts = [f"Ich habe '{action}' ausgefuehrt"]
+        if self.confidence_display:
+            if confidence >= 0.9:
+                action_prefix = f"Ich habe '{action}' ausgefuehrt"
+            elif confidence >= 0.7:
+                action_prefix = f"Ich habe wahrscheinlich richtig gehandelt: '{action}' ausgefuehrt"
+            else:
+                action_prefix = f"Ich habe moeglicherweise '{action}' ausgefuehrt"
+        else:
+            action_prefix = f"Ich habe '{action}' ausgefuehrt"
+
+        parts = [action_prefix]
         if trigger_text:
             parts[0] += f" ({trigger_text})"
         parts.append(f"Grund: {reason}")
@@ -254,7 +290,34 @@ class ExplainabilityEngine:
         if time_str:
             parts.append(f"Zeitpunkt: {time_str}")
 
+        if self.reasoning_chains:
+            domain = decision.get("domain", "")
+            if trigger and domain:
+                parts.append(f"Kausalkette: {trigger} -> {reason} -> {action}")
+
         return ". ".join(parts) + "."
+
+    async def get_explanation(self, decision: dict) -> str:
+        """Gibt eine Erklaerung basierend auf dem konfigurierten explanation_style zurueck.
+
+        - "template": Immer format_explanation() (schnell)
+        - "llm": Immer format_explanation_llm() (natuerlich)
+        - "auto": Template fuer einfache Erklaerungen (einzelner Trigger), LLM fuer komplexe
+        """
+        style = self.explanation_style
+        if style == "template":
+            return self.format_explanation(decision)
+        if style == "llm":
+            return await self.format_explanation_llm(decision)
+        # auto: LLM fuer komplexe Erklaerungen, Template fuer einfache
+        is_complex = (
+            len(decision.get("alternative_outcomes", [])) > 0
+            or decision.get("confidence", 1.0) < 0.9
+            or decision.get("trigger", "") in ("anticipation", "proactive", "conflict")
+        )
+        if is_complex:
+            return await self.format_explanation_llm(decision)
+        return self.format_explanation(decision)
 
     async def format_explanation_llm(self, decision: dict) -> str:
         """Formuliert eine Erklaerung via LLM im Butler-Stil.

@@ -61,10 +61,18 @@ class RoutineEngine:
         # Morning Briefing Config
         mb_cfg = routines_cfg.get("morning_briefing", {})
         self.briefing_enabled = mb_cfg.get("enabled", True)
-        self.briefing_modules = mb_cfg.get("modules", [
-            "greeting", "weather", "calendar", "house_status", "travel",
-            "personal_memory", "device_conflicts",
-        ])
+        self.briefing_modules = mb_cfg.get(
+            "modules",
+            [
+                "greeting",
+                "weather",
+                "calendar",
+                "house_status",
+                "travel",
+                "personal_memory",
+                "device_conflicts",
+            ],
+        )
         self.weekday_style = mb_cfg.get("weekday_style", "kurz")
         self.weekend_style = mb_cfg.get("weekend_style", "ausfuehrlich")
         self.morning_actions = mb_cfg.get("morning_actions", {})
@@ -72,19 +80,35 @@ class RoutineEngine:
         # Good Night Config
         gn_cfg = routines_cfg.get("good_night", {})
         self.goodnight_enabled = gn_cfg.get("enabled", True)
-        self.goodnight_triggers = gn_cfg.get("triggers", [
-            "gute nacht", "ich gehe schlafen", "schlaf gut",
-        ])
-        self.goodnight_checks = gn_cfg.get("checks", [
-            "windows", "doors", "alarm", "lights",
-        ])
+        self.goodnight_triggers = gn_cfg.get(
+            "triggers",
+            [
+                "gute nacht",
+                "ich gehe schlafen",
+                "schlaf gut",
+            ],
+        )
+        self.goodnight_checks = gn_cfg.get(
+            "checks",
+            [
+                "windows",
+                "doors",
+                "alarm",
+                "lights",
+            ],
+        )
         self.goodnight_actions = gn_cfg.get("actions", {})
 
         # Guest Mode Config
         gm_cfg = routines_cfg.get("guest_mode", {})
-        self.guest_triggers = gm_cfg.get("triggers", [
-            "ich habe besuch", "ich hab besuch", "gaeste kommen",
-        ])
+        self.guest_triggers = gm_cfg.get(
+            "triggers",
+            [
+                "ich habe besuch",
+                "ich hab besuch",
+                "gaeste kommen",
+            ],
+        )
         self.guest_restrictions = gm_cfg.get("restrictions", {})
 
         logger.info("RoutineEngine initialisiert")
@@ -95,28 +119,52 @@ class RoutineEngine:
 
         mb_cfg = routines_cfg.get("morning_briefing", {})
         self.briefing_enabled = mb_cfg.get("enabled", True)
-        self.briefing_modules = mb_cfg.get("modules", [
-            "greeting", "weather", "calendar", "house_status", "travel",
-            "personal_memory", "device_conflicts",
-        ])
+        self.briefing_modules = mb_cfg.get(
+            "modules",
+            [
+                "greeting",
+                "weather",
+                "calendar",
+                "house_status",
+                "travel",
+                "personal_memory",
+                "device_conflicts",
+            ],
+        )
         self.weekday_style = mb_cfg.get("weekday_style", "kurz")
         self.weekend_style = mb_cfg.get("weekend_style", "ausfuehrlich")
         self.morning_actions = mb_cfg.get("morning_actions", {})
 
         gn_cfg = routines_cfg.get("good_night", {})
         self.goodnight_enabled = gn_cfg.get("enabled", True)
-        self.goodnight_triggers = gn_cfg.get("triggers", [
-            "gute nacht", "ich gehe schlafen", "schlaf gut",
-        ])
-        self.goodnight_checks = gn_cfg.get("checks", [
-            "windows", "doors", "alarm", "lights",
-        ])
+        self.goodnight_triggers = gn_cfg.get(
+            "triggers",
+            [
+                "gute nacht",
+                "ich gehe schlafen",
+                "schlaf gut",
+            ],
+        )
+        self.goodnight_checks = gn_cfg.get(
+            "checks",
+            [
+                "windows",
+                "doors",
+                "alarm",
+                "lights",
+            ],
+        )
         self.goodnight_actions = gn_cfg.get("actions", {})
 
         gm_cfg = routines_cfg.get("guest_mode", {})
-        self.guest_triggers = gm_cfg.get("triggers", [
-            "ich habe besuch", "ich hab besuch", "gaeste kommen",
-        ])
+        self.guest_triggers = gm_cfg.get(
+            "triggers",
+            [
+                "ich habe besuch",
+                "ich hab besuch",
+                "gaeste kommen",
+            ],
+        )
         self.guest_restrictions = gm_cfg.get("restrictions", {})
 
         logger.info("RoutineEngine Config hot-reloaded")
@@ -137,7 +185,9 @@ class RoutineEngine:
     # Morning Briefing (Feature 7.1)
     # ------------------------------------------------------------------
 
-    async def generate_morning_briefing(self, person: str = "", force: bool = False) -> dict:
+    async def generate_morning_briefing(
+        self, person: str = "", force: bool = False
+    ) -> dict:
         """
         Generiert ein Morning Briefing.
 
@@ -194,7 +244,10 @@ class RoutineEngine:
         try:
             response = await self.ollama.chat(
                 messages=[
-                    {"role": "system", "content": self._get_briefing_system_prompt(style)},
+                    {
+                        "role": "system",
+                        "content": self._get_briefing_system_prompt(style),
+                    },
                     {"role": "user", "content": briefing_prompt},
                 ],
                 model=settings.model_fast,
@@ -216,7 +269,11 @@ class RoutineEngine:
             except Exception as e:
                 logger.warning("Redis setex für Morning Briefing fehlgeschlagen: %s", e)
 
-        logger.info("Morning Briefing generiert (%d Bausteine, %d Aktionen)", len(parts), len(actions))
+        logger.info(
+            "Morning Briefing generiert (%d Bausteine, %d Aktionen)",
+            len(parts),
+            len(actions),
+        )
         return {"text": text, "actions": actions}
 
     async def _get_briefing_module(self, module: str, person: str, style: str) -> str:
@@ -248,8 +305,11 @@ class RoutineEngine:
             states = await self.ha.get_states()
             if not states:
                 return ""
-            state_dict = {s["entity_id"]: s.get("state", "") for s in states if "entity_id" in s}
+            state_dict = {
+                s["entity_id"]: s.get("state", "") for s in states if "entity_id" in s
+            }
             from .state_change_log import StateChangeLog
+
             scl = StateChangeLog.__new__(StateChangeLog)
             conflicts = scl.detect_conflicts(state_dict)
             if not conflicts:
@@ -271,7 +331,9 @@ class RoutineEngine:
         parts = []
         try:
             # Anstehende persoenliche Daten (naechste 7 Tage)
-            upcoming = await self._semantic_memory.get_upcoming_personal_dates(days_ahead=7)
+            upcoming = await self._semantic_memory.get_upcoming_personal_dates(
+                days_ahead=7
+            )
             for entry in upcoming:
                 if entry["days_until"] > 0:  # Heute wird schon in greeting abgedeckt
                     name = entry["person"].capitalize()
@@ -290,12 +352,16 @@ class RoutineEngine:
             # Offene Gespraeche aus der letzten Session
             if self.redis:
                 from .memory import MemoryManager
+
                 pending_key = "mha:conversations:pending"
                 pending_raw = await self.redis.lrange(pending_key, 0, 2)
                 import json as _json
-                for raw in (pending_raw or []):
+
+                for raw in pending_raw or []:
                     try:
-                        item = _json.loads(raw if isinstance(raw, str) else raw.decode())
+                        item = _json.loads(
+                            raw if isinstance(raw, str) else raw.decode()
+                        )
                         topic = item.get("topic", "")
                         if topic:
                             parts.append(f"Offenes Thema: {topic}")
@@ -305,14 +371,26 @@ class RoutineEngine:
             logger.debug("Personal Memory Briefing fehlgeschlagen: %s", e)
 
         if parts:
-            return "Persoenliche Erinnerungen:\n" + "\n".join(f"- {p}" for p in parts[:5])
+            return "Persoenliche Erinnerungen:\n" + "\n".join(
+                f"- {p}" for p in parts[:5]
+            )
         return ""
 
     async def _get_greeting_context(self, person: str) -> str:
         """Kontextdaten für die Begruessung, inkl. Geburtstags-Check."""
         now = datetime.now(tz=_TZ)
-        weekday = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"][now.weekday()]
-        context = f"Tag: {weekday}, {now.strftime('%d.%m.%Y')}, {now.strftime('%H:%M')} Uhr"
+        weekday = [
+            "Montag",
+            "Dienstag",
+            "Mittwoch",
+            "Donnerstag",
+            "Freitag",
+            "Samstag",
+            "Sonntag",
+        ][now.weekday()]
+        context = (
+            f"Tag: {weekday}, {now.strftime('%d.%m.%Y')}, {now.strftime('%H:%M')} Uhr"
+        )
 
         # Geburtstags-Check (YAML-Konfiguration)
         birthday = self._check_birthday(person, now)
@@ -322,7 +400,9 @@ class RoutineEngine:
         # Semantic Memory: Heutige persoenliche Daten
         if self._semantic_memory:
             try:
-                upcoming = await self._semantic_memory.get_upcoming_personal_dates(days_ahead=1)
+                upcoming = await self._semantic_memory.get_upcoming_personal_dates(
+                    days_ahead=1
+                )
                 for entry in upcoming:
                     if entry["days_until"] == 0:
                         name = entry["person"].capitalize()
@@ -332,7 +412,9 @@ class RoutineEngine:
                         if name.lower() in context.lower():
                             continue
                         if entry.get("date_type") == "birthday" and anni:
-                            context += f". {name} hat heute {label} ({anni}. Geburtstag)"
+                            context += (
+                                f". {name} hat heute {label} ({anni}. Geburtstag)"
+                            )
                         elif entry.get("date_type") == "birthday":
                             context += f". {name} hat heute {label}"
                         else:
@@ -367,7 +449,9 @@ class RoutineEngine:
                         birth_year = int(date_str[:4]) if len(date_str) == 10 else None
                         age = now.year - birth_year if birth_year else None
                         age_text = f" ({age}. Geburtstag)" if age else ""
-                        messages.append(f"GEBURTSTAG: {name} hat heute Geburtstag{age_text}")
+                        messages.append(
+                            f"GEBURTSTAG: {name} hat heute Geburtstag{age_text}"
+                        )
                     except (ValueError, TypeError):
                         messages.append(f"GEBURTSTAG: {name} hat heute Geburtstag")
                 else:
@@ -489,7 +573,8 @@ class RoutineEngine:
         """
         try:
             result = await self.ha.call_service_with_response(
-                "weather", "get_forecasts",
+                "weather",
+                "get_forecasts",
                 {"entity_id": entity_id, "type": "daily"},
             )
             if not result:
@@ -649,6 +734,7 @@ class RoutineEngine:
 
         # Offene Fenster/Türen — kategorisiert nach Typ
         from .function_calling import is_window_or_door, get_opening_type
+
         open_windows_doors = []
         open_gates = []
         for state in states:
@@ -666,7 +752,8 @@ class RoutineEngine:
 
         # Lichter
         lights_on = sum(
-            1 for s in states
+            1
+            for s in states
             if s.get("entity_id", "").startswith("light.") and s.get("state") == "on"
         )
         if lights_on > 0:
@@ -678,7 +765,11 @@ class RoutineEngine:
         self, parts: list[str], style: str, person: str, now: datetime
     ) -> str:
         """Baut den Prompt für das LLM um das Briefing zu formulieren."""
-        title = get_person_title(person) if not person or person.lower() == settings.user_name.lower() else person
+        title = (
+            get_person_title(person)
+            if not person or person.lower() == settings.user_name.lower()
+            else person
+        )
         prompt = f"Erstelle ein Morning Briefing für {title}.\n\n"
         prompt += "DATEN:\n"
         for part in parts:
@@ -699,7 +790,8 @@ class RoutineEngine:
         if self._personality:
             try:
                 return self._personality.build_routine_prompt(
-                    routine_type="morning", style=style,
+                    routine_type="morning",
+                    style=style,
                 )
             except Exception as e:
                 logger.debug("Personality-Routine-Prompt fehlgeschlagen: %s", e)
@@ -765,7 +857,9 @@ class RoutineEngine:
             else:
                 return {}
 
-            logger.info("Sleep-Awareness: Late-Night erkannt (consecutive=%d)", consecutive)
+            logger.info(
+                "Sleep-Awareness: Late-Night erkannt (consecutive=%d)", consecutive
+            )
             return {"was_late": True, "briefing_note": note}
 
         except Exception as e:
@@ -791,7 +885,9 @@ class RoutineEngine:
                 except Exception as e:
                     logger.debug("Unhandled: %s", e)
             if wakeup_done:
-                logger.info("Morning covers_up übersprungen: Wakeup-Sequenz hat Rollläden schon gefahren")
+                logger.info(
+                    "Morning covers_up übersprungen: Wakeup-Sequenz hat Rollläden schon gefahren"
+                )
             else:
                 # Bettsensor prüfen: Wenn noch jemand im Bett liegt,
                 # Rollläden NICHT hochfahren (Schlafzimmer-Schutz)
@@ -799,17 +895,26 @@ class RoutineEngine:
                 if bed_occupied:
                     logger.info("Morning covers_up übersprungen: Bettsensor belegt")
                 else:
-                    result = await self._executor.execute("set_cover", {
-                        "room": "all", "position": 100,
-                    })
+                    result = await self._executor.execute(
+                        "set_cover",
+                        {
+                            "room": "all",
+                            "position": 100,
+                        },
+                    )
                     actions.append({"function": "set_cover", "result": result})
 
         if self.morning_actions.get("lights_soft", False):
             lights_room = self.morning_actions.get("lights_soft_room", "wohnzimmer")
             lights_brightness = self.morning_actions.get("lights_soft_brightness", 30)
-            result = await self._executor.execute("set_light", {
-                "room": lights_room, "state": "on", "brightness": lights_brightness,
-            })
+            result = await self._executor.execute(
+                "set_light",
+                {
+                    "room": lights_room,
+                    "state": "on",
+                    "brightness": lights_brightness,
+                },
+            )
             actions.append({"function": "set_light", "result": result})
 
         return actions
@@ -827,7 +932,11 @@ class RoutineEngine:
         Returns:
             True wenn Sequenz ausgeführt wurde.
         """
-        ws_cfg = yaml_config.get("routines", {}).get("morning_briefing", {}).get("wakeup_sequence", {})
+        ws_cfg = (
+            yaml_config.get("routines", {})
+            .get("morning_briefing", {})
+            .get("wakeup_sequence", {})
+        )
         if not ws_cfg.get("enabled", False):
             return False
 
@@ -899,9 +1008,13 @@ class RoutineEngine:
         for i in range(1, steps + 1):
             position = min(100, i * step_size)
             try:
-                await self._executor.execute("set_cover", {
-                    "room": room, "position": position,
-                })
+                await self._executor.execute(
+                    "set_cover",
+                    {
+                        "room": room,
+                        "position": position,
+                    },
+                )
                 logger.debug("Wakeup covers: %d%% (%s)", position, room)
             except Exception as e:
                 logger.debug("Wakeup cover step fehlgeschlagen: %s", e)
@@ -919,12 +1032,15 @@ class RoutineEngine:
         transition = cfg.get("transition", 10)
 
         try:
-            await self._executor.execute("set_light", {
-                "room": room,
-                "state": "on",
-                "brightness": brightness,
-                "transition": transition,
-            })
+            await self._executor.execute(
+                "set_light",
+                {
+                    "room": room,
+                    "state": "on",
+                    "brightness": brightness,
+                    "transition": transition,
+                },
+            )
             logger.debug("Wakeup light: %d%% in %s", brightness, room)
         except Exception as e:
             logger.debug("Wakeup light fehlgeschlagen: %s", e)
@@ -939,16 +1055,21 @@ class RoutineEngine:
             # Dependency-Check (z.B. Kaffeemaschine + Wasserleitung)
             try:
                 from .state_change_log import StateChangeLog
+
                 states = await self.ha.get_states() or []
                 hints = StateChangeLog.check_action_dependencies(
-                    "set_switch", {"entity_id": entity, "state": "on"}, states,
+                    "set_switch",
+                    {"entity_id": entity, "state": "on"},
+                    states,
                 )
                 if hints:
                     logger.info("Wakeup coffee: Dependency-Warnung: %s", hints[0])
             except Exception as e:
                 logger.debug("Wakeup coffee Dependency-Pruefung fehlgeschlagen: %s", e)
             await self.ha.call_service(
-                "homeassistant", "turn_on", {"entity_id": entity},
+                "homeassistant",
+                "turn_on",
+                {"entity_id": entity},
             )
             logger.info("Wakeup: Kaffeemaschine eingeschaltet (%s)", entity)
         except Exception as e:
@@ -960,10 +1081,13 @@ class RoutineEngine:
         bed_sensors = get_all_bed_sensors()
         if not bed_sensors:
             activity_cfg = yaml_config.get("activity", {})
-            bed_sensors = activity_cfg.get("entities", {}).get("bed_sensors", [
-                "binary_sensor.bed_occupancy",
-                "binary_sensor.bett",
-            ])
+            bed_sensors = activity_cfg.get("entities", {}).get(
+                "bed_sensors",
+                [
+                    "binary_sensor.bed_occupancy",
+                    "binary_sensor.bett",
+                ],
+            )
         try:
             states = await self.ha.get_states()
             if not states:
@@ -989,34 +1113,67 @@ class RoutineEngine:
         """
         text_lower = text.lower().strip()
         # Wetter-Fragen mit "nacht" ausschliessen
-        _weather_excludes = ["wie kalt", "wie warm", "temperatur", "wetter",
-                             "grad", "regnet", "schneit"]
+        _weather_excludes = [
+            "wie kalt",
+            "wie warm",
+            "temperatur",
+            "wetter",
+            "grad",
+            "regnet",
+            "schneit",
+        ]
         if any(ex in text_lower for ex in _weather_excludes):
             logger.debug("Goodnight-Check: Wetter-Ausschluss fuer '%s'", text_lower)
             return False
 
         # Gezielte Geraetebefehle sind kein Gute-Nacht-Intent
-        _device_excludes = ["rollladen", "rolladen", "licht", "lampe", "heizung",
-                            "thermostat", "markise", "jalousie", "steckdose",
-                            "schalter", "klimaanlage", "ventilator"]
+        _device_excludes = [
+            "rollladen",
+            "rolladen",
+            "licht",
+            "lampe",
+            "heizung",
+            "thermostat",
+            "markise",
+            "jalousie",
+            "steckdose",
+            "schalter",
+            "klimaanlage",
+            "ventilator",
+        ]
         if any(dev in text_lower for dev in _device_excludes):
-            logger.debug("Goodnight-Check: Geraete-Befehl ausgeschlossen fuer '%s'", text_lower)
+            logger.debug(
+                "Goodnight-Check: Geraete-Befehl ausgeschlossen fuer '%s'", text_lower
+            )
             return False
 
         # Erweiterte Defaults (zusaetzlich zu konfigurierten Triggern)
         _extended_triggers = [
-            "nacht", "schlafe", "ab ins bett", "geh ins bett",
-            "gehe ins bett", "bin muede", "ich bin müde", "geh schlafen",
-            "gehe schlafen", "geh pennen", "bis morgen",
-            "feierabend", "leg mich hin", "lege mich hin",
-            "bin im bett", "ich schlaf jetzt",
+            "nacht",
+            "schlafe",
+            "ab ins bett",
+            "geh ins bett",
+            "gehe ins bett",
+            "bin muede",
+            "ich bin müde",
+            "geh schlafen",
+            "gehe schlafen",
+            "geh pennen",
+            "bis morgen",
+            "feierabend",
+            "leg mich hin",
+            "lege mich hin",
+            "bin im bett",
+            "ich schlaf jetzt",
         ]
         all_triggers = list(self.goodnight_triggers) + _extended_triggers
 
         matched = any(trigger in text_lower for trigger in all_triggers)
         logger.debug(
             "Goodnight-Check: text='%s', enabled=%s, keyword_matched=%s",
-            text_lower, self.goodnight_enabled, matched,
+            text_lower,
+            self.goodnight_enabled,
+            matched,
         )
         if matched:
             return True
@@ -1028,26 +1185,33 @@ class RoutineEngine:
         try:
             llm_result = await asyncio.wait_for(
                 self.ollama.chat(
-                    messages=[{
-                        "role": "system",
-                        "content": (
-                            "Ist der folgende Satz ein Gute-Nacht-Intent? "
-                            "Also moechte die Person schlafen gehen oder sich verabschieden fuer die Nacht? "
-                            "Antworte NUR mit 'ja' oder 'nein'."
-                        ),
-                    }, {
-                        "role": "user",
-                        "content": text,
-                    }],
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Ist der folgende Satz ein Gute-Nacht-Intent? "
+                                "Also moechte die Person schlafen gehen oder sich verabschieden fuer die Nacht? "
+                                "Antworte NUR mit 'ja' oder 'nein'."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": text,
+                        },
+                    ],
                     model=settings.model_fast,
-                    temperature=0.0, max_tokens=5, think=False,
+                    temperature=0.0,
+                    max_tokens=5,
+                    think=False,
                 ),
                 timeout=2.0,
             )
             answer = llm_result.get("message", {}).get("content", "").strip().lower()
             is_goodnight = answer.startswith("ja")
             if is_goodnight:
-                logger.info("Goodnight-Check: LLM-Classifier erkannt fuer '%s'", text_lower)
+                logger.info(
+                    "Goodnight-Check: LLM-Classifier erkannt fuer '%s'", text_lower
+                )
             return is_goodnight
         except Exception as e:
             logger.debug("Goodnight LLM-Classifier fehlgeschlagen: %s", e)
@@ -1064,7 +1228,11 @@ class RoutineEngine:
                 issues: list - Offene Probleme (Fenster, Türen)
         """
         if not self.goodnight_enabled:
-            return {"text": f"Gute Nacht, {get_person_title(person)}. Alles unter Kontrolle.", "actions": [], "issues": []}
+            return {
+                "text": f"Gute Nacht, {get_person_title(person)}. Alles unter Kontrolle.",
+                "actions": [],
+                "issues": [],
+            }
 
         logger.info("Gute-Nacht-Routine gestartet fuer '%s'", person or "unbekannt")
 
@@ -1081,7 +1249,9 @@ class RoutineEngine:
 
         # 2. Morgen-Vorschau (max 10s)
         try:
-            tomorrow_info = await asyncio.wait_for(self._get_tomorrow_preview(), timeout=10.0)
+            tomorrow_info = await asyncio.wait_for(
+                self._get_tomorrow_preview(), timeout=10.0
+            )
             logger.info("Gute-Nacht: Morgen-Vorschau fertig")
         except asyncio.TimeoutError:
             logger.warning("Gute-Nacht: Morgen-Vorschau Timeout (10s)")
@@ -1094,7 +1264,9 @@ class RoutineEngine:
         actions = []
         if not any(i.get("critical", False) for i in issues):
             try:
-                actions = await asyncio.wait_for(self._execute_goodnight_actions(), timeout=15.0)
+                actions = await asyncio.wait_for(
+                    self._execute_goodnight_actions(), timeout=15.0
+                )
                 logger.info("Gute-Nacht: %d Aktionen ausgefuehrt", len(actions))
             except asyncio.TimeoutError:
                 logger.warning("Gute-Nacht: Aktionen Timeout (15s)")
@@ -1124,13 +1296,16 @@ class RoutineEngine:
         # Timestamp speichern
         if self.redis:
             try:
-                await self.redis.setex(KEY_LAST_GOODNIGHT, 86400, datetime.now(tz=_TZ).isoformat())
+                await self.redis.setex(
+                    KEY_LAST_GOODNIGHT, 86400, datetime.now(tz=_TZ).isoformat()
+                )
             except Exception as e:
                 logger.debug("Gute-Nacht: Timestamp nicht gespeichert: %s", e)
 
         logger.info(
             "Gute-Nacht: %d Aktionen, %d Issues — Routine abgeschlossen",
-            len(actions), len(issues),
+            len(actions),
+            len(issues),
         )
         return {"text": text, "actions": actions, "issues": issues}
 
@@ -1144,44 +1319,53 @@ class RoutineEngine:
         for check in self.goodnight_checks:
             if check == "windows":
                 from .function_calling import is_window_or_door, get_opening_type
+
                 for state in states:
                     eid = state.get("entity_id", "")
                     if is_window_or_door(eid, state) and state.get("state") == "on":
                         name = state.get("attributes", {}).get("friendly_name", eid)
                         opening_type = get_opening_type(eid, state)
                         type_label = "Tor" if opening_type == "gate" else "Fenster/Tür"
-                        issues.append({
-                            "type": "window_open" if opening_type != "gate" else "gate_open",
-                            "entity": eid,
-                            "name": name,
-                            "message": f"{name} ist noch offen ({type_label})",
-                            "critical": False,
-                        })
+                        issues.append(
+                            {
+                                "type": "window_open"
+                                if opening_type != "gate"
+                                else "gate_open",
+                                "entity": eid,
+                                "name": name,
+                                "message": f"{name} ist noch offen ({type_label})",
+                                "critical": False,
+                            }
+                        )
 
             elif check == "doors":
                 for state in states:
                     eid = state.get("entity_id", "")
                     if eid.startswith("lock.") and state.get("state") == "unlocked":
                         name = state.get("attributes", {}).get("friendly_name", eid)
-                        issues.append({
-                            "type": "door_unlocked",
-                            "entity": eid,
-                            "name": name,
-                            "message": f"{name} ist nicht verriegelt",
-                            "critical": True,
-                        })
+                        issues.append(
+                            {
+                                "type": "door_unlocked",
+                                "entity": eid,
+                                "name": name,
+                                "message": f"{name} ist nicht verriegelt",
+                                "critical": True,
+                            }
+                        )
 
             elif check == "alarm":
                 for state in states:
                     if state.get("entity_id", "").startswith("alarm_control_panel."):
                         if state.get("state") == "disarmed":
-                            issues.append({
-                                "type": "alarm_off",
-                                "entity": state["entity_id"],
-                                "name": "Alarmanlage",
-                                "message": "Alarm ist deaktiviert",
-                                "critical": False,
-                            })
+                            issues.append(
+                                {
+                                    "type": "alarm_off",
+                                    "entity": state["entity_id"],
+                                    "name": "Alarmanlage",
+                                    "message": "Alarm ist deaktiviert",
+                                    "critical": False,
+                                }
+                            )
 
             elif check == "lights":
                 lights_on = []
@@ -1191,41 +1375,53 @@ class RoutineEngine:
                         name = state.get("attributes", {}).get("friendly_name", eid)
                         lights_on.append(name)
                 if lights_on:
-                    issues.append({
-                        "type": "lights_on",
-                        "name": ", ".join(lights_on),
-                        "message": f"{len(lights_on)} Licht(er) noch an: {', '.join(lights_on)}",
-                        "critical": False,
-                    })
+                    issues.append(
+                        {
+                            "type": "lights_on",
+                            "name": ", ".join(lights_on),
+                            "message": f"{len(lights_on)} Licht(er) noch an: {', '.join(lights_on)}",
+                            "critical": False,
+                        }
+                    )
 
             elif check == "appliances":
                 appliance_keywords = ["ofen", "herd", "buegeleisen", "iron", "oven"]
                 for state in states:
                     eid = state.get("entity_id", "")
-                    if any(kw in eid for kw in appliance_keywords) and state.get("state") == "on":
+                    if (
+                        any(kw in eid for kw in appliance_keywords)
+                        and state.get("state") == "on"
+                    ):
                         name = state.get("attributes", {}).get("friendly_name", eid)
-                        issues.append({
-                            "type": "appliance_on",
-                            "entity": eid,
-                            "name": name,
-                            "message": f"{name} ist noch an!",
-                            "critical": True,
-                        })
+                        issues.append(
+                            {
+                                "type": "appliance_on",
+                                "entity": eid,
+                                "name": name,
+                                "message": f"{name} ist noch an!",
+                                "critical": True,
+                            }
+                        )
 
         # Device-Dependency Konflikte (naechtliche Sicherheitsrelevanz)
         try:
-            state_dict = {s["entity_id"]: s.get("state", "") for s in states if "entity_id" in s}
+            state_dict = {
+                s["entity_id"]: s.get("state", "") for s in states if "entity_id" in s
+            }
             from .state_change_log import StateChangeLog
+
             scl = StateChangeLog.__new__(StateChangeLog)
             conflicts = scl.detect_conflicts(state_dict)
             for c in conflicts[:3]:
                 room_info = f" ({c['room']})" if c.get("room") else ""
-                issues.append({
-                    "type": "device_conflict",
-                    "name": c.get("hint", "Geraete-Konflikt"),
-                    "message": f"{c['hint']}{room_info}",
-                    "critical": False,
-                })
+                issues.append(
+                    {
+                        "type": "device_conflict",
+                        "name": c.get("hint", "Geraete-Konflikt"),
+                        "message": f"{c['hint']}{room_info}",
+                        "critical": False,
+                    }
+                )
         except Exception as e:
             logger.debug("Goodnight Device-Conflict Check Fehler: %s", e)
 
@@ -1318,61 +1514,99 @@ class RoutineEngine:
 
         if gn_actions.get("lights_off", False):
             try:
-                result = await self._executor.execute("set_light", {
-                    "room": "all", "state": "off",
-                })
+                result = await self._executor.execute(
+                    "set_light",
+                    {
+                        "room": "all",
+                        "state": "off",
+                    },
+                )
                 actions.append({"function": "set_light:off", "result": result})
             except Exception as e:
                 logger.warning("Gute-Nacht Lichter-aus fehlgeschlagen: %s", e)
-                actions.append({"function": "set_light:off", "result": {"error": str(e)}})
+                actions.append(
+                    {"function": "set_light:off", "result": {"error": str(e)}}
+                )
 
         if gn_actions.get("heating_night", False):
             try:
                 heating = yaml_config.get("heating", {})
                 if heating.get("mode") == "heating_curve":
                     night_offset = heating.get("night_offset", -2)
-                    result = await self._executor.execute("set_climate", {
-                        "offset": night_offset,
-                    })
+                    result = await self._executor.execute(
+                        "set_climate",
+                        {
+                            "offset": night_offset,
+                        },
+                    )
                 else:
                     night_room = gn_actions.get("heating_night_room", "schlafzimmer")
                     night_temp = gn_actions.get("heating_night_temp", 18)
-                    result = await self._executor.execute("set_climate", {
-                        "room": night_room, "temperature": night_temp,
-                    })
+                    result = await self._executor.execute(
+                        "set_climate",
+                        {
+                            "room": night_room,
+                            "temperature": night_temp,
+                        },
+                    )
                 actions.append({"function": "set_climate:night", "result": result})
             except Exception as e:
                 logger.warning("Gute-Nacht Heizung-Nacht fehlgeschlagen: %s", e)
-                actions.append({"function": "set_climate:night", "result": {"error": str(e)}})
+                actions.append(
+                    {"function": "set_climate:night", "result": {"error": str(e)}}
+                )
 
         if gn_actions.get("covers_down", False):
             try:
-                result = await self._executor.execute("set_cover", {
-                    "room": "all", "position": 0,
-                })
+                result = await self._executor.execute(
+                    "set_cover",
+                    {
+                        "room": "all",
+                        "position": 0,
+                    },
+                )
                 actions.append({"function": "set_cover:down", "result": result})
             except Exception as e:
                 logger.warning("Gute-Nacht Rollläden-runter fehlgeschlagen: %s", e)
-                actions.append({"function": "set_cover:down", "result": {"error": str(e)}})
+                actions.append(
+                    {"function": "set_cover:down", "result": {"error": str(e)}}
+                )
 
         if gn_actions.get("alarm_arm_home", False):
             try:
-                result = await self._executor.execute("arm_security_system", {
-                    "mode": "arm_home",
-                })
-                actions.append({"function": "arm_security_system:arm_home", "result": result})
+                result = await self._executor.execute(
+                    "arm_security_system",
+                    {
+                        "mode": "arm_home",
+                    },
+                )
+                actions.append(
+                    {"function": "arm_security_system:arm_home", "result": result}
+                )
             except Exception as e:
                 logger.warning("Gute-Nacht Alarmanlage fehlgeschlagen: %s", e)
-                actions.append({"function": "arm_security_system:arm_home", "result": {"error": str(e)}})
+                actions.append(
+                    {
+                        "function": "arm_security_system:arm_home",
+                        "result": {"error": str(e)},
+                    }
+                )
 
         return actions
 
     async def _generate_goodnight_text(
-        self, person: str, issues: list[dict],
-        tomorrow_info: str, actions: list[dict],
+        self,
+        person: str,
+        issues: list[dict],
+        tomorrow_info: str,
+        actions: list[dict],
     ) -> str:
         """Generiert den Gute-Nacht-Text via LLM."""
-        title = get_person_title(person) if not person or person.lower() == settings.user_name.lower() else person
+        title = (
+            get_person_title(person)
+            if not person or person.lower() == settings.user_name.lower()
+            else person
+        )
 
         parts = []
         if tomorrow_info:
@@ -1422,7 +1656,10 @@ class RoutineEngine:
                 ],
                 model=settings.model_fast,
             )
-            return response.get("message", {}).get("content", f"Gute Nacht, {get_person_title(person)}. Systeme fahren runter.")
+            return response.get("message", {}).get(
+                "content",
+                f"Gute Nacht, {get_person_title(person)}. Systeme fahren runter.",
+            )
         except Exception as e:
             logger.error("Gute-Nacht LLM Fehler: %s", e)
             # Fallback ohne LLM
@@ -1447,12 +1684,21 @@ class RoutineEngine:
 
         # Erweiterte Defaults (zusaetzlich zu konfigurierten Triggern)
         _extended_triggers = [
-            "besuch kommt", "besuch da", "freunde kommen",
-            "wir bekommen besuch", "wir haben besuch", "wir kriegen besuch",
-            "gleich kommen gaeste", "gleich kommt besuch",
-            "meine eltern kommen", "familie kommt",
-            "jemand kommt vorbei", "kommt jemand vorbei",
-            "bekommen gaeste", "erwarte besuch", "erwarte gaeste",
+            "besuch kommt",
+            "besuch da",
+            "freunde kommen",
+            "wir bekommen besuch",
+            "wir haben besuch",
+            "wir kriegen besuch",
+            "gleich kommen gaeste",
+            "gleich kommt besuch",
+            "meine eltern kommen",
+            "familie kommt",
+            "jemand kommt vorbei",
+            "kommt jemand vorbei",
+            "bekommen gaeste",
+            "erwarte besuch",
+            "erwarte gaeste",
         ]
         all_triggers = list(self.guest_triggers) + _extended_triggers
 
@@ -1461,8 +1707,16 @@ class RoutineEngine:
 
         # Negative Guard: Wenn der Text signalisiert dass Gaeste GEHEN/WEG sind,
         # darf der LLM-Fallback nicht faelschlicherweise Aktivierung erkennen.
-        _gone_signals = ["gegangen", "weg", "geht", "gehen", "verabschiedet",
-                         "abgereist", "aufgebrochen", "wieder allein"]
+        _gone_signals = [
+            "gegangen",
+            "weg",
+            "geht",
+            "gehen",
+            "verabschiedet",
+            "abgereist",
+            "aufgebrochen",
+            "wieder allein",
+        ]
         if any(s in text_lower for s in _gone_signals):
             return False
 
@@ -1473,18 +1727,23 @@ class RoutineEngine:
         try:
             llm_result = await asyncio.wait_for(
                 self.ollama.chat(
-                    messages=[{
-                        "role": "system",
-                        "content": (
-                            "Kuendigt der folgende Satz an, dass Gaeste/Besuch kommen oder da sind? "
-                            "Antworte NUR mit 'ja' oder 'nein'."
-                        ),
-                    }, {
-                        "role": "user",
-                        "content": text,
-                    }],
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Kuendigt der folgende Satz an, dass Gaeste/Besuch kommen oder da sind? "
+                                "Antworte NUR mit 'ja' oder 'nein'."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": text,
+                        },
+                    ],
                     model=settings.model_fast,
-                    temperature=0.0, max_tokens=5, think=False,
+                    temperature=0.0,
+                    max_tokens=5,
+                    think=False,
                 ),
                 timeout=2.0,
             )
@@ -1519,11 +1778,14 @@ class RoutineEngine:
         if wifi_cfg.get("auto_enable", False) and self._executor:
             try:
                 wifi_entity = wifi_cfg.get("switch_entity", "switch.guest_wifi")
-                result = await self._executor.execute("call_service", {
-                    "domain": "switch",
-                    "service": "turn_on",
-                    "entity_id": wifi_entity,
-                })
+                result = await self._executor.execute(
+                    "call_service",
+                    {
+                        "domain": "switch",
+                        "service": "turn_on",
+                        "entity_id": wifi_entity,
+                    },
+                )
                 ssid = wifi_cfg.get("ssid", "Gast")
                 password = wifi_cfg.get("password", "")
                 parts.append(f"Gaeste-WLAN '{ssid}' ist aktiv.")
@@ -1547,11 +1809,14 @@ class RoutineEngine:
             return "Kein Executor verfügbar."
 
         try:
-            await self._executor.execute("call_service", {
-                "domain": "switch",
-                "service": "turn_on",
-                "entity_id": wifi_entity,
-            })
+            await self._executor.execute(
+                "call_service",
+                {
+                    "domain": "switch",
+                    "service": "turn_on",
+                    "entity_id": wifi_entity,
+                },
+            )
             ssid = wifi_cfg.get("ssid", "Gast")
             password = wifi_cfg.get("password", "")
             msg = f"Gaeste-WLAN '{ssid}' ist jetzt aktiv."
@@ -1571,11 +1836,14 @@ class RoutineEngine:
             return "Kein Executor verfügbar."
 
         try:
-            await self._executor.execute("call_service", {
-                "domain": "switch",
-                "service": "turn_off",
-                "entity_id": wifi_entity,
-            })
+            await self._executor.execute(
+                "call_service",
+                {
+                    "domain": "switch",
+                    "service": "turn_off",
+                    "entity_id": wifi_entity,
+                },
+            )
             return "Gaeste-WLAN deaktiviert."
         except Exception as e:
             logger.error("Gaeste-WLAN Fehler: %s", e)
@@ -1609,7 +1877,9 @@ class RoutineEngine:
         restrictions = self.guest_restrictions
         parts = ["GAESTE-MODUS AKTIV:"]
         if restrictions.get("hide_personal_info"):
-            parts.append("- Keine persoenlichen Infos preisgeben (Kalender, Gewohnheiten, etc.)")
+            parts.append(
+                "- Keine persoenlichen Infos preisgeben (Kalender, Gewohnheiten, etc.)"
+            )
         if restrictions.get("formal_tone"):
             parts.append("- Formeller Ton. Kein Insider-Humor.")
         if restrictions.get("restrict_security"):
@@ -1646,11 +1916,13 @@ class RoutineEngine:
                 entry = entry.decode("utf-8", errors="ignore")
             parts = entry.split("|", 2)
             if len(parts) == 3:
-                events.append({
-                    "time": parts[0],
-                    "type": parts[1],
-                    "description": parts[2],
-                })
+                events.append(
+                    {
+                        "time": parts[0],
+                        "type": parts[1],
+                        "description": parts[2],
+                    }
+                )
 
         if not events:
             return ""
@@ -1689,10 +1961,16 @@ class RoutineEngine:
         try:
             response = await self.ollama.chat(
                 messages=[
-                    {"role": "system", "content": f"Du bist {settings.assistant_name}. "
-                     "Fasse Events während der Abwesenheit zusammen. "
-                     "Kurz, nur Relevantes. Max 2 Saetze. Deutsch. Butler-Stil."},
-                    {"role": "user", "content": f"Events während der Abwesenheit:\n{event_text}"},
+                    {
+                        "role": "system",
+                        "content": f"Du bist {settings.assistant_name}. "
+                        "Fasse Events während der Abwesenheit zusammen. "
+                        "Kurz, nur Relevantes. Max 2 Saetze. Deutsch. Butler-Stil.",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Events während der Abwesenheit:\n{event_text}",
+                    },
                 ],
                 model=settings.model_fast,
             )
@@ -1721,7 +1999,9 @@ class RoutineEngine:
 
         await self.redis.setex(KEY_VACATION_SIM, 30 * 86400, "active")
         self._vacation_task = asyncio.create_task(self._run_vacation_simulation())
-        self._vacation_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        self._vacation_task.add_done_callback(
+            lambda t: t.exception() if not t.cancelled() else None
+        )
         logger.info("Abwesenheits-Simulation gestartet")
         return f"Das Haus wird bewohnt wirken, {get_person_title()}. Alles Weitere übernehme ich."
 
@@ -1736,7 +2016,9 @@ class RoutineEngine:
             except asyncio.CancelledError:
                 pass
         logger.info("Abwesenheits-Simulation gestoppt")
-        return f"Abwesenheits-Simulation beendet. Willkommen zurück, {get_person_title()}."
+        return (
+            f"Abwesenheits-Simulation beendet. Willkommen zurück, {get_person_title()}."
+        )
 
     async def _run_vacation_simulation(self):
         """Hauptloop der Abwesenheits-Simulation (nur Licht).
@@ -1758,6 +2040,7 @@ class RoutineEngine:
 
                 # Bug 9: Config bei jedem Zyklus frisch lesen (Hot-Reload)
                 sim_cfg = yaml_config.get("vacation_simulation", {})
+                use_patterns = sim_cfg.get("use_learned_patterns", True)
                 morning_lights = int(sim_cfg.get("morning_hour", 7))
                 evening_lights = int(sim_cfg.get("evening_hour", 18))
                 night_off = int(sim_cfg.get("night_hour", 23))
@@ -1766,8 +2049,11 @@ class RoutineEngine:
                 now = datetime.now(tz=_TZ)
                 hour = now.hour
 
+                # Try pattern-based simulation first
+                if use_patterns and await self._sim_from_patterns(hour):
+                    pass  # Pattern handled this cycle
                 # Morgens: NUR Licht an (Cover macht proactive.py)
-                if hour == morning_lights:
+                elif hour == morning_lights:
                     variation = random.randint(-variation_minutes, variation_minutes)
                     await asyncio.sleep(max(0, variation * 60))
                     await self._sim_action("light_random_on")
@@ -1796,11 +2082,77 @@ class RoutineEngine:
 
             await asyncio.sleep(random.randint(1800, 5400))
 
+    async def _sim_from_patterns(self, current_hour: int) -> bool:
+        """Replays learned light patterns for vacation simulation.
+
+        Sources patterns from AnticipationEngine if available.
+        Returns True if a pattern action was executed.
+        """
+        try:
+            import assistant.main as main_module
+
+            if not hasattr(main_module, "brain"):
+                return False
+            anticipation = getattr(main_module.brain, "anticipation", None)
+            if not anticipation:
+                return False
+
+            suggestions = await anticipation.get_suggestions()
+            if not suggestions:
+                return False
+
+            # Filter for light-related patterns matching current hour
+            for s in suggestions:
+                action = s.get("action", "")
+                pattern_hour = s.get("hour", -1)
+                confidence = s.get("confidence", 0)
+
+                if confidence < 0.6:
+                    continue
+
+                # Only use light patterns
+                if "light" not in action and "set_light" not in action:
+                    continue
+
+                # Hour match with small variation
+                if abs(pattern_hour - current_hour) > 1:
+                    continue
+
+                # Add variation to mimic natural timing
+                variation = random.randint(-10, 10)
+                if variation > 0:
+                    await asyncio.sleep(variation * 60)
+
+                entity_id = s.get("entity_id", "")
+                if entity_id and entity_id.startswith("light."):
+                    args = s.get("args", {})
+                    brightness = args.get("brightness_pct", random.randint(40, 80))
+                    await self.ha.call_service(
+                        "light",
+                        "turn_on",
+                        {"entity_id": entity_id, "brightness_pct": brightness},
+                    )
+                    logger.info(
+                        "Vacation-Sim (Pattern): %s an (%d%%, confidence=%.2f)",
+                        entity_id,
+                        brightness,
+                        confidence,
+                    )
+                    return True
+
+        except Exception as e:
+            logger.debug("Vacation pattern simulation failed: %s", e)
+
+        return False
+
     async def _sim_action(self, action_type: str):
         """Fuehrt eine Simulations-Aktion aus (nur Licht, keine Covers)."""
         # Bug 7: Cover-Aktionen entfernt — proactive.py steuert Covers
         if action_type in ("covers_up", "covers_down"):
-            logger.debug("Vacation-Sim: Cover-Aktion '%s' übersprungen (proactive.py)", action_type)
+            logger.debug(
+                "Vacation-Sim: Cover-Aktion '%s' übersprungen (proactive.py)",
+                action_type,
+            )
             return
 
         try:
@@ -1809,25 +2161,42 @@ class RoutineEngine:
                 return
 
             if action_type == "light_random_on":
-                lights = [s for s in states if s.get("entity_id", "").startswith("light.")
-                          and s.get("state") == "off"]
+                lights = [
+                    s
+                    for s in states
+                    if s.get("entity_id", "").startswith("light.")
+                    and s.get("state") == "off"
+                ]
                 if lights:
                     target = random.choice(lights)
                     brightness = random.randint(40, 80)
-                    await self.ha.call_service("light", "turn_on",
-                                               {"entity_id": target["entity_id"], "brightness_pct": brightness})
-                    logger.info("Vacation-Sim: %s an (%d%%)",
-                                target["entity_id"], brightness)
+                    await self.ha.call_service(
+                        "light",
+                        "turn_on",
+                        {
+                            "entity_id": target["entity_id"],
+                            "brightness_pct": brightness,
+                        },
+                    )
+                    logger.info(
+                        "Vacation-Sim: %s an (%d%%)", target["entity_id"], brightness
+                    )
 
             elif action_type == "all_lights_off":
                 for s in states:
-                    if s.get("entity_id", "").startswith("light.") and s.get("state") == "on":
-                        await self.ha.call_service("light", "turn_off",
-                                                   {"entity_id": s["entity_id"]})
+                    if (
+                        s.get("entity_id", "").startswith("light.")
+                        and s.get("state") == "on"
+                    ):
+                        await self.ha.call_service(
+                            "light", "turn_off", {"entity_id": s["entity_id"]}
+                        )
                 logger.info("Vacation-Sim: Alle Lichter aus")
 
             elif action_type == "light_toggle_random":
-                lights = [s for s in states if s.get("entity_id", "").startswith("light.")]
+                lights = [
+                    s for s in states if s.get("entity_id", "").startswith("light.")
+                ]
                 if lights:
                     target = random.choice(lights)
                     service = "turn_off" if target.get("state") == "on" else "turn_on"
@@ -1857,8 +2226,13 @@ class RoutineEngine:
         for state in states:
             entity_id = state.get("entity_id", "")
             # travel_time Sensoren erkennen
-            if not (entity_id.startswith("sensor.") and
-                    any(kw in entity_id.lower() for kw in ["travel_time", "fahrzeit", "commute", "pendel", "route"])):
+            if not (
+                entity_id.startswith("sensor.")
+                and any(
+                    kw in entity_id.lower()
+                    for kw in ["travel_time", "fahrzeit", "commute", "pendel", "route"]
+                )
+            ):
                 continue
 
             attrs = state.get("attributes", {})
@@ -1914,7 +2288,9 @@ class RoutineEngine:
             if already_done:
                 return 0
         except Exception as e:
-            logger.debug("Redis-Pruefung fuer Geburtstags-Migration fehlgeschlagen: %s", e)
+            logger.debug(
+                "Redis-Pruefung fuer Geburtstags-Migration fehlgeschlagen: %s", e
+            )
             return 0
 
         persons_cfg = yaml_config.get("persons", {})
@@ -1956,7 +2332,8 @@ class RoutineEngine:
         if migrated:
             logger.info(
                 "YAML-Geburtstage migriert: %d/%d in Semantic Memory",
-                migrated, len(birthdays),
+                migrated,
+                len(birthdays),
             )
         return migrated
 
@@ -2004,14 +2381,18 @@ class RoutineEngine:
             # Start-Zeitpunkt parsen
             start_raw = event.get("start", "")
             if isinstance(start_raw, datetime):
-                event_start = start_raw if start_raw.tzinfo else start_raw.replace(tzinfo=_TZ)
+                event_start = (
+                    start_raw if start_raw.tzinfo else start_raw.replace(tzinfo=_TZ)
+                )
             elif isinstance(start_raw, str) and start_raw:
                 try:
                     event_start = datetime.fromisoformat(start_raw)
                     if event_start.tzinfo is None:
                         event_start = event_start.replace(tzinfo=_TZ)
                 except (ValueError, TypeError):
-                    logger.debug("plan_ahead: Ungueliges Datum '%s', uebersprungen", start_raw)
+                    logger.debug(
+                        "plan_ahead: Ungueliges Datum '%s', uebersprungen", start_raw
+                    )
                     continue
             else:
                 continue
@@ -2026,127 +2407,173 @@ class RoutineEngine:
 
             # --- Gaeste / Besuch erkennen ---
             guest_keywords = [
-                "gast", "gaeste", "besuch", "besucher", "einladung",
-                "dinner", "abendessen", "feier", "party", "guest",
+                "gast",
+                "gaeste",
+                "besuch",
+                "besucher",
+                "einladung",
+                "dinner",
+                "abendessen",
+                "feier",
+                "party",
+                "guest",
             ]
             if any(kw in combined_text for kw in guest_keywords):
                 # Gaestezimmer vorheizen (4h vorher)
-                preparations.append({
-                    "action": "set_climate",
-                    "entity": "climate.gaestezimmer",
-                    "target": 21,
-                    "when": "4h before",
-                    "description": "Gaestezimmer auf 21°C vorheizen",
-                })
+                preparations.append(
+                    {
+                        "action": "set_climate",
+                        "entity": "climate.gaestezimmer",
+                        "target": 21,
+                        "when": "4h before",
+                        "description": "Gaestezimmer auf 21°C vorheizen",
+                    }
+                )
                 # Reinigung einplanen (am Morgen des Tages)
-                preparations.append({
-                    "action": "notify",
-                    "message": "Gaeste kommen heute — Gaestezimmer vorbereiten",
-                    "when": "morning_of_day",
-                    "description": "Erinnerung: Gaestezimmer vorbereiten",
-                })
+                preparations.append(
+                    {
+                        "action": "notify",
+                        "message": "Gaeste kommen heute — Gaestezimmer vorbereiten",
+                        "when": "morning_of_day",
+                        "description": "Erinnerung: Gaestezimmer vorbereiten",
+                    }
+                )
                 # Wohnzimmer auch angenehm temperieren
-                preparations.append({
-                    "action": "set_climate",
-                    "entity": "climate.wohnzimmer",
-                    "target": 22,
-                    "when": "2h before",
-                    "description": "Wohnzimmer auf 22°C fuer Gaeste",
-                })
+                preparations.append(
+                    {
+                        "action": "set_climate",
+                        "entity": "climate.wohnzimmer",
+                        "target": 22,
+                        "when": "2h before",
+                        "description": "Wohnzimmer auf 22°C fuer Gaeste",
+                    }
+                )
 
             # --- Frueher Termin (vor 8:00) → frueherer Wecker ---
             early_keywords = ["meeting", "termin", "besprechung", "arzt", "flug", "zug"]
             if event_start.hour < 8 and event_start.hour > 0:
-                is_early_event = any(kw in combined_text for kw in early_keywords) or True
+                is_early_event = (
+                    any(kw in combined_text for kw in early_keywords) or True
+                )
                 if is_early_event:
                     # Wecker 90 Minuten vor dem Termin vorschlagen
                     wake_time = event_start - timedelta(minutes=90)
-                    preparations.append({
-                        "action": "suggest_alarm",
-                        "time": wake_time.strftime("%H:%M"),
-                        "when": "evening_before",
-                        "description": (
-                            f"Frueher Termin um {event_start.strftime('%H:%M')} — "
-                            f"Wecker auf {wake_time.strftime('%H:%M')} empfohlen"
-                        ),
-                    })
+                    preparations.append(
+                        {
+                            "action": "suggest_alarm",
+                            "time": wake_time.strftime("%H:%M"),
+                            "when": "evening_before",
+                            "description": (
+                                f"Frueher Termin um {event_start.strftime('%H:%M')} — "
+                                f"Wecker auf {wake_time.strftime('%H:%M')} empfohlen"
+                            ),
+                        }
+                    )
                     # Morgenroutine frueher starten
-                    preparations.append({
-                        "action": "set_wakeup_time",
-                        "time": wake_time.strftime("%H:%M"),
-                        "when": "evening_before",
-                        "description": "Aufwach-Sequenz frueher starten",
-                    })
+                    preparations.append(
+                        {
+                            "action": "set_wakeup_time",
+                            "time": wake_time.strftime("%H:%M"),
+                            "when": "evening_before",
+                            "description": "Aufwach-Sequenz frueher starten",
+                        }
+                    )
 
             # --- Urlaub / Ferien erkennen ---
             vacation_keywords = [
-                "urlaub", "ferien", "vacation", "holiday", "verreisen",
-                "abwesenheit", "away", "reise",
+                "urlaub",
+                "ferien",
+                "vacation",
+                "holiday",
+                "verreisen",
+                "abwesenheit",
+                "away",
+                "reise",
             ]
             if any(kw in combined_text for kw in vacation_keywords):
                 # Urlaubs-Checkliste: Heizung absenken
-                preparations.append({
-                    "action": "set_climate_all",
-                    "target": 16,
-                    "when": "on_departure",
-                    "description": "Alle Raeume auf 16°C Absenktemperatur",
-                })
+                preparations.append(
+                    {
+                        "action": "set_climate_all",
+                        "target": 16,
+                        "when": "on_departure",
+                        "description": "Alle Raeume auf 16°C Absenktemperatur",
+                    }
+                )
                 # Anwesenheitssimulation starten
-                preparations.append({
-                    "action": "start_vacation_simulation",
-                    "when": "on_departure",
-                    "description": "Anwesenheitssimulation aktivieren",
-                })
+                preparations.append(
+                    {
+                        "action": "start_vacation_simulation",
+                        "when": "on_departure",
+                        "description": "Anwesenheitssimulation aktivieren",
+                    }
+                )
                 # Fenster-Check
-                preparations.append({
-                    "action": "check_windows",
-                    "when": "1h before departure",
-                    "description": "Alle Fenster geschlossen? Sicherheitscheck",
-                })
+                preparations.append(
+                    {
+                        "action": "check_windows",
+                        "when": "1h before departure",
+                        "description": "Alle Fenster geschlossen? Sicherheitscheck",
+                    }
+                )
                 # Erinnerung: Muell, Post, etc.
-                preparations.append({
-                    "action": "notify",
-                    "message": "Urlaubs-Checkliste: Muell, Post umleiten, Kuehlschrank",
-                    "when": "1d before",
-                    "description": "Urlaubs-Vorbereitungs-Erinnerung",
-                })
+                preparations.append(
+                    {
+                        "action": "notify",
+                        "message": "Urlaubs-Checkliste: Muell, Post umleiten, Kuehlschrank",
+                        "when": "1d before",
+                        "description": "Urlaubs-Vorbereitungs-Erinnerung",
+                    }
+                )
 
             # --- Geburtstag erkennen ---
             birthday_keywords = [
-                "geburtstag", "birthday", "geb.", "bday",
+                "geburtstag",
+                "birthday",
+                "geb.",
+                "bday",
             ]
             if any(kw in combined_text for kw in birthday_keywords):
-                preparations.append({
-                    "action": "notify",
-                    "message": f"Geburtstag: {summary} — Geschenk und Feier vorbereiten",
-                    "when": "2d before",
-                    "description": "Erinnerung: Geburtstagsgeschenk besorgen",
-                })
-                preparations.append({
-                    "action": "notify",
-                    "message": f"Heute ist Geburtstag: {summary}",
-                    "when": "morning_of_day",
-                    "description": "Geburtstags-Erinnerung am Morgen",
-                })
+                preparations.append(
+                    {
+                        "action": "notify",
+                        "message": f"Geburtstag: {summary} — Geschenk und Feier vorbereiten",
+                        "when": "2d before",
+                        "description": "Erinnerung: Geburtstagsgeschenk besorgen",
+                    }
+                )
+                preparations.append(
+                    {
+                        "action": "notify",
+                        "message": f"Heute ist Geburtstag: {summary}",
+                        "when": "morning_of_day",
+                        "description": "Geburtstags-Erinnerung am Morgen",
+                    }
+                )
                 # Festliche Beleuchtung vorschlagen
-                preparations.append({
-                    "action": "set_scene",
-                    "scene": "celebration",
-                    "when": "morning_of_day",
-                    "description": "Festliche Beleuchtung aktivieren",
-                })
+                preparations.append(
+                    {
+                        "action": "set_scene",
+                        "scene": "celebration",
+                        "when": "morning_of_day",
+                        "description": "Festliche Beleuchtung aktivieren",
+                    }
+                )
 
             # Nur Events mit Vorbereitungen aufnehmen
             if preparations:
-                plans.append({
-                    "day": event_date,
-                    "event": summary,
-                    "preparations": preparations,
-                })
+                plans.append(
+                    {
+                        "day": event_date,
+                        "event": summary,
+                        "preparations": preparations,
+                    }
+                )
 
         logger.info(
             "plan_ahead: %d Vorbereitungen fuer %d Tage generiert",
-            len(plans), days,
+            len(plans),
+            days,
         )
         return plans
 
@@ -2169,6 +2596,7 @@ class RoutineEngine:
                 return None
 
             import json
+
             forecast = json.loads(forecast_raw)
 
             # Naechste 2-3 Stunden pruefen
@@ -2262,6 +2690,7 @@ class RoutineEngine:
 
             # Solar produziert, aber Sonne geht bald unter
             from datetime import datetime
+
             hour = datetime.now(_TZ).hour
             if solar_power > 200 and hour >= 16:
                 return (
@@ -2283,6 +2712,7 @@ class RoutineEngine:
                 return None
 
             import json
+
             key = "mha:routine:last_goodnight"
             raw = await self.redis.get(key)
             if not raw:
@@ -2309,6 +2739,7 @@ class RoutineEngine:
         """
         try:
             from datetime import datetime
+
             now = datetime.now(_LOCAL_TZ)
             if now.hour < 23 or (now.hour == 23 and now.minute < 30):
                 return None

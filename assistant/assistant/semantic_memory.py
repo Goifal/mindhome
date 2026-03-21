@@ -125,6 +125,7 @@ class SemanticMemory:
         self._relationship_cache: dict[str, str] = {}
         self._relationship_cache_ts: float = 0.0
         self._relationship_lock = asyncio.Lock()
+        self._last_contradiction: Optional[dict] = None
 
     async def initialize(self, redis_client: Optional[redis.Redis] = None):
         """Initialisiert die Verbindungen."""
@@ -155,6 +156,8 @@ class SemanticMemory:
 
 
     async def store_fact(self, fact: SemanticFact) -> bool:
+        """Speichert einen Fakt. Gibt True/False zurueck.
+        Widerspruchsinformationen sind nach dem Aufruf ueber ``self._last_contradiction`` abrufbar."""
         # F-007: Lock um den gesamten Read-Write-Zyklus gegen TOCTOU
         lock_key = f"mha:fact_lock:{hashlib.sha256(fact.content.encode()).hexdigest()[:12]}"
         lock_acquired = False
@@ -172,7 +175,9 @@ class SemanticMemory:
                 logger.debug("Redis Lock nicht verfuegbar, fahre ohne Lock fort: %s", e)
 
         try:
-            return await self._store_fact_inner(fact)
+            self._last_contradiction = None
+            result = await self._store_fact_inner(fact)
+            return result
         finally:
             if lock_acquired and self.redis:
                 try:
@@ -181,6 +186,13 @@ class SemanticMemory:
                     logger.debug("Unhandled: %s", e)
 
     async def _store_fact_inner(self, fact: SemanticFact) -> bool:
+        contradiction_query_enabled = yaml_config.get("semantic_memory", {}).get(
+            "contradiction_query", True
+        )
+        fact_versioning_enabled = yaml_config.get("semantic_memory", {}).get(
+            "fact_versioning", False
+        )
+
         # Widerspruchserkennung: Pruefen ob ein widersprechender Fakt existiert
         contradiction = await self._check_contradiction(fact)
         if contradiction:
@@ -188,8 +200,13 @@ class SemanticMemory:
                 "Widerspruch erkannt: '%s' vs '%s' -> Alter Fakt wird aktualisiert",
                 fact.content, contradiction.get("content", ""),
             )
-            # Alten Fakt loeschen und neuen speichern (neuere Info gewinnt)
+            old_content = contradiction.get("content", "")
             old_id = contradiction.get("fact_id", "")
+
+            if fact_versioning_enabled and old_id:
+                await self._store_fact_version(old_id, contradiction)
+
+            # Alten Fakt loeschen und neuen speichern (neuere Info gewinnt)
             if old_id:
                 await self.delete_fact(old_id)
                 # Relationship-Cache invalidieren damit stale Beziehungsdaten
@@ -199,6 +216,16 @@ class SemanticMemory:
                         await self.refresh_relationship_cache()
                     except Exception as e:
                         logger.debug("Relationship-Cache Refresh fehlgeschlagen: %s", e)
+
+            if contradiction_query_enabled:
+                self._last_contradiction = {
+                    "contradiction_detected": True,
+                    "old_value": old_content,
+                    "old_fact_id": old_id,
+                    "new_value": fact.content,
+                    "category": fact.category,
+                    "person": fact.person,
+                }
 
         dup_threshold = float(yaml_config.get("memory", {}).get("duplicate_threshold", 0.15))
         existing = await self.find_similar_fact(fact.content, threshold=dup_threshold)
@@ -281,6 +308,11 @@ class SemanticMemory:
         if not fact_id:
             return False
 
+        old_content = existing.get("content", "")
+        if old_content != new_fact.content:
+            if yaml_config.get("semantic_memory", {}).get("fact_versioning", False):
+                await self._store_fact_version(fact_id, existing)
+
         now = datetime.now(timezone.utc).isoformat()
         times_confirmed = int(existing.get("times_confirmed", 1)) + 1
         new_confidence = min(1.0, float(existing.get("confidence", 0.8)) + 0.05)
@@ -319,6 +351,42 @@ class SemanticMemory:
             fact_id, times_confirmed, new_confidence,
         )
         return True
+
+    async def _store_fact_version(self, fact_id: str, old_fact: dict) -> None:
+        """Speichert eine vorherige Version eines Fakts in Redis."""
+        if not self.redis:
+            return
+        try:
+            version_entry = json.dumps({
+                "content": old_fact.get("content", ""),
+                "category": old_fact.get("category", ""),
+                "person": old_fact.get("person", ""),
+                "confidence": old_fact.get("confidence", ""),
+                "changed_at": datetime.now(timezone.utc).isoformat(),
+            })
+            key = f"mha:fact_history:{fact_id}"
+            await self.redis.lpush(key, version_entry)
+            await self.redis.ltrim(key, 0, 19)
+            await self.redis.expire(key, 90 * 86400)
+        except Exception as e:
+            logger.warning("Fakt-Version konnte nicht gespeichert werden: %s", e)
+
+    async def get_fact_history(self, fact_id: str) -> list:
+        """Gibt die Versionshistorie eines Fakts zurueck.
+
+        Liefert eine chronologische Liste frueherer Werte (neueste zuerst),
+        sofern ``fact_versioning`` in der Konfiguration aktiviert ist.
+        """
+        if not self.redis:
+            return []
+        if not yaml_config.get("semantic_memory", {}).get("fact_versioning", False):
+            return []
+        try:
+            raw = await self.redis.lrange(f"mha:fact_history:{fact_id}", 0, -1)
+            return [json.loads(entry) for entry in raw]
+        except Exception as e:
+            logger.warning("Fakt-Historie konnte nicht geladen werden: %s", e)
+            return []
 
     async def _check_contradiction(self, new_fact: SemanticFact) -> Optional[dict]:
         """Prueft ob ein neuer Fakt einem bestehenden widerspricht.

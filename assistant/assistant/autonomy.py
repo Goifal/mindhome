@@ -16,10 +16,13 @@ Z.B. Level 4 bei Klima, Level 2 bei Sicherheit.
 
 import logging
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from .config import settings, yaml_config
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
 # Domaenen fuer domain-spezifische Autonomie
@@ -141,6 +144,23 @@ class AutonomyManager:
         # Outcome Tracker Integration (gesetzt via set_outcome_tracker)
         self._outcome_tracker = None
 
+        # Emergency escalation state (#40)
+        self._emergency_escalation: dict | None = None
+
+        # Temporal autonomy config (#42)
+        temporal_cfg = auto_cfg.get("temporal", {})
+        self._temporal_enabled = temporal_cfg.get("enabled", False)
+        self._temporal_night_start = int(temporal_cfg.get("night_start_hour", 22))
+        self._temporal_night_end = int(temporal_cfg.get("night_end_hour", 6))
+        self._temporal_night_offset = int(temporal_cfg.get("night_offset", -1))
+        self._temporal_day_offset = int(temporal_cfg.get("day_offset", 0))
+
+        # De-escalation config (#41)
+        deesc_cfg = auto_cfg.get("deescalation", {})
+        self._deescalation_enabled = deesc_cfg.get("enabled", False)
+        self._deescalation_min_acceptance = float(deesc_cfg.get("min_acceptance_rate", 0.5))
+        self._deescalation_eval_days = int(deesc_cfg.get("evaluation_days", 14))
+
     def can_act(self, action_type: str, domain: str = "") -> bool:
         """
         Prueft ob der Assistent diese Aktion ausfuehren darf.
@@ -164,6 +184,33 @@ class AutonomyManager:
             )
         return allowed
 
+    def get_effective_level(self, domain: str = None) -> int:
+        """Bestimmt das effektive Autonomie-Level mit temporalem Offset und Emergency.
+
+        Prueft in dieser Reihenfolge:
+        1. Aktive Emergency-Eskalation → Level 5
+        2. Domain-spezifisches Level (falls aktiviert)
+        3. Globales Level + temporaler Offset (Nachtabsenkung)
+
+        Args:
+            domain: Optionale Domaene (z.B. "climate", "light")
+
+        Returns:
+            Effektives Level (1-5)
+        """
+        return self._get_effective_level(domain=domain or "")
+
+    def _get_temporal_offset(self) -> int:
+        """Berechnet den temporalen Offset basierend auf der Tageszeit."""
+        if not self._temporal_enabled:
+            return 0
+        hour = datetime.now(_LOCAL_TZ).hour
+        if self._temporal_night_start > self._temporal_night_end:
+            is_night = hour >= self._temporal_night_start or hour < self._temporal_night_end
+        else:
+            is_night = self._temporal_night_start <= hour < self._temporal_night_end
+        return self._temporal_night_offset if is_night else self._temporal_day_offset
+
     def _get_effective_level(self, action_type: str = "", domain: str = "") -> int:
         """Bestimmt das effektive Autonomie-Level unter Beruecksichtigung von Domaenen.
 
@@ -174,15 +221,21 @@ class AutonomyManager:
         Returns:
             Effektives Level (1-5)
         """
-        if not self._domain_levels_enabled or not self._domain_levels:
-            return self.level
+        if self._is_emergency_active():
+            return 5
 
-        # Domaene bestimmen: explizit oder aus Action-Mapping
         resolved_domain = domain or ACTION_DOMAIN_MAP.get(action_type, "")
-        if resolved_domain and resolved_domain in self._domain_levels:
-            return self._domain_levels[resolved_domain]
 
-        return self.level
+        if self._domain_levels_enabled and self._domain_levels:
+            if resolved_domain and resolved_domain in self._domain_levels:
+                base_level = self._domain_levels[resolved_domain]
+            else:
+                base_level = self.level
+        else:
+            base_level = self.level
+
+        offset = self._get_temporal_offset()
+        return max(1, min(5, base_level + offset))
 
     def set_level(self, level: int) -> bool:
         """Setzt ein neues Autonomie-Level (1-5)."""
@@ -477,6 +530,108 @@ class AutonomyManager:
             "guest_actions": list(self._guest_actions),
             "security_actions": list(self._security_actions),
         }
+
+    # ------------------------------------------------------------------
+    # Emergency Autonomy Escalation (#40)
+    # ------------------------------------------------------------------
+
+    def escalate_for_emergency(self, duration_minutes: int = 15) -> None:
+        """Temporaer auf Level 5 eskalieren fuer Notfaelle.
+
+        Args:
+            duration_minutes: Dauer der Eskalation in Minuten.
+                              Wird durch Config begrenzt.
+        """
+        threat_cfg = yaml_config.get("threat_assessment", {})
+        max_duration = int(threat_cfg.get("emergency_boost_duration_min", 30))
+        duration_minutes = max(1, min(duration_minutes, max_duration))
+
+        self._emergency_escalation = {
+            "activated_at": datetime.now(timezone.utc),
+            "duration_minutes": duration_minutes,
+        }
+        logger.warning(
+            "Emergency-Eskalation aktiviert: Level 5 fuer %d Minuten",
+            duration_minutes,
+        )
+
+    def clear_emergency_escalation(self) -> None:
+        """Beendet die Emergency-Eskalation manuell."""
+        if self._emergency_escalation:
+            logger.info("Emergency-Eskalation manuell beendet")
+        self._emergency_escalation = None
+
+    def _is_emergency_active(self) -> bool:
+        """Prueft ob eine Emergency-Eskalation aktiv ist."""
+        if not self._emergency_escalation:
+            return False
+        activated_at = self._emergency_escalation["activated_at"]
+        duration = self._emergency_escalation["duration_minutes"]
+        elapsed = (datetime.now(timezone.utc) - activated_at).total_seconds() / 60
+        if elapsed >= duration:
+            logger.info("Emergency-Eskalation abgelaufen nach %.1f Minuten", elapsed)
+            self._emergency_escalation = None
+            return False
+        return True
+
+    # ------------------------------------------------------------------
+    # De-Escalation (#41)
+    # ------------------------------------------------------------------
+
+    async def check_deescalation(self) -> dict | None:
+        """Prueft ob eine Level-Reduktion vorgeschlagen werden sollte.
+
+        Basiert auf der Akzeptanzrate der letzten evaluation_days.
+        Reduziert NIEMALS automatisch — gibt nur einen Vorschlag zurueck.
+
+        Returns:
+            Dict mit Vorschlag oder None.
+        """
+        if not self._deescalation_enabled:
+            return None
+        if self.level <= 1:
+            return None
+        if not self._redis:
+            return None
+
+        try:
+            raw_stats = await self._redis.hgetall(self._REDIS_KEY_STATS)
+            if not raw_stats:
+                return None
+            stats = {
+                (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
+                for k, v in raw_stats.items()
+            }
+            total = int(stats.get("total", 0) or 0)
+            accepted = int(stats.get("accepted", 0) or 0)
+
+            if total < 10:
+                return None
+
+            acceptance_rate = accepted / max(1, total)
+
+            if acceptance_rate < self._deescalation_min_acceptance:
+                proposed_level = self.level - 1
+                logger.info(
+                    "De-Eskalation vorgeschlagen: Level %d -> %d "
+                    "(Akzeptanz: %.1f%% < %.1f%%)",
+                    self.level, proposed_level,
+                    acceptance_rate * 100,
+                    self._deescalation_min_acceptance * 100,
+                )
+                return {
+                    "current_level": self.level,
+                    "proposed_level": proposed_level,
+                    "acceptance_rate": round(acceptance_rate, 3),
+                    "threshold": self._deescalation_min_acceptance,
+                    "evaluation_days": self._deescalation_eval_days,
+                    "total_interactions": total,
+                }
+            return None
+
+        except Exception as e:
+            logger.warning("De-Eskalation Pruefung fehlgeschlagen: %s", e)
+            return None
 
     # ------------------------------------------------------------------
     # Autonomy Evolution: Dynamische Level-Anpassung

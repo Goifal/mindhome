@@ -12,6 +12,7 @@ Konfigurierbar in der Jarvis Assistant UI unter "Intelligenz".
 
 import json
 import logging
+import statistics
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -209,8 +210,35 @@ class PredictiveMaintenance:
         await self._save_devices()
         logger.info("Geraet registriert: %s (Typ: %s)", entity_id, device_type)
 
+    def _calculate_pairwise_drain_rates(
+        self, history: list[dict]
+    ) -> list[tuple[float, int]]:
+        """Berechnet paarweise Drain-Raten aus aufeinanderfolgenden Messpunkten.
+
+        Returns:
+            Liste von (pct_per_day, days_elapsed) Tupeln fuer jedes Paar.
+        """
+        rates = []
+        for i in range(len(history) - 1):
+            try:
+                h_prev = history[i]
+                h_next = history[i + 1]
+                d_prev = datetime.fromisoformat(h_prev["date"])
+                d_next = datetime.fromisoformat(h_next["date"])
+                days = max(1, (d_next - d_prev).days)
+                drop = h_prev["level"] - h_next["level"]
+                if drop > 0 and days > 0:
+                    rates.append((drop / days, days))
+            except (ValueError, TypeError, KeyError):
+                continue
+        return rates
+
     def calculate_battery_drain_rate(self, entity_id: str) -> Optional[dict]:
         """Berechnet die Batterie-Drain-Rate.
+
+        Nutzt 3-Punkt-Median fuer robustere Vorhersagen (weniger anfaellig
+        fuer Ausreisser). Faellt auf 2-Punkt-Berechnung zurueck wenn weniger
+        als 3 Datenpunkte vorliegen.
 
         Returns:
             Dict mit pct_per_week, days_until_empty, severity oder None
@@ -220,40 +248,58 @@ class PredictiveMaintenance:
             return None
 
         history = entry.battery_history
-        # Letzte vs. aelteste Messung
         newest = history[-1]
-        # Mindestens 7 Tage zurueckliegende Messung suchen
-        oldest_valid = None
-        for h in history:
+
+        # 3-Punkt-Median: Berechne paarweise Drain-Raten und nimm den Median
+        pairwise_rates = self._calculate_pairwise_drain_rates(history)
+
+        if len(pairwise_rates) >= 3:
+            # Robust: Median der paarweisen Drain-Raten (filtert Ausreisser)
+            pct_per_day = statistics.median([r[0] for r in pairwise_rates])
+            total_days = sum(r[1] for r in pairwise_rates)
+            days_elapsed = max(1, total_days)
+        elif len(pairwise_rates) >= 1:
+            # Fallback: Gewichteter Durchschnitt der verfuegbaren Raten
+            total_drop = sum(r[0] * r[1] for r in pairwise_rates)
+            total_days = sum(r[1] for r in pairwise_rates)
+            days_elapsed = max(1, total_days)
+            pct_per_day = total_drop / days_elapsed
+        else:
+            # Letzter Fallback: 2-Punkt-Berechnung mit aeltester Messung
+            oldest_valid = None
+            for h in history:
+                try:
+                    h_date = datetime.fromisoformat(h["date"])
+                    n_date = datetime.fromisoformat(newest["date"])
+                    if (n_date - h_date).days >= 7:
+                        oldest_valid = h
+                        break
+                except (ValueError, TypeError):
+                    continue
+
+            if not oldest_valid:
+                oldest_valid = history[0]
+
             try:
-                h_date = datetime.fromisoformat(h["date"])
-                n_date = datetime.fromisoformat(newest["date"])
-                if (n_date - h_date).days >= 7:
-                    oldest_valid = h
-                    break
+                start_date = datetime.fromisoformat(oldest_valid["date"])
+                end_date = datetime.fromisoformat(newest["date"])
+                days_elapsed = max(1, (end_date - start_date).days)
             except (ValueError, TypeError):
-                continue
+                return None
 
-        if not oldest_valid:
-            # Weniger als 7 Tage Daten — nehme was da ist
-            oldest_valid = history[0]
+            level_drop = oldest_valid["level"] - newest["level"]
+            if level_drop <= 0:
+                return {"pct_per_week": 0, "days_until_empty": None, "severity": "normal"}
 
-        try:
-            start_date = datetime.fromisoformat(oldest_valid["date"])
-            end_date = datetime.fromisoformat(newest["date"])
-            days_elapsed = max(1, (end_date - start_date).days)
-        except (ValueError, TypeError):
-            return None
+            pct_per_day = level_drop / days_elapsed
 
-        level_drop = oldest_valid["level"] - newest["level"]
-        if level_drop <= 0:
-            return {"pct_per_week": 0, "days_until_empty": None, "severity": "normal"}
-
-        pct_per_day = level_drop / days_elapsed
         pct_per_week = pct_per_day * 7
 
+        if pct_per_day <= 0:
+            return {"pct_per_week": 0, "days_until_empty": None, "severity": "normal"}
+
         days_until_empty = None
-        if pct_per_day > 0 and newest["level"] > 0:
+        if newest["level"] > 0:
             days_until_empty = int(newest["level"] / pct_per_day)
 
         severity = "normal"

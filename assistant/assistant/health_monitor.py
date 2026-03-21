@@ -65,6 +65,15 @@ class HealthMonitor:
             raw_sensors = [s.strip() for s in raw_sensors.split(",") if s.strip()]
         self._humidity_sensors: set[str] = {s.lower() for s in raw_sensors}
 
+        # Hysteresis: Verhindert Flapping bei Grenzwerten
+        self._hysteresis_enabled = cfg.get("hysteresis_enabled", True)
+        self._hysteresis_pct = cfg.get("hysteresis_pct", 2)
+        self._alert_active: dict[str, bool] = {}
+
+        # Room-specific Overrides
+        self._room_overrides_enabled = cfg.get("room_overrides_enabled", False)
+        self._room_overrides: dict[str, dict] = cfg.get("room_overrides", {})
+
         # Cooldowns (entity_id -> letzte Warnung)
         self._alert_cooldowns: dict[str, datetime] = {}
         self._alert_cooldown_minutes = cfg.get("alert_cooldown_minutes", 60)
@@ -275,15 +284,84 @@ class HealthMonitor:
 
         return alerts
 
+    def _get_threshold(self, entity_id: str, metric: str, default: float) -> float:
+        """Returns threshold for a metric, considering room-specific overrides."""
+        if not self._room_overrides_enabled or not self._room_overrides:
+            return default
+
+        room_name = self._room_for_entity(entity_id)
+        if not room_name:
+            return default
+
+        overrides = self._room_overrides.get(room_name, {})
+        return overrides.get(metric, default)
+
+    def _room_for_entity(self, entity_id: str) -> str:
+        """Extracts room name from entity_id for room override lookup."""
+        try:
+            from .function_calling import get_mindhome_room
+            room = get_mindhome_room(entity_id)
+            if room:
+                return room.lower()
+        except Exception as e:
+            logger.debug("Room-Lookup via function_calling fehlgeschlagen: %s", e)
+
+        parts = entity_id.split(".", 1)
+        if len(parts) == 2:
+            name_part = parts[1].lower()
+            for room_key in self._room_overrides:
+                if room_key.lower() in name_part:
+                    return room_key.lower()
+        return ""
+
+    def _check_with_hysteresis(self, entity_id: str, metric: str,
+                                value: float, threshold: float,
+                                above: bool = True) -> bool:
+        """Checks threshold with hysteresis to prevent flapping.
+
+        Args:
+            entity_id: The entity being checked.
+            metric: Alert metric name (e.g. 'co2_warn').
+            value: Current sensor value.
+            threshold: The threshold to check against.
+            above: True if alert triggers when value >= threshold.
+
+        Returns:
+            True if alert should be active.
+        """
+        key = f"{entity_id}:{metric}"
+        was_active = self._alert_active.get(key, False)
+
+        if not self._hysteresis_enabled:
+            is_active = (value >= threshold) if above else (value <= threshold)
+            self._alert_active[key] = is_active
+            return is_active
+
+        clear_threshold = threshold * (1 - self._hysteresis_pct / 100) if above else threshold * (1 + self._hysteresis_pct / 100)
+
+        if was_active:
+            if above:
+                is_active = value >= clear_threshold
+            else:
+                is_active = value <= clear_threshold
+        else:
+            is_active = (value >= threshold) if above else (value <= threshold)
+
+        self._alert_active[key] = is_active
+        return is_active
+
     def _check_co2(self, entity_id: str, name: str, ppm: float) -> Optional[dict]:
         """Prueft CO2-Wert."""
-        if ppm >= self.co2_critical:
+        co2_critical = self._get_threshold(entity_id, "co2_critical", self.co2_critical)
+        co2_warn = self._get_threshold(entity_id, "co2_warn", self.co2_warn)
+
+        if self._check_with_hysteresis(entity_id, "co2_critical", ppm, co2_critical, above=True):
             return self._make_alert(
                 entity_id, "co2_critical", "high",
                 f"{name}: CO2 bei {int(ppm)} ppm — sofort lueften!",
                 {"sensor": name, "value": ppm, "unit": "ppm"},
             )
-        elif ppm >= self.co2_warn:
+        elif self._check_with_hysteresis(entity_id, "co2_warn", ppm, co2_warn, above=True):
             return self._make_alert(
                 entity_id, "co2_warn", "medium",
                 f"{name}: CO2 bei {int(ppm)} ppm — Lueften empfohlen.",
@@ -293,13 +371,16 @@ class HealthMonitor:
 
     def _check_humidity(self, entity_id: str, name: str, percent: float) -> Optional[dict]:
         """Prueft Luftfeuchtigkeit."""
-        if percent < self.humidity_low:
+        humidity_low = self._get_threshold(entity_id, "humidity_low", self.humidity_low)
+        humidity_high = self._get_threshold(entity_id, "humidity_high", self.humidity_high)
+
+        if self._check_with_hysteresis(entity_id, "humidity_low", percent, humidity_low, above=False):
             return self._make_alert(
                 entity_id, "humidity_low", "medium",
                 f"{name}: Luft zu trocken ({int(percent)}%). Befeuchter einschalten?",
                 {"sensor": name, "value": percent, "unit": "%"},
             )
-        elif percent > self.humidity_high:
+        elif self._check_with_hysteresis(entity_id, "humidity_high", percent, humidity_high, above=True):
             # Eskalation: Wenn humidity_high fuer denselben Sensor wiederholt
             # auftritt (Cooldown laeuft ab und Alert kommt erneut), wird Urgency
             # auf "high" erhoeht damit es auch in Quiet Hours durchkommt.
@@ -342,13 +423,16 @@ class HealthMonitor:
 
     def _check_temperature(self, entity_id: str, name: str, temp: float) -> Optional[dict]:
         """Prueft Raumtemperatur."""
-        if temp < self.temp_low:
+        temp_low = self._get_threshold(entity_id, "temp_low", self.temp_low)
+        temp_high = self._get_threshold(entity_id, "temp_high", self.temp_high)
+
+        if self._check_with_hysteresis(entity_id, "temp_low", temp, temp_low, above=False):
             return self._make_alert(
                 entity_id, "temp_low", "low",
                 f"{name}: Nur {temp:.1f}°C — etwas kuhl.",
                 {"sensor": name, "value": temp, "unit": "°C"},
             )
-        elif temp > self.temp_high:
+        elif self._check_with_hysteresis(entity_id, "temp_high", temp, temp_high, above=True):
             return self._make_alert(
                 entity_id, "temp_high", "low",
                 f"{name}: {temp:.1f}°C — ziemlich warm.",

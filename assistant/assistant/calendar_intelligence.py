@@ -8,6 +8,7 @@ und leitet Gewohnheiten ab (z.B. Mittagspause immer 12-13 Uhr).
 Konfigurierbar in der Jarvis Assistant UI unter dem Tab "Kalender-Intelligenz".
 """
 
+import hashlib
 import json
 import logging
 from collections import Counter, defaultdict
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 REDIS_KEY_HABITS = "mha:calendar:habits"
 REDIS_KEY_CONFLICTS = "mha:calendar:conflicts"
 REDIS_KEY_EVENT_HISTORY = "mha:calendar:event_history"
+REDIS_KEY_COMMUTE_PREFIX = "mha:calendar:commute:"
 
 
 class CalendarIntelligence:
@@ -42,16 +44,21 @@ class CalendarIntelligence:
         self.habit_detection_enabled = cfg.get("habit_detection", True)
         self.conflict_detection_enabled = cfg.get("conflict_detection", True)
         self.break_detection_enabled = cfg.get("break_detection", True)
+        self.per_route_commute_enabled = cfg.get("per_route_commute", False)
 
         # Erkannte Gewohnheiten (Cache)
         self._habits: list[dict] = []
         self._conflicts: list[dict] = []
+        # Per-route commute times: destination_hash -> learned minutes
+        self._route_commute_cache: dict[str, float] = {}
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis."""
         self.redis = redis_client
         if self.redis and self.enabled:
             await self._load_habits()
+            if self.per_route_commute_enabled:
+                await self._load_route_commute_cache()
         logger.info("CalendarIntelligence initialisiert (enabled: %s)", self.enabled)
 
     async def _load_habits(self):
@@ -64,6 +71,92 @@ class CalendarIntelligence:
                 self._habits = json.loads(raw)
         except Exception as e:
             logger.debug("Habits laden fehlgeschlagen: %s", e)
+
+    @staticmethod
+    def _location_hash(location: str) -> str:
+        """Erzeugt einen stabilen Hash fuer eine Location (normalisiert)."""
+        normalized = location.strip().lower()
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+    async def _load_route_commute_cache(self):
+        """Laedt alle gespeicherten per-route Pendelzeiten aus Redis in den Cache."""
+        if not self.redis:
+            return
+        try:
+            # Scan fuer alle commute keys
+            cursor = 0
+            prefix = REDIS_KEY_COMMUTE_PREFIX
+            while True:
+                cursor, keys = await self.redis.scan(
+                    cursor=cursor, match=f"{prefix}*", count=100
+                )
+                for key in keys:
+                    raw = await self.redis.get(key)
+                    if raw:
+                        loc_hash = key.decode("utf-8").removeprefix(prefix) if isinstance(key, bytes) else str(key).removeprefix(prefix)
+                        try:
+                            self._route_commute_cache[loc_hash] = float(raw)
+                        except (ValueError, TypeError):
+                            logger.warning("Ungueltige Pendelzeit in Redis fuer Key %s: %s", key, raw)
+                if cursor == 0:
+                    break
+            if self._route_commute_cache:
+                logger.info(
+                    "Per-Route Pendelzeiten geladen: %d Routen", len(self._route_commute_cache)
+                )
+        except Exception as e:
+            logger.warning("Route-Commute-Cache laden fehlgeschlagen: %s", e)
+
+    async def store_commute_time(self, location: str, minutes: float):
+        """Speichert eine gelernte Pendelzeit fuer eine bestimmte Location.
+
+        Wird aufgerufen wenn ein Benutzer eine tatsaechliche Pendelzeit fuer
+        eine bestimmte Location meldet oder wenn aus Kalender-Daten abgeleitet.
+
+        Args:
+            location: Zielort-String (z.B. "Buero", "Arztpraxis Dr. Mueller")
+            minutes: Tatsaechliche Pendelzeit in Minuten
+        """
+        if not self.per_route_commute_enabled:
+            return
+        if not location or minutes <= 0:
+            return
+
+        loc_hash = self._location_hash(location)
+        self._route_commute_cache[loc_hash] = minutes
+
+        if self.redis:
+            try:
+                key = f"{REDIS_KEY_COMMUTE_PREFIX}{loc_hash}"
+                # 90 Tage TTL — Pendelzeiten koennen sich aendern
+                await self.redis.setex(key, 90 * 86400, str(minutes))
+                logger.info(
+                    "Pendelzeit gespeichert: '%s' -> %.0f Min. (hash=%s)",
+                    location, minutes, loc_hash,
+                )
+            except Exception as e:
+                logger.warning("Pendelzeit speichern fehlgeschlagen: %s", e)
+
+    def _get_commute_for_event(self, event: dict) -> float:
+        """Ermittelt Pendelzeit fuer ein Event — per-route oder global default.
+
+        Args:
+            event: Kalender-Event dict (muss 'location' Feld haben)
+
+        Returns:
+            Pendelzeit in Minuten
+        """
+        if not self.per_route_commute_enabled:
+            return self.commute_minutes
+
+        location = event.get("location", "")
+        if location:
+            loc_hash = self._location_hash(location)
+            learned = self._route_commute_cache.get(loc_hash)
+            if learned is not None:
+                return learned
+
+        return self.commute_minutes
 
     async def analyze_events(self, events: list[dict]) -> dict:
         """Analysiert Kalender-Events und extrahiert Muster.
@@ -166,9 +259,9 @@ class CalendarIntelligence:
         """Erkennt Zeitkonflikte und Pendelzeit-Probleme.
 
         Z.B. 'Meeting um 9 Uhr, aber Pendelzeit 30 Min = muss um 8:30 los'.
+        Nutzt per-route Pendelzeiten wenn per_route_commute aktiviert ist.
         """
         conflicts = []
-        commute_delta = timedelta(minutes=self.commute_minutes)
 
         # Sortierte Events nach Startzeit
         timed_events = []
@@ -176,7 +269,13 @@ class CalendarIntelligence:
             start = self._parse_dt(ev.get("start", ""))
             end = self._parse_dt(ev.get("end", ""))
             if start and end and not ev.get("all_day"):
-                timed_events.append({"start": start, "end": end, "summary": ev.get("summary", "")})
+                timed_events.append({
+                    "start": start,
+                    "end": end,
+                    "summary": ev.get("summary", ""),
+                    "location": ev.get("location", ""),
+                    "_orig": ev,
+                })
 
         timed_events.sort(key=lambda e: e["start"])
 
@@ -195,15 +294,19 @@ class CalendarIntelligence:
                     "gap_minutes": round(gap),
                     "description": f"'{curr['summary']}' und '{nxt['summary']}' ueberlappen sich um {abs(round(gap))} Minuten.",
                 })
-            elif 0 < gap < self.commute_minutes:
-                # Pendelzeit-Warnung
-                conflicts.append({
-                    "type": "tight_schedule",
-                    "event_a": curr["summary"],
-                    "event_b": nxt["summary"],
-                    "gap_minutes": round(gap),
-                    "description": f"Nur {round(gap)} Min. zwischen '{curr['summary']}' und '{nxt['summary']}' (Pendelzeit: {self.commute_minutes} Min.).",
-                })
+            else:
+                # Pendelzeit fuer das naechste Event ermitteln (per-route oder global)
+                commute = self._get_commute_for_event(nxt["_orig"])
+                if 0 < gap < commute:
+                    # Pendelzeit-Warnung
+                    conflicts.append({
+                        "type": "tight_schedule",
+                        "event_a": curr["summary"],
+                        "event_b": nxt["summary"],
+                        "gap_minutes": round(gap),
+                        "commute_minutes": round(commute),
+                        "description": f"Nur {round(gap)} Min. zwischen '{curr['summary']}' und '{nxt['summary']}' (Pendelzeit: {round(commute)} Min.).",
+                    })
 
         return conflicts
 

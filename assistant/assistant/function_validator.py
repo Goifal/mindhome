@@ -6,13 +6,20 @@ Feature 10: Daten-basierter Widerspruch — prueft Live-Daten vor Ausfuehrung
 und liefert konkreten Pushback-Kontext (offene Fenster, leerer Raum, etc.).
 """
 
+import asyncio
+import json
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Optional
+
+import redis.asyncio as aioredis
 
 from .config import yaml_config
 
 logger = logging.getLogger(__name__)
+
+REDIS_PUSHBACK_KEY = "mha:pushback_overrides"
 
 
 @dataclass
@@ -28,6 +35,9 @@ class FunctionValidator:
     def __init__(self):
         # Feature 10: HA-Client fuer Live-Daten-Pushback (gesetzt via set_ha_client)
         self.ha = None
+        self.redis: Optional[aioredis.Redis] = None
+        self._pushback_overrides: dict[str, list[float]] = {}
+        self._pushback_lock = asyncio.Lock()
 
     @property
     def require_confirmation(self) -> set:
@@ -38,6 +48,80 @@ class FunctionValidator:
     def set_ha_client(self, ha_client) -> None:
         """Setzt den HA-Client fuer Live-Daten-Abfragen (Feature 10)."""
         self.ha = ha_client
+
+    def set_redis(self, redis_client: Optional[aioredis.Redis]) -> None:
+        """Setzt den Redis-Client fuer Pushback-Learning."""
+        self.redis = redis_client
+
+    async def _load_pushback_overrides(self) -> None:
+        """Laedt Pushback-Overrides aus Redis in den lokalen Cache."""
+        if not self.redis:
+            return
+        try:
+            raw = await self.redis.get(REDIS_PUSHBACK_KEY)
+            if raw:
+                raw = raw.decode() if isinstance(raw, bytes) else raw
+                self._pushback_overrides = json.loads(raw)
+        except Exception as e:
+            logger.warning("Pushback-Overrides laden fehlgeschlagen: %s", e)
+
+    async def _save_pushback_overrides(self) -> None:
+        """Speichert Pushback-Overrides in Redis."""
+        if not self.redis:
+            return
+        try:
+            await self.redis.set(REDIS_PUSHBACK_KEY, json.dumps(self._pushback_overrides))
+        except Exception as e:
+            logger.warning("Pushback-Overrides speichern fehlgeschlagen: %s", e)
+
+    async def record_pushback_override(self, action_type: str, context_key: str) -> None:
+        """Zeichnet auf, dass der User einen Pushback uebergangen hat."""
+        if not self.redis:
+            return
+
+        pushback_cfg = yaml_config.get("pushback", {})
+        if not pushback_cfg.get("learning_enabled", True):
+            return
+
+        async with self._pushback_lock:
+            await self._load_pushback_overrides()
+
+            key = f"{action_type}:{context_key}"
+            now = time.time()
+            suppress_days = pushback_cfg.get("suppress_duration_days", 30)
+            cutoff = now - (suppress_days * 86400)
+
+            timestamps = self._pushback_overrides.get(key, [])
+            timestamps = [t for t in timestamps if t > cutoff]
+            timestamps.append(now)
+            self._pushback_overrides[key] = timestamps
+
+            await self._save_pushback_overrides()
+            logger.debug("Pushback-Override aufgezeichnet: %s (count=%d)", key, len(timestamps))
+
+    async def is_pushback_suppressed(self, action_type: str, context_key: str) -> bool:
+        """Prueft ob ein Pushback unterdrueckt werden soll (zu oft uebergangen)."""
+        pushback_cfg = yaml_config.get("pushback", {})
+        if not pushback_cfg.get("learning_enabled", True):
+            return False
+
+        async with self._pushback_lock:
+            await self._load_pushback_overrides()
+
+            key = f"{action_type}:{context_key}"
+            timestamps = self._pushback_overrides.get(key, [])
+            if not timestamps:
+                return False
+
+            suppress_days = pushback_cfg.get("suppress_duration_days", 30)
+            cutoff = time.time() - (suppress_days * 86400)
+            recent = [t for t in timestamps if t > cutoff]
+
+            suppress_after = pushback_cfg.get("suppress_after_overrides", 5)
+            if len(recent) >= suppress_after:
+                logger.debug("Pushback unterdrueckt: %s (%d Overrides)", key, len(recent))
+                return True
+            return False
 
     def _get_climate_config(self) -> dict:
         """Liest Climate-Limits und Heizungsmodus live aus yaml_config."""
@@ -198,10 +282,28 @@ class FunctionValidator:
             return None
 
         try:
-            return await checker(args, pushback_cfg.get("checks", {}))
+            result = await checker(args, pushback_cfg.get("checks", {}))
         except Exception as e:
             logger.debug("Pushback-Check fehlgeschlagen fuer %s: %s", func_name, e)
             return None
+
+        if not result or not result.get("warnings"):
+            return None
+
+        room = (args.get("room") or "").lower()
+        filtered = []
+        for w in result["warnings"]:
+            wtype = w.get("type", "")
+            ctx = w.get("room", room) or wtype
+            if await self.is_pushback_suppressed(func_name, f"{wtype}:{ctx}"):
+                continue
+            filtered.append(w)
+
+        if not filtered:
+            return None
+        result["warnings"] = filtered
+        result["severity"] = self._calculate_severity(filtered)
+        return result
 
     async def _pushback_set_climate(
         self, args: dict, checks: dict

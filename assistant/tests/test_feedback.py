@@ -397,7 +397,8 @@ async def test_update_score_with_person(tracker, mock_redis):
     """Per-person score is updated (lines 362-369)."""
     tracker.redis = mock_redis
     mock_redis.get.return_value = "0.5"
-    new_score = await tracker._update_score("door_open", 0.1, person="Max")
+    with patch("assistant.feedback.yaml_config", {"feedback": {"smoothing_enabled": False}}):
+        new_score = await tracker._update_score("door_open", 0.1, person="Max")
     assert new_score == 0.6
     # Should have called setex twice: global + person
     assert mock_redis.setex.call_count == 2
@@ -652,7 +653,8 @@ async def test_update_score_clamps_to_zero(tracker, mock_redis):
     """Score should never go below 0.0."""
     tracker.redis = mock_redis
     mock_redis.get.return_value = "0.05"
-    new_score = await tracker._update_score("event", -0.20)
+    with patch("assistant.feedback.yaml_config", {"feedback": {"smoothing_enabled": False}}):
+        new_score = await tracker._update_score("event", -0.20)
     assert new_score == 0.0
 
 
@@ -661,7 +663,8 @@ async def test_update_score_clamps_to_one(tracker, mock_redis):
     """Score should never exceed 1.0."""
     tracker.redis = mock_redis
     mock_redis.get.return_value = "0.95"
-    new_score = await tracker._update_score("event", 0.20)
+    with patch("assistant.feedback.yaml_config", {"feedback": {"smoothing_enabled": False}}):
+        new_score = await tracker._update_score("event", 0.20)
     assert new_score == 1.0
 
 
@@ -735,13 +738,14 @@ async def test_repeated_feedback_accumulates(tracker, mock_redis):
     tracker.redis = mock_redis
     # Start at 0.5
     mock_redis.get.return_value = "0.5"
-    r1 = await tracker.record_feedback("event_a", "thanked")
-    assert r1["new_score"] == 0.7
+    with patch("assistant.feedback.yaml_config", {"feedback": {"smoothing_enabled": False}}):
+        r1 = await tracker.record_feedback("event_a", "thanked")
+        assert r1["new_score"] == 0.7
 
-    # Now redis returns the updated score
-    mock_redis.get.return_value = "0.7"
-    r2 = await tracker.record_feedback("event_a", "dismissed")
-    assert r2["new_score"] == 0.6
+        # Now redis returns the updated score
+        mock_redis.get.return_value = "0.7"
+        r2 = await tracker.record_feedback("event_a", "dismissed")
+        assert r2["new_score"] == 0.6
 
 
 # ------------------------------------------------------------------

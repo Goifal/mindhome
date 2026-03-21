@@ -383,6 +383,15 @@ class FeedbackTracker:
 
     # ----- Private Hilfsmethoden -----
 
+    def _apply_smoothing(self, old_score: float, raw_new_score: float) -> float:
+        """Wendet Exponential Moving Average auf den Score an (Feature 9)."""
+        feedback_cfg = yaml_config.get("feedback", {})
+        if not feedback_cfg.get("smoothing_enabled", True):
+            return raw_new_score
+        factor = feedback_cfg.get("smoothing_factor", 0.3)
+        factor = max(0.0, min(1.0, factor))
+        return (1.0 - factor) * old_score + factor * raw_new_score
+
     async def _update_score(self, event_type: str, delta: float,
                            person: str = "") -> float:
         """Aktualisiert den Score und gibt den neuen Wert zurueck."""
@@ -390,7 +399,8 @@ class FeedbackTracker:
             return DEFAULT_SCORE
 
         current = await self.get_score(event_type)
-        new_score = max(0.0, min(1.0, current + delta))
+        raw_new = max(0.0, min(1.0, current + delta))
+        new_score = max(0.0, min(1.0, self._apply_smoothing(current, raw_new)))
         await self.redis.setex(f"mha:feedback:score:{event_type}", REDIS_FEEDBACK_SCORE_TTL, str(new_score))
 
         # Per-Person Score (Feature 6: Per-Person Learning)
@@ -400,7 +410,8 @@ class FeedbackTracker:
             if isinstance(person_current, bytes):
                 person_current = person_current.decode()
             person_score = float(person_current) if person_current else DEFAULT_SCORE
-            person_new = max(0.0, min(1.0, person_score + delta))
+            person_raw = max(0.0, min(1.0, person_score + delta))
+            person_new = max(0.0, min(1.0, self._apply_smoothing(person_score, person_raw)))
             await self.redis.setex(person_key, REDIS_FEEDBACK_SCORE_TTL, str(person_new))
 
         return new_score

@@ -11,6 +11,7 @@ import math
 import os
 import re
 import threading
+import time
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -222,10 +223,17 @@ class ContextBuilder:
         self._energy_optimizer = None
         self._calendar_intelligence = None
         self._redis = None
+        self._conversation_memory = None
         # Weather-Warning-Cache (ändert sich selten, spart Iteration pro Request)
         self._weather_cache: list[str] = []
         self._weather_cache_ts: float = 0.0
         self._WEATHER_CACHE_TTL = 300.0  # 5 Minuten
+
+        # HA-States TTL Cache
+        ctx_cfg = yaml_config.get("context", {})
+        self._state_cache_ttl: float = float(ctx_cfg.get("state_cache_ttl_seconds", 5))
+        self._state_cache: Optional[list] = None
+        self._state_cache_time: float = 0.0
 
     def set_semantic_memory(self, semantic: SemanticMemory):
         """Setzt die Referenz zum Semantic Memory."""
@@ -250,6 +258,22 @@ class ContextBuilder:
     def set_calendar_intelligence(self, calendar_intelligence):
         """S8#8: Setzt die Referenz zur Calendar Intelligence."""
         self._calendar_intelligence = calendar_intelligence
+
+    def set_conversation_memory(self, conversation_memory):
+        """Setzt die Referenz zur ConversationMemory (fuer Thread-Kontext)."""
+        self._conversation_memory = conversation_memory
+
+    async def _get_states_cached(self) -> Optional[list]:
+        """Returns HA states with short TTL cache to avoid redundant API calls."""
+        now = time.monotonic()
+        if self._state_cache is not None and (now - self._state_cache_time) < self._state_cache_ttl:
+            return self._state_cache
+
+        states = await self.ha.get_states()
+        if states is not None:
+            self._state_cache = states
+            self._state_cache_time = now
+        return states
 
     async def build(
         self,
@@ -288,7 +312,7 @@ class ContextBuilder:
 
         # Haus-Status von HA
         if not profile or profile.need_house_status:
-            parallel_tasks.append(("states", self.ha.get_states()))
+            parallel_tasks.append(("states", self._get_states_cached()))
 
         # MindHome-Daten (optional, falls MindHome installiert)
         if not profile or profile.need_mindhome_data:
@@ -479,6 +503,28 @@ class ContextBuilder:
                 context["memories"] = await self._get_relevant_memories(
                     user_text, person
                 )
+
+        # Active conversation threads — include recent thread summaries for continuity
+        cb_cfg = yaml_config.get("context_builder", {})
+        if cb_cfg.get("include_threads", False) and self._conversation_memory:
+            try:
+                threads = await self._conversation_memory.get_recent_threads(limit=3)
+                if threads:
+                    thread_summaries = []
+                    for t in threads[:3]:
+                        topic = t.get("topic", "")
+                        summary = t.get("summary", topic)
+                        # Truncate to max 200 chars to avoid context bloat
+                        if summary and len(summary) > 200:
+                            summary = summary[:197] + "..."
+                        if summary:
+                            thread_summaries.append(
+                                _sanitize_for_prompt(summary, 200, "thread_summary")
+                            )
+                    if thread_summaries:
+                        context["active_threads"] = thread_summaries
+            except Exception as e:
+                logger.debug("Thread-Kontext laden fehlgeschlagen: %s", e)
 
         return context
 

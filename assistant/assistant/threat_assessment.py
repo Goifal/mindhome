@@ -232,17 +232,19 @@ class ThreatAssessment:
     def __init__(self, ha_client: HomeAssistantClient):
         self.ha = ha_client
         self.redis: Optional[aioredis.Redis] = None
-        # Laufzeitschutz: Verhindert parallele Ausführung desselben Playbooks
         self._running_playbooks: set[str] = set()
 
         security_cfg = yaml_config.get("security", {})
         _raw_enabled = security_cfg.get("threat_assessment", True)
         self.enabled = bool(_raw_enabled) and str(_raw_enabled).lower() not in ("false", "0", "no", "off")
-        self.night_start = security_cfg.get("night_start_hour", 23)
-        self.night_end = security_cfg.get("night_end_hour", 6)
 
-        # Bekannte Geräte-Patterns: Entity-IDs die diese Substrings enthalten
-        # werden nie als "unbekannt" gemeldet (z.B. "ps5", "amazon", "watch")
+        ta_cfg = yaml_config.get("threat_assessment", {})
+        self.night_start = ta_cfg.get("night_start_hour", security_cfg.get("night_start_hour", 23))
+        self.night_end = ta_cfg.get("night_end_hour", security_cfg.get("night_end_hour", 6))
+        self.motion_cooldown_minutes = ta_cfg.get("motion_cooldown_minutes", 30)
+        self.state_max_age_minutes = ta_cfg.get("state_max_age_minutes", 10)
+        self.auto_execute_playbooks = ta_cfg.get("auto_execute_playbooks", False)
+
         self._known_device_patterns = [
             p.lower() for p in security_cfg.get("known_device_patterns", [])
         ]
@@ -319,7 +321,38 @@ class ThreatAssessment:
         water_threats = self._check_water_leak(states)
         threats.extend(water_threats)
 
+        if self.auto_execute_playbooks and self.ha:
+            for threat in threats:
+                if threat.get("urgency") != "critical":
+                    continue
+                playbook_name = self._threat_type_to_playbook(threat.get("type", ""))
+                if not playbook_name:
+                    continue
+                if playbook_name in self._running_playbooks:
+                    logger.warning("Playbook '%s' läuft bereits — überspringe doppelten Start", playbook_name)
+                    continue
+
+                def _playbook_done(t):
+                    if not t.cancelled():
+                        exc = t.exception()
+                        if exc:
+                            logger.error("Playbook-Task fehlgeschlagen: %s", exc)
+
+                task = asyncio.create_task(self.execute_playbook_by_name(playbook_name))
+                task.add_done_callback(_playbook_done)
+
         return threats
+
+    @staticmethod
+    def _threat_type_to_playbook(threat_type: str) -> Optional[str]:
+        mapping = {
+            "smoke_fire": "fire_smoke",
+            "water_leak": "water_damage",
+            "door_open_empty": "break_in",
+            "lock_open_empty": "break_in",
+            "night_motion": "break_in",
+        }
+        return mapping.get(threat_type)
 
     async def _check_night_motion(self, states: list[dict], weather_ctx: dict = None) -> list[dict]:
         """Prueft ob nachts Bewegung erkannt wird obwohl alle schlafen.
@@ -364,8 +397,8 @@ class ThreatAssessment:
                     continue
 
                 key = f"night_motion_{eid}"
-                if not await self._was_notified(key, cooldown_minutes=30):
-                    await self._mark_notified(key, cooldown_minutes=30)
+                if not await self._was_notified(key, cooldown_minutes=self.motion_cooldown_minutes):
+                    await self._mark_notified(key, cooldown_minutes=self.motion_cooldown_minutes)
                     friendly = s.get("attributes", {}).get("friendly_name", eid)
                     threats.append({
                         "type": "night_motion",
@@ -825,6 +858,132 @@ class ThreatAssessment:
                 )
 
         return actions_taken
+
+    async def execute_playbook_by_name(self, playbook_name: str) -> dict:
+        """Führt ein Notfall-Playbook anhand seines Namens aus.
+
+        Nutzt self.ha als HA-Client. Jeder Service-Call hat ein 15s Timeout.
+
+        Args:
+            playbook_name: Schlüssel in EMERGENCY_PLAYBOOKS (z.B. "fire_smoke")
+
+        Returns:
+            Summary-Dict mit playbook, steps_total, steps_executed, steps_failed, results
+        """
+        summary: dict = {
+            "playbook": playbook_name,
+            "steps_total": 0,
+            "steps_executed": 0,
+            "steps_failed": 0,
+            "results": [],
+        }
+
+        playbook = self.EMERGENCY_PLAYBOOKS.get(playbook_name)
+        if not playbook:
+            logger.warning("execute_playbook_by_name: Unbekanntes Playbook '%s'", playbook_name)
+            summary["results"].append({"step": 0, "error": f"Unbekanntes Playbook: {playbook_name}"})
+            return summary
+
+        if playbook_name in self._running_playbooks:
+            logger.warning("Playbook '%s' läuft bereits — parallele Ausführung verhindert", playbook_name)
+            summary["results"].append({"step": 0, "error": f"Playbook {playbook_name} läuft bereits"})
+            return summary
+
+        if not self.ha:
+            logger.warning("execute_playbook_by_name: Kein HA-Client verfügbar")
+            summary["results"].append({"step": 0, "error": "Kein HA-Client verfügbar"})
+            return summary
+
+        self._running_playbooks.add(playbook_name)
+        try:
+            steps = playbook.get("steps", [])
+            summary["steps_total"] = len(steps)
+
+            logger.info(
+                "=== PLAYBOOK START: %s (%s, %d Schritte) ===",
+                playbook.get("name", playbook_name), playbook_name, len(steps),
+            )
+
+            try:
+                states = await asyncio.wait_for(self.ha.get_states(), timeout=15)
+            except (asyncio.TimeoutError, Exception) as exc:
+                logger.warning("execute_playbook_by_name: HA-States nicht ladbar: %s", exc)
+                states = []
+
+            for step_def in steps:
+                step_num = step_def.get("step", 0)
+                action_name = step_def.get("action", "unknown")
+                step_result = {
+                    "step": step_num,
+                    "action": action_name,
+                    "success": True,
+                    "details": [],
+                }
+
+                ha_actions = step_def.get("ha_actions", [])
+                if not ha_actions:
+                    logger.info("Playbook %s Schritt %d: %s (keine HA-Aktionen)", playbook_name, step_num, action_name)
+                    summary["steps_executed"] += 1
+                    summary["results"].append(step_result)
+                    continue
+
+                logger.info("Playbook %s Schritt %d: %s (%d HA-Aktionen)", playbook_name, step_num, action_name, len(ha_actions))
+                step_had_failure = False
+
+                for ha_action in ha_actions:
+                    service_domain = ha_action.get("service", "")
+                    service_action = ha_action.get("action", "")
+                    entity_filter = ha_action.get("entity_filter", "")
+
+                    matching_entities = []
+                    if entity_filter and states:
+                        filter_parts = [f.lower() for f in entity_filter.split("|")]
+                        for s in states:
+                            eid = s.get("entity_id", "").lower()
+                            if any(fp in eid for fp in filter_parts):
+                                matching_entities.append(s.get("entity_id"))
+
+                    if not matching_entities:
+                        step_result["details"].append(
+                            f"{service_domain}.{service_action}: keine Entities für '{entity_filter}'"
+                        )
+                        continue
+
+                    for entity_id in matching_entities:
+                        try:
+                            await asyncio.wait_for(
+                                self.ha.call_service(
+                                    service_domain,
+                                    service_action,
+                                    {"entity_id": entity_id},
+                                ),
+                                timeout=15,
+                            )
+                            step_result["details"].append(f"{service_domain}.{service_action} → {entity_id}: OK")
+                            logger.info("Playbook %s: %s.%s → %s OK", playbook_name, service_domain, service_action, entity_id)
+                        except asyncio.TimeoutError:
+                            step_result["details"].append(f"{service_domain}.{service_action} → {entity_id}: TIMEOUT")
+                            logger.warning("Playbook %s: %s.%s → %s Timeout (15s)", playbook_name, service_domain, service_action, entity_id)
+                            step_had_failure = True
+                        except Exception as svc_err:
+                            step_result["details"].append(f"{service_domain}.{service_action} → {entity_id}: FEHLER ({svc_err})")
+                            logger.warning("Playbook %s: %s.%s → %s Fehler: %s", playbook_name, service_domain, service_action, entity_id, svc_err)
+                            step_had_failure = True
+
+                if step_had_failure:
+                    step_result["success"] = False
+                    summary["steps_failed"] += 1
+                summary["steps_executed"] += 1
+                summary["results"].append(step_result)
+
+            logger.info(
+                "=== PLAYBOOK ENDE: %s — %d/%d erfolgreich, %d fehlgeschlagen ===",
+                playbook_name, summary["steps_executed"] - summary["steps_failed"],
+                summary["steps_total"], summary["steps_failed"],
+            )
+            return summary
+        finally:
+            self._running_playbooks.discard(playbook_name)
 
     async def execute_playbook(
         self,
