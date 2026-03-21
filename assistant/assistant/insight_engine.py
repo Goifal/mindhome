@@ -508,6 +508,45 @@ class InsightEngine:
             (self._llm_causal_enabled, self._check_llm_causal),  # LLM-basierte Kausalanalyse
         ]
 
+    async def get_recently_checked_domains(self) -> set[str]:
+        """Liefert Domains die kuerzlich von InsightEngine geprueft wurden.
+
+        Wird von SpontaneousObserver fuer Check-Level Dedup genutzt,
+        damit ueberlappende Checks (Energy, Weather) nicht doppelt feuern.
+        """
+        if not self.redis:
+            return set()
+        try:
+            raw = await self.redis.smembers(f"{_PREFIX}:recent_domains")
+            return {m.decode() if isinstance(m, bytes) else m for m in raw}
+        except Exception:
+            return set()
+
+    async def _record_checked_domains(self, insights: list[dict]) -> None:
+        """Markiert Domains die in diesem Zyklus geprueft wurden."""
+        if not self.redis or not insights:
+            return
+        try:
+            domains = set()
+            for ins in insights:
+                check = ins.get("check", "")
+                if "energy" in check:
+                    domains.add("energy")
+                if "weather" in check or "frost" in check or "window" in check:
+                    domains.add("weather")
+                if "temp" in check or "climate" in check or "comfort" in check:
+                    domains.add("temperature")
+                if "calendar" in check:
+                    domains.add("calendar")
+            if domains:
+                pipe = self.redis.pipeline()
+                pipe.delete(f"{_PREFIX}:recent_domains")
+                pipe.sadd(f"{_PREFIX}:recent_domains", *domains)
+                pipe.expire(f"{_PREFIX}:recent_domains", 3600)  # 1h TTL
+                await pipe.execute()
+        except Exception as e:
+            logger.debug("Checked-Domains speichern fehlgeschlagen: %s", e)
+
     async def _run_all_checks(self) -> list[dict]:
         """Fuehrt alle aktivierten Checks aus."""
         data = await self._gather_data()
@@ -553,6 +592,9 @@ class InsightEngine:
             insights.extend(learning_insights)
         except Exception as e:
             logger.debug("Learning insight check: %s", e)
+
+        # Check-Level Dedup: Domains aufzeichnen fuer SpontaneousObserver
+        await self._record_checked_domains(insights)
 
         return insights
 

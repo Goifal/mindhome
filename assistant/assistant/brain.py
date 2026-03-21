@@ -4348,7 +4348,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         ):
             logger.info("Knowledge Fast-Path: Ueberspringe mega-gather")
             recent = await self.memory.get_recent_conversations(limit=10)
-            _kfp_system = self.personality.build_minimal_system_prompt()
+            _kfp_system = self.personality.build_minimal_system_prompt(person=person or "")
             _kfp_messages = [{"role": "system", "content": _kfp_system}]
             for conv in recent[-10:]:
                 _kfp_messages.append({"role": conv["role"], "content": conv["content"]})
@@ -4565,6 +4565,24 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 ("conv_memory_extended", self.conversation_memory.get_memory_context())
             )
 
+        # Knowledge Graph: Personen-Praeferenzen und Geraete-Relationen abfragen
+        if self.knowledge_graph and self.knowledge_graph.enabled:
+            _now_hour = datetime.now(_LOCAL_TZ).hour
+            _time_slot = (
+                "morning" if 6 <= _now_hour < 10
+                else "daytime" if 10 <= _now_hour < 18
+                else "evening" if 18 <= _now_hour < 22
+                else "night"
+            )
+            _mega_tasks.append((
+                "knowledge_graph",
+                self.knowledge_graph.query_context(
+                    person=person or "",
+                    room=room or "",
+                    time_slot=_time_slot,
+                ),
+            ))
+
         # B10: Emotionale Kontinuitaet — vergangene negative Reaktionen beruecksichtigen
         _emo_action, _ = await self._get_last_action(person)
         if self.memory_extractor and _emo_action:
@@ -4667,7 +4685,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         def _safe_get(key, default=None):
             val = _result_map.get(key, default)
             if isinstance(val, BaseException):
-                logger.debug("Subsystem '%s' Fehler: %s", key, val)
+                logger.warning("Subsystem '%s' Fehler: %s", key, val)
                 return default
             return val
 
@@ -4715,6 +4733,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         pending_learnings = _safe_get("pending_learnings")
         sensor_fusion_ctx = _safe_get("sensor_fusion")
         emotional_ctx = _safe_get("emotional_ctx")  # B10: Emotionale Kontinuitaet
+        kg_context = _safe_get("knowledge_graph") or []  # Knowledge Graph Relationen
 
         context["mood"] = mood_result
 
@@ -5272,6 +5291,27 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             # weiss das LLM nicht wer spricht und antwortet generisch
             sections.append(("memory", memory_context, 1))
 
+        # Knowledge Graph: Personen-Praeferenzen und Geraete-Relationen
+        if kg_context:
+            _kg_lines = []
+            for item in kg_context[:10]:
+                if item.get("type") == "preference":
+                    _kg_lines.append(
+                        f"- {item['person']} bevorzugt {item['target']}"
+                        + (f" ({item['room']})" if item.get("room") else "")
+                    )
+                elif item.get("type") == "device_usage":
+                    _kg_lines.append(
+                        f"- {item['person']} nutzt oft {item['device']}"
+                        + (f" ({item['room']})" if item.get("room") else "")
+                    )
+            if _kg_lines:
+                _kg_text = (
+                    "\n\nBEKANNTE PRAEFERENZEN (Wissensgraph):\n"
+                    + "\n".join(_kg_lines)
+                )
+                sections.append(("knowledge_graph", _kg_text, 3))
+
         # Kontext-Kette: Relevante vergangene Gespraeche
         conv_memory = _safe_get("conv_memory")
         if conv_memory:
@@ -5796,7 +5836,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             else:
                 _reminder = (
                     "[REMINDER] Du bist J.A.R.V.I.S. — trocken, praezise, Butler-Ton. "
-                    "Kurz. Keine Listen. Erfinde NICHTS. NUR vorhandene Daten nutzen."
+                    "Kurz. Keine Listen. Erfinde NICHTS. NUR vorhandene Daten nutzen. "
+                    "Innenleben, Meinungen, Haltung. Partner, nicht Diener."
                 )
             messages.append({"role": "system", "content": _reminder})
 
@@ -6875,6 +6916,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             _pb_rule = func_name
                         await self._track_pushback_override(_pb_rule)
 
+                    # Kommentar-Dedup: Max 2 optionale Kommentare pro Turn
+                    # (Opinion, Humor, Curiosity, Think-Ahead). Sicherheits-
+                    # relevante Module (Pushback, Conflict, Dep-Hints, Escalation)
+                    # zaehlen NICHT dazu.
+                    _addon_comments = 0
+                    _MAX_ADDON_COMMENTS = 2
+
                     # Phase 6: Opinion Check — Jarvis kommentiert Aktionen
                     # Nutzt check_opinion_with_context() fuer kombinierte
                     # Opinion-Rules + Device-Dependency Bewertung
@@ -6899,6 +6947,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 response_text = f"{response_text} {opinion}"
                             else:
                                 response_text = opinion
+                            _addon_comments += 1
 
                     # Eskalationskette: JARVIS wird trockener bei Wiederholungen
                     # Read-only Abfragen (Status, Wetter, Kalender etc.) ueberspringen —
@@ -6932,7 +6981,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         logger.debug("Eskalation fehlgeschlagen (optional): %s", e)
 
                     # Feature B: Kontextueller Humor nach Aktion
-                    if not pushback_msg and not opinion:
+                    if not pushback_msg and not opinion and _addon_comments < _MAX_ADDON_COMMENTS:
                         try:
                             humor = await self.personality.generate_contextual_humor(
                                 func_name,
@@ -6950,11 +6999,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 self._last_humor_category = (
                                     self.personality._humor_func_to_category(func_name)
                                 )
+                                _addon_comments += 1
                         except Exception as e:
                             logger.debug("Humor fehlgeschlagen (optional): %s", e)
 
                     # Phase 18: Curiosity Check — sanfte Neugier bei untypischem Verhalten
-                    if isinstance(result, dict) and result.get("success"):
+                    if isinstance(result, dict) and result.get("success") and _addon_comments < _MAX_ADDON_COMMENTS:
                         try:
                             curiosity = await self.personality.check_curiosity(
                                 func_name,
@@ -6967,6 +7017,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     response_text = f"{response_text} {curiosity}"
                                 else:
                                     response_text = curiosity
+                                _addon_comments += 1
                         except Exception as _cur_err:
                             logger.debug("Curiosity-Check fehlgeschlagen: %s", _cur_err)
 
@@ -6975,6 +7026,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         self._think_ahead_enabled
                         and _success
                         and not self._think_ahead_used
+                        and _addon_comments < _MAX_ADDON_COMMENTS
                     ):
                         try:
                             think_ahead_suggestion = self._get_think_ahead_suggestion(
@@ -17035,6 +17087,63 @@ Regeln:
                     "HA-States fuer Tagesreflexion laden fehlgeschlagen: %s", e
                 )
 
+            # Wetter-Daten (fuer Cross-Domain-Verknuepfung)
+            try:
+                weather_states = [
+                    s for s in (states or [])
+                    if s.get("entity_id", "").startswith("weather.")
+                    and s.get("state") not in ("unavailable", "unknown")
+                ]
+                if weather_states:
+                    ws = weather_states[0]
+                    attrs = ws.get("attributes", {})
+                    _weather_info = (
+                        f"Wetter: {ws.get('state', '?')}, "
+                        f"Temperatur: {attrs.get('temperature', '?')}°C, "
+                        f"Luftfeuchtigkeit: {attrs.get('humidity', '?')}%"
+                    )
+                    forecast = attrs.get("forecast", [])
+                    if forecast:
+                        _weather_info += f", Morgen: {forecast[0].get('condition', '?')}"
+                    _context_parts.append(_weather_info)
+            except Exception as e:
+                logger.debug("Wetter fuer Idle Reasoning fehlgeschlagen: %s", e)
+
+            # Kalender-Events (naechste 24h)
+            try:
+                if hasattr(self, "calendar_intelligence") and self.calendar_intelligence:
+                    cal_events = await self.calendar_intelligence.get_upcoming_events(hours=24)
+                    if cal_events:
+                        _cal_lines = [
+                            f"- {e.get('summary', '?')} um {e.get('start', '?')}"
+                            for e in cal_events[:3]
+                        ]
+                        _context_parts.append(
+                            "Kommende Termine:\n" + "\n".join(_cal_lines)
+                        )
+            except Exception as e:
+                logger.debug("Kalender fuer Idle Reasoning fehlgeschlagen: %s", e)
+
+            # Energie-Zusammenfassung
+            try:
+                energy_sensors = [
+                    s for s in (states or [])
+                    if "energy" in s.get("entity_id", "")
+                    or "power" in s.get("entity_id", "")
+                    and s.get("state") not in ("unavailable", "unknown", "0", "0.0")
+                ]
+                if energy_sensors:
+                    _energy_lines = [
+                        f"- {s.get('attributes', {}).get('friendly_name', s['entity_id'])}: "
+                        f"{s['state']}{s.get('attributes', {}).get('unit_of_measurement', '')}"
+                        for s in energy_sensors[:5]
+                    ]
+                    _context_parts.append(
+                        "Energie-Sensoren:\n" + "\n".join(_energy_lines)
+                    )
+            except Exception as e:
+                logger.debug("Energie fuer Idle Reasoning fehlgeschlagen: %s", e)
+
             if not _context_parts:
                 return
 
@@ -17051,10 +17160,11 @@ Regeln:
                 else "qwen3.5:latest"
             )
             _system = (
-                "Du bist Jarvis, ein intelligenter Haus-Assistent. "
+                "Du bist J.A.R.V.I.S., ein intelligenter Haus-Assistent. "
                 "Analysiere den folgenden Kontext und generiere EIN nuetzliches Insight. "
-                "Das kann sein: eine Optimierung (Energie, Komfort), ein Muster das dir auffaellt, "
-                "oder eine proaktive Empfehlung. "
+                "CROSS-DOMAIN-DENKEN: Verknuepfe verschiedene Datenbereiche. "
+                "Beispiele: Wetter + offene Fenster + Heizung, Kalender + Anwesenheit, "
+                "Energiemuster + Tageszeit, Temperaturtrends + Wettervorhersage. "
                 "Antworte in einem einzigen Satz, direkt und konkret. "
                 "Wenn nichts Auffaelliges → antworte mit 'KEIN_INSIGHT'."
             )

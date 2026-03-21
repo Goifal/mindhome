@@ -16,6 +16,7 @@ from typing import Optional
 import redis.asyncio as aioredis
 
 from .config import yaml_config
+from .core_identity import IDENTITY_BLOCK
 
 logger = logging.getLogger(__name__)
 
@@ -347,7 +348,7 @@ class ExplainabilityEngine:
                         {
                             "role": "system",
                             "content": (
-                                "Du bist J.A.R.V.I.S., ein trocken-britischer Smart-Home-Butler. "
+                                IDENTITY_BLOCK + "\n\n"
                                 "Erklaere dem Benutzer warum du eine Aktion ausgefuehrt hast. "
                                 "1-2 Saetze, souveraen und knapp. Keine Aufzaehlungen."
                             ),
