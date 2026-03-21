@@ -28,7 +28,7 @@ from typing import Optional
 
 from .action_planner import ActionPlanner
 from .activity import ActivityEngine
-from .autonomy import AutonomyManager
+from .autonomy import ACTION_DOMAIN_MAP, AutonomyManager
 from . import config as cfg
 from .config import settings, get_person_title, set_active_person, get_model_profile
 from .context_builder import ContextBuilder
@@ -16277,10 +16277,17 @@ Regeln:
                 domain=suggestion.get("domain", ""),
             )
             if not exec_check["allowed"]:
+                _eff_lvl = exec_check.get("autonomy_level", "?")
+                _reason = exec_check.get("reason", "keine Berechtigung")
                 logger.warning(
-                    "F-027: Anticipation auto-execute blockiert (%s) — %s",
+                    "F-027: Anticipation auto-execute blockiert (%s) — %s "
+                    "(global: %d, effektiv: %s, domain: %s, temporal: %s)",
                     action,
-                    exec_check.get("reason", "keine Berechtigung"),
+                    _reason,
+                    self.autonomy.level,
+                    _eff_lvl,
+                    suggestion.get("domain", "") or ACTION_DOMAIN_MAP.get(action, ""),
+                    "aktiv" if self.autonomy._temporal_enabled else "aus",
                 )
                 text = f"{title}, {desc}. Soll ich das uebernehmen? (Bestaetigung erforderlich)"
                 await emit_proactive(text, "anticipation_suggest", "medium")
