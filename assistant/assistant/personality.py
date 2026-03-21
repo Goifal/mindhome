@@ -218,6 +218,17 @@ CONFIRMATIONS_SUCCESS_SNARKY = [
     "Gern geschehen, {title}.",
 ]
 
+# Phase 19: Begrudging Acceptance — wenn User Pushback ueberstimmt
+CONFIRMATIONS_RELUCTANT = [
+    "Wie du wuenschst, {title}.",
+    "Dein Haus, deine Regeln.",
+    "Umgesetzt. Meine Bedenken sind aktenkundig.",
+    "Sehr wohl. Ich behalte die Lage im Auge.",
+    "Erledigt — gegen meine ausdrueckliche Empfehlung.",
+    "Jawohl, {title}. Protokolliert.",
+    "Wenn du meinst. Ich waere bereit, wenn du es dir anders ueberlegst.",
+]
+
 CONFIRMATIONS_PARTIAL = [
     "Fast alles geschafft.",
     "Zum Teil umgesetzt.",
@@ -351,6 +362,9 @@ class PersonalityEngine:
         )
         self._confirmations_success_snarky = _confs.get("success_snarky") or list(
             CONFIRMATIONS_SUCCESS_SNARKY
+        )
+        self._confirmations_reluctant = _confs.get("reluctant") or list(
+            CONFIRMATIONS_RELUCTANT
         )
         self._confirmations_partial = _confs.get("partial") or list(
             CONFIRMATIONS_PARTIAL
@@ -799,6 +813,9 @@ class PersonalityEngine:
         )
         self._confirmations_success_snarky = _confs.get("success_snarky") or list(
             CONFIRMATIONS_SUCCESS_SNARKY
+        )
+        self._confirmations_reluctant = _confs.get("reluctant") or list(
+            CONFIRMATIONS_RELUCTANT
         )
         self._confirmations_partial = _confs.get("partial") or list(
             CONFIRMATIONS_PARTIAL
@@ -1630,6 +1647,7 @@ class PersonalityEngine:
         room: str = "",
         person: str = "",
         mood: str = "",
+        pushback_overridden: bool = False,
     ) -> str:
         """Gibt eine variierte, kontextbezogene Bestätigung zurück.
 
@@ -1640,10 +1658,12 @@ class PersonalityEngine:
             room: Raum der Aktion (z.B. "Wohnzimmer")
             person: F-021: Person für per-User Tracking
             mood: Aktuelle Stimmung des Users (stressed/tired → kuerzere Antworten)
+            pushback_overridden: User hat Jarvis' Pushback ueberstimmt
 
         Bei Sarkasmus-Level >= 4 werden spitzere Varianten beigemischt.
         Bei stressed/tired: Nur die kuerzesten Bestätigungen verwenden.
         Kontextbezogene Bestätigungen werden bevorzugt wenn passend.
+        Bei pushback_overridden + sarcasm_level >= 3: Widerwillige Akzeptanz.
         """
         with self._mood_formality_lock:
             effective_mood = mood or self._current_mood
@@ -1653,6 +1673,21 @@ class PersonalityEngine:
 
         with self._tracking_lock:
             user_history = list(self._last_confirmations.get(user_key, []))
+
+        # Pushback ueberstimmt: Widerwillige Akzeptanz (ab Sarkasmus-Level 3)
+        if pushback_overridden and success and not partial and self.sarcasm_level >= 3:
+            pool = list(self._confirmations_reluctant)
+            available = [c for c in pool if c not in user_history[-3:]]
+            if not available:
+                available = pool
+            chosen = random.choice(available).replace("{title}", get_person_title())
+            user_history.append(chosen)
+            with self._tracking_lock:
+                self._last_confirmations[user_key] = user_history[-10:]
+                if len(self._last_confirmations) > 50:
+                    oldest_key = next(iter(self._last_confirmations))
+                    del self._last_confirmations[oldest_key]
+            return chosen
 
         # Bei Stress/Muedigkeit: Ultra-kurze Bestätigungen bevorzugen
         if effective_mood in ("stressed", "tired") and success and not partial:

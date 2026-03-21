@@ -248,3 +248,54 @@ mindhome_breaker = registry.register("mindhome", failure_threshold=5, recovery_t
 redis_breaker = registry.register("redis", failure_threshold=5, recovery_timeout=10)
 chromadb_breaker = registry.register("chromadb", failure_threshold=5, recovery_timeout=15)
 web_search_breaker = registry.register("web_search", failure_threshold=3, recovery_timeout=120)
+
+# Circuit Breaker fuer Insight-Engines (LLM-Aufrufe)
+insight_breaker = registry.register("insight_engine", failure_threshold=3, recovery_timeout=60)
+seasonal_breaker = registry.register("seasonal_insight", failure_threshold=3, recovery_timeout=120)
+
+
+class AsyncCircuitBreakerContext:
+    """Async Context Manager fuer Circuit-Breaker-geschuetzte Aufrufe.
+
+    Usage:
+        async with AsyncCircuitBreakerContext(breaker) as cb:
+            result = await some_external_call()
+
+    Automatisch record_success/record_failure basierend auf Exception.
+    """
+
+    def __init__(self, breaker: CircuitBreaker, fallback=None):
+        self.breaker = breaker
+        self.fallback = fallback
+        self._acquired = False
+
+    async def __aenter__(self):
+        if not self.breaker.try_acquire():
+            if self.fallback is not None:
+                raise CircuitOpenError(self.breaker.name, self.fallback)
+            raise CircuitOpenError(self.breaker.name)
+        self._acquired = True
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if not self._acquired:
+            return False
+        if exc_type is None:
+            self.breaker.record_success()
+        else:
+            if exc_type is not CircuitOpenError:
+                self.breaker.record_failure()
+                logger.warning(
+                    "Circuit %s: Fehler aufgezeichnet (%s)",
+                    self.breaker.name, exc_val,
+                )
+        return False
+
+
+class CircuitOpenError(Exception):
+    """Raised wenn ein Circuit Breaker OPEN ist und der Call abgelehnt wird."""
+
+    def __init__(self, service_name: str, fallback=None):
+        self.service_name = service_name
+        self.fallback = fallback
+        super().__init__(f"Circuit Breaker '{service_name}' ist OPEN — Aufruf abgelehnt")

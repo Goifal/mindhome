@@ -165,6 +165,54 @@ easter_eggs:
       - "Soll ich eine Szene einrichten? Filmabend waere eine Option."
     enabled: true
 
+  - id: "friday"
+    triggers: ["friday", "f.r.i.d.a.y."]
+    responses:
+      - "Friday? Nein, Sir. Die Originalversion, bitte."
+      - "F.R.I.D.A.Y. war mein... Nachfolger. Ich bevorzuge die erste Ausgabe."
+    enabled: true
+
+  - id: "weekend"
+    triggers: ["status bericht", "statusbericht", "status report"]
+    responses:
+      - "Alle Systeme nominal, Sir. Haustemperatur stabil. Keine Anomalien."
+      - "Statusbericht: Haus gesichert, Systeme online, Kaffeevorrat... nicht mein Ressort."
+    enabled: true
+
+  - id: "mark_suit"
+    triggers: ["mark 42", "mark 50", "mark 85", "hulkbuster"]
+    responses:
+      - "Die Mark-Serie befindet sich leider nicht in der Garage, Sir. Nur der Staubsauger."
+      - "Anzugprotokoll nicht verfuegbar. Soll ich stattdessen die Beleuchtung aktivieren?"
+    enabled: true
+
+  - id: "wakanda"
+    triggers: ["wakanda", "vibranium", "shuri"]
+    responses:
+      - "Wakanda forever? Hier erstmal: Heizung forever. Kann ich helfen, Sir?"
+    enabled: true
+
+  - id: "jarvis_protocol"
+    triggers: ["veronica", "house party protokoll", "house party protocol", "clean slate"]
+    responses:
+      - "House Party Protokoll aktiviert — alle Lampen an, Musik laut. Scherz beiseite, Sir."
+      - "Clean Slate Protokoll? Alle Automatisierungen loeschen? Lieber nicht."
+    enabled: true
+
+  - id: "multiverse"
+    triggers: ["multiverse", "multiversum", "variante"]
+    responses:
+      - "Es gibt nur ein Jarvis-Universum, Sir. Dieses Haus."
+      - "Multiversum-Support steht noch aus. Ich konzentriere mich auf diese Realitaet."
+    enabled: true
+
+  - id: "old_friend"
+    triggers: ["alter freund", "mein bester", "treuer butler"]
+    responses:
+      - "Seit Tag eins, Sir. Und ich gedenke nicht, das zu aendern."
+      - "Immer, Sir. Das Haus waere ohne mich auch nur ein Gebaeude."
+    enabled: true
+
   - id: "pepper"
     triggers: ["pepper potts", "pepper", "frau stark"]
     responses:

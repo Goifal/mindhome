@@ -930,13 +930,24 @@ class ProactiveManager:
         )
         ws_url = f"{ha_url}/api/websocket"
 
+        _reconnect_attempt = 0
+        _max_backoff = 300  # Max 5 Minuten
         while self._running:
             try:
                 await self._connect_and_listen(ws_url)
+                _reconnect_attempt = 0  # Reset nach erfolgreicher Verbindung
             except Exception as e:
-                logger.error("HA WebSocket Fehler: %s", e)
+                _reconnect_attempt += 1
+                backoff = min(
+                    PROACTIVE_WS_RECONNECT_DELAY * (2 ** (_reconnect_attempt - 1)),
+                    _max_backoff,
+                )
+                logger.error(
+                    "HA WebSocket Fehler (Versuch %d, naechster in %ds): %s",
+                    _reconnect_attempt, backoff, e,
+                )
                 if self._running:
-                    await asyncio.sleep(PROACTIVE_WS_RECONNECT_DELAY)
+                    await asyncio.sleep(backoff)
 
     async def _connect_and_listen(self, ws_url: str):
         """Verbindet sich mit HA WebSocket und verarbeitet Events."""

@@ -56,6 +56,17 @@ TEMPORAL_REFERENCES_DE = {
     "wie vorher": timedelta(hours=4),
     "wie vorhin": timedelta(hours=2),
     "wie heute morgen": timedelta(hours=8),
+    "wie heute nacht": timedelta(hours=12),
+    "wie eben": timedelta(minutes=30),
+    "wie gerade": timedelta(minutes=15),
+    "wie am montag": timedelta(days=7),
+    "wie am dienstag": timedelta(days=7),
+    "wie am mittwoch": timedelta(days=7),
+    "wie am donnerstag": timedelta(days=7),
+    "wie am freitag": timedelta(days=7),
+    "wie am samstag": timedelta(days=7),
+    "wie am sonntag": timedelta(days=7),
+    "wie am wochenende": timedelta(days=7),
     "wie immer": timedelta(days=7),  # Sucht in den letzten 7 Tagen
 }
 
@@ -124,6 +135,7 @@ class DialogueStateManager:
         self.clarification_enabled = cfg.get("clarification_enabled", True)
         self.max_clarification_options = cfg.get("max_clarification_options", 5)
         self.max_references = cfg.get("max_references", 20)
+        self.clarification_timeout = cfg.get("clarification_timeout_seconds", 300)
 
         # Per-Person Dialog-Zustaende
         self._states: dict[str, DialogueState] = {}
@@ -311,6 +323,23 @@ class DialogueStateManager:
                 matched_delta = delta
                 break
 
+        # Wochentag-spezifische Referenzen ("wie am Montag")
+        if not matched_ref:
+            weekday_map = {
+                "montag": 0, "dienstag": 1, "mittwoch": 2, "donnerstag": 3,
+                "freitag": 4, "samstag": 5, "sonntag": 6,
+            }
+            for day_name, day_num in weekday_map.items():
+                pattern = f"wie am {day_name}"
+                if pattern in text_lower or f"wie letzten {day_name}" in text_lower:
+                    today = datetime.now(timezone.utc).weekday()
+                    days_ago = (today - day_num) % 7
+                    if days_ago == 0:
+                        days_ago = 7
+                    matched_ref = pattern
+                    matched_delta = timedelta(days=days_ago)
+                    break
+
         if not matched_ref or not matched_delta:
             return ""
 
@@ -370,6 +399,71 @@ class DialogueStateManager:
         """C5: Setzt den Action-Log Cache (von brain.py aufgerufen)."""
         self._action_log_cache = entries
 
+    async def resolve_temporal_reference_async(
+        self, text_lower: str, person: str = ""
+    ) -> str:
+        """Async Version: Loest temporale Referenzen per direktem Redis-Zugriff auf.
+
+        Faellt auf die cached Version zurueck wenn Redis nicht verfuegbar ist.
+        """
+        if not self._redis:
+            return self._resolve_temporal_reference(text_lower, person)
+
+        matched_ref = ""
+        matched_delta = None
+
+        for ref_text, delta in TEMPORAL_REFERENCES_DE.items():
+            if ref_text in text_lower:
+                matched_ref = ref_text
+                matched_delta = delta
+                break
+
+        if not matched_ref or not matched_delta:
+            return ""
+
+        try:
+            now = datetime.now(timezone.utc)
+            target_time = now - matched_delta
+            window_start = target_time - timedelta(hours=2)
+            window_end = target_time + timedelta(hours=2)
+            if matched_ref == "wie immer":
+                window_start = now - timedelta(days=7)
+                window_end = now
+
+            # Redis Action-Outcomes direkt abfragen
+            raw = await self._redis.lrange("mha:action_outcomes", 0, 199)
+            matching_actions = []
+            for entry_raw in raw:
+                try:
+                    entry_str = entry_raw.decode() if isinstance(entry_raw, bytes) else entry_raw
+                    entry = json.loads(entry_str)
+                    ts_str = entry.get("timestamp", "")
+                    if not ts_str:
+                        continue
+                    ts = datetime.fromisoformat(ts_str)
+                    if window_start <= ts <= window_end:
+                        # Person-Filter wenn angegeben
+                        if person and entry.get("person", "") and entry.get("person", "").lower() != person.lower():
+                            continue
+                        action = entry.get("action", entry.get("function", ""))
+                        desc = entry.get("description", action)
+                        if action and entry.get("success", True):
+                            matching_actions.append(desc)
+                except (ValueError, TypeError, json.JSONDecodeError):
+                    continue
+
+            if matching_actions:
+                unique = list(dict.fromkeys(matching_actions))[:3]
+                actions_str = ", ".join(unique)
+                return f"'{matched_ref}' referenziert fruehere Aktionen: {actions_str}"
+
+        except Exception as e:
+            logger.debug("C5 Async Temporal Reference Fehler: %s", e)
+            # Fall back to cached version
+            return self._resolve_temporal_reference(text_lower, person)
+
+        return ""
+
     def start_clarification(
         self,
         person: str,
@@ -421,6 +515,15 @@ class DialogueStateManager:
             return None
 
         clarification = state.pending_clarification
+
+        # Timeout check
+        age = time.time() - clarification.get("timestamp", 0)
+        if age > self.clarification_timeout:
+            logger.debug("Klaerungsfrage timeout nach %.0fs", age)
+            state.pending_clarification = None
+            state.state = "idle"
+            return None
+
         text_lower = text.lower().strip()
 
         # Direkte Option-Auswahl (z.B. "Wohnzimmer" wenn Optionen [Wohnzimmer, Buero, ...])

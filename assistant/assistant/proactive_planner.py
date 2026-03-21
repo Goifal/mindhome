@@ -254,6 +254,24 @@ class ProactiveSequencePlanner:
                 "description": "Alle Lichter ausschalten",
             })
 
+        # Offene Fenster schliessen
+        open_windows = house.get("open_windows", [])
+        if open_windows:
+            actions.append({
+                "type": "notify",
+                "args": {"message": f"Noch offene Fenster: {', '.join(open_windows[:3])}"},
+                "description": f"Fenster-Warnung ({len(open_windows)} offen)",
+            })
+
+        # Medien stoppen
+        active_media = house.get("media_playing", [])
+        if active_media:
+            actions.append({
+                "type": "media_stop",
+                "args": {},
+                "description": "Laufende Medien stoppen",
+            })
+
         # Klima auf Eco
         actions.append({
             "type": "set_climate",
@@ -288,6 +306,14 @@ class ProactiveSequencePlanner:
                 "description": "Guenstiger Strom — energieintensive Geraete starten",
             })
 
+        elif price > energy.get("high_threshold", 0.35):
+            # Teurer Strom — verschiebbare Lasten pausieren
+            actions.append({
+                "type": "notify",
+                "args": {"message": f"Strom teuer ({price:.2f} EUR/kWh) — verschiebbare Geraete pausieren empfohlen"},
+                "description": "Strompreis-Warnung — Lasten verschieben",
+            })
+
         if not actions:
             return None
 
@@ -315,6 +341,24 @@ class ProactiveSequencePlanner:
                 "type": "notify",
                 "args": {"message": f"Noch offene Tueren: {', '.join(open_doors[:3])}"},
                 "description": "Offene Tueren melden",
+            })
+
+        # Offene Fenster melden
+        open_windows = house.get("open_windows", [])
+        if open_windows:
+            actions.append({
+                "type": "notify",
+                "args": {"message": f"Noch offene Fenster: {', '.join(open_windows[:3])}"},
+                "description": "Offene Fenster vor dem Schlafengehen",
+            })
+
+        # Medien stoppen
+        active_media = house.get("media_playing", [])
+        if active_media:
+            actions.append({
+                "type": "media_stop",
+                "args": {},
+                "description": "Laufende Medien stoppen",
             })
 
         title = get_person_title()

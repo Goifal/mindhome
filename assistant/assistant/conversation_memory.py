@@ -948,3 +948,95 @@ class ConversationMemory:
         }
         words = text.lower().split()
         return [w for w in words if len(w) >= 3 and w not in _STOP_WORDS][:10]
+
+    async def get_recent_topics(self, person: str = "", days: int = 7, limit: int = 10) -> list[dict]:
+        """Gibt die haeufigsten Gespraechsthemen der letzten Tage zurueck.
+
+        Aggregiert aus Tageszusammenfassungen und Thread-Index.
+
+        Args:
+            person: Person-Filter (optional)
+            days: Zeitraum in Tagen
+            limit: Max Anzahl Themen
+
+        Returns:
+            Liste von {topic, count, last_discussed, contexts}
+        """
+        if not self.redis or not self.enabled:
+            return []
+
+        topics: dict[str, dict] = {}
+
+        try:
+            # Aus Tageszusammenfassungen
+            now = datetime.now(timezone.utc)
+            for day_offset in range(days):
+                date_key = (now - timedelta(days=day_offset)).strftime("%Y-%m-%d")
+                summary_raw = await self.redis.get(f"{_KEY_DAILY_SUMMARY}{date_key}")
+                if not summary_raw:
+                    continue
+                summary_str = summary_raw.decode() if isinstance(summary_raw, bytes) else summary_raw
+                summary = json.loads(summary_str)
+
+                for topic in summary.get("topics", []):
+                    topic_name = topic if isinstance(topic, str) else topic.get("name", "")
+                    if not topic_name:
+                        continue
+                    topic_lower = topic_name.lower()
+                    if topic_lower not in topics:
+                        topics[topic_lower] = {
+                            "topic": topic_name,
+                            "count": 0,
+                            "last_discussed": date_key,
+                            "contexts": [],
+                        }
+                    topics[topic_lower]["count"] += 1
+
+            # Aus Thread-Index
+            thread_index = await self.redis.hgetall(_KEY_THREAD_INDEX)
+            for keyword, thread_id in thread_index.items():
+                kw = keyword.decode() if isinstance(keyword, bytes) else keyword
+                kw_lower = kw.lower()
+                if kw_lower not in topics:
+                    topics[kw_lower] = {
+                        "topic": kw,
+                        "count": 1,
+                        "last_discussed": "",
+                        "contexts": [],
+                    }
+                else:
+                    topics[kw_lower]["count"] += 1
+
+        except Exception as e:
+            logger.debug("get_recent_topics Fehler: %s", e)
+
+        # Sortieren nach Haeufigkeit
+        sorted_topics = sorted(topics.values(), key=lambda x: x["count"], reverse=True)
+        return sorted_topics[:limit]
+
+    async def get_topic_context(self, topic: str, person: str = "") -> str:
+        """Gibt Kontext zu einem bestimmten Thema zurueck fuer LLM-Prompt.
+
+        Sucht in Threads und Zusammenfassungen nach dem Thema.
+        """
+        if not self.redis or not self.enabled or not topic:
+            return ""
+
+        try:
+            # Thread-Suche
+            thread_id = await self.redis.hget(_KEY_THREAD_INDEX, topic.lower())
+            if thread_id:
+                tid = thread_id.decode() if isinstance(thread_id, bytes) else thread_id
+                thread_raw = await self.redis.hget(_KEY_THREADS, tid)
+                if thread_raw:
+                    t_str = thread_raw.decode() if isinstance(thread_raw, bytes) else thread_raw
+                    thread = json.loads(t_str)
+                    messages = thread.get("messages", [])[-3:]
+                    if messages:
+                        return f"Vorheriges Gespraech zu '{topic}': " + " | ".join(
+                            m.get("summary", m.get("text", ""))[:100] for m in messages
+                        )
+        except Exception as e:
+            logger.debug("get_topic_context Fehler: %s", e)
+
+        return ""

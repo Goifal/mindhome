@@ -48,6 +48,8 @@ class AnticipationEngine:
         self.min_confidence = cfg.get("min_confidence") or 0.6
         self.check_interval = (cfg.get("check_interval_minutes") or 15) * 60
 
+        self._min_observations = cfg.get("min_observations", 5)
+
         thresholds = cfg.get("thresholds", {})
         self.threshold_ask = thresholds.get("ask", 0.6)
         self.threshold_suggest = thresholds.get("suggest", 0.8)
@@ -879,6 +881,12 @@ class AnticipationEngine:
 
         for pattern in patterns:
             if pattern["confidence"] < self.min_confidence:
+                continue
+
+            # Minimum Datenpunkte bevor Pattern vorgeschlagen wird
+            # Wenn occurrences nicht gesetzt ist, hat detect_patterns bereits gefiltert
+            occurrences = pattern.get("occurrences")
+            if occurrences is not None and occurrences < self._min_observations:
                 continue
 
             # Before suggesting: Check correction memory

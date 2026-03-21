@@ -16,6 +16,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Optional
 
 from .config import get_person_title
@@ -595,6 +596,66 @@ class CookingAssistant:
         except Exception as e:
             logger.warning("Zutaten zur Einkaufsliste hinzufuegen fehlgeschlagen: %s", e)
             return "Fehler beim Hinzufuegen zur Einkaufsliste."
+
+    async def push_missing_to_shopping(self, recipe_name: str, missing_ingredients: list[str]) -> dict:
+        """Uebertraegt fehlende Zutaten eines Rezepts in die Einkaufsliste.
+
+        Integration mit smart_shopping.py falls verfuegbar.
+
+        Args:
+            recipe_name: Name des Rezepts
+            missing_ingredients: Liste fehlender Zutaten
+
+        Returns:
+            Dict mit success, added_count, message
+        """
+        if not missing_ingredients:
+            return {"success": True, "added_count": 0, "message": "Keine fehlenden Zutaten."}
+
+        try:
+            # Smart Shopping Integration
+            shopping = None
+            try:
+                import assistant.main as main_module
+                if hasattr(main_module, "brain"):
+                    shopping = getattr(main_module.brain, "smart_shopping", None)
+            except Exception:
+                pass
+
+            added = 0
+            if shopping and hasattr(shopping, "add_item"):
+                for ingredient in missing_ingredients:
+                    try:
+                        result = await shopping.add_item(
+                            item=ingredient,
+                            category="Lebensmittel",
+                            note=f"Fuer: {recipe_name}",
+                        )
+                        if result.get("success"):
+                            added += 1
+                    except Exception as e:
+                        logger.debug("Shopping add_item Fehler fuer '%s': %s", ingredient, e)
+            elif self.redis:
+                # Fallback: Direkt in Redis-Shopping-Liste
+                for ingredient in missing_ingredients:
+                    entry = json.dumps({
+                        "item": ingredient,
+                        "category": "Lebensmittel",
+                        "note": f"Fuer: {recipe_name}",
+                        "source": "cooking_assistant",
+                        "added_at": datetime.now(timezone.utc).isoformat(),
+                    }, ensure_ascii=False)
+                    await self.redis.rpush("mha:shopping:list", entry)
+                    added += 1
+
+            return {
+                "success": True,
+                "added_count": added,
+                "message": f"{added} Zutat(en) zur Einkaufsliste hinzugefuegt.",
+            }
+        except Exception as e:
+            logger.warning("push_missing_to_shopping Fehler: %s", e)
+            return {"success": False, "added_count": 0, "message": str(e)}
 
     async def _adjust_portions(self, new_portions: int) -> str:
         """Passt die Portionen an (einfache Skalierung)."""
