@@ -15,9 +15,9 @@ Die J.A.R.V.I.S.-Codebase ist insgesamt **solide und professionell** aufgebaut. 
 
 | Kategorie | Anzahl |
 |-----------|--------|
-| **Kritisch** (Laufzeitfehler + Auth-Bypass) | 3 |
-| **Hoch** (Sicherheit + fehlende Error-Callbacks) | 4 |
-| **Mittel** (Logik, Concurrency, Qualität) | 21 |
+| **Kritisch** (Runtime-Crashes + Auth-Bypass) | 3 |
+| **Hoch** (Sicherheit, systemkritische Race Conditions) | 6 |
+| **Mittel** (Logik, Concurrency, Qualität) | 25+ |
 | **Niedrig** (Code-Qualität, Stil) | 19+ |
 | **Widerlegte Findings** | 3 |
 
@@ -158,12 +158,60 @@ User-Name, erkannte Stimmung und Präferenzen fließen via f-String in den Syste
 
 ## Teil 3: Concurrency & Race Conditions
 
-### MITTEL — Async Race Conditions
+### HOCH — Systemkritische Race Conditions
 
-#### C-1: proactive.py — Cooldown-Dict TOCTOU ohne Lock
+#### C-0: brain.py:1007-1017 — Lock gehalten während HTTP-I/O zu HA
 
 ```python
-# Zwei Coroutines können gleichzeitig _check_cooldown passieren
+async with self._states_lock:
+    states = await self.ha.get_states()    # ← Netzwerk-I/O unter Lock!
+    self._states_cache = states
+```
+
+**Problem:** Wenn Home Assistant langsam antwortet (oder nicht erreichbar ist), blockiert der Lock **alle** `_get_all_states()`-Aufrufe. Da der HA-State überall gebraucht wird, kann dies das gesamte System zum Stillstand bringen. Lock nur für Cache-Read/Write halten, I/O außerhalb machen.
+
+#### C-0b: event_bus.py (Addon) — Dedup ohne Lock
+
+```python
+# event_bus.py:102-114 — publish() liest/schreibt _last_event OHNE Lock
+dedup_key = f"{event_type}:{hash(str(data))}"
+last_ts = self._last_event.get(dedup_key)     # kein Lock!
+self._last_event[dedup_key] = now              # kein Lock!
+if len(self._last_event) > 500:
+    self._last_event = {k: v for ...}          # kein Lock! Dict-Reassignment!
+```
+
+**Problem:** `self._lock` existiert, wird aber nur für `_handlers` verwendet. `_last_event` wird aus verschiedenen Threads modifiziert (HA-WebSocket, Flask-Requests, Event-Handler). Das Dict-Reassignment in Zeile 112 kann gleichzeitige Schreibvorgänge verlieren. **Betrifft jedes Event im System.**
+
+### MITTEL — Async Race Conditions
+
+#### C-1: inner_state.py — 6+ Counter ohne Lock
+
+```python
+# inner_state.py:221-251
+async def on_action_success(self, ...):
+    self._successful_actions += 1    # kein Lock
+    self._confidence = min(1.0, self._confidence + 0.02 * weight)
+async def on_action_failure(self, ...):
+    self._failed_actions += 1        # kein Lock
+# ... plus _ignored_warnings, _funny_interactions, _complex_solves
+```
+
+`+=` auf int/float ist Read-Modify-Write, bei async-Kontextwechsel können Inkremente verloren gehen. Diese Counter beeinflussen **Jarvis' Stimmung und Konfidenz**.
+
+#### C-1b: pattern_engine.py (Addon) — Fehlender Lock im Custom-Threshold-Pfad
+
+```python
+# pattern_engine.py:404-432 — OHNE _sensor_tracking_lock:
+self._last_sensor_values[entity_id] = new_val    # KEIN Lock!
+self._last_sensor_times[entity_id] = now_ts      # KEIN Lock!
+```
+
+Der Standard-Threshold-Pfad (Zeile 440-447) nutzt den Lock korrekt — beim Custom-Threshold-Pfad wurde er vergessen.
+
+#### C-2: proactive.py — Cooldown-Dict TOCTOU ohne Lock
+
+```python
 async def _check_cooldown(self, key):
     if key in self._cooldowns:  # Check
         ...
@@ -172,13 +220,30 @@ async def _set_cooldown(self, key):
 # Kein asyncio.Lock → doppelte Auslösung möglich
 ```
 
-#### C-2: anticipation.py — Dict-Iteration während Modifikation
+#### C-3: anticipation.py — Dict-Iteration während Modifikation
 
 `_evaluate_patterns` iteriert über `self._patterns.items()` während `_learn_pattern` neue Patterns hinzufügt. Kann `RuntimeError: dictionary changed size during iteration` auslösen.
 
-#### C-3: pattern_engine.py (Addon) — Shared Dicts ohne threading.Lock
+#### C-3b: ~25 weitere Dict-Mutationen ohne Lock
 
-`self._pattern_cache` und `self._active_patterns` werden von Flask-Request-Handlern und Event-Bus-Callbacks in verschiedenen Threads modifiziert, ohne Lock.
+Betroffen (jeweils `self._*` Dicts in async Methoden ohne Lock):
+
+| Modul | Attribut |
+|-------|----------|
+| personality.py | `_curiosity_count_today`, `_humor_consecutive` |
+| timer_manager.py | `timers`, `_tasks` |
+| action_planner.py | `_pending_plans` |
+| conflict_resolver.py | `_last_resolutions` |
+| sound_manager.py | `_last_sound_time` |
+| self_automation.py | `_pending` |
+| light_engine.py | `_room_lux` |
+| ambient_audio.py | `_last_event_times` |
+| predictive_maintenance.py | `_devices` |
+| speaker_recognition.py | `_profiles`, `_device_mapping` |
+| calendar_intelligence.py | `_route_commute_cache` |
+| correction_memory.py | `_rules_created_today` |
+| llm_enhancer.py | `_suggestions_today` |
+| mood_detector.py | `_stress_level`, `_frustration_count` |
 
 ### MITTEL — Blockierende Aufrufe in Async Code
 
@@ -207,9 +272,14 @@ Die zentrale Licht-Check-Loop hat keinen Error-Callback. Wenn die Loop crashed, 
 
 ### MITTEL — Lock während I/O
 
-#### C-7: conversation_memory.py — Lock während ChromaDB-Zugriff
+#### C-7: conversation_memory.py, self_optimization.py, speaker_recognition.py — Lock während Redis/ChromaDB
 
-`self._lock` wird gehalten während ChromaDB-Operationen ausgeführt werden (>100ms bei großen Collections). Andere Coroutines die auf den Lock warten werden unnötig blockiert.
+Locks werden gehalten während Redis- und ChromaDB-Operationen laufen. Bei Latenzen blockiert dies alle anderen Coroutines die den Lock brauchen.
+
+Betroffene Stellen:
+- `conversation_memory.py:222,264` — `_project_lock` während Redis hset/hdel
+- `self_optimization.py:242` — `_proposals_lock` während Redis get
+- `speaker_recognition.py:720-723` — `_save_lock` während Redis set
 
 ---
 
@@ -406,22 +476,24 @@ Was besonders gut umgesetzt ist:
 
 | Prio | Finding | Aufwand |
 |------|---------|--------|
-| 6 | H-1: intent_tracker.py User-Message trennen | 15 Min |
-| 7 | H-2: action_planner.py User-Message trennen | 15 Min |
-| 8 | M-2: main.py Versionen zentralisieren | 10 Min |
-| 9 | C-6: proactive.py add_done_callback ergänzen | 15 Min |
-| 10 | M-7: cover_config.py File-Locking hinzufügen | 15 Min |
-| 11 | M-8: time_awareness.py _light_engine im __init__ | 10 Min |
+| 6 | C-0: brain.py Lock-Refactor (I/O außerhalb Lock) | 20 Min |
+| 7 | C-0b: event_bus.py Dedup mit Lock schützen | 15 Min |
+| 8 | H-1: intent_tracker.py User-Message trennen | 15 Min |
+| 9 | H-2: action_planner.py User-Message trennen | 15 Min |
+| 10 | M-2: main.py Versionen zentralisieren | 10 Min |
+| 11 | C-6: proactive.py add_done_callback ergänzen | 15 Min |
+| 12 | M-7: cover_config.py File-Locking hinzufügen | 15 Min |
+| 13 | M-8: time_awareness.py _light_engine im __init__ | 10 Min |
 
 ### Mittelfristig (< 1 Tag)
 
 | Prio | Finding | Aufwand |
 |------|---------|--------|
-| 12 | M-3: health_monitor.py Redis-State | 30 Min |
-| 13 | C-4: ChromaDB-Aufrufe in asyncio.to_thread() wrappen | 2 Std |
-| 14 | C-5: Embedding-Berechnung in asyncio.to_thread() | 30 Min |
-| 15 | A-1: Legacy get_db() → get_db_session() migrieren | 1 Std |
-| 16 | C-1/C-2: asyncio.Lock für Cooldown/Pattern-Dicts | 1 Std |
+| 14 | M-3: health_monitor.py Redis-State | 30 Min |
+| 15 | C-4: ChromaDB-Aufrufe in asyncio.to_thread() wrappen | 2 Std |
+| 16 | C-5: Embedding-Berechnung in asyncio.to_thread() | 30 Min |
+| 17 | A-1: Legacy get_db() → get_db_session() migrieren | 1 Std |
+| 18 | C-1/C-2/C-3b: asyncio.Lock für ~25 ungeschützte Dicts | 2-3 Std |
 
 ---
 
