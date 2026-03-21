@@ -213,7 +213,7 @@ class TestPlaybookExecutor:
         with patch("assistant.threat_assessment.yaml_config", {
             "threat_assessment": {"auto_execute_playbooks": True},
         }):
-            result = await t.execute_playbook("fire")
+            result = await t.execute_playbook_by_name("fire")
             assert isinstance(result, dict)
             assert "playbook" in result
 
@@ -230,7 +230,7 @@ class TestPlaybookExecutor:
         t.redis = AsyncMock()
 
         t._running_playbooks.add("fire")
-        result = await t.execute_playbook("fire")
+        result = await t.execute_playbook_by_name("fire")
         assert result.get("steps_executed", 0) == 0 or "already_running" in str(result)
 
 
@@ -261,6 +261,7 @@ class TestConflictPrediction:
         with patch("assistant.conflict_resolver.yaml_config", yaml_mock):
             cr = ConflictResolver.__new__(ConflictResolver)
             cr._recent_commands = {}
+            cr._commands_lock = __import__('threading').Lock()
             cr.yaml_config = yaml_mock
 
             result = await cr.predict_conflict("max", "climate", "wohnzimmer", {"temperature": 22})

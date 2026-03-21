@@ -768,9 +768,9 @@ class TestBaseline:
         await mon._add_sample("sensor.t", 22.5)
 
         pipe = redis_mock._pipeline
-        pipe.rpush.assert_called_once()
-        pipe.expire.assert_called_once()
-        pipe.execute.assert_awaited_once()
+        assert pipe.rpush.call_count >= 1  # regular + optional seasonal sample
+        assert pipe.expire.call_count >= 1
+        pipe.execute.assert_awaited()
         mon._recalculate_baseline.assert_awaited_once_with("sensor.t")
 
     @pytest.mark.asyncio
