@@ -395,6 +395,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self._last_proactive_event_type: str = ""
         self._idle_reasoning_pending: bool = False
 
+        # Think-Ahead: suggest follow-up actions after function execution
+        _brain_cfg = yaml_config.get("brain", {})
+        self._think_ahead_enabled = _brain_cfg.get("think_ahead_enabled", False)
+        self._think_ahead_used = False  # Max 1 suggestion per response
+
         # Clients
         self.ha = HomeAssistantClient()
         self.ollama = OllamaClient()
@@ -2241,6 +2246,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         device_id: Optional[str] = None,
     ) -> dict:
         """Innere process()-Implementierung, geschuetzt durch _process_lock."""
+        # Reset think-ahead flag for new request (max 1 suggestion per response)
+        self._think_ahead_used = False
+
         # C-2: Erkennen ob Request von HA Assist Pipeline kommt
         # Die Pipeline uebernimmt TTS selbst via Wyoming Piper → brain.py darf NICHT auch sprechen
         self._request_from_pipeline = (
