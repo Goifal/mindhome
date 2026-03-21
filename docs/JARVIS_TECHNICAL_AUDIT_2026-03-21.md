@@ -81,13 +81,23 @@ if not _trusted:
 
 **Auswirkung:** Vollständiger Zugriff auf alle API-Endpunkte inkl. Gerätesteuerung, Automatisierungen, Einstellungen. Da das System im lokalen Netzwerk läuft, ist die Angriffsfläche auf LAN-Zugang begrenzt, aber jedes Gerät im Heimnetzwerk (inkl. kompromittierter IoT-Geräte) könnte die API missbrauchen.
 
-**Fix:**
+**Verschärfend:** Die route-spezifische `_require_auth()` in `routes/security.py:40` und `routes/users.py:23` hat **denselben Fehler** — prüft nur ob der Header vorhanden ist, nie den Wert. Da die globale Middleware bereits alle `/api/`-Requests abfängt, gibt es nur **einen Fix-Punkt** (die Middleware), aber zwei Stellen die das gleiche Anti-Pattern verwenden.
+
+**Fix (Middleware in app.py:534):**
 ```python
 if ingress_token:
     import hmac
     if hmac.compare_digest(ingress_token, _SUPERVISOR_TOKEN):
         return None
     # Ungültiger Token → weiter zur API-Key-Prüfung
+```
+
+**Fix (_require_auth in security.py:46 und users.py:23):**
+```python
+if not ingress_token:
+    return jsonify({"error": "Authentication required"}), 401
+if _SUPERVISOR_TOKEN and not hmac.compare_digest(ingress_token, _SUPERVISOR_TOKEN):
+    return jsonify({"error": "Invalid token"}), 403
 ```
 
 ---
