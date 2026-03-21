@@ -303,8 +303,8 @@ class HealthMonitor:
             room = get_mindhome_room(entity_id)
             if room:
                 return room.lower()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Room-Lookup via function_calling fehlgeschlagen: %s", e)
 
         parts = entity_id.split(".", 1)
         if len(parts) == 2:

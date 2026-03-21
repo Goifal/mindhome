@@ -1031,6 +1031,9 @@ class EnergyOptimizer:
             history = json.loads(raw)
             if not isinstance(history, list) or len(history) < 4:
                 return None
+            history = [x for x in history if isinstance(x, (int, float))]
+            if len(history) < 4:
+                return None
 
             # Split into first half and second half
             mid = len(history) // 2
@@ -1094,7 +1097,7 @@ class EnergyOptimizer:
                 return None
 
             # Heuristic: map weather condition to solar estimate
-            high_conditions = {"sunny", "clear-night", "clear"}
+            high_conditions = {"sunny", "clear"}
             medium_conditions = {"partlycloudy", "partly_cloudy", "windy"}
             low_conditions = {"cloudy", "fog"}
             # Everything else (rainy, pouring, etc.) = minimal

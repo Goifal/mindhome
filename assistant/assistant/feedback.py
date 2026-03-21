@@ -389,6 +389,7 @@ class FeedbackTracker:
         if not feedback_cfg.get("smoothing_enabled", True):
             return raw_new_score
         factor = feedback_cfg.get("smoothing_factor", 0.3)
+        factor = max(0.0, min(1.0, factor))
         return (1.0 - factor) * old_score + factor * raw_new_score
 
     async def _update_score(self, event_type: str, delta: float,

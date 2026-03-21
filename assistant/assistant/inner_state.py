@@ -457,9 +457,29 @@ class InnerStateEngine:
 
     @property
     def mood(self) -> str:
-        """Aktueller innerer Zustand (mit Decay-Pruefung)."""
-        self._apply_mood_decay()
+        """Aktueller innerer Zustand (mit Decay-Pruefung).
+
+        Berechnet den Decay-Status ohne den internen State zu mutieren.
+        Die tatsaechliche State-Mutation erfolgt ueber apply_mood_decay().
+        """
+        _cfg = yaml_config.get("inner_state", {})
+        if (
+            _cfg.get("mood_decay_enabled", True)
+            and self._mood != MOOD_NEUTRAL
+        ):
+            decay_minutes = _cfg.get("mood_decay_minutes", 30)
+            elapsed_minutes = (time.time() - self._last_mood_change) / 60.0
+            if elapsed_minutes >= decay_minutes:
+                return MOOD_NEUTRAL
         return self._mood
+
+    def apply_mood_decay(self) -> None:
+        """Wendet Mood-Decay an und mutiert den internen State.
+
+        Sollte periodisch aufgerufen werden (z.B. bei check/update Zyklen),
+        nicht im Property-Getter.
+        """
+        self._apply_mood_decay()
 
     @property
     def confidence(self) -> float:

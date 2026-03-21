@@ -455,18 +455,25 @@ class PersonalityEngine:
         """#20: Berechnet Tage seit dem Verhaeltnis-Start (Redis-basiert).
 
         Liest mha:relationship:start_date aus Redis. Fallback: 0 Tage.
+        Wenn der Cache noch nicht populiert ist, wird ein async Refresh angestossen.
         """
-        if not self._redis:
-            return 0
-        try:
-            import asyncio
+        cached = getattr(self, "_cached_relationship_days", None)
+        if cached is not None:
+            return cached
+        # Cache noch nicht populiert — async Refresh anstossen fuer naechsten Aufruf
+        if self._redis:
+            try:
+                import asyncio
 
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                return getattr(self, "_cached_relationship_days", 0)
-        except RuntimeError:
-            return getattr(self, "_cached_relationship_days", 0)
-        return getattr(self, "_cached_relationship_days", 0)
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    task = asyncio.create_task(self.refresh_relationship_days())
+                    task.add_done_callback(
+                        lambda t: t.exception() if not t.cancelled() else None
+                    )
+            except RuntimeError:
+                pass
+        return 0
 
     async def refresh_relationship_days(self):
         """#20: Aktualisiert den Cache fuer Beziehungsdauer aus Redis."""
@@ -2160,7 +2167,7 @@ class PersonalityEngine:
         if _mr_cfg.get("enabled", True) and mood == "frustrated":
             _frust_threshold = _mr_cfg.get("frustration_threshold", 2)
             _frust_reduction = _mr_cfg.get("frustration_sarcasm_reduction", 2)
-            if _frust_threshold <= 2:
+            if base_level >= _frust_threshold:
                 base_level = max(1, base_level - _frust_reduction)
 
         # F-023: Bei Sicherheits-Alerts KEIN Sarkasmus
@@ -2200,7 +2207,6 @@ class PersonalityEngine:
         # #20: Trait Unlocks — Sarkasmus-Level an Beziehungsstufe anpassen
         _p_cfg = yaml_config.get("personality", {})
         if _p_cfg.get("trait_unlocks_enabled", False):
-            _days_per_stage = _p_cfg.get("trait_unlock_days_per_stage", 14)
             _relationship_days = self._get_relationship_days()
             _stage_info = self.get_trait_unlock_stage(_relationship_days)
             effective_level = min(effective_level, _stage_info["max_sarcasm"])

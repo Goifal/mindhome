@@ -16,10 +16,13 @@ Z.B. Level 4 bei Klima, Level 2 bei Sicherheit.
 
 import logging
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from .config import settings, yaml_config
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
 # Domaenen fuer domain-spezifische Autonomie
@@ -146,6 +149,7 @@ class AutonomyManager:
 
         # Temporal autonomy config (#42)
         temporal_cfg = auto_cfg.get("temporal", {})
+        self._temporal_enabled = temporal_cfg.get("enabled", False)
         self._temporal_night_start = int(temporal_cfg.get("night_start_hour", 22))
         self._temporal_night_end = int(temporal_cfg.get("night_end_hour", 6))
         self._temporal_night_offset = int(temporal_cfg.get("night_offset", -1))
@@ -194,20 +198,13 @@ class AutonomyManager:
         Returns:
             Effektives Level (1-5)
         """
-        if self._is_emergency_active():
-            return 5
-
-        base_level = self.level
-        if self._domain_levels_enabled and self._domain_levels and domain:
-            if domain in self._domain_levels:
-                base_level = self._domain_levels[domain]
-
-        offset = self._get_temporal_offset()
-        return max(1, min(5, base_level + offset))
+        return self._get_effective_level(domain=domain or "")
 
     def _get_temporal_offset(self) -> int:
         """Berechnet den temporalen Offset basierend auf der Tageszeit."""
-        hour = datetime.now(timezone.utc).hour
+        if not self._temporal_enabled:
+            return 0
+        hour = datetime.now(_LOCAL_TZ).hour
         if self._temporal_night_start > self._temporal_night_end:
             is_night = hour >= self._temporal_night_start or hour < self._temporal_night_end
         else:
@@ -547,7 +544,7 @@ class AutonomyManager:
         """
         threat_cfg = yaml_config.get("threat_assessment", {})
         max_duration = int(threat_cfg.get("emergency_boost_duration_min", 30))
-        duration_minutes = min(duration_minutes, max_duration)
+        duration_minutes = max(1, min(duration_minutes, max_duration))
 
         self._emergency_escalation = {
             "activated_at": datetime.now(timezone.utc),

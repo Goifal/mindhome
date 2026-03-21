@@ -328,10 +328,18 @@ class ThreatAssessment:
                 playbook_name = self._threat_type_to_playbook(threat.get("type", ""))
                 if not playbook_name:
                     continue
+                if playbook_name in self._running_playbooks:
+                    logger.warning("Playbook '%s' läuft bereits — überspringe doppelten Start", playbook_name)
+                    continue
+
+                def _playbook_done(t):
+                    if not t.cancelled():
+                        exc = t.exception()
+                        if exc:
+                            logger.error("Playbook-Task fehlgeschlagen: %s", exc)
+
                 task = asyncio.create_task(self.execute_playbook_by_name(playbook_name))
-                task.add_done_callback(
-                    lambda t: t.exception() if not t.cancelled() else None
-                )
+                task.add_done_callback(_playbook_done)
 
         return threats
 
@@ -887,93 +895,95 @@ class ThreatAssessment:
             return summary
 
         self._running_playbooks.add(playbook_name)
-        steps = playbook.get("steps", [])
-        summary["steps_total"] = len(steps)
-
-        logger.info(
-            "=== PLAYBOOK START: %s (%s, %d Schritte) ===",
-            playbook.get("name", playbook_name), playbook_name, len(steps),
-        )
-
         try:
-            states = await asyncio.wait_for(self.ha.get_states(), timeout=15)
-        except (asyncio.TimeoutError, Exception) as exc:
-            logger.warning("execute_playbook_by_name: HA-States nicht ladbar: %s", exc)
-            states = []
+            steps = playbook.get("steps", [])
+            summary["steps_total"] = len(steps)
 
-        for step_def in steps:
-            step_num = step_def.get("step", 0)
-            action_name = step_def.get("action", "unknown")
-            step_result = {
-                "step": step_num,
-                "action": action_name,
-                "success": True,
-                "details": [],
-            }
+            logger.info(
+                "=== PLAYBOOK START: %s (%s, %d Schritte) ===",
+                playbook.get("name", playbook_name), playbook_name, len(steps),
+            )
 
-            ha_actions = step_def.get("ha_actions", [])
-            if not ha_actions:
-                logger.info("Playbook %s Schritt %d: %s (keine HA-Aktionen)", playbook_name, step_num, action_name)
-                summary["steps_executed"] += 1
-                summary["results"].append(step_result)
-                continue
+            try:
+                states = await asyncio.wait_for(self.ha.get_states(), timeout=15)
+            except (asyncio.TimeoutError, Exception) as exc:
+                logger.warning("execute_playbook_by_name: HA-States nicht ladbar: %s", exc)
+                states = []
 
-            logger.info("Playbook %s Schritt %d: %s (%d HA-Aktionen)", playbook_name, step_num, action_name, len(ha_actions))
-            step_had_failure = False
+            for step_def in steps:
+                step_num = step_def.get("step", 0)
+                action_name = step_def.get("action", "unknown")
+                step_result = {
+                    "step": step_num,
+                    "action": action_name,
+                    "success": True,
+                    "details": [],
+                }
 
-            for ha_action in ha_actions:
-                service_domain = ha_action.get("service", "")
-                service_action = ha_action.get("action", "")
-                entity_filter = ha_action.get("entity_filter", "")
-
-                matching_entities = []
-                if entity_filter and states:
-                    filter_parts = [f.lower() for f in entity_filter.split("|")]
-                    for s in states:
-                        eid = s.get("entity_id", "").lower()
-                        if any(fp in eid for fp in filter_parts):
-                            matching_entities.append(s.get("entity_id"))
-
-                if not matching_entities:
-                    step_result["details"].append(
-                        f"{service_domain}.{service_action}: keine Entities für '{entity_filter}'"
-                    )
+                ha_actions = step_def.get("ha_actions", [])
+                if not ha_actions:
+                    logger.info("Playbook %s Schritt %d: %s (keine HA-Aktionen)", playbook_name, step_num, action_name)
+                    summary["steps_executed"] += 1
+                    summary["results"].append(step_result)
                     continue
 
-                for entity_id in matching_entities:
-                    try:
-                        await asyncio.wait_for(
-                            self.ha.call_service(
-                                service_domain,
-                                service_action,
-                                {"entity_id": entity_id},
-                            ),
-                            timeout=15,
+                logger.info("Playbook %s Schritt %d: %s (%d HA-Aktionen)", playbook_name, step_num, action_name, len(ha_actions))
+                step_had_failure = False
+
+                for ha_action in ha_actions:
+                    service_domain = ha_action.get("service", "")
+                    service_action = ha_action.get("action", "")
+                    entity_filter = ha_action.get("entity_filter", "")
+
+                    matching_entities = []
+                    if entity_filter and states:
+                        filter_parts = [f.lower() for f in entity_filter.split("|")]
+                        for s in states:
+                            eid = s.get("entity_id", "").lower()
+                            if any(fp in eid for fp in filter_parts):
+                                matching_entities.append(s.get("entity_id"))
+
+                    if not matching_entities:
+                        step_result["details"].append(
+                            f"{service_domain}.{service_action}: keine Entities für '{entity_filter}'"
                         )
-                        step_result["details"].append(f"{service_domain}.{service_action} → {entity_id}: OK")
-                        logger.info("Playbook %s: %s.%s → %s OK", playbook_name, service_domain, service_action, entity_id)
-                    except asyncio.TimeoutError:
-                        step_result["details"].append(f"{service_domain}.{service_action} → {entity_id}: TIMEOUT")
-                        logger.warning("Playbook %s: %s.%s → %s Timeout (15s)", playbook_name, service_domain, service_action, entity_id)
-                        step_had_failure = True
-                    except Exception as svc_err:
-                        step_result["details"].append(f"{service_domain}.{service_action} → {entity_id}: FEHLER ({svc_err})")
-                        logger.warning("Playbook %s: %s.%s → %s Fehler: %s", playbook_name, service_domain, service_action, entity_id, svc_err)
-                        step_had_failure = True
+                        continue
 
-            if step_had_failure:
-                step_result["success"] = False
-                summary["steps_failed"] += 1
-            summary["steps_executed"] += 1
-            summary["results"].append(step_result)
+                    for entity_id in matching_entities:
+                        try:
+                            await asyncio.wait_for(
+                                self.ha.call_service(
+                                    service_domain,
+                                    service_action,
+                                    {"entity_id": entity_id},
+                                ),
+                                timeout=15,
+                            )
+                            step_result["details"].append(f"{service_domain}.{service_action} → {entity_id}: OK")
+                            logger.info("Playbook %s: %s.%s → %s OK", playbook_name, service_domain, service_action, entity_id)
+                        except asyncio.TimeoutError:
+                            step_result["details"].append(f"{service_domain}.{service_action} → {entity_id}: TIMEOUT")
+                            logger.warning("Playbook %s: %s.%s → %s Timeout (15s)", playbook_name, service_domain, service_action, entity_id)
+                            step_had_failure = True
+                        except Exception as svc_err:
+                            step_result["details"].append(f"{service_domain}.{service_action} → {entity_id}: FEHLER ({svc_err})")
+                            logger.warning("Playbook %s: %s.%s → %s Fehler: %s", playbook_name, service_domain, service_action, entity_id, svc_err)
+                            step_had_failure = True
 
-        self._running_playbooks.discard(playbook_name)
-        logger.info(
-            "=== PLAYBOOK ENDE: %s — %d/%d erfolgreich, %d fehlgeschlagen ===",
-            playbook_name, summary["steps_executed"] - summary["steps_failed"],
-            summary["steps_total"], summary["steps_failed"],
-        )
-        return summary
+                if step_had_failure:
+                    step_result["success"] = False
+                    summary["steps_failed"] += 1
+                summary["steps_executed"] += 1
+                summary["results"].append(step_result)
+
+            logger.info(
+                "=== PLAYBOOK ENDE: %s — %d/%d erfolgreich, %d fehlgeschlagen ===",
+                playbook_name, summary["steps_executed"] - summary["steps_failed"],
+                summary["steps_total"], summary["steps_failed"],
+            )
+            return summary
+        finally:
+            self._running_playbooks.discard(playbook_name)
 
     async def execute_playbook(
         self,

@@ -572,13 +572,16 @@ class CorrectionMemory:
 
         # Cross-Domain: propagate generic correction patterns to other domains
         if self._cross_domain_enabled:
-            await self._propagate_cross_domain(
-                rule_key,
-                rule,
-                correction_type,
-                action,
-                person,
-            )
+            try:
+                await self._propagate_cross_domain(
+                    rule_key,
+                    rule,
+                    correction_type,
+                    action,
+                    person,
+                )
+            except Exception as e:
+                logger.warning("Cross-Domain-Propagation fehlgeschlagen: %s", e)
 
         # MCU-Persoenlichkeit: Lern-Bestaetigung in Queue pushen
         try:
@@ -630,6 +633,15 @@ class CorrectionMemory:
             if target_domain == source_domain or target_action == action:
                 continue
 
+            # Rate Limit: Max N Regeln pro Tag (shared with _update_rules)
+            if self._rules_created_today >= RULES_PER_DAY_LIMIT:
+                break
+
+            # MAX_RULES Check: nicht ueber Limit hinaus erstellen
+            existing_count = await self.redis.hlen("mha:correction_memory:rules")
+            if existing_count and existing_count >= MAX_RULES:
+                break
+
             context_key = person or source_rule.get("room", "") or "global"
             cross_key = f"{target_action}:{correction_type}:{context_key}"
 
@@ -653,6 +665,7 @@ class CorrectionMemory:
                 cross_key,
                 json.dumps(cross_rule, ensure_ascii=False),
             )
+            self._rules_created_today += 1
             propagated += 1
 
         if propagated > 0:

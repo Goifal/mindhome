@@ -155,11 +155,10 @@ class SemanticMemory:
             self.chroma_collection = None
 
 
-    async def store_fact(self, fact: SemanticFact) -> bool | dict:
-        """Speichert einen Fakt. Gibt True/False zurueck oder ein dict mit
-        Widerspruchsinformationen wenn ``contradiction_query`` aktiviert ist."""
+    async def store_fact(self, fact: SemanticFact) -> bool:
+        """Speichert einen Fakt. Gibt True/False zurueck.
+        Widerspruchsinformationen sind nach dem Aufruf ueber ``self._last_contradiction`` abrufbar."""
         # F-007: Lock um den gesamten Read-Write-Zyklus gegen TOCTOU
-        self._last_contradiction = None
         lock_key = f"mha:fact_lock:{hashlib.sha256(fact.content.encode()).hexdigest()[:12]}"
         lock_acquired = False
         if self.redis:
@@ -176,9 +175,8 @@ class SemanticMemory:
                 logger.debug("Redis Lock nicht verfuegbar, fahre ohne Lock fort: %s", e)
 
         try:
+            self._last_contradiction = None
             result = await self._store_fact_inner(fact)
-            if result and self._last_contradiction:
-                return self._last_contradiction
             return result
         finally:
             if lock_acquired and self.redis:
@@ -187,7 +185,7 @@ class SemanticMemory:
                 except Exception as e:
                     logger.debug("Unhandled: %s", e)
 
-    async def _store_fact_inner(self, fact: SemanticFact) -> bool | dict:
+    async def _store_fact_inner(self, fact: SemanticFact) -> bool:
         contradiction_query_enabled = yaml_config.get("semantic_memory", {}).get(
             "contradiction_query", True
         )

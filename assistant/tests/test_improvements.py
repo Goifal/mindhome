@@ -15,8 +15,6 @@ Testet:
 - Settings Defaults
 """
 
-import asyncio
-import time
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -58,9 +56,8 @@ class TestTemporalAutonomy:
             with patch("assistant.autonomy.datetime") as dt_mock:
                 dt_mock.now.return_value = datetime(2026, 3, 20, 23, 0, tzinfo=timezone.utc)
                 dt_mock.side_effect = lambda *a, **kw: datetime(*a, **kw)
-                if hasattr(am, "get_effective_level"):
-                    level = am.get_effective_level()
-                    assert level <= 3  # Sollte reduziert sein
+                level = am.get_effective_level()
+                assert level <= 3  # Sollte reduziert sein
 
     def test_effective_level_clamped_to_1(self):
         """Level darf nicht unter 1 fallen."""
@@ -84,9 +81,8 @@ class TestTemporalAutonomy:
         with patch("assistant.autonomy.settings", mock_settings), \
              patch("assistant.autonomy.yaml_config", yaml_mock):
             am = AutonomyManager()
-            if hasattr(am, "get_effective_level"):
-                level = am.get_effective_level()
-                assert level >= 1
+            level = am.get_effective_level()
+            assert level >= 1
 
     def test_temporal_disabled(self):
         """Bei deaktivierter temporaler Autonomie gilt normales Level."""
@@ -106,9 +102,8 @@ class TestTemporalAutonomy:
         with patch("assistant.autonomy.settings", mock_settings), \
              patch("assistant.autonomy.yaml_config", yaml_mock):
             am = AutonomyManager()
-            if hasattr(am, "get_effective_level"):
-                level = am.get_effective_level()
-                assert level == 3
+            level = am.get_effective_level()
+            assert level == 3
 
 
 class TestEmergencyEscalation:
@@ -133,11 +128,9 @@ class TestEmergencyEscalation:
         with patch("assistant.autonomy.settings", mock_settings), \
              patch("assistant.autonomy.yaml_config", yaml_mock):
             am = AutonomyManager()
-            if hasattr(am, "escalate_for_emergency"):
-                am.escalate_for_emergency()
-                if hasattr(am, "get_effective_level"):
-                    level = am.get_effective_level()
-                    assert level == 5
+            am.escalate_for_emergency()
+            level = am.get_effective_level()
+            assert level == 5
 
     def test_clear_emergency(self):
         """Emergency Escalation kann zurueckgesetzt werden."""
@@ -155,12 +148,14 @@ class TestEmergencyEscalation:
         with patch("assistant.autonomy.settings", mock_settings), \
              patch("assistant.autonomy.yaml_config", yaml_mock):
             am = AutonomyManager()
-            if hasattr(am, "escalate_for_emergency"):
-                am.escalate_for_emergency()
-                am.clear_emergency_escalation()
-                if hasattr(am, "get_effective_level"):
-                    level = am.get_effective_level()
-                    assert level == 2
+            am.escalate_for_emergency()
+            am.clear_emergency_escalation()
+            # Mock datetime auf 12:00 (Tag) damit temporaler Offset keine Rolle spielt
+            with patch("assistant.autonomy.datetime") as dt_mock:
+                dt_mock.now.return_value = datetime(2026, 3, 20, 12, 0, tzinfo=timezone.utc)
+                dt_mock.side_effect = lambda *a, **kw: datetime(*a, **kw)
+                level = am.get_effective_level()
+                assert level == 2
 
 
 class TestDeescalation:
@@ -188,11 +183,10 @@ class TestDeescalation:
         with patch("assistant.autonomy.settings", mock_settings), \
              patch("assistant.autonomy.yaml_config", yaml_mock):
             am = AutonomyManager()
-            if hasattr(am, "check_deescalation"):
-                # Simuliere niedrige Akzeptanzrate
-                am._stats = {"accepted": 10, "total": 100}
-                result = am.check_deescalation()
-                # Result kann None oder dict sein
+            # Simuliere niedrige Akzeptanzrate
+            am._stats = {"accepted": 10, "total": 100}
+            result = am.check_deescalation()
+            # Result kann None oder dict sein
 
 
 # =====================================================================
@@ -219,10 +213,9 @@ class TestPlaybookExecutor:
         with patch("assistant.threat_assessment.yaml_config", {
             "threat_assessment": {"auto_execute_playbooks": True},
         }):
-            if hasattr(t, "execute_playbook"):
-                result = await t.execute_playbook("fire")
-                assert isinstance(result, dict)
-                assert "playbook" in result
+            result = await t.execute_playbook("fire")
+            assert isinstance(result, dict)
+            assert "playbook" in result
 
     @pytest.mark.asyncio
     async def test_execute_playbook_prevents_parallel(self):
@@ -236,10 +229,9 @@ class TestPlaybookExecutor:
         t = ThreatAssessment(ha)
         t.redis = AsyncMock()
 
-        if hasattr(t, "execute_playbook") and hasattr(t, "_running_playbooks"):
-            t._running_playbooks.add("fire")
-            result = await t.execute_playbook("fire")
-            assert result.get("steps_executed", 0) == 0 or "already_running" in str(result)
+        t._running_playbooks.add("fire")
+        result = await t.execute_playbook("fire")
+        assert result.get("steps_executed", 0) == 0 or "already_running" in str(result)
 
 
 # =====================================================================
@@ -271,9 +263,8 @@ class TestConflictPrediction:
             cr._recent_commands = {}
             cr.yaml_config = yaml_mock
 
-            if hasattr(cr, "predict_conflict"):
-                result = await cr.predict_conflict("max", "climate", "wohnzimmer", {"temperature": 22})
-                assert result is None
+            result = await cr.predict_conflict("max", "climate", "wohnzimmer", {"temperature": 22})
+            assert result is None
 
 
 # =====================================================================
@@ -291,13 +282,11 @@ class TestExplainabilityConfig:
         with patch("assistant.explainability.yaml_config", {
             "explainability": {"explanation_style": "auto"},
         }):
-            if hasattr(ExplainabilityEngine, "__init__"):
-                from collections import deque
-                ee = ExplainabilityEngine.__new__(ExplainabilityEngine)
-                ee._decisions = deque(maxlen=50)
-                if hasattr(ee, "reload_config"):
-                    ee.reload_config()
-                    assert ee.explanation_style == "auto"
+            from collections import deque
+            ee = ExplainabilityEngine.__new__(ExplainabilityEngine)
+            ee._decisions = deque(maxlen=50)
+            ee.reload_config()
+            assert ee.explanation_style == "auto"
 
 
 # =====================================================================

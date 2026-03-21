@@ -89,6 +89,63 @@ class LearningObserver:
         self._ollama = ollama_client
         logger.info("LearningObserver: LLM-Rewrite aktiviert")
 
+    async def boost_pattern_confidence(
+        self,
+        action_type: str,
+        boost: float,
+        person: str = "",
+        room: str = "",
+    ) -> None:
+        """Erhoeht den Pattern-Zaehler fuer einen Aktionstyp bei positivem Outcome.
+
+        Wird vom OutcomeTracker aufgerufen wenn eine Aktion erfolgreich war,
+        um das erkannte Muster zu verstaerken.
+
+        Args:
+            action_type: Aktionstyp (z.B. "set_light", "set_climate")
+            boost: Boost-Wert (wird als zusaetzlicher Zaehler-Inkrement interpretiert)
+            person: Betroffene Person (optional)
+            room: Betroffener Raum (optional)
+        """
+        if not self.redis or not self.enabled:
+            return
+
+        # Boost auf den Pattern-Zaehler anwenden: Suche passende Pattern-Keys
+        # und inkrementiere deren Count, damit das Muster schneller die
+        # Schwelle fuer Automatisierungs-Vorschlaege erreicht.
+        try:
+            match_prefix = f"{KEY_PATTERNS}:"
+            if person:
+                match_prefix += f"{person}:"
+
+            cursor = 0
+            boosted = 0
+            while True:
+                cursor, keys = await self.redis.scan(
+                    cursor, match=f"{match_prefix}*", count=100
+                )
+                for key in keys:
+                    key_str = key.decode() if isinstance(key, bytes) else key
+                    # Pruefen ob der Aktionstyp im Key vorkommt
+                    # Pattern-Keys: mha:learning:patterns:[person:]entity:state:HH:MM
+                    if action_type.replace("set_", "") not in key_str.lower():
+                        continue
+                    if room and room.lower() not in key_str.lower():
+                        continue
+                    await self.redis.incr(key_str)
+                    boosted += 1
+                if cursor == 0:
+                    break
+
+            if boosted > 0:
+                logger.debug(
+                    "LearningObserver: %d Pattern(s) fuer '%s' geboostet (+1)",
+                    boosted,
+                    action_type,
+                )
+        except Exception as e:
+            logger.warning("LearningObserver boost_pattern_confidence Fehler: %s", e)
+
     async def mark_jarvis_action(self, entity_id: str):
         """Markiert eine Aktion als von Jarvis ausgefuehrt (nicht manuell)."""
         if not self.redis:

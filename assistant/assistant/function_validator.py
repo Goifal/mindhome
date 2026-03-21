@@ -6,6 +6,7 @@ Feature 10: Daten-basierter Widerspruch — prueft Live-Daten vor Ausfuehrung
 und liefert konkreten Pushback-Kontext (offene Fenster, leerer Raum, etc.).
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -36,6 +37,7 @@ class FunctionValidator:
         self.ha = None
         self.redis: Optional[aioredis.Redis] = None
         self._pushback_overrides: dict[str, list[float]] = {}
+        self._pushback_lock = asyncio.Lock()
 
     @property
     def require_confirmation(self) -> set:
@@ -74,24 +76,28 @@ class FunctionValidator:
 
     async def record_pushback_override(self, action_type: str, context_key: str) -> None:
         """Zeichnet auf, dass der User einen Pushback uebergangen hat."""
+        if not self.redis:
+            return
+
         pushback_cfg = yaml_config.get("pushback", {})
         if not pushback_cfg.get("learning_enabled", True):
             return
 
-        await self._load_pushback_overrides()
+        async with self._pushback_lock:
+            await self._load_pushback_overrides()
 
-        key = f"{action_type}:{context_key}"
-        now = time.time()
-        suppress_days = pushback_cfg.get("suppress_duration_days", 30)
-        cutoff = now - (suppress_days * 86400)
+            key = f"{action_type}:{context_key}"
+            now = time.time()
+            suppress_days = pushback_cfg.get("suppress_duration_days", 30)
+            cutoff = now - (suppress_days * 86400)
 
-        timestamps = self._pushback_overrides.get(key, [])
-        timestamps = [t for t in timestamps if t > cutoff]
-        timestamps.append(now)
-        self._pushback_overrides[key] = timestamps
+            timestamps = self._pushback_overrides.get(key, [])
+            timestamps = [t for t in timestamps if t > cutoff]
+            timestamps.append(now)
+            self._pushback_overrides[key] = timestamps
 
-        await self._save_pushback_overrides()
-        logger.debug("Pushback-Override aufgezeichnet: %s (count=%d)", key, len(timestamps))
+            await self._save_pushback_overrides()
+            logger.debug("Pushback-Override aufgezeichnet: %s (count=%d)", key, len(timestamps))
 
     async def is_pushback_suppressed(self, action_type: str, context_key: str) -> bool:
         """Prueft ob ein Pushback unterdrueckt werden soll (zu oft uebergangen)."""
@@ -99,22 +105,23 @@ class FunctionValidator:
         if not pushback_cfg.get("learning_enabled", True):
             return False
 
-        await self._load_pushback_overrides()
+        async with self._pushback_lock:
+            await self._load_pushback_overrides()
 
-        key = f"{action_type}:{context_key}"
-        timestamps = self._pushback_overrides.get(key, [])
-        if not timestamps:
+            key = f"{action_type}:{context_key}"
+            timestamps = self._pushback_overrides.get(key, [])
+            if not timestamps:
+                return False
+
+            suppress_days = pushback_cfg.get("suppress_duration_days", 30)
+            cutoff = time.time() - (suppress_days * 86400)
+            recent = [t for t in timestamps if t > cutoff]
+
+            suppress_after = pushback_cfg.get("suppress_after_overrides", 5)
+            if len(recent) >= suppress_after:
+                logger.debug("Pushback unterdrueckt: %s (%d Overrides)", key, len(recent))
+                return True
             return False
-
-        suppress_days = pushback_cfg.get("suppress_duration_days", 30)
-        cutoff = time.time() - (suppress_days * 86400)
-        recent = [t for t in timestamps if t > cutoff]
-
-        suppress_after = pushback_cfg.get("suppress_after_overrides", 5)
-        if len(recent) >= suppress_after:
-            logger.debug("Pushback unterdrueckt: %s (%d Overrides)", key, len(recent))
-            return True
-        return False
 
     def _get_climate_config(self) -> dict:
         """Liest Climate-Limits und Heizungsmodus live aus yaml_config."""

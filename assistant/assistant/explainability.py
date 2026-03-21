@@ -96,8 +96,10 @@ class ExplainabilityEngine:
         self.confidence_display = cfg.get("confidence_display", False)
         self.explanation_style = cfg.get("explanation_style", "auto")
         if self._decisions.maxlen != self.max_history:
-            old = list(self._decisions)
-            self._decisions = deque(old[-self.max_history:], maxlen=self.max_history)
+            old_items = list(self._decisions)
+            self._decisions.clear()
+            # Erstelle neue Deque mit neuem maxlen
+            self._decisions = deque(old_items[-self.max_history:], maxlen=self.max_history)
         logger.info(
             "ExplainabilityEngine config reloaded (enabled: %s, style: %s)",
             self.enabled,
@@ -289,7 +291,6 @@ class ExplainabilityEngine:
             parts.append(f"Zeitpunkt: {time_str}")
 
         if self.reasoning_chains:
-            ctx = decision.get("context", {})
             domain = decision.get("domain", "")
             if trigger and domain:
                 parts.append(f"Kausalkette: {trigger} -> {reason} -> {action}")
