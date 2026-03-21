@@ -190,8 +190,8 @@ autonomy:
   domain_levels:
     climate: 3       # Klima & Heizung
     light: 3         # Licht & Beleuchtung
-    media: 2         # Medien & Musik
-    cover: 2         # Rolllaeden
+    media: 3         # Medien & Musik
+    cover: 3         # Rolllaeden
     security: 1      # Sicherheit (niedrig empfohlen)
     automation: 2    # Automationen & Routinen
     notification: 2  # Benachrichtigungen
