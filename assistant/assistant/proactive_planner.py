@@ -321,7 +321,7 @@ class ProactiveSequencePlanner:
             "trigger": "energy_price_changed",
             "actions": actions,
             "message": actions[0]["description"],
-            "auto_message": actions[0]["description"],
+            "auto_message": self._build_narrative(actions, "", "energy_price_changed"),
         }
 
     async def _plan_bedtime_sequence(self, context: dict) -> Optional[dict]:
@@ -410,7 +410,7 @@ class ProactiveSequencePlanner:
             "weather_changed": f"Wetter-Anpassung, {title}.",
             "calendar_event_soon": f"Gaeste-Vorbereitung, {title}.",
             "bedtime": f"Gute Nacht, {title}.",
-            "energy_price": f"Energieoptimierung, {title}.",
+            "energy_price_changed": f"Energieoptimierung, {title}.",
         }
         intro = intros.get(trigger, f"Sehr wohl, {title}.")
 
@@ -457,7 +457,10 @@ class ProactiveSequencePlanner:
                 parts.append(desc.lower())
 
         if not parts:
-            return f"{intro} {', '.join(a.get('description', '') for a in actions)} — erledigt."
+            # Nur Benachrichtigungen — kein "erledigt" noetig
+            if notifications:
+                return f"{intro} Hinweis: {'; '.join(notifications)}."
+            return f"{intro} {', '.join(a.get('description', '') for a in actions)}."
 
         # Natuerliche Verkettung: "A, B und C"
         if len(parts) == 1:

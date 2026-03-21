@@ -744,10 +744,10 @@ class LearningObserver:
                 weekday = pattern.get("weekday", -1)
 
                 if weekday >= 0:
-                    key = f"{KEY_WEEKDAY_PATTERNS}:{person + ':' if person else ''}{entity_action}:{time_slot.replace(':', ':')}:{weekday}"
+                    key = f"{KEY_WEEKDAY_PATTERNS}:{person + ':' if person else ''}{entity_action}:{time_slot}:{weekday}"
                     max_ttl = 60 * 86400  # 60 Tage
                 else:
-                    key = f"{KEY_PATTERNS}:{person + ':' if person else ''}{entity_action}:{time_slot.replace(':', ':')}"
+                    key = f"{KEY_PATTERNS}:{person + ':' if person else ''}{entity_action}:{time_slot}"
                     max_ttl = 365 * 86400  # 365 Tage
 
                 ttl = await self.redis.ttl(key)

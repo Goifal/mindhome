@@ -48,6 +48,7 @@ class CircuitBreaker:
         self._last_failure_time: float = 0
         self._half_open_calls = 0
         self._lock = threading.Lock()
+        self._on_attempt: Optional[callable] = None  # PredictiveWarmer callback
 
     def _check_recovery(self) -> None:
         """Prueft ob der Recovery-Timeout abgelaufen ist und wechselt ggf. zu HALF_OPEN."""
@@ -79,6 +80,12 @@ class CircuitBreaker:
 
     def try_acquire(self) -> bool:
         """Reserviert einen Call-Slot. Im HALF_OPEN: inkrementiert Zaehler."""
+        # PredictiveWarmer: Aufruf aufzeichnen
+        if self._on_attempt:
+            try:
+                self._on_attempt(self.name)
+            except Exception:
+                pass
         with self._lock:
             self._check_recovery()
             s = self._state
@@ -147,6 +154,14 @@ class CircuitBreakerRegistry:
 
     def __init__(self):
         self._breakers: dict[str, CircuitBreaker] = {}
+        self._warmer: Optional["PredictiveWarmer"] = None
+
+    @property
+    def warmer(self) -> "PredictiveWarmer":
+        """Lazy-Init PredictiveWarmer."""
+        if self._warmer is None:
+            self._warmer = PredictiveWarmer(self)
+        return self._warmer
 
     def register(
         self,
@@ -160,8 +175,16 @@ class CircuitBreakerRegistry:
             failure_threshold=failure_threshold,
             recovery_timeout=recovery_timeout,
         )
+        # Warmer-Callback setzen wenn bereits initialisiert
+        if self._warmer:
+            cb._on_attempt = self._warmer.record_attempt
         self._breakers[name] = cb
         return cb
+
+    def _connect_warmer(self) -> None:
+        """Verbindet den PredictiveWarmer mit allen registrierten Breakern."""
+        for cb in self._breakers.values():
+            cb._on_attempt = self.warmer.record_attempt
 
     def get(self, name: str) -> Optional[CircuitBreaker]:
         """Holt einen Circuit Breaker by name."""
@@ -399,3 +422,7 @@ class PredictiveWarmer:
         """Gibt vorhergesagte Peak-Zeiten fuer Diagnostik zurueck."""
         with self._lock:
             return dict(self._peak_windows)
+
+
+# PredictiveWarmer mit bestehenden Breakern verbinden
+registry._connect_warmer()

@@ -16,6 +16,7 @@ Zustaende:
 Konfigurierbar in der Jarvis Assistant UI unter "Intelligenz".
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -214,6 +215,15 @@ class DialogueStateManager:
         if state.state == "awaiting_clarification":
             state.state = "follow_up"
             state.pending_clarification = None
+
+        # Cross-Session Referenzen in Redis speichern (fire-and-forget)
+        if self._redis:
+            try:
+                loop = asyncio.get_running_loop()
+                task = loop.create_task(self._save_important_references(person))
+                task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+            except RuntimeError:
+                pass  # Kein laufender Event-Loop
 
     def resolve_references(self, text: str, person: str = "", current_room: str = "") -> dict:
         """Loest Referenzen im User-Text auf.
