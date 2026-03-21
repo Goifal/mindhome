@@ -2,6 +2,9 @@
 Unterstuetzt zwei Heizungsmodi:
   - room_thermostat: Einzelraumregelung mit climate.* Entities pro Raum
   - heating_curve:   Feste Heizkurve, nur Vorlauftemperatur-Offset steuerbar
+
+Comfort-Integration: Liest ComfortScore aus der DB und passt
+Solltemperaturen dynamisch an wenn der Komfort-Score niedrig ist.
 """
 from .base import DomainPlugin
 
@@ -18,6 +21,9 @@ class ClimateDomain(DomainPlugin):
         "curve_entity": "",
         "away_offset": "-3",
         "night_offset": "-2",
+        # Comfort-basierte Anpassung (nutzt ComfortCalculator Scores)
+        "use_comfort": "true",
+        "comfort_temp_boost": "1.0",  # Max +1°C bei schlechtem Komfort
     }
 
     def on_start(self):
@@ -114,14 +120,66 @@ class ClimateDomain(DomainPlugin):
 
         return self.execute_or_suggest(actions)
 
+    def _get_comfort_adjustment(self, entity_id):
+        """Berechnet Temperatur-Anpassung basierend auf Komfort-Score.
+
+        Liest den letzten ComfortScore aus der DB fuer den Raum der Entity.
+        Bei niedrigem Temperatur-Komfort wird ein positiver Offset berechnet.
+
+        Returns:
+            Float: Temperatur-Offset (0.0 bis comfort_temp_boost)
+        """
+        try:
+            from models import ComfortScore, Room
+            max_boost = float(self.get_setting("comfort_temp_boost", 1.0))
+            with self.get_session() as session:
+                # Raum-ID aus Entity-Name ableiten
+                rooms = session.query(Room).all()
+                room_id = None
+                eid_lower = entity_id.lower()
+                for room in rooms:
+                    room_name_lower = (room.name or "").lower().replace(" ", "_")
+                    if room_name_lower and room_name_lower in eid_lower:
+                        room_id = room.id
+                        break
+                if not room_id:
+                    return 0.0
+
+                # Letzten Comfort-Score lesen
+                score = session.query(ComfortScore).filter_by(
+                    room_id=room_id, is_aggregate=0
+                ).order_by(ComfortScore.created_at.desc()).first()
+                if not score:
+                    return 0.0
+
+                # Temperatur-Faktor aus den Comfort-Faktoren
+                import json
+                factors = json.loads(score.factors) if isinstance(score.factors, str) else (score.factors or {})
+                temp_score = factors.get("temp", 100)
+
+                # Nur bei niedrigem Temperatur-Komfort (<60) anpassen
+                if temp_score >= 60:
+                    return 0.0
+
+                # Linear: Score 0 → max_boost, Score 60 → 0
+                return round(max_boost * (1.0 - temp_score / 60.0), 1)
+        except Exception as e:
+            self.logger.debug("Comfort-Adjustment fehlgeschlagen: %s", e)
+            return 0.0
+
     def _evaluate_room_thermostat(self, ctx):
-        """Raumthermostat-Modus: Einzelne Thermostate steuern (wie bisher)."""
+        """Raumthermostat-Modus: Einzelne Thermostate steuern.
+
+        Comfort-Integration: Bei niedrigem Temperatur-Komfort wird die
+        Solltemperatur leicht angehoben (max comfort_temp_boost).
+        """
         actions = []
         entities = self.get_entities()
         away_temp = float(self.get_setting("away_temp", 17))
         night_temp = float(self.get_setting("night_temp", 18))
+        use_comfort = self.get_setting("use_comfort", True)
 
-        # Nobody home -> lower temperature
+        # Nobody home -> lower temperature (kein Comfort-Boost bei Abwesenheit)
         if self.get_setting("away_lower", True):
             if not ctx.get("anyone_home"):
                 for e in entities:
@@ -136,20 +194,27 @@ class ClimateDomain(DomainPlugin):
                                 "reason_en": f"Nobody home: {name} to {away_temp}C",
                             })
 
-        # Night mode -> lower temperature
+        # Night mode -> lower temperature (mit optionalem Comfort-Boost)
         if self.get_setting("night_lower", True):
             phase = ctx.get("day_phase", "")
             if phase in ("Nacht", "Nachtruhe", "Night"):
                 for e in entities:
                     if e.get("state") not in ("off", "unavailable"):
                         current = e.get("attributes", {}).get("temperature")
-                        if current and float(current) > night_temp:
+                        target = night_temp
+                        reason_suffix = ""
+                        if use_comfort:
+                            boost = self._get_comfort_adjustment(e["entity_id"])
+                            if boost > 0:
+                                target = round(night_temp + boost, 1)
+                                reason_suffix = f" (+{boost}C Komfort)"
+                        if current and float(current) > target:
                             name = e.get("attributes", {}).get("friendly_name", e["entity_id"])
                             actions.append({
                                 "entity_id": e["entity_id"], "service": "set_temperature",
-                                "data": {"temperature": night_temp},
-                                "reason_de": f"Nachtabsenkung: {name} auf {night_temp}C",
-                                "reason_en": f"Night setback: {name} to {night_temp}C",
+                                "data": {"temperature": target},
+                                "reason_de": f"Nachtabsenkung: {name} auf {target}C{reason_suffix}",
+                                "reason_en": f"Night setback: {name} to {target}C{reason_suffix}",
                             })
 
         return self.execute_or_suggest(actions)

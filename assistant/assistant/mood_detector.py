@@ -1151,6 +1151,20 @@ class MoodDetector:
                 signals.append("rapid_follow_up")
                 logger.debug("Voice: schnelle Nachfrage -> Stress +%.2f", 0.1 * self.voice_weight)
 
+            # Phase 9.5: Erweiterte Emotionserkennung wenn Pitch/Energie verfuegbar
+            if metadata.get("pitch_mean") is not None or metadata.get("energy_rms") is not None:
+                try:
+                    emotion_result = self.detect_audio_emotion(metadata)
+                    if emotion_result.get("confidence", 0) > 0.4:
+                        signals.append(f"emotion_{emotion_result['emotion']}")
+                        logger.debug(
+                            "Voice-Emotion: %s (confidence=%.2f)",
+                            emotion_result["emotion"],
+                            emotion_result["confidence"],
+                        )
+                except Exception as e:
+                    logger.debug("Voice-Emotion Erkennung fehlgeschlagen: %s", e)
+
             self._last_voice_signals = signals
             self._store_person_state()
             return signals

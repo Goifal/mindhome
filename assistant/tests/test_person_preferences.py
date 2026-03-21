@@ -87,7 +87,8 @@ class TestSet:
         result = await prefs.set("Max", "default_brightness", 70)
         assert result is True
         prefs.redis.hset.assert_called_once()
-        prefs.redis.expire.assert_called_once()
+        # expire wird 2x aufgerufen: 1x fuer Prefs-Key, 1x fuer History-Key
+        assert prefs.redis.expire.call_count == 2
 
     @pytest.mark.asyncio
     async def test_set_clamps_to_min(self, prefs):

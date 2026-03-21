@@ -201,6 +201,22 @@ class LearningObserver:
             if await self.redis.get(automated_key):
                 return
 
+            # Kontext: Wetter und Anwesenheit fuer kontextbasierte Muster
+            weather_condition = ""
+            anyone_home = True
+            try:
+                _wc = await self.redis.get("mha:weather:current_condition")
+                if _wc:
+                    weather_condition = (
+                        _wc.decode("utf-8", errors="ignore")
+                        if isinstance(_wc, bytes) else str(_wc)
+                    )[:30]
+                _away = await self.redis.get("mha:presence:away_persons")
+                if _away:
+                    anyone_home = False  # Jemand ist als abwesend markiert
+            except Exception:
+                pass  # Kontext ist optional — kein Fehler loggen
+
             action = {
                 "entity_id": entity_id,
                 "new_state": new_state,
@@ -208,6 +224,8 @@ class LearningObserver:
                 "weekday": weekday,
                 "timestamp": now.isoformat(),
                 "person": person,
+                "weather": weather_condition,
+                "anyone_home": anyone_home,
             }
 
             # In Redis-Liste speichern (max 5000 letzte Aktionen, 365 Tage)
@@ -220,6 +238,12 @@ class LearningObserver:
 
             # Wochentag-spezifischer Pattern-Check
             await self._check_weekday_pattern(action_key, time_slot, weekday, entity_id, new_state, person=person)
+
+            # Wetter-Kontext-Pattern: Erkennt wetterbasierte Muster
+            if weather_condition:
+                await self._check_weather_pattern(
+                    action_key, weather_condition, entity_id, new_state, person=person
+                )
 
             # Temporal Auto-Clustering: Automatisch Cluster erkennen
             # wenn mehrere manuelle Aktionen innerhalb von 5 Minuten passieren
@@ -349,6 +373,70 @@ class LearningObserver:
                 "time_slot": time_slot,
                 "weekday": weekday,
                 "weekday_name": day_name,
+                "count": count,
+                "person": person,
+            })
+
+    # Wetter-Bedingungen zu lesbaren deutschen Labels
+    _WEATHER_LABELS_DE = {
+        "sunny": "Sonnenschein", "clear-night": "klare Nacht",
+        "cloudy": "bewoelkt", "partlycloudy": "teilweise bewoelkt",
+        "rainy": "Regen", "pouring": "starkem Regen",
+        "lightning-rainy": "Gewitter", "snowy": "Schnee",
+        "fog": "Nebel", "windy": "Wind", "hail": "Hagel",
+    }
+
+    async def _check_weather_pattern(self, action_key: str, weather: str,
+                                     entity_id: str, new_state: str,
+                                     person: str = ""):
+        """Prueft wetterbasierte Muster (z.B. 'bei Regen Rolllaeden zu')."""
+        person_prefix = f"{person}:" if person else ""
+        # Wetter normalisieren (nur Hauptkategorie)
+        weather_norm = weather.lower().strip().split(",")[0].split("-")[0][:20]
+        if not weather_norm:
+            return
+
+        pattern_key = f"mha:learning:weather_patterns:{person_prefix}{action_key}:{weather_norm}"
+
+        count = await self.redis.incr(pattern_key)
+        if count == 1:
+            await self.redis.expire(pattern_key, 120 * 86400)  # 120 Tage TTL
+
+        # Hoehere Schwelle fuer Wetter-Muster (4 statt 3) — Wetter ist variabler
+        if count < self.min_repetitions + 1:
+            return
+
+        suggested_key = f"{KEY_SUGGESTED}:weather:{person_prefix}{action_key}:{weather_norm}"
+        if await self.redis.get(suggested_key):
+            return
+
+        await self.redis.setex(suggested_key, 14 * 86400, "1")  # 14 Tage Cooldown
+
+        friendly = entity_id.split(".", 1)[1].replace("_", " ").title()
+        action_de = "eingeschaltet" if new_state == "on" else "ausgeschaltet" if new_state == "off" else new_state
+        weather_de = self._WEATHER_LABELS_DE.get(weather.lower().strip(), weather)
+
+        title = get_person_title()
+        person_hint = f" ({person})" if person else ""
+        message = (
+            f"{title}, mir ist aufgefallen, dass du{person_hint} {friendly} bei {weather_de} "
+            f"immer {action_de} ({count}x). "
+            f"Soll ich das wetterbasiert automatisieren?"
+        )
+
+        logger.info(
+            "Learning: Wetter-Muster erkannt - %s bei %s (%dx, Person: %s)",
+            action_key, weather_norm, count, person or "global",
+        )
+
+        if self._notify_callback:
+            await self._notify_callback({
+                "message": message,
+                "type": "learning_suggestion",
+                "subtype": "weather",
+                "entity_id": entity_id,
+                "new_state": new_state,
+                "weather": weather_norm,
                 "count": count,
                 "person": person,
             })

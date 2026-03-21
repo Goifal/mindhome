@@ -41,12 +41,15 @@ class MindHomeEventBus:
     - Wildcard subscriptions (e.g. 'state.*' matches 'state.changed')
     """
 
-    def __init__(self, history_size: int = 100):
+    def __init__(self, history_size: int = 100, dedup_window: float = 0.1):
         self._handlers: Dict[str, List[dict]] = defaultdict(list)
         self._lock = threading.Lock()
         self._history: deque = deque(maxlen=history_size)
         self._stats = defaultdict(int)
         self._stats_lock = threading.Lock()
+        # Deduplizierung: identische Events innerhalb des Zeitfensters ignorieren
+        self._dedup_window = dedup_window  # Sekunden (Standard: 100ms)
+        self._last_event: Dict[str, float] = {}  # event_type:data_hash -> timestamp
 
     def subscribe(self, event_type: str, handler: Callable, 
                   priority: int = 0, source_filter: Optional[str] = None) -> str:
@@ -85,16 +88,31 @@ class MindHomeEventBus:
                         return True
         return False
 
-    def publish(self, event_type: str, data: Any = None, 
+    def publish(self, event_type: str, data: Any = None,
                 source: str = "system", priority: int = 0):
         """Publish an event to all subscribers.
-        
+
         Args:
             event_type: Type of event (e.g. 'state.changed', 'sleep.detected')
             data: Event payload
             source: Who published this event
             priority: Event priority
         """
+        # Deduplizierung: identische Events innerhalb des Zeitfensters ignorieren
+        if self._dedup_window > 0:
+            now = time.time()
+            dedup_key = f"{event_type}:{hash(str(data)) if data else ''}"
+            last_ts = self._last_event.get(dedup_key)
+            if last_ts is not None and (now - last_ts) < self._dedup_window:
+                return  # Duplikat innerhalb Zeitfenster — ignorieren
+            self._last_event[dedup_key] = now
+            # Memory-Schutz: Max 500 Keys behalten
+            if len(self._last_event) > 500:
+                cutoff = now - self._dedup_window * 10
+                self._last_event = {
+                    k: v for k, v in self._last_event.items() if v > cutoff
+                }
+
         event = Event(event_type, data, source, priority)
         self._history.append(event)
         with self._stats_lock:

@@ -345,9 +345,7 @@ class EnergyOptimizer:
                 seasonal_status = await self.seasonal_insight.get_status()
                 if seasonal_status.get("months_with_data", 0) >= 3:
                     # Saisonalen Kontext an Anomalie-Alerts anhaengen
-                    from datetime import datetime
-
-                    month = datetime.now().month
+                    month = datetime.now(timezone.utc).month
                     seasons = {
                         12: "Winter",
                         1: "Winter",

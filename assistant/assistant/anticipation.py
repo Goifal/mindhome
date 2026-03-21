@@ -247,6 +247,8 @@ class AnticipationEngine:
             for entry in group:
                 try:
                     ts = datetime.fromisoformat(entry.get("timestamp", ""))
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=_LOCAL_TZ)
                     days_ago = (now - ts).days
                     # Gewicht: 1.0 fuer heute, 0.5 fuer vor 30 Tagen
                     weight = max(0.3, 1.0 - (days_ago / self.history_days) * 0.7)
@@ -927,6 +929,8 @@ class AnticipationEngine:
                         if not ts_str:
                             continue
                         ts = datetime.fromisoformat(ts_str)
+                        if ts.tzinfo is None:
+                            ts = ts.replace(tzinfo=_LOCAL_TZ)
                         if (now - ts).total_seconds() < 300:
                             if entry.get("action") == pattern["trigger_action"]:
                                 suggestion = {
@@ -1040,6 +1044,24 @@ class AnticipationEngine:
 
                 # Cooldown setzen (1 Stunde)
                 await self.redis.setex(pattern_key, 3600, "1")
+
+        # Predictive Comfort: Vorheizungsvorschlaege aus Thermosimulation
+        try:
+            comfort_suggestions = await self.get_predictive_comfort_suggestions()
+            for cs in comfort_suggestions:
+                suggestions.append(
+                    {
+                        "pattern": {"type": "predictive_comfort"},
+                        "action": cs.get("action", ""),
+                        "args": {"room": cs.get("room", ""), "target_temp": cs.get("target_temp")},
+                        "confidence": cs.get("confidence", 0.6),
+                        "description": cs.get("description", ""),
+                        "mode": "suggest",
+                        "preheat_minutes": cs.get("preheat_minutes"),
+                    }
+                )
+        except Exception as e:
+            logger.debug("Predictive Comfort fehlgeschlagen: %s", e)
 
         # Kalender x Wetter Kreuzreferenzen einbinden (bisher verwaist)
         try:
@@ -1468,6 +1490,8 @@ class AnticipationEngine:
             for entry in entries:
                 try:
                     ts = datetime.fromisoformat(entry.get("timestamp", ""))
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=_LOCAL_TZ)
                 except (ValueError, TypeError):
                     continue
                 if ts >= recent_start:

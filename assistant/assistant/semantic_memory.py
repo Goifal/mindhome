@@ -513,6 +513,8 @@ class SemanticMemory:
 
                 try:
                     last_update = datetime.fromisoformat(updated_at)
+                    if last_update.tzinfo is None:
+                        last_update = last_update.replace(tzinfo=timezone.utc)
                 except (ValueError, TypeError):
                     continue
 
@@ -737,7 +739,10 @@ class SemanticMemory:
                 updated_at = meta.get("updated_at", "")
                 if updated_at:
                     try:
-                        days_old = (now - datetime.fromisoformat(updated_at)).days
+                        _parsed_dt = datetime.fromisoformat(updated_at)
+                        if _parsed_dt.tzinfo is None:
+                            _parsed_dt = _parsed_dt.replace(tzinfo=timezone.utc)
+                        days_old = (now - _parsed_dt).days
                         # Staerkerer Recency-Boost: 25% fuer aktuelle Fakten,
                         # linear abfallend ueber 60 Tage
                         if days_old < 60:
@@ -840,7 +845,10 @@ class SemanticMemory:
                         _updated_at = _updated_at.decode()
                     if _updated_at:
                         try:
-                            _days_old = (now - datetime.fromisoformat(_updated_at)).days
+                            _parsed_ua = datetime.fromisoformat(_updated_at)
+                            if _parsed_ua.tzinfo is None:
+                                _parsed_ua = _parsed_ua.replace(tzinfo=timezone.utc)
+                            _days_old = (now - _parsed_ua).days
                             if _days_old < 60:
                                 total_score += 0.25 * max(0.0, 1.0 - _days_old / 60.0)
                         except (ValueError, TypeError):
@@ -1193,7 +1201,10 @@ class SemanticMemory:
             if created:
                 try:
                     from datetime import datetime
-                    age_days = (datetime.now(timezone.utc) - datetime.fromisoformat(created)).days
+                    _parsed_cr = datetime.fromisoformat(created)
+                    if _parsed_cr.tzinfo is None:
+                        _parsed_cr = _parsed_cr.replace(tzinfo=timezone.utc)
+                    age_days = (datetime.now(timezone.utc) - _parsed_cr).days
                     # Juengere Gespraeche bevorzugen (Bonus bis 1.5x fuer heute)
                     age_bonus = max(0.5, 1.5 - age_days * 0.1)
                 except (ValueError, TypeError):

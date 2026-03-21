@@ -8,6 +8,7 @@ class LightDomain(DomainPlugin):
     DEFAULT_SETTINGS = {
         "enabled": "true", "mode": "suggest",
         "dim_brightness_pct": "20", "dusk_brightness_pct": "80",
+        "use_circadian": "true",
     }
 
     def on_start(self):
@@ -41,6 +42,38 @@ class LightDomain(DomainPlugin):
             {"key": "night_dim", "label_de": "Nachtmodus dimmen", "label_en": "Night mode dim", "default": True},
         ]
 
+    def _get_circadian_values(self, entity_id):
+        """Holt Circadian-Werte (Helligkeit, Farbtemperatur) fuer eine Entity.
+
+        Nutzt den CircadianLightManager aus dem globalen dependencies-Dict.
+        Graceful Degradation wenn Circadian nicht verfuegbar.
+
+        Returns:
+            Tuple (brightness_pct, color_temp_kelvin) oder (None, None)
+        """
+        try:
+            import app as _app_module
+            deps = getattr(_app_module, "dependencies", {})
+            circadian = deps.get("circadian_manager")
+            if not circadian:
+                return None, None
+            statuses = circadian.get_status()
+            if not statuses:
+                return None, None
+            # Entity-Room-Matching: entity_id enthält oft den Raum-Namen
+            eid_lower = entity_id.lower()
+            for status in statuses:
+                room_name = (status.get("room_name") or "").lower().replace(" ", "_")
+                if room_name and room_name in eid_lower:
+                    if not status.get("override_active"):
+                        return (
+                            status.get("brightness_pct"),
+                            status.get("color_temp_kelvin"),
+                        )
+            return None, None
+        except Exception:
+            return None, None
+
     def evaluate(self, context):
         if not self.is_enabled():
             return []
@@ -49,6 +82,7 @@ class LightDomain(DomainPlugin):
         entities = self.get_entities()
         dim_pct = int(self.get_setting("dim_brightness_pct", 20))
         dusk_pct = int(self.get_setting("dusk_brightness_pct", 80))
+        use_circadian = self.get_setting("use_circadian", True)
 
         # Dusk + someone home -> lights on
         if self.get_setting("auto_on_dusk", True):
@@ -56,9 +90,17 @@ class LightDomain(DomainPlugin):
                 for e in entities:
                     if e.get("state") == "off":
                         name = e.get("attributes", {}).get("friendly_name", e["entity_id"])
+                        # Circadian: dynamische Helligkeit + Farbtemperatur
+                        data = {"brightness_pct": dusk_pct}
+                        if use_circadian:
+                            c_bright, c_ct = self._get_circadian_values(e["entity_id"])
+                            if c_bright is not None:
+                                data["brightness_pct"] = c_bright
+                            if c_ct is not None:
+                                data["color_temp_kelvin"] = c_ct
                         actions.append({
                             "entity_id": e["entity_id"], "service": "turn_on",
-                            "data": {"brightness_pct": dusk_pct},
+                            "data": data,
                             "reason_de": f"Daemmerung: {name} einschalten",
                             "reason_en": f"Dusk: turn on {name}",
                         })
@@ -75,7 +117,7 @@ class LightDomain(DomainPlugin):
                             "reason_en": f"Nobody home: turn off {name}",
                         })
 
-        # Night mode -> dim
+        # Night mode -> dim (Circadian-aware)
         if self.get_setting("night_dim", True):
             phase = ctx.get("day_phase", "")
             if phase.lower() in ("nacht", "nachtruhe", "night"):
@@ -84,9 +126,16 @@ class LightDomain(DomainPlugin):
                         brightness = e.get("attributes", {}).get("brightness", 255)
                         if brightness and brightness > 50:
                             name = e.get("attributes", {}).get("friendly_name", e["entity_id"])
+                            data = {"brightness_pct": dim_pct}
+                            if use_circadian:
+                                c_bright, c_ct = self._get_circadian_values(e["entity_id"])
+                                if c_bright is not None:
+                                    data["brightness_pct"] = min(dim_pct, c_bright)
+                                if c_ct is not None:
+                                    data["color_temp_kelvin"] = c_ct
                             actions.append({
                                 "entity_id": e["entity_id"], "service": "turn_on",
-                                "data": {"brightness_pct": dim_pct},
+                                "data": data,
                                 "reason_de": f"Nachtmodus: {name} dimmen",
                                 "reason_en": f"Night mode: dim {name}",
                             })

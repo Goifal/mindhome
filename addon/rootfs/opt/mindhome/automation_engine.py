@@ -554,7 +554,12 @@ class FeedbackProcessor:
                 else:
                     pattern.status = "observed"  # Back to observing
 
-                pattern.updated_at = datetime.now(timezone.utc)
+                now = datetime.now(timezone.utc)
+                pattern.updated_at = now
+                # last_matched_at aktualisieren damit der Confidence-Decay-Timer
+                # neu startet — abgelehnte Muster sollen nicht durch die
+                # Grace-Period vor weiterem Decay geschuetzt werden.
+                pattern.last_matched_at = now
 
             session.commit()
             logger.info(f"Prediction {prediction_id} rejected → confidence decreased")

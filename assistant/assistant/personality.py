@@ -3566,6 +3566,22 @@ class PersonalityEngine:
             elif mood == "good":
                 mood_section += "LOCKERHEIT: User gut gelaunt — etwas mehr Humor und Leichtigkeit erlaubt.\n"
 
+        # Scene-Personality: Aktive Szene beeinflusst Antwort-Stil
+        if context:
+            _active_scenes = (context.get("house") or {}).get("active_scenes", [])
+            for _scene in _active_scenes:
+                _scene_adj = self.get_scene_adjustment(_scene)
+                if _scene_adj:
+                    _style_hint = _scene_adj.get("style_hint", "")
+                    if _style_hint:
+                        mood_section += f"SZENE ({_scene}): {_style_hint}\n"
+                    _verb = _scene_adj.get("verbosity")
+                    if _verb == "minimal":
+                        max_sentences = max(1, min(max_sentences, 2))
+                    elif _verb == "kurz":
+                        max_sentences = max(1, min(max_sentences, 3))
+                    break  # Nur erste passende Szene anwenden
+
         # Phase 17.4: Late-Night Fürsorge — zwischen 0-4 Uhr sanfter Ton
         _hour = datetime.now(_LOCAL_TZ).hour
         if _hour < 5 and time_of_day in ("night", "early_morning"):
@@ -3885,6 +3901,17 @@ class PersonalityEngine:
             _inner_hint = self._inner_state.get_prompt_section()
             if _inner_hint:
                 _dynamic_parts.append(_inner_hint.strip())
+            # #18: Emotion Blending — gemischte Stimmung als Nuance
+            _blended = self._inner_state.get_blended_mood()
+            if len(_blended) > 1:
+                # Mehr als eine Emotion aktiv → Nuance fuer das LLM
+                _blend_parts = [
+                    f"{k} ({v:.0%})" for k, v in _blended.items() if v > 0.1
+                ]
+                if len(_blend_parts) > 1:
+                    _dynamic_parts.append(
+                        f"EMOTIONSMISCHUNG: {', '.join(_blend_parts)}"
+                    )
 
         # D5: Quality Feedback — VERMEIDE-Hints aus schlechten Patterns
         if self._quality_hints:

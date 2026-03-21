@@ -1137,6 +1137,15 @@ async def submit_feedback(request: FeedbackRequest):
             status_code=400,
             detail=f"Ungueltiger feedback_type: {request.feedback_type}",
         )
+
+    # Inner-State: Warnung ignoriert → Jarvis wird leicht irritiert
+    if request.feedback_type in ("ignored", "dismissed"):
+        if hasattr(brain, "inner_state") and brain.inner_state:
+            brain._task_registry.create_task(
+                brain.inner_state.on_warning_ignored(),
+                name="inner_state_warning_ignored",
+            )
+
     return result
 
 

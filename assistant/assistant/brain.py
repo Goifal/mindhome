@@ -28,7 +28,7 @@ from typing import Optional
 
 from .action_planner import ActionPlanner
 from .activity import ActivityEngine
-from .autonomy import AutonomyManager
+from .autonomy import ACTION_DOMAIN_MAP, AutonomyManager
 from . import config as cfg
 from .config import settings, get_person_title, set_active_person, get_model_profile
 from .context_builder import ContextBuilder
@@ -2323,6 +2323,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     self._task_registry.create_task(
                         self.personality.record_inside_joke(person, _joke_text),
                         name="b6_inside_joke",
+                    )
+                # Inner-State: Positive Humor-Reaktion → Jarvis amüsiert
+                if humor_fb and hasattr(self, "inner_state") and self.inner_state:
+                    self._task_registry.create_task(
+                        self.inner_state.on_funny_interaction(),
+                        name="inner_state_funny",
                     )
             self._last_humor_category = None
 
@@ -5233,6 +5239,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             if dedup_notes:
                 dedup_text = "\n\nWARNUNGS-DEDUP:\n" + "\n".join(dedup_notes)
                 sections.append(("warning_dedup", dedup_text, 2))
+        elif hasattr(self, "inner_state") and self.inner_state:
+            # Keine Alerts → Haus laeuft optimal → Jarvis zufrieden
+            self._task_registry.create_task(
+                self.inner_state.on_house_optimal(),
+                name="inner_state_house_optimal",
+            )
 
         memories = context.get("memories", {})
         memory_context = self._build_memory_context(memories)
@@ -16264,10 +16276,12 @@ Regeln:
         _butler_cfg = cfg.yaml_config.get("butler_instinct", {})
         _butler_enabled = _butler_cfg.get("enabled", True)
         _butler_min_autonomy = _butler_cfg.get("min_autonomy_level", 3)
+        _action_domain = suggestion.get("domain", "") or ACTION_DOMAIN_MAP.get(action, "")
+        _effective_level = self.autonomy.get_effective_level(_action_domain)
         if (
             mode == "auto"
             and _butler_enabled
-            and self.autonomy.level >= _butler_min_autonomy
+            and _effective_level >= _butler_min_autonomy
         ):
             # F-027: Kombinierte Autonomie + Trust Pruefung via can_execute()
             exec_check = self.autonomy.can_execute(
@@ -16277,10 +16291,17 @@ Regeln:
                 domain=suggestion.get("domain", ""),
             )
             if not exec_check["allowed"]:
+                _eff_lvl = exec_check.get("autonomy_level", "?")
+                _reason = exec_check.get("reason", "keine Berechtigung")
                 logger.warning(
-                    "F-027: Anticipation auto-execute blockiert (%s) — %s",
+                    "F-027: Anticipation auto-execute blockiert (%s) — %s "
+                    "(global: %d, effektiv: %s, domain: %s, temporal: %s)",
                     action,
-                    exec_check.get("reason", "keine Berechtigung"),
+                    _reason,
+                    self.autonomy.level,
+                    _eff_lvl,
+                    suggestion.get("domain", "") or ACTION_DOMAIN_MAP.get(action, ""),
+                    "aktiv" if self.autonomy._temporal_enabled else "aus",
                 )
                 text = f"{title}, {desc}. Soll ich das uebernehmen? (Bestaetigung erforderlich)"
                 await emit_proactive(text, "anticipation_suggest", "medium")

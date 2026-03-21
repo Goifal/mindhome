@@ -21,12 +21,17 @@ Quellen:
 
 import json
 import logging
+import time
+from datetime import datetime, timezone
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 REDIS_KEY_PREFIX = "mha:person_prefs"
 REDIS_TTL = 90 * 86400  # 90 Tage
+HISTORY_KEY_PREFIX = "mha:person_prefs_history"
+HISTORY_TTL = 180 * 86400  # 180 Tage History
+HISTORY_MAX_ENTRIES = 100  # Max Snapshots pro Person+Key
 
 # Bekannte Preference-Keys mit Typ und Grenzen
 KNOWN_PREFERENCES = {
@@ -104,6 +109,12 @@ class PersonPreferences:
                 return False
         await self.redis.hset(self._key(person), key, str(value))
         await self.redis.expire(self._key(person), REDIS_TTL)
+
+        # Preference Evolution: Numerische Aenderungen historisch tracken
+        spec = KNOWN_PREFERENCES.get(key)
+        if spec and spec["type"] is float:
+            await self._record_history(person, key, float(value))
+
         logger.info("PersonPrefs: %s.%s = %s", person, key, value)
         return True
 
@@ -159,3 +170,101 @@ class PersonPreferences:
             label = k.replace("_", " ").replace("default ", "").title()
             parts.append(f"{label}: {v}{unit}")
         return f"Persoenliche Praeferenzen von {person}: {', '.join(parts)}"
+
+    # ------------------------------------------------------------------
+    # Preference Evolution: Historische Trend-Erkennung
+    # ------------------------------------------------------------------
+
+    def _history_key(self, person: str, pref_key: str) -> str:
+        return f"{HISTORY_KEY_PREFIX}:{person.lower().strip()}:{pref_key}"
+
+    async def _record_history(self, person: str, key: str, value: float):
+        """Speichert einen historischen Snapshot einer Praeferenz-Aenderung."""
+        if not self.redis:
+            return
+        try:
+            entry = json.dumps({
+                "value": round(value, 2),
+                "ts": datetime.now(timezone.utc).isoformat(),
+            })
+            hk = self._history_key(person, key)
+            await self.redis.lpush(hk, entry)
+            await self.redis.ltrim(hk, 0, HISTORY_MAX_ENTRIES - 1)
+            await self.redis.expire(hk, HISTORY_TTL)
+        except Exception as e:
+            logger.debug("PersonPrefs History-Write fehlgeschlagen: %s", e)
+
+    async def get_preference_trend(self, person: str, key: str) -> Optional[dict]:
+        """Erkennt Praeferenz-Trends ueber die letzten Monate.
+
+        Returns:
+            Dict mit direction ('rising'/'falling'/'stable'), change_pct,
+            first_value, latest_value, span_days. Oder None.
+        """
+        if not self.redis or not person:
+            return None
+        try:
+            hk = self._history_key(person, key)
+            raw = await self.redis.lrange(hk, 0, HISTORY_MAX_ENTRIES - 1)
+            if not raw or len(raw) < 3:
+                return None
+
+            entries = []
+            for r in raw:
+                try:
+                    entry = json.loads(r)
+                    entries.append(entry)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+            if len(entries) < 3:
+                return None
+
+            # Chronologisch sortieren (aelteste zuerst)
+            entries.reverse()
+
+            first_val = entries[0]["value"]
+            latest_val = entries[-1]["value"]
+
+            # Zeitspanne berechnen
+            try:
+                first_ts = datetime.fromisoformat(entries[0]["ts"])
+                latest_ts = datetime.fromisoformat(entries[-1]["ts"])
+                span_days = max(1, (latest_ts - first_ts).days)
+            except (ValueError, TypeError):
+                span_days = 1
+
+            if first_val == 0:
+                return None
+
+            change_pct = ((latest_val - first_val) / abs(first_val)) * 100
+
+            # Trend bestimmen: >5% Aenderung = signifikant
+            if change_pct > 5:
+                direction = "rising"
+            elif change_pct < -5:
+                direction = "falling"
+            else:
+                direction = "stable"
+
+            return {
+                "direction": direction,
+                "change_pct": round(change_pct, 1),
+                "first_value": first_val,
+                "latest_value": latest_val,
+                "span_days": span_days,
+                "data_points": len(entries),
+            }
+        except Exception as e:
+            logger.debug("PersonPrefs Trend-Erkennung fehlgeschlagen: %s", e)
+            return None
+
+    async def get_all_trends(self, person: str) -> dict:
+        """Gibt Trends fuer alle numerischen Praeferenzen einer Person zurueck."""
+        trends = {}
+        for key, spec in KNOWN_PREFERENCES.items():
+            if spec["type"] is float:
+                trend = await self.get_preference_trend(person, key)
+                if trend and trend["direction"] != "stable":
+                    trends[key] = trend
+        return trends
