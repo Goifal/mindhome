@@ -396,7 +396,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self._idle_reasoning_pending: bool = False
 
         # Think-Ahead: suggest follow-up actions after function execution
-        _brain_cfg = yaml_config.get("brain", {})
+        _brain_cfg = cfg.yaml_config.get("brain", {})
         self._think_ahead_enabled = _brain_cfg.get("think_ahead_enabled", False)
         self._think_ahead_used = False  # Max 1 suggestion per response
 
@@ -6506,6 +6506,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     # Pushback-Check: Jarvis warnt VOR der Ausfuehrung
                     pushback_msg = None
                     pushback = self.personality.check_pushback(func_name, final_args)
+                    # Pushback-Learning: Haeufig ignorierte Warnungen unterdruecken
+                    if pushback and await self._should_suppress_pushback(
+                        pushback.get("rule_id", func_name)
+                    ):
+                        logger.info(
+                            "Pushback '%s' unterdrueckt (zu oft ignoriert)",
+                            pushback.get("rule_id", func_name),
+                        )
+                        pushback = None
                     if pushback:
                         if pushback["level"] >= 2:
                             # Level 2: Bestaetigung verlangen — nicht ausfuehren
@@ -6828,6 +6837,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             response_text = f"{pushback_msg} {response_text}"
                         else:
                             response_text = pushback_msg
+                        # Pushback-Learning: Level 1 Warnung wurde ignoriert (Aktion lief trotzdem)
+                        if pushback:
+                            _pb_rule = pushback.get("rule_id", func_name)
+                        else:
+                            _pb_rule = func_name
+                        await self._track_pushback_override(_pb_rule)
 
                     # Phase 6: Opinion Check — Jarvis kommentiert Aktionen
                     # Nutzt check_opinion_with_context() fuer kombinierte
@@ -8668,6 +8683,95 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         "temperature": "set_climate",
         "hvac_mode": "set_climate",
     }
+
+    # Think-Ahead: Mapping function_name → (condition_check_key, suggestion_template)
+    # condition_check_key: optional entity prefix to check in HA states
+    _THINK_AHEAD_MAP: dict[str, tuple[str, str]] = {
+        "set_light": (
+            "cover.",
+            "Soll ich die Rolllaeden auch {action}?",
+        ),
+        "set_climate": (
+            "binary_sensor.",
+            "Nebenbei bemerkt — es sind Fenster geoeffnet. Soll ich pruefen welche?",
+        ),
+        "media_player_play": (
+            "",
+            "Soll ich die Lautstaerke anpassen?",
+        ),
+        "play_media": (
+            "",
+            "Soll ich die Lautstaerke anpassen?",
+        ),
+        "lock_lock": (
+            "",
+            "Soll ich die Gute-Nacht-Routine starten?",
+        ),
+        "set_alarm": (
+            "",
+            "Soll ich die Gute-Nacht-Routine starten?",
+        ),
+    }
+
+    def _get_think_ahead_suggestion(
+        self, func_name: str, func_args: dict, states: list
+    ) -> Optional[str]:
+        """Returns an optional follow-up suggestion after a function execution.
+
+        Max 1 suggestion per response. Simple dict-based mapping.
+        Returns None if no relevant suggestion or conditions not met.
+        """
+        mapping = self._THINK_AHEAD_MAP.get(func_name)
+        if not mapping:
+            return None
+
+        condition_prefix, template = mapping
+        room = func_args.get("room", "") if isinstance(func_args, dict) else ""
+
+        # Light turn off in bedroom → suggest closing covers
+        if func_name == "set_light":
+            action_val = func_args.get("action", "") if isinstance(func_args, dict) else ""
+            brightness = func_args.get("brightness") if isinstance(func_args, dict) else None
+            if action_val == "off" or brightness == 0:
+                room_lower = room.lower() if room else ""
+                if any(
+                    kw in room_lower
+                    for kw in ("schlafzimmer", "bedroom", "kinderzimmer")
+                ):
+                    return template.format(action="schliessen")
+            return None
+
+        # Climate set temperature up → check if windows are open
+        if func_name == "set_climate" and states:
+            room_lower = room.lower().replace(" ", "_") if room else ""
+            for s in states:
+                eid = s.get("entity_id", "")
+                if (
+                    eid.startswith("binary_sensor.")
+                    and ("window" in eid or "fenster" in eid or "door" in eid or "tuer" in eid)
+                    and s.get("state") == "on"
+                ):
+                    # Check if window is in same room
+                    if not room_lower or room_lower in eid.lower():
+                        return template
+            return None
+
+        # Media player → suggest volume
+        if func_name in ("media_player_play", "play_media"):
+            return template
+
+        # Lock/alarm → suggest goodnight routine
+        if func_name in ("lock_lock", "set_alarm"):
+            # Only suggest at night (after 20:00)
+            try:
+                hour = datetime.now(_LOCAL_TZ).hour
+                if hour >= 20 or hour < 4:
+                    return template
+            except Exception:
+                pass
+            return None
+
+        return None
 
     def _extract_tool_calls_from_text(self, text: str) -> list[dict]:
         """Extrahiert Tool-Calls aus LLM-Textantworten.
@@ -11299,6 +11403,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 return None
             result = await self.executor.execute(func_name, func_args)
             await self.memory.redis.delete(SECURITY_CONFIRM_KEY)
+
+            # Pushback-Learning: Level 2 Pushback wurde ueberschrieben
+            _pending_reason = pending.get("reason", "")
+            if _pending_reason.startswith("pushback:"):
+                _pb_rule = _pending_reason.removeprefix("pushback:")
+                await self._track_pushback_override(_pb_rule)
 
             _audit_log(
                 "security_confirmation_executed",
@@ -17112,6 +17222,65 @@ Regeln:
             "Wird umgesetzt, {title}. Die Warnung steht noch.",
         ],
     }
+
+    # ------------------------------------------------------------------
+    # Pushback Learning — Haeufig ignorierte Warnungen unterdruecken
+    # ------------------------------------------------------------------
+
+    async def _track_pushback_override(self, pushback_type: str):
+        """Zaehlt wie oft ein Pushback-Typ vom User ignoriert/ueberschrieben wird.
+
+        Nutzt Redis INCR mit TTL basierend auf suppress_duration_days.
+        """
+        _pushback_cfg = cfg.yaml_config.get("pushback", {})
+        if not _pushback_cfg.get("learning_enabled", False):
+            return
+        if not self.memory.redis or not pushback_type:
+            return
+
+        key = f"mha:pushback:override:{pushback_type}"
+        ttl_days = _pushback_cfg.get("suppress_duration_days", 30)
+        try:
+            count = await self.memory.redis.incr(key)
+            if count == 1:
+                # Erster Override — TTL setzen
+                await self.memory.redis.expire(key, ttl_days * 86400)
+            logger.debug(
+                "Pushback-Override gezaehlt: %s (count=%d)", pushback_type, count
+            )
+        except Exception as e:
+            logger.warning("Pushback-Override tracking fehlgeschlagen: %s", e)
+
+    async def _should_suppress_pushback(self, pushback_type: str) -> bool:
+        """Prueft ob ein Pushback-Typ unterdrueckt werden soll (zu oft ignoriert).
+
+        Returns:
+            True wenn der Pushback unterdrueckt werden soll.
+        """
+        _pushback_cfg = cfg.yaml_config.get("pushback", {})
+        if not _pushback_cfg.get("learning_enabled", False):
+            return False
+        if not self.memory.redis or not pushback_type:
+            return False
+
+        threshold = _pushback_cfg.get("suppress_after_overrides", 5)
+        key = f"mha:pushback:override:{pushback_type}"
+        try:
+            raw = await self.memory.redis.get(key)
+            if raw is None:
+                return False
+            count = int(raw)
+            if count >= threshold:
+                logger.info(
+                    "Pushback '%s' wird unterdrueckt: %d/%d Overrides",
+                    pushback_type, count, threshold,
+                )
+                return True
+        except (ValueError, TypeError) as e:
+            logger.warning("Pushback-Suppress check fehlgeschlagen: %s", e)
+        except Exception as e:
+            logger.warning("Pushback-Suppress Redis-Fehler: %s", e)
+        return False
 
     async def _generate_situational_warning(
         self,

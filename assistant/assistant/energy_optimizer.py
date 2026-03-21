@@ -1137,7 +1137,11 @@ class EnergyOptimizer:
             return None
 
     async def get_solar_forecast(self) -> Optional[dict]:
-        """Schaetzt Solar-Produktion basierend auf Wetter-Forecast.
+        """Schaetzt Solar-Produktion basierend auf HA Wetter-Forecast.
+
+        Nutzt ausschliesslich lokale HA-Daten (weather.home oder erstes weather.* Entity).
+        Wenn das Forecast-Entity cloud_coverage liefert, wird das fuer praezisere
+        Schaetzung genutzt. Ansonsten Fallback auf condition-Heuristik.
 
         Returns:
             Dict mit estimate (high/medium/low/minimal) und details, oder None.
@@ -1147,68 +1151,102 @@ class EnergyOptimizer:
             return None
 
         solar_entity = energy_cfg.get("solar_entity", "") or self.solar_sensor
-        if not solar_entity:
-            return None
+        weather_entity = energy_cfg.get("weather_entity", "weather.home")
 
         try:
             states = await self.ha.get_states()
             if not states:
                 return None
 
-            # Find weather forecast entity
+            # Find weather forecast entity — bevorzugt konfiguriertes Entity
             weather_condition = None
             forecast_entries = []
+            cloud_coverage = None
             for s in states:
-                if s.get("entity_id", "").startswith("weather."):
+                eid = s.get("entity_id", "")
+                if eid == weather_entity or (
+                    not weather_condition and eid.startswith("weather.")
+                ):
                     weather_condition = s.get("state", "").lower()
-                    forecast_entries = s.get("attributes", {}).get("forecast", [])
-                    break
+                    attrs = s.get("attributes", {})
+                    forecast_entries = attrs.get("forecast", [])
+                    # Manche HA-Integrationen liefern cloud_coverage direkt
+                    if "cloud_coverage" in attrs:
+                        try:
+                            cloud_coverage = float(attrs["cloud_coverage"])
+                        except (ValueError, TypeError):
+                            pass
+                    if eid == weather_entity:
+                        break  # Exakt gewuenschtes Entity gefunden
 
             if not weather_condition:
                 return None
 
-            # Heuristic: map weather condition to solar estimate
-            high_conditions = {"sunny", "clear"}
-            medium_conditions = {"partlycloudy", "partly_cloudy", "windy"}
-            low_conditions = {"cloudy", "fog"}
-            # Everything else (rainy, pouring, etc.) = minimal
-
-            if weather_condition in high_conditions:
-                estimate = "high"
-                production_pct = 90
-            elif weather_condition in medium_conditions:
-                estimate = "medium"
-                production_pct = 55
-            elif weather_condition in low_conditions:
-                estimate = "low"
-                production_pct = 25
+            # Primaer: Cloud-Coverage-Prozentsatz fuer praezise Schaetzung
+            if cloud_coverage is not None:
+                production_pct = self._cloud_coverage_to_solar_pct(cloud_coverage)
+                estimate = self._production_pct_to_estimate(production_pct)
             else:
-                estimate = "minimal"
-                production_pct = 10
+                # Fallback: Heuristic basierend auf weather condition
+                high_conditions = {"sunny", "clear"}
+                medium_conditions = {"partlycloudy", "partly_cloudy", "windy"}
+                low_conditions = {"cloudy", "fog"}
+                # Everything else (rainy, pouring, etc.) = minimal
 
-            # Check upcoming hours from forecast
+                if weather_condition in high_conditions:
+                    estimate = "high"
+                    production_pct = 90
+                elif weather_condition in medium_conditions:
+                    estimate = "medium"
+                    production_pct = 55
+                elif weather_condition in low_conditions:
+                    estimate = "low"
+                    production_pct = 25
+                else:
+                    estimate = "minimal"
+                    production_pct = 10
+
+            # Check upcoming hours from forecast — nutze cloud_coverage wenn verfuegbar
+            upcoming_production = []
             upcoming_conditions = []
             for fc in forecast_entries[:6]:
+                fc_cloud = fc.get("cloud_coverage")
+                if fc_cloud is not None:
+                    try:
+                        upcoming_production.append(
+                            self._cloud_coverage_to_solar_pct(float(fc_cloud))
+                        )
+                    except (ValueError, TypeError):
+                        pass
                 cond = fc.get("condition", "").lower()
                 if cond:
                     upcoming_conditions.append(cond)
 
             declining = False
-            if upcoming_conditions:
+            if upcoming_production:
+                # Praezise: Durchschnitt der prognostizierten Produktion sinkt
+                avg_upcoming = sum(upcoming_production) / len(upcoming_production)
+                if avg_upcoming < production_pct * 0.7:
+                    declining = True
+            elif upcoming_conditions:
+                # Fallback: condition-basiert
                 bad = {"cloudy", "rainy", "pouring", "fog", "lightning-rainy"}
                 bad_count = sum(1 for c in upcoming_conditions if c in bad)
                 if bad_count >= len(upcoming_conditions) / 2:
                     declining = True
 
-            current_solar = self._find_sensor_value(
-                states, solar_entity, ["solar", "pv", "photovoltaik"]
-            )
+            current_solar = None
+            if solar_entity:
+                current_solar = self._find_sensor_value(
+                    states, solar_entity, ["solar", "pv", "photovoltaik"]
+                )
 
             return {
                 "estimate": estimate,
                 "production_pct": production_pct,
                 "current_watts": current_solar,
                 "weather": weather_condition,
+                "cloud_coverage": cloud_coverage,
                 "declining": declining,
                 "recommendation": (
                     "Solar sinkt bald — energieintensive Geraete jetzt nutzen."
@@ -1219,6 +1257,28 @@ class EnergyOptimizer:
         except Exception as e:
             logger.debug("Solar forecast failed: %s", e)
             return None
+
+    @staticmethod
+    def _cloud_coverage_to_solar_pct(cloud_pct: float) -> float:
+        """Mappt Bewoelkungsgrad (0-100%) auf erwartete Solar-Produktion (%).
+
+        Nicht-linear: duenne Wolken lassen noch viel durch,
+        dicke Bewoelkung reduziert drastisch.
+        """
+        cloud_pct = max(0.0, min(100.0, cloud_pct))
+        # Quadratische Reduktion: 0% Wolken = 95%, 50% = ~72%, 100% = 10%
+        return max(10.0, 95.0 - (cloud_pct / 100.0) ** 1.5 * 85.0)
+
+    @staticmethod
+    def _production_pct_to_estimate(pct: float) -> str:
+        """Mappt Produktions-Prozentsatz auf Label."""
+        if pct >= 70:
+            return "high"
+        elif pct >= 40:
+            return "medium"
+        elif pct >= 20:
+            return "low"
+        return "minimal"
 
     async def _was_recently_alerted(self, alert_type: str) -> bool:
         """Prueft ob bereits kuerzlich ein Alert dieses Typs gesendet wurde (TTL kommt von _mark_alerted)."""
