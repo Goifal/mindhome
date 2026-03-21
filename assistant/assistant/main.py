@@ -885,6 +885,7 @@ async def chat(request: ChatRequest):
         task = asyncio.ensure_future(brain.ha.log_actions(
             actions, user_text=request.text,
             response_text=result.get("response", ""),
+            person=request.person or "",
         ))
         task.add_done_callback(
             lambda t: logger.warning("log_actions fehlgeschlagen: %s", t.exception())
@@ -2288,6 +2289,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 _ws_task = asyncio.ensure_future(brain.ha.log_actions(
                                     actions, user_text=text,
                                     response_text=result.get("response", ""),
+                                    person=person or "",
                                 ))
                                 _ws_task.add_done_callback(
                                     lambda t: logger.warning("log_actions fehlgeschlagen: %s", t.exception())

@@ -436,10 +436,19 @@ class SpontaneousObserver:
         cfg = yaml_config.get("spontaneous", {})
         checks_cfg = cfg.get("checks", {})
 
+        # Check-Level Dedup: Domains die InsightEngine kuerzlich geprueft hat
+        # ueberspringen, um Duplikate zu vermeiden.
+        _ie_domains: set[str] = set()
+        if self.insight_engine and hasattr(self.insight_engine, "get_recently_checked_domains"):
+            try:
+                _ie_domains = await self.insight_engine.get_recently_checked_domains()
+            except Exception:
+                pass
+
         checks = []
-        if checks_cfg.get("energy_comparison", True):
+        if checks_cfg.get("energy_comparison", True) and "energy" not in _ie_domains:
             checks.append(self._check_energy_comparison)
-        if checks_cfg.get("streak", True):
+        if checks_cfg.get("streak", True) and "weather" not in _ie_domains:
             checks.append(self._check_weather_streak)
         if checks_cfg.get("usage_record", True):
             checks.append(self._check_usage_record)

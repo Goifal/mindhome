@@ -173,6 +173,63 @@ class HomeAssistantClient:
             return result[0]  # HA gibt [[entries]] zurueck
         return None
 
+    async def get_logbook(
+        self,
+        entity_id: str = "",
+        hours: int = 24,
+    ) -> Optional[list]:
+        """Holt Logbook-Eintraege von der HA REST API.
+
+        Das Logbook zeigt menschenlesbare Zustandsaenderungen (wer/was/wann)
+        und ist nützlich fuer Trendanalyse und Attribution.
+
+        Args:
+            entity_id: Optionale Entity-ID zum Filtern
+            hours: Anzahl zurueckliegender Stunden (max 168 = 7 Tage)
+
+        Returns:
+            Liste von Logbook-Eintraegen oder None bei Fehler.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        hours = max(1, min(hours, 168))
+        start = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        path = f"/api/logbook/{start}"
+        if entity_id:
+            path += f"?entity={entity_id}"
+        return await self._get_ha(path)
+
+    async def get_statistics(
+        self,
+        entity_ids: list[str],
+        period: str = "hour",
+        hours: int = 24,
+    ) -> Optional[dict]:
+        """Holt Langzeit-Statistiken von der HA REST API.
+
+        Gibt historische Durchschnitte, Minima, Maxima und Summen
+        fuer Sensoren zurueck. Ideal fuer Energieanalysen und Trends.
+
+        Args:
+            entity_ids: Liste von Entity-IDs
+            period: Aggregationsperiode ("5minute", "hour", "day", "week", "month")
+            hours: Anzahl zurueckliegender Stunden (max 8760 = 1 Jahr)
+
+        Returns:
+            Dict mit Entity-IDs als Keys und Listen von Statistik-Eintraegen.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        hours = max(1, min(hours, 8760))
+        start = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        entity_param = ",".join(entity_ids)
+        path = (
+            f"/api/history/period/{start}"
+            f"?filter_entity_id={entity_param}"
+            f"&significant_changes_only&minimal_response"
+        )
+        return await self._get_ha(path)
+
     async def api_get(self, path: str) -> Any:
         """Generischer GET auf die HA REST API (z.B. /api/shopping_list)."""
         return await self._get_ha(path)
@@ -504,7 +561,8 @@ class HomeAssistantClient:
         return None
 
     async def log_actions(
-        self, actions: list, user_text: str = "", response_text: str = ""
+        self, actions: list, user_text: str = "", response_text: str = "",
+        person: str = "",
     ) -> None:
         """Jarvis-Aktionen an MindHome Add-on ActionLog melden."""
         if not actions:
@@ -530,6 +588,7 @@ class HomeAssistantClient:
             "actions": safe_actions,
             "user_text": str(user_text or ""),
             "response": str(response_text or ""),
+            "person": str(person or ""),
         }
         logger.info(
             "log_actions: %d Aktionen melden (%s)",

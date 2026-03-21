@@ -25,6 +25,7 @@ from typing import Optional
 
 from .config import settings, yaml_config
 from .autonomy import AutonomyManager, TRUST_LEVEL_NAMES
+from .core_identity import IDENTITY_BLOCK
 from .ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
@@ -694,9 +695,13 @@ class ConflictResolver:
         )
 
         try:
+            _system = IDENTITY_BLOCK + "\n\n" + prompt
             response = await self.ollama.chat(
                 model=self._mediation_model,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": _system},
+                    {"role": "user", "content": "Loese den Konflikt."},
+                ],
                 temperature=self._mediation_temperature,
                 max_tokens=self._mediation_max_tokens,
             )

@@ -21,6 +21,7 @@ import redis.asyncio as aioredis
 from zoneinfo import ZoneInfo
 
 from .config import yaml_config, get_person_title
+from .core_identity import IDENTITY_BLOCK
 
 logger = logging.getLogger(__name__)
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
@@ -809,7 +810,7 @@ class WellnessAdvisor:
                         {
                             "role": "system",
                             "content": (
-                                "Du bist J.A.R.V.I.S., ein trocken-britischer Smart-Home-Butler. "
+                                IDENTITY_BLOCK + "\n\n"
                                 "Formuliere den folgenden Wellness-Hinweis leicht um fuer natuerliche Varianz. "
                                 f"Typ: {nudge_type}. "
                                 "REGELN: Behalte den Kern und alle Fakten. Max 1-2 Saetze. "
