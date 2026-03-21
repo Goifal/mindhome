@@ -2324,6 +2324,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         self.personality.record_inside_joke(person, _joke_text),
                         name="b6_inside_joke",
                     )
+                # Inner-State: Positive Humor-Reaktion → Jarvis amüsiert
+                if humor_fb and hasattr(self, "inner_state") and self.inner_state:
+                    self._task_registry.create_task(
+                        self.inner_state.on_funny_interaction(),
+                        name="inner_state_funny",
+                    )
             self._last_humor_category = None
 
         # Phase 9.1: Pending Speaker-Rueckfrage aufloesen
@@ -5233,6 +5239,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             if dedup_notes:
                 dedup_text = "\n\nWARNUNGS-DEDUP:\n" + "\n".join(dedup_notes)
                 sections.append(("warning_dedup", dedup_text, 2))
+        elif hasattr(self, "inner_state") and self.inner_state:
+            # Keine Alerts → Haus laeuft optimal → Jarvis zufrieden
+            self._task_registry.create_task(
+                self.inner_state.on_house_optimal(),
+                name="inner_state_house_optimal",
+            )
 
         memories = context.get("memories", {})
         memory_context = self._build_memory_context(memories)

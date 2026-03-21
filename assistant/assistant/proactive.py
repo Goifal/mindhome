@@ -3307,6 +3307,16 @@ class ProactiveManager:
                 max_retries=3,
             )
 
+            # Inner-State: Security-Event → Jarvis wird besorgt
+            _inner = getattr(self.brain, "inner_state", None)
+            if _inner:
+                _tr = getattr(self.brain, "_task_registry", None)
+                if _tr:
+                    _tr.create_task(
+                        _inner.on_security_event(),
+                        name="inner_state_security",
+                    )
+
             await self.brain.memory.set_last_notification_time(event_type)
 
             logger.warning(

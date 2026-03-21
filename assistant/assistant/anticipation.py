@@ -1045,6 +1045,24 @@ class AnticipationEngine:
                 # Cooldown setzen (1 Stunde)
                 await self.redis.setex(pattern_key, 3600, "1")
 
+        # Predictive Comfort: Vorheizungsvorschlaege aus Thermosimulation
+        try:
+            comfort_suggestions = await self.get_predictive_comfort_suggestions()
+            for cs in comfort_suggestions:
+                suggestions.append(
+                    {
+                        "pattern": {"type": "predictive_comfort"},
+                        "action": cs.get("action", ""),
+                        "args": {"room": cs.get("room", ""), "target_temp": cs.get("target_temp")},
+                        "confidence": cs.get("confidence", 0.6),
+                        "description": cs.get("description", ""),
+                        "mode": "suggest",
+                        "preheat_minutes": cs.get("preheat_minutes"),
+                    }
+                )
+        except Exception as e:
+            logger.debug("Predictive Comfort fehlgeschlagen: %s", e)
+
         # Kalender x Wetter Kreuzreferenzen einbinden (bisher verwaist)
         try:
             crossrefs = await self.get_calendar_weather_crossrefs()

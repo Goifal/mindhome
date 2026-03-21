@@ -238,13 +238,26 @@ class AutonomyManager:
         return max(1, min(5, base_level + offset))
 
     def set_level(self, level: int) -> bool:
-        """Setzt ein neues Autonomie-Level (1-5)."""
-        if 1 <= level <= 5:
-            old = self.level
-            self.level = level
-            logger.info("Autonomie-Level: %d -> %d", old, level)
-            return True
-        return False
+        """Setzt ein neues Autonomie-Level (1-5).
+
+        Respektiert max_level aus der Config — Werte darueber werden abgelehnt.
+        """
+        if not (1 <= level <= 5):
+            return False
+
+        # max_level aus Config respektieren (gleiche Quelle wie evaluate_evolution)
+        evolution_cfg = yaml_config.get("autonomy", {}).get("evolution", {})
+        max_level = evolution_cfg.get("max_level", 5)
+        if level > max_level:
+            logger.warning(
+                "Autonomie-Level %d abgelehnt — max_level ist %d", level, max_level
+            )
+            return False
+
+        old = self.level
+        self.level = level
+        logger.info("Autonomie-Level: %d -> %d", old, level)
+        return True
 
     # Level-Namen (auch von aussen nutzbar)
     LEVEL_NAMES = {
