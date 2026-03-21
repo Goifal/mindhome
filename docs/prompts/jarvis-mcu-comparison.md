@@ -47,14 +47,61 @@ Bewerte für jeden Vergleichspunkt, wie weit der reale Jarvis im Vergleich zum M
 
 Sei **ehrlich und kritisch**, nicht schmeichelnd. Der Entwickler will die Wahrheit, nicht Lob.
 
-### Regel 5: Gezielte Feature-Lücken-Suche
+**Gewichtung:** Nicht alle Kategorien sind gleich wichtig. Verwende diese Gewichte für den Gesamt-Score:
+
+| Kategorie | Gewicht | Begründung |
+|-----------|---------|------------|
+| Natürliche Konversation & Sprachverständnis | **×3** | DAS Kernmerkmal von MCU-Jarvis — ohne das ist alles andere irrelevant |
+| Persönlichkeit, Sarkasmus & Humor | **×3** | Macht Jarvis zu JARVIS, nicht zu Alexa |
+| Proaktives Handeln & Antizipation | **×2.5** | Unterscheidet Butler von Sprachassistent |
+| Butler-Qualitäten & Servicementalität | **×2.5** | "Das Übliche", Diskretion, Vorlieben — tägliches Feeling |
+| Situationsbewusstsein & Kontextverständnis | **×2** | Jarvis weiß was los ist, ohne dass man es ihm sagt |
+| Lernfähigkeit & Adaptation | **×2** | Wird über Zeit besser — Langzeit-Investment |
+| Sprecherkennung & Personalisierung | **×1.5** | Wichtig für Multi-User, aber nicht das Hauptmerkmal |
+| Krisenmanagement & Notfallreaktionen | **×1.5** | Selten gebraucht, aber wenn dann kritisch |
+| Sicherheit & Bedrohungserkennung | **×1.5** | Grundlage für Vertrauen |
+| Multi-Room-Awareness & Follow-Me | **×1** | Nice-to-have, nicht Kern-Identität |
+| Energiemanagement & Haussteuerung | **×1** | HA macht das meiste — Jarvis optimiert nur |
+| Erklärbarkeit & Transparenz | **×1** | Wichtig aber nicht das was man "fühlt" |
+
+Formel: `Gesamt-Score = Σ(Kategorie-% × Gewicht) / Σ(Gewichte)`
+
+### Regel 5: Alltagsrelevanz-Filter
+Priorisiere bei allen Verbesserungsvorschlägen das, was der Benutzer **täglich spürt**:
+- **Hohe Alltagsrelevanz:** Antwortqualität, Persönlichkeit, Routine-Erkennung, Proaktivität, Sprachqualität — das merkt man bei JEDER Interaktion
+- **Mittlere Alltagsrelevanz:** Lernfähigkeit, Kontext-Awareness, Personalisierung — merkt man über Wochen
+- **Niedrige Alltagsrelevanz:** Krisenmanagement, Bedrohungserkennung, XAI — braucht man selten, aber wenn dann richtig
+
+Markiere jeden Verbesserungsvorschlag mit:
+- `[TÄGLICH]` — Benutzer merkt die Verbesserung bei jeder Interaktion
+- `[WÖCHENTLICH]` — Benutzer merkt es regelmäßig aber nicht ständig
+- `[SELTEN]` — Benutzer merkt es nur in speziellen Situationen
+
+Bei gleichem Aufwand: `[TÄGLICH]` Verbesserungen IMMER vor `[SELTEN]` priorisieren.
+
+### Regel 6: "Besser als MCU" erkennen und schützen
+Der reale Jarvis hat Fähigkeiten die **MCU-Jarvis NICHT hat** — weil er in der echten Welt mit echten Daten arbeitet:
+- Echte Energiedaten über Monate, echte Strompreise, Solar-Awareness
+- Echte gelernte Muster aus wochenlanger Beobachtung (nicht scriptgeschrieben)
+- Echte Wetter-Integration mit Vorhersagen und Automatisierung
+- Einkaufslisten, Rezepte, Vorratsverwaltung — Butler-Aufgaben die MCU nie zeigt
+- Reparaturplanung, Workshop-Generator — praktische Hilfe die MCU nie braucht
+- 100% lokal, keine Cloud — MCU-Jarvis hat nie Datenschutz thematisiert
+
+**Für diese Features:**
+1. Erkenne sie explizit an — markiere als `[BESSER ALS MCU]`
+2. Bewerte sie trotzdem kritisch (Implementierungsqualität zählt)
+3. Stelle sicher dass Verbesserungsvorschläge diese Features **NICHT beschädigen**
+4. Liste sie in der Gesamtübersicht separat auf — das sind Stärken die geschützt werden müssen
+
+### Regel 7: Gezielte Feature-Lücken-Suche
 Gehe nicht nur die vorgegebenen Kategorien durch — **suche aktiv nach Features die komplett fehlen:**
 1. Schau dir jede MCU-Szene/Fähigkeit an und frage: "Gibt es dafür IRGENDWAS in der Codebase?" Durchsuche aktiv mit verschiedenen Suchbegriffen — nicht nur dem offensichtlichen Namen.
 2. Wenn du **nichts findest**: Markiere es klar als `[FEHLT KOMPLETT]` und beschreibe genau was gebaut werden müsste.
 3. Wenn du etwas findest das **nur ein Stub/Platzhalter** ist (leere Methoden, `pass`, `NotImplementedError`, TODO-Kommentare): Markiere als `[STUB/UNFERTIG]` mit genauer Stelle im Code.
 4. Suche auch nach MCU-Fähigkeiten die in **keiner der vordefinierten Kategorien** stehen — erstelle dafür neue Kategorien.
 
-### Regel 6: Verbesserungsprüfung bei vorhandenen Features
+### Regel 8: Verbesserungsprüfung bei vorhandenen Features
 Für jedes Feature das **bereits existiert**, prüfe gezielt:
 1. **Vollständigkeit:** Ist es zu Ende implementiert oder fehlen Teile? Gibt es auskommentierte Codeblöcke, Branches die nie erreicht werden, oder Konfigurationsoptionen die nichts tun?
 2. **Qualität:** Ist die Implementierung robust oder fragil? Race Conditions, fehlende Error-Handles, hartcodierte Werte die konfigurierbar sein sollten?
@@ -68,6 +115,72 @@ Markiere jedes vorhandene Feature mit einem Status:
 - `[VERBESSERBAR]` — Feature existiert, hat aber klare Schwächen oder ungenutztes Potenzial
 - `[UNTERVERBUNDEN]` — Feature existiert, ist aber nicht ausreichend mit anderen Modulen vernetzt
 - `[VERALTET]` — Feature existiert, nutzt aber veraltete Patterns oder ist nicht mehr zeitgemäß
+
+### Regel 9: Kontext-Limit-Strategie
+Die Codebase ist riesig (brain.py ~629KB, function_calling.py ~419KB, proactive.py ~378KB). Du WIRST an Kontext-Grenzen stoßen. Arbeite deshalb so:
+
+1. **Nie ganze Dateien laden** — Nutze Grep/Suche um relevante Stellen zu finden, dann lies nur die relevanten Abschnitte (50-100 Zeilen Kontext)
+2. **Kategorien sequentiell abarbeiten** — Analysiere eine Kategorie komplett fertig bevor du zur nächsten gehst. Halte nicht 5 große Dateien gleichzeitig im Kontext.
+3. **Notizen machen** — Schreibe nach jeder Kategorie deine Erkenntnisse sofort auf (in die Ergebnis-Datei). So verlierst du nichts wenn älterer Kontext komprimiert wird.
+4. **Priorität bei der Analyse:** Die Kategorien mit Gewicht ×3 und ×2.5 zuerst und am gründlichsten analysieren. Bei Kategorien mit Gewicht ×1 reicht eine solide aber nicht erschöpfende Analyse.
+5. **Bei großen Dateien:** Suche erst nach Klassen-/Funktionsnamen, dann lies gezielt die relevanten Methoden. Nicht von oben nach unten durchscrollen.
+
+---
+
+## MCU-Szenen-Katalog — Referenzmaterial
+
+> Nutze diese konkreten Szenen als Benchmark. Jede Szene zeigt eine spezifische Fähigkeit.
+
+### Iron Man 1 (2008)
+| Szene | Fähigkeit | Relevanz |
+|-------|-----------|----------|
+| "Good morning, Jarvis" — Tony kommt in die Werkstatt | Begrüßung, Tagesbriefing, Kontext-Awareness (Uhrzeit, Termine) | Routine Engine, Morgen-Briefing |
+| "Jarvis, run a diagnostic" | System-Diagnostik auf Befehl, detaillierter Report | Diagnostics, Health Monitor |
+| "Reduce heat in the workshop" | Natürliche Sprachsteuerung, Raum-Kontext | Function Calling, Klimasteuerung |
+| Jarvis warnt vor Vereisung beim ersten Flug | Proaktive Warnung vor Gefahr, Sensor-Analyse | Proactive Manager, Threat Assessment |
+| "Sir, the weapons systems are online" | Status-Updates ohne Aufforderung | Proaktive Notifications |
+
+### Iron Man 2 (2010)
+| Szene | Fähigkeit | Relevanz |
+|-------|-----------|----------|
+| Jarvis verwaltet Tonys Haus während der Party | Autonomes Hausmanagement, Gäste-Modus | Autonomie-Level, Activity Detection |
+| "Jarvis, how are we doing?" — Palladium-Vergiftung | Gesundheitsüberwachung, ehrliche Antworten auch bei schlechten Nachrichten | Wellness Advisor, Persönlichkeit |
+| Jarvis hilft bei der Entdeckung des neuen Elements | Forschungsassistenz, Datenanalyse, lange Arbeitssessions | Kontextgedächtnis, Projekt-Tracking |
+| Erkennt Rhodey im War Machine Suit | Sprecherkennung, Person-Identifikation | Speaker Recognition |
+
+### Iron Man 3 (2013)
+| Szene | Fähigkeit | Relevanz |
+|-------|-----------|----------|
+| Haus wird angegriffen — Jarvis koordiniert Verteidigung | Krisenmodus, Priorisierung (Pepper retten > Haus verteidigen) | Krisenmanagement, Threat Assessment |
+| Jarvis navigiert Tony nach Tennessee | Orientierung, Routenplanung, trotz Systemschaden weiter funktionieren | Graceful Degradation, Circuit Breaker |
+| "Jarvis, do me a favor and enable the House Party Protocol" | Komplexe Multi-Step Aktion mit einem Befehl | Action Planner, "Das Übliche" |
+| Jarvis nach dem Absturz — eingeschränkt aber funktionsfähig | Degraded Mode, reduzierte aber stabile Funktionalität | Circuit Breaker, Fallback-Strategien |
+| "I got you, Sir" — Jarvis rettet Tony im freien Fall | Antizipation, sofortiges Handeln ohne Befehl | Anticipation, Butler Instinct |
+
+### Avengers 1 (2012)
+| Szene | Fähigkeit | Relevanz |
+|-------|-----------|----------|
+| "Sir, shall I try Miss Potts?" | Kontextuelles Verständnis der sozialen Situation | Dialogue State, Kontext-Awareness |
+| Jarvis scannt das Stark Tower Energiesystem | Energieanalyse, technische Diagnose | Energy Optimizer, Diagnostics |
+| "Jarvis, deploy the Mark VII" — Kampf um New York | Priorisierung unter Zeitdruck, sofortige Ausführung | Response Time, Priorisierung |
+
+### Avengers 2: Age of Ultron (2015)
+| Szene | Fähigkeit | Relevanz |
+|-------|-----------|----------|
+| "I'm sorry, I was having a bit of a row with the other guy" — Jarvis vs. Ultron | Systemschutz, Security-Bewusstsein, Widerstand gegen Übernahme | Security, Immutable Core |
+| Jarvis' Humor auch in ernsten Situationen: "I believe the phrase is: I got your back" | Persönlichkeitskonsistenz, situativer Humor | Character Lock, Personality |
+| Jarvis existiert verteilt im Internet nach Ultrons Angriff | Resilienz, verteilte Architektur, Überlebensfähigkeit | Graceful Degradation, Backup |
+
+### Übergreifende MCU-Jarvis Eigenschaften
+| Eigenschaft | Details |
+|-------------|---------|
+| **Stimme** | Ruhig, britisch, gleichmäßig — wird NICHT nervös, NICHT laut, NICHT emotional übertrieben. Subtile Prosodie-Änderungen bei Dringlichkeit. |
+| **Timing** | Antwortet sofort wenn nötig, wartet wenn Tony beschäftigt ist. Unterbricht NUR bei Gefahr. |
+| **Loyalität** | Absolute Loyalität zu Tony, aber mit eigenem moralischen Kompass. Sagt "Sir, I wouldn't recommend that." |
+| **Diskretion** | Spricht nie über Tonys Schwächen vor anderen. Passt Informationstiefe an den Zuhörer an. |
+| **Humor-Dosierung** | 90% sachlich, 10% trockener Humor. NIE Witze bei Gefahr. NIE aufdringlich. Der Humor kommt beiläufig. |
+| **Selbstständigkeit** | Handelt eigenständig wenn die Situation es erfordert (House Party Protocol), fragt sonst nach. |
+| **Fehlerkultur** | Gibt Fehler zu: "I'm afraid I can't determine that, Sir." — Halluziniert nicht. |
 
 ---
 
@@ -285,35 +398,60 @@ Für **jede einzelne Verbesserung** in der Roadmap, erstelle eine **umsetzungsfe
 
 ## Phase 4: Abschluss & Gesamtbewertung
 
-### Gesamtübersicht
+### Gesamtübersicht (gewichtet)
+
+Verwende die Gewichte aus Regel 4 für den Gesamt-Score:
 
 ```
-| Kategorie                    | Aktuell | Nach Umsetzung | Status-Tag      | Sprint |
-|------------------------------|---------|----------------|-----------------|--------|
-| Natürliche Konversation      | XX%     | XX%            | [VERBESSERBAR]  | 1,3    |
-| Persönlichkeit & Humor       | XX%     | XX%            | [OK]            | -      |
-| ...                          | ...     | ...            | ...             | ...    |
-| **GESAMT**                   | **XX%** | **XX%**        |                 |        |
+| Kategorie                    | Gewicht | Aktuell | Nach Umsetzung | Status-Tag      | Alltag     | Sprint |
+|------------------------------|---------|---------|----------------|-----------------|------------|--------|
+| Natürliche Konversation      | ×3      | XX%     | XX%            | [VERBESSERBAR]  | [TÄGLICH]  | 1,3    |
+| Persönlichkeit & Humor       | ×3      | XX%     | XX%            | [OK]            | [TÄGLICH]  | -      |
+| Proaktives Handeln           | ×2.5    | XX%     | XX%            | ...             | [TÄGLICH]  | ...    |
+| Butler-Qualitäten            | ×2.5    | XX%     | XX%            | ...             | [TÄGLICH]  | ...    |
+| Situationsbewusstsein        | ×2      | XX%     | XX%            | ...             | ...        | ...    |
+| Lernfähigkeit                | ×2      | XX%     | XX%            | ...             | [WÖCHENTL] | ...    |
+| Sprecherkennung              | ×1.5    | XX%     | XX%            | ...             | ...        | ...    |
+| Krisenmanagement             | ×1.5    | XX%     | XX%            | ...             | [SELTEN]   | ...    |
+| Sicherheit                   | ×1.5    | XX%     | XX%            | ...             | [SELTEN]   | ...    |
+| Multi-Room-Awareness         | ×1      | XX%     | XX%            | ...             | ...        | ...    |
+| Energiemanagement            | ×1      | XX%     | XX%            | ...             | ...        | ...    |
+| Erklärbarkeit                | ×1      | XX%     | XX%            | ...             | ...        | ...    |
+| [Weitere Kategorien]         | ×?      | XX%     | XX%            | ...             | ...        | ...    |
+|------------------------------|---------|---------|----------------|-----------------|------------|--------|
+| **GEWICHTETER GESAMT-SCORE** |         | **XX%** | **XX%**        |                 |            |        |
 ```
+
+### Besser als MCU — Alleinstellungsmerkmale
+| Feature | Was es kann | MCU-Äquivalent | Bewertung |
+|---------|-------------|----------------|-----------|
+| [Feature] | [Was der reale Jarvis hier besser macht] | [Existiert nicht im MCU / MCU hat nur X] | [BESSER ALS MCU] |
+| ... | ... | ... | ... |
+
+**Schutzliste:** Diese Features dürfen durch KEINE Verbesserung beschädigt werden. Jeder Sprint muss gegen diese Liste geprüft werden.
 
 ### Fehlende Features (komplett neu zu bauen)
-| Feature | MCU-Referenz | Aufwand | Sprint |
-|---------|--------------|---------|--------|
-| ...     | ...          | ...     | ...    |
+| Feature | MCU-Referenz | Aufwand | Alltag | Sprint |
+|---------|--------------|---------|--------|--------|
+| ...     | ...          | ...     | ...    | ...    |
 
 ### Top-10 Quick Wins (Impact/Aufwand-Verhältnis)
-1. [Aufgabe] — **+X%** Gesamt, Aufwand: Klein, Sprint: X
+Sortiere nach: `(Prozent-Gewinn × Kategorie-Gewicht × Alltags-Faktor) / Aufwand`
+- Alltags-Faktor: [TÄGLICH]=3, [WÖCHENTLICH]=2, [SELTEN]=1
+
+1. [Aufgabe] — **+X% gewichtet** Gesamt, Aufwand: Klein, Sprint: X, `[TÄGLICH]`
 2. ...
 
 ### Kritischer Pfad zum MCU-Level
-Liste die **minimale Menge an Änderungen** die nötig ist um von aktuell XX% auf ≥90% zu kommen.
-Was ist der kürzeste Weg? Was kann weggelassen werden und was ist unverzichtbar?
+Liste die **minimale Menge an Änderungen** die nötig ist um von aktuell XX% auf ≥90% **gewichteten** Score zu kommen.
+Fokus auf Kategorien mit hohem Gewicht (×3, ×2.5) — dort bringt jede Verbesserung am meisten.
 
 ### Fazit
-- **Aktueller Stand:** XX% MCU-Level — [Einschätzung in 1 Satz]
+- **Aktueller Stand:** XX% gewichteter MCU-Score — [Einschätzung in 1 Satz]
 - **Erreichbar nach Umsetzung:** XX% — [Was dann noch fehlt]
-- **Größte Stärke:** [Was der reale Jarvis besser macht als erwartet]
-- **Größte Schwäche:** [Was am weitesten vom MCU-Level entfernt ist]
+- **Größte Stärke:** [Was der reale Jarvis besser macht als MCU]
+- **Größte Schwäche:** [Was am weitesten vom MCU-Level entfernt ist UND hohes Gewicht hat]
+- **Alltagsrelevanteste Verbesserung:** [Was den Benutzer täglich am meisten betreffen würde]
 - **Empfehlung:** [Womit sofort starten, was kann warten]
 
 ---
