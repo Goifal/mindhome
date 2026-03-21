@@ -26,7 +26,7 @@ import yaml
 from .config import settings, yaml_config
 
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
-from .constants import SELF_AUTOMATION_PENDING_TTL
+from .constants import ALLOWED_SERVICES, BLOCKED_SERVICES, SELF_AUTOMATION_PENDING_TTL
 from .ha_client import HomeAssistantClient
 from .ollama_client import OllamaClient
 
@@ -72,65 +72,9 @@ class SelfAutomation:
         self._security: dict = {}
         self._templates: dict = {}
 
-        # Security: Whitelists/Blacklists
-        self._allowed_services = set(self._security.get("allowed_services", [
-            "light.turn_on", "light.turn_off", "light.toggle",
-            "switch.turn_on", "switch.turn_off", "switch.toggle",
-            "climate.set_temperature", "climate.set_hvac_mode",
-            "climate.set_preset_mode",
-            "cover.open_cover", "cover.close_cover", "cover.set_cover_position",
-            "cover.stop_cover",
-            "media_player.media_play", "media_player.media_pause",
-            "media_player.media_stop", "media_player.volume_set",
-            "media_player.media_next_track", "media_player.media_previous_track",
-            "scene.turn_on",
-            "notify.notify",
-            "input_boolean.turn_on", "input_boolean.turn_off",
-            "input_boolean.toggle",
-            "input_number.set_value",
-            "input_select.select_option",
-            "fan.turn_on", "fan.turn_off", "fan.set_percentage",
-            "vacuum.start", "vacuum.return_to_base", "vacuum.stop",
-            "humidifier.turn_on", "humidifier.turn_off",
-            "humidifier.set_humidity",
-            "water_heater.set_temperature",
-            "button.press",
-            "number.set_value",
-            "select.select_option",
-            "timer.start", "timer.cancel",
-            # F-091: Fehlende Input-Helpers
-            "input_text.set_value",
-            "input_datetime.set_datetime",
-            # F-091: TTS fuer proaktive Benachrichtigungen
-            "tts.speak",
-            # F-091: Erweiterte Medien-Steuerung
-            "media_player.select_source",
-            "media_player.play_media",
-            "media_player.shuffle_set",
-            "media_player.repeat_set",
-            # F-091: Klima Ein/Aus
-            "climate.turn_on", "climate.turn_off",
-            # F-091: Persistente Benachrichtigungen
-            "persistent_notification.create",
-            "persistent_notification.dismiss",
-            # F-091: Siren fuer Notfall-Automationen
-            "siren.turn_on", "siren.turn_off",
-        ]))
-        self._blocked_services = set(self._security.get("blocked_services", [
-            "shell_command", "script", "python_script",
-            "rest_command", "homeassistant.restart",
-            "homeassistant.stop", "homeassistant.reload_all",
-            "automation.turn_off", "automation.turn_on",
-            "automation.trigger", "automation.reload",
-            "lock.unlock", "lock.lock", "lock.open",
-            # F-091: Zusaetzliche blockierte Services
-            "homeassistant.set_location",
-            "homeassistant.check_config",
-            "hassio.addon_start", "hassio.addon_stop",
-            "hassio.addon_restart", "hassio.addon_update",
-            "recorder.purge", "recorder.disable",
-            "system_log.clear",
-        ]))
+        # Security: Whitelists/Blacklists — Defaults aus constants.py (Single Source of Truth)
+        self._allowed_services = set(self._security.get("allowed_services", ALLOWED_SERVICES))
+        self._blocked_services = set(self._security.get("blocked_services", BLOCKED_SERVICES))
         self._allowed_trigger_platforms = set(self._security.get("allowed_trigger_platforms", [
             "state", "time", "sun", "zone",
             "numeric_state", "template",

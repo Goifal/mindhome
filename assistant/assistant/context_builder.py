@@ -223,6 +223,7 @@ class ContextBuilder:
         self._energy_optimizer = None
         self._calendar_intelligence = None
         self._redis = None
+        self._conversation_memory = None
         # Weather-Warning-Cache (ändert sich selten, spart Iteration pro Request)
         self._weather_cache: list[str] = []
         self._weather_cache_ts: float = 0.0
@@ -257,6 +258,10 @@ class ContextBuilder:
     def set_calendar_intelligence(self, calendar_intelligence):
         """S8#8: Setzt die Referenz zur Calendar Intelligence."""
         self._calendar_intelligence = calendar_intelligence
+
+    def set_conversation_memory(self, conversation_memory):
+        """Setzt die Referenz zur ConversationMemory (fuer Thread-Kontext)."""
+        self._conversation_memory = conversation_memory
 
     async def _get_states_cached(self) -> Optional[list]:
         """Returns HA states with short TTL cache to avoid redundant API calls."""
@@ -498,6 +503,28 @@ class ContextBuilder:
                 context["memories"] = await self._get_relevant_memories(
                     user_text, person
                 )
+
+        # Active conversation threads — include recent thread summaries for continuity
+        cb_cfg = yaml_config.get("context_builder", {})
+        if cb_cfg.get("include_threads", False) and self._conversation_memory:
+            try:
+                threads = await self._conversation_memory.get_recent_threads(limit=3)
+                if threads:
+                    thread_summaries = []
+                    for t in threads[:3]:
+                        topic = t.get("topic", "")
+                        summary = t.get("summary", topic)
+                        # Truncate to max 200 chars to avoid context bloat
+                        if summary and len(summary) > 200:
+                            summary = summary[:197] + "..."
+                        if summary:
+                            thread_summaries.append(
+                                _sanitize_for_prompt(summary, 200, "thread_summary")
+                            )
+                    if thread_summaries:
+                        context["active_threads"] = thread_summaries
+            except Exception as e:
+                logger.debug("Thread-Kontext laden fehlgeschlagen: %s", e)
 
         return context
 

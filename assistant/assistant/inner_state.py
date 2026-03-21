@@ -27,6 +27,18 @@ logger = logging.getLogger(__name__)
 # Redis Key fuer Stimmungs-History (Sorted Set, max 90 Tage)
 _KEY_MOOD_HISTORY = "mha:inner_state:mood_history"
 
+# Domain-spezifische Gewichtung fuer Mood-Deltas:
+# Sicherheitsevents wirken staerker, Licht-Aenderungen sind Routine.
+_DOMAIN_CONFIDENCE_DELTAS: dict[str, float] = {
+    "security": 1.5,    # Sicherheitsevents haben staerkeren Mood-Impact
+    "climate": 0.8,     # Klimaaenderungen sind Routine
+    "light": 0.5,       # Lichtaenderungen sind sehr routiniert
+    "media": 0.6,       # Medien sind low-impact
+    "automation": 1.0,  # Standard
+    "emergency": 2.0,   # Notfaelle haben maximalen Impact
+}
+_DEFAULT_DOMAIN_WEIGHT = 1.0
+
 # JARVIS-Emotionszustaende
 MOOD_NEUTRAL = "neutral"
 MOOD_CONTENT = "zufrieden"  # Haus laeuft optimal
@@ -196,18 +208,30 @@ class InnerStateEngine:
     # Event-Tracking — diese Methoden werden von brain.py aufgerufen
     # ------------------------------------------------------------------
 
-    async def on_action_success(self, action: str = ""):
+    def _get_domain_weight(self, domain: str) -> float:
+        """Gibt den Domain-Gewichtungsfaktor fuer Mood-Deltas zurueck.
+
+        Nur aktiv wenn inner_state.domain_weighted_mood in der Config aktiviert ist.
+        """
+        _cfg = yaml_config.get("inner_state", {})
+        if not _cfg.get("domain_weighted_mood", False):
+            return _DEFAULT_DOMAIN_WEIGHT
+        return _DOMAIN_CONFIDENCE_DELTAS.get(domain, _DEFAULT_DOMAIN_WEIGHT)
+
+    async def on_action_success(self, action: str = "", domain: str = ""):
         """Erfolgreiche Aktion ausgefuehrt."""
+        weight = self._get_domain_weight(domain)
         self._successful_actions += 1
-        self._confidence = min(1.0, self._confidence + 0.02)
-        self._satisfaction = min(1.0, self._satisfaction + 0.03)
+        self._confidence = min(1.0, self._confidence + 0.02 * weight)
+        self._satisfaction = min(1.0, self._satisfaction + 0.03 * weight)
         await self._update_mood()
 
-    async def on_action_failure(self, action: str = "", error: str = ""):
+    async def on_action_failure(self, action: str = "", error: str = "", domain: str = ""):
         """Aktion fehlgeschlagen."""
+        weight = self._get_domain_weight(domain)
         self._failed_actions += 1
-        self._confidence = max(0.0, self._confidence - 0.05)
-        self._satisfaction = max(0.0, self._satisfaction - 0.03)
+        self._confidence = max(0.0, self._confidence - 0.05 * weight)
+        self._satisfaction = max(0.0, self._satisfaction - 0.03 * weight)
         await self._update_mood()
 
     async def on_warning_ignored(self):

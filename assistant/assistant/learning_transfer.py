@@ -17,6 +17,7 @@ import json
 import logging
 import time
 from collections import deque
+from datetime import datetime, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -27,6 +28,10 @@ logger = logging.getLogger(__name__)
 
 REDIS_KEY_PREFERENCES = "mha:learning_transfer:preferences"
 REDIS_KEY_TRANSFERS = "mha:learning_transfer:transfers"
+REDIS_KEY_NOTIFY_COUNT = "mha:learning_transfer:notify_count"
+
+# Max notifications per day to avoid spamming
+MAX_TRANSFER_NOTIFICATIONS_PER_DAY = 2
 
 # Aehnliche Raeume (Default-Gruppen)
 DEFAULT_ROOM_GROUPS = {
@@ -66,6 +71,8 @@ class LearningTransfer:
         self.min_observations = cfg.get("min_observations", 3)
         self.transfer_confidence = cfg.get("transfer_confidence", 0.7)
         self.domains_enabled = cfg.get("domains", ["light", "climate", "media"])
+
+        self.notify_user = cfg.get("notify_user", True)
 
         # Raum-Gruppen: konfigurierbar oder Default
         self._room_groups = cfg.get("room_groups") or dict(DEFAULT_ROOM_GROUPS)
@@ -267,6 +274,87 @@ class LearningTransfer:
                             domain,
                             transferable_attrs,
                         )
+                        # Notify user about the transfer (rate-limited)
+                        if self.notify_user:
+                            await self._emit_transfer_notification(transfer)
+
+    async def _can_notify_today(self) -> bool:
+        """Prueft ob heute noch Transfer-Benachrichtigungen gesendet werden duerfen.
+
+        Begrenzt auf MAX_TRANSFER_NOTIFICATIONS_PER_DAY pro Tag um Spam zu vermeiden.
+        """
+        if not self.redis:
+            return False
+        try:
+            today_key = f"{REDIS_KEY_NOTIFY_COUNT}:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+            count_raw = await self.redis.get(today_key)
+            count = int(count_raw) if count_raw else 0
+            return count < MAX_TRANSFER_NOTIFICATIONS_PER_DAY
+        except Exception as e:
+            logger.warning("Transfer-Notify-Counter Pruefung fehlgeschlagen: %s", e)
+            return False
+
+    async def _increment_notify_count(self):
+        """Erhoeht den taeglichen Benachrichtigungszaehler."""
+        if not self.redis:
+            return
+        try:
+            today_key = f"{REDIS_KEY_NOTIFY_COUNT}:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+            await self.redis.incr(today_key)
+            await self.redis.expire(today_key, 86400 * 2)  # 2 Tage TTL
+        except Exception as e:
+            logger.warning("Transfer-Notify-Counter Inkrement fehlgeschlagen: %s", e)
+
+    async def _emit_transfer_notification(self, transfer: dict):
+        """Sendet eine proaktive Benachrichtigung ueber einen Transfer-Vorschlag.
+
+        Nutzt das proaktive System (brain._proactive._notify) falls verfuegbar,
+        ansonsten wird ein strukturierter Log-Eintrag erzeugt.
+
+        Args:
+            transfer: Transfer-Dict mit source_room, target_room, domain, attributes
+        """
+        if not await self._can_notify_today():
+            logger.debug(
+                "Transfer-Notification unterdrueckt (Tageslimit erreicht): %s -> %s",
+                transfer["source_room"],
+                transfer["target_room"],
+            )
+            return
+
+        domain_desc = TRANSFERABLE_DOMAINS.get(transfer["domain"], {}).get(
+            "description", transfer["domain"]
+        )
+        attrs_str = ", ".join(
+            f"{k}={v}" for k, v in transfer.get("attributes", {}).items()
+        )
+        message = (
+            f"Ich habe deine {domain_desc} Praeferenz vom {transfer['source_room'].capitalize()} "
+            f"auch auf {transfer['target_room'].capitalize()} uebertragen ({attrs_str})."
+        )
+
+        notified = False
+        try:
+            import assistant.main as main_module
+
+            brain = getattr(main_module, "brain", None)
+            proactive = getattr(brain, "_proactive", None) if brain else None
+            if proactive and hasattr(proactive, "_notify"):
+                await proactive._notify(
+                    "learning_transfer",
+                    "low",
+                    {"message": message, "transfer": transfer},
+                )
+                notified = True
+        except Exception as e:
+            logger.warning("Proaktive Transfer-Notification fehlgeschlagen: %s", e)
+
+        if not notified:
+            logger.info(
+                "Transfer-Notification (kein proaktives System): %s", message
+            )
+
+        await self._increment_notify_count()
 
     def _find_similar_rooms(self, room: str) -> list[str]:
         """Findet Raeume in der gleichen Gruppe."""

@@ -1047,6 +1047,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Redis für Context Builder (Guest-Mode-Check)
         self.context_builder.set_redis(self.memory.redis)
 
+        # ConversationMemory für Thread-Kontext im Context Builder
+        if hasattr(self, "conversation_memory"):
+            self.context_builder.set_conversation_memory(self.conversation_memory)
+
         # Autonomy Evolution: Redis für Interaktions-Tracking
         self.autonomy.set_redis(self.memory.redis)
         # Outcome-Tracker -> Autonomy Feedback-Loop: Outcome-Scores fliessen
@@ -6911,6 +6915,25 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     response_text = curiosity
                         except Exception as _cur_err:
                             logger.debug("Curiosity-Check fehlgeschlagen: %s", _cur_err)
+
+                    # Think-Ahead: suggest likely follow-up actions after execution
+                    if (
+                        self._think_ahead_enabled
+                        and _success
+                        and not self._think_ahead_used
+                    ):
+                        try:
+                            think_ahead_suggestion = self._get_think_ahead_suggestion(
+                                func_name, final_args, states or []
+                            )
+                            if think_ahead_suggestion:
+                                self._think_ahead_used = True
+                                if response_text:
+                                    response_text = f"{response_text} {think_ahead_suggestion}"
+                                else:
+                                    response_text = think_ahead_suggestion
+                        except Exception as _ta_err:
+                            logger.debug("Think-Ahead fehlgeschlagen: %s", _ta_err)
 
             # N3: Multi-Turn Tool Calling — ReAct-Loop
             # Ergebnisse zurueck ans LLM senden fuer iteratives Reasoning.

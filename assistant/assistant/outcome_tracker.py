@@ -67,6 +67,14 @@ class OutcomeTracker:
         self._learning_observer = None
         self._lo_feedback_enabled = self._cfg.get("learning_observer_feedback", True)
         self._lo_learning_boost = float(self._cfg.get("learning_boost", 0.1))
+        self._anticipation = None
+        self._anticipation_feedback_enabled = self._cfg.get("anticipation_feedback", True)
+        self._anticipation_success_boost = float(
+            self._cfg.get("success_confidence_boost", 0.1)
+        )
+        self._anticipation_failure_penalty = float(
+            self._cfg.get("failure_confidence_penalty", 0.15)
+        )
 
     async def initialize(self, redis_client, ha_client, task_registry=None):
         """Initialisiert mit Redis und HA Client."""
@@ -699,6 +707,13 @@ class OutcomeTracker:
         if outcome == OUTCOME_POSITIVE and self._lo_feedback_enabled:
             await self._notify_learning_observer(action_type, person, room)
 
+        # AnticipationEngine feedback: adjust pattern confidence based on outcome
+        if self._anticipation_feedback_enabled and outcome in (
+            OUTCOME_POSITIVE,
+            OUTCOME_NEGATIVE,
+        ):
+            await self._notify_anticipation_engine(action_type, outcome)
+
         # Letzten Aktionstyp merken (fuer verbal feedback ohne Kontext)
         await self.redis.setex("mha:outcome:last_action_type", 300, action_type)
 
@@ -783,6 +798,56 @@ class OutcomeTracker:
                 )
         except Exception as e:
             logger.debug("LearningObserver notification failed: %s", e)
+
+
+    async def _notify_anticipation_engine(self, action_type: str, outcome: str):
+        """Adjusts anticipation pattern confidence based on outcome result.
+
+        On success: boosts confidence by configurable amount (default +0.1).
+        On failure: reduces confidence by configurable amount (default -0.15).
+        """
+        try:
+            if self._anticipation is None:
+                import assistant.main as main_module
+
+                if hasattr(main_module, "brain"):
+                    self._anticipation = getattr(
+                        main_module.brain, "anticipation", None
+                    )
+            if self._anticipation is None:
+                return
+
+            # Use record_feedback which already handles confidence + cooldown logic
+            accepted = outcome == OUTCOME_POSITIVE
+            # Build pattern description from action_type for feedback tracking
+            pattern_desc = f"outcome:{action_type}"
+
+            await self._anticipation.record_feedback(pattern_desc, accepted)
+
+            # Additionally adjust adaptive threshold if available
+            if hasattr(self._anticipation, "update_adaptive_threshold"):
+                import hashlib
+
+                pattern_hash = hashlib.md5(
+                    action_type.encode(), usedforsecurity=False
+                ).hexdigest()[:12]
+                await self._anticipation.update_adaptive_threshold(
+                    pattern_hash, accepted
+                )
+
+            delta = (
+                self._anticipation_success_boost
+                if accepted
+                else -self._anticipation_failure_penalty
+            )
+            logger.debug(
+                "Anticipation feedback: %s %s (delta=%+.2f)",
+                action_type,
+                outcome,
+                delta,
+            )
+        except Exception as e:
+            logger.debug("Anticipation feedback failed: %s", e)
 
 
 def _extract_state_key(state) -> dict:

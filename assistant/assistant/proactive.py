@@ -600,11 +600,21 @@ class ProactiveManager:
             room: Zielraum (auto-detect wenn leer)
         """
         # Personality filter: restyle raw message in Jarvis style
+        # Graceful degradation: skip if personality or LLM not available
         if self._personality_filter and urgency != "critical":
-            try:
-                text = await self.format_with_personality(text, urgency)
-            except Exception as e:
-                logger.debug("Personality filter failed, using original: %s", e)
+            _personality = getattr(self.brain, "personality", None)
+            _ollama = getattr(self.brain, "ollama", None)
+            if _personality and _ollama:
+                try:
+                    text = await self.format_with_personality(text, urgency)
+                except Exception as e:
+                    logger.debug("Personality filter failed, using original: %s", e)
+            else:
+                logger.debug(
+                    "Personality filter skipped: personality=%s, ollama=%s",
+                    _personality is not None,
+                    _ollama is not None,
+                )
 
         # 1. WebSocket: Proaktive Meldung an alle Clients
         await emit_proactive(text, event_type, urgency, notification_id)

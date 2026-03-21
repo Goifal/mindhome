@@ -256,3 +256,61 @@ CLIMATE_COMFORT_DEFAULT: Final[float] = 21.0
 CLIMATE_VACATION_TARGET: Final[float] = 16.0
 CLIMATE_COVER_HEAT_FACTOR: Final[float] = 0.7
 CLIMATE_DEFAULT_ENERGY_PRICE: Final[float] = 0.30  # EUR/kWh
+
+# ============================================================
+# Service Whitelists / Blacklists (Single Source of Truth)
+# Verwendet von: function_validator.py, self_automation.py
+# ============================================================
+
+ALLOWED_SERVICES: Final[frozenset[str]] = frozenset([
+    "light.turn_on", "light.turn_off", "light.toggle",
+    "switch.turn_on", "switch.turn_off", "switch.toggle",
+    "climate.set_temperature", "climate.set_hvac_mode",
+    "climate.set_preset_mode",
+    "cover.open_cover", "cover.close_cover", "cover.set_cover_position",
+    "cover.stop_cover",
+    "media_player.media_play", "media_player.media_pause",
+    "media_player.media_stop", "media_player.volume_set",
+    "media_player.media_next_track", "media_player.media_previous_track",
+    "scene.turn_on",
+    "notify.notify",
+    "input_boolean.turn_on", "input_boolean.turn_off",
+    "input_boolean.toggle",
+    "input_number.set_value",
+    "input_select.select_option",
+    "fan.turn_on", "fan.turn_off", "fan.set_percentage",
+    "vacuum.start", "vacuum.return_to_base", "vacuum.stop",
+    "humidifier.turn_on", "humidifier.turn_off",
+    "humidifier.set_humidity",
+    "water_heater.set_temperature",
+    "button.press",
+    "number.set_value",
+    "select.select_option",
+    "timer.start", "timer.cancel",
+    "input_text.set_value",
+    "input_datetime.set_datetime",
+    "tts.speak",
+    "media_player.select_source",
+    "media_player.play_media",
+    "media_player.shuffle_set",
+    "media_player.repeat_set",
+    "climate.turn_on", "climate.turn_off",
+    "persistent_notification.create",
+    "persistent_notification.dismiss",
+    "siren.turn_on", "siren.turn_off",
+])
+
+BLOCKED_SERVICES: Final[frozenset[str]] = frozenset([
+    "shell_command", "script", "python_script",
+    "rest_command", "homeassistant.restart",
+    "homeassistant.stop", "homeassistant.reload_all",
+    "automation.turn_off", "automation.turn_on",
+    "automation.trigger", "automation.reload",
+    "lock.unlock", "lock.lock", "lock.open",
+    "homeassistant.set_location",
+    "homeassistant.check_config",
+    "hassio.addon_start", "hassio.addon_stop",
+    "hassio.addon_restart", "hassio.addon_update",
+    "recorder.purge", "recorder.disable",
+    "system_log.clear",
+])

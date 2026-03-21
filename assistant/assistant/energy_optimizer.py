@@ -269,6 +269,10 @@ class EnergyOptimizer:
             states, self.price_sensor, ["price", "strom", "electricity"]
         )
 
+        # Preis in Redis-Historie aufzeichnen fuer lokalen Trend
+        if price is not None and self.redis:
+            await self._record_price_history(price)
+
         # 2. Solar-Ueberschuss + Cloud-Forecast
         solar = self._find_sensor_value(states, self.solar_sensor, ["solar", "pv"])
         export = self._find_sensor_value(
@@ -593,7 +597,25 @@ class EnergyOptimizer:
         schedule: list[dict] = []
         now = datetime.now(_LOCAL_TZ)
 
+        # Entity-States fuer already-running Check aufbereiten
+        _state_map: dict[str, str] = {
+            s["entity_id"]: s.get("state", "unknown")
+            for s in states
+            if "entity_id" in s
+        }
+
         for device_key, load_info in self.flexible_loads.items():
+            # Skip: Geraet laeuft bereits — Empfehlung waere redundant
+            entity_ids = load_info.get("entities", [])
+            if entity_ids and any(
+                _state_map.get(eid, "unknown") in ("on", "running", "active")
+                for eid in entity_ids
+            ):
+                logger.debug(
+                    "Energie-Schedule: %s uebersprungen — bereits aktiv", device_key
+                )
+                continue
+
             estimated_kwh = load_info["kwh"]
             duration_h = load_info["duration_h"]
             savings_ct = self.calculate_load_shift_savings(
@@ -677,6 +699,13 @@ class EnergyOptimizer:
 
         actions: list[dict] = []
 
+        # Entity-States fuer already-running Check aufbereiten
+        _state_map: dict[str, str] = {
+            s["entity_id"]: s.get("state", "unknown")
+            for s in states
+            if "entity_id" in s
+        }
+
         # Nach Verbrauch sortieren (groesste zuerst fuer maximale Eigenverbrauchsquote)
         sorted_loads = sorted(
             self.flexible_loads.items(),
@@ -686,6 +715,16 @@ class EnergyOptimizer:
 
         remaining_kw = surplus_kw
         for device_key, load_info in sorted_loads:
+            # Skip: Geraet laeuft bereits — Empfehlung waere redundant
+            entity_ids = load_info.get("entities", [])
+            if entity_ids and any(
+                _state_map.get(eid, "unknown") in ("on", "running", "active")
+                for eid in entity_ids
+            ):
+                logger.debug(
+                    "Solar-Surplus: %s uebersprungen — bereits aktiv", device_key
+                )
+                continue
             # Durchschnittliche Leistung des Geraets in kW
             avg_power_kw = load_info["kwh"] / max(load_info["duration_h"], 0.1)
 
@@ -1007,11 +1046,44 @@ class EnergyOptimizer:
         return None
 
     # ------------------------------------------------------------------
+    # Price History Recording
+    # ------------------------------------------------------------------
+
+    async def _record_price_history(self, price: float):
+        """Zeichnet aktuellen Strompreis in Redis-Liste auf (max. 48 Eintraege = 24h bei 30-Min-Intervall).
+
+        Wird periodisch von check_energy_events() aufgerufen.
+        """
+        if not self.redis:
+            return
+        try:
+            raw = await self.redis.get(KEY_PRICE_HISTORY)
+            history: list[float] = []
+            if raw:
+                loaded = json.loads(raw)
+                if isinstance(loaded, list):
+                    history = [x for x in loaded if isinstance(x, (int, float))]
+
+            history.append(price)
+            # Maximal 48 Eintraege behalten (ca. 24h bei 30-Min-Checks)
+            if len(history) > 48:
+                history = history[-48:]
+
+            await self.redis.setex(
+                KEY_PRICE_HISTORY, 86400 * 2, json.dumps(history)
+            )
+        except Exception as e:
+            logger.warning("Preis-Historie aufzeichnen fehlgeschlagen: %s", e)
+
+    # ------------------------------------------------------------------
     # Price Trend & Solar Forecast
     # ------------------------------------------------------------------
 
     async def get_price_trend(self) -> Optional[str]:
         """Analysiert Preistrend der letzten 24h.
+
+        Nutzt lokal gespeicherte Preis-Historie aus Redis.
+        Funktioniert ohne externe APIs — nur HA-Sensordaten + Redis.
 
         Returns:
             Trend-String ("rising"/"stable"/"falling") mit Empfehlung, oder None.
@@ -1020,8 +1092,7 @@ class EnergyOptimizer:
         if not energy_cfg.get("price_forecast_enabled", False):
             return None
 
-        price_entity = energy_cfg.get("price_entity", "") or self.price_sensor
-        if not price_entity or not self.redis:
+        if not self.redis:
             return None
 
         try:
