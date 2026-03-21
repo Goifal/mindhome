@@ -13,6 +13,28 @@ Du analysierst jetzt das MindHome-Projekt: einen realen KI-Assistenten namens **
 
 ---
 
+## KRITISCH: Jeder Durchlauf = Volle Tiefe
+
+> **Dieser Prompt ist für wiederholte Durchläufe konzipiert.**
+> Egal ob dies dein 1., 3. oder 10. Durchlauf ist — du führst JEDES MAL die vollständige Analyse durch.
+
+**Es gibt KEINE Abkürzungen bei Folge-Durchläufen.** Konkret:
+- Du durchsuchst den Code JEDES MAL genauso gründlich wie beim ersten Mal
+- Du liest JEDES MAL die tatsächliche Implementierung, nicht nur die Plan-Datei
+- Du verifizierst JEDES MAL doppelt (V1 + V2) — auch bei Aufgaben die als erledigt markiert sind
+- Du prüfst JEDES MAL alle Kategorien — auch die die letztes Mal gut waren (Code kann sich verschlechtert haben)
+- Du suchst JEDES MAL aktiv nach neuen Lücken, neuen Verbesserungsmöglichkeiten, neuen Problemen
+
+**Warum:** Zwischen den Durchläufen wird Code geändert. Neue Bugs entstehen, Abhängigkeiten verschieben sich, Zeilenreferenzen stimmen nicht mehr, Features die letztens "OK" waren können durch Änderungen schlechter geworden sein. Nur eine vollständige Neuanalyse fängt das auf.
+
+**Was sich bei Folge-Durchläufen ZUSÄTZLICH ändert (aber die Grundanalyse NICHT ersetzt):**
+- Du liest die bestehende Plan-Datei und aktualisierst den Status (erledigt/offen/teilweise)
+- Du vergleichst deine neuen Erkenntnisse mit den alten — hat sich was verbessert oder verschlechtert?
+- Du ergänzt neue Aufgaben die dir bei der frischen Analyse auffallen
+- Du schreibst den Changelog-Eintrag
+
+---
+
 ## Regeln
 
 ### Regel 1: Nur realistische Fähigkeiten
@@ -478,8 +500,14 @@ Die Datei heißt **`docs/prompts/jarvis-mcu-implementation-plan.md`** — das is
 Erstelle die Datei neu mit der vollständigen Struktur unten.
 
 #### Wiederholte Durchläufe (Datei existiert bereits)
+
+> **WICHTIG:** Du hast gerade Phase 1-4 vollständig durchlaufen — mit voller Tiefe, doppelter Verifizierung, allen Kategorien.
+> Jetzt vergleichst du deine FRISCHEN Erkenntnisse mit der bestehenden Plan-Datei.
+> Die Plan-Datei ist NICHT deine Quelle der Wahrheit — der CODE ist deine Quelle der Wahrheit.
+> Die Plan-Datei ist nur das Protokoll das du jetzt mit deinen neuen Erkenntnissen aktualisierst.
+
 **LIES ZUERST die bestehende Datei komplett.** Dann:
-1. **Erledigtes markieren:** Prüfe jede Aufgabe gegen den aktuellen Code. Wenn die Aufgabe umgesetzt wurde:
+1. **Erledigtes markieren:** Prüfe jede Aufgabe gegen den aktuellen Code (den du gerade in Phase 1-4 analysiert hast). Wenn die Aufgabe umgesetzt wurde:
    - Ändere den Status von `[ ]` zu `[x]`
    - Füge hinzu: `✅ Erledigt am [Datum] — Durchlauf #X`
    - Aktualisiere die Prozent-Bewertung der Kategorie
