@@ -15,7 +15,7 @@ Die J.A.R.V.I.S.-Codebase ist insgesamt **solide und professionell** aufgebaut. 
 
 | Kategorie | Anzahl |
 |-----------|--------|
-| **Kritisch** (Laufzeitfehler) | 2 |
+| **Kritisch** (Laufzeitfehler + Auth-Bypass) | 3 |
 | **Hoch** (Sicherheit + fehlende Error-Callbacks) | 4 |
 | **Mittel** (Logik, Concurrency, Qualität) | 21 |
 | **Niedrig** (Code-Qualität, Stil) | 19+ |
@@ -65,6 +65,29 @@ if last_dt.tzinfo is not None:
 else:
     last_dt = last_dt.replace(tzinfo=timezone.utc)
 diff = datetime.now(timezone.utc) - last_dt
+```
+
+#### K-3: app.py:534 (Addon) — Ingress-Token wird nicht validiert (Auth-Bypass)
+
+```python
+# addon/rootfs/opt/mindhome/app.py:532-535
+if not _trusted:
+    ingress_token = request.headers.get("X-Ingress-Token", "")
+    if ingress_token:      # ← JEDER nicht-leere String wird akzeptiert!
+        return None        # ← Authentifizierung umgangen
+```
+
+**Problem:** Der Code prüft nur ob ein `X-Ingress-Token` Header **vorhanden und nicht leer** ist — aber **nicht ob der Wert korrekt ist**. Der `_SUPERVISOR_TOKEN` (Zeile 80) wird nie zum Vergleich herangezogen. Ein Angreifer im lokalen Netzwerk kann mit `curl -H "X-Ingress-Token: anything" http://host:8099/api/...` die gesamte API ohne Authentifizierung nutzen.
+
+**Auswirkung:** Vollständiger Zugriff auf alle API-Endpunkte inkl. Gerätesteuerung, Automatisierungen, Einstellungen. Da das System im lokalen Netzwerk läuft, ist die Angriffsfläche auf LAN-Zugang begrenzt, aber jedes Gerät im Heimnetzwerk (inkl. kompromittierter IoT-Geräte) könnte die API missbrauchen.
+
+**Fix:**
+```python
+if ingress_token:
+    import hmac
+    if hmac.compare_digest(ingress_token, _SUPERVISOR_TOKEN):
+        return None
+    # Ungültiger Token → weiter zur API-Key-Prüfung
 ```
 
 ---
@@ -372,6 +395,7 @@ Was besonders gut umgesetzt ist:
 
 | Prio | Finding | Aufwand |
 |------|---------|--------|
+| **0** | **K-3: app.py:534 Ingress-Token validieren (AUTH-BYPASS!)** | **5 Min** |
 | 1 | K-1: memory_extractor.py Import fixen | 2 Min |
 | 2 | K-2: situation_model.py Datetime fixen | 5 Min |
 | 3 | M-1: llm_enhancer.py Klammern setzen | 2 Min |
