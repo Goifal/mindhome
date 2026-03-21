@@ -192,27 +192,144 @@ Für **jeden Vergleichspunkt** verwende dieses Format:
    - Aufwand: [Klein/Mittel/Groß]
    - Impact: [Wie viel Prozent es zur MCU-Bewertung hinzufügen würde]
 2. ...
+
+### Akzeptanzkriterien — Wann ist dieses Feature "MCU-Level"?
+[Definiere 3-5 messbare Kriterien die erfüllt sein müssen, damit dieses Feature als MCU-Level gilt]
+- [ ] Kriterium 1 — [konkret, testbar, messbar]
+- [ ] Kriterium 2 — ...
+- [ ] Kriterium 3 — ...
 ```
 
 ---
 
-## Abschluss
+## Phase 2: Implementierungs-Roadmap
 
-Am Ende erstelle eine **Gesamtübersicht**:
+Nachdem alle Kategorien analysiert sind, erstelle eine **priorisierte Implementierungs-Roadmap** die sicherstellt, dass am Ende MCU-Level erreicht wird.
+
+### Abhängigkeitsgraph
+Erstelle einen Abhängigkeitsgraph: Welche Verbesserungen müssen VOR anderen umgesetzt werden?
+Beispiel: Bessere Sprecherkennung (7) muss vor personalisiertem Butler-Verhalten (8) kommen.
 
 ```
-## Gesamtbewertung: MindHome-Jarvis vs. MCU-Jarvis
-
-| Kategorie | Aktuell | Erreichbar | Top-3 Quick Wins |
-|-----------|---------|------------|-------------------|
-| ...       | XX%     | XX%        | ...               |
-
-**Gesamt-Score:** XX% (Durchschnitt aller Kategorien)
-**Realistisch erreichbar:** XX% (mit den vorgeschlagenen Verbesserungen)
-**Fazit:** [Ehrliche Einschätzung in 3-5 Sätzen]
+Abhängigkeiten:
+[Feature A] ──→ [Feature B] ──→ [Feature C]
+                                 ↗
+[Feature D] ────────────────────┘
 ```
 
-Sortiere die Quick Wins nach **Impact/Aufwand-Verhältnis** — was bringt am meisten für am wenigsten Arbeit?
+### Sprint-Plan
+Teile alle Verbesserungen in Sprints auf (jeder Sprint = 1 zusammenhängende Arbeitseinheit):
+
+```
+### Sprint 1: [Thema] — Fundament
+**Ziel:** [Was nach diesem Sprint MCU-Level sein soll]
+**Vorher:** XX% Gesamt | **Nachher (Ziel):** XX% Gesamt
+
+1. [Aufgabe 1] — Datei: `pfad`, Funktion: `xyz()`
+   - Was genau zu tun ist (Pseudocode oder konkrete Beschreibung)
+   - Akzeptanzkriterium das erfüllt sein muss
+2. [Aufgabe 2] — ...
+
+**Validierung nach Sprint 1:**
+- [ ] [Test/Prüfung die bestätigt dass das Ziel erreicht ist]
+- [ ] [Regressions-Check: Was darf NICHT kaputtgegangen sein]
+```
+
+### Reihenfolge-Prinzipien
+Sortiere die Sprints nach diesen Regeln:
+1. **Abhängigkeiten zuerst** — Fundamente vor Features die darauf aufbauen
+2. **Höchster Impact zuerst** — Was den Gesamt-Score am meisten hebt
+3. **Quick Wins vorziehen** — Kleine Änderungen mit großem Effekt vor Großprojekten
+4. **Risiko minimieren** — Sicherheitskritische Verbesserungen vor Nice-to-haves
+5. **Vernetzung maximieren** — Features die andere Features besser machen zuerst
+
+---
+
+## Phase 3: Implementierungsanweisungen
+
+Für **jede einzelne Verbesserung** in der Roadmap, erstelle eine **umsetzungsfertige Anweisung**:
+
+```
+### Aufgabe: [Titel]
+**Sprint:** X | **Priorität:** [Kritisch/Hoch/Mittel] | **Aufwand:** [Klein/Mittel/Groß]
+
+#### Ist-Zustand
+- Datei: `pfad/zur/datei.py`
+- Aktuelle Implementierung: [Was der Code jetzt tut, mit Zeilenreferenz]
+- Problem: [Was fehlt oder schlecht ist]
+
+#### Soll-Zustand (MCU-Level)
+- [Genau beschreiben wie es nach der Änderung funktionieren soll]
+- [Konkretes Verhalten das der MCU-Jarvis zeigt und das erreicht werden soll]
+
+#### Implementierungsschritte
+1. In `datei.py`, Funktion `xyz()`: [Was genau zu ändern ist]
+2. Neue Methode `abc()` erstellen die: [Logik beschreiben]
+3. In `brain.py` einbinden: [Wo und wie aufrufen]
+4. In `settings.yaml`: [Welche Config-Optionen hinzufügen]
+
+#### Akzeptanzkriterien
+- [ ] [Testbares Kriterium 1]
+- [ ] [Testbares Kriterium 2]
+- [ ] Kein Regressions-Bruch in bestehenden Tests
+- [ ] Feature ist in settings.yaml konfigurierbar
+
+#### Risiken & Vorsichtsmaßnahmen
+- [Was könnte schiefgehen beim Umsetzen]
+- [Was muss vorher gesichert/getestet werden — Produktivsystem!]
+```
+
+**WICHTIG:** Die Anweisungen müssen so konkret sein, dass ein Entwickler (oder ein Code-LLM) sie **ohne Rückfragen** umsetzen kann. Keine vagen Formulierungen wie "verbessere die Logik" — sondern "füge in `anticipation.py` Zeile 340 eine Gewichtung hinzu die den Wochentag berücksichtigt".
+
+---
+
+## Phase 4: Abschluss & Gesamtbewertung
+
+### Gesamtübersicht
+
+```
+| Kategorie                    | Aktuell | Nach Umsetzung | Status-Tag      | Sprint |
+|------------------------------|---------|----------------|-----------------|--------|
+| Natürliche Konversation      | XX%     | XX%            | [VERBESSERBAR]  | 1,3    |
+| Persönlichkeit & Humor       | XX%     | XX%            | [OK]            | -      |
+| ...                          | ...     | ...            | ...             | ...    |
+| **GESAMT**                   | **XX%** | **XX%**        |                 |        |
+```
+
+### Fehlende Features (komplett neu zu bauen)
+| Feature | MCU-Referenz | Aufwand | Sprint |
+|---------|--------------|---------|--------|
+| ...     | ...          | ...     | ...    |
+
+### Top-10 Quick Wins (Impact/Aufwand-Verhältnis)
+1. [Aufgabe] — **+X%** Gesamt, Aufwand: Klein, Sprint: X
+2. ...
+
+### Kritischer Pfad zum MCU-Level
+Liste die **minimale Menge an Änderungen** die nötig ist um von aktuell XX% auf ≥90% zu kommen.
+Was ist der kürzeste Weg? Was kann weggelassen werden und was ist unverzichtbar?
+
+### Fazit
+- **Aktueller Stand:** XX% MCU-Level — [Einschätzung in 1 Satz]
+- **Erreichbar nach Umsetzung:** XX% — [Was dann noch fehlt]
+- **Größte Stärke:** [Was der reale Jarvis besser macht als erwartet]
+- **Größte Schwäche:** [Was am weitesten vom MCU-Level entfernt ist]
+- **Empfehlung:** [Womit sofort starten, was kann warten]
+
+---
+
+## Phase 5: Re-Validierung (nach Implementierung)
+
+> **Diesen Abschnitt NACH der Umsetzung der Sprints als separaten Prompt verwenden.**
+
+Wenn die Verbesserungen implementiert sind, führe diesen Prompt erneut aus mit dem Zusatz:
+
+"Ich habe die Verbesserungen aus der vorherigen Analyse implementiert. Führe jetzt eine **Re-Validierung** durch:
+1. Prüfe jeden Sprint — sind alle Akzeptanzkriterien erfüllt?
+2. Berechne die neuen Prozent-Werte pro Kategorie
+3. Gibt es neue Lücken die durch die Änderungen sichtbar geworden sind?
+4. Was fehlt noch zum MCU-Level?
+5. Erstelle einen neuen Sprint-Plan für die verbleibenden Lücken."
 
 ---
 
