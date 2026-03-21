@@ -310,10 +310,37 @@ class AutonomyManager:
             reasons = []
             if not autonomy_ok:
                 required = self._action_permissions.get(action_type, 5)
-                reasons.append(
-                    f"Autonomie-Level {self._get_effective_level(action_type, domain)} "
-                    f"reicht nicht fuer '{action_type}' (benoetigt: {required})"
-                )
+                effective = self._get_effective_level(action_type, domain)
+                detail_parts = [
+                    f"Autonomie-Level {effective} reicht nicht fuer "
+                    f"'{action_type}' (benoetigt: {required})",
+                ]
+                if effective != self.level:
+                    offset_info = []
+                    if self._temporal_enabled:
+                        t_offset = self._get_temporal_offset()
+                        if t_offset != 0:
+                            offset_info.append(
+                                f"Temporal-Offset {t_offset:+d} aktiv "
+                                f"(Nacht {self._temporal_night_start}-"
+                                f"{self._temporal_night_end} Uhr)"
+                            )
+                    resolved = domain or ACTION_DOMAIN_MAP.get(action_type, "")
+                    if (
+                        self._domain_levels_enabled
+                        and resolved
+                        and resolved in self._domain_levels
+                    ):
+                        offset_info.append(
+                            f"Domain-Level '{resolved}' = "
+                            f"{self._domain_levels[resolved]}"
+                        )
+                    if offset_info:
+                        detail_parts.append(
+                            f"Global: {self.level}, reduziert durch: "
+                            + ", ".join(offset_info)
+                        )
+                reasons.extend(detail_parts)
             if not trust_ok:
                 reasons.append(trust_result.get("reason", "Trust-Check fehlgeschlagen"))
             result["reason"] = "; ".join(reasons)

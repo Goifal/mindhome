@@ -16264,10 +16264,12 @@ Regeln:
         _butler_cfg = cfg.yaml_config.get("butler_instinct", {})
         _butler_enabled = _butler_cfg.get("enabled", True)
         _butler_min_autonomy = _butler_cfg.get("min_autonomy_level", 3)
+        _action_domain = suggestion.get("domain", "") or ACTION_DOMAIN_MAP.get(action, "")
+        _effective_level = self.autonomy.get_effective_level(_action_domain)
         if (
             mode == "auto"
             and _butler_enabled
-            and self.autonomy.level >= _butler_min_autonomy
+            and _effective_level >= _butler_min_autonomy
         ):
             # F-027: Kombinierte Autonomie + Trust Pruefung via can_execute()
             exec_check = self.autonomy.can_execute(
