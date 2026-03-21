@@ -33,6 +33,8 @@ _KEY_FOLLOWUPS = "mha:memory:followups"              # Hash: followup_id -> JSON
 # Phase 3B: Gesprächs-Threads
 _KEY_THREADS = "mha:memory:threads"                  # Hash: thread_id -> JSON
 _KEY_THREAD_INDEX = "mha:memory:thread_index"        # Hash: keyword -> thread_id
+# Phase 3C: Emotionales Context-Tagging
+_KEY_EMOTIONAL_CONTEXT = "mha:memory:emotional_context"  # Hash: msg_id -> JSON
 
 # Defaults
 _DEFAULT_MAX_PROJECTS = 20
@@ -1040,3 +1042,98 @@ class ConversationMemory:
             logger.debug("get_topic_context Fehler: %s", e)
 
         return ""
+
+    # ------------------------------------------------------------------
+    # Phase 3C: Emotionales Context-Tagging
+    # ------------------------------------------------------------------
+
+    _EMOTION_KEYWORDS: dict[str, list[str]] = {
+        "good": ["super", "toll", "klasse", "prima", "freue", "geil", "perfekt", "danke", "liebe"],
+        "stressed": ["stress", "eile", "schnell", "dringend", "sofort", "hektisch", "muss"],
+        "frustrated": ["nerv", "aerger", "mist", "scheisse", "klappt nicht", "geht nicht", "funktioniert nicht", "schon wieder"],
+        "tired": ["muede", "schlaf", "erschoepft", "kaputt", "fertig", "gaehn", "pennen"],
+    }
+
+    def _detect_emotion(self, text: str) -> dict:
+        """Erkennt Emotion aus Text per Keyword-Analyse.
+
+        Leichtgewichtige Erkennung ohne LLM-Aufruf, als Fallback
+        wenn mood_detector nicht verfuegbar ist.
+
+        Returns:
+            Dict mit mood (str) und intensity (float 0.0-1.0).
+        """
+        if not text:
+            return {"mood": "neutral", "intensity": 0.0}
+
+        text_lower = text.lower()
+        scores: dict[str, int] = {}
+
+        for mood, keywords in self._EMOTION_KEYWORDS.items():
+            count = sum(1 for kw in keywords if kw in text_lower)
+            if count > 0:
+                scores[mood] = count
+
+        if not scores:
+            return {"mood": "neutral", "intensity": 0.0}
+
+        best_mood = max(scores, key=scores.get)  # type: ignore[arg-type]
+        intensity = min(1.0, scores[best_mood] / 3.0)
+        return {"mood": best_mood, "intensity": round(intensity, 2)}
+
+    async def _tag_emotional_context(
+        self,
+        message_id: str,
+        text: str,
+        role: str = "user",
+        mood_data: Optional[dict] = None,
+    ) -> None:
+        """Taggt eine Nachricht mit emotionalem Kontext.
+
+        Speichert das erkannte Emotionsprofil in Redis, verknuepft
+        mit der Nachricht-ID. Kann spaeter fuer stimmungsbasierte
+        Zusammenfassungen oder empathische Antworten genutzt werden.
+
+        Args:
+            message_id: Eindeutige Nachricht-ID (z.B. Timestamp)
+            text: Nachrichtentext
+            role: "user" oder "assistant"
+            mood_data: Optionale Mood-Daten von mood_detector (ueberschreibt Keyword-Erkennung)
+        """
+        if not self.redis or not self.enabled or not text:
+            return
+
+        try:
+            # Mood-Daten nutzen falls vorhanden, sonst Keyword-Fallback
+            if mood_data and mood_data.get("mood"):
+                emotion = {
+                    "mood": mood_data["mood"],
+                    "intensity": mood_data.get("stress_level", mood_data.get("intensity", 0.5)),
+                    "signals": mood_data.get("signals", []),
+                    "source": "mood_detector",
+                }
+            else:
+                detected = self._detect_emotion(text)
+                emotion = {
+                    "mood": detected["mood"],
+                    "intensity": detected["intensity"],
+                    "signals": [],
+                    "source": "keyword_fallback",
+                }
+
+            emotion["role"] = role
+            emotion["timestamp"] = datetime.now(timezone.utc).isoformat()
+
+            await self.redis.hset(
+                _KEY_EMOTIONAL_CONTEXT,
+                message_id,
+                json.dumps(emotion, ensure_ascii=False),
+            )
+
+            # TTL fuer das gesamte Hash setzen (14 Tage)
+            ttl = await self.redis.ttl(_KEY_EMOTIONAL_CONTEXT)
+            if not ttl or ttl < 0:
+                await self.redis.expire(_KEY_EMOTIONAL_CONTEXT, 14 * 86400)
+
+        except Exception as e:
+            logger.debug("Emotional context tagging Fehler: %s", e)

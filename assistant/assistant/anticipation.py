@@ -1294,6 +1294,51 @@ class AnticipationEngine:
         except Exception as e:
             logger.error("Fehler bei Anticipation-Feedback: %s", e)
 
+    async def invalidate_pattern(self, pattern_description: str) -> bool:
+        """Invalidiert ein Pattern wenn eine Korrektur erfolgt.
+
+        Entfernt Cooldown-, Feedback- und Threshold-Keys aus Redis,
+        damit das Pattern nicht mehr vorgeschlagen wird bis es sich
+        erneut bestaetigt.
+
+        Args:
+            pattern_description: Beschreibung des Patterns (wie bei suggest())
+
+        Returns:
+            True wenn Keys geloescht wurden, False sonst
+        """
+        if not self.redis or not pattern_description:
+            return False
+
+        try:
+            import hashlib as _hl
+
+            _desc = pattern_description[:200]
+            _desc_hash = _hl.sha256(_desc.encode()).hexdigest()[:16]
+
+            keys_to_delete = [
+                f"mha:anticipation:suggested:{_desc_hash}",
+                f"mha:anticipation:feedback:{pattern_description}",
+                f"mha:anticipation:threshold:{_desc_hash}",
+            ]
+
+            deleted = 0
+            for key in keys_to_delete:
+                result = await self.redis.delete(key)
+                deleted += result
+
+            if deleted > 0:
+                logger.info(
+                    "Pattern invalidiert: '%s' (%d Redis-Keys entfernt)",
+                    pattern_description[:80],
+                    deleted,
+                )
+
+            return deleted > 0
+        except Exception as e:
+            logger.warning("Pattern-Invalidierung fehlgeschlagen: %s", e)
+            return False
+
     # ------------------------------------------------------------------
     # Feature: Predictive Pre-Execution (Auto-Execute bei Idle)
     # ------------------------------------------------------------------

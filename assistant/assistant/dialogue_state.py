@@ -464,6 +464,116 @@ class DialogueStateManager:
 
         return ""
 
+    # ------------------------------------------------------------------
+    # Cross-Session Reference Speicherung
+    # ------------------------------------------------------------------
+
+    _XREF_KEY = "mha:dialogue:references"  # Hash: person -> JSON
+
+    async def _save_important_references(self, person: str = "") -> None:
+        """Speichert wichtige Referenzen in Redis fuer Cross-Session Zugriff.
+
+        Wird nach jedem track_turn aufgerufen, damit Entitaeten und
+        Raeume ueber Session-Grenzen hinweg verfuegbar bleiben.
+        """
+        if not self._redis:
+            return
+
+        state = self._get_state(person)
+        key = (person or "_default").lower()
+
+        try:
+            ref_data = json.dumps({
+                "entities": list(state.last_entities)[:10],
+                "rooms": list(state.last_rooms),
+                "actions": [
+                    {"action": a.get("action", a.get("function", "")),
+                     "description": a.get("description", "")[:100]}
+                    for a in list(state.last_actions)[:3]
+                ],
+                "domains": list(state.last_domains),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }, ensure_ascii=False)
+
+            await self._redis.hset(self._XREF_KEY, key, ref_data)
+            await self._redis.expire(self._XREF_KEY, 14 * 86400)  # 14 Tage TTL
+        except Exception as e:
+            logger.debug("Cross-Session Referenz-Save Fehler: %s", e)
+
+    async def _resolve_cross_session(self, text_lower: str, person: str = "") -> str:
+        """Loest Referenzen aus frueheren Sessions auf.
+
+        Wenn der aktuelle In-Memory State leer ist (neue Session),
+        werden gespeicherte Referenzen aus Redis geladen.
+
+        Returns:
+            Context-Hint fuer das LLM oder leerer String.
+        """
+        if not self._redis:
+            return ""
+
+        state = self._get_state(person)
+
+        # Nur laden wenn In-Memory State leer ist (neue Session)
+        if state.last_entities or state.last_rooms:
+            return ""
+
+        # Pronomen/Referenz-Check
+        has_reference = False
+        for ref in ENTITY_REFERENCES_DE:
+            if ref in text_lower:
+                has_reference = True
+                break
+        if not has_reference:
+            for ref in ROOM_REFERENCES_DE:
+                if ref in text_lower:
+                    has_reference = True
+                    break
+        if not has_reference:
+            for ref in ACTION_REFERENCES_DE:
+                if ref in text_lower:
+                    has_reference = True
+                    break
+
+        if not has_reference:
+            return ""
+
+        try:
+            key = (person or "_default").lower()
+            raw = await self._redis.hget(self._XREF_KEY, key)
+            if not raw:
+                return ""
+
+            data_str = raw.decode() if isinstance(raw, bytes) else raw
+            data = json.loads(data_str)
+
+            entities = data.get("entities", [])
+            rooms = data.get("rooms", [])
+
+            # In-Memory State wiederherstellen
+            for ent in reversed(entities):
+                if ent not in state.last_entities:
+                    state.last_entities.appendleft(ent)
+            for room in reversed(rooms):
+                if room not in state.last_rooms:
+                    state.last_rooms.appendleft(room)
+            for domain in reversed(data.get("domains", [])):
+                if domain not in state.last_domains:
+                    state.last_domains.appendleft(domain)
+
+            hints = []
+            if entities:
+                hints.append(f"Letzte Entitaeten (Cross-Session): {', '.join(entities[:3])}")
+            if rooms:
+                hints.append(f"Letzte Raeume: {', '.join(rooms[:3])}")
+
+            if hints:
+                return " | ".join(hints)
+        except Exception as e:
+            logger.debug("Cross-Session Referenz-Resolve Fehler: %s", e)
+
+        return ""
+
     def start_clarification(
         self,
         person: str,

@@ -701,7 +701,70 @@ class LearningObserver:
 
         # Nach Count sortieren (haeufigste zuerst)
         patterns.sort(key=lambda p: p["count"], reverse=True)
+
+        # Confidence Decay anwenden
+        patterns = await self._apply_confidence_decay(patterns)
+
         return patterns[:20]  # Max 20
+
+    async def _apply_confidence_decay(self, patterns: list[dict]) -> list[dict]:
+        """Wendet Confidence-Decay auf Patterns an basierend auf Redis-Key-Alter.
+
+        Aeltere Patterns die nicht mehr bestaetigt wurden verlieren an
+        Confidence. Nutzt die verbleibende TTL der Redis-Keys um das
+        Alter zu bestimmen.
+
+        Returns:
+            Gefilterte und mit Confidence-Scores angereicherte Pattern-Liste.
+        """
+        if not self.redis or not patterns:
+            return patterns
+
+        cfg = yaml_config.get("learning", {}).get("confidence_decay", {})
+        if not cfg.get("enabled", True):
+            return patterns
+
+        decay_per_day = cfg.get("decay_per_day", 0.03)  # 3% pro Tag
+        min_confidence = cfg.get("minimum_confidence", 0.2)
+        max_expected_count = cfg.get("max_expected_count", 20)
+
+        result = []
+        for pattern in patterns:
+            count = pattern.get("count", 0)
+
+            # Rohzaehler in 0.0-1.0 Confidence normalisieren
+            base_confidence = min(1.0, count / max_expected_count)
+
+            # Alter per TTL schaetzen
+            age_days = 0.0
+            try:
+                entity_action = pattern.get("action", "")
+                time_slot = pattern.get("time_slot", "")
+                person = pattern.get("person", "")
+                weekday = pattern.get("weekday", -1)
+
+                if weekday >= 0:
+                    key = f"{KEY_WEEKDAY_PATTERNS}:{person + ':' if person else ''}{entity_action}:{time_slot.replace(':', ':')}:{weekday}"
+                    max_ttl = 60 * 86400  # 60 Tage
+                else:
+                    key = f"{KEY_PATTERNS}:{person + ':' if person else ''}{entity_action}:{time_slot.replace(':', ':')}"
+                    max_ttl = 365 * 86400  # 365 Tage
+
+                ttl = await self.redis.ttl(key)
+                if ttl and ttl > 0:
+                    age_days = (max_ttl - ttl) / 86400
+            except Exception:
+                pass
+
+            # Decay anwenden
+            decayed = base_confidence - (age_days * decay_per_day)
+            confidence = max(min_confidence, min(1.0, decayed))
+
+            if confidence >= min_confidence:
+                pattern["confidence"] = round(confidence, 3)
+                result.append(pattern)
+
+        return result
 
     # ------------------------------------------------------------------
     # Feature 8: Lern-Transparenz — "Was hast du gelernt?"

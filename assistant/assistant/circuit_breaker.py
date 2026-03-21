@@ -299,3 +299,103 @@ class CircuitOpenError(Exception):
         self.service_name = service_name
         self.fallback = fallback
         super().__init__(f"Circuit Breaker '{service_name}' ist OPEN — Aufruf abgelehnt")
+
+
+class PredictiveWarmer:
+    """Verfolgt Nutzungsmuster von Circuit Breakern und fuehrt proaktive
+    Health-Checks vor Peak-Zeiten durch.
+
+    Sammelt Timestamps von try_acquire()-Aufrufen, erkennt stuendliche
+    Peaks und triggert Gesundheitschecks bevor Lastspitzen beginnen.
+    """
+
+    def __init__(self, cb_registry: CircuitBreakerRegistry):
+        self._registry = cb_registry
+        self._lock = threading.Lock()
+        # {breaker_name: [hour_of_day, ...]} — rolling 7 Tage
+        self._call_hours: dict[str, list[int]] = {}
+        # {breaker_name: {"hour": int, "confidence": float}}
+        self._peak_windows: dict[str, dict] = {}
+        self._max_history = 1000  # Max Eintraege pro Breaker
+
+    def record_attempt(self, breaker_name: str) -> None:
+        """Zeichnet einen Aufrufversuch fuer Mustererkennung auf."""
+        hour = time.localtime().tm_hour
+        with self._lock:
+            hours = self._call_hours.setdefault(breaker_name, [])
+            hours.append(hour)
+            if len(hours) > self._max_history:
+                self._call_hours[breaker_name] = hours[-self._max_history:]
+
+    def analyze_patterns(self) -> dict[str, dict]:
+        """Analysiert Aufrufmuster und identifiziert Peak-Stunden.
+
+        Returns:
+            Dict {breaker_name: {"hour": int, "confidence": float, "call_share": float}}
+        """
+        with self._lock:
+            call_hours_snapshot = {k: list(v) for k, v in self._call_hours.items()}
+
+        peaks: dict[str, dict] = {}
+        for breaker_name, hours in call_hours_snapshot.items():
+            if len(hours) < 10:
+                continue
+
+            # Stuendliches Histogramm
+            histogram: dict[int, int] = {}
+            for h in hours:
+                histogram[h] = histogram.get(h, 0) + 1
+
+            total = len(hours)
+            if total == 0:
+                continue
+
+            peak_hour = max(histogram, key=histogram.get)  # type: ignore[arg-type]
+            peak_count = histogram[peak_hour]
+            call_share = peak_count / total
+
+            # Nur Peaks mit mindestens 15% Anteil
+            if call_share >= 0.15:
+                peaks[breaker_name] = {
+                    "hour": peak_hour,
+                    "confidence": min(1.0, call_share * 2),
+                    "call_share": round(call_share, 3),
+                    "total_calls": total,
+                }
+
+        with self._lock:
+            self._peak_windows = peaks
+
+        return peaks
+
+    def should_prewarm(self, breaker_name: str) -> bool:
+        """Prueft ob ein proaktiver Health-Check jetzt sinnvoll waere.
+
+        Gibt True zurueck wenn:
+        - Wir 5-15 Min vor einem Peak sind
+        - Der Breaker NICHT im CLOSED-State ist
+        """
+        with self._lock:
+            peak = self._peak_windows.get(breaker_name)
+        if not peak:
+            return False
+
+        cb = self._registry.get(breaker_name)
+        if not cb:
+            return False
+
+        # Bereits gesund — kein Prewarm noetig
+        if cb.check_state() == CircuitState.CLOSED:
+            return False
+
+        current_hour = time.localtime().tm_hour
+        peak_hour = peak["hour"]
+
+        # 1 Stunde vorher ist Prewarm-Fenster
+        prewarm_hour = (peak_hour - 1) % 24
+        return current_hour == prewarm_hour
+
+    def get_predicted_peaks(self) -> dict[str, dict]:
+        """Gibt vorhergesagte Peak-Zeiten fuer Diagnostik zurueck."""
+        with self._lock:
+            return dict(self._peak_windows)
