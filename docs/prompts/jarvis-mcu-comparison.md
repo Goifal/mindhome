@@ -318,7 +318,127 @@ Was ist der kürzeste Weg? Was kann weggelassen werden und was ist unverzichtbar
 
 ---
 
-## Phase 5: Re-Validierung (nach Implementierung)
+## Phase 5: Finale Gegenprüfung & Ergebnis-Datei
+
+> **Diese Phase ist NICHT optional. Sie ist der letzte Schritt bevor du fertig bist.**
+
+### Schritt 1: Alle Erkenntnisse nochmal gegen den Code prüfen
+Bevor du die Ergebnis-Datei schreibst, gehe **jede einzelne Erkenntnis** aus Phase 1-4 nochmal durch:
+
+1. **Für jeden "fehlt"-Punkt:** Suche ein letztes Mal mit alternativen Suchbegriffen. Vielleicht heißt die Funktion anders, liegt in einer unerwarteten Datei, oder ist in einem Helper versteckt. Erst wenn du 3+ verschiedene Suchversuche gemacht hast und nichts gefunden hast, bestätige `[FEHLT KOMPLETT]`.
+2. **Für jeden Verbesserungsvorschlag:** Prüfe nochmal ob die Datei/Funktion die du referenzierst tatsächlich existiert und ob deine Zeilenangaben stimmen. Code kann sich seit Phase 1 geändert haben.
+3. **Für jede Prozent-Bewertung:** Lies die relevanten Code-Stellen ein drittes Mal und frage dich: "Bin ich fair? Habe ich etwas übersehen das die Bewertung ändert?"
+4. **Für jeden Sprint-Task:** Prüfe ob die vorgeschlagene Änderung keine bestehende Funktionalität bricht. Schau nach Abhängigkeiten, Aufrufer, Tests.
+
+Markiere jede Erkenntnis die sich bei der Gegenprüfung geändert hat mit `[KORRIGIERT]` und erkläre was und warum.
+
+### Schritt 2: Ergebnis-Datei erstellen
+
+Erstelle die Datei **`docs/prompts/jarvis-mcu-implementation-plan.md`** — das ist das finale Umsetzungsdokument.
+
+Diese Datei muss **vollständig eigenständig** sein. Ein Claude Code Agent der NUR diese Datei liest (ohne den Analyse-Prompt, ohne Kontext, ohne vorherige Gespräche) muss in der Lage sein, **jeden einzelnen Punkt umzusetzen**.
+
+Die Datei muss folgende Struktur haben:
+
+```markdown
+# J.A.R.V.I.S. MCU-Level Implementation Plan
+> Generiert am [Datum] | Aktueller Stand: XX% | Ziel: ≥90% MCU-Level
+> Dieses Dokument ist die Single Source of Truth für alle MCU-Level Verbesserungen.
+
+## Anweisungen für den umsetzenden Agenten
+
+Du bist ein Code-Agent der diesen Plan umsetzt. Folge diesen Regeln:
+- Arbeite die Sprints in Reihenfolge ab — überspringe keinen Sprint
+- Prüfe nach jeder Aufgabe die Akzeptanzkriterien
+- Wenn ein Akzeptanzkriterium nicht erfüllt werden kann, dokumentiere warum und gehe weiter
+- Ändere NIEMALS sicherheitskritische Logik (Trust-Level, Autonomie, Security-Zones) ohne explizite Freigabe
+- Führe nach jedem Sprint die Tests aus: `cd assistant && python -m pytest --tb=short -q`
+- Committe nach jedem Sprint mit einer beschreibenden Commit-Message
+- Dieses System läuft produktiv — teste alles gründlich
+
+## Kontext: Was ist MindHome/Jarvis?
+[Kurze Beschreibung des Projekts, Architektur, Tech-Stack — genug dass ein Agent ohne Vorwissen versteht was er bearbeitet]
+
+## Gesamtübersicht
+[Die Tabelle aus Phase 4 mit allen Kategorien, Prozenten, Status-Tags]
+
+## Sprint 1: [Titel]
+**Ziel:** [Was MCU-Level sein soll nach diesem Sprint]
+**Vorher → Nachher:** XX% → XX%
+**Betroffene Dateien:** [Vollständige Liste aller Dateien die angefasst werden]
+
+### Aufgabe 1.1: [Titel]
+**Datei:** `vollständiger/pfad/zur/datei.py`
+**Betroffene Funktion(en):** `funktionsname()` (Zeile XX-YY)
+
+**Ist-Zustand:**
+[Beschreibe was der Code JETZT tut — mit konkretem Code-Auszug wenn nötig]
+
+**Soll-Zustand:**
+[Beschreibe GENAU was der Code NACHHER tun soll]
+
+**Umsetzung:**
+1. [Schritt-für-Schritt was zu tun ist]
+2. [Konkret genug für Copy-Paste-Level]
+3. [Wenn neuer Code nötig: Pseudocode oder Beschreibung der Logik]
+
+**Verknüpfungen:**
+- Muss aufgerufen werden in: `datei.py`, Funktion `xyz()`
+- Benötigt Config in: `settings.yaml`, Sektion `abc`
+- Beeinflusst: [Welche anderen Module/Features]
+
+**Akzeptanzkriterien:**
+- [ ] [Konkretes, testbares Kriterium]
+- [ ] Bestehende Tests laufen durch
+- [ ] Kein Breaking Change an bestehenden APIs
+
+**Risiken:**
+- [Was kann schiefgehen, worauf achten — Produktivsystem!]
+
+### Aufgabe 1.2: [Titel]
+[... gleiches Format ...]
+
+### Sprint 1 — Validierung
+- [ ] Alle Aufgaben abgeschlossen
+- [ ] `python -m pytest --tb=short -q` — alle Tests grün
+- [ ] `ruff check --select=E9,F63,F7,F82 --ignore=F823 assistant/` — kein Fehler
+- [ ] Kein Breaking Change an bestehender Funktionalität
+
+---
+
+## Sprint 2: [Titel]
+[... gleiches Format ...]
+
+---
+
+[... weitere Sprints ...]
+
+---
+
+## Komplett fehlende Features (neu zu bauen)
+[Für jedes komplett fehlende Feature: vollständige Spezifikation, wo es hingehört, welche bestehenden Module es nutzen soll, welche neuen Dateien erstellt werden müssen]
+
+## Abschluss-Checkliste
+- [ ] Alle Sprints abgearbeitet
+- [ ] Alle Akzeptanzkriterien erfüllt
+- [ ] Alle Tests grün
+- [ ] Kein Regressions-Bruch
+- [ ] Commit + Push aller Änderungen
+```
+
+### Qualitätskriterien für die Ergebnis-Datei
+Die Datei ist **NUR dann akzeptabel** wenn:
+- [ ] Jede Aufgabe einen konkreten Dateipfad hat (kein "in der relevanten Datei")
+- [ ] Jede Aufgabe konkrete Zeilenreferenzen hat (verifiziert gegen den aktuellen Code)
+- [ ] Jede Aufgabe Akzeptanzkriterien hat die testbar sind
+- [ ] Die Sprint-Reihenfolge Abhängigkeiten respektiert
+- [ ] Ein Agent der NUR diese Datei liest, jeden Punkt umsetzen kann
+- [ ] Keine vagen Formulierungen ("verbessere", "optimiere") — nur konkrete Anweisungen
+- [ ] Alle Erkenntnisse durch die Gegenprüfung in Schritt 1 bestätigt wurden
+
+---
+
+## Phase 6: Re-Validierung (nach Implementierung)
 
 > **Diesen Abschnitt NACH der Umsetzung der Sprints als separaten Prompt verwenden.**
 
@@ -329,7 +449,8 @@ Wenn die Verbesserungen implementiert sind, führe diesen Prompt erneut aus mit 
 2. Berechne die neuen Prozent-Werte pro Kategorie
 3. Gibt es neue Lücken die durch die Änderungen sichtbar geworden sind?
 4. Was fehlt noch zum MCU-Level?
-5. Erstelle einen neuen Sprint-Plan für die verbleibenden Lücken."
+5. Aktualisiere `docs/prompts/jarvis-mcu-implementation-plan.md` mit den neuen Erkenntnissen
+6. Erstelle einen neuen Sprint-Plan für die verbleibenden Lücken."
 
 ---
 
