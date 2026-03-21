@@ -1,9 +1,9 @@
 # J.A.R.V.I.S. Technical Audit — 2026-03-21
 
 > **Scope:** Vollständiger Code-Audit aller 99 Python-Dateien im `assistant/assistant/`-Paket + Addon-Code
-> **Methodik:** 5-Pass-Analyse (Modul-Audit → Quality Deep Dive → Cross-Verification → Concurrency-Audit → Security-Deep-Dive)
+> **Methodik:** 5-Pass-Analyse (Modul-Audit → Quality Deep Dive → Cross-Verification → Concurrency-Audit → Security-Deep-Dive) + Vollständigkeitsabgleich
 > **Auditor:** Claude Code (Opus 4.6), 10 parallele Audit-Agents
-> **Dateien auditiert:** 99 Assistant-Module + 18 Routes + 23 Domains + Core Addon-Dateien
+> **Dateien auditiert:** 99 Assistant-Module + 18 Routes + 23 Domains + Core Addon-Dateien (100% Abdeckung verifiziert)
 
 ---
 
@@ -16,9 +16,9 @@ Die J.A.R.V.I.S.-Codebase ist insgesamt **solide und professionell** aufgebaut. 
 | Kategorie | Anzahl |
 |-----------|--------|
 | **Kritisch** (Laufzeitfehler) | 2 |
-| **Hoch** (Sicherheit) | 3 |
-| **Mittel** (Logik, Concurrency, Qualität) | 17 |
-| **Niedrig** (Code-Qualität, Stil) | 15+ |
+| **Hoch** (Sicherheit + fehlende Error-Callbacks) | 4 |
+| **Mittel** (Logik, Concurrency, Qualität) | 21 |
+| **Niedrig** (Code-Qualität, Stil) | 19+ |
 | **Widerlegte Findings** | 3 |
 
 ---
@@ -171,7 +171,16 @@ ChromaDB's Python-Client ist synchron. Aufrufe wie `collection.query()` blockier
 
 #### C-6: proactive.py — 4-6 Stellen mit `create_task()` ohne `add_done_callback`
 
-Per CLAUDE.md-Regel müssen alle Fire-and-Forget Tasks einen Error-Callback haben. In proactive.py fehlt dieser an mehreren Stellen. Fehler in diesen Tasks gehen still verloren.
+Per CLAUDE.md-Regel müssen alle Fire-and-Forget Tasks einen Error-Callback haben. In proactive.py fehlt dieser an mehreren Stellen.
+
+#### C-6b: light_engine.py:80 — `ensure_future()` ohne `add_done_callback` (HOCH)
+
+```python
+self._task = asyncio.ensure_future(self._check_loop())
+# Kein add_done_callback → Exception in der Check-Loop geht still verloren
+```
+
+Die zentrale Licht-Check-Loop hat keinen Error-Callback. Wenn die Loop crashed, stoppt die Lichtsteuerung ohne jede Fehlermeldung.
 
 ### MITTEL — Lock während I/O
 
@@ -221,6 +230,57 @@ except yaml.YAMLError:
 #### M-6: ha_connection.py:~380 — WebSocket-Lock blockiert bei Timeout
 
 `_ws_lock` wird während `send_json` + `receive_json` gehalten. Bei Netzwerk-Timeout kann der Lock bis zu 30s blockiert sein → andere Threads warten.
+
+#### M-7: cover_config.py — Kein File-Locking bei JSON-Dateizugriffen
+
+Mehrere API-Endpunkte können gleichzeitig die JSON-Konfigurationsdatei lesen und schreiben. Bei parallelen Requests kann es zum Datenverlust kommen. Ein `threading.Lock()` oder `filelock` fehlt.
+
+#### M-8: time_awareness.py:308 — Zugriff auf nicht-initialisierten Attribut
+
+`_check_lights_empty_rooms()` greift auf `self._light_engine` zu, das weder im Konstruktor noch in `initialize()` gesetzt wird. Es muss extern via `setattr` gesetzt werden — fragil und fehleranfällig.
+
+---
+
+## Teil 4b: Übersehene Module (nachträglicher Vollständigkeitsabgleich)
+
+Folgende 5 Module waren in keiner der initialen 6 Audit-Gruppen enthalten und wurden nachträglich auditiert:
+
+### climate_model.py — Climate Digital Twin
+
+Simuliert Temperaturverläufe für Was-wäre-wenn-Fragen. Wird von brain.py importiert.
+
+- **NIEDRIG:** `import re` inline in `_parse_what_if()` statt auf Modul-Ebene
+- **NIEDRIG:** Keine Längenbegrenzung für `question`-Parameter (kommt aus User-Input via brain.py)
+
+### cover_config.py — Cover-Konfiguration
+
+Lokale JSON-basierte Cover-Gruppen, Szenen, Zeitpläne. Wird von function_calling.py, proactive.py, main.py importiert.
+
+- **MITTEL:** Kein File-Locking (siehe M-7)
+- **NIEDRIG:** `update_power_close_rule()` hat keine Input-Validierung (threshold könnte negativ sein)
+- **NIEDRIG:** Hardcoded `_DATA_DIR = Path("/app/data")`
+
+### light_engine.py — Zentrale Lichtsteuerung
+
+Präsenz-basiert, Bettsensoren, Lux-adaptiv, Night-Dimming, Weather-Boost. Wird von brain.py importiert.
+
+- **HOCH:** `asyncio.ensure_future()` ohne `add_done_callback` (Zeile 80) — Exceptions in der Check-Loop gehen still verloren. Widerspricht direkt CLAUDE.md-Regel.
+- **NIEDRIG:** Variable `l` in List-Comprehension (verwechselbar mit `1`)
+
+### time_awareness.py — Geräte-Laufzeit-Überwachung
+
+Ofen, Bügeleisen, Waschmaschine, Licht in leeren Räumen. Wird von brain.py importiert.
+
+- **MITTEL:** `self._light_engine` nicht im Konstruktor initialisiert (siehe M-8)
+- **NIEDRIG:** `_pending_alerts` (Zeile 73) wird nie gelesen — toter Code
+- **NIEDRIG:** Zirkuläre Imports umgangen durch Inline-Imports (Zeilen 287, 381, 431) — funktioniert, aber undokumentiert
+
+### circuit_breaker.py — Fault Tolerance
+
+Circuit-Breaker für externe Dienste. Wird von ha_client.py, ollama_client.py, memory.py, web_search.py importiert.
+
+- **NIEDRIG:** Direkter Zugriff auf privates `_failure_count` in `get_graduated_state()` (Zeile 200)
+- **NIEDRIG:** Verwendet `threading.Lock()` in async-Kontext (Lock-Sektionen minimal, kein praktisches Problem)
 
 ---
 
@@ -316,25 +376,28 @@ Was besonders gut umgesetzt ist:
 | 2 | K-2: situation_model.py Datetime fixen | 5 Min |
 | 3 | M-1: llm_enhancer.py Klammern setzen | 2 Min |
 | 4 | M-5: config.py YAML-Fehler loggen | 5 Min |
+| 5 | light_engine.py:80 add_done_callback ergänzen | 5 Min |
 
 ### Kurzfristig (< 1 Stunde)
 
 | Prio | Finding | Aufwand |
 |------|---------|--------|
-| 5 | H-1: intent_tracker.py User-Message trennen | 15 Min |
-| 6 | H-2: action_planner.py User-Message trennen | 15 Min |
-| 7 | M-2: main.py Versionen zentralisieren | 10 Min |
-| 8 | C-6: proactive.py add_done_callback ergänzen | 15 Min |
+| 6 | H-1: intent_tracker.py User-Message trennen | 15 Min |
+| 7 | H-2: action_planner.py User-Message trennen | 15 Min |
+| 8 | M-2: main.py Versionen zentralisieren | 10 Min |
+| 9 | C-6: proactive.py add_done_callback ergänzen | 15 Min |
+| 10 | M-7: cover_config.py File-Locking hinzufügen | 15 Min |
+| 11 | M-8: time_awareness.py _light_engine im __init__ | 10 Min |
 
 ### Mittelfristig (< 1 Tag)
 
 | Prio | Finding | Aufwand |
 |------|---------|--------|
-| 9 | M-3: health_monitor.py Redis-State | 30 Min |
-| 10 | C-4: ChromaDB-Aufrufe in asyncio.to_thread() wrappen | 2 Std |
-| 11 | C-5: Embedding-Berechnung in asyncio.to_thread() | 30 Min |
-| 12 | A-1: Legacy get_db() → get_db_session() migrieren | 1 Std |
-| 13 | C-1/C-2: asyncio.Lock für Cooldown/Pattern-Dicts | 1 Std |
+| 12 | M-3: health_monitor.py Redis-State | 30 Min |
+| 13 | C-4: ChromaDB-Aufrufe in asyncio.to_thread() wrappen | 2 Std |
+| 14 | C-5: Embedding-Berechnung in asyncio.to_thread() | 30 Min |
+| 15 | A-1: Legacy get_db() → get_db_session() migrieren | 1 Std |
+| 16 | C-1/C-2: asyncio.Lock für Cooldown/Pattern-Dicts | 1 Std |
 
 ---
 
