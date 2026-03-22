@@ -454,11 +454,14 @@ class TestUpdateScore:
             t = OutcomeTracker()
         t.redis = redis_mock
         redis_mock.hget.return_value = "20"  # Above MIN_OUTCOMES_FOR_SCORE
-        redis_mock.get.return_value = "0.5"  # Current score
+        # get() wird fuer Score-Key UND Daily-Delta-Key aufgerufen.
+        # Reihenfolge: score_key, daily_key (None = kein Tagesbudget verbraucht).
+        redis_mock.get.side_effect = ["0.5", None]
         await t._update_score("set_light", "positive")
-        redis_mock.setex.assert_called_once()
-        # Check score was written
-        score_str = redis_mock.setex.call_args[0][2]
+        # setex wird 2x aufgerufen: Score + Daily-Delta-Tracking
+        assert redis_mock.setex.call_count == 2
+        # Erster setex-Call ist der Score
+        score_str = redis_mock.setex.call_args_list[0][0][2]
         score = float(score_str)
         assert 0.5 < score <= 1.0
 
@@ -470,10 +473,11 @@ class TestUpdateScore:
             t = OutcomeTracker()
         t.redis = redis_mock
         redis_mock.hget.return_value = "15"
-        redis_mock.get.return_value = "0.5"
+        redis_mock.get.side_effect = ["0.5", None]  # Score + Daily-Delta
         await t._update_score("set_light", "negative", person="Max")
-        call_args = redis_mock.setex.call_args[0]
-        assert "person:Max" in call_args[0]
+        # Score-setex sollte person-spezifischen Key enthalten
+        score_call = redis_mock.setex.call_args_list[0][0]
+        assert "person:Max" in score_call[0]
 
     @pytest.mark.asyncio
     async def test_update_score_no_redis(self):

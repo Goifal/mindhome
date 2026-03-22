@@ -306,6 +306,8 @@ class AnticipationEngine:
     ) -> list[dict]:
         """Erkennt Sequenz-Muster (A -> B innerhalb von 5 Minuten).
 
+        Neuere Sequenzen werden staerker gewichtet (Recency-Weighting).
+
         Args:
             entries: Action-Log Eintraege
             person: Wenn gesetzt, nur Sequenzen dieser Person erkennen
@@ -319,8 +321,12 @@ class AnticipationEngine:
         # Sortiere nach Timestamp (neueste zuerst in der Liste)
         sorted_entries = sorted(entries, key=lambda e: e.get("timestamp", ""))
 
+        now = datetime.now(_LOCAL_TZ)
+
         # Zaehle Paare (A -> B) die innerhalb von 5 Min aufeinander folgen
-        pair_counts = Counter()
+        # Mit Recency-Weighting: neuere Paare zaehlen staerker
+        pair_weighted_counts: dict[str, float] = defaultdict(float)
+        pair_raw_counts: Counter = Counter()
         pair_args = defaultdict(list)
 
         for i in range(len(sorted_entries) - 1):
@@ -337,19 +343,26 @@ class AnticipationEngine:
                     b = next_e.get("action", "")
                     if a and b and a != b:
                         pair = f"{a}|{b}"
-                        pair_counts[pair] += 1
+                        pair_raw_counts[pair] += 1
                         pair_args[pair].append(next_e.get("args", "{}"))
+                        # Recency-Weighting: 1.0 fuer heute, 0.3 fuer aelteste
+                        if t1.tzinfo is None:
+                            t1 = t1.replace(tzinfo=_LOCAL_TZ)
+                        days_ago = max(0, (now - t1).days)
+                        weight = max(0.3, 1.0 - (days_ago / self.history_days) * 0.7)
+                        pair_weighted_counts[pair] += weight
             except (ValueError, TypeError):
                 continue
 
         # Muster: Wenn Paar > 5x vorkommt
         total_actions = len(sorted_entries)
-        for pair, count in pair_counts.items():
+        for pair, count in pair_raw_counts.items():
             if count < 5:
                 continue
 
             a, b = pair.split("|")
-            confidence = min(1.0, count / max(1, total_actions / 10))
+            weighted = pair_weighted_counts.get(pair, float(count))
+            confidence = min(1.0, weighted / max(1, total_actions / 10))
 
             if confidence >= self.min_confidence:
                 args_counter = Counter(pair_args[pair])
@@ -531,9 +544,17 @@ class AnticipationEngine:
         patterns = []
         sorted_entries = sorted(entries, key=lambda e: e.get("timestamp", ""))
 
-        # Finde Cluster von 3+ Aktionen innerhalb des Zeitfensters
-        chain_counter: Counter = Counter()
+        now = datetime.now(_LOCAL_TZ)
+
+        # Finde Cluster von 3+ Aktionen innerhalb des Zeitfensters.
+        # Trackt zusaetzlich die Reihenfolge der Aktionen pro Kette,
+        # um konsistente von inkonsistenten Sequenzen zu unterscheiden.
+        # Recency-Weighting: Neuere Cluster zaehlen staerker.
+        chain_counter: Counter = Counter()  # Rohe Counts (fuer min_occurrences)
+        chain_weighted: dict[str, float] = defaultdict(float)  # Gewichtete Counts
         chain_contexts: dict[str, list[str]] = defaultdict(list)
+        # Ordnungs-Tracking: Zaehlt wie oft die exakte Reihenfolge vorkommt
+        chain_order_counter: Counter = Counter()
 
         i = 0
         while i < len(sorted_entries):
@@ -565,14 +586,30 @@ class AnticipationEngine:
                     dict.fromkeys(actions)
                 )  # Reihenfolge erhalten, Duplikate weg
                 if len(unique_actions) >= 3:
-                    chain_key = "|".join(unique_actions)
-                    chain_counter[chain_key] += 1
+                    # Sortierter Key fuer richtungsunabhaengiges Zaehlen
+                    chain_key_sorted = "|".join(sorted(unique_actions))
+                    # Geordneter Key fuer Richtungs-Tracking
+                    chain_key_ordered = "|".join(unique_actions)
+                    chain_counter[chain_key_sorted] += 1
+                    chain_order_counter[chain_key_ordered] += 1
+                    # Recency-Weighting: Neuere Cluster zaehlen staerker
+                    try:
+                        cluster_ts = t_start
+                        if cluster_ts.tzinfo is None:
+                            cluster_ts = cluster_ts.replace(tzinfo=_LOCAL_TZ)
+                        days_ago = max(0, (now - cluster_ts).days)
+                        weight = max(0.3, 1.0 - (days_ago / max(1, self.history_days)) * 0.7)
+                    except (ValueError, TypeError):
+                        weight = 0.5
+                    chain_weighted[chain_key_sorted] = (
+                        chain_weighted.get(chain_key_sorted, 0.0) + weight
+                    )
                     # Kontext der ersten Aktion als Trigger
                     ctx = (
                         cluster[0].get("weather", "")
                         or f"hour:{cluster[0].get('hour', 0)}"
                     )
-                    chain_contexts[chain_key].append(ctx)
+                    chain_contexts[chain_key_sorted].append(ctx)
 
             i = j if j > i + 1 else i + 1
 
@@ -581,14 +618,37 @@ class AnticipationEngine:
             if count < min_occurrences:
                 continue
 
-            actions = chain_key.split("|")
+            # Dominante Reihenfolge bestimmen: Welche Reihenfolge kam am haeufigsten?
+            # Alle geordneten Keys die die gleichen Aktionen enthalten finden.
+            chain_actions_set = set(chain_key.split("|"))
+            matching_orders = [
+                (ordered_key, ordered_count)
+                for ordered_key, ordered_count in chain_order_counter.items()
+                if set(ordered_key.split("|")) == chain_actions_set
+            ]
+            matching_orders.sort(key=lambda x: x[1], reverse=True)
+            dominant_order = matching_orders[0] if matching_orders else (chain_key, count)
+            actions = dominant_order[0].split("|")
+            dominant_order_count = dominant_order[1]
+
+            # Ordnungs-Konsistenz: Wie oft tritt die dominante Reihenfolge auf?
+            # order_ratio = 1.0 → immer gleiche Reihenfolge (stark kausal)
+            # order_ratio = 0.5 → zufaellige Reihenfolge (schwach kausal)
+            order_ratio = dominant_order_count / count if count > 0 else 0.5
+
             # Dominanter Kontext bestimmen
             ctx_counter = Counter(chain_contexts.get(chain_key, []))
             dominant_ctx = (
                 ctx_counter.most_common(1)[0][0] if ctx_counter else "unbekannt"
             )
 
-            confidence = min(1.0, count / max(1, len(sorted_entries) / 20))
+            # Confidence: Gewichtete Basis * Ordnungs-Boost
+            # Recency-Weighting: chain_weighted nutzt gewichtete Counts
+            # Konsistente Reihenfolge erhaelt bis zu 20% Boost
+            weighted_count = chain_weighted.get(chain_key, float(count))
+            base_confidence = min(1.0, weighted_count / max(1, len(sorted_entries) / 20))
+            order_boost = 0.2 * (order_ratio - 0.5) * 2  # -0.2 bis +0.2
+            confidence = min(1.0, max(0.0, base_confidence + order_boost))
             if confidence < self.min_confidence:
                 continue
 
@@ -599,6 +659,7 @@ class AnticipationEngine:
                 "actions": actions,
                 "confidence": round(confidence, 2),
                 "occurrences": count,
+                "order_consistency": round(order_ratio, 2),
                 "description": f"Kette ({dominant_ctx}): {desc_actions}",
             }
             if person:

@@ -724,16 +724,24 @@ class OutcomeTracker:
         await self.redis.setex("mha:outcome:last_action_type", 300, action_type)
 
     async def _update_score(self, action_type: str, outcome: str, person: str = ""):
-        """Aktualisiert den Rolling Score (EMA, alpha=0.1)."""
+        """Aktualisiert den Rolling Score (EMA, alpha=0.1).
+
+        Data Poisoning Protection:
+        - Per-Update: Einzelner Delta auf ±MAX_DAILY_CHANGE begrenzt.
+        - Kumulativ: Tages-Gesamtaenderung auf ±MAX_DAILY_CHANGE begrenzt.
+          Tracking via Redis-Key mit 24h-TTL pro action_type(+person).
+        """
         if not self.redis:
             return
 
         if person:
             score_key = f"mha:outcome:score:{action_type}:person:{person}"
             stats_key = f"mha:outcome:stats:{action_type}:person:{person}"
+            daily_key = f"mha:outcome:daily_delta:{action_type}:person:{person}"
         else:
             score_key = f"mha:outcome:score:{action_type}"
             stats_key = f"mha:outcome:stats:{action_type}"
+            daily_key = f"mha:outcome:daily_delta:{action_type}"
 
         # Minimum-Datenmenge pruefen
         total = await self.redis.hget(stats_key, "total")
@@ -760,13 +768,53 @@ class OutcomeTracker:
         )
         new_score = alpha * target + (1 - alpha) * current_score
 
-        # Data Poisoning Protection: Max daily change
+        # Data Poisoning Protection: Per-Update Cap
         delta = new_score - current_score
         clamped_delta = max(-MAX_DAILY_CHANGE, min(MAX_DAILY_CHANGE, delta))
+
+        # Data Poisoning Protection: Kumulative Tages-Cap
+        # Trackt die Gesamtaenderung pro Tag via Redis (24h-TTL).
+        # Wenn das Tagesbudget erschoepft ist, wird das Update uebersprungen.
+        try:
+            daily_raw = await self.redis.get(daily_key)
+            daily_cumulative = (
+                float(daily_raw.decode() if isinstance(daily_raw, bytes) else daily_raw)
+                if daily_raw is not None
+                else 0.0
+            )
+        except (ValueError, TypeError):
+            daily_cumulative = 0.0
+
+        # Verbleibendes Budget in Richtung des Deltas pruefen
+        if clamped_delta > 0:
+            remaining = MAX_DAILY_CHANGE - daily_cumulative
+            if remaining <= 0:
+                logger.debug(
+                    "Poison Protection: Tages-Cap erreicht fuer %s (kumulativ: %.4f)",
+                    action_type,
+                    daily_cumulative,
+                )
+                return
+            clamped_delta = min(clamped_delta, remaining)
+        elif clamped_delta < 0:
+            remaining = -MAX_DAILY_CHANGE - daily_cumulative
+            if remaining >= 0:
+                logger.debug(
+                    "Poison Protection: Tages-Cap erreicht fuer %s (kumulativ: %.4f)",
+                    action_type,
+                    daily_cumulative,
+                )
+                return
+            clamped_delta = max(clamped_delta, remaining)
+
         final_score = max(0.0, min(1.0, current_score + clamped_delta))
 
         ttl = 180 * 86400
         await self.redis.setex(score_key, ttl, str(round(final_score, 4)))
+
+        # Kumulativen Tages-Delta aktualisieren (24h-TTL)
+        new_cumulative = daily_cumulative + clamped_delta
+        await self.redis.setex(daily_key, 86400, str(round(new_cumulative, 4)))
 
     async def _notify_learning_observer(
         self, action_type: str, person: str = "", room: str = ""
@@ -938,6 +986,103 @@ class OutcomeTracker:
 
         except Exception as e:
             logger.debug("Auto-Opinion Update fehlgeschlagen: %s", e)
+
+    # ------------------------------------------------------------------
+    # Learned Follow-ups: Trackt Aktions-Sequenzen fuer Think-Ahead
+    # ------------------------------------------------------------------
+
+    _FOLLOWUP_WINDOW_SECONDS = 120  # Max Abstand zwischen Aktionen
+    _FOLLOWUP_MIN_COUNT = 3  # Min Wiederholungen bevor ein Follow-up gelernt wird
+    _FOLLOWUP_TTL = 90 * 86400  # 90 Tage
+
+    async def track_followup_sequence(self, action_type: str, room: str = ""):
+        """Trackt Aktions-Sequenzen: Wenn nach Aktion A regelmaessig B folgt, lernen.
+
+        Wird bei jeder Tool-Execution aufgerufen. Prueft ob kurz vorher
+        eine andere Aktion im selben Raum ausgefuehrt wurde und zaehlt das Paar.
+
+        Args:
+            action_type: Die gerade ausgefuehrte Aktion (z.B. "set_cover").
+            room: Der Raum (fuer raumspezifische Sequenzen).
+        """
+        if not self.redis or not self.enabled:
+            return
+
+        try:
+            # Vorherige Aktion und Zeitpunkt aus Redis holen
+            prev_key = f"mha:followup:last_action:{room}" if room else "mha:followup:last_action:global"
+            prev_raw = await self.redis.get(prev_key)
+            if prev_raw:
+                prev_data = json.loads(
+                    prev_raw.decode() if isinstance(prev_raw, bytes) else prev_raw
+                )
+                prev_action = prev_data.get("action", "")
+                prev_ts = prev_data.get("ts", 0)
+
+                # Nur zaehlen wenn anderer Aktionstyp und innerhalb des Zeitfensters
+                if (
+                    prev_action
+                    and prev_action != action_type
+                    and (time.time() - prev_ts) <= self._FOLLOWUP_WINDOW_SECONDS
+                ):
+                    pair_key = f"mha:followup:pair:{prev_action}:{action_type}"
+                    if room:
+                        pair_key = f"{pair_key}:{room}"
+                    await self.redis.incr(pair_key)
+                    await self.redis.expire(pair_key, self._FOLLOWUP_TTL)
+
+            # Aktuelle Aktion als "letzte" speichern
+            await self.redis.setex(
+                prev_key,
+                self._FOLLOWUP_WINDOW_SECONDS + 10,
+                json.dumps({"action": action_type, "ts": time.time()}),
+            )
+        except Exception as e:
+            logger.debug("Follow-up Sequenz-Tracking fehlgeschlagen: %s", e)
+
+    async def get_learned_followups(self, action_type: str, room: str = "") -> list[dict]:
+        """Gibt gelernte Follow-up-Aktionen fuer eine ausgefuehrte Aktion zurueck.
+
+        Returns:
+            Liste von {"action": "set_cover", "count": 7, "room": "schlafzimmer"} Dicts,
+            sortiert nach Haeufigkeit. Nur Paare mit >= _FOLLOWUP_MIN_COUNT.
+        """
+        if not self.redis or not self.enabled:
+            return []
+
+        followups = []
+        try:
+            # Raumspezifische und globale Patterns scannen
+            patterns = [f"mha:followup:pair:{action_type}:*"]
+            for pattern in patterns:
+                cursor = 0
+                while True:
+                    cursor, keys = await self.redis.scan(
+                        cursor, match=pattern, count=50
+                    )
+                    for key in keys:
+                        key_str = key.decode() if isinstance(key, bytes) else key
+                        parts = key_str.split(":")
+                        # Format: mha:followup:pair:{prev}:{next} oder ..:{next}:{room}
+                        if len(parts) < 5:
+                            continue
+                        follow_action = parts[4]
+                        follow_room = parts[5] if len(parts) > 5 else ""
+                        val = await self.redis.get(key)
+                        count = int(val.decode() if isinstance(val, bytes) else val) if val else 0
+                        if count >= self._FOLLOWUP_MIN_COUNT:
+                            followups.append({
+                                "action": follow_action,
+                                "count": count,
+                                "room": follow_room,
+                            })
+                    if cursor == 0:
+                        break
+        except Exception as e:
+            logger.debug("Learned Follow-ups laden fehlgeschlagen: %s", e)
+
+        followups.sort(key=lambda x: x["count"], reverse=True)
+        return followups[:5]  # Max 5 Follow-ups
 
     def set_personality(self, personality) -> None:
         """Setzt die PersonalityEngine-Referenz fuer Auto-Opinion-Learning."""
