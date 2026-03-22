@@ -111,34 +111,34 @@ class ConflictResolver:
         self.ollama = ollama
 
         # Konfiguration laden
-        cfg = yaml_config.get("conflict_resolution", {})
+        cfg = yaml_config.get("conflict_resolution") or {}
         self.enabled = cfg.get("enabled", True)
-        self._conflict_window = int(cfg.get("conflict_window_seconds", 300))
-        self._max_commands = int(cfg.get("max_commands_per_person", 20))
+        self._conflict_window = int(cfg.get("conflict_window_seconds") or 300)
+        self._max_commands = int(cfg.get("max_commands_per_person") or 20)
         self._use_trust_priority = cfg.get("use_trust_priority", True)
-        self._resolution_cooldown = int(cfg.get("resolution_cooldown_seconds", 120))
+        self._resolution_cooldown = int(cfg.get("resolution_cooldown_seconds") or 120)
 
         # Mediations-Config
-        med_cfg = cfg.get("mediation", {})
+        med_cfg = cfg.get("mediation") or {}
         self._mediation_enabled = med_cfg.get("enabled", True)
         from .config import resolve_model
 
         self._mediation_model = resolve_model(
             med_cfg.get("model", ""), fallback_tier="deep"
         )
-        self._mediation_max_tokens = int(med_cfg.get("max_tokens", 256))
+        self._mediation_max_tokens = int(med_cfg.get("max_tokens") or 256)
         self._mediation_temperature = med_cfg.get("temperature", 0.7)
 
         # Domain-spezifische Konfiguration
         self._domain_configs: dict[str, dict] = cfg.get("conflict_domains", {})
 
         # Konfigurierbare Kontext-Schwellwerte (F-090 Review)
-        ctx_cfg = cfg.get("context_thresholds", {})
-        self._threshold_solar_w = float(ctx_cfg.get("solar_producing_w", 100))
-        self._threshold_lux = float(ctx_cfg.get("high_lux", 500))
-        self._threshold_wind_kmh = float(ctx_cfg.get("high_wind_kmh", 60))
-        self._threshold_energy_price = float(ctx_cfg.get("high_energy_price", 0.30))
-        self._threshold_frost_c = float(ctx_cfg.get("frost_below_c", 0))
+        ctx_cfg = cfg.get("context_thresholds") or {}
+        self._threshold_solar_w = float(ctx_cfg.get("solar_producing_w") or 100)
+        self._threshold_lux = float(ctx_cfg.get("high_lux") or 500)
+        self._threshold_wind_kmh = float(ctx_cfg.get("high_wind_kmh") or 60)
+        self._threshold_energy_price = float(ctx_cfg.get("high_energy_price") or 0.30)
+        self._threshold_frost_c = float(ctx_cfg.get("frost_below_c") if ctx_cfg.get("frost_below_c") is not None else 0.0)
         self._weather_entity = ctx_cfg.get("weather_entity", "weather.home")
 
         # Konfigurierbare Regel-Toggles: einzelne Regeln deaktivierbar
@@ -178,7 +178,7 @@ class ConflictResolver:
 
         # Prediction-Config
         self._prediction_enabled = cfg.get("prediction_enabled", False)
-        self._prediction_window_seconds = int(cfg.get("prediction_window_seconds", 180))
+        self._prediction_window_seconds = int(cfg.get("prediction_window_seconds") or 180)
 
         # Validator für Kompromiss-Werte (kann später gesetzt werden)
         self._validator = None
@@ -195,19 +195,19 @@ class ConflictResolver:
 
     def reload_config(self):
         """Lädt konfigurierbare Werte aus settings.yaml neu (Hot-Reload bei UI-Änderungen)."""
-        cfg = yaml_config.get("conflict_resolution", {})
+        cfg = yaml_config.get("conflict_resolution") or {}
         self.enabled = cfg.get("enabled", True)
-        self._conflict_window = int(cfg.get("conflict_window_seconds", 300))
+        self._conflict_window = int(cfg.get("conflict_window_seconds") or 300)
         self._use_trust_priority = cfg.get("use_trust_priority", True)
-        self._cooldown_seconds = int(cfg.get("resolution_cooldown_seconds", 120))
+        self._cooldown_seconds = int(cfg.get("resolution_cooldown_seconds") or 120)
 
         # Kontext-Schwellwerte aktualisieren
-        ctx_cfg = cfg.get("context_thresholds", {})
-        self._threshold_solar_w = float(ctx_cfg.get("solar_producing_w", 100))
-        self._threshold_lux = float(ctx_cfg.get("high_lux", 500))
-        self._threshold_wind_kmh = float(ctx_cfg.get("high_wind_kmh", 60))
-        self._threshold_energy_price = float(ctx_cfg.get("high_energy_price", 0.30))
-        self._threshold_frost_c = float(ctx_cfg.get("frost_below_c", 0))
+        ctx_cfg = cfg.get("context_thresholds") or {}
+        self._threshold_solar_w = float(ctx_cfg.get("solar_producing_w") or 100)
+        self._threshold_lux = float(ctx_cfg.get("high_lux") or 500)
+        self._threshold_wind_kmh = float(ctx_cfg.get("high_wind_kmh") or 60)
+        self._threshold_energy_price = float(ctx_cfg.get("high_energy_price") or 0.30)
+        self._threshold_frost_c = float(ctx_cfg.get("frost_below_c") if ctx_cfg.get("frost_below_c") is not None else 0.0)
         self._weather_entity = ctx_cfg.get("weather_entity", "weather.home")
 
         # Regel-Toggles aktualisieren
@@ -215,7 +215,7 @@ class ConflictResolver:
 
         # Prediction-Config aktualisieren
         self._prediction_enabled = cfg.get("prediction_enabled", False)
-        self._prediction_window_seconds = int(cfg.get("prediction_window_seconds", 180))
+        self._prediction_window_seconds = int(cfg.get("prediction_window_seconds") or 180)
 
         logger.info(
             "ConflictResolver config reloaded (enabled=%s, prediction=%s, rules_enabled=%d custom)",
@@ -950,14 +950,14 @@ class ConflictResolver:
         Returns:
             Warning-Dict oder None wenn kein Konflikt vorhergesagt.
         """
-        cfg = yaml_config.get("conflict_resolution", {})
+        cfg = yaml_config.get("conflict_resolution") or {}
         if not cfg.get("prediction_enabled", False):
             return None
 
         if not person or not domain:
             return None
 
-        prediction_window = int(cfg.get("prediction_window_seconds", 180))
+        prediction_window = int(cfg.get("prediction_window_seconds") or 180)
         person_lower = person.lower()
         room_lower = room.lower() if room else ""
         now = time.time()

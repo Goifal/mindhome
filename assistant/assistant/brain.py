@@ -2376,7 +2376,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         )
 
         # F-069: One-time degraded mode notification on first user request
-        if self._degraded_modules and not self._degraded_notified:
+        if getattr(self, "_degraded_modules", None) and not self._degraded_notified:
             self._degraded_notified = True
             _deg_names = ", ".join(self._degraded_modules)
             _deg_hint = (
