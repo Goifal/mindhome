@@ -1,6 +1,6 @@
 # J.A.R.V.I.S. MCU-Level Implementation Plan
 > Erstellt am 2026-03-22 | Letzter Durchlauf: Durchlauf #2 — Session 1 am 2026-03-22
-> Aktueller Stand: 85.9% (Kategorien 1-9 re-analysiert nach Sprint-Implementierungen, Kat 10-12 unverändert)
+> Aktueller Stand: 86.0% (Kategorien 1-9 re-analysiert nach Sprint-Implementierungen, Kat 10-12 unverändert)
 > Dieses Dokument ist die Single Source of Truth für alle MCU-Level Verbesserungen.
 
 ## Status-Legende
@@ -530,11 +530,11 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 ## Changelog
 
 ### Durchlauf #2 — Session 2 — 2026-03-22
-- 10 Aufgaben als erledigt markiert (alle Cat 8+9 Aufgaben, 2 von Cat 7, 1 von Cat 5, 1 von Cat 6)
+- 11 Aufgaben als erledigt markiert (alle Cat 7+8+9 Aufgaben, 1 von Cat 5, 1 von Cat 6)
 - 2 Aufgaben als teilweise erledigt markiert (Cat 6: Contradiction Confirmation, Learning Report)
 - 0 neue Aufgaben hinzugefügt (bestehende Aufgaben decken verbleibende Lücken ab)
-- Kategorien 5-9 Score: **80.2% → 85.6%** (+5.4%)
-- Gesamt-Score: **83.9% → 85.9%** (+2.0%)
+- Kategorien 5-9 Score: **80.2% → 85.8%** (+5.6%)
+- Gesamt-Score: **83.9% → 86.0%** (+2.1%)
 - Besonders stark verbessert: Kat 8 Krisenmanagement (+8%) und Kat 9 Sicherheit (+5%)
 - Alle Cat 8 Akzeptanzkriterien erfüllt, alle Cat 9 Akzeptanzkriterien erfüllt
 
@@ -1179,7 +1179,7 @@ MCU-Jarvis lernt aus Tonys Verhalten, wird über die Filme hinweg immer besser: 
 ### MCU-Jarvis Benchmark
 MCU-Jarvis erkennt Tony, Pepper und Rhodey sofort, unterscheidet Fremde von Bewohnern, und passt sein Verhalten an die Person an (Iron Man 2: erkennt Rhodey im War Machine Suit). Er weiß wer spricht und reagiert entsprechend dem Vertrauenslevel.
 
-### MindHome-Jarvis Status: 80% 🔄 (vorher: 74% — Durchlauf #1)
+### MindHome-Jarvis Status: 82% 🔄 (vorher: 74% — Durchlauf #1)
 
 ### Code-Verifizierung
 
@@ -1243,8 +1243,8 @@ MCU-Jarvis erkennt Tony, Pepper und Rhodey sofort, unterscheidet Fremde von Bewo
 2. **`[x]` Confidence-basiertes Fallback-Chain** ✅ Erledigt am 2026-03-22 — Durchlauf #2
    - speaker_recognition.py:339-347: Soft-confirm bei 0.5-0.7 Confidence, "Das klingt nach X — bist du das?"
 
-3. **`[ ]` Speaker Recognition default aktivieren** — Zumindest Device-Mapping sollte default `enabled: true` sein, da es keine externe Hardware braucht.
-   - Aufwand: Klein | Impact: +3% | Alltag: `[TÄGLICH]`
+3. **`[x]` Speaker Recognition default aktivieren** ✅ Erledigt am 2026-03-22 — Durchlauf #2
+   - speaker_recognition.py:123: `sr_cfg.get("enabled", True)` — Default jetzt True statt False
 
 ### Akzeptanzkriterien — Wann ist dieses Feature "MCU-Level"?
 - [x] Sprecher werden in >85% der Fälle korrekt erkannt (Device-Mapping + Voice) ✅ 4-stufige Erkennung
@@ -1252,7 +1252,7 @@ MCU-Jarvis erkennt Tony, Pepper und Rhodey sofort, unterscheidet Fremde von Bewo
 - [x] Gäste bekommen automatisch eingeschränkte Rechte (Trust Level 0) ✅ Bereits seit Durchlauf #1
 - [x] Multi-User-Konflikte werden in >90% der Fälle fair gelöst ✅ Bereits seit Durchlauf #1
 - [x] Per-Person Anpassungen sind nach 1 Woche spürbar ✅ Bereits seit Durchlauf #1
-- [ ] Speaker Recognition ist default aktiviert (aktuell: manuell)
+- [x] Speaker Recognition ist default aktiviert ✅ Default True
 
 ## 8. Krisenmanagement & Notfallreaktionen (×1.5)
 
@@ -1445,7 +1445,7 @@ Bei Angriffen auf das Haus (Iron Man 3) koordiniert Jarvis die Verteidigung, pri
 | 4 | Butler-Qualitäten & Servicementalität | ×2.5 | 80% | 200 |
 | 5 | Situationsbewusstsein & Kontextverständnis | ×2 | 85% 🔄 | 170 |
 | 6 | Lernfähigkeit & Adaptation | ×2 | 85% 🔄 | 170 |
-| 7 | Sprecherkennung & Personalisierung | ×1.5 | 80% 🔄 | 120 |
+| 7 | Sprecherkennung & Personalisierung | ×1.5 | 82% 🔄 | 123 |
 | 8 | Krisenmanagement & Notfallreaktionen | ×1.5 | 86% 🔄 | 129 |
 | 9 | Sicherheit & Bedrohungserkennung | ×1.5 | 90% 🔄 | 135 |
 | 10 | Multi-Room-Awareness & Follow-Me | ×1 | 73% | 73 |
