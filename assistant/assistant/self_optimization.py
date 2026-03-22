@@ -152,10 +152,30 @@ class SelfOptimization:
             }
             domain_name = _DOMAIN_DE.get(worst_domain, worst_domain.title())
 
+            # Root-Cause-Analyse: Korrelationen pruefen
+            correlations = await self.get_failure_correlations()
+            _root_cause_hint = ""
+            for corr in correlations:
+                if corr.get("domain") == worst_domain and corr.get("count", 0) >= 3:
+                    _CAUSE_DE = {
+                        "window_open": "offenes Fenster",
+                        "user_reverted": "User-Korrektur",
+                        "device_unavailable": "Geraet offline",
+                    }
+                    _cause_de = _CAUSE_DE.get(
+                        corr.get("cause", ""), corr.get("cause", "")
+                    )
+                    _root_cause_hint = (
+                        f" Haeufigste Ursache: {_cause_de} "
+                        f"({corr['count']}x beobachtet)."
+                    )
+                    break
+
             return (
                 f"Mir ist aufgefallen, dass {worst_pct}% meiner Korrekturen "
                 f"den Bereich '{domain_name}' betreffen ({worst_count} von {total}). "
                 f"Ich passe meine Empfehlungen in diesem Bereich an."
+                f"{_root_cause_hint}"
             )
 
         except Exception as e:

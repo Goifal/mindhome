@@ -4735,6 +4735,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 )
             )
             _mega_tasks.append(("insights_now", self.insight_engine.run_checks_now()))
+            _mega_tasks.append(
+                ("cross_domain", self.insight_engine.get_learned_cross_domain_insights())
+            )
             _mega_tasks.append(("experiential", self._get_experiential_hints(text)))
             _mega_tasks.append(("idle_insights", self._get_idle_insights()))
             _mega_tasks.append(
@@ -4938,6 +4941,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         emotional_ctx = _safe_get("emotional_ctx")  # B10: Emotionale Kontinuitaet
         kg_context = _safe_get("knowledge_graph") or []  # Knowledge Graph Relationen
         outcome_scores = _safe_get("outcome_scores") or {}  # Outcome-Scores fuer LLM
+        cross_domain_insights = _safe_get("cross_domain") or []  # Gelernte Cross-Domain
+
+        # Cross-Domain Insights als zusaetzliche Live-Insights einmischen
+        if cross_domain_insights:
+            for _cdi in cross_domain_insights[:2]:
+                live_insights.append({
+                    "message": _cdi.get("description", ""),
+                    "urgency": "low",
+                })
 
         context["mood"] = mood_result
 
@@ -8740,12 +8752,24 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         if k in ("volume_level", "source") and v is not None
                     }
                 if _lt_domain and _lt_attrs and room:
+                    # Grund aus Kontext ableiten (task vs ambiance vs comfort)
+                    _lt_reason = ""
+                    if _lt_domain == "light":
+                        _brightness = _lt_attrs.get("brightness", 0)
+                        _color_temp = _lt_attrs.get("color_temp", 0)
+                        if _brightness and _brightness > 200:
+                            _lt_reason = "task_lighting"
+                        elif _color_temp and _color_temp < 350:
+                            _lt_reason = "ambiance"
+                    elif _lt_domain == "climate":
+                        _lt_reason = "comfort"
                     self._task_registry.create_task(
                         self.learning_transfer.observe_action(
                             room=room,
                             domain=_lt_domain,
                             attributes=_lt_attrs,
                             person=person or "",
+                            reason=_lt_reason,
                         ),
                         name="learning_transfer_observe",
                     )
@@ -17094,6 +17118,28 @@ Regeln:
                 # Pattern Invalidation: Korrektur invalidiert zugehoerige Patterns
                 if _corr_action and hasattr(self.anticipation, "invalidate_pattern"):
                     await self.anticipation.invalidate_pattern(_corr_action)
+
+                # Self-Optimization: Domain-Korrektur mit Ursache tracken
+                _corr_domain = ""
+                if _corr_action:
+                    if "light" in _corr_action:
+                        _corr_domain = "light"
+                    elif "climate" in _corr_action or "temp" in _corr_action:
+                        _corr_domain = "climate"
+                    elif "cover" in _corr_action:
+                        _corr_domain = "cover"
+                    elif "media" in _corr_action or "play" in _corr_action:
+                        _corr_domain = "media"
+                if _corr_domain:
+                    _failure_cause = ""
+                    if _corr_causal.get("windows_open"):
+                        _failure_cause = "window_open"
+                    self._task_registry.create_task(
+                        self.self_optimization.track_domain_correction(
+                            _corr_domain, _failure_cause
+                        ),
+                        name="track_domain_correction",
+                    )
 
                 # Self-Improvement: Outcome Tracker — Korrektur = NEGATIVE
                 await self.outcome_tracker.record_verbal_feedback(
