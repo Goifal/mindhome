@@ -309,6 +309,7 @@ class TTSEnhancer:
         message_type: Optional[str] = None,
         urgency: str = "medium",
         activity: str = "",
+        sarcasm_level: int = 0,
     ) -> dict:
         """
         Verbessert einen Text für TTS-Ausgabe.
@@ -317,6 +318,7 @@ class TTSEnhancer:
             text: Originaltext
             message_type: Optional manueller Typ (sonst auto-detect)
             urgency: Dringlichkeit (critical, high, medium, low)
+            sarcasm_level: Aktueller Sarkasmus-Level (0-5), fuer Comedy-Timing
             activity: Aktuelle Aktivität des Users (sleeping, focused, etc.)
 
         Returns:
@@ -356,7 +358,9 @@ class TTSEnhancer:
         )
 
         if self.ssml_enabled:
-            ssml = self._generate_ssml(text, message_type, speed, pitch)
+            ssml = self._generate_ssml(
+                text, message_type, speed, pitch, sarcasm_level=sarcasm_level
+            )
         else:
             # Ohne SSML: Englische Titel phonetisch ersetzen damit
             # deutscher TTS sie nicht mit deutscher Phonetik ausspricht.
@@ -499,7 +503,12 @@ class TTSEnhancer:
             return False
 
     def _generate_ssml(
-        self, text: str, message_type: str, speed: int, pitch: str = "0%"
+        self,
+        text: str,
+        message_type: str,
+        speed: int,
+        pitch: str = "0%",
+        sarcasm_level: int = 0,
     ) -> str:
         """
         Generiert SSML aus Text und Nachrichtentyp.
@@ -568,6 +577,15 @@ class TTSEnhancer:
             # Briefing: Pause zwischen Bausteinen
             if message_type == "briefing" and i > 0:
                 parts.append(f'<break time="{self.pause_important}ms"/>')
+
+            # MCU Sprint 2: Comedy-Timing — Pause vor letztem Satz bei Sarkasmus
+            if (
+                sarcasm_level >= 3
+                and i == len(sentences) - 1
+                and i > 0  # Nur wenn es mehr als 1 Satz gibt
+            ):
+                _comedy_pause = 100 + sarcasm_level * 50  # Level 3=250ms, 5=350ms
+                parts.append(f'<break time="{_comedy_pause}ms"/>')
 
             parts.append(sentence)
 

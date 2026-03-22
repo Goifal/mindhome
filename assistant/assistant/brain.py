@@ -2279,6 +2279,48 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             self._last_interaction_ts = time.time()  # B4: auch nach Antwort
             self._process_lock.release()
 
+    # MCU Sprint 2: Konversationelle Unterbrechungs-Bestaetigung
+    INTERRUPTION_RESPONSES = [
+        "Verstanden, abgebrochen.",
+        "Alles klar, ich hoere auf.",
+        "In Ordnung, unterbrochen.",
+    ]
+    INTERRUPTION_LONG_TASK_RESPONSES = [
+        "Abgebrochen. Soll ich spaeter weitermachen?",
+        "Unterbrochen. Ich kann spaeter daran anknuepfen.",
+    ]
+
+    def get_interruption_response(
+        self, task_duration_s: float = 0.0, person: str = ""
+    ) -> str:
+        """Generiert eine kurze konversationelle Unterbrechungs-Bestaetigung.
+
+        Args:
+            task_duration_s: Wie lange der abgebrochene Task lief (in Sekunden).
+            person: Person die unterbrochen hat.
+
+        Returns:
+            Kurze Bestaetigung im Butler-Stil.
+        """
+        import random
+
+        title = ""
+        if person and hasattr(self, "personality"):
+            try:
+                title = self.personality._get_title(person)
+            except Exception:
+                pass
+
+        if task_duration_s > 5.0:
+            text = random.choice(self.INTERRUPTION_LONG_TASK_RESPONSES)
+        else:
+            text = random.choice(self.INTERRUPTION_RESPONSES)
+
+        if title:
+            text = text.replace(".", f", {title}.", 1)
+
+        return text
+
     async def _process_inner(
         self,
         text: str,
@@ -5894,6 +5936,22 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 "5) Pruefe nach der Ausfuehrung ob das Ergebnis stimmt."
             )
 
+        # 4c. MCU Sprint 2: Arbeitssession-Kontext einfuegen
+        try:
+            work_session = await self.conversation_memory.detect_work_session(
+                person or "", text
+            )
+            if work_session and work_session.get("message_count", 0) >= 3:
+                _ws_keywords = ", ".join(work_session.get("keywords", [])[:5])
+                _ws_count = work_session.get("message_count", 0)
+                system_prompt += (
+                    f"\n\n[ARBEITSSESSION]: Der Benutzer arbeitet seit {_ws_count} Nachrichten "
+                    f"an einem zusammenhaengenden Thema ({_ws_keywords}). "
+                    f"Behalte den Kontext bei und referenziere fruehere Punkte aus dieser Session."
+                )
+        except Exception as _ws_err:
+            logger.debug("Arbeitssession-Kontext Fehler: %s", _ws_err)
+
         # 5. Letzte Gespraeche laden (Working Memory)
         # Token-Budget für Conversations: Restliches Budget nach System-Prompt + Sektionen
         system_tokens = _estimate_tokens(system_prompt)
@@ -7858,6 +7916,66 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         response_text = await self._generate_contextual_error(
                             text, "general"
                         )
+
+        # MCU Sprint 2: Erweiterte Halluzinations-Erkennung — State-Behauptungen
+        # Prüfe ob die Antwort Geraetezustaende behauptet die nicht im Kontext stehen.
+        # NUR erweitern, bestehende Logik NICHT aendern (Schutzliste).
+        if response_text and not _hallucination_replaced:
+            try:
+                _state_assertion_patterns = [
+                    (
+                        r"(?:licht|lampe).*(?:ist|sind|wurde|war)\s+(?:an|aus|ein)",
+                        "light.",
+                    ),
+                    (
+                        r"(?:heizung|thermostat|temperatur).*(?:ist|steht)\s+(?:auf|bei)\s+\d+",
+                        "climate.",
+                    ),
+                    (
+                        r"(?:rolll?aden|rollo|jalousie).*(?:ist|sind|wurde|war)\s+(?:offen|geschlossen|auf|zu|unten|oben)",
+                        "cover.",
+                    ),
+                    (
+                        r"(?:tuer|t[uü]r|schloss).*(?:ist|wurde|war)\s+(?:offen|geschlossen|auf|zu|verriegelt|entriegelt)",
+                        "lock.",
+                    ),
+                    (
+                        r"(?:fenster).*(?:ist|sind|wurde|war)\s+(?:offen|geschlossen|auf|zu|gekippt)",
+                        "binary_sensor.",
+                    ),
+                ]
+                _text_low_2 = response_text.lower()
+                _context_str = (
+                    (context or "").lower()
+                    if isinstance(context, str)
+                    else str(context).lower()
+                )
+                for _pattern, _entity_prefix in _state_assertion_patterns:
+                    if re.search(_pattern, _text_low_2, re.IGNORECASE):
+                        # Prüfe ob Entity-Typ im Kontext war
+                        if _entity_prefix not in _context_str:
+                            logger.info(
+                                "Halluzinations-Erweiterung: State-Behauptung '%s' ohne %s im Kontext",
+                                _pattern,
+                                _entity_prefix,
+                            )
+                            # Satz mit Behauptung durch vorsichtige Formulierung ersetzen
+                            _sentences_2 = re.split(r"(?<=[.!?])\s+", response_text)
+                            _clean_2 = []
+                            _replaced_any = False
+                            for _s in _sentences_2:
+                                if re.search(_pattern, _s.lower(), re.IGNORECASE):
+                                    _clean_2.append(
+                                        "Ich bin mir ueber den aktuellen Zustand nicht sicher — lass mich nachsehen."
+                                    )
+                                    _replaced_any = True
+                                else:
+                                    _clean_2.append(_s)
+                            if _replaced_any:
+                                response_text = " ".join(_clean_2)
+                            break  # Nur eine Korrektur pro Antwort
+            except Exception as _hall_ext_err:
+                logger.debug("Halluzinations-Erweiterung Fehler: %s", _hall_ext_err)
 
         # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
         # Knowledge/Memory-Pfade filtern bereits inline, daher hier nur für

@@ -1373,3 +1373,164 @@ class ConversationMemory:
 
         except Exception as e:
             logger.debug("Emotional context tagging Fehler: %s", e)
+
+    # ------------------------------------------------------------------
+    # MCU Sprint 2: Arbeitssession-Tracking
+    # ------------------------------------------------------------------
+
+    _WORK_SESSION_KEY = "mha:work_session:{person}"
+    _WORK_SESSION_IDLE_TIMEOUT = 4 * 3600  # 4h Idle -> Session endet
+    _WORK_SESSION_MIN_MESSAGES = 3  # >=3 Nachrichten zum selben Thema
+    _WORK_SESSION_WINDOW = 30 * 60  # 30min Fenster
+
+    async def detect_work_session(self, person: str, text: str) -> Optional[dict]:
+        """Erkennt und verwaltet zusammenhaengende Arbeitssessions.
+
+        Eine Arbeitssession wird erstellt wenn >3 Nachrichten in <30min
+        zum selben Thema kommen. Die Session bleibt aktiv solange
+        Nachrichten kommen (max 4h Idle-Timeout).
+
+        Args:
+            person: Name der Person.
+            text: Aktueller Nachrichtentext.
+
+        Returns:
+            Session-Dict wenn aktiv, None wenn keine Session.
+        """
+        if not self.redis or not person:
+            return None
+
+        key = self._WORK_SESSION_KEY.format(person=person)
+
+        try:
+            raw = await self.redis.get(key)
+            now = datetime.now(timezone.utc)
+
+            # Keywords aus Text extrahieren (einfache Heuristik)
+            keywords = self._extract_topic_keywords(text)
+
+            if raw:
+                session = json.loads(raw)
+                last_msg = datetime.fromisoformat(session["last_message"])
+                idle_seconds = (now - last_msg).total_seconds()
+
+                # Session abgelaufen?
+                if idle_seconds > self._WORK_SESSION_IDLE_TIMEOUT:
+                    await self.redis.delete(key)
+                    # Neue Session starten wenn genug Keywords
+                    return await self._start_work_session(key, person, keywords, now)
+
+                # Thema-Uebereinstimmung pruefen
+                session_keywords = set(session.get("keywords", []))
+                overlap = session_keywords & set(keywords)
+                if overlap or not session_keywords:
+                    # Gleiche Session fortsetzen
+                    session["message_count"] = session.get("message_count", 0) + 1
+                    session["last_message"] = now.isoformat()
+                    # Keywords erweitern
+                    all_kw = list(session_keywords | set(keywords))[:20]
+                    session["keywords"] = all_kw
+                    await self.redis.setex(
+                        key,
+                        self._WORK_SESSION_IDLE_TIMEOUT,
+                        json.dumps(session),
+                    )
+                    if session["message_count"] >= self._WORK_SESSION_MIN_MESSAGES:
+                        return session
+                    return None
+                else:
+                    # Themenwechsel — alte Session beenden, neue starten
+                    await self.redis.delete(key)
+                    return await self._start_work_session(key, person, keywords, now)
+            else:
+                # Keine aktive Session — neue beginnen
+                return await self._start_work_session(key, person, keywords, now)
+
+        except Exception as e:
+            logger.debug("Work-Session-Detection Fehler: %s", e)
+            return None
+
+    async def _start_work_session(
+        self, key: str, person: str, keywords: list[str], now: datetime
+    ) -> None:
+        """Startet eine neue Arbeitssession (gibt None zurueck da noch <3 Nachrichten)."""
+        session = {
+            "person": person,
+            "start_time": now.isoformat(),
+            "last_message": now.isoformat(),
+            "message_count": 1,
+            "keywords": keywords[:20],
+        }
+        try:
+            await self.redis.setex(
+                key,
+                self._WORK_SESSION_IDLE_TIMEOUT,
+                json.dumps(session),
+            )
+        except Exception as e:
+            logger.debug("Work-Session start Fehler: %s", e)
+        return None
+
+    async def get_active_work_session(self, person: str) -> Optional[dict]:
+        """Gibt die aktive Arbeitssession fuer eine Person zurueck."""
+        if not self.redis or not person:
+            return None
+        key = self._WORK_SESSION_KEY.format(person=person)
+        try:
+            raw = await self.redis.get(key)
+            if raw:
+                session = json.loads(raw)
+                if session.get("message_count", 0) >= self._WORK_SESSION_MIN_MESSAGES:
+                    return session
+        except Exception as e:
+            logger.debug("Work-Session get Fehler: %s", e)
+        return None
+
+    @staticmethod
+    def _extract_topic_keywords(text: str) -> list[str]:
+        """Extrahiert einfache Topic-Keywords aus einem Text.
+
+        Nutzt eine einfache Heuristik: Woerter > 4 Zeichen, keine Stoppwoerter.
+        """
+        _stopwords = {
+            "nicht",
+            "haben",
+            "einen",
+            "einer",
+            "eines",
+            "diese",
+            "dieser",
+            "dieses",
+            "werden",
+            "wurde",
+            "worden",
+            "machen",
+            "gerade",
+            "kannst",
+            "koenntest",
+            "bitte",
+            "danke",
+            "warum",
+            "weil",
+            "ueber",
+            "unter",
+            "neben",
+            "zwischen",
+            "durch",
+            "fuer",
+            "the",
+            "and",
+            "this",
+            "that",
+            "with",
+            "from",
+            "have",
+            "been",
+        }
+        words = text.lower().split()
+        keywords = [
+            w.strip(".,!?;:()\"'")
+            for w in words
+            if len(w) > 4 and w.strip(".,!?;:()\"'") not in _stopwords
+        ]
+        return keywords[:10]
