@@ -5748,17 +5748,22 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 for _d in _recent_decisions:
                     _age = time.time() - _d.get("timestamp", 0)
                     if _age < 1800:  # Nur letzte 30 Min
-                        _dec_lines.append(
+                        _line = (
                             f"- {_d.get('time_str', '?')}: {_d.get('action', '?')} "
                             f"(Grund: {_d.get('reason', '?')}, "
                             f"Trigger: {_d.get('trigger', '?')})"
                         )
+                        # Reasoning-Chain: Kausale Begruendungskette
+                        _alt = _d.get("alternative_outcomes", [])
+                        if _alt:
+                            _line += f"\n  Ohne Eingreifen: {_alt[0]}"
+                        _dec_lines.append(_line)
                 if _dec_lines:
                     _dec_text = (
                         "\n\nMEINE LETZTEN ENTSCHEIDUNGEN:\n"
                         + "\n".join(_dec_lines)
                         + "\nNutze diese Info wenn der User fragt warum du "
-                        "etwas getan hast."
+                        "etwas getan hast. Erklaere die KAUSALKETTE, nicht nur die Aktion."
                     )
                     sections.append(("decisions", _dec_text, 3))
         except Exception:
@@ -6161,6 +6166,22 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             logger.info(
                 "Komplexe Anfrage erkannt -> Action Planner (Deep: %s)", _deep_model
             )
+
+            # Kausalen Kontext fuer den Planner zusammenstellen
+            _planner_causal = {}
+            if outcome_scores:
+                _planner_causal["outcome_scores"] = outcome_scores
+            if anticipation_suggestions:
+                _causal_chains = [
+                    s for s in anticipation_suggestions
+                    if s.get("type") == "causal_chain"
+                ]
+                if _causal_chains:
+                    _planner_causal["causal_chains"] = _causal_chains
+            if _planner_causal:
+                context = dict(context) if context else {}
+                context["causal_context"] = _planner_causal
+
             planner_result = await self.action_planner.plan_and_execute(
                 text=text,
                 system_prompt=system_prompt,
@@ -6988,6 +7009,44 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     pct,
                                 )
 
+                    # Proaktives Counterfactual: VOR der Ausfuehrung pruefen
+                    # was OHNE diese Aktion passieren wuerde. Wird als Kontext
+                    # fuer die Explainability geloggt und bei Pushback genutzt.
+                    _pre_counterfactual = None
+                    if func_name.startswith("set_"):
+                        _cf_domain = func_name.replace("set_", "")
+                        _cf_ctx = {}
+                        if _conflict_warning:
+                            _cf_ctx["conflict"] = _conflict_warning
+                        if isinstance(final_args, dict):
+                            _cf_ctx["room"] = final_args.get("room", room or "")
+                        try:
+                            _cf_states = (
+                                await self.get_states_cached() if self.ha else []
+                            )
+                            # Fenster-Status fuer Kontext ermitteln
+                            _cf_room = _cf_ctx.get("room", "").lower().replace(" ", "_")
+                            for _s in _cf_states:
+                                _eid = _s.get("entity_id", "")
+                                if (
+                                    _eid.startswith("binary_sensor.")
+                                    and ("window" in _eid or "fenster" in _eid)
+                                    and _s.get("state") == "on"
+                                    and (not _cf_room or _cf_room in _eid.lower())
+                                ):
+                                    _cf_ctx["window_open"] = True
+                                    break
+                            from .explainability import ExplainabilityEngine
+                            _pre_counterfactual = (
+                                ExplainabilityEngine._build_counterfactual(
+                                    _cf_domain, _cf_ctx
+                                )
+                            )
+                        except Exception as _cf_err:
+                            logger.debug(
+                                "Proaktives Counterfactual fehlgeschlagen: %s", _cf_err
+                            )
+
                     # Ausfuehren
                     result = await self.executor.execute(func_name, final_args)
 
@@ -7032,13 +7091,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     if _conflict_warning and isinstance(result, dict):
                         result["conflict_warning"] = _conflict_warning
 
-                    executed_actions.append(
-                        {
-                            "function": func_name,
-                            "args": final_args,
-                            "result": result,
-                        }
-                    )
+                    _action_entry = {
+                        "function": func_name,
+                        "args": final_args,
+                        "result": result,
+                    }
+                    if _pre_counterfactual:
+                        _action_entry["counterfactual"] = _pre_counterfactual
+                    executed_actions.append(_action_entry)
 
                     # Autonomy Evolution: Interaktion tracken
                     _success = isinstance(result, dict) and result.get("success", True)
@@ -8611,6 +8671,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     if _llm_thinking
                     else f"User-Befehl: {text[:100]}"
                 )
+                # Proaktives Counterfactual als Context mitgeben
+                _decision_ctx = {}
+                _act_cf = _act.get("counterfactual")
+                if _act_cf:
+                    _decision_ctx["counterfactual"] = _act_cf
                 self._task_registry.create_task(
                     self.explainability.log_decision(
                         action=_act_desc,
@@ -8618,6 +8683,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         trigger="user_command",
                         person=person or "",
                         domain=_executed_domain,
+                        context=_decision_ctx if _decision_ctx else None,
                     ),
                     name="log_explainability",
                 )

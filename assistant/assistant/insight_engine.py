@@ -152,6 +152,13 @@ class InsightEngine:
         self._llm_causal_enabled = _llm_causal_cfg.get("enabled", True)
         self._llm_causal_cooldown = _llm_causal_cfg.get("cooldown_seconds", 1800)
 
+        # Cross-Domain Causal Learning: Lernt Korrelationen zwischen Domains
+        _cross_cfg = yaml_config.get("cross_domain_learning", {})
+        self._cross_domain_enabled = _cross_cfg.get("enabled", True)
+        self._cross_domain_window = int(_cross_cfg.get("window_seconds", 300))
+        self._cross_domain_min_count = int(_cross_cfg.get("min_count", 5))
+        self._cross_domain_ttl = int(_cross_cfg.get("ttl_days", 90)) * 86400
+
     async def initialize(
         self,
         redis_client: Optional[aioredis.Redis] = None,
@@ -262,6 +269,15 @@ class InsightEngine:
         except Exception as e:
             logger.debug("Insight debounce Fehler: %s", e)
             return
+
+        # Cross-Domain Causal Learning: State-Change Korrelationen tracken
+        if self._cross_domain_enabled:
+            try:
+                await self._track_cross_domain_correlation(
+                    entity_id, old_state, new_state
+                )
+            except Exception as e:
+                logger.debug("Cross-Domain Tracking Fehler: %s", e)
 
         # Relevante Checks finden
         entity_lower = entity_id.lower()
@@ -2790,3 +2806,133 @@ class InsightEngine:
                 logger.info("Recurring insight erkannt: %s (%dx)", check_type, count)
         except Exception as e:
             logger.debug("Recurring insight tracking Redis Fehler: %s", e)
+
+    # ------------------------------------------------------------------
+    # Cross-Domain Causal Learning
+    # ------------------------------------------------------------------
+
+    async def _track_cross_domain_correlation(
+        self, entity_id: str, old_state: str, new_state: str
+    ) -> None:
+        """Trackt zeitliche Korrelationen zwischen State-Changes verschiedener Domains.
+
+        Lernt z.B.: "Wenn binary_sensor.fenster_wohnzimmer auf 'on' geht,
+        aendert sich climate.wohnzimmer innerhalb von 5 Minuten oft."
+
+        Speichert jeden State-Change mit Timestamp in Redis. Prueft ob
+        kurz vorher ein Change in einer anderen Domain war → zaehlt die
+        Korrelation.
+        """
+        if not self.redis:
+            return
+
+        # Domain aus Entity-ID extrahieren (z.B. "binary_sensor" oder "climate")
+        domain = entity_id.split(".")[0] if "." in entity_id else ""
+        if not domain:
+            return
+
+        # Aktuellen Change in Redis speichern (kurzes TTL = Fenster-Groesse)
+        change_key = f"mha:cross_domain:recent:{entity_id}"
+        import time as _time
+
+        change_data = json.dumps({
+            "entity": entity_id,
+            "domain": domain,
+            "old": old_state,
+            "new": new_state,
+            "ts": _time.time(),
+        })
+        await self.redis.setex(
+            change_key, self._cross_domain_window + 10, change_data
+        )
+
+        # Vorherige Changes in anderen Domains pruefen
+        cursor = 0
+        try:
+            while True:
+                cursor, keys = await self.redis.scan(
+                    cursor, match="mha:cross_domain:recent:*", count=50
+                )
+                for key in keys:
+                    key_str = key.decode() if isinstance(key, bytes) else key
+                    # Eigenen Change ueberspringen
+                    if key_str == change_key:
+                        continue
+                    raw = await self.redis.get(key)
+                    if not raw:
+                        continue
+                    prev = json.loads(
+                        raw.decode() if isinstance(raw, bytes) else raw
+                    )
+                    prev_domain = prev.get("domain", "")
+                    prev_ts = prev.get("ts", 0)
+
+                    # Nur andere Domains und innerhalb des Zeitfensters
+                    if prev_domain == domain:
+                        continue
+                    if _time.time() - prev_ts > self._cross_domain_window:
+                        continue
+
+                    # Korrelation zaehlen: prev_entity → current_entity
+                    prev_entity = prev.get("entity", "")
+                    corr_key = f"mha:cross_domain:corr:{prev_entity}:{entity_id}"
+                    await self.redis.incr(corr_key)
+                    await self.redis.expire(corr_key, self._cross_domain_ttl)
+
+                if cursor == 0:
+                    break
+        except Exception as e:
+            logger.debug("Cross-Domain Scan Fehler: %s", e)
+
+    async def get_learned_cross_domain_insights(self) -> list[dict]:
+        """Gibt gelernte Cross-Domain-Korrelationen zurueck.
+
+        Nur Korrelationen mit >= min_count Beobachtungen.
+
+        Returns:
+            Liste von {"source": "...", "target": "...", "count": N,
+                       "description": "..."} Dicts.
+        """
+        if not self.redis or not self._cross_domain_enabled:
+            return []
+
+        insights = []
+        cursor = 0
+        try:
+            while True:
+                cursor, keys = await self.redis.scan(
+                    cursor, match="mha:cross_domain:corr:*", count=100
+                )
+                for key in keys:
+                    key_str = key.decode() if isinstance(key, bytes) else key
+                    parts = key_str.split(":")
+                    if len(parts) < 5:
+                        continue
+                    # Format: mha:cross_domain:corr:{source}:{target}
+                    source = parts[3]
+                    target = parts[4]
+                    val = await self.redis.get(key)
+                    count = int(
+                        val.decode() if isinstance(val, bytes) else val
+                    ) if val else 0
+
+                    if count >= self._cross_domain_min_count:
+                        # Lesbarer Name
+                        src_nice = source.split(".")[-1].replace("_", " ")
+                        tgt_nice = target.split(".")[-1].replace("_", " ")
+                        insights.append({
+                            "source": source,
+                            "target": target,
+                            "count": count,
+                            "description": (
+                                f"Wenn {src_nice} sich aendert, folgt oft "
+                                f"eine Aenderung bei {tgt_nice} ({count}x beobachtet)"
+                            ),
+                        })
+                if cursor == 0:
+                    break
+        except Exception as e:
+            logger.debug("Cross-Domain Insights laden fehlgeschlagen: %s", e)
+
+        insights.sort(key=lambda x: x["count"], reverse=True)
+        return insights[:10]

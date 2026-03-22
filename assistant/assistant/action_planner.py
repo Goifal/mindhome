@@ -97,7 +97,13 @@ FEHLERBEHANDLUNG:
 - Beispiel: Szene existiert nicht → einzelne Geraete manuell setzen.
 - Nicht einfach aufgeben — kreativ nach Loesungen suchen.
 
-WICHTIG: Du bist und bleibst J.A.R.V.I.S. — auch beim Planen. Dein Ton aendert sich NICHT."""
+WICHTIG: Du bist und bleibst J.A.R.V.I.S. — auch beim Planen. Dein Ton aendert sich NICHT.
+
+KAUSALES DENKEN:
+- Beachte Abhaengigkeiten zwischen Geraeten (Fenster offen → Heizung ineffizient).
+- Beruecksichtige ERFAHRUNGSWERTE wenn vorhanden: Aktionen mit niedriger Erfolgsrate vorsichtiger planen.
+- Erklaere WARUM du diese Reihenfolge waehlst (nicht nur WAS du tust).
+- Bei gelernten Ketten: Wenn A→B→C oft zusammen vorkommt, pruefe ob alle Schritte noetig sind."""
 
 
 @dataclass
@@ -253,6 +259,48 @@ class ActionPlanner:
 
         # System Prompt fuer Planner erweitern
         planner_prompt = system_prompt + "\n\n" + PLANNER_SYSTEM_PROMPT
+
+        # Kausalen Kontext injizieren: Outcome-Scores, Causal-Chains, Conflicts
+        _causal_sections = []
+        _causal_ctx = context.get("causal_context", {}) if context else {}
+
+        # Outcome-Scores: Welche Aktionen performen schlecht?
+        _outcome_scores = _causal_ctx.get("outcome_scores", {})
+        if _outcome_scores:
+            _low = [
+                (a, s) for a, s in _outcome_scores.items() if s < 0.4
+            ]
+            if _low:
+                _low.sort(key=lambda x: x[1])
+                _lines = [f"  - {a}: {int(s*100)}% Erfolg" for a, s in _low[:3]]
+                _causal_sections.append(
+                    "ERFAHRUNGSWERTE (Aktionen mit niedriger Erfolgsrate):\n"
+                    + "\n".join(_lines)
+                    + "\nBei diesen Aktionen: Vorsichtiger planen, Alternative erwägen."
+                )
+
+        # Causal-Chains: Bekannte Aktionsketten
+        _chains = _causal_ctx.get("causal_chains", [])
+        if _chains:
+            _chain_lines = []
+            for c in _chains[:3]:
+                desc = c.get("description", "")
+                conf = c.get("confidence", 0)
+                order = c.get("order_consistency", 0)
+                if desc:
+                    _chain_lines.append(
+                        f"  - {desc} (Konfidenz: {int(conf*100)}%, "
+                        f"Reihenfolge-Konsistenz: {int(order*100)}%)"
+                    )
+            if _chain_lines:
+                _causal_sections.append(
+                    "BEKANNTE AKTIONSKETTEN (aus Gewohnheiten gelernt):\n"
+                    + "\n".join(_chain_lines)
+                    + "\nBeruecksichtige diese Reihenfolge bei der Planung."
+                )
+
+        if _causal_sections:
+            planner_prompt += "\n\n" + "\n\n".join(_causal_sections)
 
         # Nachrichten fuer den Planner aufbauen
         planner_messages = [{"role": "system", "content": planner_prompt}]

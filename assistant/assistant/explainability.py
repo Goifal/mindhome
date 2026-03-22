@@ -78,7 +78,7 @@ class ExplainabilityEngine:
         )  # minimal, normal, verbose
         self.auto_explain = cfg.get("auto_explain", True)
         self.counterfactual_enabled = cfg.get("counterfactual_enabled", True)
-        self.reasoning_chains = cfg.get("reasoning_chains", False)
+        self.reasoning_chains = cfg.get("reasoning_chains", True)
         self.confidence_display = cfg.get("confidence_display", True)
         self.explanation_style = cfg.get("explanation_style", "auto")
 
@@ -93,7 +93,7 @@ class ExplainabilityEngine:
         self.detail_level = cfg.get("detail_level", "normal")
         self.auto_explain = cfg.get("auto_explain", True)
         self.counterfactual_enabled = cfg.get("counterfactual_enabled", True)
-        self.reasoning_chains = cfg.get("reasoning_chains", False)
+        self.reasoning_chains = cfg.get("reasoning_chains", True)
         self.confidence_display = cfg.get("confidence_display", True)
         self.explanation_style = cfg.get("explanation_style", "auto")
         if self._decisions.maxlen != self.max_history:
@@ -190,12 +190,16 @@ class ExplainabilityEngine:
                     "autonomy_level",
                     "weather",
                     "calendar_event",
+                    "counterfactual",
                 )
             }
 
-        # Kontrafaktische Ergebnisse: explizit oder automatisch generiert
+        # Kontrafaktische Ergebnisse: explizit, proaktiv (aus Context) oder automatisch
         if alternative_outcomes:
             decision["alternative_outcomes"] = alternative_outcomes
+        elif context and context.get("counterfactual"):
+            # Proaktives Counterfactual (vor Ausfuehrung berechnet)
+            decision["alternative_outcomes"] = [context["counterfactual"]]
         elif self.counterfactual_enabled:
             counterfactual = self._build_counterfactual(domain, context or {})
             if counterfactual:
@@ -298,6 +302,15 @@ class ExplainabilityEngine:
 
             if time_str:
                 text = text.rstrip(".") + f" ({time_str})."
+
+            # Reasoning-Chain auch im Template-Pfad anfuegen
+            if self.reasoning_chains:
+                domain = decision.get("domain", "")
+                if trigger and domain:
+                    text = (
+                        text.rstrip(".")
+                        + f". Kausalkette: {trigger} -> {reason} -> {action}."
+                    )
 
             return text
 
