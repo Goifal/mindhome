@@ -3500,6 +3500,7 @@ class ProactiveManager:
                 return
 
         # Mood-Suppression: Bei Frustration/Stress nur HIGH+ durchlassen
+        # MCU Sprint 3: Zusaetzlich positive Mood-Aktionen triggern
         if urgency not in (CRITICAL, HIGH):
             try:
                 mood_data = self.brain.mood.get_current_mood()
@@ -3517,6 +3518,14 @@ class ProactiveManager:
                         urgency,
                         event_type,
                         f" ({detail})" if detail else "",
+                    )
+                    # MCU Sprint 3: Comfort-Vorschlag bei Stress
+                    asyncio.ensure_future(
+                        self._mood_triggered_suggestion(
+                            mood, data.get("person", ""), data.get("room", "")
+                        )
+                    ).add_done_callback(
+                        lambda t: t.exception() if not t.cancelled() else None
                     )
                     return
             except Exception as e:
@@ -10245,3 +10254,106 @@ class ProactiveManager:
             return "\n".join(parts)
         except Exception as e:
             return f"Debug-Fehler: {e}"
+
+    # ------------------------------------------------------------------
+    # MCU Sprint 3: Stimmungsbasierte Proaktivitaet
+    # ------------------------------------------------------------------
+
+    _MOOD_SUGGESTION_COOLDOWN_KEY = "mha:proactive:mood_suggestion:{person}"
+    _MOOD_SUGGESTION_COOLDOWN = 3600  # 1h pro Person
+    _MOOD_STRESS_MIN_DURATION_KEY = "mha:proactive:mood_stress_start:{person}"
+    _MOOD_STRESS_MIN_SECONDS = 300  # 5 Minuten Stress bevor Vorschlag
+
+    async def _mood_triggered_suggestion(
+        self, mood: str, person: str, room: str
+    ) -> None:
+        """Generiert stimmungsbasierte Vorschlaege statt nur Suppression.
+
+        Args:
+            mood: Aktuelle Stimmung (stressed, frustrated, tired, good).
+            person: Betroffene Person.
+            room: Aktueller Raum.
+        """
+        if not self.redis:
+            return
+
+        person = person or "default"
+
+        # Cooldown pruefen: Max 1 Vorschlag pro Stunde pro Person
+        cooldown_key = self._MOOD_SUGGESTION_COOLDOWN_KEY.format(person=person)
+        if await self.redis.get(cooldown_key):
+            return
+
+        # Stress-Mindestdauer: Nur wenn mindestens 5min gestresst
+        stress_key = self._MOOD_STRESS_MIN_DURATION_KEY.format(person=person)
+        if mood in ("stressed", "frustrated"):
+            stress_start = await self.redis.get(stress_key)
+            if not stress_start:
+                # Stress-Start markieren
+                await self.redis.setex(
+                    stress_key,
+                    self._MOOD_STRESS_MIN_SECONDS * 2,
+                    datetime.now(timezone.utc).isoformat(),
+                )
+                return  # Noch nicht lang genug gestresst
+            try:
+                start_dt = datetime.fromisoformat(stress_start)
+                elapsed = (datetime.now(timezone.utc) - start_dt).total_seconds()
+                if elapsed < self._MOOD_STRESS_MIN_SECONDS:
+                    return  # Noch nicht lang genug
+            except (ValueError, TypeError):
+                return
+        else:
+            # Kein Stress mehr — Timer loeschen
+            await self.redis.delete(stress_key)
+
+        # Autonomie-Level pruefen
+        _autonomy = getattr(self.brain, "autonomy", None)
+        level = _autonomy.level if _autonomy else 2
+
+        # Vorschlag generieren
+        suggestion = None
+        if mood in ("stressed", "frustrated"):
+            suggestion = "Soll ich eine entspannte Atmosphaere schaffen? Ich koennte das Licht dimmen."
+            # Ab Level 3: Auto-Execute Comfort
+            if level >= 3 and room:
+                try:
+                    await self.brain.executor.execute(
+                        "set_light", {"room": room, "brightness": 30, "state": "on"}
+                    )
+                    suggestion = (
+                        "Ich habe das Licht etwas gedimmt — du wirkst gestresst."
+                    )
+                    # Explainability loggen
+                    if hasattr(self.brain, "explainability"):
+                        asyncio.ensure_future(
+                            self.brain.explainability.log_decision(
+                                action=f"Licht dimmen ({room})",
+                                reason=f"Benutzer wirkt {mood}",
+                                trigger="proactive",
+                                person=person,
+                                domain="light",
+                                confidence=0.7,
+                            )
+                        ).add_done_callback(
+                            lambda t: t.exception() if not t.cancelled() else None
+                        )
+                except Exception as e:
+                    logger.debug("Mood comfort action Fehler: %s", e)
+        elif mood == "tired":
+            now_hour = datetime.now(timezone.utc).hour
+            # Einfache Zeitzonen-Korrektur (CET = UTC+1/2)
+            local_hour = (now_hour + 1) % 24
+            if local_hour >= 21:
+                suggestion = "Du wirkst muede — Zeit fuer die Gute-Nacht-Routine?"
+
+        if suggestion:
+            # Cooldown setzen
+            await self.redis.setex(cooldown_key, self._MOOD_SUGGESTION_COOLDOWN, "1")
+            # Stress-Timer loeschen
+            await self.redis.delete(stress_key)
+            # Als proaktive Notification senden
+            try:
+                await self._deliver(suggestion, "mood_comfort", LOW)
+            except Exception as e:
+                logger.debug("Mood suggestion emit Fehler: %s", e)

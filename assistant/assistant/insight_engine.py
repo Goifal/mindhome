@@ -216,6 +216,106 @@ class InsightEngine:
             except asyncio.CancelledError:
                 pass
 
+    # ------------------------------------------------------------------
+    # MCU Sprint 3: Event-getriebener Insight-Check
+    # ------------------------------------------------------------------
+
+    # Entity-Typ -> relevante Check-Methoden
+    _STATE_CHANGE_CHECKS: dict[str, list[str]] = {
+        "binary_sensor.*window": [
+            "_check_weather_windows",
+            "_check_window_temp_drop",
+            "_check_comfort_contradiction",
+        ],
+        "binary_sensor.*door": ["_check_night_security", "_check_away_security_full"],
+        "climate.": ["_check_heating_vs_sun", "_check_comfort_contradiction"],
+        "sensor.*co2": ["_check_weather_windows"],
+        "sensor.*humid": ["_check_humidity_contradiction"],
+    }
+    _STATE_CHANGE_DEBOUNCE_KEY = "mha:insight:debounce:{entity}"
+    _STATE_CHANGE_DEBOUNCE_SECONDS = 60  # Max 1 Check pro Entity pro 60s
+
+    async def on_state_change(
+        self, entity_id: str, old_state: str, new_state: str
+    ) -> None:
+        """Event-getriebener Insight-Check bei relevanten State-Changes.
+
+        Triggert sofort relevante Checks statt auf den 30min-Timer zu warten.
+        Debounce: Max 1 Check pro Entity pro 60s.
+
+        Args:
+            entity_id: HA Entity-ID die sich geaendert hat.
+            old_state: Vorheriger State.
+            new_state: Neuer State.
+        """
+        if not self.enabled or not self.redis:
+            return
+
+        # Debounce pruefen
+        debounce_key = self._STATE_CHANGE_DEBOUNCE_KEY.format(entity=entity_id)
+        try:
+            if await self.redis.get(debounce_key):
+                return
+            await self.redis.setex(
+                debounce_key, self._STATE_CHANGE_DEBOUNCE_SECONDS, "1"
+            )
+        except Exception as e:
+            logger.debug("Insight debounce Fehler: %s", e)
+            return
+
+        # Relevante Checks finden
+        entity_lower = entity_id.lower()
+        check_methods = []
+        for pattern, methods in self._STATE_CHANGE_CHECKS.items():
+            if pattern.endswith("."):
+                if entity_lower.startswith(pattern):
+                    check_methods.extend(methods)
+            elif "*" in pattern:
+                prefix, suffix = pattern.split("*", 1)
+                if entity_lower.startswith(prefix) and suffix in entity_lower:
+                    check_methods.extend(methods)
+
+        if not check_methods:
+            return
+
+        # Unique checks only
+        check_methods = list(dict.fromkeys(check_methods))
+
+        logger.debug(
+            "Event-Insight fuer %s (%s -> %s): %d Checks",
+            entity_id,
+            old_state,
+            new_state,
+            len(check_methods),
+        )
+
+        # Daten sammeln und Checks ausfuehren
+        try:
+            data = await self._gather_data()
+            if not data.get("states"):
+                return
+            for method_name in check_methods:
+                method = getattr(self, method_name, None)
+                if not method:
+                    continue
+                try:
+                    result = await method(data)
+                    if result and not await self._is_on_cooldown(
+                        result.get("check", "")
+                    ):
+                        result = await self._rewrite_insight(result)
+                        if self._notify_callback:
+                            await self._notify_callback(result)
+                        logger.info(
+                            "Event-Insight [%s]: %s",
+                            result.get("check"),
+                            result.get("message", "")[:80],
+                        )
+                except Exception as e:
+                    logger.debug("Event-Insight Check %s Fehler: %s", method_name, e)
+        except Exception as e:
+            logger.debug("Event-Insight data collection Fehler: %s", e)
+
     def reload_config(self):
         """Laedt Konfiguration aus yaml_config neu."""
         cfg = yaml_config.get("insights", {})
@@ -660,6 +760,13 @@ class InsightEngine:
             insights.extend(learning_insights)
         except Exception as e:
             logger.debug("Learning insight check: %s", e)
+
+        # MCU Sprint 3: Recurring-Problem-Erkennung
+        for insight in insights:
+            try:
+                await self._track_recurring_insight(insight)
+            except Exception as e:
+                logger.debug("Recurring insight tracking Fehler: %s", e)
 
         # Check-Level Dedup: Domains aufzeichnen fuer SpontaneousObserver
         await self._record_checked_domains(insights)
@@ -2627,3 +2734,59 @@ class InsightEngine:
                 status["active_cooldowns"] = -1
 
         return status
+
+    # ------------------------------------------------------------------
+    # MCU Sprint 3: Wiederkehrende Probleme erkennen
+    # ------------------------------------------------------------------
+
+    _RECURRING_KEY = "mha:insight:recurring:{insight_type}:{entity_hash}"
+    _RECURRING_TTL = 14 * 86400  # 14 Tage
+    _RECURRING_THRESHOLD = 3  # >=3 Auftreten -> wiederkehrend
+
+    async def _track_recurring_insight(self, insight: dict) -> None:
+        """Trackt Insight-Auftreten und markiert wiederkehrende Probleme.
+
+        Wenn ein Insight >3x in 14 Tagen auftritt, wird er als
+        'recurring' markiert und ein Automatisierungs-Vorschlag angehaengt.
+
+        Args:
+            insight: Insight-Dict mit check, message, data.
+        """
+        if not self.redis:
+            return
+
+        check_type = insight.get("check", "")
+        if not check_type:
+            return
+
+        # Entity-Hash aus Insight-Daten erstellen
+        data = insight.get("data", {})
+        entity_parts = []
+        for key in ("entity_id", "entity", "room"):
+            val = data.get(key, "")
+            if isinstance(val, str) and val:
+                entity_parts.append(val)
+        entity_hash = "_".join(entity_parts) if entity_parts else "global"
+        # Kurzer Hash um Redis-Keys klein zu halten
+        import hashlib
+
+        entity_hash = hashlib.md5(entity_hash.encode()).hexdigest()[:8]
+
+        key = self._RECURRING_KEY.format(
+            insight_type=check_type, entity_hash=entity_hash
+        )
+
+        try:
+            count = await self.redis.incr(key)
+            await self.redis.expire(key, self._RECURRING_TTL)
+
+            if count >= self._RECURRING_THRESHOLD:
+                insight["recurring"] = True
+                insight["recurring_count"] = count
+                insight["message"] += (
+                    f" (Dieses Problem trat {count}x in den letzten 14 Tagen auf. "
+                    f"Soll ich eine Automatisierung erstellen?)"
+                )
+                logger.info("Recurring insight erkannt: %s (%dx)", check_type, count)
+        except Exception as e:
+            logger.debug("Recurring insight tracking Redis Fehler: %s", e)

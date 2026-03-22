@@ -331,6 +331,13 @@ class HealthMonitor:
                 if alert:
                     alerts.append(alert)
 
+        # MCU Sprint 3: Praediktive Trend-Warnungen
+        try:
+            trend_alerts = await self._check_predictive_trends()
+            alerts.extend(trend_alerts)
+        except Exception as e:
+            logger.debug("Predictive trend check Fehler: %s", e)
+
         return alerts
 
     def _get_threshold(self, entity_id: str, metric: str, default: float) -> float:
@@ -797,3 +804,190 @@ class HealthMonitor:
         except Exception as e:
             logger.debug("Trend-Summary Fehler: %s", e)
             return None
+
+    # ------------------------------------------------------------------
+    # MCU Sprint 3: Praediktive Trend-Warnungen
+    # ------------------------------------------------------------------
+
+    _TREND_COOLDOWN_KEY = "mha:health:trend_cooldown:{entity}"
+    _TREND_COOLDOWN_SECONDS = 3600  # 1h Cooldown pro Entity
+
+    async def _check_predictive_trends(self) -> list[dict]:
+        """Lineare Regression ueber letzte 30min Sensorwerte.
+
+        Warnt wenn der Trend einen Threshold in <30min erreichen wird.
+        Nutzt die stuendlichen Snapshots aus Redis und aktuelle Werte.
+
+        Returns:
+            Liste von Trend-Warnungen.
+        """
+        if not self.redis:
+            return []
+
+        alerts = []
+        import json as _json
+
+        # Thresholds fuer Trend-Praediktion
+        _thresholds = {
+            "co2": self.co2_warn,
+            "humidity_high": self.humidity_high,
+            "humidity_low": self.humidity_low,
+            "temperature_high": self.temp_high,
+            "temperature_low": self.temp_low,
+        }
+
+        try:
+            # Aktuelle Sensorwerte holen
+            status = await self.get_status()
+            if not status.get("sensors"):
+                return alerts
+
+            # Letzte Snapshots laden (max 6 = 30min bei 5min-Intervall)
+            now = datetime.now(timezone.utc)
+            snapshots = []
+            for hours_ago in range(6):
+                ts = now - timedelta(hours=hours_ago)
+                key = f"mha:health:snapshot:{ts.strftime('%Y-%m-%d:%H')}"
+                try:
+                    raw = await self.redis.get(key)
+                    if raw:
+                        snap = _json.loads(raw)
+                        snap["_hours_ago"] = hours_ago
+                        snapshots.append(snap)
+                except Exception:
+                    continue
+
+            if len(snapshots) < 2:
+                return alerts  # Nicht genug Datenpunkte
+
+            # Pro Sensor-Typ: Trend berechnen
+            for s_type in ("co2", "humidity", "temperature"):
+                values_with_time = []
+                for snap in reversed(snapshots):  # Aelteste zuerst
+                    if s_type in snap:
+                        hours_ago = snap["_hours_ago"]
+                        values_with_time.append((-hours_ago, snap[s_type]))
+
+                if len(values_with_time) < 2:
+                    continue
+
+                # Aktuellen Wert hinzufuegen
+                current_sensors = [
+                    s for s in status["sensors"] if s.get("type") == s_type
+                ]
+                if current_sensors:
+                    avg_current = sum(s["value"] for s in current_sensors) / len(
+                        current_sensors
+                    )
+                    values_with_time.append((0, avg_current))
+                else:
+                    continue
+
+                # Lineare Regression (ohne numpy)
+                n = len(values_with_time)
+                xs = [v[0] for v in values_with_time]
+                ys = [v[1] for v in values_with_time]
+                mean_x = sum(xs) / n
+                mean_y = sum(ys) / n
+                ss_xy = sum((xs[i] - mean_x) * (ys[i] - mean_y) for i in range(n))
+                ss_xx = sum((xs[i] - mean_x) ** 2 for i in range(n))
+
+                if ss_xx == 0:
+                    continue
+
+                slope_per_hour = ss_xy / ss_xx
+                current_value = ys[-1]
+
+                # Trend-Alerts generieren
+                trend_alert = self._evaluate_trend(
+                    s_type, current_value, slope_per_hour, _thresholds
+                )
+                if trend_alert:
+                    # Cooldown pruefen
+                    cooldown_key = self._TREND_COOLDOWN_KEY.format(entity=s_type)
+                    if await self.redis.get(cooldown_key):
+                        continue
+                    await self.redis.setex(
+                        cooldown_key, self._TREND_COOLDOWN_SECONDS, "1"
+                    )
+                    alerts.append(trend_alert)
+
+        except Exception as e:
+            logger.debug("Predictive trends Fehler: %s", e)
+
+        return alerts
+
+    @staticmethod
+    def _evaluate_trend(
+        sensor_type: str,
+        current: float,
+        slope_per_hour: float,
+        thresholds: dict,
+    ) -> Optional[dict]:
+        """Bewertet einen Sensortrend und generiert ggf. eine Warnung.
+
+        Args:
+            sensor_type: co2, humidity, temperature
+            current: Aktueller Durchschnittswert
+            slope_per_hour: Anstieg pro Stunde
+            thresholds: Dict mit Schwellwerten
+
+        Returns:
+            Alert-Dict oder None
+        """
+        if abs(slope_per_hour) < 0.1:
+            return None  # Kein signifikanter Trend
+
+        alerts_config = []
+        if sensor_type == "co2" and slope_per_hour > 0:
+            threshold = thresholds.get("co2", 1000)
+            if current < threshold:
+                hours_to_threshold = (threshold - current) / slope_per_hour
+                alerts_config.append((hours_to_threshold, threshold, "ppm", "steigt"))
+        elif sensor_type == "humidity":
+            if slope_per_hour > 0:
+                threshold = thresholds.get("humidity_high", 65)
+                if current < threshold:
+                    hours_to_threshold = (threshold - current) / slope_per_hour
+                    alerts_config.append((hours_to_threshold, threshold, "%", "steigt"))
+            elif slope_per_hour < 0:
+                threshold = thresholds.get("humidity_low", 30)
+                if current > threshold:
+                    hours_to_threshold = (current - threshold) / abs(slope_per_hour)
+                    alerts_config.append((hours_to_threshold, threshold, "%", "sinkt"))
+        elif sensor_type == "temperature":
+            if slope_per_hour > 0:
+                threshold = thresholds.get("temperature_high", 30)
+                if current < threshold:
+                    hours_to_threshold = (threshold - current) / slope_per_hour
+                    alerts_config.append(
+                        (hours_to_threshold, threshold, "°C", "steigt")
+                    )
+            elif slope_per_hour < 0:
+                threshold = thresholds.get("temperature_low", 16)
+                if current > threshold:
+                    hours_to_threshold = (current - threshold) / abs(slope_per_hour)
+                    alerts_config.append((hours_to_threshold, threshold, "°C", "sinkt"))
+
+        for hours_to, threshold, unit, direction in alerts_config:
+            if 0 < hours_to <= 0.5:  # Innerhalb von 30 Minuten
+                minutes = int(hours_to * 60)
+                _type_labels = {
+                    "co2": "CO2",
+                    "humidity": "Luftfeuchtigkeit",
+                    "temperature": "Temperatur",
+                }
+                label = _type_labels.get(sensor_type, sensor_type)
+                return {
+                    "entity_id": f"trend_{sensor_type}",
+                    "metric": sensor_type,
+                    "message": (
+                        f"{label} {direction}: Bei aktuellem Trend wird "
+                        f"{threshold}{unit} in ca. {minutes} Minuten erreicht "
+                        f"(aktuell: {current:.0f}{unit})."
+                    ),
+                    "urgency": "medium",
+                    "type": "trend_prediction",
+                }
+
+        return None

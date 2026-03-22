@@ -88,7 +88,7 @@ class ProactiveSequencePlanner:
         elif trigger == "weather_changed":
             plan = await self._plan_weather_sequence(context)
         elif trigger == "calendar_event_soon":
-            plan = await self._plan_guest_sequence(context)
+            plan = await self._plan_event_sequence(context)
         # F5: Erweiterte Trigger
         elif trigger == "person_left":
             plan = await self._plan_departure_sequence(context)
@@ -226,40 +226,129 @@ class ProactiveSequencePlanner:
             "auto_message": self._build_narrative(actions, "", "weather_changed"),
         }
 
-    async def _plan_guest_sequence(self, context: dict) -> Optional[dict]:
-        """Gaeste erwartet: Licht → Musik → Check."""
-        title = get_person_title()
+    # MCU Sprint 3: Event-Typ-Erkennung aus Kalender-Titel
+    EVENT_TYPE_KEYWORDS: dict[str, list[str]] = {
+        "meeting": [
+            "meeting",
+            "call",
+            "zoom",
+            "teams",
+            "besprechung",
+            "konferenz",
+            "termin",
+        ],
+        "cooking": [
+            "kochen",
+            "essen",
+            "dinner",
+            "abendessen",
+            "mittagessen",
+            "rezept",
+            "backen",
+        ],
+        "sport": ["sport", "training", "yoga", "fitness", "laufen", "joggen"],
+        "guest": ["besuch", "gaeste", "gäste", "gast", "party", "feier"],
+    }
 
-        actions = []
+    EVENT_PREPARATIONS: dict[str, list[dict]] = {
+        "meeting": [
+            {
+                "type": "set_light",
+                "args": {"room": "buero", "brightness": 80, "state": "on"},
+                "description": "Buero-Licht einschalten",
+            },
+            {
+                "type": "set_climate",
+                "args": {"room": "buero", "temperature": 22},
+                "description": "Buero auf 22°C",
+            },
+        ],
+        "cooking": [
+            {
+                "type": "set_light",
+                "args": {"room": "kueche", "brightness": 100, "state": "on"},
+                "description": "Kueche-Licht auf 100%",
+            },
+        ],
+        "sport": [],  # Nur Wetter-Check, keine Geraeteaktion
+        "guest": [],  # Wird von bestehender Gaeste-Logik befuellt
+    }
+
+    def _detect_event_type(self, event_title: str) -> str:
+        """Erkennt den Event-Typ aus dem Kalender-Titel.
+
+        Args:
+            event_title: Kalender-Event-Titel.
+
+        Returns:
+            Event-Typ (meeting, cooking, sport, guest) oder "guest" als Default.
+        """
+        title_lower = event_title.lower()
+        for event_type, keywords in self.EVENT_TYPE_KEYWORDS.items():
+            if any(kw in title_lower for kw in keywords):
+                return event_type
+        return "guest"  # Default: Gaeste-Vorbereitung
+
+    async def _plan_event_sequence(self, context: dict) -> Optional[dict]:
+        """Kontextuelle Kalender-Vorbereitung basierend auf Event-Typ.
+
+        MCU Sprint 3: Erweitert die bisherige Gaeste-Vorbereitung um
+        Meeting, Kochen und Sport-Events.
+        """
+        title = get_person_title()
         hour = datetime.now(_LOCAL_TZ).hour
 
-        # Angenehme Beleuchtung
-        if hour >= 16 or hour < 8:
+        # Event-Typ erkennen
+        event_title = context.get("event", {}).get("summary", "") or context.get(
+            "title", ""
+        )
+        event_type = self._detect_event_type(event_title)
+
+        actions = list(self.EVENT_PREPARATIONS.get(event_type, []))
+
+        if event_type == "guest":
+            # Bestehende Gaeste-Logik beibehalten
+            if hour >= 16 or hour < 8:
+                actions.append(
+                    {
+                        "type": "set_light",
+                        "args": {"brightness": 80, "color_temp": "warm"},
+                        "description": "Angenehme Beleuchtung",
+                    }
+                )
             actions.append(
                 {
-                    "type": "set_light",
-                    "args": {"brightness": 80, "color_temp": "warm"},
-                    "description": "Angenehme Beleuchtung",
+                    "type": "play_media",
+                    "args": {"content_type": "ambient"},
+                    "description": "Hintergrundmusik",
                 }
             )
-
-        # Hintergrundmusik (immer bei Gaeste-Event)
-        actions.append(
-            {
-                "type": "play_media",
-                "args": {"content_type": "ambient"},
-                "description": "Hintergrundmusik",
-            }
-        )
+        elif event_type == "sport":
+            # Wetter-Info als Notification
+            actions.append(
+                {
+                    "type": "notify",
+                    "args": {"message": "Wetter-Check fuer Training"},
+                    "description": "Wetter pruefen",
+                }
+            )
 
         if not actions:
             return None
 
+        _event_labels = {
+            "meeting": "Meeting",
+            "cooking": "Kochen",
+            "sport": "Training",
+            "guest": "Gaeste",
+        }
+        event_label = _event_labels.get(event_type, "Event")
         actions_desc = ", ".join(a["description"] for a in actions)
+
         return {
             "trigger": "calendar_event_soon",
             "actions": actions,
-            "message": f"{title}, Gaeste kommen bald. Soll ich {actions_desc} vorbereiten?",
+            "message": f"{title}, {event_label} steht bald an. Soll ich {actions_desc} vorbereiten?",
             "auto_message": self._build_narrative(actions, "", "calendar_event_soon"),
         }
 
