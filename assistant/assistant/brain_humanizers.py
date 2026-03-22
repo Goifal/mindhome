@@ -764,3 +764,65 @@ class BrainHumanizersMixin:
             return f"Heizung{room_suffix} angepasst"
 
         return None
+
+    # ------------------------------------------------------------------
+    # MCU Sprint 4: Cross-Domain-Narration
+    # ------------------------------------------------------------------
+
+    _MULTI_DOMAIN_TEMPLATES_2 = [
+        "{item1}, also {item2}.",
+        "{item1} — uebrigens, {item2}.",
+        "{item1}. Dazu: {item2}.",
+    ]
+    _MULTI_DOMAIN_TEMPLATES_3 = [
+        "{item1}, {item2}, und {item3}.",
+        "{item1}. Dazu: {item2} und {item3}.",
+        "{item1} — ausserdem {item2}, und {item3}.",
+    ]
+
+    @staticmethod
+    def combine_multi_domain_status(items: list[dict]) -> str:
+        """Kombiniert Multi-Domain-Status-Items zu einem natuerlichen Satz.
+
+        Statt: "Das Wetter ist schlecht. Dein Termin ist um 15 Uhr. Die Waschmaschine ist fertig."
+        Wird: "Es regnet, also nimm einen Schirm mit zum Meeting um 15 Uhr — und die Waschmaschine ist auch fertig."
+
+        Args:
+            items: Liste von Dicts mit {"domain": str, "text": str, "priority": int}.
+                   Sortiert nach Prioritaet (hoechste zuerst).
+
+        Returns:
+            Kombinierter natuerlicher Text. Max 3 Items, danach Absatz.
+        """
+        import random
+
+        if not items:
+            return ""
+
+        # Nach Prioritaet sortieren (hoechste zuerst)
+        sorted_items = sorted(items, key=lambda x: x.get("priority", 0), reverse=True)
+
+        texts = [
+            item["text"].strip().rstrip(".")
+            for item in sorted_items
+            if item.get("text", "").strip()
+        ]
+        if not texts:
+            return ""
+
+        if len(texts) == 1:
+            return texts[0] + "."
+
+        if len(texts) == 2:
+            template = random.choice(BrainHumanizersMixin._MULTI_DOMAIN_TEMPLATES_2)
+            return template.format(item1=texts[0], item2=texts[1])
+
+        # 3+ Items: Max 3 kombinieren, Rest als neuer Absatz
+        template = random.choice(BrainHumanizersMixin._MULTI_DOMAIN_TEMPLATES_3)
+        combined = template.format(item1=texts[0], item2=texts[1], item3=texts[2])
+
+        if len(texts) > 3:
+            extra = " ".join(t + "." for t in texts[3:])
+            combined += " " + extra
+
+        return combined

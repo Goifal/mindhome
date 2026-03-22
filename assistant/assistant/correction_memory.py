@@ -48,6 +48,7 @@ class CorrectionMemory:
     def __init__(self):
         self.redis = None
         self.enabled = False
+        self._ollama = None  # MCU Sprint 4: Kausales Lernen
         self._cfg = yaml_config.get("correction_memory", {})
         self._max_entries = self._cfg.get("max_entries", 500)
         self._max_context = self._cfg.get("max_context_entries", 3)
@@ -61,6 +62,10 @@ class CorrectionMemory:
         self.redis = redis_client
         self.enabled = self._cfg.get("enabled", True) and self.redis is not None
         logger.info("CorrectionMemory initialisiert (enabled=%s)", self.enabled)
+
+    def set_ollama(self, ollama_client):
+        """Setzt den OllamaClient fuer LLM-basierte Regel-Begruendungen."""
+        self._ollama = ollama_client
 
     async def store_correction(
         self,
@@ -555,6 +560,11 @@ class CorrectionMemory:
         if room:
             rule["room"] = room
 
+        # MCU Sprint 4: Kausales Lernen — LLM fragt WARUM die Korrektur noetig war
+        llm_reason = await self._get_llm_reason(new_entry, rule)
+        if llm_reason:
+            rule["reason"] = llm_reason
+
         await self.redis.hset(
             "mha:correction_memory:rules",
             rule_key,
@@ -563,11 +573,12 @@ class CorrectionMemory:
         await self.redis.expire("mha:correction_memory:rules", 365 * 86400)
 
         logger.info(
-            "Neue Regel [%s]: %s (confidence: %.2f, similar: %d)",
+            "Neue Regel [%s]: %s (confidence: %.2f, similar: %d%s)",
             correction_type,
             rule_text,
             confidence,
             len(similar),
+            f", reason: {llm_reason}" if llm_reason else "",
         )
 
         # Cross-Domain: propagate generic correction patterns to other domains
@@ -874,6 +885,69 @@ class CorrectionMemory:
         except Exception as e:
             logger.debug("Teaching-Usage Update fehlgeschlagen: %s", e)
 
+    # ------------------------------------------------------------------
+    # MCU Sprint 4: Kausales Lernen via LLM
+    # ------------------------------------------------------------------
+
+    async def _get_llm_reason(self, correction: dict, rule: dict) -> str:
+        """Fragt das LLM WARUM eine Korrektur noetig war.
+
+        Nutzt Fast-Tier fuer minimale Latenz (2s Timeout).
+        Bei LLM-Ausfall: leerer String (Regel ohne Begruendung).
+
+        Args:
+            correction: Korrektur-Eintrag.
+            rule: Erstellte Regel.
+
+        Returns:
+            Ein-Satz-Begruendung oder leerer String.
+        """
+        if not self._ollama:
+            return ""
+
+        try:
+            action = correction.get("original_action", "")
+            correction_text = correction.get("correction_text", "")
+            room = correction.get("room", "")
+            hour = correction.get("hour", 12)
+            time_hint = (
+                "abends" if hour >= 18 else ("morgens" if hour < 10 else "tagsueber")
+            )
+
+            prompt = (
+                f"Der Benutzer hat folgende Korrektur vorgenommen:\n"
+                f"Aktion: {action}\n"
+                f"Korrektur: {correction_text}\n"
+                f"Raum: {room or 'unbekannt'}\n"
+                f"Tageszeit: {time_hint}\n\n"
+                f"Warum hat der Benutzer diese Korrektur vorgenommen? "
+                f"Antworte in EINEM kurzen Satz auf Deutsch."
+            )
+
+            from .config import settings
+
+            response = await asyncio.wait_for(
+                self._ollama.chat(
+                    messages=[{"role": "user", "content": prompt}],
+                    model=settings.model_fast,
+                ),
+                timeout=2.0,
+            )
+
+            reason = response.get("message", {}).get("content", "").strip()
+            # <think> Bloecke entfernen
+            reason = re.sub(r"<think>.*?</think>", "", reason, flags=re.DOTALL).strip()
+
+            if reason and 5 < len(reason) < 150:
+                return _sanitize(reason, max_len=150)
+
+        except asyncio.TimeoutError:
+            logger.debug("LLM reason timeout (2s)")
+        except Exception as e:
+            logger.debug("LLM reason Fehler: %s", e)
+
+        return ""
+
     def format_rules_for_prompt(self, rules: list[dict]) -> str:
         """Formatiert Regeln als Prompt-Abschnitt (Feature 7: Prompt Self-Refinement)."""
         if not rules:
@@ -891,7 +965,16 @@ class CorrectionMemory:
                 # Sanitize bevor es in den Prompt geht
                 clean = _sanitize(text)
                 if clean:
-                    lines.append(f"- {clean}")
+                    # MCU Sprint 4: Begruendung mit ausgeben wenn vorhanden
+                    reason = rule.get("reason", "")
+                    if reason:
+                        clean_reason = _sanitize(reason, max_len=100)
+                        if clean_reason:
+                            lines.append(f"- {clean} (Grund: {clean_reason})")
+                        else:
+                            lines.append(f"- {clean}")
+                    else:
+                        lines.append(f"- {clean}")
 
         if len(lines) <= 1:
             return ""

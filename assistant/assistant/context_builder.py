@@ -1824,3 +1824,122 @@ class ContextBuilder:
                 f"- {f.get('fact', '')} (Konfidenz: {f.get('confidence', 0):.0%})"
             )
         return "Kuerzlich gelernt:\n" + "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # MCU Sprint 4: Instant-Lagebericht
+    # ------------------------------------------------------------------
+
+    async def build_situation_report(self, person: str = "") -> str:
+        """Generiert einen 3-5 Satz Lagebericht fuer "Wie steht's?" Anfragen.
+
+        Sammelt Wetter, Raum-Praesenz, offene Konflikte, Energie-Status
+        und naechsten Kalender-Eintrag parallel. Latenz-Ziel: <3s.
+
+        Args:
+            person: Name der Person (fuer personalisierte Infos).
+
+        Returns:
+            Natuerlichsprachiger Lagebericht in 3-5 Saetzen.
+        """
+        import asyncio
+
+        parts = []
+
+        # Datenquellen parallel sammeln (mit Timeout)
+        async def _get_weather() -> str:
+            try:
+                weather = await self.ha.get_state("weather.home")
+                if weather:
+                    state = weather.get("state", "")
+                    attrs = weather.get("attributes", {})
+                    temp = attrs.get("temperature", "")
+                    _state_map = {
+                        "sunny": "sonnig",
+                        "cloudy": "bewoelkt",
+                        "rainy": "regnerisch",
+                        "partlycloudy": "teilweise bewoelkt",
+                        "snowy": "Schnee",
+                        "fog": "neblig",
+                        "clear-night": "klare Nacht",
+                        "windy": "windig",
+                    }
+                    desc = _state_map.get(state, state)
+                    if temp:
+                        return f"Draussen {desc}, {temp}°C"
+                    return f"Draussen {desc}"
+            except Exception:
+                pass
+            return ""
+
+        async def _get_presence() -> str:
+            try:
+                states = await self.ha.get_states()
+                if not states:
+                    return ""
+                occupied = []
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    if eid.startswith("binary_sensor.") and "presence" in eid.lower():
+                        if s.get("state") == "on":
+                            name = s.get("attributes", {}).get("friendly_name", eid)
+                            room = name.replace("Präsenz ", "").replace("Presence ", "")
+                            occupied.append(room)
+                if occupied:
+                    return f"Personen in: {', '.join(occupied[:3])}"
+            except Exception:
+                pass
+            return ""
+
+        async def _get_energy() -> str:
+            if not self._energy_optimizer:
+                return ""
+            try:
+                report = await self._energy_optimizer.get_energy_report()
+                if isinstance(report, dict):
+                    cost = report.get("today_cost", "")
+                    solar = report.get("solar_production", "")
+                    if cost:
+                        return f"Energie heute: {cost}"
+                    if solar:
+                        return f"Solar: {solar}"
+                elif isinstance(report, str) and report:
+                    return report[:80]
+            except Exception:
+                pass
+            return ""
+
+        async def _get_calendar() -> str:
+            if not self._calendar_intelligence:
+                return ""
+            try:
+                hint = await self._calendar_intelligence.get_context_hint()
+                if hint:
+                    return hint[:80]
+            except Exception:
+                pass
+            return ""
+
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(
+                    _get_weather(),
+                    _get_presence(),
+                    _get_energy(),
+                    _get_calendar(),
+                    return_exceptions=True,
+                ),
+                timeout=3.0,
+            )
+        except asyncio.TimeoutError:
+            results = []
+
+        for r in results:
+            if isinstance(r, str) and r:
+                parts.append(r)
+
+        if not parts:
+            return "Alles ruhig, keine besonderen Vorkommnisse."
+
+        # Natuerlichen Bericht zusammenbauen
+        report = ". ".join(parts) + "."
+        return report

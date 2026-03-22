@@ -1459,6 +1459,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.music_dj.set_ollama(self.ollama)
         self.visitor_manager.set_ollama(self.ollama)
         self.learning_observer.set_ollama(self.ollama)
+        self.correction_memory.set_ollama(self.ollama)
 
         if "WellnessAdvisor" not in _degraded_modules:
             await _safe_init("WellnessAdvisor.start", self.wellness_advisor.start())

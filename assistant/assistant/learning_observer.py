@@ -270,6 +270,9 @@ class LearningObserver:
             # Temporal Auto-Clustering: Automatisch Cluster erkennen
             # wenn mehrere manuelle Aktionen innerhalb von 5 Minuten passieren
             await self._check_temporal_cluster(action, person=person)
+
+            # MCU Sprint 4: Cross-Domain-Combo-Erkennung
+            await self._check_cross_domain_combo(person, entity_id)
         except Exception as e:
             logger.warning("Learning Observer state_change Fehler: %s", e)
 
@@ -1694,3 +1697,125 @@ class LearningObserver:
             "examples_unique_a": list(unique_a)[:5],
             "examples_unique_b": list(unique_b)[:5],
         }
+
+    # ------------------------------------------------------------------
+    # MCU Sprint 4: Cross-Domain-Combo-Erkennung
+    # ------------------------------------------------------------------
+
+    _COMBO_WINDOW_SECONDS = 60  # 60s Fenster
+    _COMBO_KEY = "mha:learning:cross_domain_last:{person}"
+
+    async def _check_cross_domain_combo(self, person: str, entity_id: str) -> None:
+        """Erkennt Cross-Domain-Combos: 2+ Domains in <60s.
+
+        Wenn Korrekturen in verschiedenen Domains (z.B. light + climate)
+        innerhalb von 60s passieren, wird ein Szene-Vorschlag gemacht.
+
+        Args:
+            person: Person die die Aenderung gemacht hat.
+            entity_id: Entity-ID der aktuellen Aenderung.
+        """
+        if not self.redis:
+            return
+
+        person_key = person or "global"
+        combo_key = self._COMBO_KEY.format(person=person_key)
+
+        # Domain extrahieren
+        domain = entity_id.split(".")[0] if "." in entity_id else ""
+        if not domain:
+            return
+
+        # Room extrahieren (best effort)
+        room = ""
+        try:
+            from .function_calling import get_mindhome_room
+
+            room = get_mindhome_room(entity_id) or ""
+        except Exception:
+            pass
+
+        try:
+            now = datetime.now(timezone.utc)
+            now_iso = now.isoformat()
+
+            # Letzte Aktionen laden
+            raw = await self.redis.get(combo_key)
+            recent_actions = []
+            if raw:
+                try:
+                    recent_actions = json.loads(raw)
+                except (json.JSONDecodeError, ValueError):
+                    recent_actions = []
+
+            # Alte Aktionen (>60s) entfernen
+            recent_actions = [
+                a
+                for a in recent_actions
+                if (now - datetime.fromisoformat(a["ts"])).total_seconds()
+                <= self._COMBO_WINDOW_SECONDS
+            ]
+
+            # Aktuelle Aktion hinzufuegen
+            recent_actions.append(
+                {
+                    "domain": domain,
+                    "entity_id": entity_id,
+                    "room": room,
+                    "ts": now_iso,
+                }
+            )
+
+            # Speichern (kurzes TTL)
+            await self.redis.setex(
+                combo_key,
+                self._COMBO_WINDOW_SECONDS * 2,
+                json.dumps(recent_actions),
+            )
+
+            # Combo pruefen: 2+ verschiedene Domains
+            domains = {a["domain"] for a in recent_actions}
+            if len(domains) < 2:
+                return
+
+            # Gleicher Raum pruefen (reduziert False Positives)
+            rooms = {a["room"] for a in recent_actions if a.get("room")}
+            if rooms and len(rooms) > 1:
+                return  # Verschiedene Raeume → wahrscheinlich Zufall
+
+            # Cooldown: Max 1 Combo-Vorschlag pro Tag
+            combo_cooldown_key = f"mha:learning:combo_cooldown:{person_key}"
+            if await self.redis.get(combo_cooldown_key):
+                return
+            await self.redis.setex(combo_cooldown_key, 86400, "1")
+
+            # Combo-Notification erstellen
+            domain_labels = {
+                "light": "Licht",
+                "climate": "Temperatur",
+                "cover": "Rollladen",
+                "switch": "Schalter",
+                "media_player": "Medien",
+            }
+            domain_names = [domain_labels.get(d, d) for d in sorted(domains)]
+            combo_desc = " und ".join(domain_names)
+            room_hint = f" im {rooms.pop()}" if rooms else ""
+
+            logger.info(
+                "Cross-Domain-Combo erkannt: %s%s (%d Aktionen in %ds)",
+                combo_desc,
+                room_hint,
+                len(recent_actions),
+                self._COMBO_WINDOW_SECONDS,
+            )
+
+            # Notification senden (via Callback wenn vorhanden)
+            if self._notify_callback:
+                await self._notify_callback(
+                    f"Du hast gerade {combo_desc}{room_hint} angepasst — "
+                    f"soll ich das als Szene speichern?",
+                    "combo_scene_suggest",
+                    "low",
+                )
+        except Exception as e:
+            logger.debug("Cross-Domain-Combo Fehler: %s", e)
