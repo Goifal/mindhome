@@ -562,6 +562,16 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 
 ## Changelog
 
+### Durchlauf #3 — Session 3 — 2026-03-22
+- 0 Aufgaben als erledigt markiert (keine Code-Änderungen in Cat 10-12)
+- 0 neue Aufgaben hinzugefügt
+- 3 "Was fehlt"-Einträge in Cat 10 als erledigt markiert (waren bereits in Tasks erledigt, Text war veraltet)
+- 2 "Was fehlt"-Einträge in Cat 11 als erledigt markiert
+- 1 doppeltes Akzeptanzkriterium in Cat 11 entfernt
+- 1 Room Presence Status in Cat 10 aktualisiert (war VERBESSERBAR, ist seit D#2 erledigt via FollowMe)
+- Kategorien 10-12 Score: unverändert (82%, 88%, 77%)
+- Stichproben-Prüfung: Keine Code-Änderungen in follow_me.py, energy_optimizer.py, explainability.py — Status bestätigt
+
 ### Durchlauf #3 — Session 2 — 2026-03-22
 - 2 Aufgaben als erledigt markiert (Cat 6: Contradiction Confirmation, Learning Report)
 - 1 neue Aufgabe hinzugefügt (Cat 6: fehlende Tests für Sprint 6 Lern-Features)
@@ -1680,15 +1690,15 @@ MCU-Jarvis ist überall im Haus präsent, folgt Tony von Raum zu Raum, passt Lau
 
 4. **Room Presence** (context_builder.py `_build_room_presence()`)
    - `[OK]` Multi-Sensor-Ansatz: Occupancy → Motion → Fallback
-   - `[VERBESSERBAR]` Alle Personen dem "primären Raum" zugewiesen — kein individuelles Per-Person-Room-Tracking
+   - ✅ `[OK]` Per-Person Room Tracking via FollowMe-Integration (context_builder.py:1703-1726). 🔄 *War VERBESSERBAR, jetzt erledigt — siehe Cat 5 Durchlauf #2*
 
 **[V2 entfällt — Gewicht ×1]**
 
 ### Was fehlt zum MCU-Level
 
-1. **Follow-Me default deaktiviert** — MCU-Jarvis folgt immer. Hier muss es manuell aktiviert werden. `[TÄGLICH]`
-2. **Kein nahtloser Audio-Handoff** — Beim Raumwechsel wird Audio transferiert, aber kein Crossfade oder nahtloser Übergang. `[WÖCHENTLICH]`
-3. **Einfaches Per-Person Room Tracking** — System weiß nicht zuverlässig, wer in welchem Raum ist (nur primärer Raum). `[WÖCHENTLICH]`
+1. ~~**Follow-Me default deaktiviert**~~ ✅ Erledigt in Durchlauf #2 — Default jetzt True.
+2. ~~**Kein nahtloser Audio-Handoff**~~ ✅ Erledigt in Durchlauf #2 — 10-Step Crossfade.
+3. ~~**Einfaches Per-Person Room Tracking**~~ ✅ Erledigt in Durchlauf #2 — FollowMe-Integration in context_builder.py.
 
 ### Konkrete Verbesserungsvorschläge
 
@@ -1753,8 +1763,8 @@ MCU-Jarvis steuert das gesamte Stark Tower effizient — Licht, Klima, Sicherhei
 
 ### Was fehlt zum MCU-Level
 
-1. **Keine intelligente Lastpriorisierung** — Bei Engpässen wird nicht priorisiert welches Gerät zuerst abgeschaltet wird. MCU-Jarvis würde non-essential zuerst abschalten. `[SELTEN]`
-2. **Kein Batterie-/USV-Management** — Keine Integration mit USV-Systemen oder Batteriespeichern für Lastspitzen-Abfederung. `[SELTEN]`
+1. ~~**Keine intelligente Lastpriorisierung**~~ ✅ Erledigt in Durchlauf #2 — Essential > Comfort > Entertainment.
+2. ~~**Kein Batterie-/USV-Management**~~ ✅ Erledigt in Durchlauf #2 — `_detect_battery_storage()`.
 
 ### Konkrete Verbesserungsvorschläge
 
@@ -1770,7 +1780,6 @@ MCU-Jarvis steuert das gesamte Stark Tower effizient — Licht, Klima, Sicherhei
 - [x] Energie-Anomalien >30% werden innerhalb von 30 Minuten erkannt ✅ Bereits seit Durchlauf #1
 - [x] Flexible Lasten werden bei niedrigem Strompreis automatisch verschoben ✅ Bereits seit Durchlauf #1
 - [x] Load-Shedding priorisiert Essential > Comfort > Entertainment ✅ Sprint 5
-- [ ] Flexible Lasten werden bei niedrigem Strompreis automatisch verschoben
 
 ## 12. Erklärbarkeit & Transparenz (×1)
 
