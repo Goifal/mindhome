@@ -77,6 +77,22 @@ class OutcomeTracker:
         self._anticipation_failure_penalty = float(
             self._cfg.get("failure_confidence_penalty", 0.15)
         )
+        # Konfigurierbare Werte fuer Follow-up-Learning und Poison Protection
+        self._max_daily_change = float(
+            self._cfg.get("max_daily_score_change", MAX_DAILY_CHANGE)
+        )
+        self._followup_window = int(
+            self._cfg.get("followup_window_seconds", 120)
+        )
+        self._followup_min = int(
+            self._cfg.get("followup_min_count", 3)
+        )
+        self._followup_ttl = int(
+            self._cfg.get("followup_ttl_days", 90)
+        ) * 86400
+        self._low_score_threshold = float(
+            self._cfg.get("low_score_threshold", 0.35)
+        )
 
     async def initialize(self, redis_client, ha_client, task_registry=None):
         """Initialisiert mit Redis und HA Client."""
@@ -327,13 +343,16 @@ class OutcomeTracker:
             for entry in raw:
                 data = json.loads(entry)
                 if data.get("outcome") == OUTCOME_NEGATIVE:
-                    failures.append(
-                        {
-                            "action_type": data.get("action_type", "unbekannt"),
-                            "reason": data.get("room", ""),
-                            "timestamp": data.get("timestamp", ""),
-                        }
-                    )
+                    _failure = {
+                        "action_type": data.get("action_type", "unbekannt"),
+                        "reason": data.get("room", ""),
+                        "timestamp": data.get("timestamp", ""),
+                    }
+                    # Ursache einschliessen wenn vorhanden
+                    _cause = data.get("failure_cause")
+                    if _cause:
+                        _failure["cause"] = _cause
+                    failures.append(_failure)
                     if len(failures) >= limit:
                         break
             return failures
@@ -541,16 +560,27 @@ class OutcomeTracker:
             outcome = self._classify_outcome(state_after, state_now, action_type)
             person = pending.get("person", "")
 
+            # Ursachen-Analyse bei negativem Outcome: WARUM wurde es korrigiert?
+            failure_cause = None
+            if outcome in (OUTCOME_NEGATIVE, OUTCOME_PARTIAL) and self.ha:
+                failure_cause = await self._analyze_failure_cause(
+                    entity_id, action_type, state_after, state_now,
+                    room=pending.get("room", ""),
+                )
+
             await self._store_outcome(
-                action_type, outcome, person, room=pending.get("room", "")
+                action_type, outcome, person,
+                room=pending.get("room", ""),
+                failure_cause=failure_cause,
             )
 
             logger.info(
-                "Outcome [%s]: %s (Entity: %s, Person: %s)",
+                "Outcome [%s]: %s (Entity: %s, Person: %s%s)",
                 outcome,
                 action_type,
                 entity_id,
                 person or "unbekannt",
+                f", Ursache: {failure_cause}" if failure_cause else "",
             )
 
         except asyncio.CancelledError:
@@ -639,8 +669,77 @@ class OutcomeTracker:
 
         return OUTCOME_NEUTRAL
 
+    async def _analyze_failure_cause(
+        self,
+        entity_id: str,
+        action_type: str,
+        state_after: dict,
+        state_now: dict,
+        room: str = "",
+    ) -> Optional[str]:
+        """Analysiert die Ursache eines negativen Outcomes (regelbasiert).
+
+        Prueft haeufige Fehlerursachen:
+        - Fenster offen bei Klima-Aktionen
+        - Geraet unavailable/offline
+        - Konfliktierende Automation
+        - User-Revert (bewusste Korrektur)
+
+        Returns:
+            Ursachen-String oder None.
+        """
+        try:
+            causes = []
+
+            # 1. Geraet unavailable?
+            now_state_val = state_now.get("state", "")
+            if now_state_val == "unavailable":
+                return "device_unavailable"
+
+            # 2. Bei Klima: Fenster offen?
+            if "climate" in action_type or "temperature" in action_type:
+                states = await self.ha.get_states() if self.ha else []
+                room_lower = room.lower().replace(" ", "_") if room else ""
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    if (
+                        eid.startswith("binary_sensor.")
+                        and ("window" in eid or "fenster" in eid)
+                        and s.get("state") == "on"
+                        and (not room_lower or room_lower in eid.lower())
+                    ):
+                        causes.append("window_open")
+                        break
+
+            # 3. State wurde komplett zurueckgesetzt (User-Revert)
+            after_state = state_after.get("state", "")
+            if after_state != now_state_val:
+                causes.append("user_reverted")
+
+            # 4. Attribute stark veraendert (partielle Korrektur)
+            after_attrs = state_after.get("attributes", {})
+            now_attrs = state_now.get("attributes", {})
+            _changed = sum(
+                1 for k in set(after_attrs) | set(now_attrs)
+                if k not in ("friendly_name", "icon", "supported_features")
+                and after_attrs.get(k) != now_attrs.get(k)
+            )
+            if _changed > 0 and after_state == now_state_val:
+                causes.append("parameters_adjusted")
+
+            return "|".join(causes) if causes else None
+
+        except Exception as e:
+            logger.debug("Failure cause analysis Fehler: %s", e)
+            return None
+
     async def _store_outcome(
-        self, action_type: str, outcome: str, person: str = "", room: str = ""
+        self,
+        action_type: str,
+        outcome: str,
+        person: str = "",
+        room: str = "",
+        failure_cause: Optional[str] = None,
     ):
         """Speichert Outcome in Redis und aktualisiert Scores."""
         if not self.redis:
@@ -671,6 +770,8 @@ class OutcomeTracker:
         }
         if _dep_influenced:
             _entry_data["dependency_influenced"] = True
+        if failure_cause:
+            _entry_data["failure_cause"] = failure_cause
         entry = json.dumps(_entry_data, ensure_ascii=False)
 
         # Ergebnis-Liste (max N Eintraege)
@@ -724,16 +825,24 @@ class OutcomeTracker:
         await self.redis.setex("mha:outcome:last_action_type", 300, action_type)
 
     async def _update_score(self, action_type: str, outcome: str, person: str = ""):
-        """Aktualisiert den Rolling Score (EMA, alpha=0.1)."""
+        """Aktualisiert den Rolling Score (EMA, alpha=0.1).
+
+        Data Poisoning Protection:
+        - Per-Update: Einzelner Delta auf ±MAX_DAILY_CHANGE begrenzt.
+        - Kumulativ: Tages-Gesamtaenderung auf ±MAX_DAILY_CHANGE begrenzt.
+          Tracking via Redis-Key mit 24h-TTL pro action_type(+person).
+        """
         if not self.redis:
             return
 
         if person:
             score_key = f"mha:outcome:score:{action_type}:person:{person}"
             stats_key = f"mha:outcome:stats:{action_type}:person:{person}"
+            daily_key = f"mha:outcome:daily_delta:{action_type}:person:{person}"
         else:
             score_key = f"mha:outcome:score:{action_type}"
             stats_key = f"mha:outcome:stats:{action_type}"
+            daily_key = f"mha:outcome:daily_delta:{action_type}"
 
         # Minimum-Datenmenge pruefen
         total = await self.redis.hget(stats_key, "total")
@@ -760,13 +869,53 @@ class OutcomeTracker:
         )
         new_score = alpha * target + (1 - alpha) * current_score
 
-        # Data Poisoning Protection: Max daily change
+        # Data Poisoning Protection: Per-Update Cap
         delta = new_score - current_score
-        clamped_delta = max(-MAX_DAILY_CHANGE, min(MAX_DAILY_CHANGE, delta))
+        clamped_delta = max(-self._max_daily_change, min(self._max_daily_change, delta))
+
+        # Data Poisoning Protection: Kumulative Tages-Cap
+        # Trackt die Gesamtaenderung pro Tag via Redis (24h-TTL).
+        # Wenn das Tagesbudget erschoepft ist, wird das Update uebersprungen.
+        try:
+            daily_raw = await self.redis.get(daily_key)
+            daily_cumulative = (
+                float(daily_raw.decode() if isinstance(daily_raw, bytes) else daily_raw)
+                if daily_raw is not None
+                else 0.0
+            )
+        except (ValueError, TypeError):
+            daily_cumulative = 0.0
+
+        # Verbleibendes Budget in Richtung des Deltas pruefen
+        if clamped_delta > 0:
+            remaining = self._max_daily_change - daily_cumulative
+            if remaining <= 0:
+                logger.debug(
+                    "Poison Protection: Tages-Cap erreicht fuer %s (kumulativ: %.4f)",
+                    action_type,
+                    daily_cumulative,
+                )
+                return
+            clamped_delta = min(clamped_delta, remaining)
+        elif clamped_delta < 0:
+            remaining = -self._max_daily_change - daily_cumulative
+            if remaining >= 0:
+                logger.debug(
+                    "Poison Protection: Tages-Cap erreicht fuer %s (kumulativ: %.4f)",
+                    action_type,
+                    daily_cumulative,
+                )
+                return
+            clamped_delta = max(clamped_delta, remaining)
+
         final_score = max(0.0, min(1.0, current_score + clamped_delta))
 
         ttl = 180 * 86400
         await self.redis.setex(score_key, ttl, str(round(final_score, 4)))
+
+        # Kumulativen Tages-Delta aktualisieren (24h-TTL)
+        new_cumulative = daily_cumulative + clamped_delta
+        await self.redis.setex(daily_key, 86400, str(round(new_cumulative, 4)))
 
     async def _notify_learning_observer(
         self, action_type: str, person: str = "", room: str = ""
@@ -938,6 +1087,104 @@ class OutcomeTracker:
 
         except Exception as e:
             logger.debug("Auto-Opinion Update fehlgeschlagen: %s", e)
+
+    # ------------------------------------------------------------------
+    # Learned Follow-ups: Trackt Aktions-Sequenzen fuer Think-Ahead
+    # ------------------------------------------------------------------
+
+    # Defaults — werden von __init__ aus Config ueberschrieben
+    _FOLLOWUP_WINDOW_SECONDS = 120
+    _FOLLOWUP_MIN_COUNT = 3
+    _FOLLOWUP_TTL = 90 * 86400
+
+    async def track_followup_sequence(self, action_type: str, room: str = ""):
+        """Trackt Aktions-Sequenzen: Wenn nach Aktion A regelmaessig B folgt, lernen.
+
+        Wird bei jeder Tool-Execution aufgerufen. Prueft ob kurz vorher
+        eine andere Aktion im selben Raum ausgefuehrt wurde und zaehlt das Paar.
+
+        Args:
+            action_type: Die gerade ausgefuehrte Aktion (z.B. "set_cover").
+            room: Der Raum (fuer raumspezifische Sequenzen).
+        """
+        if not self.redis or not self.enabled:
+            return
+
+        try:
+            # Vorherige Aktion und Zeitpunkt aus Redis holen
+            prev_key = f"mha:followup:last_action:{room}" if room else "mha:followup:last_action:global"
+            prev_raw = await self.redis.get(prev_key)
+            if prev_raw:
+                prev_data = json.loads(
+                    prev_raw.decode() if isinstance(prev_raw, bytes) else prev_raw
+                )
+                prev_action = prev_data.get("action", "")
+                prev_ts = prev_data.get("ts", 0)
+
+                # Nur zaehlen wenn anderer Aktionstyp und innerhalb des Zeitfensters
+                if (
+                    prev_action
+                    and prev_action != action_type
+                    and (time.time() - prev_ts) <= self._followup_window
+                ):
+                    pair_key = f"mha:followup:pair:{prev_action}:{action_type}"
+                    if room:
+                        pair_key = f"{pair_key}:{room}"
+                    await self.redis.incr(pair_key)
+                    await self.redis.expire(pair_key, self._followup_ttl)
+
+            # Aktuelle Aktion als "letzte" speichern
+            await self.redis.setex(
+                prev_key,
+                self._followup_window + 10,
+                json.dumps({"action": action_type, "ts": time.time()}),
+            )
+        except Exception as e:
+            logger.debug("Follow-up Sequenz-Tracking fehlgeschlagen: %s", e)
+
+    async def get_learned_followups(self, action_type: str, room: str = "") -> list[dict]:
+        """Gibt gelernte Follow-up-Aktionen fuer eine ausgefuehrte Aktion zurueck.
+
+        Returns:
+            Liste von {"action": "set_cover", "count": 7, "room": "schlafzimmer"} Dicts,
+            sortiert nach Haeufigkeit. Nur Paare mit >= _FOLLOWUP_MIN_COUNT.
+        """
+        if not self.redis or not self.enabled:
+            return []
+
+        followups = []
+        try:
+            # Raumspezifische und globale Patterns scannen
+            patterns = [f"mha:followup:pair:{action_type}:*"]
+            for pattern in patterns:
+                cursor = 0
+                while True:
+                    cursor, keys = await self.redis.scan(
+                        cursor, match=pattern, count=50
+                    )
+                    for key in keys:
+                        key_str = key.decode() if isinstance(key, bytes) else key
+                        parts = key_str.split(":")
+                        # Format: mha:followup:pair:{prev}:{next} oder ..:{next}:{room}
+                        if len(parts) < 5:
+                            continue
+                        follow_action = parts[4]
+                        follow_room = parts[5] if len(parts) > 5 else ""
+                        val = await self.redis.get(key)
+                        count = int(val.decode() if isinstance(val, bytes) else val) if val else 0
+                        if count >= self._followup_min:
+                            followups.append({
+                                "action": follow_action,
+                                "count": count,
+                                "room": follow_room,
+                            })
+                    if cursor == 0:
+                        break
+        except Exception as e:
+            logger.debug("Learned Follow-ups laden fehlgeschlagen: %s", e)
+
+        followups.sort(key=lambda x: x["count"], reverse=True)
+        return followups[:5]  # Max 5 Follow-ups
 
     def set_personality(self, personality) -> None:
         """Setzt die PersonalityEngine-Referenz fuer Auto-Opinion-Learning."""

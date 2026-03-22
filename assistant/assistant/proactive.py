@@ -1240,6 +1240,15 @@ class ProactiveManager:
             except Exception as _scl_err:
                 logger.warning("State-Change-Log Fehler: %s", _scl_err)
 
+        # InsightEngine: Event-getriebene Checks + Cross-Domain Causal Learning
+        try:
+            if hasattr(self.brain, "insight_engine"):
+                await self.brain.insight_engine.on_state_change(
+                    entity_id, old_val, new_val
+                )
+        except Exception as _ie_err:
+            logger.debug("InsightEngine on_state_change Fehler: %s", _ie_err)
+
         # Event-basierte Wetter-Sensoren: Sofort-Reaktion auf kritische Änderungen
         try:
             await self._handle_weather_event(entity_id, new_val, old_val)

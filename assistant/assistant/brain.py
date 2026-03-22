@@ -4735,6 +4735,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 )
             )
             _mega_tasks.append(("insights_now", self.insight_engine.run_checks_now()))
+            _mega_tasks.append(
+                ("cross_domain", self.insight_engine.get_learned_cross_domain_insights())
+            )
             _mega_tasks.append(("experiential", self._get_experiential_hints(text)))
             _mega_tasks.append(("idle_insights", self._get_idle_insights()))
             _mega_tasks.append(
@@ -4794,6 +4797,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     ),
                 )
             )
+
+        # Outcome-Scores fuer LLM-Context: Welche Aktionen performen schlecht?
+        _mega_tasks.append(
+            ("outcome_scores", self.outcome_tracker.get_all_scores())
+        )
 
         # Conversation-Mode Detection + Memory-Callback parallelisieren
         # (bisher sequentiell NACH dem gather — spart ~50-200ms)
@@ -4932,6 +4940,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         sensor_fusion_ctx = _safe_get("sensor_fusion")
         emotional_ctx = _safe_get("emotional_ctx")  # B10: Emotionale Kontinuitaet
         kg_context = _safe_get("knowledge_graph") or []  # Knowledge Graph Relationen
+        outcome_scores = _safe_get("outcome_scores") or {}  # Outcome-Scores fuer LLM
+        cross_domain_insights = _safe_get("cross_domain") or []  # Gelernte Cross-Domain
+
+        # Cross-Domain Insights als zusaetzliche Live-Insights einmischen
+        if cross_domain_insights:
+            for _cdi in cross_domain_insights[:2]:
+                live_insights.append({
+                    "message": _cdi.get("description", ""),
+                    "urgency": "low",
+                })
 
         context["mood"] = mood_result
 
@@ -5007,6 +5025,17 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if whatif_prompt:
             _upgrade_signals += 3  # Hypothetisches Denken braucht Deep
             _has_reasoning_need = True
+
+        # Konversations-Komplexitaet: Wenn der Dialog-State zeigt dass der User
+        # eine mehrstufige Anfrage stellt (>2 Turns, gleiche Domain, Verfeinerungen),
+        # braucht das LLM mehr Reasoning-Kapazitaet.
+        if not _is_device_cmd and not _is_simple_greeting:
+            _ds = self.dialogue_state._get_state(person or "")
+            if _ds.turn_count >= 3 and _ds.last_domains:
+                # Multi-Turn im selben Thema → wahrscheinlich Diagnose/Verfeinerung
+                _upgrade_signals += 2
+                _has_reasoning_need = True
+
         if not _is_simple_greeting and not _is_device_cmd:
             # Intelligence-Signals auch in Konversationen zaehlen,
             # aber Conversation-Mode erhoet den Threshold (+2) um
@@ -5588,6 +5617,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             anticipation_suggestions,
             learned_patterns,
             live_insights,
+            outcome_scores=outcome_scores,
         )
         if jarvis_thinks:
             sections.append(("jarvis_thinks", jarvis_thinks, 2))
@@ -5741,17 +5771,22 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 for _d in _recent_decisions:
                     _age = time.time() - _d.get("timestamp", 0)
                     if _age < 1800:  # Nur letzte 30 Min
-                        _dec_lines.append(
+                        _line = (
                             f"- {_d.get('time_str', '?')}: {_d.get('action', '?')} "
                             f"(Grund: {_d.get('reason', '?')}, "
                             f"Trigger: {_d.get('trigger', '?')})"
                         )
+                        # Reasoning-Chain: Kausale Begruendungskette
+                        _alt = _d.get("alternative_outcomes", [])
+                        if _alt:
+                            _line += f"\n  Ohne Eingreifen: {_alt[0]}"
+                        _dec_lines.append(_line)
                 if _dec_lines:
                     _dec_text = (
                         "\n\nMEINE LETZTEN ENTSCHEIDUNGEN:\n"
                         + "\n".join(_dec_lines)
                         + "\nNutze diese Info wenn der User fragt warum du "
-                        "etwas getan hast."
+                        "etwas getan hast. Erklaere die KAUSALKETTE, nicht nur die Aktion."
                     )
                     sections.append(("decisions", _dec_text, 3))
         except Exception:
@@ -6154,6 +6189,22 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             logger.info(
                 "Komplexe Anfrage erkannt -> Action Planner (Deep: %s)", _deep_model
             )
+
+            # Kausalen Kontext fuer den Planner zusammenstellen
+            _planner_causal = {}
+            if outcome_scores:
+                _planner_causal["outcome_scores"] = outcome_scores
+            if anticipation_suggestions:
+                _causal_chains = [
+                    s for s in anticipation_suggestions
+                    if s.get("type") == "causal_chain"
+                ]
+                if _causal_chains:
+                    _planner_causal["causal_chains"] = _causal_chains
+            if _planner_causal:
+                context = dict(context) if context else {}
+                context["causal_context"] = _planner_causal
+
             planner_result = await self.action_planner.plan_and_execute(
                 text=text,
                 system_prompt=system_prompt,
@@ -6981,6 +7032,44 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     pct,
                                 )
 
+                    # Proaktives Counterfactual: VOR der Ausfuehrung pruefen
+                    # was OHNE diese Aktion passieren wuerde. Wird als Kontext
+                    # fuer die Explainability geloggt und bei Pushback genutzt.
+                    _pre_counterfactual = None
+                    if func_name.startswith("set_"):
+                        _cf_domain = func_name.replace("set_", "")
+                        _cf_ctx = {}
+                        if _conflict_warning:
+                            _cf_ctx["conflict"] = _conflict_warning
+                        if isinstance(final_args, dict):
+                            _cf_ctx["room"] = final_args.get("room", room or "")
+                        try:
+                            _cf_states = (
+                                await self.get_states_cached() if self.ha else []
+                            )
+                            # Fenster-Status fuer Kontext ermitteln
+                            _cf_room = _cf_ctx.get("room", "").lower().replace(" ", "_")
+                            for _s in _cf_states:
+                                _eid = _s.get("entity_id", "")
+                                if (
+                                    _eid.startswith("binary_sensor.")
+                                    and ("window" in _eid or "fenster" in _eid)
+                                    and _s.get("state") == "on"
+                                    and (not _cf_room or _cf_room in _eid.lower())
+                                ):
+                                    _cf_ctx["window_open"] = True
+                                    break
+                            from .explainability import ExplainabilityEngine
+                            _pre_counterfactual = (
+                                ExplainabilityEngine._build_counterfactual(
+                                    _cf_domain, _cf_ctx
+                                )
+                            )
+                        except Exception as _cf_err:
+                            logger.debug(
+                                "Proaktives Counterfactual fehlgeschlagen: %s", _cf_err
+                            )
+
                     # Ausfuehren
                     result = await self.executor.execute(func_name, final_args)
 
@@ -7025,13 +7114,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     if _conflict_warning and isinstance(result, dict):
                         result["conflict_warning"] = _conflict_warning
 
-                    executed_actions.append(
-                        {
-                            "function": func_name,
-                            "args": final_args,
-                            "result": result,
-                        }
-                    )
+                    _action_entry = {
+                        "function": func_name,
+                        "args": final_args,
+                        "result": result,
+                    }
+                    if _pre_counterfactual:
+                        _action_entry["counterfactual"] = _pre_counterfactual
+                    executed_actions.append(_action_entry)
 
                     # Autonomy Evolution: Interaktion tracken
                     _success = isinstance(result, dict) and result.get("success", True)
@@ -7114,6 +7204,19 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 room=room or "",
                             ),
                             name="outcome_track",
+                        )
+
+                        # Learned Follow-ups: Sequenzen tracken (A→B Muster lernen)
+                        _followup_room = (
+                            final_args.get("room", room or "")
+                            if isinstance(final_args, dict) else ""
+                        )
+                        self._task_registry.create_task(
+                            self.outcome_tracker.track_followup_sequence(
+                                action_type=func_name,
+                                room=_followup_room,
+                            ),
+                            name="followup_track",
                         )
 
                     # Befehl für Konflikt-Tracking aufzeichnen
@@ -8591,6 +8694,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     if _llm_thinking
                     else f"User-Befehl: {text[:100]}"
                 )
+                # Proaktives Counterfactual als Context mitgeben
+                _decision_ctx = {}
+                _act_cf = _act.get("counterfactual")
+                if _act_cf:
+                    _decision_ctx["counterfactual"] = _act_cf
                 self._task_registry.create_task(
                     self.explainability.log_decision(
                         action=_act_desc,
@@ -8598,6 +8706,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         trigger="user_command",
                         person=person or "",
                         domain=_executed_domain,
+                        context=_decision_ctx if _decision_ctx else None,
                     ),
                     name="log_explainability",
                 )
@@ -8643,12 +8752,24 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         if k in ("volume_level", "source") and v is not None
                     }
                 if _lt_domain and _lt_attrs and room:
+                    # Grund aus Kontext ableiten (task vs ambiance vs comfort)
+                    _lt_reason = ""
+                    if _lt_domain == "light":
+                        _brightness = _lt_attrs.get("brightness", 0)
+                        _color_temp = _lt_attrs.get("color_temp", 0)
+                        if _brightness and _brightness > 200:
+                            _lt_reason = "task_lighting"
+                        elif _color_temp and _color_temp < 350:
+                            _lt_reason = "ambiance"
+                    elif _lt_domain == "climate":
+                        _lt_reason = "comfort"
                     self._task_registry.create_task(
                         self.learning_transfer.observe_action(
                             room=room,
                             domain=_lt_domain,
                             attributes=_lt_attrs,
                             person=person or "",
+                            reason=_lt_reason,
                         ),
                         name="learning_transfer_observe",
                     )
@@ -9023,6 +9144,20 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 )
                 response_text = self.personality.get_varied_confirmation(success=True)
 
+        # Self-Consistency Check: Think-Content gegen finale Antwort pruefen.
+        # Erkennt Faelle wo das LLM intern Bedenken aeussert, sie aber in der
+        # Antwort verschweigt (z.B. "unsicher" im Denken, aber "Erledigt!" sagt).
+        if _llm_thinking and response_text and executed_actions:
+            _consistency_issue = self._check_think_consistency(
+                _llm_thinking, response_text, executed_actions
+            )
+            if _consistency_issue:
+                logger.info(
+                    "Think-Consistency: Bedenken erkannt — ergaenze Antwort: %s",
+                    _consistency_issue[:100],
+                )
+                response_text = f"{response_text}\n\n{_consistency_issue}"
+
         # Think-Content in Redis speichern für "Warum hast du das gemacht?"-Queries
         if _llm_thinking and self.memory and self.memory.redis:
             try:
@@ -9131,14 +9266,33 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
     ) -> Optional[str]:
         """Returns an optional follow-up suggestion after a function execution.
 
-        Max 1 suggestion per response. Simple dict-based mapping.
+        Max 1 suggestion per response.
+        Prueft zuerst die hardcodierte Map, dann gelernte Follow-ups aus dem
+        OutcomeTracker (Redis-basiert, ab 3 beobachteten Sequenzen).
+
         Returns None if no relevant suggestion or conditions not met.
         """
+        # --- Phase 1: Hardcodierte Regeln (hohe Praezision) ---
         mapping = self._THINK_AHEAD_MAP.get(func_name)
-        if not mapping:
-            return None
+        if mapping:
+            suggestion = self._evaluate_hardcoded_think_ahead(
+                func_name, func_args, states, mapping
+            )
+            if suggestion:
+                return suggestion
 
-        condition_prefix, template = mapping
+        # --- Phase 2: Gelernte Follow-ups (aus beobachteten Sequenzen) ---
+        return self._get_learned_think_ahead(func_name, func_args)
+
+    def _evaluate_hardcoded_think_ahead(
+        self,
+        func_name: str,
+        func_args: dict,
+        states: list,
+        mapping: tuple[str, str],
+    ) -> Optional[str]:
+        """Wertet die hardcodierte Think-Ahead-Map aus."""
+        _, template = mapping
         room = func_args.get("room", "") if isinstance(func_args, dict) else ""
 
         # Light turn off in bedroom → suggest closing covers
@@ -9194,6 +9348,170 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             return None
 
         return None
+
+    def _get_learned_think_ahead(
+        self, func_name: str, func_args: dict
+    ) -> Optional[str]:
+        """Generiert einen Think-Ahead-Vorschlag aus gelernten Follow-up-Sequenzen.
+
+        Nutzt den OutcomeTracker um haeufige Aktionspaar-Muster zu finden.
+        Synchron: Liest aus Redis-Cache (async-Wrapper nicht noetig da Ergebnis
+        im Mega-Gather vorgeladen wird).
+
+        Returns:
+            Suggestion-String oder None.
+        """
+        if not self.outcome_tracker or not self.outcome_tracker.enabled:
+            return None
+        if not self.outcome_tracker.redis:
+            return None
+
+        room = func_args.get("room", "") if isinstance(func_args, dict) else ""
+
+        # Async-Call in sync Kontext — wir nutzen den bestehenden Event-Loop
+        try:
+            loop = asyncio.get_running_loop()
+            # Wir koennen keinen await machen — stattdessen cached pruefen
+            # via Redis-basierter Lookup (fire-and-forget Task fuer async)
+            future = asyncio.ensure_future(
+                self.outcome_tracker.get_learned_followups(func_name, room)
+            )
+            # Da wir im selben async-Kontext sind, ist der Future schon scheduliert.
+            # Wir geben None zurueck und lassen den naechsten Aufruf profitieren.
+            # Alternative: Dieses Feature wird async aufgerufen.
+            future.add_done_callback(
+                lambda f: self._cache_learned_followup(func_name, f)
+            )
+        except RuntimeError:
+            pass
+
+        # Cached Ergebnis pruefen (von vorherigem Aufruf)
+        cache_key = f"_learned_followup:{func_name}"
+        cached = getattr(self, "_learned_followup_cache", {}).get(cache_key)
+        if cached:
+            action_nice = cached["action"].replace("_", " ").replace("set ", "")
+            room_hint = f" im {cached['room']}" if cached.get("room") else ""
+            return (
+                f"Das machst du danach oefters{room_hint} — "
+                f"soll ich auch {action_nice}?"
+            )
+        return None
+
+    def _cache_learned_followup(self, func_name: str, future) -> None:
+        """Callback: Cached das Ergebnis des async Follow-up-Lookups."""
+        try:
+            if future.cancelled() or future.exception():
+                return
+            followups = future.result()
+            if not hasattr(self, "_learned_followup_cache"):
+                self._learned_followup_cache = {}
+            cache_key = f"_learned_followup:{func_name}"
+            if followups:
+                self._learned_followup_cache[cache_key] = followups[0]
+            else:
+                self._learned_followup_cache.pop(cache_key, None)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Self-Consistency Check: Think-Content vs. finale Antwort
+    # ------------------------------------------------------------------
+
+    # Bedenken-Signale im Think-Content (deutsch + englisch)
+    _THINK_CONCERN_PATTERNS: list[tuple[str, str]] = [
+        ("nicht sicher", "Ich bin mir nicht ganz sicher"),
+        ("unsicher", "Ich bin mir nicht ganz sicher"),
+        ("not sure", "Ich bin mir nicht ganz sicher"),
+        ("uncertain", "Ich bin mir nicht ganz sicher"),
+        ("koennte falsch", "Das koennte auch anders gemeint sein"),
+        ("could be wrong", "Das koennte auch anders gemeint sein"),
+        ("besser nachfragen", "Vielleicht sollte ich lieber nachfragen"),
+        ("should ask", "Vielleicht sollte ich lieber nachfragen"),
+        ("risiko", "Vorsicht — das birgt ein gewisses Risiko"),
+        ("risk", "Vorsicht — das birgt ein gewisses Risiko"),
+        ("gefaehrlich", "Achtung — das koennte problematisch sein"),
+        ("dangerous", "Achtung — das koennte problematisch sein"),
+        ("falsch verstanden", "Moeglichweise habe ich das falsch verstanden"),
+        ("misunderst", "Moeglichweise habe ich das falsch verstanden"),
+        ("alternative waere", "Es gaebe auch eine Alternative"),
+        ("kontraproduktiv", "Hinweis: Das koennte kontraproduktiv sein"),
+        ("counterproduct", "Hinweis: Das koennte kontraproduktiv sein"),
+    ]
+
+    # Zuversichts-Signale in der Antwort die Bedenken uebertuenchen
+    _RESPONSE_OVERCONFIDENT = [
+        "erledigt",
+        "done",
+        "kein problem",
+        "selbstverstaendlich",
+        "sofort",
+        "natuerlich",
+        "wird gemacht",
+    ]
+
+    def _check_think_consistency(
+        self,
+        thinking: str,
+        response: str,
+        actions: list[dict],
+    ) -> Optional[str]:
+        """Prueft ob das LLM-Thinking Bedenken enthaelt die in der Antwort fehlen.
+
+        Regelbasiert (kein LLM-Call) — schnell und deterministisch.
+        Gibt einen ergaenzenden Hinweis zurueck, oder None wenn konsistent.
+
+        Args:
+            thinking: Der <think>-Content des LLM.
+            response: Die finale Antwort an den User.
+            actions: Ausgefuehrte Tool-Calls.
+
+        Returns:
+            Ergaenzender Hinweis-String oder None.
+        """
+        if not thinking or not actions:
+            return None
+
+        thinking_lower = thinking.lower()
+        response_lower = response.lower()
+
+        # 1. Bedenken im Thinking finden
+        concern_msg = None
+        for pattern, hint in self._THINK_CONCERN_PATTERNS:
+            if pattern in thinking_lower:
+                concern_msg = hint
+                break
+
+        if not concern_msg:
+            return None
+
+        # 2. Pruefen ob die Antwort die Bedenken bereits transparent macht
+        # Wenn die Antwort selbst Unsicherheit zeigt, ist kein Nachtrag noetig.
+        _transparency_signals = [
+            "allerdings",
+            "aber",
+            "vorsicht",
+            "hinweis",
+            "beachte",
+            "nicht sicher",
+            "moeglicherweise",
+            "vielleicht",
+            "however",
+            "though",
+            "careful",
+            "note that",
+        ]
+        if any(sig in response_lower for sig in _transparency_signals):
+            return None
+
+        # 3. Pruefen ob die Antwort uebertrieben zuversichtlich ist
+        is_overconfident = any(
+            sig in response_lower for sig in self._RESPONSE_OVERCONFIDENT
+        )
+        if not is_overconfident:
+            return None
+
+        # 4. Konsistenz-Warnung generieren (Butler-Stil, nicht alarmierend)
+        return f"Nebenbei bemerkt: {concern_msg} — falls etwas nicht stimmt, einfach Bescheid sagen."
 
     def _extract_tool_calls_from_text(self, text: str) -> list[dict]:
         """Extrahiert Tool-Calls aus LLM-Textantworten.
@@ -16224,12 +16542,19 @@ Regeln:
         anticipation_suggestions: list[dict],
         learned_patterns: list[dict],
         live_insights: list[dict],
+        outcome_scores: Optional[dict] = None,
     ) -> Optional[str]:
         """Erzeugt eine 'JARVIS DENKT MIT'-Sektion für den System-Prompt.
 
         Fusioniert die drei Intelligenz-Subsysteme in maximal 5 kompakte
         Hinweise, sortiert nach Relevanz. Das LLM kann diese beilaeufig
         in seine Antwort einfliessen lassen — MCU-JARVIS-Stil.
+
+        Args:
+            anticipation_suggestions: Vorhersagen der AnticipationEngine.
+            learned_patterns: Gelernte Muster des LearningObserver.
+            live_insights: Aktuelle Erkenntnisse der InsightEngine.
+            outcome_scores: Dict action_type -> score (0.0-1.0) vom OutcomeTracker.
 
         Returns:
             Prompt-Sektion als String, oder None wenn keine Erkenntnisse.
@@ -16371,6 +16696,34 @@ Regeln:
                     )
                 )
 
+        # --- Outcome-Scores: Aktionen mit schlechter Erfolgsrate ---
+        # LLM soll bei niedrigem Score vorsichtiger agieren / nachfragen.
+        _LOW_SCORE_THRESHOLD = float(
+            cfg.yaml_config.get("outcome_tracker", {}).get("low_score_threshold", 0.35)
+        )
+        if outcome_scores:
+            low_score_actions = [
+                (action, score)
+                for action, score in outcome_scores.items()
+                if score < _LOW_SCORE_THRESHOLD
+            ]
+            if low_score_actions:
+                low_score_actions.sort(key=lambda x: x[1])
+                score_lines = [
+                    f"  - {a.replace('_', ' ')}: {int(s * 100)}% Erfolg"
+                    for a, s in low_score_actions[:3]
+                ]
+                hints.append(
+                    (
+                        2,
+                        "ERFAHRUNGSWERTE — diese Aktionen werden oft korrigiert:\n"
+                        + "\n".join(score_lines)
+                        + "\n"
+                        "Bei diesen Aktionen: Lieber NACHFRAGEN statt direkt ausfuehren. "
+                        "'Soll ich das wirklich so machen? Letztes Mal wurde das korrigiert.'",
+                    )
+                )
+
         if not hints:
             return None
 
@@ -16496,6 +16849,51 @@ Regeln:
                                 f"Erwaehne als Diagnose: '{coldest[0]} kuehl — Fenster oder Heizung?'",
                             )
                         )
+
+            # --- Physikalische Abhaengigkeiten als kausale Hinweise ---
+            # Erkennt Fenster-offen + Heizung-aktiv im selben Raum via HA-States.
+            # Prueft Entity-IDs direkt statt house-Context (der keine Live-States hat).
+            try:
+                _cr_states = getattr(self, "_states_cache", None) or []
+                _window_rooms: set[str] = set()
+                _heating_rooms: set[str] = set()
+                for _s in _cr_states:
+                    _eid = _s.get("entity_id", "")
+                    _state_val = _s.get("state", "")
+                    # Offene Fenster/Tueren erkennen
+                    if (
+                        _eid.startswith("binary_sensor.")
+                        and ("window" in _eid or "fenster" in _eid)
+                        and _state_val == "on"
+                    ):
+                        # Raum aus Entity-ID extrahieren (z.B. binary_sensor.fenster_wohnzimmer → wohnzimmer)
+                        _parts = _eid.split(".")[-1].replace("fenster_", "").replace("window_", "")
+                        if _parts:
+                            _window_rooms.add(_parts.split("_")[0])
+                    # Aktive Heizungen erkennen
+                    elif (
+                        _eid.startswith("climate.")
+                        and _state_val in ("heat", "auto", "heat_cool")
+                    ):
+                        _cr_name = _eid.split(".")[-1]
+                        _heating_rooms.add(_cr_name.split("_")[0])
+
+                _conflict_rooms = _window_rooms & _heating_rooms
+                if _conflict_rooms:
+                    _rooms_nice = ", ".join(
+                        r.replace("_", " ").capitalize() for r in _conflict_rooms
+                    )
+                    results.append(
+                        (
+                            1,
+                            f"KAUSAL-WARNUNG: In {_rooms_nice} ist ein Fenster offen "
+                            f"waehrend die Heizung laeuft. Physikalische Abhaengigkeit: "
+                            f"Heizenergie entweicht → Heizen ist ineffektiv. "
+                            f"Empfehlung: Zuerst Fenster schliessen, dann heizen.",
+                        )
+                    )
+            except Exception as _cr_err:
+                logger.debug("Kausale Cross-Reference Fehler: %s", _cr_err)
 
         except Exception as e:
             logger.debug("Cross-Referenz Fehler: %s", e)
@@ -16701,17 +17099,69 @@ Regeln:
                 )
 
                 # Self-Improvement: Correction Memory — strukturiert speichern
+                # mit kausalem Kontext (Fenster, Wetter, Aktivitaet) fuer Root-Cause
                 _corr_action, _corr_args = await self._get_last_action(person)
+                _corr_causal = {}
+                try:
+                    _corr_states = (
+                        await self.get_states_cached() if self.ha else []
+                    )
+                    _corr_room = (
+                        _corr_args.get("room", "")
+                        if isinstance(_corr_args, dict) else ""
+                    )
+                    _corr_room_lower = _corr_room.lower().replace(" ", "_")
+                    # Fenster-Status im Raum
+                    for _s in _corr_states:
+                        _eid = _s.get("entity_id", "")
+                        if (
+                            _eid.startswith("binary_sensor.")
+                            and ("window" in _eid or "fenster" in _eid)
+                            and _s.get("state") == "on"
+                            and (not _corr_room_lower or _corr_room_lower in _eid.lower())
+                        ):
+                            _corr_causal["windows_open"] = True
+                            break
+                    # Aktivitaet (async — detect_activity liefert Dict mit "activity" Key)
+                    if self.activity:
+                        _act_result = await self.activity.detect_activity()
+                        if _act_result and _act_result.get("activity"):
+                            _corr_causal["activity"] = _act_result["activity"]
+                except Exception:
+                    pass
                 await self.correction_memory.store_correction(
                     original_action=_corr_action,
                     original_args=_corr_args,
                     correction_text=fact_text,
                     person=person,
+                    causal_context=_corr_causal if _corr_causal else None,
                 )
 
                 # Pattern Invalidation: Korrektur invalidiert zugehoerige Patterns
                 if _corr_action and hasattr(self.anticipation, "invalidate_pattern"):
                     await self.anticipation.invalidate_pattern(_corr_action)
+
+                # Self-Optimization: Domain-Korrektur mit Ursache tracken
+                _corr_domain = ""
+                if _corr_action:
+                    if "light" in _corr_action:
+                        _corr_domain = "light"
+                    elif "climate" in _corr_action or "temp" in _corr_action:
+                        _corr_domain = "climate"
+                    elif "cover" in _corr_action:
+                        _corr_domain = "cover"
+                    elif "media" in _corr_action or "play" in _corr_action:
+                        _corr_domain = "media"
+                if _corr_domain:
+                    _failure_cause = ""
+                    if _corr_causal.get("windows_open"):
+                        _failure_cause = "window_open"
+                    self._task_registry.create_task(
+                        self.self_optimization.track_domain_correction(
+                            _corr_domain, _failure_cause
+                        ),
+                        name="track_domain_correction",
+                    )
 
                 # Self-Improvement: Outcome Tracker — Korrektur = NEGATIVE
                 await self.outcome_tracker.record_verbal_feedback(

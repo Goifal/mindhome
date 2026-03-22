@@ -124,6 +124,7 @@ class LearningTransfer:
         domain: str,
         attributes: dict,
         person: str = "",
+        reason: str = "",
     ):
         """Beobachtet eine manuelle Aktion und merkt sich die Praeferenz.
 
@@ -132,6 +133,10 @@ class LearningTransfer:
             domain: Domaene (z.B. "light", "climate")
             attributes: Gesetzte Werte (z.B. {"brightness": 180, "color_temp": 400})
             person: Wer die Aktion ausgefuehrt hat
+            reason: Optionaler Grund fuer die Aktion (z.B. "task_lighting",
+                "ambiance", "energy_saving"). Ermoeglicht intelligenteres
+                Transfer-Learning: Werte werden nur in Raeume mit aehnlichem
+                Nutzungszweck uebertragen.
         """
         if not self.enabled or domain not in self.domains_enabled:
             return
@@ -162,14 +167,15 @@ class LearningTransfer:
                     break
 
             if not updated:
-                prefs.append(
-                    {
-                        **filtered,
-                        "count": 1,
-                        "last_seen": time.time(),
-                        "person": person,
-                    }
-                )
+                _new_pref = {
+                    **filtered,
+                    "count": 1,
+                    "last_seen": time.time(),
+                    "person": person,
+                }
+                if reason:
+                    _new_pref["reason"] = reason[:100]
+                prefs.append(_new_pref)
 
             # Max 20 Praeferenzen pro Raum+Domaene
             self._preferences[key] = sorted(

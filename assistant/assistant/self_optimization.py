@@ -152,28 +152,117 @@ class SelfOptimization:
             }
             domain_name = _DOMAIN_DE.get(worst_domain, worst_domain.title())
 
+            # Root-Cause-Analyse: Korrelationen pruefen
+            correlations = await self.get_failure_correlations()
+            _root_cause_hint = ""
+            for corr in correlations:
+                if corr.get("domain") == worst_domain and corr.get("count", 0) >= 3:
+                    _CAUSE_DE = {
+                        "window_open": "offenes Fenster",
+                        "user_reverted": "User-Korrektur",
+                        "device_unavailable": "Geraet offline",
+                    }
+                    _cause_de = _CAUSE_DE.get(
+                        corr.get("cause", ""), corr.get("cause", "")
+                    )
+                    _root_cause_hint = (
+                        f" Haeufigste Ursache: {_cause_de} "
+                        f"({corr['count']}x beobachtet)."
+                    )
+                    break
+
             return (
                 f"Mir ist aufgefallen, dass {worst_pct}% meiner Korrekturen "
                 f"den Bereich '{domain_name}' betreffen ({worst_count} von {total}). "
                 f"Ich passe meine Empfehlungen in diesem Bereich an."
+                f"{_root_cause_hint}"
             )
 
         except Exception as e:
             logger.debug("Proactive insight generation failed: %s", e)
             return None
 
-    async def track_domain_correction(self, domain: str):
+    async def track_domain_correction(
+        self, domain: str, failure_cause: str = ""
+    ):
         """Trackt eine Korrektur fuer eine bestimmte Domaene.
 
         Wird von brain.py aufgerufen wenn der User eine Jarvis-Aktion korrigiert.
+
+        Args:
+            domain: Betroffene Domaene (climate, light, cover, etc.)
+            failure_cause: Optionale Ursache (z.B. "window_open", "user_reverted").
         """
         if not self._redis or not domain:
             return
         try:
             await self._redis.hincrby("mha:self_opt:domain_corrections", domain, 1)
             await self._redis.expire("mha:self_opt:domain_corrections", 30 * 86400)
+
+            # Ursachen-Korrelation tracken: domain + cause
+            if failure_cause:
+                for cause in failure_cause.split("|"):
+                    cause = cause.strip()
+                    if cause:
+                        corr_key = f"mha:self_opt:cause_corr:{domain}:{cause}"
+                        await self._redis.incr(corr_key)
+                        await self._redis.expire(corr_key, 30 * 86400)
         except Exception as e:
             logger.debug("Domain correction tracking failed: %s", e)
+
+    async def get_failure_correlations(self) -> list[dict]:
+        """Analysiert welche Ursachen mit welchen Domains korrelieren.
+
+        Ermoeglicht Root-Cause-Analyse: "80% der Klima-Korrekturen
+        passieren wenn Fenster offen sind."
+
+        Returns:
+            Liste von {"domain": ..., "cause": ..., "count": ..., "insight": ...}
+        """
+        if not self._redis:
+            return []
+
+        correlations = []
+        try:
+            cursor = 0
+            while True:
+                cursor, keys = await self._redis.scan(
+                    cursor, match="mha:self_opt:cause_corr:*", count=50
+                )
+                for key in keys:
+                    key_str = key.decode() if isinstance(key, bytes) else key
+                    parts = key_str.split(":")
+                    if len(parts) < 5:
+                        continue
+                    domain = parts[3]
+                    cause = parts[4]
+                    val = await self._redis.get(key)
+                    count = int(
+                        val.decode() if isinstance(val, bytes) else val
+                    ) if val else 0
+                    if count >= 3:
+                        _CAUSE_DE = {
+                            "window_open": "offenes Fenster",
+                            "user_reverted": "User-Korrektur",
+                            "device_unavailable": "Geraet offline",
+                            "parameters_adjusted": "Parameter-Anpassung",
+                        }
+                        cause_de = _CAUSE_DE.get(cause, cause)
+                        correlations.append({
+                            "domain": domain,
+                            "cause": cause,
+                            "count": count,
+                            "insight": (
+                                f"{count}x {domain}-Fehler durch {cause_de}"
+                            ),
+                        })
+                if cursor == 0:
+                    break
+        except Exception as e:
+            logger.debug("Failure correlations scan failed: %s", e)
+
+        correlations.sort(key=lambda x: x["count"], reverse=True)
+        return correlations[:10]
 
     async def run_analysis(
         self, outcome_tracker=None, response_quality=None, correction_memory=None

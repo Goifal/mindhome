@@ -222,6 +222,8 @@ class DialogueStateManager:
         state.turn_count += 1
 
         # MCU Sprint 2: Topic-Switch-Detection via Jaccard word overlap
+        # Erweitert: Semantische Verfeinerungen und Domain-Kontinuitaet
+        # verhindern falsche Topic-Switch-Erkennung bei Multi-Turn-Reasoning.
         if text and state.turn_count > 1 and state._last_turn_words:
             _reference_words = {
                 "es",
@@ -239,6 +241,21 @@ class DialogueStateManager:
                 "genau",
                 "gleich",
                 "selbe",
+            }
+            # Semantische Verfeinerungs-Signale: Wenn der User den vorherigen
+            # Befehl verfeinert/korrigiert, ist es KEIN Topic-Switch.
+            _refinement_words = {
+                # Komparative (deutsch)
+                "heller", "dunkler", "waermer", "kaelter", "lauter", "leiser",
+                "schneller", "langsamer", "mehr", "weniger", "staerker",
+                "schwaecher", "hoeher", "niedriger", "groesser", "kleiner",
+                # Korrekturen
+                "nein", "nicht", "falsch", "anders", "doch", "stattdessen",
+                "lieber", "eigentlich", "besser", "richtig",
+                # Verfeinerungen
+                "bisschen", "etwas", "viel", "ganz", "komplett", "halb",
+                "nur", "noch", "aber", "bitte", "dazu", "ausserdem",
+                "zusaetzlich", "trotzdem", "weil",
             }
             _acknowledgments = {
                 "ok",
@@ -266,7 +283,30 @@ class DialogueStateManager:
                 union = current_words | prev_words
                 jaccard = len(intersection) / len(union) if union else 0
                 has_reference = bool(set(text.lower().split()) & _reference_words)
-                if jaccard < 0.1 and not has_reference:
+
+                # Verfeinerungs-Check: Enthaelt der Turn Verfeinerungs-Signale?
+                has_refinement = bool(
+                    set(text.lower().split()) & _refinement_words
+                )
+
+                # Domain-Kontinuitaet: Wenn der User Woerter aus derselben Domain
+                # verwendet wie im letzten Turn, ist es wahrscheinlich kein Switch.
+                _domain_continuity = False
+                if state.last_domains:
+                    _last_domain = state.last_domains[0] if state.last_domains else ""
+                    _domain_keywords = {
+                        "light": {"licht", "lampe", "hell", "dunkel", "dimm", "leucht", "bright"},
+                        "climate": {"heiz", "temp", "warm", "kalt", "grad", "klima", "thermostat"},
+                        "cover": {"rollladen", "rolladen", "rollo", "jalousie", "hoch", "runter"},
+                        "media": {"musik", "laut", "leise", "song", "play", "pause", "stopp"},
+                    }
+                    _kws = _domain_keywords.get(_last_domain, set())
+                    if _kws and any(
+                        kw in text.lower() for kw in _kws
+                    ):
+                        _domain_continuity = True
+
+                if jaccard < 0.1 and not has_reference and not has_refinement and not _domain_continuity:
                     logger.info(
                         "Topic-Switch erkannt (Jaccard=%.2f): '%s'",
                         jaccard,

@@ -119,6 +119,8 @@ const _searchIndex = [
   {tab:'tab-intelligence', title:'Kausalketten-Erkennung', keywords:'kausal kette handlung wiederholend muster', icon:'&#128279;'},
   {tab:'tab-intelligence', title:'3D+ Insight Checks', keywords:'gäste vorbereitung alarm abwesenheit sicherheit feuchtigkeit nacht', icon:'&#128200;'},
   {tab:'tab-intelligence', title:'LLM Kausal-Analyse', keywords:'llm kausal insight korrelation ungewöhnlich muster', icon:'&#129504;'},
+  {tab:'tab-intelligence', title:'Cross-Domain Causal Learning', keywords:'cross domain kausal lernen korrelation fenster heizung zusammenhang', icon:'&#128279;'},
+  {tab:'tab-intelligence', title:'Plausibilitaets-Pruefung', keywords:'plausibilitaet kausal kette domain verwandt penalty confidence', icon:'&#128300;'},
   {tab:'tab-intelligence', title:'Prozedurales Lernen', keywords:'prozedural sequenz multi step automation kette', icon:'&#128279;'},
   {tab:'tab-intelligence', title:'Routine-Abweichungen', keywords:'routine abweichung deviation ungewöhnlich anders', icon:'&#128270;'},
   {tab:'tab-intelligence', title:'Routine-Anomalie-Erkennung', keywords:'routine anomalie abwesenheit check nachfrage sorge muster erwartung', icon:'&#128680;'},
@@ -1928,6 +1930,16 @@ const HELP_TEXTS = {
   'outcome_tracker.max_results': {title:'Max. Ergebnisse', text:'Wie viele Outcome-Ergebnisse in Redis gespeichert werden.'},
   'outcome_tracker.calibration_min': {title:'Min. Kalibrierungsfaktor', text:'Untere Grenze fuer Domain-Kalibrierung. Niedrigerer Wert = staerkere Daempfung bei schlecht bewerteten Domains (z.B. Klima).'},
   'outcome_tracker.calibration_max': {title:'Max. Kalibrierungsfaktor', text:'Obere Grenze fuer Domain-Kalibrierung. Hoeherer Wert = staerkerer Boost bei gut bewerteten Domains.'},
+  'outcome_tracker.max_daily_score_change': {title:'Max. taegliche Score-Aenderung', text:'Poison Protection: Begrenzt wie stark sich ein Aktions-Score an einem einzigen Tag aendern kann. Schuetzt vor Manipulation durch fehlerhafte Automatisierungen.'},
+  'outcome_tracker.low_score_threshold': {title:'Warn-Schwelle im Prompt', text:'Aktionen mit einem Erfolgs-Score unter diesem Wert werden dem LLM als Warnung angezeigt. Das LLM fragt dann lieber nach statt blind auszufuehren.'},
+  'outcome_tracker.followup_window_seconds': {title:'Follow-up Zeitfenster', text:'Max. Abstand in Sekunden zwischen zwei Aktionen damit sie als Sequenz (A→B) erkannt werden.'},
+  'outcome_tracker.followup_min_count': {title:'Follow-up Min. Wiederholungen', text:'Wie oft muss eine Aktions-Sequenz beobachtet werden bevor sie als gelerntes Follow-up vorgeschlagen wird.'},
+  'outcome_tracker.followup_ttl_days': {title:'Follow-up Speicherdauer', text:'Wie lange gelernte Follow-up-Sequenzen in Redis gespeichert werden (in Tagen).'},
+  'cross_domain_learning.enabled': {title:'Cross-Domain Learning', text:'Lernt automatisch Zusammenhaenge zwischen verschiedenen Geraete-Domaenen (z.B. Fenster oeffnen → Temperatur sinkt). Nutzt Redis fuer Persistenz.'},
+  'cross_domain_learning.window_seconds': {title:'Korrelations-Zeitfenster', text:'State-Changes muessen innerhalb dieses Zeitfensters auftreten um als korreliert gezaehlt zu werden.'},
+  'cross_domain_learning.min_count': {title:'Min. Beobachtungen', text:'Wie oft muss eine Cross-Domain-Korrelation beobachtet werden bevor sie als gelernt gilt und dem LLM gezeigt wird.'},
+  'cross_domain_learning.ttl_days': {title:'Speicherdauer', text:'Wie lange gelernte Cross-Domain-Korrelationen in Redis gespeichert werden.'},
+  'anticipation.plausibility_penalty': {title:'Plausibilitaets-Penalty', text:'Confidence-Multiplikator fuer Kausalketten mit unverwandten Domains. 0.7 = 30% Reduktion fuer z.B. Medien+Klima Ketten. 1.0 = keine Reduktion (deaktiviert).'},
   'correction_memory.enabled': {title:'Korrektur-Gedächtnis', text:'Speichert User-Korrekturen strukturiert und injiziert relevante bei ähnlichen Aktionen.'},
   'correction_memory.max_entries': {title:'Max. Einträge', text:'Maximale Anzahl gespeicherter Korrekturen.'},
   'correction_memory.max_context_entries': {title:'Max. Kontext-Einträge', text:'Wie viele relevante Korrekturen dem LLM als Kontext mitgegeben werden.'},
@@ -6501,6 +6513,23 @@ function renderAutonomie() {
     fToggle('outcome_tracker.learning_observer_feedback', 'Learning-Observer Feedback') +
     fRange('outcome_tracker.learning_boost', 'Lern-Boost bei Erfolg', 0.05, 0.2, 0.01,
       {0.05:'0.05',0.1:'0.1 (Standard)',0.15:'0.15',0.2:'0.2'}) +
+
+    fSubheading('Schutz & Sicherheit') +
+    fInfo('Verhindert dass ein einzelner Tag den Erfolgs-Score einer Aktion ruiniert (Data Poisoning Protection). Der Score kann pro Tag maximal um diesen Wert steigen oder fallen.') +
+    fRange('outcome_tracker.max_daily_score_change', 'Max. taegliche Score-Aenderung', 0.05, 0.5, 0.05,
+      {0.05:'0.05 (sehr strikt)',0.1:'0.1',0.2:'0.2 (Standard)',0.3:'0.3',0.5:'0.5 (locker)'}) +
+    fRange('outcome_tracker.low_score_threshold', 'Warn-Schwelle im Prompt', 0.2, 0.5, 0.05,
+      {0.2:'20%',0.25:'25%',0.3:'30%',0.35:'35% (Standard)',0.4:'40%',0.5:'50%'}) +
+    fInfo('Aktionen mit einem Erfolgs-Score unter diesem Wert werden dem LLM als Warnung angezeigt: "Diese Aktion wird oft korrigiert — lieber nachfragen."') +
+
+    fSubheading('Gelernte Folgeaktionen') +
+    fInfo('Jarvis lernt welche Aktionen oft aufeinander folgen (z.B. Licht aus → Rolladen zu). Diese gelernten Sequenzen werden als Think-Ahead-Vorschlaege angeboten.') +
+    fNum('outcome_tracker.followup_window_seconds', 'Zeitfenster (Sekunden)', 30, 600, 30,
+      'Max. Abstand zwischen zwei Aktionen damit sie als Sequenz erkannt werden.') +
+    fNum('outcome_tracker.followup_min_count', 'Min. Wiederholungen', 2, 10, 1,
+      'Wie oft muss eine Sequenz beobachtet werden bevor sie als Follow-up vorgeschlagen wird?') +
+    fNum('outcome_tracker.followup_ttl_days', 'Speicherdauer (Tage)', 30, 365, 30,
+      'Wie lange werden gelernte Follow-up-Sequenzen in Redis gespeichert?') +
 
     fSubheading('Korrektur-Gedächtnis') +
     fToggle('correction_memory.enabled', 'Korrektur-Gedächtnis aktiv') +
@@ -12256,6 +12285,21 @@ function renderIntelligence() {
   sectionWrap('&#129504;', 'LLM Kausal-Analyse',
     fInfo('Das LLM analysiert Sensordaten der letzten Stunden und sucht nach ungewöhnlichen Korrelationen die kein Mensch als Regel kodiert haette. Z.B. "Temperatur sinkt obwohl Heizung laeuft — Fenster offen?"') +
     fToggle('insight_llm_causal.enabled', 'LLM Kausal-Analyse aktiv')
+  ) +
+  sectionWrap('&#128279;', 'Cross-Domain Causal Learning',
+    fInfo('Jarvis lernt automatisch Zusammenhaenge zwischen verschiedenen Geraete-Domaenen. Z.B. "Wenn das Fenster im Wohnzimmer geoeffnet wird, aendert sich kurz darauf die Temperatur." Diese gelernten Korrelationen fliessen in die Entscheidungsfindung ein.') +
+    fToggle('cross_domain_learning.enabled', 'Cross-Domain Learning aktiv') +
+    fNum('cross_domain_learning.window_seconds', 'Korrelations-Zeitfenster (Sekunden)', 60, 900, 30,
+      'Innerhalb welcher Zeitspanne muessen State-Changes auftreten um als korreliert gezaehlt zu werden?') +
+    fNum('cross_domain_learning.min_count', 'Min. Beobachtungen', 3, 20, 1,
+      'Wie oft muss eine Korrelation beobachtet werden bevor sie als gelernt gilt?') +
+    fNum('cross_domain_learning.ttl_days', 'Speicherdauer (Tage)', 30, 365, 30,
+      'Wie lange werden gelernte Korrelationen in Redis gespeichert?')
+  ) +
+  sectionWrap('&#128300;', 'Plausibilitaets-Pruefung',
+    fInfo('Kausalketten deren Aktionen in unverwandten Domains liegen (z.B. Medien + Klima) werden als weniger plausibel eingestuft. Der Confidence-Multiplikator reduziert die Konfidenz dieser Ketten. Verwandte Domains (Licht + Rollladen, Klima + Rollladen) sind davon nicht betroffen.') +
+    fRange('anticipation.plausibility_penalty', 'Confidence-Faktor fuer unverwandte Domains', 0.3, 1.0, 0.05,
+      {0.3:'0.3 (aggressiv)',0.5:'0.5',0.7:'0.7 (Standard)',0.85:'0.85',1.0:'1.0 (deaktiviert)'})
   ) +
   sectionWrap('&#128279;', 'Prozedurales Lernen',
     fInfo('Jarvis lernt Multi-Step-Sequenzen: "Filmabend" = Licht dimmen → Rolladen zu → TV an. Erstellt verkettete HA-Automationen mit Delays.') +
