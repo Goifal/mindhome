@@ -26,8 +26,14 @@ Du bist ein Elite-Software-Architekt. Die vorherigen 4 Sessions haben eine volls
 > Änderungen an der Plan-Datei MÜSSEN in kleinen Abschnitten per **Edit-Tool** gemacht werden.
 > **Niemals die gesamte Datei neu schreiben** — immer nur gezielte Edits (Korrekturen, Ergänzungen, Status-Updates).
 
-### Durchlauf-Nummer ermitteln
-Lies den **Changelog** am Ende von `docs/prompts/jarvis-mcu-implementation-plan.md`. Zähle die bestehenden Durchlauf-Einträge. Dein Durchlauf ist **der nächste** (z.B. wenn der letzte `#3` war, bist du `#4`). Beim allerersten Durchlauf (kein Changelog vorhanden) bist du `#1`.
+### Durchlauf-Nummer korrekt bestimmen
+> **WICHTIG:** `Durchlauf #X` ist NICHT die Session-Nummer! Es ist die **Anzahl, wie oft diese spezifische Session bereits gelaufen ist + 1**.
+
+**So ermittelst du die aktuelle Durchlauf-Nummer:**
+1. **Erstlauf (kein `Session 5` Eintrag im Changelog):** → `Durchlauf #1`
+2. **Folge-Durchlauf:** Lies den **Changelog** am Ende der Plan-Datei. Zähle die vorhandenen `### Durchlauf #N — Session 5` Einträge. Die neue Nummer ist der höchste N + 1.
+
+**Verwechslungsgefahr:** Es gibt 5 Sessions (Session 1-5) und beliebig viele Durchläufe pro Session. Session-Nummer ≠ Durchlauf-Nummer!
 
 ---
 
