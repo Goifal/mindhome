@@ -15,9 +15,22 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class DeviceIntent:
+    """Extrahierter Geraete-Intent fuer LLM-Skip Fast-Path.
+
+    Wird von extract_device_intent() zurueckgegeben wenn der Befehl
+    eindeutig per Regex erkannt werden kann.
+    """
+
+    function: str  # "set_light", "set_cover", "set_switch"
+    args: dict  # {"room": ..., "state": ..., ...}
+    confidence: float  # 0.0-1.0
 
 
 @dataclass(frozen=True)
@@ -626,3 +639,218 @@ class PreClassifier:
         # 6. Default: Alles aktiv
         logger.debug("PreClassifier: GENERAL (%s)", text)
         return PROFILE_GENERAL
+
+    # =================================================================
+    # Device Intent Extraction — LLM-Skip Fast-Path
+    # =================================================================
+
+    # Geraete-Typ → Function-Name
+    _DEVICE_TYPE_MAP: dict[str, str] = {
+        "licht": "set_light",
+        "lampe": "set_light",
+        "lampen": "set_light",
+        "lichter": "set_light",
+        "leuchte": "set_light",
+        "beleuchtung": "set_light",
+        "rollladen": "set_cover",
+        "rolladen": "set_cover",
+        "rollo": "set_cover",
+        "rollos": "set_cover",
+        "rolllaeden": "set_cover",
+        "rollläden": "set_cover",
+        "rolläden": "set_cover",
+        "jalousie": "set_cover",
+        "jalousien": "set_cover",
+        "steckdose": "set_switch",
+        "steckdosen": "set_switch",
+        "kaffeemaschine": "set_switch",
+        "siebtraeger": "set_switch",
+        "siebträger": "set_switch",
+        "maschine": "set_switch",
+        "ventilator": "set_switch",
+        "luefter": "set_switch",
+        "lüfter": "set_switch",
+        "pumpe": "set_switch",
+        "boiler": "set_switch",
+    }
+
+    # Raum-Extraktion: "im Wohnzimmer", "in der Kueche", etc.
+    _ROOM_PREP_RE = re.compile(
+        r"\b(?:im|in der|in dem|ins|vom|am|auf dem|auf der)\s+(\w+)",
+        re.IGNORECASE,
+    )
+
+    # Aktions-Erkennung (einfache Endwoerter)
+    _ACTION_ON_WORDS = frozenset({"an", "ein", "auf"})
+    _ACTION_OFF_WORDS = frozenset({"aus", "ab", "zu", "dicht"})
+    _ACTION_UP_WORDS = frozenset({"hoch", "rauf", "oben"})
+    _ACTION_DOWN_WORDS = frozenset({"runter", "raus", "unten"})
+    _ACTION_STOP_WORDS = frozenset({"stopp", "stop", "halt"})
+
+    # Compound-Verb → Aktion
+    _COMPOUND_ON_STEMS = (
+        "einschalt",
+        "anschalt",
+        "anmach",
+        "einmach",
+        "aufmach",
+        "oeffn",
+        "öffn",
+        "aktivier",
+    )
+    _COMPOUND_OFF_STEMS = (
+        "ausschalt",
+        "abschalt",
+        "ausmach",
+        "zumach",
+        "schliess",
+        "deaktivier",
+    )
+    _COMPOUND_UP_STEMS = ("hochfahr", "rauffahr", "hochdreh", "aufdreh")
+    _COMPOUND_DOWN_STEMS = (
+        "runterfahr",
+        "runterlad",
+        "runterdreh",
+        "zudreh",
+        "abdunkel",
+    )
+
+    def extract_device_intent(
+        self, text: str, room: Optional[str] = None
+    ) -> Optional[DeviceIntent]:
+        """Extrahiert Funktion + Argumente aus einem einfachen Geraete-Befehl.
+
+        Gibt None zurueck wenn der Befehl nicht eindeutig per Regex erkannt
+        werden kann (z.B. Helligkeit, Farbe, Temperatur → braucht LLM).
+
+        Args:
+            text: Normalisierter User-Text
+            room: Raum aus dem die Anfrage kommt (Fallback)
+
+        Returns:
+            DeviceIntent oder None
+        """
+        text_lower = text.lower().strip().replace("ß", "ss")
+        words = text_lower.split()
+
+        if not words:
+            return None
+
+        # --- Geraete-Typ erkennen ---
+        device_func: Optional[str] = None
+        for word in words:
+            clean = word.rstrip(".,!?")
+            if clean in self._DEVICE_TYPE_MAP:
+                device_func = self._DEVICE_TYPE_MAP[clean]
+                break
+
+        # "alles aus" / "alle Lichter aus" / "ueberall aus"
+        has_all = any(
+            w.rstrip(".,!?") in ("alle", "alles", "überall", "ueberall") for w in words
+        )
+
+        if not device_func and not has_all:
+            return None
+
+        # --- Aktion erkennen ---
+        action: Optional[str] = None
+
+        # 1. Einzelwoerter am Satzende oder freistehend
+        for word in reversed(words):
+            clean = word.rstrip(".,!?")
+            if clean in self._ACTION_ON_WORDS:
+                action = "on"
+                break
+            if clean in self._ACTION_OFF_WORDS:
+                action = "off"
+                break
+            if clean in self._ACTION_UP_WORDS:
+                action = "up"
+                break
+            if clean in self._ACTION_DOWN_WORDS:
+                action = "down"
+                break
+            if clean in self._ACTION_STOP_WORDS:
+                action = "stop"
+                break
+
+        # 2. Compound-Verben: "einschalten", "ausschalten", "hochfahren"
+        if not action:
+            if any(stem in text_lower for stem in self._COMPOUND_ON_STEMS):
+                action = "on"
+            elif any(stem in text_lower for stem in self._COMPOUND_OFF_STEMS):
+                action = "off"
+            elif any(stem in text_lower for stem in self._COMPOUND_UP_STEMS):
+                action = "up"
+            elif any(stem in text_lower for stem in self._COMPOUND_DOWN_STEMS):
+                action = "down"
+
+        if not action:
+            return None
+
+        # --- Raum erkennen ---
+        room_match = self._ROOM_PREP_RE.search(text_lower)
+        target_room = room_match.group(1) if room_match else None
+
+        # Fallback: Raum aus Request-Kontext
+        if not target_room:
+            target_room = room
+
+        # "alles aus" → alle Geraete
+        if has_all:
+            target_room = "all"
+            if not device_func:
+                device_func = "set_light"  # "alles aus" → Lichter
+
+        if not target_room:
+            return None
+
+        # --- Komplexe Befehle ausschliessen (brauchen LLM) ---
+        # Helligkeit ("50%", "halb", "dimmen"), Farbe, Temperatur
+        if any(
+            indicator in text_lower
+            for indicator in (
+                "%",
+                "prozent",
+                "grad",
+                "°",
+                "dimm",
+                "heller",
+                "dunkler",
+                "farbe",
+                "rot",
+                "blau",
+                "gruen",
+                "grün",
+                "weiss",
+                "weiß",
+                "warm",
+                "kalt",
+                "wärmer",
+                "waermer",
+                "kälter",
+                "kaelter",
+                "kühler",
+                "kuehler",
+            )
+        ):
+            return None
+
+        # --- Argumente bauen ---
+        args: dict[str, Union[str, int]] = {"room": target_room}
+
+        if device_func == "set_light":
+            args["state"] = "on" if action in ("on", "up") else "off"
+        elif device_func == "set_cover":
+            if action == "stop":
+                args["action"] = "stop"
+            elif action in ("up", "on"):
+                args["position"] = 100
+            else:
+                args["position"] = 0
+        elif device_func == "set_switch":
+            args["state"] = "on" if action in ("on", "up") else "off"
+        else:
+            return None
+
+        return DeviceIntent(function=device_func, args=dict(args), confidence=0.95)
