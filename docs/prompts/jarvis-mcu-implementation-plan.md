@@ -206,6 +206,8 @@ MCU-Jarvis hat trockenen britischen Humor, der nie aufdringlich ist. "I do apolo
 - `[OK]` Empathy-Section im System-Prompt: Stress-Level des Users wird in den Prompt eingebaut
 - `[VERBESSERBAR]` Meinungs-Engine ist funktional, aber das automatische Lernen von Meinungen (z.B. nach 5× Geräte-Probleme → negative Meinung) fehlt — aktuell muss `store_learned_opinion()` explizit aufgerufen werden. Kein automatischer Trigger bei wiederholten Problemen.
 - `[VERBESSERBAR]` Running Gag Evolution hat nur 2 Eskalationsstufen ("Wie wir beide wissen." / "Mittlerweile ein Klassiker."). MCU-Jarvis entwickelt Gags mit mehr Kreativität und Varianz.
+- `[VERBESSERBAR]` Opinion Rules: Nur `opinion_rules.yaml.example` existiert (352 Zeilen, 30+ Regeln) — keine aktive `opinion_rules.yaml`. Feature fällt auf leere Regelliste zurück ohne manuelle Setup-Kopie.
+- `[OK]` Humor-Fatigue-Management: Nach 8 Jokes/Tag 50% Unterdrückung, nach 12 Jokes/Tag 80%. Per-User consecutive Fatigue: Pause nach 4 Jokes in Folge.
 
 ### Was fehlt zum MCU-Level
 
