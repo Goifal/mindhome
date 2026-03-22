@@ -2512,16 +2512,53 @@ Sortiert nach: `(Prozent-Gewinn × Kategorie-Gewicht × Alltags-Faktor) / Aufwan
 
 ### 🆕 Nicht analysierte Module (Durchlauf #1, Session 5)
 
-Die folgenden Module existieren im Code, wurden aber in keiner der 12 Kategorien tiefenanalysiert. Sie fallen in die Butler-Qualitäten (Kat.4) und könnten den Score dort beeinflussen:
+Die folgenden Module existieren im Code, wurden aber in keiner der 12 Kategorien tiefenanalysiert:
 
-| Modul | Zeilen | Kategorie | Relevanz |
-|-------|--------|-----------|----------|
-| `web_search.py` | 647 | Butler (4) / Situationsbewusstsein (5) | SearXNG+DDG mit SSRF-Schutz, bereits in CLAUDE.md erwähnt |
-| `workshop_generator.py` | 615 | Butler (4) | Code-Generierung, 3D-Modelle, SVG-Schaltpläne |
-| `repair_planner.py` | 1.774 | Butler (4) | Diagnose, Reparaturanleitungen — größtes unanalysiertes Modul |
-| `calendar_intelligence.py` | 410 | Butler (4) / Proaktivität (3) | Gewohnheitserkennung, Konfliktwarnungen |
+**Feature-Module (in CLAUDE.md dokumentiert, aber nicht MCU-kategorisiert):**
 
-**Auswirkung auf Score:** Diese Module sind in der Butler-Kategorie (×2.5) bereits implizit mitgezählt — der 80%-Score für Kat.4 könnte bei Berücksichtigung dieser Module auf ~82% steigen. Kein Sprint-Impact, da keine Verbesserungsvorschläge nötig.
+| Modul | Kategorie-Zuordnung | Relevanz |
+|-------|---------------------|----------|
+| `web_search.py` (647 Zeilen) | Butler (4) / Situationsbewusstsein (5) | SearXNG+DDG mit 7-Schichten SSRF-Schutz |
+| `workshop_generator.py` (615 Zeilen) | Butler (4) | Code-Generierung, 3D-Modelle, SVG-Schaltpläne |
+| `repair_planner.py` (1.774 Zeilen) | Butler (4) | Diagnose, Reparaturanleitungen — größtes unanalysiertes Modul |
+| `calendar_intelligence.py` (410 Zeilen) | Butler (4) / Proaktivität (3) | Gewohnheitserkennung, Konfliktwarnungen |
+| `music_dj.py` | Persönlichkeit (2) / Situationsbewusstsein (5) | Kontextbewusste Musikempfehlungen |
+| `camera_manager.py` | Krisenmanagement (8) / Sicherheit (9) | Kamera-Integration für visuelle Sicherheit |
+| `situation_model.py` | Situationsbewusstsein (5) | Trackt Veränderungen zwischen Gesprächen |
+| `time_awareness.py` | Situationsbewusstsein (5) | Geräte-Laufzeiten, 13 Schwellwerte |
+| `timer_manager.py` | Butler (4) | Timer & Erinnerungen |
+| `inventory.py` | Butler (4) | Vorratsmanagement mit Ablaufdaten |
+| `climate_model.py` | Situationsbewusstsein (5) / Proaktivität (3) | Digitales Thermik-Modell für Was-wäre-wenn |
+| `knowledge_graph.py` | Lernfähigkeit (6) | Redis-basierter Wissensgraph für Entity-Relationen |
+| `light_engine.py` | Butler (4) | Ultimative Lichtsteuerung (Präsenz, Bett, Lux, Dämmerung) |
+
+**Infrastruktur-Module (nicht in CLAUDE.md, aber in brain.py registriert):**
+
+| Modul | Kategorie-Zuordnung | Relevanz |
+|-------|---------------------|----------|
+| `error_patterns.py` | Krisenmanagement (8) | Erkennt wiederkehrende Fehlermuster (≥3× in 1h) |
+| `notification_dedup.py` | Proaktivität (3) | Cross-Module semantische Duplikaterkennung |
+| `response_quality.py` | Lernfähigkeit (6) / Erklärbarkeit (12) | Misst Effektivität von Antworten |
+| `conditional_commands.py` | Proaktivität (3) | Temporäre Wenn-Dann-Befehle |
+| `protocol_engine.py` | Butler (4) | Benannte Multi-Step-Sequenzen ("Filmabend"-Protokoll) |
+| `adaptive_thresholds.py` | Lernfähigkeit (6) | Lernende Schwellwerte mit Auto-Adjust |
+
+**Auswirkung auf Score:** Diese 19 Module stärken die Butler-Kategorie (Kat.4, ×2.5) und Situationsbewusstsein (Kat.5, ×2). Der Score könnte bei Berücksichtigung um +1-2% steigen. Kein Sprint-Impact, da keine Verbesserungsvorschläge nötig — die Module sind funktional.
+
+### 🆕 Vernetzungslücken (Durchlauf #1, Session 5)
+
+Folgende Module arbeiten isoliert, obwohl Synergien bestehen:
+
+| Verbindung | Status | Potenzial |
+|-----------|--------|-----------|
+| `energy_optimizer` ↔ `anticipation` | `[UNTERVERBUNDEN]` | Anticipation könnte Preis-Muster lernen → proaktiv Lasten verschieben |
+| `follow_me` ↔ `person_preferences` | `[UNTERVERBUNDEN]` | Follow-Me nutzt feste comfort_temp statt Person-Profile |
+| `threat_assessment` ↔ `follow_me` | `[UNTERVERBUNDEN]` | Evakuierung ohne Raumpräsenz-Info |
+| `proactive` ↔ `mood_detector` | `[TEILWEISE]` | Nur Suppression, keine positiven Mood-Aktionen |
+| `time_awareness` ↔ `anticipation` | `[UNTERVERBUNDEN]` | Geräte-Laufzeiten nicht in Muster-Erkennung |
+| `situation_model` ↔ `dialogue_state` | `[UNTERVERBUNDEN]` | "Seit wir zuletzt sprachen..." fehlt |
+
+**Hinweis:** Module kommunizieren über `brain.py` (Event-Bus/Redis), nicht direkt. Sprint-Aufgaben 5.2, 5.3 und 5.5 adressieren die ersten drei Lücken.
 
 ### Fehlende Features (komplett neu zu bauen)
 
@@ -2632,3 +2669,12 @@ Du bist ein Code-Agent der diesen Plan umsetzt. Folge diesen Regeln:
   - [x] Schutzliste vollständig, kein Sprint verletzt sie
   - [x] Gesamt-Score korrekt berechnet
 - **Plan-Datei ist finalisiert und bereit zur Umsetzung mit dem Executor-Agent**
+
+### Nachtrag — Session 5 (Feature-Vollständigkeitsprüfung) — 2026-03-22
+- 19 nicht-analysierte Module identifiziert (13 Feature + 6 Infrastruktur) — 🆕
+  - Wichtigste: `music_dj.py`, `situation_model.py`, `protocol_engine.py`, `knowledge_graph.py`, `adaptive_thresholds.py`
+- 6 Vernetzungslücken dokumentiert (`[UNTERVERBUNDEN]`)
+  - 3 davon werden durch Sprint-Aufgaben 5.2, 5.3, 5.5 adressiert
+  - 3 neue: time_awareness↔anticipation, situation_model↔dialogue_state, proactive↔mood (positiv)
+- Sprint 2.5 korrigiert: Running Gags haben bereits `context`-Feld (Zeile 5476) — 🔄
+- Gewichteter MCU-Score: 80.5% (bestätigt, mögliche +1-2% bei Berücksichtigung aller Module)
