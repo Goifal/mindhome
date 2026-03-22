@@ -411,7 +411,7 @@ class InsightEngine:
                         logger.info(
                             "Insight [%s]: %s",
                             insight.get("check"),
-                            insight.get("message", "")[:80],
+                            insight.get("message", "")[:200],
                         )
             except asyncio.CancelledError:
                 break
@@ -1001,6 +1001,15 @@ class InsightEngine:
                     unique_active.append(c)
             if not unique_active:
                 return None
+            # Bei vielen Konflikten (>10) nur high/critical melden —
+            # info-severity Masse (z.B. 93 Schlafenszeit-Regeln) ist Noise
+            if len(unique_active) > 10:
+                important = [
+                    c for c in unique_active if c.get("severity") in ("high", "critical")
+                ]
+                if not important:
+                    return None
+                unique_active = important
             hints = [c.get("hint", "") for c in unique_active[:3]]
             count = len(unique_active)
             return {
