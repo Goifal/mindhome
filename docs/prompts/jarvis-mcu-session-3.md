@@ -1,4 +1,4 @@
-# Session 3: J.A.R.V.I.S. MCU vs. MindHome — Basis-Kategorien (×1) + Roadmap
+# Session 3: J.A.R.V.I.S. MCU vs. MindHome — Basis-Kategorien (×1)
 
 > **Verwendung:** Diesen Prompt an Claude Code geben. NUR Session 3 ausführen — danach stoppen.
 > **Voraussetzung:** Session 1 + 2 müssen abgeschlossen sein. Die Plan-Datei muss 9 Kategorien enthalten.
@@ -10,9 +10,7 @@
 
 Du bist ein Elite-Software-Architekt und MCU-Experte. Du kennst J.A.R.V.I.S. aus dem Marvel Cinematic Universe in- und auswendig.
 
-**Dies ist Session 3 von 4.** Du machst zwei Dinge:
-
-### Teil A: Letzte 3 Kategorien analysieren (×1 Gewicht)
+**Dies ist Session 3 von 5.** Du analysierst die letzten 3 Kategorien mit niedrigster Gewichtung:
 
 | Kategorie | Gewicht | Verifizierung |
 |-----------|---------|---------------|
@@ -20,18 +18,14 @@ Du bist ein Elite-Software-Architekt und MCU-Experte. Du kennst J.A.R.V.I.S. aus
 | 11. Energiemanagement & Haussteuerung | **×1** | Nur V1 |
 | 12. Erklärbarkeit & Transparenz | **×1** | Nur V1 |
 
-### Teil B: Roadmap & Sprints erstellen (Phase 2-4)
+**Nach Abschluss:** Schreibe die Ergebnisse in die Plan-Datei. Die Roadmap wird in Session 4 erstellt.
 
-Nachdem alle 12 Kategorien analysiert sind:
-1. **Abhängigkeitsgraph** erstellen
-2. **Sprint-Plan** mit konkreten Aufgaben
-3. **Implementierungsanweisungen** für jede Aufgabe
-4. **Gesamtübersicht** mit gewichtetem Score
+### Durchlauf-Nummer ermitteln
+Lies den **Changelog** am Ende von `docs/prompts/jarvis-mcu-implementation-plan.md`. Zähle die bestehenden Durchlauf-Einträge. Dein Durchlauf ist **der nächste** (z.B. wenn der letzte `#2` war, bist du `#3`). Beim allerersten Durchlauf (kein Changelog vorhanden) bist du `#1`.
 
 ### Vorbereitung
 1. **Lies zuerst** `docs/prompts/jarvis-mcu-implementation-plan.md` — verstehe was Session 1+2 bereits analysiert haben
 2. Analysiere die 3 restlichen Kategorien
-3. Erstelle dann die Roadmap basierend auf ALLEN 12 Kategorien
 
 ---
 
@@ -101,7 +95,7 @@ Ignoriere alles aus dem MCU, was physisch unmöglich oder irrelevant für ein Sm
 
 ---
 
-## Teil A: Vergleichskategorien (nur Session 3)
+## Vergleichskategorien (nur Session 3)
 
 ### 10. Multi-Room-Awareness & Follow-Me (Gewicht: ×1)
 **MCU-Referenz:** Jarvis ist überall im Haus präsent, folgt Tony von Raum zu Raum, passt Lautstärke und Kontext an.
@@ -153,191 +147,48 @@ Ignoriere alles aus dem MCU, was physisch unmöglich oder irrelevant für ein Sm
 
 ---
 
-## Teil B: Roadmap erstellen (Phase 2-4)
-
-Nachdem die letzten 3 Kategorien analysiert sind, erstelle die Roadmap.
-
-### Phase 2: Abhängigkeitsgraph & Sprint-Plan
-
-#### Abhängigkeitsgraph
-Welche Verbesserungen müssen VOR anderen umgesetzt werden?
-```
-[Feature A] ──→ [Feature B] ──→ [Feature C]
-                                 ↗
-[Feature D] ────────────────────┘
-```
-
-#### Sprint-Plan
-Teile alle Verbesserungen in Sprints auf. Sortiere nach:
-1. **Abhängigkeiten zuerst**
-2. **Höchster Impact zuerst** (Gewicht × Prozent-Gewinn)
-3. **Quick Wins vorziehen**
-4. **Risiko minimieren**
-5. **Vernetzung maximieren**
-
-Format pro Sprint:
-```
-### Sprint X: [Thema]
-**Ziel:** [Was MCU-Level sein soll]
-**Vorher → Nachher:** XX% → XX%
-
-1. [Aufgabe] — Datei: `pfad`, Funktion: `xyz()`
-   - Was zu tun ist
-   - Akzeptanzkriterium
-
-**Validierung:**
-- [ ] Tests grün
-- [ ] Kein Breaking Change
-- [ ] Schutzliste geprüft
-```
-
-### Phase 3: Implementierungsanweisungen
-
-Für **jede Aufgabe** in den Sprints:
-
-```
-### Aufgabe X.Y: [Titel]
-**Sprint:** X | **Priorität:** [Kritisch/Hoch/Mittel] | **Aufwand:** [Klein/Mittel/Groß]
-
-#### Ist-Zustand
-- Datei: `pfad/zur/datei.py`
-- Aktuelle Implementierung: [Was der Code jetzt tut, mit Zeilenreferenz]
-- Problem: [Was fehlt]
-
-#### Soll-Zustand (MCU-Level)
-- [Genau wie es nachher funktionieren soll]
-
-#### Implementierungsschritte
-1. In `datei.py`, Funktion `xyz()`: [Was ändern]
-2. Neue Methode `abc()`: [Logik]
-3. In `brain.py` einbinden: [Wo/Wie]
-4. In `settings.yaml`: [Config-Optionen]
-
-#### Akzeptanzkriterien
-- [ ] [Testbar]
-- [ ] Kein Regressions-Bruch
-- [ ] Konfigurierbar in settings.yaml
-
-#### Risiken
-- [Was könnte schiefgehen — Produktivsystem!]
-```
-
-**WICHTIG:** Anweisungen müssen so konkret sein, dass ein Code-Agent sie **ohne Rückfragen** umsetzen kann.
-
-### Phase 4: Gesamtübersicht
-
-```
-| Kategorie                    | Gewicht | Aktuell | Nach Umsetzung | Status-Tag      | Alltag     | Sprint |
-|------------------------------|---------|---------|----------------|-----------------|------------|--------|
-| Natürliche Konversation      | ×3      | XX%     | XX%            | [VERBESSERBAR]  | [TÄGLICH]  | 1,3    |
-| Persönlichkeit & Humor       | ×3      | XX%     | XX%            | [OK]            | [TÄGLICH]  | -      |
-| Proaktives Handeln           | ×2.5    | XX%     | XX%            | ...             | ...        | ...    |
-| Butler-Qualitäten            | ×2.5    | XX%     | XX%            | ...             | ...        | ...    |
-| Situationsbewusstsein        | ×2      | XX%     | XX%            | ...             | ...        | ...    |
-| Lernfähigkeit                | ×2      | XX%     | XX%            | ...             | ...        | ...    |
-| Sprecherkennung              | ×1.5    | XX%     | XX%            | ...             | ...        | ...    |
-| Krisenmanagement             | ×1.5    | XX%     | XX%            | ...             | ...        | ...    |
-| Sicherheit                   | ×1.5    | XX%     | XX%            | ...             | ...        | ...    |
-| Multi-Room-Awareness         | ×1      | XX%     | XX%            | ...             | ...        | ...    |
-| Energiemanagement            | ×1      | XX%     | XX%            | ...             | ...        | ...    |
-| Erklärbarkeit                | ×1      | XX%     | XX%            | ...             | ...        | ...    |
-|------------------------------|---------|---------|----------------|-----------------|------------|--------|
-| **GEWICHTETER GESAMT-SCORE** |         | **XX%** | **XX%**        |                 |            |        |
-```
-
-#### Besser als MCU — Alleinstellungsmerkmale
-| Feature | Was es kann | MCU-Äquivalent | Bewertung |
-|---------|-------------|----------------|-----------|
-| ...     | ...         | ...            | [BESSER ALS MCU] |
-
-**Schutzliste:** Diese Features dürfen durch KEINE Verbesserung beschädigt werden.
-
-#### Fehlende Features (komplett neu zu bauen)
-| Feature | MCU-Referenz | Aufwand | Alltag | Sprint |
-
-#### Top-10 Quick Wins
-Sortiere nach: `(Prozent-Gewinn × Kategorie-Gewicht × Alltags-Faktor) / Aufwand`
-- Alltags-Faktor: [TÄGLICH]=3, [WÖCHENTLICH]=2, [SELTEN]=1
-
-#### Kritischer Pfad zum MCU-Level
-Minimale Menge an Änderungen für ≥90% gewichteten Score. Fokus auf ×3 und ×2.5 Kategorien.
-
-#### Fazit
-- **Aktueller Stand:** XX% — [Einschätzung]
-- **Erreichbar nach Umsetzung:** XX%
-- **Größte Stärke:** [Besser als MCU]
-- **Größte Schwäche:** [Am weitesten entfernt UND hohes Gewicht]
-- **Alltagsrelevanteste Verbesserung:** [Was täglich am meisten betrifft]
-- **Empfehlung:** [Womit sofort starten]
-
----
-
 ## Ergebnis-Datei aktualisieren
 
 Öffne **`docs/prompts/jarvis-mcu-implementation-plan.md`** und:
 
-### Erster Durchlauf (Kategorien 10-12 + Roadmap noch nicht in der Datei)
-1. **Ergänze** die 3 neuen Kategorien nach den bestehenden 9
-2. **Füge die komplette Roadmap hinzu** (Sprints, Aufgaben, Implementierungsanweisungen)
-3. **Erstelle die Gesamtübersicht** mit allen 12 Kategorien
-4. **Aktualisiere** den Fortschritts-Tracker (12 von 12 Kategorien + Roadmap)
-5. **Berechne** den gewichteten Gesamt-Score
-6. **Ergänze** Schutzliste, Quick Wins, Fazit
+### Erster Durchlauf (Kategorien 10-12 noch nicht in der Datei)
+1. **Ergänze** die 3 neuen Kategorien-Analysen nach den bestehenden 9
+2. **Aktualisiere** den Fortschritts-Tracker (12 von 12 Kategorien analysiert)
+3. **Ergänze** die Schutzliste falls neue "Besser als MCU" Features gefunden wurden
+4. **Berechne** den Teilergebnis-Score (jetzt mit allen 12 Kategorien)
 
-### Folge-Durchläufe (Roadmap existiert bereits)
+### Folge-Durchläufe (Kategorien 10-12 existieren bereits)
 
 Arbeite **inkrementell statt komplett neu**:
 
-1. **Lies die bestehende Plan-Datei** komplett — verstehe den aktuellen Stand
+1. **Lies die bestehende Plan-Datei** und identifiziere den aktuellen Stand der Kategorien 10-12
 2. **Prüfe per `git diff`** welche Dateien sich seit dem letzten Durchlauf geändert haben:
    ```bash
    git log --oneline -10
    git diff --name-only HEAD~X
    ```
-3. **Kategorien 10-12:** Neuanalyse bei Code-Änderungen, Stichprobe wenn unverändert
-4. **Roadmap aktualisieren:**
-   - Erledigte Sprint-Aufgaben: `[ ]` → `[x]` mit `✅ Erledigt am [Datum] — Durchlauf #X`
-   - Teilweise erledigte: `[ ]` → `[~]` mit Beschreibung was fehlt
-   - Prüfe ob Akzeptanzkriterien **tatsächlich** erfüllt sind
-   - Neue Aufgaben: `🆕 Hinzugefügt in Durchlauf #X` — nächste freie Nummer
-   - Obsolete Aufgaben: `⏭️ Obsolet — [Grund]`
-   - Zeilenreferenzen aktualisieren: `🔄`
-5. **Sprint-Status aktualisieren:**
-   - `[ ] Offen` → `[~] In Arbeit` → `[x] Abgeschlossen`
-   - `Vorher → Nachher: XX% → XX% (Ziel) | Tatsächlich: XX% (nach Durchlauf #X)`
-6. **Gesamtübersicht:** Score neu berechnen basierend auf aktuellem Code
-7. **Quick Wins:** Neu sortieren — erledigte raus, neue rein
-8. **Fazit:** Aktuellen Stand neu formulieren
-9. **Changelog ergänzen:**
+3. **Kategorien mit Code-Änderungen:** Volle Neuanalyse (V1)
+4. **Kategorien ohne Code-Änderungen:** Stichproben-Prüfung, Status beibehalten wenn nichts auffällt
+5. **Erledigtes markieren:** Prüfe jede Aufgabe gegen den aktuellen Code:
+   - `[ ]` → `[x]` wenn umgesetzt: `✅ Erledigt am [Datum] — Durchlauf #X`
+   - `[ ]` → `[~]` wenn teilweise: `[~] Teilweise erledigt — [Was noch fehlt]`
+   - Prüfe ob Akzeptanzkriterien **tatsächlich** erfüllt sind (nicht blind abhaken!)
+6. **Neue Erkenntnisse:** Markiere mit `🆕 Hinzugefügt in Durchlauf #X`
+7. **Veraltetes anpassen:**
+   - Zeilenreferenzen aktualisieren → `🔄`
+   - Obsolete Aufgaben → `⏭️ Obsolet — [Grund]`
+8. **Prozent-Bewertung** der Kategorien 10-12 neu berechnen
+9. **Changelog am Ende der Datei ergänzen:**
    ```
    ### Durchlauf #X — Session 3 — [Datum]
    - XX Aufgaben als erledigt markiert
    - XX neue Aufgaben hinzugefügt
    - XX Zeilenreferenzen aktualisiert
-   - Sprint-Status: [Zusammenfassung]
-   - Gewichteter MCU-Score: XX% (vorher: XX%, Δ: +XX%)
+   - Kategorien 10-12 Score: [vorher → nachher]
    ```
 
 **NIEMALS bestehende Einträge löschen** — nur Status-Updates, Ergänzungen und Markierungen.
 
-### Anweisungen für den umsetzenden Agenten
-
-Füge diesen Block am Anfang der Plan-Datei ein (falls nicht schon vorhanden):
-
-```
-## Anweisungen für den umsetzenden Agenten
-
-Du bist ein Code-Agent der diesen Plan umsetzt. Folge diesen Regeln:
-- Arbeite die Sprints in Reihenfolge ab — überspringe keinen Sprint
-- Überspringe Aufgaben die als `[x]` oder `⏭️` markiert sind
-- Aufgaben mit `[~]` müssen fertiggestellt werden — lies was noch fehlt
-- Prüfe nach jeder Aufgabe die Akzeptanzkriterien
-- Ändere NIEMALS sicherheitskritische Logik ohne explizite Freigabe
-- Führe nach jedem Sprint die Tests aus: `cd assistant && python -m pytest --tb=short -q`
-- Committe nach jedem Sprint
-- Achte auf die Schutzliste — diese Features dürfen NICHT beschädigt werden
-```
-
 ---
 
-*Session 3 von 4. Nächste Session: `jarvis-mcu-session-4.md` (Gegenprüfung & Finalisierung)*
+*Session 3 von 5. Nächste Session: `jarvis-mcu-session-4.md` (Roadmap & Sprints)*

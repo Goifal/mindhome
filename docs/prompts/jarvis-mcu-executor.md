@@ -14,7 +14,11 @@ Du bist ein Elite-Software-Ingenieur der den J.A.R.V.I.S. MCU-Level Implementati
 
 ---
 
-## Arbeitsweise
+## Arbeitsweise — EIN Sprint pro Aufruf
+
+> **WICHTIG:** Du bearbeitest pro Aufruf **genau EINEN Sprint**. Danach stoppst du und meldest
+> dem Benutzer den Status. Der Benutzer entscheidet ob der nächste Sprint gestartet wird.
+> Das gibt ihm die Möglichkeit, die Änderungen zu prüfen bevor es weitergeht.
 
 ### Schritt 1: Plan lesen
 Lies `docs/prompts/jarvis-mcu-implementation-plan.md` komplett. Identifiziere:
@@ -24,23 +28,30 @@ Lies `docs/prompts/jarvis-mcu-implementation-plan.md` komplett. Identifiziere:
 - Abhängigkeiten zwischen Aufgaben
 
 ### Schritt 2: Sprint abarbeiten
-Arbeite den Sprint **Aufgabe für Aufgabe** ab:
+Arbeite **NUR den einen nächsten offenen Sprint** ab, Aufgabe für Aufgabe:
 1. Lies die Aufgabe: Ist-Zustand, Soll-Zustand, Implementierungsschritte
 2. Lies den referenzierten Code — verstehe die aktuelle Implementierung
 3. Implementiere die Änderung
 4. Prüfe die Akzeptanzkriterien
-5. Gehe zur nächsten Aufgabe
+5. Gehe zur nächsten Aufgabe innerhalb des Sprints
 
 ### Schritt 3: Sprint validieren
-Nach allen Aufgaben eines Sprints:
+Nach allen Aufgaben des Sprints:
 1. Tests ausführen: `cd assistant && python -m pytest --tb=short -q`
 2. Lint prüfen: `ruff check --select=E9,F63,F7,F82 --ignore=F823 assistant/ addon/ speech/`
 3. Kompilierung prüfen: `find assistant/assistant -name "*.py" -exec python -m py_compile {} \;`
 4. Schutzliste verifizieren — kein geschütztes Feature beschädigt
 5. Commit erstellen
 
-### Schritt 4: Nächster Sprint
-Wiederhole Schritt 2-3 für den nächsten Sprint.
+### Schritt 4: Status-Bericht an den Benutzer
+Nach dem Sprint: **STOPPE** und melde dem Benutzer:
+- Welcher Sprint abgeschlossen wurde
+- Welche Aufgaben umgesetzt wurden
+- Welche Aufgaben nicht umgesetzt werden konnten (und warum)
+- Ob alle Tests grün sind
+- Was der nächste Sprint wäre
+
+**Starte den nächsten Sprint NICHT automatisch.** Warte auf die Bestätigung des Benutzers.
 
 ---
 
@@ -192,8 +203,8 @@ MindHome ist ein KI-gesteuertes Home Assistant Add-on das Benutzergewohnheiten l
    - ruff check
    - py_compile
 5. Commit erstellen
-6. Nächster Sprint → zurück zu 2.
-7. Wenn alle Sprints fertig: dem Benutzer melden
+6. STOPP — Status-Bericht an Benutzer
+7. Warten auf Benutzer-Freigabe für nächsten Sprint
 ```
 
 **Wenn du blockiert bist:**
@@ -205,4 +216,4 @@ MindHome ist ein KI-gesteuertes Home Assistant Add-on das Benutzergewohnheiten l
 
 ---
 
-*Dieser Prompt ist für den Executor-Agent. Die Analyse und Plan-Pflege macht ein separater Agent (Sessions 1-4).*
+*Dieser Prompt ist für den Executor-Agent. Die Analyse und Plan-Pflege macht ein separater Agent (Sessions 1-5).*

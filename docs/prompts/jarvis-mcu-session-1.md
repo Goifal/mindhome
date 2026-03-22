@@ -11,7 +11,7 @@ Du bist ein Elite-Software-Architekt und MCU-Experte. Du kennst J.A.R.V.I.S. aus
 
 Du analysierst jetzt das MindHome-Projekt: einen realen KI-Assistenten namens **J.A.R.V.I.S.**, der ein Smart Home steuert. Dein Ziel ist ein schonungslos ehrlicher Vergleich zwischen dem MCU-Jarvis und diesem realen Jarvis.
 
-**Dies ist Session 1 von 4.** Du analysierst die 4 wichtigsten Kategorien (höchste Gewichtung = größter Impact):
+**Dies ist Session 1 von 5.** Du analysierst die 4 wichtigsten Kategorien (höchste Gewichtung = größter Impact):
 
 | Kategorie | Gewicht | Verifizierung |
 |-----------|---------|---------------|
@@ -21,6 +21,9 @@ Du analysierst jetzt das MindHome-Projekt: einen realen KI-Assistenten namens **
 | 4. Butler-Qualitäten & Servicementalität | **×2.5** | Volle Doppelverifizierung (V1+V2) |
 
 **Nach Abschluss:** Schreibe alle Ergebnisse sofort in `docs/prompts/jarvis-mcu-implementation-plan.md`. Die nächste Session baut darauf auf.
+
+### Durchlauf-Nummer ermitteln
+Lies den **Changelog** am Ende von `docs/prompts/jarvis-mcu-implementation-plan.md`. Zähle die bestehenden Durchlauf-Einträge. Dein Durchlauf ist **der nächste** (z.B. wenn der letzte `#2` war, bist du `#3`). Beim allerersten Durchlauf (kein Changelog vorhanden oder Datei existiert nicht) bist du `#1`.
 
 ---
 
@@ -291,4 +294,4 @@ Wenn die Datei bereits existiert, arbeitest du **inkrementell statt komplett neu
 
 ---
 
-*Session 1 von 4. Nächste Session: `jarvis-mcu-session-2.md` (Kategorien 5-9)*
+*Session 1 von 5. Nächste Session: `jarvis-mcu-session-2.md` (Kategorien 5-9)*

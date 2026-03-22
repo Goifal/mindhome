@@ -1,208 +1,246 @@
-# Session 4: J.A.R.V.I.S. MCU vs. MindHome — Gegenprüfung & Finalisierung
+# Session 4: J.A.R.V.I.S. MCU vs. MindHome — Roadmap & Sprint-Plan
 
-> **Verwendung:** Diesen Prompt an Claude Code geben. NUR Session 4 ausführen.
-> **Voraussetzung:** Session 1-3 müssen abgeschlossen sein. Die Plan-Datei muss alle 12 Kategorien + Roadmap enthalten.
-> **Ergebnis:** Verifizierte und finalisierte `docs/prompts/jarvis-mcu-implementation-plan.md`
+> **Verwendung:** Diesen Prompt an Claude Code geben. NUR Session 4 ausführen — danach stoppen.
+> **Voraussetzung:** Session 1-3 müssen abgeschlossen sein. Die Plan-Datei muss alle 12 Kategorien enthalten.
+> **Ergebnis:** Roadmap mit Sprints und Implementierungsanweisungen in `docs/prompts/jarvis-mcu-implementation-plan.md`
 
 ---
 
 ## Deine Aufgabe
 
-Du bist ein Elite-Software-Architekt. Die vorherigen 3 Sessions haben eine vollständige MCU-Analyse mit Implementierungs-Roadmap erstellt. **Dein Job ist die Qualitätssicherung.**
+Du bist ein Elite-Software-Architekt. Die vorherigen 3 Sessions haben alle 12 Kategorien analysiert. **Dein Job ist die Roadmap.**
 
-Du prüfst die bestehende Plan-Datei gegen den **aktuellen Code** und stellst sicher, dass:
-1. Alle Erkenntnisse korrekt sind
-2. Alle Code-Referenzen stimmen
-3. Keine Features übersehen wurden
-4. Die Sprint-Reihenfolge sinnvoll ist
-5. Kein Verbesserungsvorschlag bestehende Features beschädigt
+**Dies ist Session 4 von 5.** Du erstellst:
+1. Abhängigkeitsgraph
+2. Sprint-Plan mit konkreten Aufgaben
+3. Detaillierte Implementierungsanweisungen für jede Aufgabe
+4. Gesamtübersicht mit gewichtetem Score
+5. Quick Wins, Fazit, Schutzliste
 
-**Wichtig:** Du hast frischen Kontext — nutze das! Die vorherigen Sessions hatten am Ende möglicherweise Kontext-Limit-Probleme. Du prüfst jetzt alles mit voller Aufmerksamkeit.
+### Durchlauf-Nummer ermitteln
+Lies den **Changelog** am Ende von `docs/prompts/jarvis-mcu-implementation-plan.md`. Zähle die bestehenden Durchlauf-Einträge. Dein Durchlauf ist **der nächste**. Beim allerersten Durchlauf (kein Changelog vorhanden) bist du `#1`.
 
----
-
-## Vorbereitung
-
-1. **Lies die komplette Plan-Datei** `docs/prompts/jarvis-mcu-implementation-plan.md`
-2. **Lies diesen Prompt** für die Prüfkriterien
-3. Arbeite die Gegenprüfung systematisch durch
+### Vorbereitung
+1. **Lies die komplette Plan-Datei** — verstehe alle 12 Kategorien-Analysen
+2. Identifiziere alle Verbesserungsvorschläge aus allen Kategorien
+3. Erstelle daraus die Roadmap
 
 ---
 
-## Schritt 1: Erkenntnisse gegen den Code prüfen
+## Regeln
 
-Gehe die Plan-Datei **Kategorie für Kategorie** durch:
+### Regel 1: Anweisungen müssen Copy-Paste-fähig sein
+Jede Aufgabe muss so konkret sein, dass ein Code-Agent (oder Entwickler) sie **ohne Rückfragen** umsetzen kann. Keine vagen Formulierungen wie "verbessere die Logik" — sondern "füge in `anticipation.py` Zeile 340 eine Gewichtung hinzu die den Wochentag berücksichtigt".
 
-### Für jeden "fehlt"-Punkt (`[FEHLT KOMPLETT]`):
-- Suche mit **3+ verschiedenen Suchbegriffen** (Synonyme, alternative Funktionsnamen, andere Dateien)
-- Erst wenn ALLE Suchversuche leer sind: bestätige `[FEHLT KOMPLETT]`
-- Wenn du doch etwas findest: markiere als `[KORRIGIERT]` und beschreibe was gefunden wurde
+### Regel 2: Code-Referenzen verifizieren
+Für jede Aufgabe: **lies die referenzierte Datei/Funktion** und prüfe dass sie existiert und die Zeilenangabe stimmt. Keine Aufgabe ohne verifizierte Code-Referenz.
 
-### Für jeden Verbesserungsvorschlag:
-- Prüfe ob die referenzierte **Datei existiert**
-- Prüfe ob die referenzierte **Funktion existiert**
-- Prüfe ob **Zeilenangaben** noch stimmen (Code kann sich geändert haben)
-- Wenn veraltet: aktualisiere die Referenz und markiere mit `🔄`
+### Regel 3: Schutzliste respektieren
+Kein Sprint-Task darf ein "Besser als MCU" Feature beschädigen. Prüfe jede Aufgabe explizit dagegen.
 
-### Für jede Prozent-Bewertung:
-- Lies die relevanten Code-Stellen **nochmal**
-- Frage: "Bin ich fair? Habe ich etwas übersehen?"
-- Wenn die Bewertung angepasst werden muss: markiere mit `[KORRIGIERT]` und begründe
-
-### Für jeden Sprint-Task:
-- Prüfe ob die vorgeschlagene Änderung **keine bestehende Funktionalität bricht**
-- Schau nach **Abhängigkeiten** — wer ruft die zu ändernde Funktion auf?
-- Gibt es **Tests** die brechen könnten?
-- Prüfe gegen die **Schutzliste** — wird ein "Besser als MCU" Feature beschädigt?
+### Regel 4: Kontext-Limit-Strategie
+- Nie ganze Dateien laden — Grep nutzen, dann gezielt lesen (50-100 Zeilen)
+- Sprints sequentiell ausarbeiten — nicht alle gleichzeitig im Kontext halten
+- Nach jedem Sprint sofort in die Plan-Datei schreiben
 
 ---
 
-## Schritt 2: Vollständigkeitsprüfung
+## Phase 2: Abhängigkeitsgraph & Sprint-Plan
 
-### Fehlende Features suchen
-Suche aktiv nach MCU-Fähigkeiten die in **keiner der 12 Kategorien** behandelt wurden:
-- Gibt es Features die zwischen den Kategorien fallen?
-- Hat Session 1/2/3 etwas übersehen?
-- Neue Kategorien erstellen wenn nötig
-
-### Feature-Vernetzung prüfen
-MCU-Jarvis hat alles nahtlos integriert. Prüfe für jedes Feature:
-- Arbeitet es mit anderen Modulen zusammen?
-- Gibt es isolierte Features die vernetzt sein sollten?
-- Markiere `[UNTERVERBUNDEN]` wenn Features isoliert arbeiten
-
-### Konfiguration prüfen
-- Sind alle Features in `settings.yaml` **aktiviert**?
-- Sind Schwellwerte **sinnvoll** oder willkürlich?
-- Gibt es Features die konfigurierbar sein sollten aber es nicht sind?
-
----
-
-## Schritt 3: Sprint-Plan validieren
-
-### Abhängigkeiten
-- Stimmt die Sprint-Reihenfolge? Werden Abhängigkeiten respektiert?
-- Gibt es versteckte Abhängigkeiten die nicht im Graph sind?
-
-### Risiko-Assessment
-- Welche Aufgaben sind **besonders riskant** für das Produktivsystem?
-- Haben diese Aufgaben angemessene Vorsichtsmaßnahmen?
-- Sind Rollback-Strategien beschrieben?
-
-### Aufwand-Schätzungen
-- Sind "Klein/Mittel/Groß" realistisch?
-- Gibt es Aufgaben die als "Klein" markiert sind aber eigentlich komplex?
-
----
-
-## Schritt 4: Plan-Datei finalisieren
-
-Aktualisiere `docs/prompts/jarvis-mcu-implementation-plan.md`:
-
-### Korrekturen einarbeiten
-- Alle `[KORRIGIERT]`-Markierungen mit Erklärung
-- Alle `🔄`-Markierungen für aktualisierte Referenzen
-- Neue Features/Kategorien die entdeckt wurden als `🆕`
-
-### Fortschritts-Tracker aktualisieren
+### Abhängigkeitsgraph
+Welche Verbesserungen müssen VOR anderen umgesetzt werden?
 ```
-| Session | Datum | Kategorien | Aufgaben |
-|---------|-------|------------|----------|
-| 1       | [Datum] | 1-4 (×3/×2.5) | XX |
-| 2       | [Datum] | 5-9 (×2/×1.5) | XX |
-| 3       | [Datum] | 10-12 (×1) + Roadmap | XX |
-| 4       | [Datum] | Gegenprüfung | XX Korrekturen |
+[Feature A] ──→ [Feature B] ──→ [Feature C]
+                                 ↗
+[Feature D] ────────────────────┘
 ```
 
-### Gesamt-Score neu berechnen
-Berechne den gewichteten Score basierend auf den (möglicherweise korrigierten) Prozent-Bewertungen:
+### Sprint-Plan Sortierung
+1. **Abhängigkeiten zuerst** — Fundamente vor Features die darauf aufbauen
+2. **Höchster Impact zuerst** — Was den Gesamt-Score am meisten hebt (Gewicht × Prozent-Gewinn)
+3. **Quick Wins vorziehen** — Kleine Änderungen mit großem Effekt vor Großprojekten
+4. **Risiko minimieren** — Sicherheitskritische Verbesserungen vor Nice-to-haves
+5. **Vernetzung maximieren** — Features die andere Features besser machen zuerst
 
-`Gesamt-Score = Σ(Kategorie-% × Gewicht) / Σ(Gewichte)`
-
-| Kategorie | Gewicht |
-|-----------|---------|
-| Natürliche Konversation | ×3 |
-| Persönlichkeit & Humor | ×3 |
-| Proaktives Handeln | ×2.5 |
-| Butler-Qualitäten | ×2.5 |
-| Situationsbewusstsein | ×2 |
-| Lernfähigkeit | ×2 |
-| Sprecherkennung | ×1.5 |
-| Krisenmanagement | ×1.5 |
-| Sicherheit | ×1.5 |
-| Multi-Room | ×1 |
-| Energiemanagement | ×1 |
-| Erklärbarkeit | ×1 |
-
-### Changelog ergänzen
+Format pro Sprint:
 ```
-### Session 4 — Gegenprüfung [Datum]
-- XX Erkenntnisse als [KORRIGIERT] markiert
-- XX Zeilenreferenzen aktualisiert (🔄)
-- XX neue Erkenntnisse hinzugefügt (🆕)
-- XX Sprint-Aufgaben angepasst
-- Gewichteter MCU-Score: XX% (vorher: XX%, Δ: ±XX%)
-- Korrekturen: [Zusammenfassung der wichtigsten Änderungen]
+### Sprint X: [Thema]
+**Status:** [ ] Offen | [~] In Arbeit | [x] Abgeschlossen
+**Ziel:** [Was MCU-Level sein soll nach diesem Sprint]
+**Vorher → Nachher:** XX% → XX% (Ziel)
+**Betroffene Dateien:** [Vollständige Liste]
+
+[Aufgaben...]
+
+### Sprint X — Validierung
+- [ ] Alle Aufgaben abgeschlossen
+- [ ] `python -m pytest --tb=short -q` — alle Tests grün
+- [ ] `ruff check --select=E9,F63,F7,F82 --ignore=F823 assistant/` — kein Fehler
+- [ ] Kein Breaking Change
+- [ ] Schutzliste geprüft
 ```
 
 ---
 
-## Qualitätskriterien — Die Plan-Datei ist NUR akzeptabel wenn:
+## Phase 3: Implementierungsanweisungen
 
-- [ ] Jede Aufgabe einen **konkreten Dateipfad** hat (kein "in der relevanten Datei")
-- [ ] Jede Aufgabe **konkrete Zeilenreferenzen** hat (verifiziert gegen aktuellen Code)
-- [ ] Jede Aufgabe **Akzeptanzkriterien** hat die testbar sind
-- [ ] Die Sprint-Reihenfolge **Abhängigkeiten** respektiert
-- [ ] Ein Agent der NUR die Plan-Datei liest, **jeden Punkt umsetzen kann**
-- [ ] **Keine vagen Formulierungen** ("verbessere", "optimiere") — nur konkrete Anweisungen
-- [ ] Alle Erkenntnisse durch die **Gegenprüfung bestätigt** wurden
-- [ ] Die **Schutzliste** vollständig ist und kein Sprint sie verletzt
-- [ ] Der **Gesamt-Score korrekt berechnet** ist
+Für **jede einzelne Aufgabe** in den Sprints:
 
-Wenn eines dieser Kriterien NICHT erfüllt ist: behebe es bevor du fertig bist.
+```
+### Aufgabe X.Y: [Titel]
+**Status:** [ ] Offen
+**Sprint:** X | **Priorität:** [Kritisch/Hoch/Mittel] | **Aufwand:** [Klein/Mittel/Groß]
+
+#### Ist-Zustand
+- Datei: `vollständiger/pfad/zur/datei.py`
+- Aktuelle Implementierung: [Was der Code jetzt tut, mit Zeilenreferenz]
+- Problem: [Was fehlt oder schlecht ist]
+
+#### Soll-Zustand (MCU-Level)
+- [Genau beschreiben wie es nach der Änderung funktionieren soll]
+- [Konkretes Verhalten das der MCU-Jarvis zeigt und das erreicht werden soll]
+
+#### Implementierungsschritte
+1. In `datei.py`, Funktion `xyz()`: [Was genau zu ändern ist]
+2. Neue Methode `abc()` erstellen die: [Logik beschreiben]
+3. In `brain.py` einbinden: [Wo und wie aufrufen]
+4. In `settings.yaml`: [Welche Config-Optionen hinzufügen]
+
+#### Verknüpfungen
+- Muss aufgerufen werden in: `datei.py`, Funktion `xyz()`
+- Benötigt Config in: `settings.yaml`, Sektion `abc`
+- Beeinflusst: [Welche anderen Module/Features]
+
+#### Akzeptanzkriterien
+- [ ] [Konkretes, testbares Kriterium]
+- [ ] Bestehende Tests laufen durch
+- [ ] Kein Breaking Change an bestehenden APIs
+
+#### Risiken
+- [Was kann schiefgehen — Produktivsystem!]
+- [Was muss vorher gesichert/getestet werden]
+```
 
 ---
 
-## Folge-Durchläufe
+## Phase 4: Gesamtübersicht
 
-Bei wiederholten Durchläufen von Session 4:
+### Gewichtete Score-Tabelle
 
-1. **Lies die Plan-Datei** und identifiziere was sich seit der letzten Gegenprüfung geändert hat
-2. **Prüfe per `git diff`** welche Code-Änderungen es gab:
+```
+| Kategorie                    | Gewicht | Aktuell | Nach Umsetzung | Status-Tag      | Alltag     | Sprint |
+|------------------------------|---------|---------|----------------|-----------------|------------|--------|
+| Natürliche Konversation      | ×3      | XX%     | XX%            | [VERBESSERBAR]  | [TÄGLICH]  | 1,3    |
+| Persönlichkeit & Humor       | ×3      | XX%     | XX%            | [OK]            | [TÄGLICH]  | -      |
+| Proaktives Handeln           | ×2.5    | XX%     | XX%            | ...             | ...        | ...    |
+| Butler-Qualitäten            | ×2.5    | XX%     | XX%            | ...             | ...        | ...    |
+| Situationsbewusstsein        | ×2      | XX%     | XX%            | ...             | ...        | ...    |
+| Lernfähigkeit                | ×2      | XX%     | XX%            | ...             | ...        | ...    |
+| Sprecherkennung              | ×1.5    | XX%     | XX%            | ...             | ...        | ...    |
+| Krisenmanagement             | ×1.5    | XX%     | XX%            | ...             | ...        | ...    |
+| Sicherheit                   | ×1.5    | XX%     | XX%            | ...             | ...        | ...    |
+| Multi-Room-Awareness         | ×1      | XX%     | XX%            | ...             | ...        | ...    |
+| Energiemanagement            | ×1      | XX%     | XX%            | ...             | ...        | ...    |
+| Erklärbarkeit                | ×1      | XX%     | XX%            | ...             | ...        | ...    |
+|------------------------------|---------|---------|----------------|-----------------|------------|--------|
+| **GEWICHTETER GESAMT-SCORE** |         | **XX%** | **XX%**        |                 |            |        |
+```
+
+Formel: `Gesamt-Score = Σ(Kategorie-% × Gewicht) / Σ(Gewichte)`
+
+### Besser als MCU — Alleinstellungsmerkmale
+| Feature | Was es kann | MCU-Äquivalent | Bewertung |
+|---------|-------------|----------------|-----------|
+| ...     | ...         | ...            | [BESSER ALS MCU] |
+
+**Schutzliste:** Diese Features dürfen durch KEINE Verbesserung beschädigt werden. Jeder Sprint muss gegen diese Liste geprüft werden.
+
+### Fehlende Features (komplett neu zu bauen)
+| Feature | MCU-Referenz | Aufwand | Alltag | Sprint |
+
+### Top-10 Quick Wins (Impact/Aufwand-Verhältnis)
+Sortiere nach: `(Prozent-Gewinn × Kategorie-Gewicht × Alltags-Faktor) / Aufwand`
+- Alltags-Faktor: [TÄGLICH]=3, [WÖCHENTLICH]=2, [SELTEN]=1
+
+### Kritischer Pfad zum MCU-Level
+Minimale Menge an Änderungen für ≥90% gewichteten Score. Fokus auf ×3 und ×2.5 Kategorien.
+
+### Fazit
+- **Aktueller Stand:** XX% — [Einschätzung in 1 Satz]
+- **Erreichbar nach Umsetzung:** XX%
+- **Größte Stärke:** [Was der reale Jarvis besser macht als MCU]
+- **Größte Schwäche:** [Was am weitesten entfernt UND hohes Gewicht hat]
+- **Alltagsrelevanteste Verbesserung:** [Was täglich am meisten betrifft]
+- **Empfehlung:** [Womit sofort starten]
+
+---
+
+## Anweisungen für den umsetzenden Agenten
+
+Füge diesen Block in die Plan-Datei ein (falls nicht schon vorhanden):
+
+```
+## Anweisungen für den umsetzenden Agenten
+
+Du bist ein Code-Agent der diesen Plan umsetzt. Folge diesen Regeln:
+- Arbeite die Sprints in Reihenfolge ab — überspringe keinen Sprint
+- Überspringe Aufgaben die als `[x]` oder `⏭️` markiert sind
+- Aufgaben mit `[~]` müssen fertiggestellt werden — lies was noch fehlt
+- Prüfe nach jeder Aufgabe die Akzeptanzkriterien
+- Ändere NIEMALS sicherheitskritische Logik ohne explizite Freigabe
+- Führe nach jedem Sprint die Tests aus: `cd assistant && python -m pytest --tb=short -q`
+- Committe nach jedem Sprint
+- Achte auf die Schutzliste — diese Features dürfen NICHT beschädigt werden
+- Verwende den vollständigen Executor-Prompt: `docs/prompts/jarvis-mcu-executor.md`
+```
+
+---
+
+## Ergebnis-Datei aktualisieren
+
+Öffne **`docs/prompts/jarvis-mcu-implementation-plan.md`** und:
+
+### Erster Durchlauf (Roadmap noch nicht in der Datei)
+1. **Füge die komplette Roadmap hinzu** (Abhängigkeitsgraph, Sprints, Aufgaben, Implementierungsanweisungen)
+2. **Erstelle die Gesamtübersicht** mit allen 12 Kategorien
+3. **Aktualisiere** den Fortschritts-Tracker
+4. **Ergänze** Schutzliste, Quick Wins, Fazit, Anweisungen für den Executor
+
+### Folge-Durchläufe (Roadmap existiert bereits)
+
+Arbeite **inkrementell statt komplett neu**:
+
+1. **Lies die bestehende Plan-Datei** komplett — verstehe den aktuellen Stand
+2. **Prüfe per `git diff`** welche Dateien sich seit dem letzten Durchlauf geändert haben:
    ```bash
    git log --oneline -10
    git diff --name-only HEAD~X
    ```
-3. **Fokussiere die Gegenprüfung auf geänderte Bereiche** — aber prüfe auch Stichproben in unveränderten
-4. **Erledigtes markieren:**
+3. **Erledigte Sprint-Aufgaben markieren:**
    - `[ ]` → `[x]` mit `✅ Erledigt am [Datum] — Durchlauf #X`
    - `[ ]` → `[~]` mit Beschreibung was fehlt
    - Akzeptanzkriterien tatsächlich prüfen — nicht blind abhaken!
-5. **Neue Erkenntnisse:** `🆕 Hinzugefügt in Durchlauf #X`
-6. **Veraltetes:** Zeilenreferenzen `🔄`, Obsoletes `⏭️ Obsolet — [Grund]`
-7. **Gesamt-Score neu berechnen**
-8. **Changelog ergänzen:**
-   ```
-   ### Durchlauf #X — Session 4 (Gegenprüfung) — [Datum]
-   - XX Erkenntnisse als [KORRIGIERT] markiert
-   - XX Zeilenreferenzen aktualisiert (🔄)
-   - XX neue Erkenntnisse hinzugefügt (🆕)
-   - XX Aufgaben als erledigt markiert
-   - Gewichteter MCU-Score: XX% (vorher: XX%, Δ: ±XX%)
-   ```
+4. **Neue Aufgaben:** `🆕 Hinzugefügt in Durchlauf #X` — nächste freie Nummer
+5. **Obsoletes:** `⏭️ Obsolet — [Grund]`
+6. **Zeilenreferenzen:** Aktualisieren wo Code sich geändert hat → `🔄`
+7. **Sprint-Status aktualisieren:**
+   - `[ ] Offen` → `[~] In Arbeit` → `[x] Abgeschlossen`
+   - `Vorher → Nachher: XX% → XX% (Ziel) | Tatsächlich: XX% (nach Durchlauf #X)`
+8. **Gesamtübersicht:** Score neu berechnen
+9. **Quick Wins:** Erledigte raus, neue rein
+10. **Fazit:** Aktuellen Stand neu formulieren
+11. **Changelog ergänzen:**
+    ```
+    ### Durchlauf #X — Session 4 — [Datum]
+    - XX Aufgaben als erledigt markiert
+    - XX neue Aufgaben hinzugefügt
+    - XX Zeilenreferenzen aktualisiert
+    - Sprint-Status: [Zusammenfassung]
+    - Gewichteter MCU-Score: XX% (vorher: XX%, Δ: +XX%)
+    ```
 
 **NIEMALS bestehende Einträge löschen** — nur Status-Updates, Ergänzungen und Markierungen.
 
 ---
 
-## Abschluss
-
-Nach der Finalisierung:
-1. Prüfe die Plan-Datei ein letztes Mal auf Konsistenz
-2. Stelle sicher dass alle Abschnitte vorhanden sind
-3. Der nächste Schritt ist: Plan-Datei einem Code-Agent geben der Sprint 1 umsetzt
-   → Verwende dafür `docs/prompts/jarvis-mcu-executor.md`
-
----
-
-*Session 4 von 4. Die Analyse ist abgeschlossen. Die Plan-Datei ist bereit zur Umsetzung.*
+*Session 4 von 5. Nächste Session: `jarvis-mcu-session-5.md` (Gegenprüfung & Finalisierung)*

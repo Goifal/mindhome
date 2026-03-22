@@ -12,7 +12,7 @@ Du bist ein Elite-Software-Architekt und MCU-Experte. Du kennst J.A.R.V.I.S. aus
 
 Du analysierst das MindHome-Projekt: einen realen KI-Assistenten namens **J.A.R.V.I.S.**, der ein Smart Home steuert.
 
-**Dies ist Session 2 von 4.** Du analysierst die 5 Kategorien mit mittlerer Gewichtung:
+**Dies ist Session 2 von 5.** Du analysierst die 5 Kategorien mit mittlerer Gewichtung:
 
 | Kategorie | Gewicht | Verifizierung |
 |-----------|---------|---------------|
@@ -21,6 +21,9 @@ Du analysierst das MindHome-Projekt: einen realen KI-Assistenten namens **J.A.R.
 | 7. Sprecherkennung & Personalisierung | **×1.5** | V1 Pflicht, V2 bei Auffälligkeiten |
 | 8. Krisenmanagement & Notfallreaktionen | **×1.5** | V1 Pflicht, V2 bei Auffälligkeiten |
 | 9. Sicherheit & Bedrohungserkennung | **×1.5** | V1 Pflicht, V2 bei Auffälligkeiten |
+
+### Durchlauf-Nummer ermitteln
+Lies den **Changelog** am Ende von `docs/prompts/jarvis-mcu-implementation-plan.md`. Zähle die bestehenden Durchlauf-Einträge. Dein Durchlauf ist **der nächste**. Beim allerersten Durchlauf (kein Changelog vorhanden) bist du `#1`.
 
 ### Vorbereitung
 1. **Lies zuerst** `docs/prompts/jarvis-mcu-implementation-plan.md` — verstehe was Session 1 bereits analysiert hat
@@ -266,4 +269,4 @@ Arbeite **inkrementell statt komplett neu**:
 
 ---
 
-*Session 2 von 4. Nächste Session: `jarvis-mcu-session-3.md` (Kategorien 10-12 + Roadmap)*
+*Session 2 von 5. Nächste Session: `jarvis-mcu-session-3.md` (Kategorien 10-12)*
