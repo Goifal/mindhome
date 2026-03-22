@@ -52,18 +52,18 @@ class RequestProfile:
 
 PROFILE_DEVICE_FAST = RequestProfile(
     category="device_command",
-    need_house_status=True,       # Brauchen wir fuer Geraete-Zustand
+    need_house_status=True,  # Brauchen wir fuer Geraete-Zustand
     need_mindhome_data=False,
     need_activity=False,
-    need_room_profile=True,       # Raum-Kontext fuer Geraete-Zuordnung
+    need_room_profile=True,  # Raum-Kontext fuer Geraete-Zuordnung
     need_memories=False,
-    need_mood=True,               # Mood auch bei Device-Commands — Frustration muss erkannt werden
+    need_mood=True,  # Mood auch bei Device-Commands — Frustration muss erkannt werden
     need_formality=False,
     need_irony=False,
-    need_time_hints=True,         # Zeitkontext ist wichtig (z.B. "Licht aus" um 3 Uhr)
-    need_security=True,           # Sicherheit IMMER pruefen (auch bei Device-Commands)
+    need_time_hints=True,  # Zeitkontext ist wichtig (z.B. "Licht aus" um 3 Uhr)
+    need_security=True,  # Sicherheit IMMER pruefen (auch bei Device-Commands)
     need_cross_room=False,
-    need_guest_mode=True,         # Guest-Mode beeinflusst Berechtigung
+    need_guest_mode=True,  # Guest-Mode beeinflusst Berechtigung
     need_tutorial=False,
     need_summary=False,
     need_rag=False,
@@ -75,17 +75,17 @@ PROFILE_KNOWLEDGE = RequestProfile(
     need_mindhome_data=False,
     need_activity=False,
     need_room_profile=False,
-    need_memories=True,           # Persoenliches Wissen kann relevant sein
-    need_mood=True,               # Tonalitaet der Antwort
+    need_memories=True,  # Persoenliches Wissen kann relevant sein
+    need_mood=True,  # Tonalitaet der Antwort
     need_formality=True,
     need_irony=True,
     need_time_hints=False,
     need_security=False,
     need_cross_room=False,
-    need_guest_mode=True,         # Guest-Mode: keine persoenlichen Fakten
+    need_guest_mode=True,  # Guest-Mode: keine persoenlichen Fakten
     need_tutorial=False,
     need_summary=False,
-    need_rag=True,                # RAG fuer Wissensbasis
+    need_rag=True,  # RAG fuer Wissensbasis
 )
 
 PROFILE_MEMORY = RequestProfile(
@@ -94,7 +94,7 @@ PROFILE_MEMORY = RequestProfile(
     need_mindhome_data=False,
     need_activity=False,
     need_room_profile=False,
-    need_memories=True,           # Kern-Feature
+    need_memories=True,  # Kern-Feature
     need_mood=True,
     need_formality=True,
     need_irony=True,
@@ -109,18 +109,37 @@ PROFILE_MEMORY = RequestProfile(
 
 PROFILE_DEVICE_QUERY = RequestProfile(
     category="device_query",
-    need_house_status=True,       # Sensordaten/Zustaende abfragen
+    need_house_status=True,  # Sensordaten/Zustaende abfragen
     need_mindhome_data=False,
-    need_activity=True,           # Aktivitaet kann Antwort beeinflussen
-    need_room_profile=True,       # Raum-Kontext fuer Zuordnung
-    need_memories=False,          # Keine persoenlichen Erinnerungen noetig
-    need_mood=False,              # Einfache Status-Antwort
+    need_activity=True,  # Aktivitaet kann Antwort beeinflussen
+    need_room_profile=True,  # Raum-Kontext fuer Zuordnung
+    need_memories=False,  # Keine persoenlichen Erinnerungen noetig
+    need_mood=False,  # Einfache Status-Antwort
     need_formality=False,
     need_irony=False,
-    need_time_hints=True,         # Zeitkontext relevant (z.B. Nacht-Temperatur)
+    need_time_hints=True,  # Zeitkontext relevant (z.B. Nacht-Temperatur)
     need_security=False,
     need_cross_room=False,
-    need_guest_mode=True,         # Guest-Mode beeinflusst sichtbare Daten
+    need_guest_mode=True,  # Guest-Mode beeinflusst sichtbare Daten
+    need_tutorial=False,
+    need_summary=False,
+    need_rag=False,
+)
+
+PROFILE_EXPLAIN = RequestProfile(
+    category="explain",
+    need_house_status=True,  # Aktuelle States fuer Erklaerung
+    need_mindhome_data=False,
+    need_activity=False,
+    need_room_profile=False,
+    need_memories=False,
+    need_mood=False,  # Schnelle Antwort, kein Mood noetig
+    need_formality=False,
+    need_irony=False,
+    need_time_hints=False,
+    need_security=False,
+    need_cross_room=False,
+    need_guest_mode=False,
     need_tutorial=False,
     need_summary=False,
     need_rag=False,
@@ -157,48 +176,129 @@ _DEVICE_VERBS_SEPARATED = re.compile(
 )
 
 _DEVICE_NOUNS = [
-    "rollladen", "rolladen", "rollo", "jalousie",
-    "rollläden", "rolläden", "rolllaeden", "rollos", "jalousien",
-    "licht", "lampe", "leuchte", "beleuchtung",
-    "heizung", "thermostat", "temperatur", "klima",
-    "steckdose", "schalter",
+    "rollladen",
+    "rolladen",
+    "rollo",
+    "jalousie",
+    "rollläden",
+    "rolläden",
+    "rolllaeden",
+    "rollos",
+    "jalousien",
+    "licht",
+    "lampe",
+    "leuchte",
+    "beleuchtung",
+    "heizung",
+    "thermostat",
+    "temperatur",
+    "klima",
+    "steckdose",
+    "schalter",
     # Haushaltsgeraete (Switches)
-    "maschine", "kaffeemaschine", "siebtraeger",
-    "ventilator", "luefter", "pumpe", "boiler",
+    "maschine",
+    "kaffeemaschine",
+    "siebtraeger",
+    "ventilator",
+    "luefter",
+    "pumpe",
+    "boiler",
 ]
 
 _DEVICE_ACTIONS = [
-    "auf", "zu", "an", "aus", "hoch", "runter",
-    "offen", "ein", "ab", "halb", "stopp", "stop",
-    "dicht", "starten",
+    "auf",
+    "zu",
+    "an",
+    "aus",
+    "hoch",
+    "runter",
+    "offen",
+    "ein",
+    "ab",
+    "halb",
+    "stopp",
+    "stop",
+    "dicht",
+    "starten",
     # Klima-Aktionswoerter
-    "wärmer", "waermer", "kälter", "kaelter",
-    "kühler", "kuehler", "höher", "hoeher",
+    "wärmer",
+    "waermer",
+    "kälter",
+    "kaelter",
+    "kühler",
+    "kuehler",
+    "höher",
+    "hoeher",
 ]
 
 _MEMORY_KEYWORDS = [
-    "erinnerst du dich", "weisst du noch", "was weisst du",
-    "habe ich dir", "hab ich gesagt", "was war",
+    "erinnerst du dich",
+    "weisst du noch",
+    "was weisst du",
+    "habe ich dir",
+    "hab ich gesagt",
+    "was war",
 ]
 
 _KNOWLEDGE_PATTERNS = [
-    "wie lange", "wie viel", "wie viele", "was ist",
-    "was sind", "was bedeutet", "erklaer mir", "erklaere",
-    "warum ist", "wer ist", "wer war", "was passiert wenn",
-    "wie funktioniert", "wie macht man", "wie kocht man",
-    "rezept fuer", "rezept für", "definition von", "unterschied zwischen",
+    "wie lange",
+    "wie viel",
+    "wie viele",
+    "was ist",
+    "was sind",
+    "was bedeutet",
+    "erklaer mir",
+    "erklaere",
+    "warum ist",
+    "wer ist",
+    "wer war",
+    "was passiert wenn",
+    "wie funktioniert",
+    "wie macht man",
+    "wie kocht man",
+    "rezept fuer",
+    "rezept für",
+    "definition von",
+    "unterschied zwischen",
 ]
 
 _SMART_HOME_KEYWORDS = [
-    "licht", "lampe", "heizung", "temperatur", "rollladen",
-    "rollläden", "rolläden", "jalousie",
-    "szene", "alarm", "tuer", "tür", "fenster",
-    "musik", "tv", "fernseher", "kamera", "sensor",
-    "steckdose", "schalter", "thermostat",
-    "status", "hausstatus", "haus-status", "ueberblick", "überblick",
-    "watt", "strom", "verbrauch", "energie", "kwh",
-    "eingeschalten", "eingeschaltet", "ausgeschaltet",
-    "smart plug", "smartplug",
+    "licht",
+    "lampe",
+    "heizung",
+    "temperatur",
+    "rollladen",
+    "rollläden",
+    "rolläden",
+    "jalousie",
+    "szene",
+    "alarm",
+    "tuer",
+    "tür",
+    "fenster",
+    "musik",
+    "tv",
+    "fernseher",
+    "kamera",
+    "sensor",
+    "steckdose",
+    "schalter",
+    "thermostat",
+    "status",
+    "hausstatus",
+    "haus-status",
+    "ueberblick",
+    "überblick",
+    "watt",
+    "strom",
+    "verbrauch",
+    "energie",
+    "kwh",
+    "eingeschalten",
+    "eingeschaltet",
+    "ausgeschaltet",
+    "smart plug",
+    "smartplug",
 ]
 
 # Status-Abfragen: Fragen nach aktuellem Zustand von Smart-Home-Geraeten
@@ -212,24 +312,61 @@ _STATUS_QUERY_PATTERNS = re.compile(
 )
 
 _STATUS_NOUNS = [
-    "temperatur", "grad", "warm", "kalt", "heizung", "klima",
-    "licht", "lichter", "lampe", "lampen", "hell", "dunkel", "helligkeit",
-    "rollladen", "rolladen", "rolllaeden", "rollläden", "rolläden",
-    "jalousie", "jalousien", "rollo", "rollos",
-    "fenster", "tuer", "tür", "türen",
-    "wetter", "aussen", "draussen",
-    "strom", "verbrauch", "watt", "energie",
-    "steckdose", "steckdosen", "schalter",
-    "status", "hausstatus", "ueberblick", "überblick",
-    "musik", "spielt", "laeuft", "läuft",
-    "offen", "geschlossen", "verriegelt",
-    "eingeschaltet", "ausgeschaltet",
+    "temperatur",
+    "grad",
+    "warm",
+    "kalt",
+    "heizung",
+    "klima",
+    "licht",
+    "lichter",
+    "lampe",
+    "lampen",
+    "hell",
+    "dunkel",
+    "helligkeit",
+    "rollladen",
+    "rolladen",
+    "rolllaeden",
+    "rollläden",
+    "rolläden",
+    "jalousie",
+    "jalousien",
+    "rollo",
+    "rollos",
+    "fenster",
+    "tuer",
+    "tür",
+    "türen",
+    "wetter",
+    "aussen",
+    "draussen",
+    "strom",
+    "verbrauch",
+    "watt",
+    "energie",
+    "steckdose",
+    "steckdosen",
+    "schalter",
+    "status",
+    "hausstatus",
+    "ueberblick",
+    "überblick",
+    "musik",
+    "spielt",
+    "laeuft",
+    "läuft",
+    "offen",
+    "geschlossen",
+    "verriegelt",
+    "eingeschaltet",
+    "ausgeschaltet",
     "alarm",
 ]
 
 # Kurze Woerter die als eigenes Wort matchen muessen (nicht als Substring)
 # "an" wuerde sonst "Anfang", "Antwort" etc. matchen
-_STATUS_SHORT_WORDS = re.compile(r'\b(?:an|aus)\b')
+_STATUS_SHORT_WORDS = re.compile(r"\b(?:an|aus)\b")
 
 # Implizite Befehle: Zustandsbeschreibungen die eine Geraete-Aktion implizieren.
 # "Mir ist kalt" → Heizung hoch, "Es ist dunkel" → Licht an, etc.
@@ -243,6 +380,26 @@ _IMPLICIT_COMMAND_PATTERNS = re.compile(
     r"|(?:(?:zu |so |viel zu |echt |total |ziemlich |sehr )"
     r"(?:kalt|warm|heiss|dunkel|hell|laut|leise|stickig) hier)"
     r")"
+)
+
+
+# "Warum hast du das gemacht?", "Wieso hast du das Licht eingeschaltet?"
+# Muss Bezug auf Jarvis-Aktion haben (du/jarvis + Aktionsverb),
+# NICHT fuer allgemeine Wissensfragen ("Warum ist der Himmel blau?")
+_EXPLAIN_PATTERNS = re.compile(
+    r"^(?:warum|wieso|weshalb)\b.+"
+    r"(?:"
+    # Bezug auf Jarvis + Aktion
+    r"\b(?:du|jarvis)\b.+\b(?:gemacht|getan|geaendert|geändert|eingeschaltet|ausgeschaltet"
+    r"|aktiviert|deaktiviert|angemacht|ausgemacht|geschaltet|gestellt|gedreht|gefahren"
+    r"|gestartet|gestoppt|gesetzt)\b"
+    r"|"
+    # "Warum hast du das X?", "Wieso hast du die Y?"
+    r"\bhast du\b"
+    r"|"
+    # "Warum hat Jarvis X?"
+    r"\bhat jarvis\b"
+    r")",
 )
 
 
@@ -271,12 +428,9 @@ class PreClassifier:
         profile = self.classify(text)
 
         # LLM-Fallback nur bei GENERAL und laengeren Texten
-        if (
-            profile.category == "general"
-            and self._ollama
-            and len(text.split()) > 10
-        ):
+        if profile.category == "general" and self._ollama and len(text.split()) > 10:
             from .config import yaml_config
+
             cfg = yaml_config.get("pre_classifier", {})
             if cfg.get("llm_fallback", True):
                 llm_profile = await self._llm_classify(text)
@@ -294,6 +448,7 @@ class PreClassifier:
         """
         try:
             from .config import settings
+
             response = await asyncio.wait_for(
                 self._ollama.chat(
                     messages=[
@@ -308,9 +463,12 @@ class PreClassifier:
                                 "- knowledge: Wissensfrage (Erklaerung, Rezept, Info ohne Smart-Home-Bezug)\n"
                                 "- memory: Erinnerungsfrage (was weisst du, erinnerst du dich)\n"
                                 "- general: Alles andere (Smalltalk, komplexe Anfragen)\n"
-                                + (f"Vorherige Anfrage war: {self._last_category}. "
-                                   "Beruecksichtige das bei mehrdeutigen Folge-Anfragen.\n"
-                                   if self._last_category else "")
+                                + (
+                                    f"Vorherige Anfrage war: {self._last_category}. "
+                                    "Beruecksichtige das bei mehrdeutigen Folge-Anfragen.\n"
+                                    if self._last_category
+                                    else ""
+                                )
                             ),
                         },
                         {"role": "user", "content": text[:300]},
@@ -323,12 +481,14 @@ class PreClassifier:
                 ),
                 timeout=2.0,  # Hartes Timeout — darf Pre-Classification nicht verlangsamen
             )
-            content = (response.get("message", {}).get("content", "") or "").strip().lower()
+            content = (
+                (response.get("message", {}).get("content", "") or "").strip().lower()
+            )
             # Think-Tags entfernen
             if "<think>" in content:
                 think_end = content.find("</think>")
                 if think_end != -1:
-                    content = content[think_end + 8:].strip()
+                    content = content[think_end + 8 :].strip()
 
             profile_map = {
                 "device_command": PROFILE_DEVICE_FAST,
@@ -368,7 +528,9 @@ class PreClassifier:
         #    Wohnzimmer und der Kueche runter" haben 10 Woerter)
         #    ABER: Fragen ("ist ... an?", "sind ... offen?") sind Status-Queries, keine Commands
         #    FIX DL3-AI2/AI3: ? allein reicht NICHT — Fragewort muss dabei sein
-        _question_starts = text_lower.startswith(("ist ", "sind ", "wie ", "was ", "wer ", "wo ", "wann ", "welch"))
+        _question_starts = text_lower.startswith(
+            ("ist ", "sind ", "wie ", "was ", "wer ", "wo ", "wann ", "welch")
+        )
         _has_question_mark = text_lower.rstrip().endswith("?")
         _is_question = _question_starts and (_has_question_mark or word_count <= 6)
         if word_count <= 12 and not _is_question:
@@ -385,7 +547,10 @@ class PreClassifier:
                 logger.debug("PreClassifier: DEVICE_FAST (noun+action: %s)", text)
                 return PROFILE_DEVICE_FAST
             # "alles aus/zu/an" ohne spezifisches Geraete-Nomen
-            _has_alle = any(f" {w}" in f" {text_lower}" for w in ("alle", "alles", "überall", "ueberall"))
+            _has_alle = any(
+                f" {w}" in f" {text_lower}"
+                for w in ("alle", "alles", "überall", "ueberall")
+            )
             if _has_alle and has_action:
                 logger.debug("PreClassifier: DEVICE_FAST (alles+action: %s)", text)
                 return PROFILE_DEVICE_FAST
@@ -401,26 +566,38 @@ class PreClassifier:
         #     Deutsche Trennverben: Verb am Anfang/Mitte, Praefix am Satzende
         if word_count <= 16 and not _is_question:
             if _DEVICE_VERBS_SEPARATED.search(text_lower):
-                _has_device_context = (
-                    any(n in text_lower for n in _DEVICE_NOUNS)
-                    or any(w in text_lower for w in ("maschine", "geraet", "gerät", "dose"))
+                _has_device_context = any(
+                    n in text_lower for n in _DEVICE_NOUNS
+                ) or any(
+                    w in text_lower for w in ("maschine", "geraet", "gerät", "dose")
                 )
                 if _has_device_context:
-                    logger.debug("PreClassifier: DEVICE_FAST (separated verb: %s)", text)
+                    logger.debug(
+                        "PreClassifier: DEVICE_FAST (separated verb: %s)", text
+                    )
                     return PROFILE_DEVICE_FAST
+
+        # 1d. Explain-Intent: "Warum hast du das gemacht?", "Wieso laeuft die Heizung?"
+        #      Route direkt zu ExplainabilityEngine statt ans LLM
+        if word_count <= 15 and _EXPLAIN_PATTERNS.search(text_lower):
+            logger.debug("PreClassifier: EXPLAIN (%s)", text)
+            return PROFILE_EXPLAIN
 
         # 2. Status-Abfragen: "Wie warm ist es?", "Sind die Rolllaeden offen?"
         if word_count <= 10:
             has_status_pattern = _STATUS_QUERY_PATTERNS.search(text_lower)
-            has_status_noun = (
-                any(n in text_lower for n in _STATUS_NOUNS)
-                or _STATUS_SHORT_WORDS.search(text_lower)
-            )
+            has_status_noun = any(
+                n in text_lower for n in _STATUS_NOUNS
+            ) or _STATUS_SHORT_WORDS.search(text_lower)
             if has_status_pattern and has_status_noun:
                 logger.debug("PreClassifier: DEVICE_QUERY (%s)", text)
                 return PROFILE_DEVICE_QUERY
             # Kurz-Queries: "Lichter?", "Rolllaeden?", "Steckdosen?" (1-2 Woerter + ?)
-            if word_count <= 2 and text_lower.rstrip().endswith("?") and has_status_noun:
+            if (
+                word_count <= 2
+                and text_lower.rstrip().endswith("?")
+                and has_status_noun
+            ):
                 logger.debug("PreClassifier: DEVICE_QUERY (short: %s)", text)
                 return PROFILE_DEVICE_QUERY
 

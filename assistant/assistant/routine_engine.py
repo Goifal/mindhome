@@ -231,10 +231,21 @@ class RoutineEngine:
                 style = "kurz"
             parts.append(sleep_hint.get("briefing_note", ""))
 
+        # Collect modules with content, then sort by urgency
+        module_parts: list[tuple[int, str, str]] = []  # (urgency, module, content)
         for module in self.briefing_modules:
             content = await self._get_briefing_module(module, person, style)
             if content:
-                parts.append(content)
+                urgency = self._get_module_urgency(module, content)
+                module_parts.append((urgency, module, content))
+
+        # Sort by urgency descending — safety-critical items first
+        module_parts.sort(key=lambda x: x[0], reverse=True)
+
+        # Greeting always stays first regardless of urgency
+        greeting_parts = [c for u, m, c in module_parts if m == "greeting"]
+        other_parts = [c for u, m, c in module_parts if m != "greeting"]
+        parts.extend(greeting_parts + other_parts)
 
         if not parts:
             return {"text": "", "actions": []}
@@ -298,6 +309,83 @@ class RoutineEngine:
         except Exception as e:
             logger.debug("Briefing-Modul '%s' fehlgeschlagen: %s", module, e)
         return ""
+
+    def _get_module_urgency(self, module: str, content: str) -> int:
+        """Returns urgency score 0-10 for briefing module ordering.
+
+        Higher scores appear first in the briefing. Safety-critical items
+        get highest priority, time-sensitive items next, informational last.
+        """
+        # Safety / conflicts — always first
+        if module == "device_conflicts":
+            return 10
+
+        # Calendar with urgent keywords
+        if module == "calendar":
+            urgent_keywords = (
+                "termin",
+                "meeting",
+                "arzt",
+                "deadline",
+                "dringend",
+                "urgent",
+                "jetzt",
+                "gleich",
+            )
+            lower = content.lower()
+            if any(kw in lower for kw in urgent_keywords):
+                return 8
+            return 5
+
+        # House status (security-relevant but not conflict)
+        if module == "house_status":
+            alert_keywords = (
+                "offen",
+                "alarm",
+                "warnung",
+                "fehler",
+                "batterie",
+                "unreachable",
+                "unavailable",
+            )
+            lower = content.lower()
+            if any(kw in lower for kw in alert_keywords):
+                return 9
+            return 4
+
+        # Weather warnings
+        if module == "weather":
+            warn_keywords = (
+                "warnung",
+                "sturm",
+                "gewitter",
+                "frost",
+                "hitze",
+                "unwetter",
+                "hagel",
+                "glatteis",
+            )
+            lower = content.lower()
+            if any(kw in lower for kw in warn_keywords):
+                return 7
+            return 3
+
+        # Energy
+        if module == "energy":
+            return 3
+
+        # Travel
+        if module == "travel":
+            return 4
+
+        # Personal memory / greeting — informational
+        if module == "personal_memory":
+            return 2
+
+        if module == "greeting":
+            return 1  # Handled separately, but score for completeness
+
+        return 3
 
     async def _get_device_conflicts_briefing(self) -> str:
         """Prueft DEVICE_DEPENDENCIES gegen aktuelle States fuer das Briefing."""

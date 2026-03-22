@@ -97,9 +97,94 @@ class EnergyOptimizer:
             )
         )
 
+        # MCU Sprint 5: Load priorities for intelligent load shedding
+        _lp = energy_cfg.get("load_priorities", {})
+        self.load_priority_essential: list[str] = _lp.get(
+            "essential", list(self.essential_entities)
+        )
+        self.load_priority_comfort: list[str] = _lp.get(
+            "comfort",
+            [
+                "climate.*",
+                "light.*",
+            ],
+        )
+        self.load_priority_entertainment: list[str] = _lp.get(
+            "entertainment",
+            [
+                "media_player.*",
+                "switch.gaming*",
+                "switch.tv*",
+            ],
+        )
+        self.load_shed_threshold = energy_cfg.get("load_shed_price_cent", 40)
+
     def set_ollama(self, ollama_client):
         """Setzt den OllamaClient fuer LLM-basierte Empfehlungen."""
         self._ollama = ollama_client
+
+    async def get_load_shedding_recommendations(
+        self, current_price: float
+    ) -> list[dict]:
+        """MCU Sprint 5: Recommends load shedding by priority when price is high.
+
+        Priority order: entertainment → comfort → (never essential).
+        """
+        if current_price < self.load_shed_threshold:
+            return []
+
+        recommendations = []
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return []
+
+            import fnmatch
+
+            # Entertainment first
+            for s in states:
+                eid = s.get("entity_id", "")
+                if s.get("state") not in ("on", "playing"):
+                    continue
+                if eid in self.essential_entities:
+                    continue
+                for pattern in self.load_priority_entertainment:
+                    if fnmatch.fnmatch(eid, pattern):
+                        name = s.get("attributes", {}).get("friendly_name", eid)
+                        recommendations.append(
+                            {
+                                "entity_id": eid,
+                                "name": name,
+                                "priority": "entertainment",
+                                "action": "Ausschalten empfohlen",
+                            }
+                        )
+                        break
+
+            # Then comfort (only if price very high)
+            if current_price > self.load_shed_threshold * 1.5:
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    if s.get("state") not in ("on", "heat", "cool"):
+                        continue
+                    if eid in self.essential_entities:
+                        continue
+                    for pattern in self.load_priority_comfort:
+                        if fnmatch.fnmatch(eid, pattern):
+                            name = s.get("attributes", {}).get("friendly_name", eid)
+                            recommendations.append(
+                                {
+                                    "entity_id": eid,
+                                    "name": name,
+                                    "priority": "comfort",
+                                    "action": "Reduzieren empfohlen",
+                                }
+                            )
+                            break
+        except Exception as e:
+            logger.debug("Load shedding check fehlgeschlagen: %s", e)
+
+        return recommendations
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert den EnergyOptimizer."""
@@ -174,6 +259,18 @@ class EnergyOptimizer:
         if export is not None and export > 0:
             parts.append(f"  Netz-Einspeisung: {export:.0f} W")
 
+        # MCU Sprint 5: Battery/UPS detection
+        battery_info = self._detect_battery_storage(states)
+        if battery_info:
+            parts.append(
+                f"  Batteriespeicher: {battery_info['soc']}% ({battery_info['entity']})"
+            )
+            if price is not None:
+                if price < self.price_low:
+                    parts.append("  → Empfehlung: Batterie laden (günstiger Strom)")
+                elif price > self.price_high:
+                    parts.append("  → Empfehlung: Batterie entladen (teurer Strom)")
+
         # Empfehlungen
         recommendations = await self._get_recommendations(price, solar, consumption)
         if recommendations:
@@ -188,6 +285,29 @@ class EnergyOptimizer:
             }
 
         return {"success": True, "message": "\n".join(parts)}
+
+    @staticmethod
+    def _detect_battery_storage(states: list[dict]) -> Optional[dict]:
+        """MCU Sprint 5: Detects battery storage entities in HA states."""
+        battery_keywords = ("battery", "batterie", "speicher", "soc", "usv", "ups")
+        for s in states:
+            eid = s.get("entity_id", "")
+            if not eid.startswith("sensor."):
+                continue
+            eid_lower = eid.lower()
+            friendly = (s.get("attributes", {}).get("friendly_name") or "").lower()
+            # Match battery storage sensors (not device batteries)
+            if any(kw in eid_lower or kw in friendly for kw in battery_keywords):
+                # Filter out small device batteries (phones, sensors)
+                if "phone" in eid_lower or "handy" in eid_lower:
+                    continue
+                try:
+                    soc = float(s.get("state", 0))
+                    if 0 <= soc <= 100:
+                        return {"entity": eid, "soc": int(soc)}
+                except (ValueError, TypeError):
+                    continue
+        return None
 
     async def get_energy_narrative(self) -> Optional[str]:
         """G4: Erzeugt eine menschliche Energie-Geschichte fuer das Morgen-Briefing.
@@ -1067,9 +1187,7 @@ class EnergyOptimizer:
             if len(history) > 48:
                 history = history[-48:]
 
-            await self.redis.setex(
-                KEY_PRICE_HISTORY, 86400 * 2, json.dumps(history)
-            )
+            await self.redis.setex(KEY_PRICE_HISTORY, 86400 * 2, json.dumps(history))
         except Exception as e:
             logger.warning("Preis-Historie aufzeichnen fehlgeschlagen: %s", e)
 

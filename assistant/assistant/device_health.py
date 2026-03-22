@@ -232,7 +232,17 @@ class DeviceHealthMonitor:
         # Sample immer hinzufuegen (für zukuenftige Baseline)
         await self._add_sample(entity_id, current_value)
 
-        if not baseline or baseline["samples"] < self.min_samples:
+        # MCU Sprint 5: Accelerated baselines — relaxed thresholds for new devices
+        _samples = baseline["samples"] if baseline else 0
+        if _samples < 3:
+            return None  # Need at least 3 samples
+        if _samples < self.min_samples:
+            # Early detection: looser threshold for devices with 3-9 samples
+            _effective_multiplier = 3.0  # More lenient
+        else:
+            _effective_multiplier = self.stddev_multiplier
+
+        if not baseline:
             return None
 
         mean = baseline["mean"]
@@ -241,7 +251,7 @@ class DeviceHealthMonitor:
             return None
 
         deviation = abs(current_value - mean) / stddev
-        if deviation <= self.stddev_multiplier:
+        if deviation <= _effective_multiplier:
             return None
 
         if not await self._check_cooldown(entity_id):

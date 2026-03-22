@@ -229,11 +229,43 @@ class ContextBuilder:
         self._weather_cache_ts: float = 0.0
         self._WEATHER_CACHE_TTL = 300.0  # 5 Minuten
 
-        # HA-States TTL Cache
+        # HA-States TTL Cache — MCU Sprint 5: reduced to 2s with event-driven updates
         ctx_cfg = yaml_config.get("context", {})
-        self._state_cache_ttl: float = float(ctx_cfg.get("state_cache_ttl_seconds", 5))
+        self._state_cache_ttl: float = float(ctx_cfg.get("state_cache_ttl_seconds", 2))
         self._state_cache: Optional[list] = None
         self._state_cache_time: float = 0.0
+        self._state_cache_lock = threading.Lock()
+
+    def update_state_from_event(
+        self, entity_id: str, new_state: str, attributes: dict = None
+    ) -> None:
+        """MCU Sprint 5: Event-driven cache update — patches single entity in cache.
+
+        Called by ProactiveManager's HA event listener to keep cache fresh
+        without full HA state reload.
+        """
+        with self._state_cache_lock:
+            if not self._state_cache:
+                return
+            for i, state in enumerate(self._state_cache):
+                if state.get("entity_id") == entity_id:
+                    self._state_cache[i] = {
+                        **state,
+                        "state": new_state,
+                        "attributes": {
+                            **state.get("attributes", {}),
+                            **(attributes or {}),
+                        },
+                    }
+                    return
+            # Entity not in cache yet — append
+            self._state_cache.append(
+                {
+                    "entity_id": entity_id,
+                    "state": new_state,
+                    "attributes": attributes or {},
+                }
+            )
 
     def set_semantic_memory(self, semantic: SemanticMemory):
         """Setzt die Referenz zum Semantic Memory."""
@@ -263,10 +295,17 @@ class ContextBuilder:
         """Setzt die Referenz zur ConversationMemory (fuer Thread-Kontext)."""
         self._conversation_memory = conversation_memory
 
+    def set_follow_me(self, follow_me):
+        """MCU Sprint 4: Setzt FollowMe-Engine fuer Per-Person Room Tracking."""
+        self._follow_me = follow_me
+
     async def _get_states_cached(self) -> Optional[list]:
         """Returns HA states with short TTL cache to avoid redundant API calls."""
         now = time.monotonic()
-        if self._state_cache is not None and (now - self._state_cache_time) < self._state_cache_ttl:
+        if (
+            self._state_cache is not None
+            and (now - self._state_cache_time) < self._state_cache_ttl
+        ):
             return self._state_cache
 
         states = await self.ha.get_states()
@@ -1660,10 +1699,23 @@ class ContextBuilder:
                         pname = state.get("attributes", {}).get("friendly_name", "User")
                     persons_home.append(pname)
 
-        # Einfache Zuordnung: Personen zum aktivsten Raum
+        # MCU Sprint 4: Per-Person Room Tracking via FollowMe engine
         persons_by_room = {}
-        if active_rooms and persons_home:
-            # Erste Naeherung: Alle Personen im zuletzt aktiven Raum
+        _follow_me = getattr(self, "_follow_me", None)
+        _used_follow_me = False
+        if _follow_me and hasattr(_follow_me, "_person_room"):
+            try:
+                for person_name in persons_home:
+                    pk = person_name.lower().strip()
+                    room = _follow_me._person_room.get(pk, "")
+                    if room:
+                        persons_by_room.setdefault(room, []).append(person_name)
+                        _used_follow_me = True
+            except Exception:
+                pass
+
+        # Fallback: Alle Personen zum aktivsten Raum wenn kein FollowMe data
+        if not _used_follow_me and active_rooms and persons_home:
             primary_room = active_rooms[0]
             persons_by_room[primary_room] = persons_home
 

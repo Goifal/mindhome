@@ -12,6 +12,7 @@ Cooldown verhindert Ping-Pong bei schnellen Raumwechseln.
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -20,6 +21,7 @@ from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
 from zoneinfo import ZoneInfo
+
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
@@ -34,11 +36,16 @@ class FollowMeEngine:
         self._person_room: dict[str, str] = {}
         self._last_transfer: dict[str, datetime] = {}
         self._tracking_lock = asyncio.Lock()
+        self._brain = None  # MCU Sprint 5: Brain reference for topic resumption
+
+    def set_brain(self, brain) -> None:
+        """MCU Sprint 5: Sets brain reference for conversation context tracking."""
+        self._brain = brain
 
     def _load_config(self):
         """Laedt Konfiguration aus settings.yaml."""
         cfg = yaml_config.get("follow_me", {})
-        self.enabled = cfg.get("enabled", False)
+        self.enabled = cfg.get("enabled", True)
         self.cooldown_seconds = cfg.get("cooldown_seconds", 60)
         self.transfer_music = cfg.get("transfer_music", True)
         self.transfer_lights = cfg.get("transfer_lights", True)
@@ -49,7 +56,9 @@ class FollowMeEngine:
         """Holt das Follow-Me Profil einer Person."""
         return self.profiles.get(person, self.profiles.get(person.lower(), {}))
 
-    async def handle_motion(self, motion_entity: str, person: str = "") -> Optional[dict]:
+    async def handle_motion(
+        self, motion_entity: str, person: str = ""
+    ) -> Optional[dict]:
         """Verarbeitet ein Motion-Event und fuehrt ggf. Transfer durch.
 
         Args:
@@ -94,7 +103,9 @@ class FollowMeEngine:
 
             # Cooldown pruefen
             last = self._last_transfer.get(person_key)
-            if last and datetime.now(timezone.utc) - last < timedelta(seconds=self.cooldown_seconds):
+            if last and datetime.now(timezone.utc) - last < timedelta(
+                seconds=self.cooldown_seconds
+            ):
                 return None
 
             # Raumwechsel registrieren
@@ -108,20 +119,44 @@ class FollowMeEngine:
             # Pruefen ob Person allein im alten Raum war
             # (wenn andere noch da sind, nichts abschalten)
             others_in_old_room = [
-                p for p, r in self._person_room.items()
+                p
+                for p, r in self._person_room.items()
                 if r and r.lower() == old_room.lower() and p != person_key
             ]
 
         logger.info(
             "Follow-Me: %s wechselt von %s nach %s (andere in %s: %d)",
-            person_key, old_room, new_room, old_room, len(others_in_old_room),
+            person_key,
+            old_room,
+            new_room,
+            old_room,
+            len(others_in_old_room),
         )
+
+        # MCU Sprint 5: Check if recent conversation exists for topic resumption
+        _last_interaction_age = None
+        _last_topic = ""
+        try:
+            if hasattr(self, "_brain") and self._brain:
+                _ts = getattr(self._brain, "_last_interaction_ts", 0)
+                if _ts:
+                    _last_interaction_age = time.time() - _ts
+                    if _last_interaction_age < 300:  # < 5 minutes
+                        # Get last topic from dialogue state
+                        if hasattr(self._brain, "dialogue_state"):
+                            _ds = self._brain.dialogue_state._get_state(person_key)
+                            if _ds and _ds.last_actions:
+                                _last_act = _ds.last_actions[0]
+                                _last_topic = _last_act.get("description", "")[:80]
+        except Exception:
+            pass
 
         result = {
             "person": person_key,
             "from_room": old_room,
             "to_room": new_room,
             "actions": [],
+            "last_topic": _last_topic,  # MCU Sprint 5
         }
 
         room_speakers = multi_room_cfg.get("room_speakers", {})
@@ -130,17 +165,32 @@ class FollowMeEngine:
         # 1-3: Musik, Licht, Klima parallel transferieren
         transfer_coros = []
         if self.transfer_music:
-            transfer_coros.append(self._transfer_music(
-                old_room, new_room, room_speakers, others_in_old_room,
-            ))
+            transfer_coros.append(
+                self._transfer_music(
+                    old_room,
+                    new_room,
+                    room_speakers,
+                    others_in_old_room,
+                )
+            )
         if self.transfer_lights:
-            transfer_coros.append(self._transfer_lights(
-                old_room, new_room, profile, others_in_old_room,
-            ))
+            transfer_coros.append(
+                self._transfer_lights(
+                    old_room,
+                    new_room,
+                    profile,
+                    others_in_old_room,
+                )
+            )
         if self.transfer_climate:
-            transfer_coros.append(self._transfer_climate(
-                old_room, new_room, profile, others_in_old_room,
-            ))
+            transfer_coros.append(
+                self._transfer_climate(
+                    old_room,
+                    new_room,
+                    profile,
+                    others_in_old_room,
+                )
+            )
 
         if transfer_coros:
             actions = await asyncio.gather(*transfer_coros, return_exceptions=True)
@@ -153,8 +203,11 @@ class FollowMeEngine:
         return None
 
     async def _transfer_music(
-        self, old_room: str, new_room: str,
-        room_speakers: dict, others_in_old: list,
+        self,
+        old_room: str,
+        new_room: str,
+        room_speakers: dict,
+        others_in_old: list,
     ) -> Optional[dict]:
         """Transferiert Musik vom alten in den neuen Raum."""
         old_speaker = self._find_speaker(old_room, room_speakers)
@@ -169,20 +222,58 @@ class FollowMeEngine:
             return None
 
         try:
-            # Pause im alten Raum (nur wenn allein)
-            if not others_in_old:
-                await self.ha.call_service(
-                    "media_player", "media_pause",
-                    {"entity_id": old_speaker},
-                )
+            # MCU Sprint 5: Crossfade — get current volume for gradual transition
+            old_attrs = state.get("attributes", {})
+            old_volume = old_attrs.get("volume_level", 0.8)
 
-            # Play im neuen Raum
+            # Start new room at low volume, will ramp up
             await self.ha.call_service(
-                "media_player", "media_play",
+                "media_player",
+                "volume_set",
+                {"entity_id": new_speaker, "volume_level": 0.1},
+            )
+            await self.ha.call_service(
+                "media_player",
+                "media_play",
                 {"entity_id": new_speaker},
             )
 
-            logger.info("Follow-Me Musik: %s → %s", old_room, new_room)
+            # Crossfade: 10 steps over 2 seconds
+            crossfade_steps = 10
+            for step in range(1, crossfade_steps + 1):
+                progress = step / crossfade_steps
+                # New room ramps up
+                new_vol = round(old_volume * progress, 2)
+                await self.ha.call_service(
+                    "media_player",
+                    "volume_set",
+                    {"entity_id": new_speaker, "volume_level": new_vol},
+                )
+                # Old room ramps down (only if alone)
+                if not others_in_old:
+                    old_vol = round(old_volume * (1 - progress), 2)
+                    await self.ha.call_service(
+                        "media_player",
+                        "volume_set",
+                        {"entity_id": old_speaker, "volume_level": old_vol},
+                    )
+                await asyncio.sleep(0.2)
+
+            # Pause old room after crossfade (only if alone)
+            if not others_in_old:
+                await self.ha.call_service(
+                    "media_player",
+                    "media_pause",
+                    {"entity_id": old_speaker},
+                )
+                # Restore old speaker volume for next use
+                await self.ha.call_service(
+                    "media_player",
+                    "volume_set",
+                    {"entity_id": old_speaker, "volume_level": old_volume},
+                )
+
+            logger.info("Follow-Me Musik (crossfade): %s → %s", old_room, new_room)
             return {"type": "music", "from": old_room, "to": new_room}
 
         except Exception as e:
@@ -190,8 +281,11 @@ class FollowMeEngine:
             return None
 
     async def _transfer_lights(
-        self, old_room: str, new_room: str,
-        profile: dict, others_in_old: list,
+        self,
+        old_room: str,
+        new_room: str,
+        profile: dict,
+        others_in_old: list,
     ) -> Optional[dict]:
         """Schaltet Licht im neuen Raum ein, im alten aus.
 
@@ -200,6 +294,7 @@ class FollowMeEngine:
         """
         try:
             from .config import get_room_profiles
+
             room_profiles = get_room_profiles().get("rooms", {})
             transition = int(
                 yaml_config.get("lighting", {}).get("default_transition", 2)
@@ -242,11 +337,14 @@ class FollowMeEngine:
                     old_entities = [f"light.{old_room.lower().replace(' ', '_')}"]
                 for entity_id in old_entities:
                     await self.ha.call_service(
-                        "light", "turn_off",
+                        "light",
+                        "turn_off",
                         {"entity_id": entity_id, "transition": transition},
                     )
 
-            logger.info("Follow-Me Licht: %s aus → %s an (%d%%)", old_room, new_room, brightness)
+            logger.info(
+                "Follow-Me Licht: %s aus → %s an (%d%%)", old_room, new_room, brightness
+            )
             return {"type": "lights", "from": old_room, "to": new_room}
 
         except Exception as e:
@@ -254,28 +352,41 @@ class FollowMeEngine:
             return None
 
     async def _transfer_climate(
-        self, old_room: str, new_room: str,
-        profile: dict, others_in_old: list,
+        self,
+        old_room: str,
+        new_room: str,
+        profile: dict,
+        others_in_old: list,
     ) -> Optional[dict]:
         """Setzt Klima im neuen Raum auf Komfort, im alten auf Eco."""
         try:
             comfort_temp = profile.get("comfort_temp", 22)
 
             # Neuen Raum auf Komfort
-            await self.ha.call_service("climate", "set_temperature", {
-                "entity_id": f"climate.{new_room.lower().replace(' ', '_')}",
-                "temperature": comfort_temp,
-            })
+            await self.ha.call_service(
+                "climate",
+                "set_temperature",
+                {
+                    "entity_id": f"climate.{new_room.lower().replace(' ', '_')}",
+                    "temperature": comfort_temp,
+                },
+            )
 
             # Alten Raum auf Eco (nur wenn allein)
             if not others_in_old:
                 eco_temp = comfort_temp - profile.get("eco_temp_offset", 3)
-                await self.ha.call_service("climate", "set_temperature", {
-                    "entity_id": f"climate.{old_room.lower().replace(' ', '_')}",
-                    "temperature": eco_temp,
-                })
+                await self.ha.call_service(
+                    "climate",
+                    "set_temperature",
+                    {
+                        "entity_id": f"climate.{old_room.lower().replace(' ', '_')}",
+                        "temperature": eco_temp,
+                    },
+                )
 
-            logger.info("Follow-Me Klima: %s→Eco, %s→%d°C", old_room, new_room, comfort_temp)
+            logger.info(
+                "Follow-Me Klima: %s→Eco, %s→%d°C", old_room, new_room, comfort_temp
+            )
             return {"type": "climate", "from": old_room, "to": new_room}
 
         except Exception as e:
@@ -294,14 +405,17 @@ class FollowMeEngine:
         """Raeumt veraltete Person-Room-Eintraege auf."""
         now = datetime.now(timezone.utc)
         stale = [
-            p for p, t in self._last_transfer.items()
+            p
+            for p, t in self._last_transfer.items()
             if now - t > timedelta(hours=max_age_hours)
         ]
         for p in stale:
             self._person_room.pop(p, None)
             self._last_transfer.pop(p, None)
         if stale:
-            logger.debug("Follow-Me: %d veraltete Tracking-Eintraege bereinigt", len(stale))
+            logger.debug(
+                "Follow-Me: %d veraltete Tracking-Eintraege bereinigt", len(stale)
+            )
 
     def health_status(self) -> dict:
         """Status fuer Diagnostik."""
@@ -343,7 +457,8 @@ class FollowMeEngine:
         """Gibt alle Personen in einem bestimmten Raum zurueck."""
         room_lower = room.lower().replace(" ", "_")
         return [
-            p for p, r in self._person_room.items()
+            p
+            for p, r in self._person_room.items()
             if r.lower().replace(" ", "_") == room_lower
         ]
 
@@ -384,7 +499,9 @@ class FollowMeEngine:
         if seconds_away <= 10.0:
             logger.debug(
                 "Rueckkehr erkannt: %s war nur %.1fs weg von %s — kein Transfer",
-                person, seconds_away, room,
+                person,
+                seconds_away,
+                room,
             )
             return True
         return False
@@ -406,7 +523,9 @@ class FollowMeEngine:
         if seconds_present >= 180.0:
             logger.debug(
                 "Verweildauer erreicht: %s ist seit %.0fs in %s — angekommen",
-                person, seconds_present, room,
+                person,
+                seconds_present,
+                room,
             )
             return True
         return False

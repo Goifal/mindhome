@@ -822,6 +822,20 @@ routines:
       formal_tone: true
       restrict_security: true
       suggest_guest_wifi: true
+# Kalender-Trigger: Vorbereitungsvorschlaege vor Terminen
+calendar_triggers:
+  enabled: true                      # Kalender-basierte Vorschlaege aktivieren
+  check_interval_minutes: 15         # Pruef-Intervall
+  lead_time_min: 10                  # Frueheste Vorwarnung (Minuten vor Event)
+  lead_time_max: 30                  # Spaeteste Vorwarnung (Minuten vor Event)
+
+# Ankunfts-Begruessung: Orchestrierte Willkommen-Sequenz nach Abwesenheit
+arrival_greeting:
+  enabled: true                      # Ankunfts-Begruessung aktivieren
+  min_absence_hours: 4               # Mindest-Abwesenheit fuer Begruessung (Stunden)
+  max_actions: 3                     # Max. automatische Aktionen bei Ankunft
+  min_confidence: 0.7                # Mindest-Confidence fuer Auto-Aktionen
+
 time_awareness:
   enabled: true
   check_interval_minutes: 5
@@ -901,6 +915,16 @@ tts:
   - normal
   - laut
   - normale lautstaerke
+  # Natuerliche Denkpausen: "Moment...", "Mal sehen..." vor komplexen Antworten
+  filler:
+    enabled: true                    # Filler-Phrasen aktivieren (nur bei Voice)
+    interval: 3                      # Max 1 Filler pro N Antworten
+    phrases:
+    - "Moment..."
+    - "Mal sehen..."
+    - "Lass mich kurz prüfen..."
+    - "Einen Augenblick..."
+    - "Ich schaue nach..."
 volume:
   day: 0.8
   evening: 0.5
@@ -975,6 +999,23 @@ multi_room:
     # schlafzimmer: binary_sensor.occupancy_schlafzimmer
     # kueche: binary_sensor.motion_kueche
     # buero: binary_sensor.motion_buero
+# Follow-Me: JARVIS folgt dir von Raum zu Raum
+# Transferiert Musik, Licht und Klima automatisch bei Raumwechsel.
+# Erfordert konfigurierte room_motion_sensors (oben) fuer Raumwechsel-Erkennung.
+follow_me:
+  enabled: true                    # Follow-Me aktivieren (Default: true)
+  cooldown_seconds: 60             # Min. Sekunden zwischen Transfers (verhindert Ping-Pong)
+  transfer_music: true             # Musik beim Raumwechsel transferieren
+  transfer_lights: true            # Licht im alten Raum aus, im neuen an
+  transfer_climate: false          # Klimasteuerung beim Raumwechsel (Eco/Comfort)
+  # Per-Person Profile (ueberschreiben globale Einstellungen)
+  profiles: {}
+    # max:
+    #   light_brightness: 80       # Licht-Helligkeit im neuen Raum (%)
+    #   light_color_temp: 3500     # Farbtemperatur (Kelvin)
+    #   comfort_temp: 22           # Komfort-Temperatur im neuen Raum
+    #   eco_temp_offset: 3         # Eco-Absenkung im alten Raum (Grad)
+
 person_profiles:
   enabled: true
   profiles: {}
@@ -1275,6 +1316,17 @@ energy:
   price_entity: ''                           # z.B. sensor.electricity_price
   solar_forecast_enabled: false
   solar_entity: ''                           # z.B. sensor.solar_power
+  load_shed_price_cent: 40                   # Preis-Schwelle fuer Last-Abschaltung (ct/kWh)
+  # Intelligente Last-Priorisierung: Bei hohem Strompreis abschalten nach Prioritaet
+  load_priorities:
+    essential: []                            # Nie abschalten (Kuehlschrank, Server, NAS)
+    comfort:                                 # Reduzieren bei sehr hohem Preis
+    - "climate.*"
+    - "light.*"
+    entertainment:                           # Zuerst abschalten
+    - "media_player.*"
+    - "switch.gaming*"
+    - "switch.tv*"
 # --- Geo-Fence / Proximity ---
 geo_fence:
   approaching_km: 2.0
@@ -1334,6 +1386,14 @@ threat_assessment:
   state_max_age_minutes: 10
   emergency_autonomy_boost: false            # Autonomie-Boost bei Notfall
   emergency_boost_duration_min: 15
+  # Externe Eskalationskette: Notfall-Kontakte bei Critical ohne ACK
+  emergency_contacts: []
+    # - name: Partner
+    #   ha_notify_target: notify.mobile_app_partner
+    #   delay_minutes: 0
+    # - name: Nachbar
+    #   ha_notify_target: notify.mobile_app_nachbar
+    #   delay_minutes: 2
 # --- Wirkungstracker ---
 outcome_tracker:
   enabled: true
@@ -1378,6 +1438,7 @@ inner_state:
 semantic_memory:
   fact_versioning: false                     # Fakt-Versionierung statt Ueberschreiben
   contradiction_query: true                  # Bei Widerspruechen nachfragen
+  contradiction_confirmation: false          # Widersprueche dem User vorlegen statt auto-ueberschreiben
 # --- Was-Waere-Wenn Simulation ---
 whatif_simulation:
   strompreis_kwh: 0.30
