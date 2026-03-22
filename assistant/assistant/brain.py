@@ -16851,29 +16851,49 @@ Regeln:
                         )
 
             # --- Physikalische Abhaengigkeiten als kausale Hinweise ---
-            # Explizite Kausalverbindungen die das LLM sonst selbst inferieren muesste.
-            _open_windows = []
-            _heating_rooms = []
-            for _room_name, _room_data in house.get("rooms", {}).items():
-                if isinstance(_room_data, dict):
-                    if _room_data.get("windows_open"):
-                        _open_windows.append(_room_name)
-                    if _room_data.get("heating_active"):
-                        _heating_rooms.append(_room_name)
+            # Erkennt Fenster-offen + Heizung-aktiv im selben Raum via HA-States.
+            # Prueft Entity-IDs direkt statt house-Context (der keine Live-States hat).
+            try:
+                _cr_states = getattr(self, "_states_cache", None) or []
+                _window_rooms: set[str] = set()
+                _heating_rooms: set[str] = set()
+                for _s in _cr_states:
+                    _eid = _s.get("entity_id", "")
+                    _state_val = _s.get("state", "")
+                    # Offene Fenster/Tueren erkennen
+                    if (
+                        _eid.startswith("binary_sensor.")
+                        and ("window" in _eid or "fenster" in _eid)
+                        and _state_val == "on"
+                    ):
+                        # Raum aus Entity-ID extrahieren (z.B. binary_sensor.fenster_wohnzimmer → wohnzimmer)
+                        _parts = _eid.split(".")[-1].replace("fenster_", "").replace("window_", "")
+                        if _parts:
+                            _window_rooms.add(_parts.split("_")[0])
+                    # Aktive Heizungen erkennen
+                    elif (
+                        _eid.startswith("climate.")
+                        and _state_val in ("heat", "auto", "heat_cool")
+                    ):
+                        _cr_name = _eid.split(".")[-1]
+                        _heating_rooms.add(_cr_name.split("_")[0])
 
-            # Fenster offen + Heizung aktiv im selben Raum = kausale Warnung
-            _conflict_rooms = set(_open_windows) & set(_heating_rooms)
-            if _conflict_rooms:
-                _rooms_str = ", ".join(_conflict_rooms)
-                results.append(
-                    (
-                        1,
-                        f"KAUSAL-WARNUNG: In {_rooms_str} ist das Fenster offen "
-                        f"waehrend die Heizung laeuft. Physikalische Abhaengigkeit: "
-                        f"Heizenergie entweicht → Heizen ist ineffektiv. "
-                        f"Empfehlung: Zuerst Fenster schliessen, dann heizen.",
+                _conflict_rooms = _window_rooms & _heating_rooms
+                if _conflict_rooms:
+                    _rooms_nice = ", ".join(
+                        r.replace("_", " ").capitalize() for r in _conflict_rooms
                     )
-                )
+                    results.append(
+                        (
+                            1,
+                            f"KAUSAL-WARNUNG: In {_rooms_nice} ist ein Fenster offen "
+                            f"waehrend die Heizung laeuft. Physikalische Abhaengigkeit: "
+                            f"Heizenergie entweicht → Heizen ist ineffektiv. "
+                            f"Empfehlung: Zuerst Fenster schliessen, dann heizen.",
+                        )
+                    )
+            except Exception as _cr_err:
+                logger.debug("Kausale Cross-Reference Fehler: %s", _cr_err)
 
         except Exception as e:
             logger.debug("Cross-Referenz Fehler: %s", e)
@@ -17102,11 +17122,11 @@ Regeln:
                         ):
                             _corr_causal["windows_open"] = True
                             break
-                    # Aktivitaet
+                    # Aktivitaet (async — detect_activity liefert Dict mit "activity" Key)
                     if self.activity:
-                        _act = self.activity.get_current_activity()
-                        if _act:
-                            _corr_causal["activity"] = _act
+                        _act_result = await self.activity.detect_activity()
+                        if _act_result and _act_result.get("activity"):
+                            _corr_causal["activity"] = _act_result["activity"]
                 except Exception:
                     pass
                 await self.correction_memory.store_correction(
