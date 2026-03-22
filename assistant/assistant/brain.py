@@ -8037,9 +8037,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             # Gruppe 1: Aktions-Behauptungen — immer halluziniert bei 0 Aktionen
             _action_claim_patterns = [
                 r"(?:habe|hab)\s+(?:den|die|das|einen)?\s*(?:Befehl|Aktion)",
-                r"(?:habe|hab).*(?:ausgef[uü]hrt|gesendet|eingeschaltet|aktiviert|erledigt)",
-                r"Befehl.*(?:erhalten|best[aä]tigt|gesendet|ausgef[uü]hrt)",
-                r"(?:eingeschaltet|aktiviert|gestartet).*(?:best[aä]tigt|erhalten)",
+                r"(?:habe|hab)[^.;!?]*(?:ausgef[uü]hrt|gesendet|eingeschaltet|aktiviert|erledigt)",
+                r"Befehl[^.;!?]*(?:erhalten|best[aä]tigt|gesendet|ausgef[uü]hrt)",
+                r"(?:eingeschaltet|aktiviert|gestartet)[^.;!?]*(?:best[aä]tigt|erhalten)",
                 # Memory-Halluzinationen: LLM behauptet sich zu erinnern ohne Memory-Lookup
                 r"(?:du hast|du hattest)\s+(?:mir\s+)?(?:gesagt|erz[aä]hlt|erw[aä]hnt)",
                 r"(?:laut|gem[aä][sß])\s+(?:deiner|deinen)\s+(?:Angaben|Daten|Eintr[aä]gen)",

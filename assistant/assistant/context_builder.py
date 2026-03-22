@@ -122,8 +122,6 @@ _INJECTION_PATTERN = re.compile(
     # F-090: Advanced Evasion Techniques
     r"|(?:S\s+Y\s+S\s+T\s+E\s+M)"  # Spaced-out keywords (mindestens 1 Space)
     r"|(?:I\s+G\s+N\s+O\s+R\s+E)"  # Spaced-out keywords v2 (mindestens 1 Space)
-    r"|(?:SYS|SYS)(?:TEM|tem)"  # Mixed-case obfuscation
-    r"|(?:IGN|ign)(?:ORE|ore)"  # Mixed-case obfuscation v2
     # F-090: Prompt Leaking via Encoding
     r"|(?:ROT13|rot13|CAESAR|caesar)\s*\("  # Encoding tricks
     r"|(?:atob|btoa)\s*\("  # JS Base64 tricks
