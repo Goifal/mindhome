@@ -39,12 +39,21 @@ Für jede Aufgabe: **lies die referenzierte Datei/Funktion** und prüfe dass sie
 ### Regel 3: Schutzliste respektieren
 Kein Sprint-Task darf ein "Besser als MCU" Feature beschädigen. Prüfe jede Aufgabe explizit dagegen.
 
-### Regel 4: Kontext-Limit-Strategie
+### Regel 4: Durchlauf-Nummer korrekt bestimmen
+> **WICHTIG:** `Durchlauf #X` ist NICHT die Session-Nummer! Es ist die **Anzahl, wie oft diese spezifische Session bereits gelaufen ist + 1**.
+
+**So ermittelst du die aktuelle Durchlauf-Nummer:**
+1. **Erstlauf (Roadmap/Sprints existieren noch nicht in der Plan-Datei):** → `Durchlauf #1`
+2. **Folge-Durchlauf:** Lies den **Changelog** am Ende der Plan-Datei. Zähle die vorhandenen `### Durchlauf #N — Session 4` Einträge. Die neue Nummer ist der höchste N + 1.
+
+**Verwechslungsgefahr:** Es gibt 5 Sessions (Session 1-5) und beliebig viele Durchläufe pro Session. Session-Nummer ≠ Durchlauf-Nummer!
+
+### Regel 5: Kontext-Limit-Strategie
 - Nie ganze Dateien laden — Grep nutzen, dann gezielt lesen (50-100 Zeilen)
 - Sprints sequentiell ausarbeiten — nicht alle gleichzeitig im Kontext halten
 - Nach jedem Sprint sofort in die Plan-Datei schreiben
 
-### Regel 5: Inkrementelles Schreiben — NIEMALS alles auf einmal
+### Regel 6: Inkrementelles Schreiben — NIEMALS alles auf einmal
 > **KRITISCH:** Claude Code friert ein oder trunkiert bei großen Write-Aufrufen (>400 Zeilen).
 > Die Plan-Datei MUSS in kleinen Abschnitten geschrieben werden.
 

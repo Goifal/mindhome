@@ -101,13 +101,22 @@ Markiere als `[BESSER ALS MCU]` und stelle sicher dass Verbesserungsvorschläge 
 - `[FEHLT KOMPLETT]` — nichts gefunden (nach 3+ Suchbegriffen)
 - `[STUB/UNFERTIG]` — nur Platzhalter
 
-### Regel 8: Kontext-Limit-Strategie
+### Regel 8: Durchlauf-Nummer korrekt bestimmen
+> **WICHTIG:** `Durchlauf #X` ist NICHT die Session-Nummer! Es ist die **Anzahl, wie oft diese spezifische Session bereits gelaufen ist + 1**.
+
+**So ermittelst du die aktuelle Durchlauf-Nummer:**
+1. **Erstlauf (Kategorien 5-9 existieren noch nicht in der Plan-Datei):** → `Durchlauf #1`
+2. **Folge-Durchlauf:** Lies den **Changelog** am Ende der Plan-Datei. Zähle die vorhandenen `### Durchlauf #N — Session 2` Einträge. Die neue Nummer ist der höchste N + 1.
+
+**Verwechslungsgefahr:** Es gibt 5 Sessions (Session 1-5) und beliebig viele Durchläufe pro Session. Session-Nummer ≠ Durchlauf-Nummer!
+
+### Regel 9: Kontext-Limit-Strategie
 - **Nie ganze Dateien laden** — Grep/Suche nutzen, dann nur relevante Abschnitte (50-100 Zeilen)
 - **Kategorien sequentiell abarbeiten**
 - **Notizen sofort aufschreiben**
 - **Bei großen Dateien:** Erst Funktionsnamen suchen, dann gezielt lesen
 
-### Regel 9: Inkrementelles Schreiben — NIEMALS alles auf einmal
+### Regel 10: Inkrementelles Schreiben — NIEMALS alles auf einmal
 > **KRITISCH:** Claude Code friert ein oder trunkiert bei großen Write-Aufrufen (>400 Zeilen).
 > Die Plan-Datei MUSS in kleinen Abschnitten geschrieben werden.
 

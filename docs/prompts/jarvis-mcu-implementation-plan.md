@@ -1,5 +1,5 @@
 # J.A.R.V.I.S. MCU-Level Implementation Plan
-> Erstellt am 2026-03-22 | Letzter Durchlauf: Session 5 (Gegenprüfung) am 2026-03-22
+> Erstellt am 2026-03-22 | Letzter Durchlauf: Durchlauf #1 (alle Sessions) am 2026-03-22
 > Aktueller Stand: 78.0% (FINAL — alle 12 Kategorien analysiert)
 > Dieses Dokument ist die Single Source of Truth für alle MCU-Level Verbesserungen.
 
@@ -466,7 +466,7 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 - Besonders schwach: Konversation (72%) — fehlende Antwort-Varianz und natürliche Pausen
 - 5 Features als `[BESSER ALS MCU]` identifiziert und in Schutzliste aufgenommen
 
-### Durchlauf #2 — Session 2 — 2026-03-22
+### Durchlauf #1 — Session 2 — 2026-03-22
 - 0 Aufgaben als erledigt markiert
 - 16 neue Aufgaben hinzugefügt (Kategorien 5-9)
 - 0 Zeilenreferenzen aktualisiert
@@ -476,7 +476,7 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 - Besonders schwach: Sprecherkennung (74%) — default deaktiviert, kein Auto-Enrollment
 - 6 neue Features als `[BESSER ALS MCU]` identifiziert (Schutzliste #8-#13)
 
-### Durchlauf #3 — Session 3 — 2026-03-22
+### Durchlauf #1 — Session 3 — 2026-03-22
 - 0 Aufgaben als erledigt markiert
 - 8 neue Aufgaben hinzugefügt (Kategorien 10-12)
 - 0 Zeilenreferenzen aktualisiert
@@ -487,7 +487,7 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 - 2 neue Features als `[BESSER ALS MCU]` identifiziert (Schutzliste #14-#15)
 - **Gesamtbilanz:** 15 Features "Besser als MCU", 43 Verbesserungsaufgaben, alle 12 Kategorien vollständig analysiert
 
-### Durchlauf #4 — Session 4 — 2026-03-22
+### Durchlauf #1 — Session 4 — 2026-03-22
 - 0 Aufgaben als erledigt markiert (Roadmap-Erstellung, keine Code-Änderungen)
 - 43 Aufgaben in 5 Sprints organisiert mit Abhängigkeitsgraph
 - Implementierungsanweisungen für jede Aufgabe mit Code-Referenzen
@@ -496,7 +496,7 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 - Ziel-Score nach Umsetzung: **78.0% → ~87-94%**
 - Empfehlung: Sprint 1 (7 Quick Wins) sofort starten
 
-### Durchlauf #5 — Session 5 (Gegenprüfung) — 2026-03-22
+### Durchlauf #1 — Session 5 (Gegenprüfung) — 2026-03-22
 - 0 Aufgaben als erledigt markiert
 - 2 Zeilenreferenzen korrigiert (🔄): `proactive.py::_check_loop()` → `_run_*_loop()`, `calendar_intelligence.py::get_upcoming_events()` → `get_context_hint()`/`analyze_events()`
 - 0 neue Erkenntnisse hinzugefügt — alle 12 Kategorien bestätigt

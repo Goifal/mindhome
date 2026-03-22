@@ -109,13 +109,24 @@ Markiere jedes vorhandene Feature mit:
 - `[UNTERVERBUNDEN]` — Feature existiert, ist aber nicht ausreichend mit anderen Modulen vernetzt
 - `[VERALTET]` — Feature existiert, nutzt aber veraltete Patterns
 
-### Regel 9: Kontext-Limit-Strategie
+### Regel 9: Durchlauf-Nummer korrekt bestimmen
+> **WICHTIG:** `Durchlauf #X` ist NICHT die Session-Nummer! Es ist die **Anzahl, wie oft diese spezifische Session bereits gelaufen ist + 1**.
+
+**So ermittelst du die aktuelle Durchlauf-Nummer:**
+1. **Erstlauf (Plan-Datei existiert noch nicht):** → `Durchlauf #1`
+2. **Folge-Durchlauf (Plan-Datei existiert):** Lies den **Changelog** am Ende der Plan-Datei. Zähle die vorhandenen `### Durchlauf #N — Session 1` Einträge. Die neue Nummer ist der höchste N + 1.
+
+**Beispiel:** Changelog enthält `### Durchlauf #1 — Session 1` und `### Durchlauf #2 — Session 1` → nächster ist `Durchlauf #3`.
+
+**Verwechslungsgefahr:** Es gibt 5 Sessions (Session 1-5) und beliebig viele Durchläufe pro Session. Session 1 kann Durchlauf #1, #2, #3... haben. Session-Nummer ≠ Durchlauf-Nummer!
+
+### Regel 10: Kontext-Limit-Strategie
 - **Nie ganze Dateien laden** — Grep/Suche nutzen, dann nur relevante Abschnitte lesen (50-100 Zeilen)
 - **Kategorien sequentiell abarbeiten** — eine Kategorie komplett fertig bevor zur nächsten
 - **Notizen sofort aufschreiben** — nach jeder Kategorie Ergebnisse in die Plan-Datei schreiben
 - **Bei großen Dateien:** Erst Klassen-/Funktionsnamen suchen, dann gezielt relevante Methoden lesen
 
-### Regel 10: Inkrementelles Schreiben — NIEMALS alles auf einmal
+### Regel 11: Inkrementelles Schreiben — NIEMALS alles auf einmal
 > **KRITISCH:** Claude Code friert ein oder trunkiert bei großen Write-Aufrufen (>400 Zeilen).
 > Die Plan-Datei MUSS in kleinen Abschnitten geschrieben werden.
 
