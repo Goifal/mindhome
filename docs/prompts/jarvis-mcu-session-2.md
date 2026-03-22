@@ -226,10 +226,43 @@ Für **jeden Vergleichspunkt** verwende dieses Format:
 
 Öffne **`docs/prompts/jarvis-mcu-implementation-plan.md`** und:
 
+### Erster Durchlauf (Kategorien 5-9 noch nicht in der Datei)
 1. **Ergänze** die 5 neuen Kategorien-Analysen nach den bestehenden 4 aus Session 1
 2. **Aktualisiere** den Fortschritts-Tracker (9 von 12 Kategorien analysiert)
 3. **Ergänze** die Schutzliste falls neue "Besser als MCU" Features gefunden wurden
 4. **Aktualisiere** den Teilergebnis-Score (jetzt mit 9 Kategorien berechenbar)
+
+### Folge-Durchläufe (Kategorien 5-9 existieren bereits)
+
+Arbeite **inkrementell statt komplett neu**:
+
+1. **Lies die bestehende Plan-Datei** und identifiziere den aktuellen Stand der Kategorien 5-9
+2. **Prüfe per `git diff`** welche Dateien sich seit dem letzten Durchlauf geändert haben:
+   ```bash
+   git log --oneline -10  # Finde den letzten Durchlauf-Commit
+   git diff --name-only HEAD~X  # X = Commits seit letztem Durchlauf
+   ```
+3. **Kategorien mit Code-Änderungen:** Volle Neuanalyse (V1, V2 bei Auffälligkeiten)
+4. **Kategorien ohne Code-Änderungen:** Stichproben-Prüfung, Status beibehalten wenn nichts auffällt
+5. **Erledigtes markieren:** Prüfe jede Aufgabe gegen den aktuellen Code:
+   - `[ ]` → `[x]` wenn umgesetzt: `✅ Erledigt am [Datum] — Durchlauf #X`
+   - `[ ]` → `[~]` wenn teilweise: `[~] Teilweise erledigt — [Was noch fehlt]`
+   - Prüfe ob Akzeptanzkriterien **tatsächlich** erfüllt sind (nicht blind abhaken!)
+6. **Neue Erkenntnisse:** Markiere mit `🆕 Hinzugefügt in Durchlauf #X`
+7. **Veraltetes anpassen:**
+   - Zeilenreferenzen aktualisieren → `🔄`
+   - Obsolete Aufgaben → `⏭️ Obsolet — [Grund]`
+8. **Prozent-Bewertung** der Kategorien 5-9 neu berechnen
+9. **Changelog am Ende der Datei ergänzen:**
+   ```
+   ### Durchlauf #X — Session 2 — [Datum]
+   - XX Aufgaben als erledigt markiert
+   - XX neue Aufgaben hinzugefügt
+   - XX Zeilenreferenzen aktualisiert
+   - Kategorien 5-9 Score: [vorher → nachher]
+   ```
+
+**NIEMALS bestehende Einträge löschen** — nur Status-Updates, Ergänzungen und Markierungen.
 
 ---
 

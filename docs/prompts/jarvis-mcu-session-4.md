@@ -163,12 +163,45 @@ Wenn eines dieser Kriterien NICHT erfüllt ist: behebe es bevor du fertig bist.
 
 ---
 
+## Folge-Durchläufe
+
+Bei wiederholten Durchläufen von Session 4:
+
+1. **Lies die Plan-Datei** und identifiziere was sich seit der letzten Gegenprüfung geändert hat
+2. **Prüfe per `git diff`** welche Code-Änderungen es gab:
+   ```bash
+   git log --oneline -10
+   git diff --name-only HEAD~X
+   ```
+3. **Fokussiere die Gegenprüfung auf geänderte Bereiche** — aber prüfe auch Stichproben in unveränderten
+4. **Erledigtes markieren:**
+   - `[ ]` → `[x]` mit `✅ Erledigt am [Datum] — Durchlauf #X`
+   - `[ ]` → `[~]` mit Beschreibung was fehlt
+   - Akzeptanzkriterien tatsächlich prüfen — nicht blind abhaken!
+5. **Neue Erkenntnisse:** `🆕 Hinzugefügt in Durchlauf #X`
+6. **Veraltetes:** Zeilenreferenzen `🔄`, Obsoletes `⏭️ Obsolet — [Grund]`
+7. **Gesamt-Score neu berechnen**
+8. **Changelog ergänzen:**
+   ```
+   ### Durchlauf #X — Session 4 (Gegenprüfung) — [Datum]
+   - XX Erkenntnisse als [KORRIGIERT] markiert
+   - XX Zeilenreferenzen aktualisiert (🔄)
+   - XX neue Erkenntnisse hinzugefügt (🆕)
+   - XX Aufgaben als erledigt markiert
+   - Gewichteter MCU-Score: XX% (vorher: XX%, Δ: ±XX%)
+   ```
+
+**NIEMALS bestehende Einträge löschen** — nur Status-Updates, Ergänzungen und Markierungen.
+
+---
+
 ## Abschluss
 
 Nach der Finalisierung:
 1. Prüfe die Plan-Datei ein letztes Mal auf Konsistenz
 2. Stelle sicher dass alle Abschnitte vorhanden sind
 3. Der nächste Schritt ist: Plan-Datei einem Code-Agent geben der Sprint 1 umsetzt
+   → Verwende dafür `docs/prompts/jarvis-mcu-executor.md`
 
 ---
 

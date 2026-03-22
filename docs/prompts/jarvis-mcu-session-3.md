@@ -276,12 +276,49 @@ Minimale Menge an Änderungen für ≥90% gewichteten Score. Fokus auf ×3 und �
 
 Öffne **`docs/prompts/jarvis-mcu-implementation-plan.md`** und:
 
+### Erster Durchlauf (Kategorien 10-12 + Roadmap noch nicht in der Datei)
 1. **Ergänze** die 3 neuen Kategorien nach den bestehenden 9
 2. **Füge die komplette Roadmap hinzu** (Sprints, Aufgaben, Implementierungsanweisungen)
 3. **Erstelle die Gesamtübersicht** mit allen 12 Kategorien
 4. **Aktualisiere** den Fortschritts-Tracker (12 von 12 Kategorien + Roadmap)
 5. **Berechne** den gewichteten Gesamt-Score
 6. **Ergänze** Schutzliste, Quick Wins, Fazit
+
+### Folge-Durchläufe (Roadmap existiert bereits)
+
+Arbeite **inkrementell statt komplett neu**:
+
+1. **Lies die bestehende Plan-Datei** komplett — verstehe den aktuellen Stand
+2. **Prüfe per `git diff`** welche Dateien sich seit dem letzten Durchlauf geändert haben:
+   ```bash
+   git log --oneline -10
+   git diff --name-only HEAD~X
+   ```
+3. **Kategorien 10-12:** Neuanalyse bei Code-Änderungen, Stichprobe wenn unverändert
+4. **Roadmap aktualisieren:**
+   - Erledigte Sprint-Aufgaben: `[ ]` → `[x]` mit `✅ Erledigt am [Datum] — Durchlauf #X`
+   - Teilweise erledigte: `[ ]` → `[~]` mit Beschreibung was fehlt
+   - Prüfe ob Akzeptanzkriterien **tatsächlich** erfüllt sind
+   - Neue Aufgaben: `🆕 Hinzugefügt in Durchlauf #X` — nächste freie Nummer
+   - Obsolete Aufgaben: `⏭️ Obsolet — [Grund]`
+   - Zeilenreferenzen aktualisieren: `🔄`
+5. **Sprint-Status aktualisieren:**
+   - `[ ] Offen` → `[~] In Arbeit` → `[x] Abgeschlossen`
+   - `Vorher → Nachher: XX% → XX% (Ziel) | Tatsächlich: XX% (nach Durchlauf #X)`
+6. **Gesamtübersicht:** Score neu berechnen basierend auf aktuellem Code
+7. **Quick Wins:** Neu sortieren — erledigte raus, neue rein
+8. **Fazit:** Aktuellen Stand neu formulieren
+9. **Changelog ergänzen:**
+   ```
+   ### Durchlauf #X — Session 3 — [Datum]
+   - XX Aufgaben als erledigt markiert
+   - XX neue Aufgaben hinzugefügt
+   - XX Zeilenreferenzen aktualisiert
+   - Sprint-Status: [Zusammenfassung]
+   - Gewichteter MCU-Score: XX% (vorher: XX%, Δ: +XX%)
+   ```
+
+**NIEMALS bestehende Einträge löschen** — nur Status-Updates, Ergänzungen und Markierungen.
 
 ### Anweisungen für den umsetzenden Agenten
 

@@ -257,7 +257,37 @@ Wenn die Datei **noch nicht existiert**, erstelle sie mit diesem Header:
 
 Dann füge die 4 Kategorien-Analysen im Ausgabeformat ein.
 
-Wenn die Datei **bereits existiert**, lies sie zuerst und aktualisiere die Kategorien 1-4.
+### Folge-Durchläufe (Plan-Datei existiert bereits)
+
+Wenn die Datei bereits existiert, arbeitest du **inkrementell statt komplett neu**:
+
+1. **Lies die bestehende Plan-Datei** und identifiziere den aktuellen Stand der Kategorien 1-4
+2. **Prüfe per `git diff`** welche Dateien sich seit dem letzten Durchlauf geändert haben:
+   ```bash
+   git log --oneline -10  # Finde den letzten Durchlauf-Commit
+   git diff --name-only HEAD~X  # X = Commits seit letztem Durchlauf
+   ```
+3. **Kategorien mit Code-Änderungen:** Volle Neuanalyse (V1+V2)
+4. **Kategorien ohne Code-Änderungen:** Stichproben-Prüfung (V1 für 2-3 Schlüsselstellen), Status beibehalten wenn nichts auffällt
+5. **Erledigtes markieren:** Prüfe jede Aufgabe gegen den aktuellen Code:
+   - `[ ]` → `[x]` wenn umgesetzt: `✅ Erledigt am [Datum] — Durchlauf #X`
+   - `[ ]` → `[~]` wenn teilweise: `[~] Teilweise erledigt — [Was noch fehlt]`
+   - Prüfe ob Akzeptanzkriterien **tatsächlich** erfüllt sind (nicht blind abhaken!)
+6. **Neue Erkenntnisse ergänzen:** Markiere mit `🆕 Hinzugefügt in Durchlauf #X`
+7. **Veraltetes anpassen:**
+   - Zeilenreferenzen aktualisieren → markiere mit `🔄`
+   - Obsolete Aufgaben → markiere mit `⏭️ Obsolet — [Grund]`
+8. **Prozent-Bewertung** der Kategorien 1-4 neu berechnen
+9. **Changelog am Ende der Datei ergänzen:**
+   ```
+   ### Durchlauf #X — Session 1 — [Datum]
+   - XX Aufgaben als erledigt markiert
+   - XX neue Aufgaben hinzugefügt
+   - XX Zeilenreferenzen aktualisiert
+   - Kategorien 1-4 Score: [vorher → nachher]
+   ```
+
+**NIEMALS bestehende Einträge löschen** — nur Status-Updates, Ergänzungen und Markierungen.
 
 ---
 
