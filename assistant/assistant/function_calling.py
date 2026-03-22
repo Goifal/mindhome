@@ -4399,9 +4399,11 @@ class FunctionExecutor:
         # Trust-Enforcement: Pruefe ob aktuelle Person die Funktion ausfuehren darf
         try:
             import assistant.main as _main_mod
+            from .request_context import get_current_person
 
             _brain = _main_mod.brain
-            _person = getattr(_brain, "_current_person", "") or ""
+            # Concurrent-safe: ContextVar statt Instance-Attribut (Per-Person Locks)
+            _person = get_current_person() or getattr(_brain, "_current_person", "") or ""
             if _brain and hasattr(_brain, "autonomy"):
                 trust_result = _brain.autonomy.can_person_act(
                     _person,

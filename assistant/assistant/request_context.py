@@ -17,10 +17,24 @@ from fastapi import Request
 # ContextVar fuer Request-ID (thread-safe, asyncio-kompatibel)
 _request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 
+# ContextVar fuer aktuelle Person (concurrent-safe bei Per-Person Locks)
+# Wird in brain.process() gesetzt und in function_calling.py fuer Trust-Checks gelesen.
+_current_person_var: ContextVar[str] = ContextVar("current_person", default="")
+
 
 def get_request_id() -> str:
     """Gibt die aktuelle Request-ID zurueck."""
     return _request_id_var.get()
+
+
+def get_current_person() -> str:
+    """Gibt die aktuelle Person des laufenden Requests zurueck (concurrent-safe)."""
+    return _current_person_var.get()
+
+
+def set_current_person(person: str) -> None:
+    """Setzt die aktuelle Person fuer den laufenden Request."""
+    _current_person_var.set(person)
 
 
 class RequestContextMiddleware:

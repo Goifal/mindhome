@@ -383,11 +383,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self._STATES_CACHE_TTL = 2.0  # 2 Sekunden
         self._states_lock = asyncio.Lock()
 
-        # Fix: Lock fuer process() — verhindert concurrent Requests die Shared State korrumpieren
-        self._process_lock = asyncio.Lock()
-        # Conflict B: Flag zeigt an ob ein User-Request gerade verarbeitet wird.
+        # Per-Person Locks: Verschiedene Personen koennen gleichzeitig Requests senden.
+        # Gleiche Person wird serialisiert (max 1 Request pro Person).
+        self._person_locks: dict[str, asyncio.Lock] = {}
+        self._person_locks_guard = asyncio.Lock()  # Schuetzt das Lock-Dict
+        # Conflict B: Set der aktiven Personen (ersetzt _user_request_active Boolean).
         # Proaktive/Routine-Callbacks pruefen dies und warten bzw. verzichten.
-        self._user_request_active = False
+        self._active_persons: set[str] = set()
 
         # B4: Background Reasoning — Idle-Timer fuer Smart-Modell-Analyse
         self._last_interaction_ts: float = 0.0
@@ -850,6 +852,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Latenz-Optimierung Einstellungen
         lat_cfg = cfg.yaml_config.get("latency_optimization", {})
+        self._opt_device_fast_path = lat_cfg.get("device_fast_path", True)
         self._opt_knowledge_fast_path = lat_cfg.get("knowledge_fast_path", True)
         self._opt_think_control = lat_cfg.get("think_control", "auto")
         self._opt_upgrade_signal_threshold = int(
@@ -2251,22 +2254,35 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         Returns:
             Dict mit response, actions, model_used
         """
+        # Per-Person Lock: Verschiedene Personen koennen gleichzeitig verarbeitet werden.
+        # Gleiche Person wird serialisiert — verhindert Shared-State-Korruption pro Person.
+        _person_key = person or "_anonymous"
+        async with self._person_locks_guard:
+            if _person_key not in self._person_locks:
+                self._person_locks[_person_key] = asyncio.Lock()
+            _lock = self._person_locks[_person_key]
+
         # Conflict E: Timeout auf Lock-Erwerb — User wartet max 30s.
-        # Bei Timeout: Freundliche Fehlermeldung statt endlosem Warten.
         try:
-            await asyncio.wait_for(self._process_lock.acquire(), timeout=30.0)
+            await asyncio.wait_for(_lock.acquire(), timeout=30.0)
         except asyncio.TimeoutError:
             logger.warning(
-                "process_lock Timeout nach 30s — vorheriger Request blockiert"
+                "person_lock Timeout nach 30s — vorheriger Request von '%s' blockiert",
+                _person_key,
             )
             return {
-                "response": "Einen Moment, ich bin noch mit einer anderen Anfrage beschaeftigt. Versuch es gleich nochmal.",
+                "response": "Einen Moment, ich bin noch mit deiner vorherigen Anfrage beschaeftigt.",
                 "actions": [],
                 "model_used": "timeout_fallback",
             }
-        self._user_request_active = True
+        self._active_persons.add(_person_key)
         self._last_interaction_ts = time.time()  # B4: Idle-Timer zuruecksetzen
         self._idle_reasoning_pending = False  # B4: Idle-Analyse abbrechen
+
+        # Concurrent-safe Person-Kontext setzen (fuer Trust-Checks in function_calling.py)
+        from .request_context import set_current_person
+
+        set_current_person(person or "")
 
         # S2: Prompt Injection Protection — Sanitize User-Input
         text, _injection_suspect = self._sanitize_user_input(text)
@@ -2276,9 +2292,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 text, person, room, files, stream_callback, voice_metadata, device_id
             )
         finally:
-            self._user_request_active = False
+            self._active_persons.discard(_person_key)
             self._last_interaction_ts = time.time()  # B4: auch nach Antwort
-            self._process_lock.release()
+            _lock.release()
 
     # MCU Sprint 2: Konversationelle Unterbrechungs-Bestaetigung
     INTERRUPTION_RESPONSES = [
@@ -4460,6 +4476,70 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 tts=_cached_tts,
                 emitted=bool(_cached_tts),
             )
+
+        # ----------------------------------------------------------------
+        # DEVICE FAST-PATH: Einfache Geraete-Befehle (Licht an/aus,
+        # Rollladen hoch/runter, Steckdose an/aus) komplett ohne LLM.
+        # Regex → Executor → Bestaetigung. Spart 1-5 Sekunden.
+        # ----------------------------------------------------------------
+        if (
+            self._opt_device_fast_path
+            and profile.category == "device_command"
+        ):
+            _device_intent = self.pre_classifier.extract_device_intent(text, room)
+            if _device_intent is not None:
+                # Validierung: Trust-Level, Sicherheitszonen, Parameter-Bounds
+                _dfp_val = self.validator.validate(
+                    _device_intent.function, _device_intent.args
+                )
+                if _dfp_val.ok and not _dfp_val.needs_confirmation:
+                    logger.info(
+                        "Device Fast-Path: %s(%s)",
+                        _device_intent.function,
+                        _device_intent.args,
+                    )
+                    _dfp_result = await self.executor.execute(
+                        _device_intent.function, _device_intent.args
+                    )
+                    if _dfp_result.get("success"):
+                        _dfp_response = _dfp_result.get("message", "Erledigt.")
+                        # Latency-Marks setzen (kein Context-Gather, kein LLM)
+                        _ltrace.mark("context_gather")
+                        _ltrace.mark("llm_first_token")
+                        _ltrace.mark("llm_complete")
+                        self._remember_exchange(text, _dfp_response)
+                        await self._set_last_action(
+                            _device_intent.function, _device_intent.args, person
+                        )
+                        await emit_action(
+                            _device_intent.function,
+                            _device_intent.args,
+                            _dfp_result,
+                        )
+                        await self._speak_and_emit(_dfp_response, room=room)
+                        return self._result(
+                            _dfp_response,
+                            actions=[
+                                {
+                                    "function": _device_intent.function,
+                                    "args": _device_intent.args,
+                                    "result": _dfp_result,
+                                }
+                            ],
+                            model="device_fast_path",
+                            room=room,
+                            emitted=True,
+                        )
+                    # Executor-Fehler → Fallthrough zum LLM
+                    logger.info(
+                        "Device Fast-Path Executor-Fehler, Fallthrough: %s",
+                        _dfp_result.get("message", ""),
+                    )
+                else:
+                    logger.info(
+                        "Device Fast-Path: Validation erfordert Fallthrough (%s)",
+                        getattr(_dfp_val, "reason", "needs_confirmation"),
+                    )
 
         # 0b. Intent vorab bestimmen — Pre-Classifier-Ergebnis als Shortcut nutzen
         intent_type = self._classify_intent(text, profile=profile)
@@ -7957,9 +8037,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             # Gruppe 1: Aktions-Behauptungen — immer halluziniert bei 0 Aktionen
             _action_claim_patterns = [
                 r"(?:habe|hab)\s+(?:den|die|das|einen)?\s*(?:Befehl|Aktion)",
-                r"(?:habe|hab).*(?:ausgef[uü]hrt|gesendet|eingeschaltet|aktiviert|erledigt)",
-                r"Befehl.*(?:erhalten|best[aä]tigt|gesendet|ausgef[uü]hrt)",
-                r"(?:eingeschaltet|aktiviert|gestartet).*(?:best[aä]tigt|erhalten)",
+                r"(?:habe|hab)[^.;!?]*(?:ausgef[uü]hrt|gesendet|eingeschaltet|aktiviert|erledigt)",
+                r"Befehl[^.;!?]*(?:erhalten|best[aä]tigt|gesendet|ausgef[uü]hrt)",
+                r"(?:eingeschaltet|aktiviert|gestartet)[^.;!?]*(?:best[aä]tigt|erhalten)",
                 # Memory-Halluzinationen: LLM behauptet sich zu erinnern ohne Memory-Lookup
                 r"(?:du hast|du hattest)\s+(?:mir\s+)?(?:gesagt|erz[aä]hlt|erw[aä]hnt)",
                 r"(?:laut|gem[aä][sß])\s+(?:deiner|deinen)\s+(?:Angaben|Daten|Eintr[aä]gen)",
@@ -11509,7 +11589,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         try:
             # Conflict B: User-Request hat IMMER Vorrang — proaktive Callbacks
             # warten bis der User-Request fertig ist (ausser CRITICAL).
-            if urgency != "critical" and self._user_request_active:
+            if urgency != "critical" and self._active_persons:
                 logger.info(
                     "Callback unterdrückt (User-Request aktiv): Quelle=%s, Urgency=%s",
                     source,
@@ -17851,7 +17931,7 @@ Regeln:
         eine Smart-Modell-Analyse im Hintergrund.
 
         Idle = kein User-Request seit N Minuten (default 5).
-        GPU-Contention-Guard: Ueberspringt wenn _user_request_active.
+        GPU-Contention-Guard: Ueberspringt wenn _active_persons nicht leer.
         Max 1 Insight pro Idle-Periode.
         """
         _cfg = cfg.yaml_config.get("background_reasoning", {})
@@ -17867,7 +17947,7 @@ Regeln:
                     continue
 
                 # GPU-Contention-Guard
-                if self._user_request_active:
+                if self._active_persons:
                     continue
 
                 # Idle-Check: Letzte Interaktion > N Minuten her
@@ -17918,7 +17998,7 @@ Regeln:
             return
 
         # Nochmal GPU-Guard pruefen
-        if self._user_request_active:
+        if self._active_persons:
             return
 
         try:
@@ -18048,7 +18128,7 @@ Regeln:
             _context = "\n\n".join(_context_parts)
 
             # GPU-Guard: Nochmal pruefen vor LLM-Call
-            if self._user_request_active:
+            if self._active_persons:
                 return
 
             # Smart-Modell fuer Analyse nutzen
