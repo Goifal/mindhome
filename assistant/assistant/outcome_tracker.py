@@ -77,6 +77,22 @@ class OutcomeTracker:
         self._anticipation_failure_penalty = float(
             self._cfg.get("failure_confidence_penalty", 0.15)
         )
+        # Konfigurierbare Werte fuer Follow-up-Learning und Poison Protection
+        self._max_daily_change = float(
+            self._cfg.get("max_daily_score_change", MAX_DAILY_CHANGE)
+        )
+        self._followup_window = int(
+            self._cfg.get("followup_window_seconds", 120)
+        )
+        self._followup_min = int(
+            self._cfg.get("followup_min_count", 3)
+        )
+        self._followup_ttl = int(
+            self._cfg.get("followup_ttl_days", 90)
+        ) * 86400
+        self._low_score_threshold = float(
+            self._cfg.get("low_score_threshold", 0.35)
+        )
 
     async def initialize(self, redis_client, ha_client, task_registry=None):
         """Initialisiert mit Redis und HA Client."""
@@ -855,7 +871,7 @@ class OutcomeTracker:
 
         # Data Poisoning Protection: Per-Update Cap
         delta = new_score - current_score
-        clamped_delta = max(-MAX_DAILY_CHANGE, min(MAX_DAILY_CHANGE, delta))
+        clamped_delta = max(-self._max_daily_change, min(self._max_daily_change, delta))
 
         # Data Poisoning Protection: Kumulative Tages-Cap
         # Trackt die Gesamtaenderung pro Tag via Redis (24h-TTL).
@@ -872,7 +888,7 @@ class OutcomeTracker:
 
         # Verbleibendes Budget in Richtung des Deltas pruefen
         if clamped_delta > 0:
-            remaining = MAX_DAILY_CHANGE - daily_cumulative
+            remaining = self._max_daily_change - daily_cumulative
             if remaining <= 0:
                 logger.debug(
                     "Poison Protection: Tages-Cap erreicht fuer %s (kumulativ: %.4f)",
@@ -882,7 +898,7 @@ class OutcomeTracker:
                 return
             clamped_delta = min(clamped_delta, remaining)
         elif clamped_delta < 0:
-            remaining = -MAX_DAILY_CHANGE - daily_cumulative
+            remaining = -self._max_daily_change - daily_cumulative
             if remaining >= 0:
                 logger.debug(
                     "Poison Protection: Tages-Cap erreicht fuer %s (kumulativ: %.4f)",
@@ -1076,9 +1092,10 @@ class OutcomeTracker:
     # Learned Follow-ups: Trackt Aktions-Sequenzen fuer Think-Ahead
     # ------------------------------------------------------------------
 
-    _FOLLOWUP_WINDOW_SECONDS = 120  # Max Abstand zwischen Aktionen
-    _FOLLOWUP_MIN_COUNT = 3  # Min Wiederholungen bevor ein Follow-up gelernt wird
-    _FOLLOWUP_TTL = 90 * 86400  # 90 Tage
+    # Defaults — werden von __init__ aus Config ueberschrieben
+    _FOLLOWUP_WINDOW_SECONDS = 120
+    _FOLLOWUP_MIN_COUNT = 3
+    _FOLLOWUP_TTL = 90 * 86400
 
     async def track_followup_sequence(self, action_type: str, room: str = ""):
         """Trackt Aktions-Sequenzen: Wenn nach Aktion A regelmaessig B folgt, lernen.
@@ -1108,18 +1125,18 @@ class OutcomeTracker:
                 if (
                     prev_action
                     and prev_action != action_type
-                    and (time.time() - prev_ts) <= self._FOLLOWUP_WINDOW_SECONDS
+                    and (time.time() - prev_ts) <= self._followup_window
                 ):
                     pair_key = f"mha:followup:pair:{prev_action}:{action_type}"
                     if room:
                         pair_key = f"{pair_key}:{room}"
                     await self.redis.incr(pair_key)
-                    await self.redis.expire(pair_key, self._FOLLOWUP_TTL)
+                    await self.redis.expire(pair_key, self._followup_ttl)
 
             # Aktuelle Aktion als "letzte" speichern
             await self.redis.setex(
                 prev_key,
-                self._FOLLOWUP_WINDOW_SECONDS + 10,
+                self._followup_window + 10,
                 json.dumps({"action": action_type, "ts": time.time()}),
             )
         except Exception as e:
@@ -1155,7 +1172,7 @@ class OutcomeTracker:
                         follow_room = parts[5] if len(parts) > 5 else ""
                         val = await self.redis.get(key)
                         count = int(val.decode() if isinstance(val, bytes) else val) if val else 0
-                        if count >= self._FOLLOWUP_MIN_COUNT:
+                        if count >= self._followup_min:
                             followups.append({
                                 "action": follow_action,
                                 "count": count,

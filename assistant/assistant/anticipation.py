@@ -996,10 +996,15 @@ class AnticipationEngine:
                             for pair in __import__("itertools").combinations(_domains, 2)
                         )
                         if not _all_related:
-                            # Unverwandte Domains → Confidence um 30% reduzieren
+                            # Unverwandte Domains → Confidence reduzieren
+                            _penalty = float(
+                                yaml_config.get("anticipation", {}).get(
+                                    "plausibility_penalty", 0.7
+                                )
+                            )
                             pattern = dict(pattern)
                             pattern["confidence"] = round(
-                                pattern["confidence"] * 0.7, 2
+                                pattern["confidence"] * _penalty, 2
                             )
                             if pattern["confidence"] < self.min_confidence:
                                 continue

@@ -223,7 +223,7 @@ explainability:
   auto_explain: true
   max_history: 50
   counterfactual_enabled: true
-  reasoning_chains: false
+  reasoning_chains: true                     # Kausalketten in Entscheidungs-Erklaerungen
   confidence_display: true
   explanation_style: auto  # template, llm, auto
 
@@ -296,6 +296,14 @@ anticipation:
   causal_chain_min_occurrences: 3            # Min Wiederholungen
   implicit_needs_enabled: false              # Beduerfnisse ohne bekanntes Pattern erkennen
   implicit_needs_min_confidence: 0.7
+  plausibility_penalty: 0.7                  # Confidence-Multiplikator fuer unverwandte Domains (0-1)
+
+# --- Cross-Domain Causal Learning ---
+cross_domain_learning:
+  enabled: true
+  window_seconds: 300                        # Zeitfenster fuer State-Change-Korrelationen
+  min_count: 5                               # Min Beobachtungen fuer gelernte Korrelation
+  ttl_days: 90                               # Wie lange Korrelationen gespeichert werden
 
 insight_checks:
   guest_preparation: true                    # Kalender x Sicherheit x Hausstatus
@@ -1406,6 +1414,11 @@ outcome_tracker:
   failure_confidence_penalty: 0.15
   learning_observer_feedback: true           # Lern-Observer Feedback aktiv
   learning_boost: 0.1
+  max_daily_score_change: 0.20               # Poison Protection: Max kumulative Tagesaenderung
+  followup_window_seconds: 120               # Max Abstand fuer Follow-up-Sequenzen
+  followup_min_count: 3                      # Min Wiederholungen fuer gelerntes Follow-up
+  followup_ttl_days: 90                      # Wie lange Follow-ups gespeichert werden
+  low_score_threshold: 0.35                  # Ab welchem Score Outcome-Warnung im Prompt
 # --- Korrektur-Gedaechtnis ---
 correction_memory:
   enabled: true

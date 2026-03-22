@@ -16698,7 +16698,9 @@ Regeln:
 
         # --- Outcome-Scores: Aktionen mit schlechter Erfolgsrate ---
         # LLM soll bei niedrigem Score vorsichtiger agieren / nachfragen.
-        _LOW_SCORE_THRESHOLD = 0.35
+        _LOW_SCORE_THRESHOLD = float(
+            cfg.yaml_config.get("outcome_tracker", {}).get("low_score_threshold", 0.35)
+        )
         if outcome_scores:
             low_score_actions = [
                 (action, score)
