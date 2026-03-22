@@ -340,6 +340,8 @@ MCU-Jarvis warnt Tony vor Vereisung beim Flug (Iron Man 1), rettet ihn im freien
 1. **Insight-to-Proactive Bridge** — InsightEngine-Erkenntnisse (Energie-Anomalie, Wetter-Kontrast) direkt als LOW-Priority ProactiveManager-Events einspeisen statt nur passiv abrufbar zu sein. `[WÖCHENTLICH]`
 2. **Ankunfts-Event-Zusammenfassung** — "Während du weg warst: Die Waschmaschine ist fertig, der Paketdienst war da, und im Bad sind es 19 Grad." StateChangeLog + ProactiveManager verbinden. `[TÄGLICH]`
 3. **Domain-spezifische Kalender-Vorbereitungen** — Meeting → Büro-Licht auf, Sport → Wecker, Gäste → Gäste-Modus. Aktuell generische Vorschläge. `[WÖCHENTLICH]`
+4. 🆕 **Wetter-Vorhersage-Integration** — Alle proaktiven Checks sind reaktiv (Regen jetzt → Fenster-Warnung). MCU-Jarvis würde vorausschauend handeln: "In 2 Stunden regnet es — Fenster jetzt schließen?" HA weather.*-Entities haben Forecast-Daten. `[FEHLT KOMPLETT]` `[WÖCHENTLICH]` *Hinzugefügt in Durchlauf #2*
+5. 🆕 **Kontextuelle Routine-Varianten** — "Das Übliche" ist global, aber MCU-Jarvis würde Kontext berücksichtigen: Montag-Morgen ≠ Sonntag-Morgen, Regen ≠ Sonne. Patterns müssten nach (Wochentag + Wetter + Anwesenheit) clustern. `[FEHLT KOMPLETT]` `[WÖCHENTLICH]` *Hinzugefügt in Durchlauf #2*
 
 ### Konkrete Verbesserungsvorschläge
 
@@ -364,6 +366,12 @@ MCU-Jarvis warnt Tony vor Vereisung beim Flug (Iron Man 1), rettet ihn im freien
 7. 🆕 **`[ ]` Domain-spezifische Kalender-Vorbereitung** — Kalender-Event-Typ zu Domain-Aktionen mappen: "Meeting" → office_light, "Sport" → reminder_timer, "Gäste" → guest_mode. Config in settings.yaml.
    - Aufwand: Mittel | Impact: +2% | Alltag: `[WÖCHENTLICH]`
 
+8. 🆕 **`[ ]` Wetter-Vorhersage-Integration** — HA weather.*-Entities haben Forecast-Daten (forecast-Service). `anticipation.py` und `insight_engine.py` um Forecast-Checks erweitern: "Regen in 2h → Fenster-Warnung jetzt", "Frost morgen → Heizung vorheizen".
+   - Aufwand: Mittel | Impact: +3% | Alltag: `[WÖCHENTLICH]`
+
+9. 🆕 **`[ ]` Kontextuelle Routine-Clustering** — In `anticipation.py`: Patterns nach Feature-Vektor (Wochentag, Wetter, Anwesenheit) clustern. "Das Übliche" liefert kontextabhängige Ergebnisse: Montag-Morgen ≠ Sonntag-Morgen.
+   - Aufwand: Groß | Impact: +3% | Alltag: `[WÖCHENTLICH]`
+
 ### Akzeptanzkriterien — Wann ist dieses Feature "MCU-Level"?
 - [x] Kalender-basierte Vorbereitungsvorschläge erscheinen 10-30min vor Events ✅ Calendar-Trigger-Loop
 - [x] CRITICAL-Warnungen eskalieren bei Nicht-Beachtung (max 3 Stufen) ✅ Critical Escalation
@@ -373,6 +381,8 @@ MCU-Jarvis warnt Tony vor Vereisung beim Flug (Iron Man 1), rettet ihn im freien
 - [x] AnticipationEngine erkennt >80% der wiederkehrenden Muster nach 7 Tagen ✅ Bereits seit Durchlauf #1
 - [ ] Arrival Greeting enthält Event-Log-Zusammenfassung der Abwesenheitszeit
 - [ ] InsightEngine-Erkenntnisse werden als proaktive Notifications ausgespielt
+- [ ] Wetter-Vorhersage wird für proaktive Cover/Fenster-Warnungen genutzt
+- [ ] "Das Übliche" liefert kontextabhängige Ergebnisse (Wochentag/Wetter-sensitiv)
 
 ## 4. Butler-Qualitäten & Servicementalität (×2.5)
 
@@ -521,12 +531,13 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 
 ### Durchlauf #2 — Session 1 — 2026-03-22
 - 19 Aufgaben als erledigt markiert (alle aus Durchlauf #1)
-- 11 neue Aufgaben hinzugefügt (Feinheiten nach Sprint-Implementierung)
+- 13 neue Aufgaben hinzugefügt (Feinheiten nach Sprint-Implementierung)
 - 2 neue Einträge in der Schutzliste (Inner State Emotions, Opinion Engine)
 - Kategorien 1-4 Score: **76.4% → 84.6%** (+8.2%)
 - Gesamt-Score: **78.0% → 83.9%** (+5.9%)
 - Besonders stark verbessert: Kat 1 Konversation (+10%) durch Response-Varianz, Filler Pauses, Topic-Switch, Follow-ups, Streaming-Feedback
-- Verbleibende Hauptlücken: Interrupt-Handling, Ankunfts-Event-Log, Running Gag Humor-Score, Auto-Opinion-Learning
+- V2-Tiefenanalyse: Wetter-Vorhersage und kontextuelle Routine-Varianten als neue Lücken identifiziert (Kat 3)
+- Verbleibende Hauptlücken: Interrupt-Handling, Ankunfts-Event-Log, Running Gag Humor-Score, Auto-Opinion-Learning, Wetter-Vorhersage, kontextuelle Routine-Clustering
 
 ### Durchlauf #1 — Session 1 — 2026-03-22
 - 0 Aufgaben als erledigt markiert (Erstanalyse)
