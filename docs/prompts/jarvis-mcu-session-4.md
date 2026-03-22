@@ -1,6 +1,7 @@
 # Session 4: J.A.R.V.I.S. MCU vs. MindHome — Roadmap & Sprint-Plan
 
 > **Verwendung:** Diesen Prompt an Claude Code geben. NUR Session 4 ausführen — danach stoppen.
+> **Scope:** NUR den Assistenten (`assistant/` Verzeichnis). Alle Sprints und Aufgaben beziehen sich auf den Assistenten-Code.
 > **Voraussetzung:** Session 1-3 müssen abgeschlossen sein. Die Plan-Datei muss alle 12 Kategorien enthalten.
 > **Ergebnis:** Roadmap mit Sprints und Implementierungsanweisungen in `docs/prompts/jarvis-mcu-implementation-plan.md`
 

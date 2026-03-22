@@ -1,6 +1,7 @@
 # Session 1: J.A.R.V.I.S. MCU vs. MindHome — Kern-Kategorien (×3 & ×2.5)
 
 > **Verwendung:** Diesen Prompt an Claude Code geben. NUR Session 1 ausführen — danach stoppen.
+> **Scope:** NUR den Assistenten analysieren (`assistant/` Verzeichnis). Das Add-on (`addon/`) ist NICHT Teil dieser Analyse.
 > **Ergebnis:** Wird in `docs/prompts/jarvis-mcu-implementation-plan.md` geschrieben.
 
 ---
