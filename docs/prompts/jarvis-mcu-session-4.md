@@ -49,9 +49,18 @@ Kein Sprint-Task darf ein "Besser als MCU" Feature beschädigen. Prüfe jede Auf
 > Die Plan-Datei MUSS in kleinen Abschnitten geschrieben werden.
 
 **Schreibstrategie:**
-1. **Pro Sprint:** Nach jedem fertigen Sprint sofort per **Edit-Tool** an die Plan-Datei anhängen
+1. **Pro Sprint (Edit-Tool):** Nach jedem fertigen Sprint sofort per Edit den Platzhalter `<!-- NEXT_SPRINT -->` ersetzen durch:
+   - Den kompletten Sprint-Plan (Aufgaben, Dateien, Abhängigkeiten, Akzeptanzkriterien)
+   - Gefolgt von einem neuen `<!-- NEXT_SPRINT -->` Platzhalter
 2. **Niemals die gesamte Datei neu schreiben** — immer nur den neuen Abschnitt per Edit einfügen
-3. **Technisch:** Verwende das Edit-Tool mit einem Anker-String (z.B. dem letzten Abschnitt) um den neuen Abschnitt direkt darunter einzufügen
+
+**Das Ausgabeformat und die Detailtiefe bleiben exakt gleich** — nur die Schreibmethode ändert sich.
+
+**Beispiel:**
+```
+old_string: "<!-- NEXT_SPRINT -->"
+new_string: "## Sprint 1: Persönlichkeit & Konversation\n\n...[vollständiger Sprint-Plan]...\n\n<!-- NEXT_SPRINT -->"
+```
 
 ---
 

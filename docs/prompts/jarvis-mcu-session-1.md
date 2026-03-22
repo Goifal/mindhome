@@ -120,12 +120,23 @@ Markiere jedes vorhandene Feature mit:
 > Die Plan-Datei MUSS in kleinen Abschnitten geschrieben werden.
 
 **Schreibstrategie:**
-1. **Erstanlage:** Nur den Header + Fortschritts-Tracker + Schutzliste schreiben (Write-Tool, ~30 Zeilen)
-2. **Pro Kategorie:** Nach jeder fertigen Kategorie sofort per **Edit-Tool** an die Datei anhängen (~80-150 Zeilen)
-3. **Niemals die gesamte Datei neu schreiben** — immer nur den neuen Abschnitt per Edit einfügen
-4. **Changelog:** Am Ende separat per Edit anhängen
+1. **Erstanlage (Write-Tool):** Nur den Header schreiben (Status-Legende, Fortschritts-Tracker, Schutzliste + ein Platzhalter-Anker am Ende). Maximal ~40 Zeilen. Beispiel-Anker am Dateiende:
+   ```
+   <!-- NEXT_CATEGORY -->
+   ```
+2. **Pro Kategorie (Edit-Tool):** Nach jeder fertig analysierten Kategorie sofort per Edit den Platzhalter `<!-- NEXT_CATEGORY -->` ersetzen durch:
+   - Die komplette Kategorie-Analyse im **exakten Ausgabeformat** (siehe "Ausgabeformat" weiter unten)
+   - Gefolgt von einem neuen `<!-- NEXT_CATEGORY -->` Platzhalter für die nächste Kategorie
+3. **Changelog (Edit-Tool):** Am Ende den letzten `<!-- NEXT_CATEGORY -->` Platzhalter durch den Changelog-Eintrag ersetzen
+4. **Niemals die gesamte Datei neu schreiben** — immer nur den neuen Abschnitt per Edit einfügen
 
-**Technisch:** Verwende das Edit-Tool mit einem Anker-String (z.B. dem letzten geschriebenen Abschnitt) um den neuen Abschnitt direkt darunter einzufügen. Falls die Datei noch leer ist, verwende Write nur für den initialen Header.
+**Das Ausgabeformat (MCU-Benchmark, Status, V1/V2, Verbesserungsvorschläge, Akzeptanzkriterien) bleibt exakt gleich** — nur die Schreibmethode ändert sich (Edit statt Write). Inhaltlich und strukturell muss jede Kategorie genauso detailliert und vollständig sein wie bei einem einzelnen großen Write.
+
+**Beispiel für den Edit-Aufruf pro Kategorie:**
+```
+old_string: "<!-- NEXT_CATEGORY -->"
+new_string: "## 1. Natürliche Konversation & Sprachverständnis (×3)\n\n### MCU-Jarvis Benchmark\n...[vollständige Analyse]...\n\n<!-- NEXT_CATEGORY -->"
+```
 
 ---
 
