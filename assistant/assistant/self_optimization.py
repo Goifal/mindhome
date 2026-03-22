@@ -170,6 +170,8 @@ class SelfOptimization:
             if isinstance(last_run, bytes):
                 last_run = last_run.decode()
             last_dt = datetime.fromisoformat(last_run)
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
             _INTERVAL_DAYS = {"weekly": 7, "3day": 3, "daily": 1}
             delta = timedelta(days=_INTERVAL_DAYS.get(self._interval, 7))
             if datetime.now(timezone.utc) - last_dt < delta:

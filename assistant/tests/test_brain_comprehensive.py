@@ -148,6 +148,8 @@ def brain():
         b._status_nouns = ["licht", "lichter", "rollladen", "heizung", "haus"]
         b._das_uebliche_patterns = ["das uebliche", "wie immer"]
         b._current_person = ""
+        # Ensure filter_humor_quality passes through text (returns its input)
+        b.personality.filter_humor_quality = MagicMock(side_effect=lambda x: x)
         return b
 
 

@@ -17,6 +17,7 @@ Nachrichtentypen:
 """
 
 import logging
+import random
 import re
 from datetime import datetime, timezone
 from typing import Optional
@@ -26,19 +27,31 @@ from .config import yaml_config
 
 logger = logging.getLogger(__name__)
 from zoneinfo import ZoneInfo
+
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # P-3: Vorcompilierte Regex-Patterns für Warn-Wörter (statt re.compile pro Aufruf)
 _EMPHASIS_WORDS = [
-    "warnung", "achtung", "vorsicht", "offen", "alarm",
-    "notfall", "gefahr", "sofort",
+    "warnung",
+    "achtung",
+    "vorsicht",
+    "offen",
+    "alarm",
+    "notfall",
+    "gefahr",
+    "sofort",
     # Device-Dependency Conflict Keywords
-    "kritisch", "wichtig", "ineffizient", "waermeverlust",
-    "energieverlust", "rauch", "kohlenmonoxid", "gasaustritt",
+    "kritisch",
+    "wichtig",
+    "ineffizient",
+    "waermeverlust",
+    "energieverlust",
+    "rauch",
+    "kohlenmonoxid",
+    "gasaustritt",
 ]
 _EMPHASIS_PATTERNS = {
-    word: re.compile(re.escape(word), re.IGNORECASE)
-    for word in _EMPHASIS_WORDS
+    word: re.compile(re.escape(word), re.IGNORECASE) for word in _EMPHASIS_WORDS
 }
 
 # Pattern fuer Device-Dependency Conflict Hints im Text erkennen
@@ -71,34 +84,64 @@ _ENGLISH_TITLE_PHONETIC = {
     "madam": "mäddem",
 }
 _ENGLISH_TITLE_PHONETIC_PATTERN = re.compile(
-    r"\b(Sir|Ma'am|Madam)\b", re.IGNORECASE,
+    r"\b(Sir|Ma'am|Madam)\b",
+    re.IGNORECASE,
 )
 
 # P-4: Vorcompiliertes Sentence-Splitting Pattern (statt re.split pro Aufruf)
-_SENTENCE_SPLIT_PATTERN = re.compile(r'(?<=[.!?])\s+')
+_SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[.!?])\s+")
 
 # Nachrichtentyp-Erkennung via Keywords
 MESSAGE_TYPE_PATTERNS = {
     "warning": [
-        "warnung", "achtung", "vorsicht", "alarm", "notfall", "gefahr",
-        "offen", "läuft seit", "vergessen", "offline", "fehler",
+        "warnung",
+        "achtung",
+        "vorsicht",
+        "alarm",
+        "notfall",
+        "gefahr",
+        "offen",
+        "läuft seit",
+        "vergessen",
+        "offline",
+        "fehler",
     ],
     "greeting": [
-        "guten morgen", "guten abend", "guten tag", "willkommen",
-        "hallo", "gute nacht", "moin",
+        "guten morgen",
+        "guten abend",
+        "guten tag",
+        "willkommen",
+        "hallo",
+        "gute nacht",
+        "moin",
     ],
     "briefing": [
-        "briefing", "zusammenfassung", "status", "bericht",
-        "heute steht an", "wetter", "termine", "überblick",
+        "briefing",
+        "zusammenfassung",
+        "status",
+        "bericht",
+        "heute steht an",
+        "wetter",
+        "termine",
+        "überblick",
     ],
     "confirmation": [
-        "erledigt", "gemacht", "ist passiert", "wie gewünscht",
-        "selbstverständlich", "kein problem",
-        "geht klar", "sofort",
+        "erledigt",
+        "gemacht",
+        "ist passiert",
+        "wie gewünscht",
+        "selbstverständlich",
+        "kein problem",
+        "geht klar",
+        "sofort",
     ],
     "question": [
-        "soll ich", "möchtest du", "welchen raum", "noch relevant",
-        "darf ich", "meinst du",
+        "soll ich",
+        "möchtest du",
+        "welchen raum",
+        "noch relevant",
+        "darf ich",
+        "meinst du",
     ],
 }
 
@@ -143,12 +186,12 @@ class TTSEnhancer:
         self.pause_greeting = pause_cfg.get("after_greeting", 400)
 
         # Flüstermodus-Trigger
-        self.whisper_triggers = tts_cfg.get("whisper_triggers", [
-            "psst", "leise", "flüster", "whisper"
-        ])
-        self.whisper_cancel = tts_cfg.get("whisper_cancel_triggers", [
-            "normal", "laut", "normale lautstärke"
-        ])
+        self.whisper_triggers = tts_cfg.get(
+            "whisper_triggers", ["psst", "leise", "flüster", "whisper"]
+        )
+        self.whisper_cancel = tts_cfg.get(
+            "whisper_cancel_triggers", ["normal", "laut", "normale lautstärke"]
+        )
 
         # P-5: Vorcompilierte Whisper-Patterns (statt re.compile pro Aufruf)
         self._whisper_trigger_patterns = [
@@ -159,6 +202,24 @@ class TTSEnhancer:
             re.compile(rf"\b{re.escape(t)}\b", re.IGNORECASE)
             for t in self.whisper_cancel
         ]
+
+        # MCU Sprint 2: Natural filler pauses
+        filler_cfg = tts_cfg.get("filler", {})
+        self.filler_enabled = filler_cfg.get("enabled", True)
+        self.filler_interval = filler_cfg.get(
+            "interval", 3
+        )  # Max 1 filler per N responses
+        self._filler_counter = 0
+        self._filler_phrases = filler_cfg.get(
+            "phrases",
+            [
+                "Moment...",
+                "Mal sehen...",
+                "Lass mich kurz prüfen...",
+                "Einen Augenblick...",
+                "Ich schaue nach...",
+            ],
+        )
 
         # Volume Konfiguration
         vol_cfg = yaml_config.get("volume", {})
@@ -195,7 +256,9 @@ class TTSEnhancer:
 
         logger.info(
             "TTSEnhancer initialisiert (SSML: %s, Prosody-Variation: %s, Whisper-Triggers: %d)",
-            self.ssml_enabled, self.prosody_variation, len(self.whisper_triggers),
+            self.ssml_enabled,
+            self.prosody_variation,
+            len(self.whisper_triggers),
         )
 
     # Negations-Muster: Wenn ein Warning-Keyword in negiertem Kontext steht,
@@ -221,9 +284,13 @@ class TTSEnhancer:
                 if msg_type == "warning":
                     matched_patterns = [p for p in patterns if p in text_lower]
                     all_negated = all(
-                        bool(self._NEGATION_PREFIXES.search(
-                            text_lower[:text_lower.index(p)][-30:] if text_lower.index(p) > 0 else ""
-                        ))
+                        bool(
+                            self._NEGATION_PREFIXES.search(
+                                text_lower[: text_lower.index(p)][-30:]
+                                if text_lower.index(p) > 0
+                                else ""
+                            )
+                        )
                         for p in matched_patterns
                     )
                     if all_negated:
@@ -236,8 +303,13 @@ class TTSEnhancer:
 
         return "casual"
 
-    def enhance(self, text: str, message_type: Optional[str] = None,
-                urgency: str = "medium", activity: str = "") -> dict:
+    def enhance(
+        self,
+        text: str,
+        message_type: Optional[str] = None,
+        urgency: str = "medium",
+        activity: str = "",
+    ) -> dict:
         """
         Verbessert einen Text für TTS-Ausgabe.
 
@@ -273,13 +345,15 @@ class TTSEnhancer:
 
         # Urgency-basierte Overrides: Critical = schneller + tiefer (dringlicher)
         if urgency == "critical":
-            speed = max(speed, 115)   # Mindestens 115% — schnell, dringlich
-            pitch = "-15%"            # Tiefer — ernst, autoritaer
+            speed = max(speed, 115)  # Mindestens 115% — schnell, dringlich
+            pitch = "-15%"  # Tiefer — ernst, autoritaer
         elif urgency == "high":
-            speed = max(speed, 108)   # Etwas schneller als normal
-            pitch = "-8%"             # Leicht tiefer
+            speed = max(speed, 108)  # Etwas schneller als normal
+            pitch = "-8%"  # Leicht tiefer
 
-        volume = self.get_volume(activity=activity, message_type=message_type, urgency=urgency)
+        volume = self.get_volume(
+            activity=activity, message_type=message_type, urgency=urgency
+        )
 
         if self.ssml_enabled:
             ssml = self._generate_ssml(text, message_type, speed, pitch)
@@ -300,8 +374,9 @@ class TTSEnhancer:
             "volume": volume,
         }
 
-    def get_volume(self, activity: str = "", message_type: str = "casual",
-                   urgency: str = "medium") -> float:
+    def get_volume(
+        self, activity: str = "", message_type: str = "casual", urgency: str = "medium"
+    ) -> float:
         """
         Bestimmt die optimale Lautstärke.
 
@@ -315,12 +390,16 @@ class TTSEnhancer:
             vol_cfg = yaml_config.get("volume", {})
 
             def _f(key, default):
-                try: return float(vol_cfg.get(key, default))
-                except (ValueError, TypeError): return default
+                try:
+                    return float(vol_cfg.get(key, default))
+                except (ValueError, TypeError):
+                    return default
 
             def _i(key, default):
-                try: return int(vol_cfg.get(key, default))
-                except (ValueError, TypeError): return default
+                try:
+                    return int(vol_cfg.get(key, default))
+                except (ValueError, TypeError):
+                    return default
 
             vol_day = _f("day", 0.8)
             vol_evening = _f("evening", 0.5)
@@ -419,8 +498,9 @@ class TTSEnhancer:
             logger.debug("TTS-Verarbeitung fehlgeschlagen: %s", e)
             return False
 
-    def _generate_ssml(self, text: str, message_type: str, speed: int,
-                        pitch: str = "0%") -> str:
+    def _generate_ssml(
+        self, text: str, message_type: str, speed: int, pitch: str = "0%"
+    ) -> str:
         """
         Generiert SSML aus Text und Nachrichtentyp.
 
@@ -439,9 +519,9 @@ class TTSEnhancer:
             prosody_attrs += f' pitch="{pitch}"'
 
         if prosody_attrs:
-            parts.append(f'<speak><prosody{prosody_attrs}>')
+            parts.append(f"<speak><prosody{prosody_attrs}>")
         else:
-            parts.append('<speak>')
+            parts.append("<speak>")
 
         # F-059: User-Text XML-escapen um SSML-Injection zu verhindern
         # P-2: xml_escape jetzt auf Modul-Ebene importiert
@@ -449,9 +529,21 @@ class TTSEnhancer:
 
         # Englische Titel (Sir, Ma'am) mit <lang> wrappen damit TTS
         # sie nicht mit deutscher Phonetik ausspricht.
-        text = _ENGLISH_TITLE_PATTERN.sub(
-            r'<lang xml:lang="en-US">\1</lang>', text
-        )
+        text = _ENGLISH_TITLE_PATTERN.sub(r'<lang xml:lang="en-US">\1</lang>', text)
+
+        # MCU Sprint 2: Natural filler prefix for complex responses
+        # Only for non-confirmation, non-greeting messages with >100 chars
+        if (
+            self.filler_enabled
+            and message_type not in ("confirmation", "greeting", "warning")
+            and len(text) > 100
+        ):
+            self._filler_counter += 1
+            if self._filler_counter >= self.filler_interval:
+                self._filler_counter = 0
+                filler = random.choice(self._filler_phrases)
+                parts.append(xml_escape(filler))
+                parts.append(f'<break time="500ms"/>')
 
         # Text in Sätze aufteilen
         sentences = self._split_sentences(text)
@@ -484,9 +576,9 @@ class TTSEnhancer:
                 parts.append(f'<break time="{self.pause_sentence}ms"/>')
 
         if prosody_attrs:
-            parts.append('</prosody></speak>')
+            parts.append("</prosody></speak>")
         else:
-            parts.append('</speak>')
+            parts.append("</speak>")
 
         return "".join(parts)
 
@@ -528,7 +620,7 @@ class TTSEnhancer:
         Returns:
             Dict mit ssml, total_estimated_duration_ms
         """
-        parts = ['<speak>']
+        parts = ["<speak>"]
         total_duration = 0
 
         for seg in segments:
@@ -562,7 +654,7 @@ class TTSEnhancer:
                 inner_text = f'<emphasis level="{emphasis}">{text}</emphasis>'
 
             if prosody_attrs:
-                parts.append(f'<prosody{prosody_attrs}>{inner_text}</prosody>')
+                parts.append(f"<prosody{prosody_attrs}>{inner_text}</prosody>")
             else:
                 parts.append(inner_text)
 
@@ -578,7 +670,7 @@ class TTSEnhancer:
                 parts.append(f'<break time="{pause_after}ms"/>')
                 total_duration += pause_after
 
-        parts.append('</speak>')
+        parts.append("</speak>")
         return {
             "ssml": "".join(parts),
             "total_estimated_duration_ms": total_duration,
@@ -600,8 +692,11 @@ class TTSEnhancer:
     }
 
     def enhance_with_emotion(
-        self, text: str, inner_mood: str = "neutral",
-        message_type: str | None = None, urgency: str = "medium",
+        self,
+        text: str,
+        inner_mood: str = "neutral",
+        message_type: str | None = None,
+        urgency: str = "medium",
         activity: str = "",
     ) -> dict:
         """Erweitert TTS-Ausgabe mit Jarvis' emotionaler Stimmung.
@@ -620,8 +715,9 @@ class TTSEnhancer:
             Enhanced dict wie enhance(), aber mit Emotion-Anpassung
         """
         # Basis-Enhancement
-        result = self.enhance(text, message_type=message_type,
-                              urgency=urgency, activity=activity)
+        result = self.enhance(
+            text, message_type=message_type, urgency=urgency, activity=activity
+        )
 
         if not inner_mood or inner_mood == "neutral":
             return result
@@ -638,13 +734,15 @@ class TTSEnhancer:
             if "<prosody" in ssml:
                 # Rate ersetzen
                 import re
+
                 ssml = re.sub(r'rate="[^"]*"', f'rate="{emotion_rate}"', ssml)
                 ssml = re.sub(r'pitch="[^"]*"', f'pitch="{emotion_pitch}"', ssml)
                 result["ssml"] = ssml
             else:
                 # Kein bestehendes SSML → neues generieren
                 result["ssml"] = self._generate_ssml(
-                    text, result.get("message_type", "casual"),
+                    text,
+                    result.get("message_type", "casual"),
                     int(emotion_rate.replace("%", "")),
                     emotion_pitch,
                 )

@@ -1055,6 +1055,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # ConversationMemory für Thread-Kontext im Context Builder
         if hasattr(self, "conversation_memory"):
             self.context_builder.set_conversation_memory(self.conversation_memory)
+        # MCU Sprint 4: Per-Person Room Tracking via FollowMe
+        if hasattr(self, "follow_me"):
+            self.context_builder.set_follow_me(self.follow_me)
 
         # Autonomy Evolution: Redis für Interaktions-Tracking
         self.autonomy.set_redis(self.memory.redis)
@@ -1082,6 +1085,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Phase 6: Redis für Personality Engine (Formality Score, Counter)
         self.personality.set_redis(self.memory.redis)
+        # MCU Sprint 2: SemanticMemory für Meinungs-Engine
+        if hasattr(self, "semantic_memory"):
+            self.personality.set_semantic_memory(self.semantic_memory)
 
         # C5: Redis fuer cross-session Intent-Referenzierung
         self.dialogue_state.set_redis(self.memory.redis)
@@ -1092,6 +1098,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Gelernten Sarkasmus-Level laden
         await self.personality.load_learned_sarcasm_level()
+        # MCU Sprint 2: Running Gags + Learned Opinions aus Redis laden
+        await self.personality.load_running_gags_from_redis()
+        await self.personality.load_learned_opinions()
 
         # F-069: Nicht-kritische Module in try/except wrappen für Degraded Startup.
         # Wenn ein Modul fehlschlaegt, laeuft der Assistent trotzdem —
@@ -1196,6 +1205,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Phase 11: Koch-Assistent mit Semantic Memory verbinden
         self.cooking.semantic_memory = self.memory.semantic
         self.cooking.set_notify_callback(self._handle_cooking_timer)
+        # MCU Sprint 3: Post-crisis debrief callback
+        self.threat_assessment.set_notify_callback(self._handle_threat_debrief)
 
         # Phase 11.1: Knowledge Base initialisieren
         await _safe_init("KnowledgeBase", self.knowledge_base.initialize())
@@ -1548,6 +1559,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 self._idle_reasoning_loop(), name="idle_reasoning"
             )
 
+        # Store degraded modules on instance for runtime access
+        self._degraded_modules = list(_degraded_modules)
+        self._degraded_notified = False  # One-time user notification flag
+
         if _degraded_modules:
             logger.warning(
                 "F-069: Jarvis gestartet im DEGRADED MODE — %d Module ausgefallen: %s",
@@ -1877,6 +1892,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 self.latency_tracker.flush_to_redis(),
                 name="latency_flush",
             )
+
+        # MCU Sprint 2: Record response pattern for variation tracking
+        if response:
+            try:
+                self.personality.record_response_pattern(response)
+            except Exception:
+                pass  # Non-critical, silent fallback
+
         return d
 
     async def _llm_with_cascade(
@@ -2054,7 +2077,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 msg_id = str(int(_t.time() * 1000))
                 mood_data = getattr(self, "_last_mood_data", None)
                 await self.conversation_memory._tag_emotional_context(
-                    msg_id, user_text, role="user", mood_data=mood_data,
+                    msg_id,
+                    user_text,
+                    role="user",
+                    mood_data=mood_data,
                 )
 
         self._task_registry.create_task(_save(), name="memory_exchange")
@@ -2278,6 +2304,21 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             person or "unbekannt",
             room or "unbekannt",
         )
+
+        # F-069: One-time degraded mode notification on first user request
+        if self._degraded_modules and not self._degraded_notified:
+            self._degraded_notified = True
+            _deg_names = ", ".join(self._degraded_modules)
+            _deg_hint = (
+                f"Hinweis: {_deg_names} "
+                f"{'ist' if len(self._degraded_modules) == 1 else 'sind'} "
+                "gerade nicht verfügbar. Ich arbeite mit eingeschränkter Funktionalität."
+            )
+            logger.info("Degraded-Mode-Notification an User: %s", _deg_hint)
+            try:
+                await self._speak_and_emit(_deg_hint, room=room)
+            except Exception as e:
+                logger.debug("Degraded-Notification Fehler: %s", e)
 
         # STT-3: User-Text als Kontext für die naechste Whisper-Transkription speichern
         self._update_stt_context(text)
@@ -4348,7 +4389,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         ):
             logger.info("Knowledge Fast-Path: Ueberspringe mega-gather")
             recent = await self.memory.get_recent_conversations(limit=10)
-            _kfp_system = self.personality.build_minimal_system_prompt(person=person or "")
+            _kfp_system = self.personality.build_minimal_system_prompt(
+                person=person or ""
+            )
             _kfp_messages = [{"role": "system", "content": _kfp_system}]
             for conv in recent[-10:]:
                 _kfp_messages.append({"role": conv["role"], "content": conv["content"]})
@@ -4412,6 +4455,68 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     tts=tts_data,
                     emitted=True,
                 )
+
+        # ----------------------------------------------------------------
+        # EXPLAIN FAST-PATH: "Warum hast du das gemacht?" → ExplainabilityEngine
+        # Beantwortet in <500ms ohne LLM-Aufruf
+        # ----------------------------------------------------------------
+        if profile.category == "explain":
+            _explain_decisions = self.explainability.explain_last(5)
+            if _explain_decisions:
+                _explanations = [
+                    self.explainability.format_explanation(d)
+                    for d in _explain_decisions
+                ]
+                _explain_text = " ".join(_explanations[:3])
+                logger.info(
+                    "Explain Fast-Path: %d Entscheidungen", len(_explain_decisions)
+                )
+                _ltrace.mark("context_gather")
+                _ltrace.mark("llm_first_token")
+                _ltrace.mark("llm_complete")
+                self._remember_exchange(text, _explain_text)
+                tts_data = self.tts_enhancer.enhance(
+                    _explain_text, message_type="casual"
+                )
+                await self._speak_and_emit(_explain_text, room=room, tts_data=tts_data)
+                return self._result(
+                    _explain_text,
+                    model="explainability",
+                    room=room,
+                    tts=tts_data,
+                    emitted=True,
+                )
+            # No decisions logged yet — fall through to normal processing
+            logger.info(
+                "Explain Fast-Path: keine Entscheidungen vorhanden, Fallback auf LLM"
+            )
+
+        # ----------------------------------------------------------------
+        # MCU Sprint 2: Streaming Feedback — sofort "Ich prüfe das" bei
+        # Voice-Interaktion und erwarteter Latenz >2s (Smart/Deep Modell)
+        # ----------------------------------------------------------------
+        if (
+            voice_metadata
+            and profile.category not in ("device_command", "device_query", "explain")
+            and not self._request_from_pipeline
+        ):
+            from .config import get_person_title as _gpt
+
+            _ack_title = _gpt()
+            _ack_text = f"Ich prüfe das, {_ack_title}."
+            try:
+                _ack_tts = self.tts_enhancer.enhance(
+                    _ack_text, message_type="confirmation"
+                )
+                _ack_task = asyncio.create_task(
+                    self._speak_and_emit(_ack_text, room=room, tts_data=_ack_tts)
+                )
+                _ack_task.add_done_callback(
+                    lambda t: t.exception() if not t.cancelled() else None
+                )
+                logger.debug("Streaming-Feedback: '%s' gesendet", _ack_text)
+            except Exception as e:
+                logger.debug("Streaming-Feedback fehlgeschlagen: %s", e)
 
         # ----------------------------------------------------------------
         # MEGA-PARALLEL GATHER: Context Build, alle Subsysteme, Running Gag,
@@ -4569,19 +4674,24 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if self.knowledge_graph and self.knowledge_graph.enabled:
             _now_hour = datetime.now(_LOCAL_TZ).hour
             _time_slot = (
-                "morning" if 6 <= _now_hour < 10
-                else "daytime" if 10 <= _now_hour < 18
-                else "evening" if 18 <= _now_hour < 22
+                "morning"
+                if 6 <= _now_hour < 10
+                else "daytime"
+                if 10 <= _now_hour < 18
+                else "evening"
+                if 18 <= _now_hour < 22
                 else "night"
             )
-            _mega_tasks.append((
-                "knowledge_graph",
-                self.knowledge_graph.query_context(
-                    person=person or "",
-                    room=room or "",
-                    time_slot=_time_slot,
-                ),
-            ))
+            _mega_tasks.append(
+                (
+                    "knowledge_graph",
+                    self.knowledge_graph.query_context(
+                        person=person or "",
+                        room=room or "",
+                        time_slot=_time_slot,
+                    ),
+                )
+            )
 
         # B10: Emotionale Kontinuitaet — vergangene negative Reaktionen beruecksichtigen
         _emo_action, _ = await self._get_last_action(person)
@@ -4977,6 +5087,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         try:
             _activity_result = await self.activity.detect_activity()
             self.personality._current_activity = _activity_result.get("activity", "")
+            # MCU Sprint 3: Guest-Discretion-Mode
+            self.personality._guest_mode_active = (
+                _activity_result.get("activity", "") == "guests"
+            )
         except Exception as e:
             logger.debug("Aktivitaetserkennung fehlgeschlagen: %s", e)
             self.personality._current_activity = ""
@@ -5306,9 +5420,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         + (f" ({item['room']})" if item.get("room") else "")
                     )
             if _kg_lines:
-                _kg_text = (
-                    "\n\nBEKANNTE PRAEFERENZEN (Wissensgraph):\n"
-                    + "\n".join(_kg_lines)
+                _kg_text = "\n\nBEKANNTE PRAEFERENZEN (Wissensgraph):\n" + "\n".join(
+                    _kg_lines
                 )
                 sections.append(("knowledge_graph", _kg_text, 3))
 
@@ -5411,6 +5524,21 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 sections.append(("explainability", f"\n\n{_explain_hint}", 3))
         except Exception:
             logger.debug("Explainability fehlgeschlagen", exc_info=True)
+
+        # Confidence-Hints: Bei unsicheren Aktionen natuerliche Unsicherheit zeigen
+        try:
+            if self.explainability.confidence_display:
+                _last_decisions = self.explainability.explain_last(1)
+                if _last_decisions:
+                    _last_conf = _last_decisions[0].get("confidence", 1.0)
+                    if _last_conf < 0.7:
+                        _conf_hint = (
+                            "\n\nBei unsicheren Aussagen: Sage 'Ich bin mir "
+                            "nicht ganz sicher, aber...' statt absolute Aussagen."
+                        )
+                        sections.append(("confidence_hint", _conf_hint, 2))
+        except Exception:
+            logger.debug("Confidence-Hint fehlgeschlagen", exc_info=True)
 
         try:
             _transfer_hint = self.learning_transfer.get_context_hint(room or "")
@@ -6540,10 +6668,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     _conflict_warning = None
                     if hasattr(self.conflict_resolver, "predict_logical_conflict"):
                         try:
-                            _predicted = await self.conflict_resolver.predict_logical_conflict(
-                                func_name,
-                                func_args if isinstance(func_args, dict) else {},
-                                await self.get_states_cached() if self.ha else [],
+                            _predicted = (
+                                await self.conflict_resolver.predict_logical_conflict(
+                                    func_name,
+                                    func_args if isinstance(func_args, dict) else {},
+                                    await self.get_states_cached() if self.ha else [],
+                                )
                             )
                             if _predicted and _predicted.get("warning"):
                                 _conflict_warning = _predicted["warning"]
@@ -6551,7 +6681,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     "Conflict prediction: %s", _conflict_warning
                                 )
                         except Exception as _pc_err:
-                            logger.debug("predict_logical_conflict fehlgeschlagen: %s", _pc_err)
+                            logger.debug(
+                                "predict_logical_conflict fehlgeschlagen: %s", _pc_err
+                            )
 
                     # Phase 16.1: Konflikt-Check (Multi-User)
                     final_args = func_args
@@ -6981,7 +7113,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         logger.debug("Eskalation fehlgeschlagen (optional): %s", e)
 
                     # Feature B: Kontextueller Humor nach Aktion
-                    if not pushback_msg and not opinion and _addon_comments < _MAX_ADDON_COMMENTS:
+                    if (
+                        not pushback_msg
+                        and not opinion
+                        and _addon_comments < _MAX_ADDON_COMMENTS
+                    ):
                         try:
                             humor = await self.personality.generate_contextual_humor(
                                 func_name,
@@ -7004,7 +7140,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             logger.debug("Humor fehlgeschlagen (optional): %s", e)
 
                     # Phase 18: Curiosity Check — sanfte Neugier bei untypischem Verhalten
-                    if isinstance(result, dict) and result.get("success") and _addon_comments < _MAX_ADDON_COMMENTS:
+                    if (
+                        isinstance(result, dict)
+                        and result.get("success")
+                        and _addon_comments < _MAX_ADDON_COMMENTS
+                    ):
                         try:
                             curiosity = await self.personality.check_curiosity(
                                 func_name,
@@ -7035,7 +7175,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             if think_ahead_suggestion:
                                 self._think_ahead_used = True
                                 if response_text:
-                                    response_text = f"{response_text} {think_ahead_suggestion}"
+                                    response_text = (
+                                        f"{response_text} {think_ahead_suggestion}"
+                                    )
                                 else:
                                     response_text = think_ahead_suggestion
                         except Exception as _ta_err:
@@ -8813,8 +8955,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Light turn off in bedroom → suggest closing covers
         if func_name == "set_light":
-            action_val = func_args.get("action", "") if isinstance(func_args, dict) else ""
-            brightness = func_args.get("brightness") if isinstance(func_args, dict) else None
+            action_val = (
+                func_args.get("action", "") if isinstance(func_args, dict) else ""
+            )
+            brightness = (
+                func_args.get("brightness") if isinstance(func_args, dict) else None
+            )
             if action_val == "off" or brightness == 0:
                 room_lower = room.lower() if room else ""
                 if any(
@@ -8831,7 +8977,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 eid = s.get("entity_id", "")
                 if (
                     eid.startswith("binary_sensor.")
-                    and ("window" in eid or "fenster" in eid or "door" in eid or "tuer" in eid)
+                    and (
+                        "window" in eid
+                        or "fenster" in eid
+                        or "door" in eid
+                        or "tuer" in eid
+                    )
                     and s.get("state") == "on"
                 ):
                     # Check if window is in same room
@@ -9155,9 +9306,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         original = text
 
         try:
-            return self._filter_response_inner(
+            text = self._filter_response_inner(
                 text, filter_config, max_sentences_override
             )
+            # MCU Sprint 2: Humor Quality Gate — filter low-quality humor
+            text = self.personality.filter_humor_quality(text)
+            return text
         except re.error as e:
             logger.error(
                 "Regex-Fehler in _filter_response: %s (text=%r)",
@@ -11033,6 +11187,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         formatted = await self._safe_format(message, "high")
         await self._speak_and_emit(formatted, room=room)
         logger.info("Koch-Timer -> Meldung: %s", formatted)
+
+    async def _handle_threat_debrief(self, debrief: dict):
+        """MCU Sprint 3: Post-crisis debrief notification."""
+        message = debrief.get("message", "")
+        if not message:
+            return
+        formatted = await self._safe_format(message, "medium")
+        await self._speak_and_emit(formatted)
+        self._remember_exchange("[proaktiv: Entwarnung]", formatted)
+        logger.info("Post-Crisis Debrief: %s", debrief.get("scenario", "unknown"))
 
     async def _handle_workshop_timer(self, message: str):
         """Callback für Workshop-Timer-Benachrichtigungen."""
@@ -14431,39 +14595,76 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 response_text, model="das_uebliche_empty", room=room, emitted=True
             )
 
-        # Beste Suggestion ausfuehren oder vorschlagen
-        best = max(suggestions, key=lambda s: s.get("confidence", 0))
-        conf = best.get("confidence", 0)
-        action = best.get("action", "")
-        args = best.get("args", {})
-        desc = best.get("description", action)
+        # MCU Sprint 3: Multi-Action — alle Suggestions mit Confidence >= threshold
+        auto_suggestions = [
+            s for s in suggestions if s.get("confidence", 0) >= _auto_conf
+        ]
+        suggest_suggestions = [
+            s
+            for s in suggestions
+            if _suggest_conf <= s.get("confidence", 0) < _auto_conf
+        ]
 
-        if conf >= _auto_conf and action:
-            # Hohe Confidence → ausfuehren und beilaeufig erwaehnen
-            try:
-                result = await self.executor.execute(action, args)
-                success = isinstance(result, dict) and result.get("success", False)
-                if success:
-                    response_text = f"Wie gewohnt, {title}. {desc.split('→')[-1].strip() if '→' in desc else desc}."
-                else:
-                    response_text = (
-                        f"{desc} — hat nicht funktioniert. Versuch es nochmal, {title}?"
+        if auto_suggestions:
+            # Hohe Confidence → als narrated Sequenz ausfuehren
+            executed_descs = []
+            executed_actions = []
+            for s in auto_suggestions[:3]:
+                action = s.get("action", "")
+                s_args = s.get("args", {})
+                desc = s.get("description", action)
+                try:
+                    result = await self.executor.execute(action, s_args)
+                    success = isinstance(result, dict) and result.get("success", False)
+                    if success:
+                        _short_desc = (
+                            desc.split("→")[-1].strip() if "→" in desc else desc
+                        )
+                        executed_descs.append(_short_desc)
+                        executed_actions.append({"function": action, "args": s_args})
+                except Exception as e:
+                    logger.debug(
+                        "Das Uebliche Aktion fehlgeschlagen: %s — %s", action, e
                     )
-            except Exception as e:
-                logger.debug("Das Uebliche Ausfuehrung fehlgeschlagen: %s", e)
+
+            if executed_descs:
+                if len(executed_descs) >= 2:
+                    _parts = (
+                        ", ".join(executed_descs[:-1]) + f" und {executed_descs[-1]}"
+                    )
+                else:
+                    _parts = executed_descs[0]
+                response_text = f"Wie gewohnt, {title}: {_parts}."
+            else:
                 response_text = f"Das Uebliche wollte nicht so recht, {title}. Was genau brauchst du?"
 
             self._remember_exchange(text, response_text)
             await self._speak_and_emit(response_text, room=room)
             return self._result(
                 response_text,
-                actions=[{"function": action, "args": args}],
+                actions=executed_actions,
                 model="das_uebliche_auto",
                 room=room,
                 emitted=True,
             )
-        else:
+
+        elif suggest_suggestions:
             # Mittlere Confidence → nachfragen
+            best = max(suggest_suggestions, key=lambda s: s.get("confidence", 0))
+            desc = best.get("description", best.get("action", ""))
+            response_text = (
+                f"Um diese Zeit machst du normalerweise: {desc}. Soll ich, {title}?"
+            )
+            self._remember_exchange(text, response_text)
+            await self._speak_and_emit(response_text, room=room)
+            return self._result(
+                response_text, model="das_uebliche_suggest", room=room, emitted=True
+            )
+
+        else:
+            # Zu niedrige Confidence für alle
+            best = max(suggestions, key=lambda s: s.get("confidence", 0))
+            desc = best.get("description", best.get("action", ""))
             response_text = (
                 f"Um diese Zeit machst du normalerweise: {desc}. Soll ich, {title}?"
             )
@@ -16351,7 +16552,9 @@ Regeln:
         _butler_cfg = cfg.yaml_config.get("butler_instinct", {})
         _butler_enabled = _butler_cfg.get("enabled", True)
         _butler_min_autonomy = _butler_cfg.get("min_autonomy_level", 3)
-        _action_domain = suggestion.get("domain", "") or ACTION_DOMAIN_MAP.get(action, "")
+        _action_domain = suggestion.get("domain", "") or ACTION_DOMAIN_MAP.get(
+            action, ""
+        )
         _effective_level = self.autonomy.get_effective_level(_action_domain)
         if (
             mode == "auto"
@@ -16502,6 +16705,17 @@ Regeln:
         await self._speak_and_emit(formatted)
         self._remember_exchange("[proaktiv: Insight]", formatted)
         logger.info("Insight zugestellt [%s/%s]: %s", check, urgency, message[:500])
+
+        # Insight-to-Proactive Bridge: Insights als LOW-Priority Event
+        # an ProactiveManager senden, damit sie im Abend-Batch erscheinen
+        try:
+            if hasattr(self, "proactive") and self.proactive:
+                from .websocket import emit_proactive
+
+                await emit_proactive(formatted, f"insight_{check}", "low")
+        except Exception as e:
+            logger.debug("Insight-to-Proactive Bridge fehlgeschlagen: %s", e)
+
         # Dashboard-History: Insight fuer Widget speichern
         if hasattr(self, "spontaneous") and hasattr(
             self.spontaneous, "_observation_history"
@@ -17090,7 +17304,8 @@ Regeln:
             # Wetter-Daten (fuer Cross-Domain-Verknuepfung)
             try:
                 weather_states = [
-                    s for s in (states or [])
+                    s
+                    for s in (states or [])
                     if s.get("entity_id", "").startswith("weather.")
                     and s.get("state") not in ("unavailable", "unknown")
                 ]
@@ -17104,15 +17319,22 @@ Regeln:
                     )
                     forecast = attrs.get("forecast", [])
                     if forecast:
-                        _weather_info += f", Morgen: {forecast[0].get('condition', '?')}"
+                        _weather_info += (
+                            f", Morgen: {forecast[0].get('condition', '?')}"
+                        )
                     _context_parts.append(_weather_info)
             except Exception as e:
                 logger.debug("Wetter fuer Idle Reasoning fehlgeschlagen: %s", e)
 
             # Kalender-Events (naechste 24h)
             try:
-                if hasattr(self, "calendar_intelligence") and self.calendar_intelligence:
-                    cal_events = await self.calendar_intelligence.get_upcoming_events(hours=24)
+                if (
+                    hasattr(self, "calendar_intelligence")
+                    and self.calendar_intelligence
+                ):
+                    cal_events = await self.calendar_intelligence.get_upcoming_events(
+                        hours=24
+                    )
                     if cal_events:
                         _cal_lines = [
                             f"- {e.get('summary', '?')} um {e.get('start', '?')}"
@@ -17127,7 +17349,8 @@ Regeln:
             # Energie-Zusammenfassung
             try:
                 energy_sensors = [
-                    s for s in (states or [])
+                    s
+                    for s in (states or [])
                     if "energy" in s.get("entity_id", "")
                     or "power" in s.get("entity_id", "")
                     and s.get("state") not in ("unavailable", "unknown", "0", "0.0")
@@ -17427,7 +17650,9 @@ Regeln:
             if count >= threshold:
                 logger.info(
                     "Pushback '%s' wird unterdrueckt: %d/%d Overrides",
-                    pushback_type, count, threshold,
+                    pushback_type,
+                    count,
+                    threshold,
                 )
                 return True
         except (ValueError, TypeError) as e:

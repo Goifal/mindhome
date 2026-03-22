@@ -80,7 +80,9 @@ class SpeakerProfile:
         profile.devices = data.get("devices", [])
         return profile
 
-    def update_voice_stats(self, wpm: float = 0, duration: float = 0, volume: float = 0):
+    def update_voice_stats(
+        self, wpm: float = 0, duration: float = 0, volume: float = 0
+    ):
         """Aktualisiert Voice-Statistiken mit gleitendem Durchschnitt."""
         n = self.sample_count
         if n == 0:
@@ -118,7 +120,7 @@ class SpeakerRecognition:
 
         # Konfiguration
         sr_cfg = yaml_config.get("speaker_recognition", {})
-        self.enabled = sr_cfg.get("enabled", False)
+        self.enabled = sr_cfg.get("enabled", True)
         self.min_confidence = sr_cfg.get("min_confidence", 0.7)
         self.fallback_ask = sr_cfg.get("fallback_ask", True)
         self.max_profiles = sr_cfg.get("max_profiles", 10)
@@ -126,13 +128,15 @@ class SpeakerRecognition:
         # Device-zu-Person Mapping (aus Config) — leere/None Werte filtern
         raw_mapping = sr_cfg.get("device_mapping", {}) or {}
         self._device_mapping: dict[str, str] = {
-            str(k): str(v) for k, v in raw_mapping.items()
-            if v is not None and v != ""
+            str(k): str(v) for k, v in raw_mapping.items() if v is not None and v != ""
         }
         filtered_count = len(raw_mapping) - len(self._device_mapping)
         if filtered_count > 0:
-            logger.info("Device-Mapping: %d Eintraege geladen, %d leere uebersprungen",
-                        len(self._device_mapping), filtered_count)
+            logger.info(
+                "Device-Mapping: %d Eintraege geladen, %d leere uebersprungen",
+                len(self._device_mapping),
+                filtered_count,
+            )
 
         # DoA (Direction of Arrival) Mapping: device_id → {winkelbereich: person_id}
         raw_doa = sr_cfg.get("doa_mapping", {}) or {}
@@ -149,17 +153,22 @@ class SpeakerRecognition:
         # In-Memory Cache der Profile
         self._profiles: dict[str, SpeakerProfile] = {}
         self._last_speaker: Optional[str] = None
-        self._last_embedding: Optional[list[float]] = None  # C-1: Cache fuer Embedding-Lernen
+        self._last_embedding: Optional[list[float]] = (
+            None  # C-1: Cache fuer Embedding-Lernen
+        )
         self._embedding_lock = asyncio.Lock()
         self._save_lock = asyncio.Lock()
 
         if self.enabled:
             logger.info(
                 "SpeakerRecognition initialisiert (devices: %d, min_confidence: %.2f)",
-                len(self._device_mapping), self.min_confidence,
+                len(self._device_mapping),
+                self.min_confidence,
             )
         else:
-            logger.info("SpeakerRecognition deaktiviert (speaker_recognition.enabled = false)")
+            logger.info(
+                "SpeakerRecognition deaktiviert (speaker_recognition.enabled = false)"
+            )
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis und laedt gespeicherte Profile."""
@@ -181,8 +190,11 @@ class SpeakerRecognition:
                         for device in profile.devices:
                             if device not in self._device_mapping:
                                 self._device_mapping[device] = pid
-                    logger.info("Speaker-Profile geladen: %d (devices: %d)",
-                                len(self._profiles), len(self._device_mapping))
+                    logger.info(
+                        "Speaker-Profile geladen: %d (devices: %d)",
+                        len(self._profiles),
+                        len(self._device_mapping),
+                    )
             except Exception as e:
                 logger.warning("Speaker-Profile laden fehlgeschlagen: %s", e)
 
@@ -190,8 +202,12 @@ class SpeakerRecognition:
             try:
                 last = await self.redis.get(SPEAKER_LAST_IDENTIFIED_KEY)
                 if last:
-                    self._last_speaker = last if isinstance(last, str) else last.decode()
-                    logger.debug("Letzter Sprecher wiederhergestellt: %s", self._last_speaker)
+                    self._last_speaker = (
+                        last if isinstance(last, str) else last.decode()
+                    )
+                    logger.debug(
+                        "Letzter Sprecher wiederhergestellt: %s", self._last_speaker
+                    )
             except Exception as e:
                 logger.debug("Speaker cache restore failed: %s", e)
 
@@ -219,7 +235,12 @@ class SpeakerRecognition:
             Dict mit person, confidence, fallback, method
         """
         if not self.enabled:
-            return {"person": None, "confidence": 0.0, "fallback": False, "method": "disabled"}
+            return {
+                "person": None,
+                "confidence": 0.0,
+                "fallback": False,
+                "method": "disabled",
+            }
 
         # 1. Device-Mapping: Geraet → Person
         if device_id and device_id in self._device_mapping:
@@ -252,7 +273,9 @@ class SpeakerRecognition:
             if doa_result:
                 self._last_speaker = doa_result["person_id"]
                 await self.log_identification(
-                    doa_result["person_id"], "doa", doa_result["confidence"],
+                    doa_result["person_id"],
+                    "doa",
+                    doa_result["confidence"],
                 )
                 return {
                     "person": doa_result["person"],
@@ -279,7 +302,9 @@ class SpeakerRecognition:
             sole_person = await self._identify_sole_person()
             if sole_person:
                 self._last_speaker = sole_person.lower()
-                await self.log_identification(sole_person.lower(), "sole_person_home", 0.85)
+                await self.log_identification(
+                    sole_person.lower(), "sole_person_home", 0.85
+                )
                 return {
                     "person": sole_person,
                     "confidence": 0.85,
@@ -306,12 +331,18 @@ class SpeakerRecognition:
             if emb_result:
                 self._last_speaker = emb_result["person_id"]
                 await self.log_identification(
-                    emb_result["person_id"], "voice_embedding", emb_result["confidence"],
+                    emb_result["person_id"],
+                    "voice_embedding",
+                    emb_result["confidence"],
                 )
+                _emb_conf = emb_result["confidence"]
+                # MCU Sprint 4: Soft-confirmation at medium confidence
+                _needs_soft_confirm = 0.5 <= _emb_conf < self.min_confidence
                 return {
                     "person": emb_result["person"],
-                    "confidence": emb_result["confidence"],
-                    "fallback": emb_result["confidence"] < self.min_confidence,
+                    "confidence": _emb_conf,
+                    "fallback": _emb_conf < 0.5,  # Only hard fallback below 0.5
+                    "soft_confirm": _needs_soft_confirm,
                     "method": "voice_embedding",
                 }
 
@@ -325,7 +356,9 @@ class SpeakerRecognition:
             if match:
                 self._last_speaker = match["person_id"]
                 await self.log_identification(
-                    match["person_id"], "voice_features", match["confidence"],
+                    match["person_id"],
+                    "voice_features",
+                    match["confidence"],
                 )
                 return {
                     "person": match["name"],
@@ -339,7 +372,11 @@ class SpeakerRecognition:
         if self._last_speaker and self._last_speaker in self._profiles:
             profile = self._profiles[self._last_speaker]
             # Cache-Confidence sinkt mit der Zeit (max 1h nuetzlich)
-            age_minutes = (time.time() - profile.last_identified) / 60 if profile.last_identified else 60
+            age_minutes = (
+                (time.time() - profile.last_identified) / 60
+                if profile.last_identified
+                else 60
+            )
             cache_confidence = max(0.2, 0.5 - age_minutes / 120)
             result = {
                 "person": profile.name,
@@ -447,7 +484,9 @@ class SpeakerRecognition:
         person_profiles = yaml_config.get("person_profiles", {}).get("profiles", {})
         room_lower = room.lower().replace(" ", "_")
         for person_key, profile in (person_profiles or {}).items():
-            pref_room = (profile.get("preferred_room", "") or "").lower().replace(" ", "_")
+            pref_room = (
+                (profile.get("preferred_room", "") or "").lower().replace(" ", "_")
+            )
             if pref_room == room_lower:
                 # Pruefen ob die Person zuhause ist
                 for ph in persons_home:
@@ -497,14 +536,18 @@ class SpeakerRecognition:
 
             # Dauer-Aehnlichkeit
             if duration > 0 and profile.avg_duration > 0:
-                dur_diff = abs(duration - profile.avg_duration) / max(profile.avg_duration, 1)
+                dur_diff = abs(duration - profile.avg_duration) / max(
+                    profile.avg_duration, 1
+                )
                 dur_score = max(0, 1.0 - dur_diff)
                 score += dur_score
                 factors += 1
 
             # Lautstaerke-Aehnlichkeit
             if volume > 0 and profile.avg_volume > 0:
-                vol_diff = abs(volume - profile.avg_volume) / max(profile.avg_volume, 0.01)
+                vol_diff = abs(volume - profile.avg_volume) / max(
+                    profile.avg_volume, 0.01
+                )
                 vol_score = max(0, 1.0 - vol_diff)
                 score += vol_score
                 factors += 1
@@ -534,9 +577,13 @@ class SpeakerRecognition:
 
         return best_match
 
-    async def enroll(self, person_id: str, name: str,
-                     audio_features: Optional[dict] = None,
-                     device_id: Optional[str] = None) -> bool:
+    async def enroll(
+        self,
+        person_id: str,
+        name: str,
+        audio_features: Optional[dict] = None,
+        device_id: Optional[str] = None,
+    ) -> bool:
         """
         Erstellt oder aktualisiert ein Profil fuer eine Person.
 
@@ -553,8 +600,13 @@ class SpeakerRecognition:
             return False
 
         async with self._save_lock:
-            if len(self._profiles) >= self.max_profiles and person_id not in self._profiles:
-                logger.warning("Maximale Anzahl Speaker-Profile erreicht (%d)", self.max_profiles)
+            if (
+                len(self._profiles) >= self.max_profiles
+                and person_id not in self._profiles
+            ):
+                logger.warning(
+                    "Maximale Anzahl Speaker-Profile erreicht (%d)", self.max_profiles
+                )
                 return False
 
             if person_id in self._profiles:
@@ -643,15 +695,24 @@ class SpeakerRecognition:
             try:
                 data = await self.redis.get("mha:speaker:latest_embedding")
                 if data:
-                    embedding = json.loads(data if isinstance(data, str) else data.decode())
+                    embedding = json.loads(
+                        data if isinstance(data, str) else data.decode()
+                    )
                     if isinstance(embedding, list) and len(embedding) > 0:
                         # Embedding konsumieren (nur einmal verwenden)
                         await self.redis.delete("mha:speaker:latest_embedding")
-                        logger.debug("Wyoming-Embedding aus Redis gelesen (%d dim, Versuch %d)",
-                                     len(embedding), attempt + 1)
+                        logger.debug(
+                            "Wyoming-Embedding aus Redis gelesen (%d dim, Versuch %d)",
+                            len(embedding),
+                            attempt + 1,
+                        )
                         return embedding
             except Exception as e:
-                logger.debug("Wyoming-Embedding lesen fehlgeschlagen (Versuch %d): %s", attempt + 1, e)
+                logger.debug(
+                    "Wyoming-Embedding lesen fehlgeschlagen (Versuch %d): %s",
+                    attempt + 1,
+                    e,
+                )
 
             # Noch nicht da — kurz warten und nochmal versuchen
             if attempt < len(delays) - 1:
@@ -689,12 +750,15 @@ class SpeakerRecognition:
             if not audio_b64:
                 return
             embedding = extract_embedding(
-                audio_b64, sample_rate=audio_metadata.get("sample_rate", 16000),
+                audio_b64,
+                sample_rate=audio_metadata.get("sample_rate", 16000),
             )
 
         if embedding:
             await self.store_embedding(person_id, embedding)
-            logger.debug("Embedding fuer %s gelernt (%d dim)", person_id, len(embedding))
+            logger.debug(
+                "Embedding fuer %s gelernt (%d dim)", person_id, len(embedding)
+            )
 
     async def update_voice_stats_for_person(self, person_id: str, audio_metadata: dict):
         """Aktualisiert Voice-Stats fuer eine bekannte Person (z.B. aus UI).
@@ -807,8 +871,10 @@ class SpeakerRecognition:
                     stored = json.loads(data)
                     if len(stored) == len(embedding):
                         alpha = 0.3
-                        merged = [alpha * e + (1 - alpha) * s
-                                  for e, s in zip(embedding, stored)]
+                        merged = [
+                            alpha * e + (1 - alpha) * s
+                            for e, s in zip(embedding, stored)
+                        ]
             except Exception as e:
                 logger.debug("Embedding merge failed: %s", e)
 
@@ -819,11 +885,15 @@ class SpeakerRecognition:
                     f"mha:speaker:embedding:{person_id}",
                     json.dumps(merged),
                 )
-                await self.redis.expire(f"mha:speaker:embedding:{person_id}", 365 * 86400)
+                await self.redis.expire(
+                    f"mha:speaker:embedding:{person_id}", 365 * 86400
+                )
             except Exception as e:
                 logger.debug("Embedding speichern fehlgeschlagen: %s", e)
 
-        logger.info("Voice-Embedding gespeichert: %s (%d Dim.)", person_id, len(embedding))
+        logger.info(
+            "Voice-Embedding gespeichert: %s (%d Dim.)", person_id, len(embedding)
+        )
         return True
 
     async def log_identification(self, person_id: str, method: str, confidence: float):
@@ -831,10 +901,14 @@ class SpeakerRecognition:
         if not self.redis:
             return
         try:
-            entry = json.dumps({
-                "person": person_id, "method": method,
-                "confidence": round(confidence, 3), "time": time.time(),
-            })
+            entry = json.dumps(
+                {
+                    "person": person_id,
+                    "method": method,
+                    "confidence": round(confidence, 3),
+                    "time": time.time(),
+                }
+            )
             await self.redis.lpush(SPEAKER_HISTORY_KEY, entry)
             await self.redis.ltrim(SPEAKER_HISTORY_KEY, 0, 99)  # Max 100 Eintraege
         except Exception as e:
@@ -857,8 +931,9 @@ class SpeakerRecognition:
             logger.debug("History deserialization failed: %s", e)
             return []
 
-    async def start_fallback_ask(self, guessed_person: Optional[str] = None,
-                                 original_text: str = "") -> str:
+    async def start_fallback_ask(
+        self, guessed_person: Optional[str] = None, original_text: str = ""
+    ) -> str:
         """Startet eine 'Wer bist du?'-Rueckfrage und merkt sich den Kontext.
 
         Args:
@@ -886,7 +961,9 @@ class SpeakerRecognition:
         if self.redis:
             try:
                 await self.redis.set(
-                    SPEAKER_PENDING_ASK_KEY, json.dumps(pending), ex=60,
+                    SPEAKER_PENDING_ASK_KEY,
+                    json.dumps(pending),
+                    ex=60,
                 )
             except Exception as e:
                 logger.debug("Unhandled: %s", e)
@@ -923,10 +1000,17 @@ class SpeakerRecognition:
         # Antwort cleanen
         clean = answer_text.lower().strip()
         # Typische Praefixe entfernen: "ich bin", "das ist", "hier ist", "die/der"
-        for prefix in ["ich bin ", "das ist ", "hier ist ", "hier spricht ",
-                        "der ", "die ", "das "]:
+        for prefix in [
+            "ich bin ",
+            "das ist ",
+            "hier ist ",
+            "hier spricht ",
+            "der ",
+            "die ",
+            "das ",
+        ]:
             if clean.startswith(prefix):
-                clean = clean[len(prefix):]
+                clean = clean[len(prefix) :]
                 break
 
         clean = clean.strip().rstrip(".!?")
@@ -945,6 +1029,18 @@ class SpeakerRecognition:
                 except Exception as e:
                     logger.debug("Unhandled: %s", e)
                 logger.info("Fallback-Antwort aufgeloest: %s", person_name)
+
+                # MCU Sprint 4: Auto-Enrollment — learn voice embedding
+                if self._last_embedding:
+                    try:
+                        await self.learn_embedding_from_audio(person_id, {})
+                        logger.info(
+                            "Auto-Enrollment: Voice-Embedding für %s gelernt",
+                            person_name,
+                        )
+                    except Exception as e:
+                        logger.debug("Auto-Enrollment fehlgeschlagen: %s", e)
+
                 return {
                     "person": person_name,
                     "person_id": person_id,
@@ -983,14 +1079,16 @@ class SpeakerRecognition:
     # Confidence Decay, Spoofing Protection & Cross-Device Fusion
     # ------------------------------------------------------------------
 
-    def _apply_confidence_decay(self, confidence: float, last_seen_days: float) -> float:
+    def _apply_confidence_decay(
+        self, confidence: float, last_seen_days: float
+    ) -> float:
         """Reduziert Konfidenz basierend auf vergangener Zeit seit letzter Erkennung.
 
         5% Decay pro Woche — Profile die lange nicht gehoert wurden,
         verlieren schrittweise an Vertrauen.
         """
         weeks = last_seen_days / 7.0
-        decayed = confidence * (0.95 ** weeks)
+        decayed = confidence * (0.95**weeks)
         return max(0.1, decayed)
 
     def check_spoofing_lockout(self, person: str) -> bool:
@@ -1014,7 +1112,11 @@ class SpeakerRecognition:
         self._spoofing_attempts[person] = attempts
 
         if len(attempts) >= max_attempts:
-            logger.warning("Spoofing-Lockout aktiv fuer '%s' — %d Fehlversuche", person, len(attempts))
+            logger.warning(
+                "Spoofing-Lockout aktiv fuer '%s' — %d Fehlversuche",
+                person,
+                len(attempts),
+            )
             return True
         return False
 
@@ -1050,4 +1152,8 @@ class SpeakerRecognition:
                 best_conf = weighted_avg
                 best_person = person
 
-        return {"person": best_person, "confidence": round(best_conf, 4), "device_count": len(scores)}
+        return {
+            "person": best_person,
+            "confidence": round(best_conf, 4),
+            "device_count": len(scores),
+        }

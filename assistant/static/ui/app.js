@@ -111,7 +111,7 @@ const _searchIndex = [
   // Follow-Me (tab-followme)
   {tab:'tab-followme', title:'Follow-Me', keywords:'raum folgen musik licht temperatur person profil', icon:'&#128694;'},
   // Intelligenz (tab-intelligence)
-  {tab:'tab-intelligence', title:'Domain-spezifische Autonomie', keywords:'domain autonomie klima licht medien sicherheit', icon:'&#127919;'},
+  {tab:'tab-autonomie', title:'Domain-spezifische Autonomie', keywords:'domain autonomie klima licht medien sicherheit', icon:'&#127919;'},
   {tab:'tab-intelligence', title:'Kalender-Intelligenz', keywords:'kalender gewohnheit konflikt pendelzeit termin per route pendel', icon:'&#128197;'},
   {tab:'tab-intelligence', title:'Erklärbarkeit', keywords:'erklaerbarkeit warum aktion begründung entscheidung', icon:'&#128161;'},
   {tab:'tab-intelligence', title:'Lern-Transfer', keywords:'transfer präferenz raum ähnlich vorschlag benachrichtigung notify', icon:'&#129504;'},
@@ -277,7 +277,7 @@ function _navigateToSearchResult(tab, sectionTitle) {
         // Scroll and flash
         section.scrollIntoView({behavior:'smooth', block:'start'});
         section.style.transition = 'box-shadow 0.3s';
-        section.style.boxShadow = '0 0 0 2px rgba(0,212,255,0.5), 0 0 20px rgba(0,212,255,0.15)';
+        section.style.boxShadow = '0 0 0 2px rgba(0,212,255,0.5), 0 0 20px var(--border-hover)';
         setTimeout(() => { section.style.boxShadow = ''; }, 2000);
         break;
       }
@@ -865,14 +865,14 @@ async function refreshEnergyDashboard() {
       html += `<div class="stat-card">
         <div class="stat-label">&#9728;&#65039; Solar</div>
         <div class="stat-value" style="color:${col}">${d.solar_watts >= 1000 ? (d.solar_watts/1000).toFixed(1)+' kW' : Math.round(d.solar_watts)+' W'}</div>
-        <div style="margin-top:6px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
-          <div style="height:100%;width:${pct}%;background:${col};border-radius:2px;transition:width .5s;"></div>
+        <div style="margin-top:6px;height:4px;background:var(--border);border-radius:var(--radius-sm);overflow:hidden;">
+          <div style="height:100%;width:${pct}%;background:${col};border-radius:var(--radius-sm);transition:width .5s;"></div>
         </div></div>`;
     }
 
     // Verbrauch
     if (d.consumption_watts != null) {
-      const col = d.consumption_watts > 3000 ? 'var(--danger)' : d.consumption_watts > 1500 ? 'var(--warning, orange)' : 'var(--text)';
+      const col = d.consumption_watts > 3000 ? 'var(--danger)' : d.consumption_watts > 1500 ? 'var(--warning)' : 'var(--text-primary)';
       html += `<div class="stat-card">
         <div class="stat-label">&#128268; Verbrauch</div>
         <div class="stat-value" style="color:${col}">${d.consumption_watts >= 1000 ? (d.consumption_watts/1000).toFixed(1)+' kW' : Math.round(d.consumption_watts)+' W'}</div>
@@ -893,7 +893,7 @@ async function refreshEnergyDashboard() {
 
     // Strompreis
     if (d.price_cents != null) {
-      const col = d.price_status === 'low' ? 'var(--success)' : d.price_status === 'high' ? 'var(--danger)' : 'var(--text)';
+      const col = d.price_status === 'low' ? 'var(--success)' : d.price_status === 'high' ? 'var(--danger)' : 'var(--text-primary)';
       const label = d.price_status === 'low' ? 'Günstig' : d.price_status === 'high' ? 'Teuer' : 'Normal';
       html += `<div class="stat-card">
         <div class="stat-label">&#128176; Strompreis</div>
@@ -1021,12 +1021,12 @@ async function loadSceneStatus() {
       }
     }
 
-    html += `<div style="padding:10px 12px;margin-bottom:10px;background:rgba(0,212,255,0.04);border:1px solid rgba(0,212,255,0.15);border-radius:8px;">
+    html += `<div style="padding:10px 12px;margin-bottom:10px;background:var(--accent-dim);border:1px solid var(--border-hover);border-radius:var(--radius-lg);">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:18px;">${actIcon}</span>
           <span style="font-size:14px;font-weight:600;color:var(--text-primary);">${esc(actLabel)}</span>
-          ${isOverride ? '<span style="font-size:9px;background:var(--accent);color:var(--bg-primary);padding:1px 6px;border-radius:3px;font-weight:600;letter-spacing:0.5px;">OVERRIDE</span>' : ''}
+          ${isOverride ? '<span style="font-size:9px;background:var(--accent);color:var(--bg-primary);padding:1px 6px;border-radius:var(--radius-sm);font-weight:600;letter-spacing:0.5px;">OVERRIDE</span>' : ''}
         </div>
         <span style="font-size:11px;color:var(--text-muted);font-family:var(--mono);">${confidence}%</span>
       </div>
@@ -2032,6 +2032,14 @@ function helpBtn(path) {
   return ` <span class="help-btn" onclick="event.stopPropagation();showHelp('${path}')" title="Hilfe">?</span>`;
 }
 
+// ---- Standardized loading/error states ----
+function fLoading(text='Lade...') {
+  return `<div style="padding:8px;color:var(--text-muted);font-size:12px;">${text}</div>`;
+}
+function fErrorMsg(text='Fehler beim Laden') {
+  return `<div style="padding:8px;color:var(--danger);font-size:12px;">${esc(text)}</div>`;
+}
+
 // ---- Form field generators ----
 function fText(path, label, hint='', ro=false) {
   const v = getPath(S,path) ?? '';
@@ -2080,6 +2088,281 @@ function fTextarea(path, label, hint='') {
   const dtype = isArr ? 'array' : (isObj ? 'json' : 'text');
   return `<div class="form-group"><label>${label}${helpBtn(path)}</label>
     <textarea data-path="${path}" data-type="${dtype}">${esc(txt)}</textarea>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
+}
+
+// Aktions-Berechtigungen Editor (visuell statt JSON)
+const ACTION_PERMISSION_LABELS = {
+  respond_to_command: 'Auf Befehle reagieren',
+  execute_function_call: 'Geräte steuern',
+  proactive_info: 'Proaktive Info',
+  morning_briefing: 'Morgen-Briefing',
+  security_alert: 'Sicherheits-Alarm',
+  adjust_temperature_small: 'Temperatur anpassen (klein)',
+  create_automation: 'Automation erstellen'
+};
+
+function fActionPermissionsEditor(path) {
+  const perms = getPath(S, path) || {};
+  const levelNames = {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'};
+  let rows = '';
+  for (const [action, level] of Object.entries(perms)) {
+    const label = ACTION_PERMISSION_LABELS[action] || action;
+    const id = `ap_${action}`;
+    let opts = '';
+    for (let i = 1; i <= 5; i++) {
+      opts += `<option value="${i}" ${level==i?'selected':''}>${i} — ${levelNames[i]}</option>`;
+    }
+    rows += `<div class="perm-row" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg-secondary);border-radius:var(--radius-md);margin-bottom:4px;">
+      <span style="flex:1;font-size:13px;" title="${action}">${label}</span>
+      <select id="${id}" style="width:auto;min-width:160px;font-size:12px;" onchange="updActionPerm('${path}','${action}',this.value)">${opts}</select>
+      <span class="perm-rm" style="cursor:pointer;color:var(--text-muted);font-size:14px;" onclick="rmActionPerm('${path}','${action}',this)" title="Entfernen">&#10005;</span>
+    </div>`;
+  }
+  return `<div id="action-perms-list">${rows}</div>
+    <div style="display:flex;gap:6px;margin-top:6px;align-items:center;">
+      <input id="new-action-key" type="text" placeholder="Neue Aktion (z.B. adjust_light)" style="flex:1;font-size:12px;">
+      <select id="new-action-level" style="width:auto;min-width:120px;font-size:12px;">
+        <option value="1">1 — Assistent</option><option value="2">2 — Butler</option>
+        <option value="3" selected>3 — Mitbewohner</option><option value="4">4 — Vertrauter</option><option value="5">5 — Autopilot</option>
+      </select>
+      <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" onclick="addActionPerm('${path}')">+ Hinzufuegen</button>
+    </div>`;
+}
+function updActionPerm(path, action, val) {
+  mergeCurrentTabIntoS();
+  const perms = getPath(S, path) || {};
+  perms[action] = parseInt(val);
+  setPath(S, path, perms);
+  scheduleAutoSave();
+}
+function rmActionPerm(path, action, el) {
+  mergeCurrentTabIntoS();
+  const perms = getPath(S, path) || {};
+  delete perms[action];
+  setPath(S, path, perms);
+  scheduleAutoSave();
+  el.closest('.perm-row').remove();
+}
+function addActionPerm(path) {
+  mergeCurrentTabIntoS();
+  const keyEl = document.getElementById('new-action-key');
+  const lvlEl = document.getElementById('new-action-level');
+  const key = keyEl.value.trim();
+  if (!key) return;
+  const perms = getPath(S, path) || {};
+  setPath(S, path, perms);
+  scheduleAutoSave();
+  keyEl.value = '';
+  renderCurrentTab();
+}
+
+// Evolution-Kriterien Editor (visuell statt JSON)
+function fEvolutionCriteriaEditor(path) {
+  const criteria = getPath(S, path) || {};
+  const levelNames = {2:'Butler',3:'Mitbewohner',4:'Vertrauter'};
+  let rows = '';
+  for (const lvl of [2, 3, 4]) {
+    const c = criteria[String(lvl)] || criteria[lvl] || {};
+    const name = levelNames[lvl] || `Level ${lvl}`;
+    rows += `<div style="padding:10px 12px;background:var(--bg-secondary);border-radius:var(--radius-md);margin-bottom:6px;border-left:3px solid var(--accent);">
+      <div style="font-weight:600;font-size:13px;margin-bottom:8px;">Level ${lvl} — ${name}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+        <div class="form-group" style="margin:0;"><label style="font-size:11px;">Min. Tage</label>
+          <input type="number" value="${c.min_days||''}" min="1" max="365" style="font-size:12px;"
+            onchange="updEvoCrit('${path}',${lvl},'min_days',this.value)"></div>
+        <div class="form-group" style="margin:0;"><label style="font-size:11px;">Min. Interaktionen</label>
+          <input type="number" value="${c.min_interactions||''}" min="10" max="10000" style="font-size:12px;"
+            onchange="updEvoCrit('${path}',${lvl},'min_interactions',this.value)"></div>
+        <div class="form-group" style="margin:0;"><label style="font-size:11px;">Min. Akzeptanzrate</label>
+          <input type="number" value="${c.min_acceptance||''}" min="0" max="1" step="0.05" style="font-size:12px;"
+            onchange="updEvoCrit('${path}',${lvl},'min_acceptance',this.value)"></div>
+      </div>
+    </div>`;
+  }
+  return rows;
+}
+function updEvoCrit(path, level, key, val) {
+  mergeCurrentTabIntoS();
+  const criteria = getPath(S, path) || {};
+  const lvlKey = String(level);
+  if (!criteria[lvlKey]) criteria[lvlKey] = {};
+  criteria[lvlKey][key] = parseFloat(val);
+  setPath(S, path, criteria);
+  scheduleAutoSave();
+}
+
+// ---- Generic Key-Value Editor (flat string→string or string→number) ----
+function fKvEditor(path, keyLabel, valLabel, valType, hint) {
+  const obj = getPath(S, path) || {};
+  let rows = '';
+  for (const [k, v] of Object.entries(obj)) {
+    const inputType = valType === 'number' ? 'number' : 'text';
+    rows += `<div class="kv-row" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+      <span style="flex:1;font-size:12px;color:var(--text-primary);font-family:var(--mono);">${esc(k)}</span>
+      <input type="${inputType}" value="${esc(String(v))}" style="width:${valType==='number'?'60px':'180px'};font-size:12px;"
+        onchange="updKv('${path}','${esc(k)}',this.value,'${valType}')">
+      <span class="kv-rm" onclick="rmKv2('${path}','${esc(k)}',this)" title="Entfernen">&#10005;</span>
+    </div>`;
+  }
+  return `<div id="kv_${path.replace(/\./g,'_')}">${rows}</div>
+    <div style="display:flex;gap:6px;margin-top:6px;align-items:center;">
+      <input id="kv_new_k_${path.replace(/\./g,'_')}" type="text" placeholder="${keyLabel}" style="flex:1;font-size:12px;">
+      <input id="kv_new_v_${path.replace(/\./g,'_')}" type="${valType==='number'?'number':'text'}" placeholder="${valLabel}" style="width:${valType==='number'?'60px':'140px'};font-size:12px;">
+      <button class="btn btn-secondary btn-sm" style="white-space:nowrap;" onclick="addKv2('${path}','${valType}')">+ Hinzufuegen</button>
+    </div>${hint?'<div class="hint" style="margin-top:4px;">'+hint+'</div>':''}`;
+}
+function updKv(path, key, val, valType) {
+  mergeCurrentTabIntoS();
+  const obj = getPath(S, path) || {};
+  obj[key] = valType === 'number' ? parseFloat(val) : val;
+  setPath(S, path, obj);
+  scheduleAutoSave();
+}
+function rmKv2(path, key, el) {
+  mergeCurrentTabIntoS();
+  const obj = getPath(S, path) || {};
+  delete obj[key];
+  setPath(S, path, obj);
+  scheduleAutoSave();
+  el.closest('.kv-row').remove();
+}
+function addKv2(path, valType) {
+  mergeCurrentTabIntoS();
+  const sfx = path.replace(/\./g,'_');
+  const kEl = document.getElementById('kv_new_k_' + sfx);
+  const vEl = document.getElementById('kv_new_v_' + sfx);
+  if (!kEl || !vEl) return;
+  const key = kEl.value.trim();
+  if (!key) return;
+  const obj = getPath(S, path) || {};
+  obj[key] = valType === 'number' ? (parseFloat(vEl.value) || 0) : vEl.value;
+  setPath(S, path, obj);
+  scheduleAutoSave();
+  kEl.value = '';
+  vEl.value = '';
+  renderCurrentTab();
+}
+
+// ---- Key → Array Editor (z.B. Raum-Gruppen, Raum-Beschränkungen) ----
+function fKvArrayEditor(path, keyLabel, valLabel, hint) {
+  const obj = getPath(S, path) || {};
+  let html = '';
+  for (const [k, arr] of Object.entries(obj)) {
+    if (!Array.isArray(arr)) continue;
+    const tags = arr.map(v => `<span class="kw-tag">${esc(v)}<span class="kw-rm" onclick="rmKvArrItem('${path}','${esc(k)}','${esc(v)}')">&#10005;</span></span>`).join('');
+    html += `<div class="kva-row" style="padding:8px;background:var(--bg-secondary);border-radius:var(--radius-md);margin-bottom:4px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <span style="font-size:12px;font-weight:600;">${esc(k)}</span>
+        <span class="kv-rm" onclick="rmKvArrGroup('${path}','${esc(k)}')" title="Gruppe entfernen">&#10005;</span>
+      </div>
+      <div class="kw-editor" style="min-height:24px;" onclick="this.querySelector('input')?.focus()">
+        ${tags}<input class="kw-input" placeholder="+ ${valLabel}..." onkeydown="addKvArrItem(event,this,'${path}','${esc(k)}')">
+      </div>
+    </div>`;
+  }
+  return `<div id="kva_${path.replace(/\./g,'_')}">${html}</div>
+    <div style="display:flex;gap:6px;margin-top:6px;align-items:center;">
+      <input id="kva_new_${path.replace(/\./g,'_')}" type="text" placeholder="Neue ${keyLabel}..." style="flex:1;font-size:12px;">
+      <button class="btn btn-secondary btn-sm" style="white-space:nowrap;" onclick="addKvArrGroup('${path}')">+ ${keyLabel}</button>
+    </div>${hint?'<div class="hint" style="margin-top:4px;">'+hint+'</div>':''}`;
+}
+function addKvArrItem(event, input, path, key) {
+  if (event.key !== 'Enter') return;
+  const val = input.value.trim();
+  if (!val) return;
+  mergeCurrentTabIntoS();
+  const obj = getPath(S, path) || {};
+  if (!obj[key]) obj[key] = [];
+  if (!obj[key].includes(val)) obj[key].push(val);
+  setPath(S, path, obj);
+  scheduleAutoSave();
+  input.value = '';
+  renderCurrentTab();
+}
+function rmKvArrItem(path, key, val) {
+  mergeCurrentTabIntoS();
+  const obj = getPath(S, path) || {};
+  if (obj[key]) obj[key] = obj[key].filter(v => v !== val);
+  setPath(S, path, obj);
+  scheduleAutoSave();
+  renderCurrentTab();
+}
+function rmKvArrGroup(path, key) {
+  mergeCurrentTabIntoS();
+  const obj = getPath(S, path) || {};
+  delete obj[key];
+  setPath(S, path, obj);
+  scheduleAutoSave();
+  renderCurrentTab();
+}
+function addKvArrGroup(path) {
+  mergeCurrentTabIntoS();
+  const sfx = path.replace(/\./g,'_');
+  const el = document.getElementById('kva_new_' + sfx);
+  if (!el) return;
+  const key = el.value.trim();
+  if (!key) return;
+  const obj = getPath(S, path) || {};
+  if (!obj[key]) obj[key] = [];
+  setPath(S, path, obj);
+  scheduleAutoSave();
+  el.value = '';
+  renderCurrentTab();
+}
+
+// ---- Event-Handler Editor (key → {priority, description}) ----
+function fEventHandlerEditor(path) {
+  const handlers = getPath(S, path) || {};
+  const priorities = ['critical','high','medium','low'];
+  let rows = '';
+  for (const [event, cfg] of Object.entries(handlers)) {
+    const c = typeof cfg === 'object' ? cfg : {priority:'medium', description:''};
+    let opts = priorities.map(p => `<option value="${p}" ${c.priority===p?'selected':''}>${p}</option>`).join('');
+    rows += `<div class="kv-row" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;padding:6px 8px;background:var(--bg-secondary);border-radius:var(--radius-md);">
+      <span style="flex:1;font-size:12px;font-family:var(--mono);">${esc(event)}</span>
+      <select style="width:auto;min-width:90px;font-size:11px;" onchange="updEvtHandler('${path}','${esc(event)}','priority',this.value)">${opts}</select>
+      <span class="kv-rm" onclick="rmEvtHandler('${path}','${esc(event)}',this)" title="Entfernen">&#10005;</span>
+    </div>`;
+  }
+  return `<div>${rows}</div>
+    <div style="display:flex;gap:6px;margin-top:6px;align-items:center;">
+      <input id="evt_new_${path.replace(/\./g,'_')}" type="text" placeholder="Event-Name" style="flex:1;font-size:12px;">
+      <select id="evt_prio_${path.replace(/\./g,'_')}" style="width:auto;min-width:90px;font-size:11px;">
+        ${priorities.map(p => `<option value="${p}" ${p==='medium'?'selected':''}>${p}</option>`).join('')}
+      </select>
+      <button class="btn btn-secondary btn-sm" style="white-space:nowrap;" onclick="addEvtHandler('${path}')">+ Hinzufuegen</button>
+    </div>`;
+}
+function updEvtHandler(path, event, field, val) {
+  mergeCurrentTabIntoS();
+  const h = getPath(S, path) || {};
+  if (!h[event]) h[event] = {};
+  h[event][field] = val;
+  setPath(S, path, h);
+  scheduleAutoSave();
+}
+function rmEvtHandler(path, event, el) {
+  mergeCurrentTabIntoS();
+  const h = getPath(S, path) || {};
+  delete h[event];
+  setPath(S, path, h);
+  scheduleAutoSave();
+  el.closest('.kv-row').remove();
+}
+function addEvtHandler(path) {
+  mergeCurrentTabIntoS();
+  const sfx = path.replace(/\./g,'_');
+  const nEl = document.getElementById('evt_new_' + sfx);
+  const pEl = document.getElementById('evt_prio_' + sfx);
+  if (!nEl) return;
+  const name = nEl.value.trim();
+  if (!name) return;
+  const h = getPath(S, path) || {};
+  h[name] = {priority: pEl?.value || 'medium', description: ''};
+  setPath(S, path, h);
+  scheduleAutoSave();
+  nEl.value = '';
+  renderCurrentTab();
 }
 
 // Klickbare Chip-Auswahl (vordefinierte Optionen zum An/Abklicken)
@@ -2632,7 +2915,7 @@ async function loadRoomTempAverage() {
   try {
     const d = await api('/api/ui/room-temperature');
     if (!d || !d.sensors || d.sensors.length === 0) {
-      el.innerHTML = '<div style="padding:8px 12px;background:var(--bg-tertiary);border-radius:8px;font-size:12px;color:var(--text-muted);">' +
+      el.innerHTML = '<div style="padding:8px 12px;background:var(--bg-tertiary);border-radius:var(--radius-lg);font-size:12px;color:var(--text-muted);">' +
         '&#128161; Noch keine Sensoren konfiguriert. Jarvis nutzt aktuell die Temperatur der Heizung/Klimaanlage.</div>';
       return;
     }
@@ -2650,7 +2933,7 @@ async function loadRoomTempAverage() {
           '<span style="font-size:18px;color:var(--accent);">' + d.average + '\u00b0C</span>' +
         '</div>'
       : '';
-    el.innerHTML = '<div style="padding:10px 14px;background:var(--bg-tertiary);border-radius:8px;margin-top:4px;">' +
+    el.innerHTML = '<div style="padding:10px 14px;background:var(--bg-tertiary);border-radius:var(--radius-lg);margin-top:4px;">' +
       '<div style="font-size:12px;font-weight:600;margin-bottom:6px;">Aktuelle Sensorwerte</div>' +
       rows + avgHtml + '</div>';
   } catch(e) {
@@ -2702,7 +2985,7 @@ function _renderModelProfiles() {
       } else if (f.type === 'textarea') {
         html += '<div class="form-group" style="margin-bottom:6px;">' +
           '<label style="font-size:12px;">' + f.label + (f.hint ? ' <span style="color:var(--text-muted);font-weight:normal;">— ' + f.hint + '</span>' : '') + '</label>' +
-          '<textarea data-path="' + path + '" rows="3" style="width:100%;font-size:12px;font-family:var(--mono);resize:vertical;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:6px;">' + esc(val) + '</textarea>' +
+          '<textarea data-path="' + path + '" rows="3" style="width:100%;font-size:12px;font-family:var(--mono);resize:vertical;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px;">' + esc(val) + '</textarea>' +
           '</div>';
       } else {
         html += '<div class="form-group" style="margin-bottom:6px;">' +
@@ -2767,7 +3050,7 @@ function renderApplianceDevices() {
     const patterns = (dev.patterns || []).map(p =>
       `<span class="kw-tag">${esc(p)}<span class="kw-rm" onclick="rmAppliancePattern(${i},this)">&#10005;</span></span>`
     ).join('');
-    return `<div class="appliance-card" style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:10px;margin-bottom:8px;">
+    return `<div class="appliance-card" style="background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;margin-bottom:8px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
         <span style="font-weight:600;font-size:13px;">${esc(dev.label || dev.key)}</span>
         <button class="btn btn-sm" style="color:var(--danger);font-size:11px;padding:2px 8px;" onclick="removeApplianceDevice(${i})">Entfernen</button>
@@ -2837,7 +3120,7 @@ function confirmAddApplianceDevice() {
   devices.push({key: cleanKey, label: label, patterns: patterns});
   setPath(S, 'appliance_monitor.devices', devices);
   renderApplianceDevices();
-  markDirty();
+  scheduleAutoSave();
   toast('Geraet "' + label + '" hinzugefuegt.');
 }
 
@@ -2855,7 +3138,6 @@ function removeApplianceDevice(idx) {
   setPath(S, 'appliance_monitor.devices', devices);
   renderApplianceDevices();
   renderPowerProfiles();
-  markDirty();
   scheduleAutoSave();
 }
 
@@ -2869,7 +3151,7 @@ function rmAppliancePattern(devIdx, el) {
   devices[devIdx].patterns = patterns;
   setPath(S, 'appliance_monitor.devices', devices);
   renderApplianceDevices();
-  markDirty();
+  scheduleAutoSave();
 }
 
 async function pickEntityForAppliance(devIdx) {
@@ -2884,10 +3166,10 @@ async function pickEntityForAppliance(devIdx) {
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
   const dialog = document.createElement('div');
-  dialog.style.cssText = 'background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:var(--radius-md);padding:16px;max-width:500px;width:90%;max-height:70vh;display:flex;flex-direction:column;';
+  dialog.style.cssText = 'background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;max-width:500px;width:90%;max-height:70vh;display:flex;flex-direction:column;';
   dialog.innerHTML = `
     <div style="font-weight:600;font-size:14px;margin-bottom:8px;">Power-Sensor auswählen</div>
-    <input type="text" id="applianceEntitySearch" placeholder="Suchen..." style="margin-bottom:8px;padding:6px 10px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);" oninput="filterApplianceEntities()">
+    <input type="text" id="applianceEntitySearch" placeholder="Suchen..." style="margin-bottom:8px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);" oninput="filterApplianceEntities()">
     <div id="applianceEntityList" style="overflow-y:auto;flex:1;max-height:50vh;"></div>
     <button class="btn btn-secondary" onclick="this.closest('div[style*=fixed]').remove()" style="margin-top:8px;">Abbrechen</button>
   `;
@@ -2915,7 +3197,7 @@ function filterApplianceEntities() {
     const name = e.attributes?.friendly_name || e.entity_id;
     const val = e.state || '';
     const unit = e.attributes?.unit_of_measurement || '';
-    return `<div onclick="selectApplianceEntity('${esc(e.entity_id)}')" style="padding:8px;cursor:pointer;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;" onmouseover="this.style.background='var(--bg-hover)'" onmouseout="this.style.background=''">
+    return `<div onclick="selectApplianceEntity('${esc(e.entity_id)}')" style="padding:8px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;" onmouseover="this.style.background='var(--bg-hover)'" onmouseout="this.style.background=''">
       <div><div style="font-size:13px;font-weight:500;">${esc(name)}</div><div style="font-size:11px;color:var(--text-muted);">${esc(e.entity_id)}</div></div>
       <span style="font-size:12px;color:var(--text-secondary);">${esc(val)} ${esc(unit)}</span>
     </div>`;
@@ -2934,7 +3216,7 @@ function selectApplianceEntity(entityId) {
     patterns.push(shortId);
     devices[devIdx].patterns = patterns;
     setPath(S, 'appliance_monitor.devices', devices);
-    markDirty();
+    scheduleAutoSave();
   }
   if (window._appliancePickOverlay) window._appliancePickOverlay.remove();
   renderApplianceDevices();
@@ -2956,7 +3238,7 @@ function renderPowerProfiles() {
     if (!k) return '';
     const p = profiles[k] || {};
     const label = dev.label || k;
-    return `<div style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:10px;margin-bottom:8px;">
+    return `<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;margin-bottom:8px;">
       <div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#9889; ${esc(label)}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
         <div class="form-group" style="margin:0;">
@@ -3002,7 +3284,6 @@ function setPowerProfile(deviceKey, field, value) {
   if (!profiles[safeKey]) profiles[safeKey] = {};
   profiles[safeKey][field] = parseFloat(value) || 0;
   setPath(S, 'appliance_monitor.power_profiles', profiles);
-  markDirty();
   scheduleAutoSave();
 }
 
@@ -3010,7 +3291,7 @@ function setPowerProfile(deviceKey, field, value) {
 async function loadCharBreakStats() {
   const el = document.getElementById('charBreakStatsContent');
   if (!el) return;
-  el.innerHTML = '<span style="color:var(--accent);">Lade...</span>';
+  el.innerHTML = fLoading();
   try {
     const resp = await fetch('/api/assistant/character-break-stats');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -3033,7 +3314,7 @@ async function loadCharBreakStats() {
       for (const [type, count] of Object.entries(data.totals).sort((a,b) => b[1]-a[1])) {
         const label = TYPE_LABELS[type] || type;
         const color = count > 10 ? 'var(--danger)' : count > 3 ? 'var(--warning)' : 'var(--text-muted)';
-        html += '<span style="padding:2px 8px;border-radius:10px;background:var(--bg-secondary);border:1px solid ' + color + ';font-size:11px;">' +
+        html += '<span style="padding:2px 8px;border-radius:var(--radius-lg);background:var(--bg-secondary);border:1px solid ' + color + ';font-size:11px;">' +
           '<span style="color:' + color + ';font-weight:600;">' + count + '</span> ' + label + '</span>';
       }
       html += '</div>';
@@ -3045,7 +3326,7 @@ async function loadCharBreakStats() {
       for (const entry of data.recent_log.slice(0, 10)) {
         const typeLabel = TYPE_LABELS[entry.type] || entry.type;
         const ts = entry.ts ? entry.ts.substring(5, 16).replace('T', ' ') : '';
-        html += '<div style="padding:2px 0;border-bottom:1px solid var(--border-color);font-size:11px;">' +
+        html += '<div style="padding:2px 0;border-bottom:1px solid var(--border);font-size:11px;">' +
           '<span style="color:var(--text-muted);">' + ts + '</span> ' +
           '<strong>' + typeLabel + '</strong>: ' + esc(entry.detail || '') + '</div>';
       }
@@ -3156,9 +3437,9 @@ function _renderPersonsSections() {
   sectionWrap('&#128106;', 'Haushaltsmitglieder',
     fInfo('Alle Personen im Haushalt. Die Rolle bestimmt was jeder steuern darf.') +
     '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">' +
-    '<div style="padding:8px 12px;background:var(--accent-dim);border-radius:6px;font-size:11px;text-align:center;"><b>&#128081; Hausherr/in</b><br>Voller Zugriff</div>' +
-    '<div style="padding:8px 12px;background:var(--blue-dim);border-radius:6px;font-size:11px;text-align:center;"><b>&#128100; Mitbewohner/in</b><br>Alles ausser Sicherheit</div>' +
-    '<div style="padding:8px 12px;background:rgba(255,255,255,0.05);border-radius:6px;font-size:11px;text-align:center;"><b>&#128587; Gast</b><br>Nur Licht, Klima, Medien</div>' +
+    '<div style="padding:8px 12px;background:var(--accent-dim);border-radius:var(--radius-md);font-size:11px;text-align:center;"><b>&#128081; Hausherr/in</b><br>Voller Zugriff</div>' +
+    '<div style="padding:8px 12px;background:var(--blue-dim);border-radius:var(--radius-md);font-size:11px;text-align:center;"><b>&#128100; Mitbewohner/in</b><br>Alles ausser Sicherheit</div>' +
+    '<div style="padding:8px 12px;background:rgba(255,255,255,0.05);border-radius:var(--radius-md);font-size:11px;text-align:center;"><b>&#128587; Gast</b><br>Nur Licht, Klima, Medien</div>' +
     '</div>' +
     '<div id="householdMembers">' + memberRows + '</div>' +
     '<button class="btn btn-secondary" onclick="addHouseholdMember()" style="margin-top:8px;width:100%;justify-content:center;">+ Person hinzufügen</button>'
@@ -3829,7 +4110,7 @@ function renderSensors() {
       '&#127916; <strong>Aktivität:</strong> Schlaf-Erkennung<br>' +
       '&#127748; <strong>Routinen:</strong> Aufwach-Erkennung (z.B. Kaffee)<br><br>' +
       'Wähle den Raum und füge Betten hinzu. Jedes Bett kann einer Person zugeordnet werden.') +
-    '<div id="centralBedSensorContainer" style="padding:8px;">Lade Räume...</div>'
+    '<div id="centralBedSensorContainer">' + fLoading('Lade Räume...') + '</div>'
   ) +
   sectionWrap('&#128225;', 'Weitere Sensoren',
     fInfo('Andere Sensor-Typen (Media Player, Mikrofone, PC) konfigurierst du pro Raum im <strong>Räume</strong>-Tab unter "Aktivitäts-Sensoren". Bettsensoren werden oben zentral konfiguriert.') +
@@ -4552,7 +4833,7 @@ function renderScenes() {
           <div style="display:flex;align-items:center;gap:6px;flex:1;">
             <input type="number" step="0.5" min="-5" max="5" value="${sc.climate_offset ?? ''}"
               placeholder="z.B. -2"
-              style="width:80px;font-size:12px;padding:4px 6px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;"
+              style="width:80px;font-size:12px;padding:4px 6px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md);"
               onchange="sceneClimateOffsetChanged('${esc(sc.id)}',this.value)">
             <span style="font-size:11px;color:var(--text-muted);">&deg;C</span>
           </div>
@@ -4586,7 +4867,7 @@ function renderScenes() {
                   style="font-size:12px;font-family:var(--mono);padding:5px 8px;">
                 <div class="entity-pick-dropdown" style="display:none;"></div>
               </div>
-              <button type="button" class="btn btn-sm scene-dt-rm" style="padding:6px 10px;font-size:14px;min-width:36px;min-height:36px;z-index:10000;position:relative;flex-shrink:0;color:var(--danger,#ef4444);" onclick="event.stopPropagation();removeSceneDeviceTrigger('${esc(sc.id)}',${i})" ontouchend="event.preventDefault();event.stopPropagation();removeSceneDeviceTrigger('${esc(sc.id)}',${i})">&#10005;</button>
+              <button type="button" class="btn btn-sm scene-dt-rm" style="flex-shrink:0;" onclick="event.stopPropagation();removeSceneDeviceTrigger('${esc(sc.id)}',${i})" ontouchend="event.preventDefault();event.stopPropagation();removeSceneDeviceTrigger('${esc(sc.id)}',${i})">&#10005;</button>
             </div>`).join('')}
             <button class="btn btn-sm" style="padding:3px 10px;font-size:11px;margin-top:4px;" onclick="addSceneDeviceTrigger('${esc(sc.id)}')">+ Gerät</button>
           </div>
@@ -4820,27 +5101,26 @@ function _renderSceneActions(sc) {
       </div>`;
     // Parameter-Inputs basierend auf Domain+Service
     if (domain === 'light' && service === 'turn_on') {
-      html += `<input type="number" min="0" max="100" step="5" value="${data.brightness_pct ?? ''}" placeholder="% Hell."
-        style="width:60px;" title="Helligkeit in %"
+      html += `<input type="number" class="form-input" min="0" max="100" step="5" value="${data.brightness_pct ?? ''}" placeholder="% Hell."
+        style="width:60px;font-size:12px;" title="Helligkeit in %"
         onchange="sceneActionDataChanged('${esc(sc.id)}',${i},'brightness_pct',this.value)">
-      <input type="number" min="2000" max="6500" step="100" value="${data.color_temp_kelvin ?? ''}" placeholder="Kelvin"
-        style="width:65px;" title="Farbtemperatur in Kelvin"
+      <input type="number" class="form-input" min="2000" max="6500" step="100" value="${data.color_temp_kelvin ?? ''}" placeholder="Kelvin"
+        style="width:65px;font-size:12px;" title="Farbtemperatur in Kelvin"
         onchange="sceneActionDataChanged('${esc(sc.id)}',${i},'color_temp_kelvin',this.value)">
       <input type="color" value="${data.rgb_color ? '#'+data.rgb_color.map(c=>(c<16?'0':'')+c.toString(16)).join('') : ''}"
         title="Farbe (optional)"
-        style="width:30px;height:26px;padding:0;border:1px solid var(--border);border-radius:6px;cursor:pointer;${data.rgb_color ? '' : 'opacity:0.3;'}"
+        style="width:30px;height:26px;padding:0;border:1px solid var(--border);border-radius:var(--radius-md);cursor:pointer;${data.rgb_color ? '' : 'opacity:var(--opacity-disabled);'}"
         onchange="sceneActionColorChanged('${esc(sc.id)}',${i},this.value)">`;
     } else if (domain === 'cover' && service === 'set_cover_position') {
-      html += `<input type="number" min="0" max="100" step="5" value="${data.position ?? ''}" placeholder="Pos. %"
-        style="width:60px;" title="Position in %"
+      html += `<input type="number" class="form-input" min="0" max="100" step="5" value="${data.position ?? ''}" placeholder="Pos. %"
+        style="width:60px;font-size:12px;" title="Position in %"
         onchange="sceneActionDataChanged('${esc(sc.id)}',${i},'position',this.value)">`;
     } else if (domain === 'climate' && service === 'set_temperature') {
-      html += `<input type="number" min="15" max="30" step="0.5" value="${data.temperature ?? ''}" placeholder="°C"
-        style="width:60px;" title="Temperatur in °C"
+      html += `<input type="number" class="form-input" min="15" max="30" step="0.5" value="${data.temperature ?? ''}" placeholder="°C"
+        style="width:60px;font-size:12px;" title="Temperatur in °C"
         onchange="sceneActionDataChanged('${esc(sc.id)}',${i},'temperature',this.value)">`;
     }
-    html += `<button type="button" style="font-size:14px;padding:4px 10px;background:none;color:var(--danger);border:1px solid rgba(239,68,68,0.3);border-radius:6px;cursor:pointer;flex-shrink:0;transition:border-color 0.15s;"
-        onmouseover="this.style.borderColor='var(--danger)'" onmouseout="this.style.borderColor='rgba(239,68,68,0.3)'"
+    html += `<button type="button" class="btn btn-sm btn-danger" style="flex-shrink:0;"
         onclick="removeSceneAction('${esc(sc.id)}',${i})">&times;</button>
     </div>`;
   }
@@ -5134,7 +5414,8 @@ function renderProactive() {
   ) +
   sectionWrap('&#128226;', 'Event-Handler',
     fInfo('Prioritaeten für verschiedene Event-Typen. Event-Typen mit höherer Prioritaet durchbrechen "Nicht stören". In settings.yaml unter proactive.event_handlers anpassbar.') +
-    fTextarea('proactive.event_handlers', 'Event-Handler (JSON)', 'Format: {"event_name": {"priority": "critical|high|medium|low", "description": "..."}}')
+    fSubheading('Event-Handler') +
+    fEventHandlerEditor('proactive.event_handlers')
   ) +
   sectionWrap('&#128065;', 'Spontane Beobachtungen',
     fInfo('Jarvis macht 1-2x taeglich unaufgeforderte, interessante Bemerkungen — z.B. "Heute verbrauchen wir 20% weniger Energie als letzte Woche" oder "Die Waschmaschine lief 7 Mal diese Woche — Rekord!"') +
@@ -5362,7 +5643,7 @@ function renderJarvisFeatures() {
     fToggle('character_lock.structural_filter', 'Struktureller Filter (Listen/Aufzaehlungen entfernen)') +
     fToggle('character_lock.character_retry', 'Automatischer Retry bei LLM-Durchbruch') +
     fRange('character_lock.retry_threshold', 'Retry-Empfindlichkeit', 1, 5, 1, ['Sehr empfindlich','','Normal','','Nur bei starkem Bruch']) +
-    '<div id="charBreakStats" style="margin-top:12px;padding:10px;background:var(--bg-primary);border-radius:var(--radius-sm);border:1px solid var(--border-color);font-size:12px;">' +
+    '<div id="charBreakStats" style="margin-top:12px;padding:10px;background:var(--bg-primary);border-radius:var(--radius-sm);border:1px solid var(--border);font-size:12px;">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
         '<span style="font-weight:600;">Charakter-Brueche (7 Tage)</span>' +
         '<button class="btn btn-secondary btn-sm" onclick="loadCharBreakStats()" style="padding:2px 8px;min-width:auto;font-size:11px;">Laden</button>' +
@@ -5383,7 +5664,8 @@ function renderJarvisFeatures() {
   sectionWrap('&#128374;', 'Geräte-Persönlichkeit',
     fInfo('Geräte bekommen Spitznamen in proaktiven Meldungen — z.B. "Die Fleissige im Keller hat ihren Job erledigt" statt "Waschmaschine ausgeschaltet".') +
     fToggle('device_narration.enabled', 'Geräte-Persönlichkeit aktiv') +
-    fTextarea('device_narration.custom_nicknames', 'Eigene Spitznamen', 'JSON: {"waschmaschine": "Frau Waschkraft", "saugroboter": "Robbie"}')
+    fSubheading('Eigene Spitznamen') +
+    fKvEditor('device_narration.custom_nicknames', 'Gerätename', 'Spitzname', 'text', 'z.B. waschmaschine → Frau Waschkraft')
   ) +
   sectionWrap('&#9889;', 'Geräte-Fertig-Erkennung',
     fInfo('Jarvis erkennt anhand des Stromverbrauchs wann Geräte fertig sind. Das Geraet muss für die eingestellte Wartezeit unter dem Idle-Schwellwert bleiben bevor "fertig" gemeldet wird — das verhindert Fehlalarme bei Zwischenphasen (z.B. zwischen Waschen und Schleudern). Du kannst beliebige Geräte hinzufügen.') +
@@ -5419,7 +5701,8 @@ function renderJarvisFeatures() {
     fRange('music_dj.default_volume', 'Standard-Lautstärke', 10, 100, 5, {10:'10%',20:'20%',30:'30%',40:'40%',50:'50%',60:'60%',70:'70%',80:'80%',100:'100%'}) +
     fToggle('music_dj.proactive_enabled', 'Proaktive Musikvorschläge') +
     fRange('music_dj.cooldown_minutes', 'Mindestabstand Vorschläge', 10, 120, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
-    fTextarea('music_dj.custom_queries', 'Eigene Genre-Queries', 'JSON: {"party_hits": "meine party playlist", "focus_lofi": "deep focus music"}')
+    fSubheading('Eigene Genre-Queries') +
+    fKvEditor('music_dj.custom_queries', 'Query-ID', 'Suchbegriff', 'text', 'z.B. party_hits → meine party playlist')
   ) +
   sectionWrap('&#128218;', 'Erinnerungen & Beziehungen',
     fInfo('Langzeitgedächtnis, Beziehungsmodell und soziales Verhalten. Jarvis merkt sich besondere Momente, entwickelt Humor weiter, zeigt Besorgnis und fragt bei ungewöhnlichem Verhalten nach.') +
@@ -5563,9 +5846,9 @@ function renderSecurity() {
     '<div class="form-group"><label>Aktueller API Key</label>' +
     '<div style="display:flex;gap:8px;align-items:center;">' +
     '<input type="text" id="apiKeyDisplay" readonly style="flex:1;font-family:monospace;font-size:12px;" value="Wird geladen..." />' +
-    '<button onclick="copyApiKey()" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);cursor:pointer;font-size:12px;">Kopieren</button>' +
+    '<button onclick="copyApiKey()" style="padding:6px 12px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--bg-card);cursor:pointer;font-size:12px;">Kopieren</button>' +
     '</div></div>' +
-    '<div style="margin-top:8px;"><button onclick="regenerateApiKey()" style="padding:6px 12px;border:1px solid var(--danger);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;font-size:12px;">Key neu generieren</button>' +
+    '<div style="margin-top:8px;"><button onclick="regenerateApiKey()" style="padding:6px 12px;border:1px solid var(--danger);border-radius:var(--radius-md);background:transparent;color:var(--danger);cursor:pointer;font-size:12px;">Key neu generieren</button>' +
     '<span style="font-size:11px;color:var(--text-secondary);margin-left:8px;">Achtung: Addon + HA-Integration müssen danach aktualisiert werden!</span></div>'
   ) +
   sectionWrap('&#128272;', 'Vertrauensstufen',
@@ -5596,8 +5879,10 @@ function renderSecurity() {
       {v:'system_restart',l:'System neustarten'}
     ]) +
     fSubheading('Erweitert') +
-    fTextarea('trust_levels.persons', 'Trust pro Person (JSON)', 'Format: {"max": 2, "anna": 1, "gast": 0}') +
-    fTextarea('trust_levels.room_restrictions', 'Raum-Beschraenkungen (JSON)', 'Format: {"gast": ["wohnzimmer", "kueche"]} — nur diese Raeume erlaubt')
+    fSubheading('Trust pro Person') +
+    fKvEditor('trust_levels.persons', 'Person', 'Level (0-2)', 'number', '0 = Gast, 1 = Familie, 2 = Admin') +
+    fSubheading('Raum-Beschraenkungen') +
+    fKvArrayEditor('trust_levels.room_restrictions', 'Person', 'Raum', 'Nur aufgelistete Raeume sind erlaubt fuer diese Person')
   ) +
   sectionWrap('&#128682;', 'Besucher-Management',
     fInfo('Jarvis verwaltet Besucher: Bekannte Personen speichern, erwartete Besucher anlegen, "Lass ihn rein"-Workflow mit Kamera-Erkennung und automatischer Tuer-Entriegelung.') +
@@ -5612,7 +5897,7 @@ function renderSecurity() {
     fToggle('security.threat_assessment', 'Netzwerk-Überwachung aktiv') +
     fKeywords('security.known_device_patterns', 'Bekannte Geräte-Muster') +
     '<div class="form-group"><label>Aktuell bekannte Geräte</label>' +
-    '<div id="knownDevicesContainer" style="color:var(--text-muted);font-size:12px;padding:8px;">Lade...</div>' +
+    '<div id="knownDevicesContainer">' + fLoading() + '</div>' +
     '<button class="btn btn-sm" onclick="loadKnownDevices()" style="margin-top:4px;">Aktualisieren</button></div>'
   ) +
   // --- Kameras & Vision ---
@@ -5641,7 +5926,7 @@ function renderSecurity() {
   // --- Notfall-Protokolle ---
   sectionWrap('&#127752;', 'Notfall-Protokolle',
     fInfo('Bei CRITICAL Events (Rauch, Einbruch, Wasser) werden automatisch Aktionen ausgeführt. Jedes Protokoll kann einzeln aktiviert werden. Geräte werden über die Rollenzuweisung zugeordnet.') +
-    '<div id="emergencyProtocolsContainer" style="color:var(--text-muted);font-size:12px;padding:8px;">Lade Notfall-Protokolle...</div>'
+    '<div id="emergencyProtocolsContainer">' + fLoading('Lade Notfall-Protokolle...') + '</div>'
   ) +
   sectionWrap('&#128680;', 'Bedrohungserkennung',
     fInfo('Konfiguriert wann und wie Jarvis Bedrohungen erkennt. Die Nacht-Stunden definieren den Zeitraum fuer erhoehte Wachsamkeit bei Bewegungserkennung.') +
@@ -5738,10 +6023,10 @@ let _epData = {}; // { fire: {entities: [...], config: {...}}, ... }
 async function loadKnownDevices() {
   const c = document.getElementById('knownDevicesContainer');
   if (!c) return;
-  c.innerHTML = '<span style="color:var(--text-muted)">Lade Geräte...</span>';
+  c.innerHTML = fLoading('Lade Geräte...');
   try {
     const r = await fetch('/api/ui/known-devices', {headers: {'Authorization': `Bearer ${TOKEN}`}});
-    if (!r.ok) { c.innerHTML = '<span style="color:var(--danger)">Fehler beim Laden</span>'; return; }
+    if (!r.ok) { c.innerHTML = fErrorMsg(); return; }
     const data = await r.json();
     const devices = data.devices || [];
     if (!devices.length) { c.innerHTML = '<span style="color:var(--text-muted)">Keine bekannten Geräte gespeichert.</span>'; return; }
@@ -5798,7 +6083,7 @@ function renderEmergencyProtocols() {
     const expanded = _epExpanded[proto.key] || false;
     const entityCount = data.entities.filter(e => e.is_active).length;
 
-    let html = '<div style="margin-bottom:12px;background:var(--bg-secondary);border-radius:10px;border-left:3px solid ' + (enabled ? 'var(--success)' : 'var(--text-muted)') + ';overflow:hidden;">';
+    let html = '<div style="margin-bottom:12px;background:var(--bg-secondary);border-radius:var(--radius-lg);border-left:3px solid ' + (enabled ? 'var(--success)' : 'var(--text-muted)') + ';overflow:hidden;">';
 
     // Header
     html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;cursor:pointer;" onclick="toggleEpExpand(\'' + proto.key + '\')">';
@@ -5833,10 +6118,10 @@ function renderEmergencyProtocols() {
         if (roleEntities.length > 0) {
           for (const ent of roleEntities) {
             const active = ent.is_active !== false;
-            html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;margin:3px 0;background:var(--bg-primary);border-radius:6px;border:1px solid var(--border);opacity:' + (active ? '1' : '0.5') + ';">';
+            html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;margin:3px 0;background:var(--bg-primary);border-radius:var(--radius-md);border:1px solid var(--border);opacity:' + (active ? '1' : '0.5') + ';">';
             html += '<span style="flex:1;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(ent.name || ent.entity_id) + '</span>';
             html += '<span style="font-size:10px;color:var(--text-muted);font-family:var(--mono,monospace);">' + esc(ent.entity_id) + '</span>';
-            html += '<button class="btn btn-ghost" style="padding:2px 6px;min-width:auto;color:var(--danger);font-size:14px;" onclick="removeEpEntity(\'' + proto.feature + '\',' + ent.id + ')" title="Entfernen">&#10005;</button>';
+            html += '<button class="btn btn-sm btn-danger" style="padding:2px 6px;min-width:auto;color:var(--danger);font-size:14px;" onclick="removeEpEntity(\'' + proto.feature + '\',' + ent.id + ')" title="Entfernen">&#10005;</button>';
             html += '</div>';
           }
         } else {
@@ -5850,8 +6135,8 @@ function renderEmergencyProtocols() {
         html += 'id="ep_add_' + proto.key + '_' + role + '" ';
         html += 'data-feature="' + proto.feature + '" data-role="' + role + '" ';
         html += 'oninput="epEntityFilter(this)" onfocus="epEntityFilter(this)" ';
-        html += 'style="font-size:12px;padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);width:100%;">';
-        html += '<div class="ep-entity-dropdown" style="display:none;position:absolute;z-index:100;top:100%;left:0;right:0;max-height:200px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.3);"></div>';
+        html += 'style="font-size:12px;padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-md);color:var(--text-primary);width:100%;">';
+        html += '<div class="ep-entity-dropdown" style="display:none;position:absolute;z-index:100;top:100%;left:0;right:0;max-height:200px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:0 4px 16px rgba(0,0,0,0.3);"></div>';
         html += '</div>';
         html += '</div>';
 
@@ -5980,7 +6265,7 @@ function renderNotifyChannels() {
     const pref = ch.preferred || false;
     const urgency = ch.urgency_min || 'low';
     const info = name==='websocket' && ch.connected_clients !== undefined ? ` (${ch.connected_clients} verbunden)` : '';
-    html += `<div style="padding:10px;margin-bottom:8px;background:var(--bg-secondary);border-radius:6px;">
+    html += `<div style="padding:10px;margin-bottom:8px;background:var(--bg-secondary);border-radius:var(--radius-md);">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
         <span style="font-size:13px;font-weight:600;">${icon} ${label}${info}</span>
         <label class="toggle" style="margin:0;">
@@ -5991,7 +6276,7 @@ function renderNotifyChannels() {
       <div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px;">${esc(ch.description||'')}</div>
       <div style="display:flex;gap:12px;align-items:center;">
         <label style="font-size:11px;color:var(--text-muted);">Min. Dringlichkeit:</label>
-        <select data-notify="${name}" data-field="urgency_min" style="font-size:11px;padding:3px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);"
+        <select data-notify="${name}" data-field="urgency_min" style="font-size:11px;padding:3px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);"
           onchange="updateNotifyChannel('${name}','urgency_min',this.value)">
           <option value="low" ${urgency==='low'?'selected':''}>Niedrig</option>
           <option value="medium" ${urgency==='medium'?'selected':''}>Mittel</option>
@@ -6099,18 +6384,34 @@ async function regenerateRecoveryKey() {
 let SNAPSHOTS = [];
 
 function renderAutonomie() {
+  // --- Group 0: Domain-spezifische Autonomie ---
+  return sectionWrap('&#127919;', 'Domain-spezifische Autonomie',
+    fInfo('Unterschiedliche Autonomie-Level pro Bereich. Z.B. Level 4 bei Klima (darf Temperatur selbst anpassen), aber Level 2 bei Sicherheit (nur informieren). Wenn deaktiviert gilt das globale Level für alle Bereiche.') +
+    fToggle('autonomy.domain_levels_enabled', 'Domain-Autonomie aktivieren') +
+    fSubheading('Level pro Domaene') +
+    fRange('autonomy.domain_levels.climate', 'Klima & Heizung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.light', 'Licht & Beleuchtung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.media', 'Medien & Musik', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.cover', 'Rollläden', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.security', 'Sicherheit', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.automation', 'Automationen & Routinen', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.notification', 'Benachrichtigungen', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
+  ) +
+
   // --- Group 1: Autonomie-Stufen & Berechtigungen ---
-  return sectionWrap('&#9889;', 'Autonomie-Stufen &amp; Berechtigungen',
+  sectionWrap('&#9889;', 'Autonomie-Stufen &amp; Berechtigungen',
     fInfo('Alles rund um Autonomie-Level, Berechtigungen, Evolution und geschuetzte Bereiche. Bestimmt WAS der Assistent eigenstaendig tun darf und welche Grenzen gelten.') +
 
     fSubheading('Autonomie') +
     fRange('autonomy.level', 'Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
 
     fSubheading('Aktions-Berechtigungen') +
-    fTextarea('autonomy.action_permissions', 'Berechtigungen (JSON)', 'Format: {"aktion": level}. z.B. {"proactive_info": 2, "adjust_temperature_small": 3}') +
+    fInfo('Definiere welches Autonomie-Level fuer jede Aktion mindestens erforderlich ist.') +
+    fActionPermissionsEditor('autonomy.action_permissions') +
 
     fSubheading('Evolution-Kriterien') +
-    fTextarea('autonomy.evolution_criteria', 'Kriterien (JSON)', 'Format: {"2": {"min_days": 30, "min_interactions": 200, "min_acceptance": 0.7}}') +
+    fInfo('Ab welchen Schwellwerten darf Jarvis auf das naechste Autonomie-Level aufsteigen?') +
+    fEvolutionCriteriaEditor('autonomy.evolution_criteria') +
     fSubheading('Automatische Evolution') +
     fToggle('autonomy.evolution.enabled', 'Automatischer Autonomie-Aufstieg') +
     fRange('autonomy.evolution.max_level', 'Max. automatisches Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
@@ -6297,16 +6598,16 @@ function renderAutonomie() {
 
     fSubheading('Config-Selbstmodifikation') +
     '<div style="display:flex;flex-direction:column;gap:8px;">' +
-    '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">' +
+    '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:var(--radius-md);">' +
       '<span style="color:var(--success);">&#9989;</span><span style="font-size:13px;">easter_eggs.yaml</span>' +
       '<span style="font-size:11px;color:var(--text-muted);margin-left:auto;">Easter Eggs &amp; Gag-Antworten</span></div>' +
-    '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">' +
+    '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:var(--radius-md);">' +
       '<span style="color:var(--success);">&#9989;</span><span style="font-size:13px;">opinion_rules.yaml</span>' +
       '<span style="font-size:11px;color:var(--text-muted);margin-left:auto;">Meinungs-Kommentare</span></div>' +
-    '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">' +
+    '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:var(--radius-md);">' +
       '<span style="color:var(--success);">&#9989;</span><span style="font-size:13px;">room_profiles.yaml</span>' +
       '<span style="font-size:11px;color:var(--text-muted);margin-left:auto;">Raum-Metadaten</span></div>' +
-    '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;opacity:0.5;">' +
+    '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:var(--radius-md);opacity:var(--opacity-disabled);">' +
       '<span style="color:var(--danger);">&#10060;</span><span style="font-size:13px;">settings.yaml</span>' +
       '<span style="font-size:11px;color:var(--text-muted);margin-left:auto;">NUR durch User änderbar</span></div>' +
     '</div>' +
@@ -6336,10 +6637,10 @@ function renderProposalList(proposals) {
   c.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Offene Vorschläge:</div>' +
     proposals.map((p, i) => {
       const conf = Math.round((p.confidence || 0) * 100);
-      return `<div style="padding:8px;margin-bottom:6px;background:var(--bg-secondary);border-radius:6px;border-left:3px solid var(--accent);">
+      return `<div style="padding:8px;margin-bottom:6px;background:var(--bg-secondary);border-radius:var(--radius-md);border-left:3px solid var(--accent);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
           <span style="font-weight:600;font-size:13px;">${esc(p.parameter)}: ${esc(String(p.current))} &#8594; ${esc(String(p.proposed))}</span>
-          <span style="font-size:11px;color:var(--text-muted);background:var(--bg-primary);padding:2px 6px;border-radius:4px;">${conf}%</span>
+          <span style="font-size:11px;color:var(--text-muted);background:var(--bg-primary);padding:2px 6px;border-radius:var(--radius-sm);">${conf}%</span>
         </div>
         <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">${esc(p.reason)}</div>
         <div style="display:flex;gap:6px;justify-content:flex-end;">
@@ -6412,14 +6713,14 @@ async function loadAutomations() {
     } else {
       jarvis.forEach(a => {
         const active = a.state === 'on';
-        const statusCls = active ? 'color:var(--accent)' : 'color:var(--muted)';
+        const statusCls = active ? 'color:var(--accent)' : 'color:var(--text-muted)';
         const statusTxt = active ? 'aktiv' : 'deaktiviert';
         const lt = a.last_triggered && a.last_triggered !== 'nie' ? new Date(a.last_triggered).toLocaleString('de-DE') : 'nie';
         html += '<div class="card" style="margin:4px 0;padding:8px;display:flex;justify-content:space-between;align-items:center">';
         html += '<div><strong>' + esc(a.alias) + '</strong><br><span class="muted" style="font-size:0.85em">' + esc(a.config_id) + ' &middot; <span style="' + statusCls + '">' + statusTxt + '</span> &middot; Zuletzt: ' + lt + '</span></div>';
         html += '<div style="display:flex;gap:6px">';
-        html += '<button class="btn btn-small" onclick="toggleJarvisAutomation(\'' + esc(a.entity_id) + '\')">' + (active ? 'Deaktivieren' : 'Aktivieren') + '</button>';
-        html += '<button class="btn btn-small btn-danger" onclick="deleteJarvisAutomation(\'' + esc(a.config_id) + '\')">Loeschen</button>';
+        html += '<button class="btn btn-sm" onclick="toggleJarvisAutomation(\'' + esc(a.entity_id) + '\')">' + (active ? 'Deaktivieren' : 'Aktivieren') + '</button>';
+        html += '<button class="btn btn-sm btn-danger" onclick="deleteJarvisAutomation(\'' + esc(a.config_id) + '\')">Loeschen</button>';
         html += '</div></div>';
       });
     }
@@ -6431,7 +6732,7 @@ async function loadAutomations() {
     } else {
       ha.forEach(a => {
         const enabled = a.enabled !== false;
-        const statusCls = enabled ? 'color:var(--accent)' : 'color:var(--muted)';
+        const statusCls = enabled ? 'color:var(--accent)' : 'color:var(--text-muted)';
         const statusTxt = enabled ? 'aktiv' : 'deaktiviert';
         const lt = a.last_triggered ? new Date(a.last_triggered).toLocaleString('de-DE') : '—';
         const triggers = a.trigger ? (Array.isArray(a.trigger) ? a.trigger : [a.trigger]) : [];
@@ -6444,7 +6745,7 @@ async function loadAutomations() {
         html += '<span style="font-size:0.85em;' + statusCls + '">' + statusTxt + '</span>';
         html += '</div>';
         if (a.description) html += '<div class="muted" style="font-size:0.85em;margin-top:2px">' + esc(a.description) + '</div>';
-        html += '<div style="font-size:0.8em;margin-top:4px;color:var(--muted)">';
+        html += '<div style="font-size:0.8em;margin-top:4px;color:var(--text-muted)">';
         if (triggerTxt) html += '<div>Trigger: ' + esc(triggerTxt) + '</div>';
         if (actionTxt) html += '<div>Aktion: ' + esc(actionTxt) + '</div>';
         if (lt !== '—') html += '<div>Zuletzt: ' + lt + '</div>';
@@ -6454,7 +6755,7 @@ async function loadAutomations() {
 
     panel.innerHTML = html;
   } catch(e) {
-    panel.innerHTML = '<div class="muted" style="padding:8px">Fehler beim Laden: ' + esc(e.message) + '</div>';
+    panel.innerHTML = fErrorMsg('Fehler beim Laden: ' + e.message);
   }
 }
 
@@ -6497,7 +6798,7 @@ function renderSnapshotList() {
   c.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Letzte Snapshots:</div>' +
     SNAPSHOTS.slice(0, 10).map(s => {
       const dt = new Date(s.timestamp).toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:4px;background:var(--bg-secondary);border-radius:6px;font-size:12px;">
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:4px;background:var(--bg-secondary);border-radius:var(--radius-md);font-size:12px;">
         <span style="font-weight:600;min-width:100px;">${esc(s.config_file)}</span>
         <span style="color:var(--text-secondary);flex:1;">${esc(s.reason)}</span>
         <span style="color:var(--text-muted);min-width:80px;">${dt}</span>
@@ -6935,7 +7236,7 @@ async function loadPresencePersons() {
     }
     document.getElementById('presencePersons').innerHTML = html;
   } catch (e) {
-    document.getElementById('presencePersons').innerHTML = `<div class="card" style="grid-column:1/-1;padding:16px;color:var(--danger);">Fehler beim Laden: ${esc(e.message)}</div>`;
+    document.getElementById('presencePersons').innerHTML = fErrorMsg('Fehler beim Laden: ' + e.message);
   }
 }
 
@@ -7661,7 +7962,7 @@ async function uploadKbFile(file) {
   if (file.size > 10 * 1024 * 1024) { toast('Datei zu gross (max 10 MB)', 'error'); return; }
 
   const dz = document.getElementById('kbDropzone');
-  if (dz) { dz.style.borderColor = 'var(--primary)'; dz.querySelector('div').textContent = 'Wird hochgeladen...'; }
+  if (dz) { dz.style.borderColor = 'var(--accent)'; dz.querySelector('div').textContent = 'Wird hochgeladen...'; }
 
   const fd = new FormData();
   fd.append('file', file);
@@ -7685,7 +7986,7 @@ function initKbDropzone() {
   const dz = document.getElementById('kbDropzone');
   if (!dz || dz.dataset.init) return;
   dz.dataset.init = '1';
-  ['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.style.borderColor = 'var(--primary)'; dz.style.background = 'var(--bg-secondary)'; }));
+  ['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.style.borderColor = 'var(--accent)'; dz.style.background = 'var(--bg-secondary)'; }));
   ['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.style.borderColor = ''; dz.style.background = ''; }));
   dz.addEventListener('drop', e => { if (e.dataTransfer.files.length) uploadKbFile(e.dataTransfer.files[0]); });
 }
@@ -7815,7 +8116,7 @@ async function uploadRecipeFile(file) {
   if (file.size > 10 * 1024 * 1024) { toast('Datei zu gross (max 10 MB)', 'error'); return; }
 
   const dz = document.getElementById('recipeDropzone');
-  if (dz) { dz.style.borderColor = 'var(--primary)'; dz.querySelector('div').textContent = 'Wird hochgeladen...'; }
+  if (dz) { dz.style.borderColor = 'var(--accent)'; dz.querySelector('div').textContent = 'Wird hochgeladen...'; }
 
   const fd = new FormData();
   fd.append('file', file);
@@ -7839,7 +8140,7 @@ function initRecipeDropzone() {
   const dz = document.getElementById('recipeDropzone');
   if (!dz || dz.dataset.init) return;
   dz.dataset.init = '1';
-  ['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.style.borderColor = 'var(--primary)'; dz.style.background = 'var(--bg-secondary)'; }));
+  ['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.style.borderColor = 'var(--accent)'; dz.style.background = 'var(--bg-secondary)'; }));
   ['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.style.borderColor = ''; dz.style.background = ''; }));
   dz.addEventListener('drop', e => { if (e.dataTransfer.files.length) uploadRecipeFile(e.dataTransfer.files[0]); });
 }
@@ -7985,7 +8286,7 @@ function filterActivity() {
   const levelColors = {
     'INFO': 'var(--text-muted)',
     'WARNING': 'var(--warning, #f59e0b)',
-    'ERROR': 'var(--danger, #ef4444)',
+    'ERROR': 'var(--danger)',
     'DEBUG': 'var(--text-secondary)'
   };
   const levelIcons = {
@@ -8018,14 +8319,14 @@ function filterActivity() {
     return '<div class="log-entry" style="align-items:flex-start;' + (lvl==='ERROR'?'background:color-mix(in srgb, var(--danger) 5%, transparent);':'') + (lvl==='WARNING'?'background:color-mix(in srgb, var(--warning) 5%, transparent);':'') + '">' +
       '<span class="log-time">' + ts + '</span>' +
       '<span style="font-size:15px;min-width:22px;text-align:center;">' + icon + '</span>' +
-      '<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:color-mix(in srgb, ' + mColor + ' 15%, transparent);color:' + mColor + ';font-weight:600;white-space:nowrap;">' + esc(mod) + '</span>' +
+      '<span style="font-size:10px;padding:1px 6px;border-radius:var(--radius-sm);background:color-mix(in srgb, ' + mColor + ' 15%, transparent);color:' + mColor + ';font-weight:600;white-space:nowrap;">' + esc(mod) + '</span>' +
       '<span style="font-size:13px;flex:1;min-width:0;word-break:break-word;">' + esc(entry.message || '') + '</span>' +
     '</div>';
   }).join('');
 }
 
 function toggleActivityLive() {
-  const live = document.getElementById('activityLive').checked;
+  const live = document.getElementById('activityLive')?.checked;
   if (live) {
     loadActivity();
     _activityLiveIv = setInterval(loadActivity, 5000);
@@ -8048,8 +8349,8 @@ let _protocolData = [];
 let _protocolLiveIv = null;
 
 async function loadProtocol() {
-  const type = document.getElementById('protocolType').value;
-  const period = document.getElementById('protocolPeriod').value;
+  const type = document.getElementById('protocolType')?.value || 'state';
+  const period = document.getElementById('protocolPeriod')?.value || '24h';
   const c = document.getElementById('protocolContainer');
   if (!c) return;
   try {
@@ -8118,7 +8419,7 @@ function filterProtocol() {
   const typeColors = {
     jarvis_action: 'var(--accent)', automation: 'var(--warning, #f59e0b)',
     observation: 'var(--text-muted)', quick_action: 'var(--info, #3b82f6)',
-    suggestion: 'var(--accent)', anomaly: 'var(--danger, #ef4444)',
+    suggestion: 'var(--accent)', anomaly: 'var(--danger)',
     system: 'var(--text-secondary)', first_time: 'var(--success, #22c55e)'
   };
   const funcIcons = {
@@ -8167,14 +8468,14 @@ function filterProtocol() {
       '<span style="font-size:18px;min-width:28px;text-align:center;">' + icon + '</span>' +
       '<div style="flex:1;min-width:0;">' +
         '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
-          '<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:color-mix(in srgb, ' + color + ' 15%, transparent);color:' + color + ';font-weight:600;">' + esc(label) + '</span>' +
+          '<span style="font-size:10px;padding:1px 6px;border-radius:var(--radius-sm);background:color-mix(in srgb, ' + color + ' 15%, transparent);color:' + color + ';font-weight:600;">' + esc(label) + '</span>' +
           '<span style="font-size:13px;">' + desc + '</span>' +
         '</div>' +
         (result ? '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">\u2192 ' + esc(result.length > 100 ? result.substring(0,100) + '...' : result) + '</div>' : '') +
         (llmResponse ? '<div style="font-size:11px;color:var(--info);margin-top:2px;">&#129302; ' + esc(llmResponse.length > 120 ? llmResponse.substring(0,120) + '...' : llmResponse) + '</div>' : '') +
         (reason && parts.length > 0 ? '<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:1px;">' + esc(reason.length > 100 ? reason.substring(0,100) + '...' : reason) + '</div>' : '') +
       '</div>' +
-      (log.was_undone ? '<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:var(--warning);color:#000;font-weight:600;">Rueckgaengig</span>' : '') +
+      (log.was_undone ? '<span style="font-size:10px;padding:1px 6px;border-radius:var(--radius-sm);background:var(--warning);color:#000;font-weight:600;">Rueckgaengig</span>' : '') +
     '</div>';
   }).join('');
 }
@@ -8293,7 +8594,7 @@ function renderCovers() {
       '<button class="btn btn-sm" onclick="coverLiveAll(50)" style="font-size:11px;">&#9644; Alle 50%</button>' +
       '<button class="btn btn-sm" onclick="loadCoverLive()" style="font-size:11px;">&#128260; Aktualisieren</button>' +
     '</div>' +
-    '<div id="coverLiveContainer" style="color:var(--text-secondary);padding:8px;">Lade Live-Positionen...</div>'
+    '<div id="coverLiveContainer">' + fLoading('Lade Live-Positionen...') + '</div>'
   ) +
   sectionWrap('&#129695;', 'Rollläden & Garagentore',
     fInfo('Hier legst du fest, welche Geräte Rollläden sind und welche Garagentore. <strong>Garagentore werden NIEMALS automatisch von Jarvis gesteuert.</strong>') +
@@ -8453,7 +8754,7 @@ async function loadCoverEntities() {
       const borderColor = isGarage ? 'var(--danger)' : isDisabled ? 'var(--text-muted)' : 'var(--border)';
       const bgColor = isGarage ? 'rgba(239,68,68,0.08)' : isDisabled ? 'rgba(128,128,128,0.08)' : 'var(--bg-card)';
       const opacity = isDisabled ? '0.6' : '1';
-      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;margin-bottom:6px;border-radius:8px;background:' + bgColor + ';border:1px solid ' + borderColor + ';opacity:' + opacity + ';">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;margin-bottom:6px;border-radius:var(--radius-lg);background:' + bgColor + ';border:1px solid ' + borderColor + ';opacity:' + opacity + ';">';
       html += '<div style="flex:1;min-width:0;margin-right:8px;">';
       html += '<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (isGarage ? '&#128274; ' : '') + esc(c.name) + '</div>';
       html += '<div style="font-size:10px;color:var(--text-muted);font-family:var(--mono);">' + esc(c.entity_id) + '</div>';
@@ -8466,7 +8767,7 @@ async function loadCoverEntities() {
       html += '<span style="font-size:11px;color:var(--text-secondary);">' + (isDisabled ? 'Aus' : 'An') + '</span>';
       html += '</label>';
       // Type Dropdown
-      html += '<select onchange="setCoverType(\'' + esc(c.entity_id) + '\', this.value)" style="background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;width:130px;flex-shrink:0;">';
+      html += '<select onchange="setCoverType(\'' + esc(c.entity_id) + '\', this.value)" style="background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md);padding:4px 8px;font-size:12px;width:130px;flex-shrink:0;">';
       const types = [
         ['shutter', 'Rollladen'], ['blind', 'Jalousie'], ['awning', 'Markise'],
         ['roof_window', 'Dachfenster'], ['garage_door', '&#128274; Garagentor']
@@ -8642,16 +8943,16 @@ function renderCentralBedSensors() {
     // Zeile 1: Raum + Entfernen
     html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">';
     html += '<span style="font-size:13px;font-weight:600;color:var(--text-primary);">&#128719; ' + esc(e.room) + '</span>';
-    html += '<button type="button" onclick="_removeBedEntry(\'' + esc(e.room) + '\',' + e.index + ')" style="font-size:11px;padding:4px 10px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:4px;cursor:pointer;">&#128465;</button>';
+    html += '<button type="button" onclick="_removeBedEntry(\'' + esc(e.room) + '\',' + e.index + ')" style="font-size:11px;padding:4px 10px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:var(--radius-sm);cursor:pointer;">&#128465;</button>';
     html += '</div>';
     // Zeile 2: Sensor-Picker
     html += '<div style="position:relative;margin-bottom:6px;">';
-    html += '<input type="text" value="' + esc(e.sensor) + '" placeholder="Sensor suchen... (z.B. bett, bed, matratze)" id="bedSensor_' + esc(e.room) + '_' + e.index + '" autocomplete="off" style="width:100%;font-size:12px;padding:8px 10px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;box-sizing:border-box;" onfocus="_bedSensorAutocomplete(this,\'' + esc(e.room) + '\',' + e.index + ')" oninput="_bedSensorAutocomplete(this,\'' + esc(e.room) + '\',' + e.index + ')" onchange="_updateBedEntry(\'' + esc(e.room) + '\',' + e.index + ',\'sensor\',this.value)">';
-    html += '<div id="bedSensorDD_' + esc(e.room) + '_' + e.index + '" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:150px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;z-index:9999;"></div>';
+    html += '<input type="text" value="' + esc(e.sensor) + '" placeholder="Sensor suchen... (z.B. bett, bed, matratze)" id="bedSensor_' + esc(e.room) + '_' + e.index + '" autocomplete="off" style="width:100%;font-size:12px;padding:8px 10px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);box-sizing:border-box;" onfocus="_bedSensorAutocomplete(this,\'' + esc(e.room) + '\',' + e.index + ')" oninput="_bedSensorAutocomplete(this,\'' + esc(e.room) + '\',' + e.index + ')" onchange="_updateBedEntry(\'' + esc(e.room) + '\',' + e.index + ',\'sensor\',this.value)">';
+    html += '<div id="bedSensorDD_' + esc(e.room) + '_' + e.index + '" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:150px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);z-index:9999;"></div>';
     html += '</div>';
     // Zeile 3: Person
     if (members.length > 0) {
-      html += '<select style="width:100%;font-size:12px;padding:6px 8px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;" onchange="_updateBedEntry(\'' + esc(e.room) + '\',' + e.index + ',\'person\',this.value)">';
+      html += '<select style="width:100%;font-size:12px;padding:6px 8px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);" onchange="_updateBedEntry(\'' + esc(e.room) + '\',' + e.index + ',\'person\',this.value)">';
       html += '<option value=""' + (!e.person ? ' selected' : '') + '>Person zuordnen...</option>';
       for (const m of members) {
         html += '<option value="' + esc(m) + '"' + (e.person === m ? ' selected' : '') + '>' + esc(m) + '</option>';
@@ -8673,7 +8974,7 @@ function renderCentralBedSensors() {
 
   // "+ Bett hinzufügen"-Button
   html += '<div style="margin-top:8px;display:flex;gap:8px;align-items:center;">';
-  html += '<select id="bedAddRoomSelect" style="flex:1;font-size:12px;padding:8px 10px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;">';
+  html += '<select id="bedAddRoomSelect" style="flex:1;font-size:12px;padding:8px 10px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);">';
   html += '<option value="">Raum wählen...</option>';
   for (const name of roomNames) {
     html += '<option value="' + esc(name) + '">' + esc(name) + '</option>';
@@ -8746,7 +9047,7 @@ function renderCoverProfileList(covers, container) {
   for (let i = 0; i < covers.length; i++) {
     const c = covers[i];
     const typeLabel = c.type === 'markise' ? '&#127958; Markise' : '&#129695; Rollladen';
-    html += '<div class="s-card" style="margin-bottom:10px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+    html += '<div class="s-card" style="margin-bottom:10px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--bg-card);">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
     html += '<span style="font-size:13px;font-weight:600;">' + typeLabel + ' — ' + esc(c.entity_id || 'Neu') + '</span>';
     html += '<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);font-size:11px;" onclick="removeCoverProfile(' + i + ')">Entfernen</button>';
@@ -8853,7 +9154,7 @@ function renderCoverLive(container) {
     const stateColor = c.state === 'open' ? 'var(--success)' : c.state === 'closed' ? 'var(--danger)' : 'var(--text-muted)';
     const stateLabel = c.state === 'open' ? 'Offen' : c.state === 'closed' ? 'Zu' : c.state === 'opening' ? 'Oeffnet...' : c.state === 'closing' ? 'Schliesst...' : c.state;
     const typeIcon = c.cover_type === 'awning' ? '&#127958;' : c.cover_type === 'blind' ? '&#129695;' : c.cover_type === 'roof_window' ? '&#127968;' : '&#129695;';
-    html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:6px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border);">';
+    html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:6px;border-radius:var(--radius-lg);background:var(--bg-card);border:1px solid var(--border);">';
     // Info
     html += '<div style="flex:1;min-width:0;">';
     html += '<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + typeIcon + ' ' + esc(c.name) + '</div>';
@@ -8941,7 +9242,7 @@ function renderCoverGroups(container) {
   let html = '';
   for (const g of _coverGroups) {
     const entityList = (g.entity_ids || []).join(', ');
-    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--bg-card);">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
     html += '<span style="font-size:13px;font-weight:600;">&#128194; ' + esc(g.name) + '</span>';
     html += '<div style="display:flex;gap:4px;">';
@@ -9026,7 +9327,7 @@ function renderCoverScenes(container) {
       if (typeof pos === 'object') return eid.replace('cover.','') + ':' + (pos.position != null ? pos.position + '%' : '') + (pos.tilt != null ? ' T' + pos.tilt : '');
       return eid.replace('cover.','') + ':' + pos + '%';
     }).join(', ');
-    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--bg-card);">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
     html += '<span style="font-size:13px;font-weight:600;">&#127916; ' + esc(s.name) + '</span>';
     html += '<div style="display:flex;gap:4px;">';
@@ -9037,7 +9338,7 @@ function renderCoverScenes(container) {
     html += '<div class="form-group"><label>Name</label><input type="text" value="' + esc(s.name) + '" onchange="updateCoverScene(' + s.id + ',{name:this.value})" style="font-size:12px;"></div>';
     // Positions display
     html += '<div class="form-group"><label>Positionen (entity:position)</label>';
-    html += '<div style="font-size:11px;color:var(--text-secondary);font-family:var(--mono);padding:6px 8px;background:var(--bg-primary);border-radius:4px;border:1px solid var(--border);min-height:24px;">';
+    html += '<div style="font-size:11px;color:var(--text-secondary);font-family:var(--mono);padding:6px 8px;background:var(--bg-primary);border-radius:var(--radius-sm);border:1px solid var(--border);min-height:24px;">';
     html += posStr || '<em style="color:var(--text-muted);">Keine Positionen definiert</em>';
     html += '</div></div>';
     // Add position editor
@@ -9057,13 +9358,13 @@ function _renderScenePositionEditor(scene) {
     const [eid, pos] = entries[i];
     const posVal = typeof pos === 'object' ? (pos.position || 0) : pos;
     html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">';
-    html += '<input type="text" value="' + esc(eid) + '" placeholder="cover.entity" style="flex:2;font-size:11px;font-family:var(--mono);padding:2px 4px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;" data-scene-id="' + scene.id + '" data-pos-idx="' + i + '" data-field="entity">';
-    html += '<input type="number" value="' + posVal + '" min="0" max="100" step="5" style="width:60px;font-size:11px;padding:2px 4px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;" data-scene-id="' + scene.id + '" data-pos-idx="' + i + '" data-field="position">';
+    html += '<input type="text" value="' + esc(eid) + '" placeholder="cover.entity" style="flex:2;font-size:11px;font-family:var(--mono);padding:2px 4px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);" data-scene-id="' + scene.id + '" data-pos-idx="' + i + '" data-field="entity">';
+    html += '<input type="number" value="' + posVal + '" min="0" max="100" step="5" style="width:60px;font-size:11px;padding:2px 4px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);" data-scene-id="' + scene.id + '" data-pos-idx="' + i + '" data-field="position">';
     html += '<span style="font-size:10px;color:var(--text-muted);">%</span>';
-    html += '<button type="button" onclick="removeScenePosition(' + scene.id + ',\'' + esc(eid) + '\')" style="font-size:10px;padding:1px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;cursor:pointer;opacity:0.7;" title="Entfernen">&times;</button>';
+    html += '<button type="button" onclick="removeScenePosition(' + scene.id + ',\'' + esc(eid) + '\')" style="font-size:10px;padding:1px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:var(--radius-sm);cursor:pointer;opacity:var(--opacity-disabled);" title="Entfernen">&times;</button>';
     html += '</div>';
   }
-  html += '<button type="button" onclick="addScenePosition(' + scene.id + ')" style="margin-top:4px;font-size:11px;padding:3px 10px;background:var(--bg-hover);color:var(--accent);border:1px solid var(--border);border-radius:4px;cursor:pointer;">+ Position</button>';
+  html += '<button type="button" onclick="addScenePosition(' + scene.id + ')" style="margin-top:4px;font-size:11px;padding:3px 10px;background:var(--bg-hover);color:var(--accent);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;">+ Position</button>';
   html += '</div>';
   return html;
 }
@@ -9142,7 +9443,7 @@ function renderCoverSchedules(container) {
   for (const s of _coverSchedules) {
     const days = s.days || [0,1,2,3,4,5,6];
     const target = s.entity_id ? s.entity_id : s.group_id ? 'Gruppe #' + s.group_id : 'Alle Cover';
-    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--bg-card);">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
     html += '<span style="font-size:13px;font-weight:600;">&#128339; ' + esc(s.time_str || '??:??') + ' &rarr; ' + s.position + '%</span>';
     html += '<div style="display:flex;gap:4px;">';
@@ -9164,7 +9465,7 @@ function renderCoverSchedules(container) {
       const active = days.includes(d);
       const bgColor = active ? 'var(--accent)' : 'var(--bg-primary)';
       const txtColor = active ? 'var(--bg-primary)' : 'var(--text-muted)';
-      html += '<button type="button" onclick="toggleScheduleDay(' + s.id + ',' + d + ')" style="width:32px;height:28px;font-size:11px;font-weight:600;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:' + bgColor + ';color:' + txtColor + ';">' + dayLabels[d] + '</button>';
+      html += '<button type="button" onclick="toggleScheduleDay(' + s.id + ',' + d + ')" style="width:32px;height:28px;font-size:11px;font-weight:600;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;background:' + bgColor + ';color:' + txtColor + ';">' + dayLabels[d] + '</button>';
     }
     html += '</div>';
     html += '</div>';
@@ -9253,10 +9554,10 @@ function renderCoverSensors(container) {
     html += '<div style="margin-bottom:10px;">';
     html += '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:4px;">' + (roleLabels[role] || role) + '</div>';
     for (const s of items) {
-      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:3px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;">';
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:3px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);">';
       html += '<span style="flex:1;font-size:12px;font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(s.entity_id) + '</span>';
-      html += '<span style="font-size:10px;color:var(--text-muted);background:var(--bg-primary);padding:1px 6px;border-radius:3px;">' + esc(s.role) + '</span>';
-      html += '<button type="button" onclick="deleteCoverSensor(' + s.id + ')" style="font-size:10px;padding:1px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;cursor:pointer;opacity:0.7;" title="Entfernen">&times;</button>';
+      html += '<span style="font-size:10px;color:var(--text-muted);background:var(--bg-primary);padding:1px 6px;border-radius:var(--radius-sm);">' + esc(s.role) + '</span>';
+      html += '<button type="button" onclick="deleteCoverSensor(' + s.id + ')" style="font-size:10px;padding:1px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:var(--radius-sm);cursor:pointer;opacity:var(--opacity-disabled);" title="Entfernen">&times;</button>';
       html += '</div>';
     }
     html += '</div>';
@@ -9267,10 +9568,10 @@ function renderCoverSensors(container) {
     html += '<div style="margin-bottom:10px;">';
     html += '<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px;">Sonstige</div>';
     for (const s of other) {
-      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:3px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;">';
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:3px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);">';
       html += '<span style="flex:1;font-size:12px;font-family:var(--mono);">' + esc(s.entity_id) + '</span>';
-      html += '<span style="font-size:10px;color:var(--text-muted);background:var(--bg-primary);padding:1px 6px;border-radius:3px;">' + esc(s.role) + '</span>';
-      html += '<button type="button" onclick="deleteCoverSensor(' + s.id + ')" style="font-size:10px;padding:1px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;cursor:pointer;opacity:0.7;" title="Entfernen">&times;</button>';
+      html += '<span style="font-size:10px;color:var(--text-muted);background:var(--bg-primary);padding:1px 6px;border-radius:var(--radius-sm);">' + esc(s.role) + '</span>';
+      html += '<button type="button" onclick="deleteCoverSensor(' + s.id + ')" style="font-size:10px;padding:1px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:var(--radius-sm);cursor:pointer;opacity:var(--opacity-disabled);" title="Entfernen">&times;</button>';
       html += '</div>';
     }
     html += '</div>';
@@ -9288,7 +9589,7 @@ async function addCoverSensor() {
   if (document.getElementById('addSensorForm')) return;
   const form = document.createElement('div');
   form.id = 'addSensorForm';
-  form.style.cssText = 'margin-top:10px;padding:12px;border:2px solid var(--accent);border-radius:8px;background:var(--bg-card);';
+  form.style.cssText = 'margin-top:10px;padding:12px;border:2px solid var(--accent);border-radius:var(--radius-lg);background:var(--bg-card);';
   let formHtml = '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px;">Neuen Sensor zuordnen</div>';
   formHtml += '<div class="form-group"><label>Entity-ID</label>';
   formHtml += '<input type="text" id="newSensorEntity" placeholder="sensor.wind_speed oder binary_sensor.rain" style="font-size:11px;font-family:var(--mono);">';
@@ -9343,7 +9644,7 @@ async function loadCoverActionLog() {
       const timeStr = ts.toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
       const eid = (e.entity_id || '').replace('cover.', '');
       const posColor = e.position > 50 ? 'var(--accent)' : e.position === 0 ? 'var(--danger)' : 'var(--text-secondary)';
-      html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 8px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;">';
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 8px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);">';
       html += '<span style="font-size:10px;color:var(--text-muted);min-width:80px;font-family:var(--mono);">' + esc(timeStr) + '</span>';
       html += '<span style="font-size:11px;font-weight:600;min-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(eid) + '</span>';
       html += '<span style="font-size:11px;color:' + posColor + ';font-weight:600;min-width:35px;">' + e.position + '%</span>';
@@ -9381,7 +9682,7 @@ function renderPowerCloseRules(container) {
   for (const r of _powerCloseRules) {
     const covers = (r.cover_ids || []).join(', ');
     const activeColor = r.is_active !== false ? 'var(--accent)' : 'var(--text-muted)';
-    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--bg-card);">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
     html += '<span style="font-size:13px;font-weight:600;color:' + activeColor + ';">&#9889; ' + esc(r.power_sensor || '???') + ' &ge; ' + (r.threshold || 50) + ' W</span>';
     html += '<div style="display:flex;gap:4px;">';
@@ -9466,7 +9767,7 @@ async function loadOpeningSensors() {
     _openingSensors = d.entities || {};
     renderOpeningSensors(container);
   } catch (e) {
-    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Fehler beim Laden: ' + esc(e.message) + '</div>';
+    container.innerHTML = fErrorMsg('Fehler beim Laden: ' + e.message);
   }
 }
 
@@ -9491,7 +9792,7 @@ function renderOpeningSensors(container) {
     const opacity = cfg.heated === false ? '0.7' : '1';
     // Friendly name aus entity_id ableiten (binary_sensor.fenster_wohnzimmer → Fenster Wohnzimmer)
     const shortName = entityId.replace(/^binary_sensor\./, '').replace(/_/g, ' ');
-    html += '<div style="padding:8px 10px;margin-bottom:4px;border-radius:6px;background:var(--bg-card);border:1px solid ' + borderColor + ';opacity:' + opacity + ';">';
+    html += '<div style="padding:8px 10px;margin-bottom:4px;border-radius:var(--radius-md);background:var(--bg-card);border:1px solid ' + borderColor + ';opacity:' + opacity + ';">';
     // Zeile 1: Name + Icon + Loeschen-Button
     html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">';
     html += '<span style="font-size:14px;">' + (typeIcons[t] || '') + '</span>';
@@ -9499,14 +9800,14 @@ function renderOpeningSensors(container) {
     html += '<div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(shortName) + '</div>';
     html += '<div style="font-size:10px;color:var(--text-muted);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(entityId) + '">' + esc(entityId) + '</div>';
     html += '</div>';
-    html += '<button type="button" onclick="removeOpeningSensor(\'' + esc(entityId) + '\')" style="flex-shrink:0;font-size:12px;padding:2px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;cursor:pointer;opacity:0.7;" title="Entfernen">&times;</button>';
+    html += '<button type="button" onclick="removeOpeningSensor(\'' + esc(entityId) + '\')" style="flex-shrink:0;font-size:12px;padding:2px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:var(--radius-sm);cursor:pointer;opacity:var(--opacity-disabled);" title="Entfernen">&times;</button>';
     html += '</div>';
     // Zeile 2: Controls (flex-wrap für Mobile)
     html += '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">';
     // Typ
     html += '<div style="display:flex;align-items:center;gap:4px;min-width:90px;">';
     html += '<span style="font-size:10px;color:var(--text-muted);">Typ</span>';
-    html += '<select onchange="updateOpeningSensor(\'' + esc(entityId) + '\',\'type\',this.value)" style="flex:1;font-size:11px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:3px 4px;">';
+    html += '<select onchange="updateOpeningSensor(\'' + esc(entityId) + '\',\'type\',this.value)" style="flex:1;font-size:11px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px 4px;">';
     html += '<option value="window"' + (t==='window'?' selected':'') + '>Fenster</option>';
     html += '<option value="door"' + (t==='door'?' selected':'') + '>Tuer</option>';
     html += '<option value="gate"' + (t==='gate'?' selected':'') + '>Tor</option>';
@@ -9514,7 +9815,7 @@ function renderOpeningSensors(container) {
     // Raum
     html += '<div style="display:flex;align-items:center;gap:4px;flex:1;min-width:120px;">';
     html += '<span style="font-size:10px;color:var(--text-muted);">Raum</span>';
-    html += '<select onchange="updateOpeningSensor(\'' + esc(entityId) + '\',\'room\',this.value||null)" style="flex:1;font-size:11px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:3px 4px;">';
+    html += '<select onchange="updateOpeningSensor(\'' + esc(entityId) + '\',\'room\',this.value||null)" style="flex:1;font-size:11px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px 4px;">';
     html += '<option value="">— kein Raum —</option>';
     for (const r of rooms) html += '<option value="' + esc(r) + '"' + (cfg.room===r?' selected':'') + '>' + esc(r) + '</option>';
     html += '</select></div>';
@@ -9580,7 +9881,7 @@ function addOpeningSensor() {
   if (!container || document.getElementById('addOpeningForm')) return;
   const form = document.createElement('div');
   form.id = 'addOpeningForm';
-  form.style.cssText = 'margin-top:10px;padding:12px;border:2px solid var(--accent);border-radius:8px;background:var(--bg-card);';
+  form.style.cssText = 'margin-top:10px;padding:12px;border:2px solid var(--accent);border-radius:var(--radius-lg);background:var(--bg-card);';
   let h = '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px;">Neuen Sensor hinzufügen</div>';
   h += '<div class="form-group"><label>Entity-ID</label><input type="text" id="newOpeningEntity" placeholder="binary_sensor.fenster_wohnzimmer" style="font-size:11px;font-family:var(--mono);"></div>';
   h += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
@@ -9640,7 +9941,7 @@ async function discoverOpeningSensors() {
 function renderLights() {
   return sectionWrap('&#127968;', 'Raum-Licht-Zuordnung',
     fInfo('Ordne jedem Raum seine Licht-Entities zu. Pro Lampe kannst du individuelle Helligkeit (Tag/Nacht) einstellen. Die Zuordnung wird in den Raum-Profilen gespeichert.') +
-    '<div id="lightRoomContainer" style="padding:8px;color:var(--text-secondary);">Lade Räume und Licht-Entities...</div>'
+    '<div id="lightRoomContainer">' + fLoading('Lade Räume und Licht-Entities...') + '</div>'
   ) +
   sectionWrap('&#9881;', 'Automatik-Regeln',
     fInfo('Regeln für automatische Lichtsteuerung. Einmal konfigurieren — Jarvis erledigt den Rest.<br>Die Bewegungsmelder aus dem Räume-Tab werden für die Leer-Raum-Erkennung genutzt.') +
@@ -9767,7 +10068,7 @@ function _renderCircadianSVG(curveType, curve, valueKey, unit, vMin, vMax, color
   // Sort curve by time
   const sorted = (curve || []).slice().sort((a, b) => _timeToMin(a.time) - _timeToMin(b.time));
 
-  let svg = `<svg width="100%" viewBox="0 0 ${W} ${H}" style="max-width:${W}px;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;user-select:none;" data-curvetype="${curveType}">`;
+  let svg = `<svg width="100%" viewBox="0 0 ${W} ${H}" style="max-width:${W}px;background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-md);user-select:none;" data-curvetype="${curveType}">`;
 
   // Grid lines & labels - hours
   for (let h = 0; h <= 24; h += 3) {
@@ -9917,7 +10218,7 @@ async function loadLightEntities() {
     const haLights = d.lights || [];
     renderLightRoomAssignment(haLights, container);
   } catch (e) {
-    container.innerHTML = '<div style="color:var(--danger);padding:8px;">Fehler beim Laden: ' + esc(e.message) + '</div>';
+    container.innerHTML = fErrorMsg('Fehler beim Laden: ' + e.message);
   }
   // Render circadian curve editor after settings are loaded
   renderCircadianCurveEditor();
@@ -9967,24 +10268,24 @@ function renderLightRoomAssignment(haLights, container) {
                    r.type==='dressing' ? '&#128087;' : '&#127968;';
       // Find motion sensor for this room
       const roomMotion = motionSensors[name] || '';
-      html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+      html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--bg-card);">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
       html += '<span style="font-size:13px;font-weight:600;">' + icon + ' ' + esc(name) + '</span>';
-      html += '<span style="font-size:10px;color:var(--text-muted);background:var(--bg-primary);padding:1px 6px;border-radius:3px;">' + (typeLabels[r.type] || r.type) + '</span>';
+      html += '<span style="font-size:10px;color:var(--text-muted);background:var(--bg-primary);padding:1px 6px;border-radius:var(--radius-sm);">' + (typeLabels[r.type] || r.type) + '</span>';
       html += '</div>';
       // Motion sensor info badge
       if (roomMotion) {
-        html += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:8px;padding:4px 8px;background:var(--bg-primary);border-radius:4px;font-size:10px;color:var(--text-secondary);">';
+        html += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:8px;padding:4px 8px;background:var(--bg-primary);border-radius:var(--radius-sm);font-size:10px;color:var(--text-secondary);">';
         html += '<span style="color:var(--success);">&#9679;</span> Präsenzmelder: <span style="font-family:var(--mono);color:var(--accent);">' + esc(roomMotion) + '</span>';
         html += '</div>';
       } else {
-        html += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:8px;padding:4px 8px;background:var(--bg-primary);border-radius:4px;font-size:10px;color:var(--text-muted);">';
+        html += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:8px;padding:4px 8px;background:var(--bg-primary);border-radius:var(--radius-sm);font-size:10px;color:var(--text-muted);">';
         html += '<span style="opacity:0.4;">&#9679;</span> Kein Präsenzmelder zugeordnet <span style="opacity:0.6;">(konfigurierbar unter Räume &rarr; Bewegungsmelder)</span>';
         html += '</div>';
       }
       // Light Entity Picker (multi-select checklist)
       html += '<div class="form-group"><label>Licht-Entities</label>';
-      html += '<div style="max-height:150px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:4px;background:var(--bg-primary);">';
+      html += '<div style="max-height:150px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-md);padding:4px;background:var(--bg-primary);">';
       if (haLights.length === 0) {
         html += '<div style="color:var(--text-muted);font-size:11px;padding:4px;">Keine light.* Entities in HA gefunden.</div>';
       } else {
@@ -9992,7 +10293,7 @@ function renderLightRoomAssignment(haLights, container) {
           const isChecked = assigned.includes(light.entity_id);
           const stateColor = light.state === 'on' ? 'var(--success)' : 'var(--text-muted)';
           const briInfo = light.brightness != null ? ' (' + light.brightness + '%)' : '';
-          html += '<label style="display:flex;align-items:center;gap:6px;padding:3px 4px;cursor:pointer;font-size:12px;border-radius:4px;" onmouseover="this.style.background=\'var(--bg-hover)\'" onmouseout="this.style.background=\'none\'">';
+          html += '<label style="display:flex;align-items:center;gap:6px;padding:3px 4px;cursor:pointer;font-size:12px;border-radius:var(--radius-sm);" onmouseover="this.style.background=\'var(--bg-hover)\'" onmouseout="this.style.background=\'none\'">';
           html += '<input type="checkbox"' + (isChecked ? ' checked' : '') + ' onchange="toggleLightEntity(\'' + esc(name) + '\',\'' + esc(light.entity_id) + '\',this.checked)" style="accent-color:var(--accent);flex-shrink:0;">';
           html += '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(light.name) + '</span>';
           html += '<span style="font-size:10px;font-family:var(--mono);color:' + stateColor + ';flex-shrink:0;">' + light.state + briInfo + '</span>';
@@ -10016,10 +10317,10 @@ function renderLightRoomAssignment(haLights, container) {
           const perLight = lightBri[entityId] || {};
           const dayVal = perLight.day != null ? perLight.day : (r.default_brightness || 70);
           const nightVal = perLight.night != null ? perLight.night : (r.night_brightness || 20);
-          html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;padding:4px 6px;background:var(--bg-primary);border-radius:4px;">';
+          html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;padding:4px 6px;background:var(--bg-primary);border-radius:var(--radius-sm);">';
           html += '<span style="flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(entityId) + '">' + esc(displayName) + '</span>';
-          html += '<label style="font-size:10px;color:var(--text-muted);display:flex;align-items:center;gap:3px;">Tag <input type="number" value="' + dayVal + '" min="0" max="100" step="5" style="width:48px;font-size:10px;padding:1px 3px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:3px;" onchange="setLightBrightness(\'' + esc(name) + '\',\'' + esc(entityId) + '\',\'day\',parseInt(this.value))">%</label>';
-          html += '<label style="font-size:10px;color:var(--text-muted);display:flex;align-items:center;gap:3px;">Nacht <input type="number" value="' + nightVal + '" min="0" max="100" step="5" style="width:48px;font-size:10px;padding:1px 3px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:3px;" onchange="setLightBrightness(\'' + esc(name) + '\',\'' + esc(entityId) + '\',\'night\',parseInt(this.value))">%</label>';
+          html += '<label style="font-size:10px;color:var(--text-muted);display:flex;align-items:center;gap:3px;">Tag <input type="number" value="' + dayVal + '" min="0" max="100" step="5" style="width:48px;font-size:10px;padding:1px 3px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);" onchange="setLightBrightness(\'' + esc(name) + '\',\'' + esc(entityId) + '\',\'day\',parseInt(this.value))">%</label>';
+          html += '<label style="font-size:10px;color:var(--text-muted);display:flex;align-items:center;gap:3px;">Nacht <input type="number" value="' + nightVal + '" min="0" max="100" step="5" style="width:48px;font-size:10px;padding:1px 3px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);" onchange="setLightBrightness(\'' + esc(name) + '\',\'' + esc(entityId) + '\',\'night\',parseInt(this.value))">%</label>';
           html += '</div>';
         }
         html += '</div>';
@@ -10124,8 +10425,8 @@ function renderRoomProfileEditor() {
                  r.type==='office' ? '&#128187;' : r.type==='bathroom' ? '&#128704;' :
                  r.type==='hallway' ? '&#128682;' : r.type==='living' ? '&#128715;' :
                  r.type==='dressing' ? '&#128087;' : '&#127968;';
-    const floorBadge = '<span style="font-size:10px;font-family:var(--mono);color:var(--text-muted);background:var(--bg-primary);padding:1px 6px;border-radius:3px;margin-left:6px;">' + (floorLabels[r.floor]||r.floor||'') + '</span>';
-    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+    const floorBadge = '<span style="font-size:10px;font-family:var(--mono);color:var(--text-muted);background:var(--bg-primary);padding:1px 6px;border-radius:var(--radius-sm);margin-left:6px;">' + (floorLabels[r.floor]||r.floor||'') + '</span>';
+    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--bg-card);">';
     html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">' + icon + ' ' + esc(name) + floorBadge + '</div>';
     // Raum-Typ
     html += '<div class="form-group"><label>Typ</label><select data-rp-path="rooms.' + name + '.type" onchange="rpSetPath(\'rooms.' + name + '.type\',this.value)">';
@@ -10155,7 +10456,7 @@ function renderSeasonalEditor() {
   let html = '';
   for (const s of seasons) {
     const cfg = seasonal[s.key] || {};
-    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--bg-card);">';
     html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">' + s.icon + ' ' + s.label + '</div>';
     html += rpRange('seasonal.' + s.key + '.temp_offset', 'Temperatur-Offset (°C)', -5, 5, 0.5, {'-3':'-3','-2':'-2','-1':'-1',0:'0',1:'+1',2:'+2',3:'+3'});
     html += rpText('seasonal.' + s.key + '.cover_hint', 'Rolladen-Hinweis', 'z.B. "Rolladen bei Sonne schließen"');
@@ -10485,7 +10786,7 @@ function stSync(editor) {
 
 function renderVacuumRobot(floor, floorLabel) {
   const prefix = 'vacuum.robots.' + floor;
-  let html = '<div class="s-card" style="margin:10px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+  let html = '<div class="s-card" style="margin:10px 0;padding:12px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--bg-card);">';
   html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">&#129529; ' + floorLabel + '</div>';
   html += fEntityPickerSingle(prefix + '.entity_id', 'Entity-ID', ['vacuum'], 'z.B. vacuum.dreame_' + floor);
   html += fText(prefix + '.name', 'Name', 'z.B. Saugroboter ' + floor.toUpperCase());
@@ -10546,7 +10847,7 @@ let _updating = false;
 
 function renderSystem() {
   return sectionWrap('&#128300;', 'System-Status',
-    '<div id="sysStatusBox" style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);">Lade...</div>' +
+    '<div id="sysStatusBox" style="font-family:var(--mono);font-size:12px;">' + fLoading() + '</div>' +
     '<button class="btn btn-secondary" style="margin-top:12px;font-size:12px;" onclick="loadSystemStatus()">Status aktualisieren</button>'
   ) +
   sectionWrap('&#128640;', 'System-Update',
@@ -10557,8 +10858,8 @@ function renderSystem() {
       '<button class="btn btn-primary" id="btnSysFullUpdate" onclick="doSystemUpdate(true)" style="background:var(--accent-tertiary,#dc6317);border-color:var(--accent-tertiary,#dc6317);">&#128230; Full Update</button>' +
       '<button class="btn btn-secondary" id="btnSysCheckUpdate" onclick="checkForUpdates()">&#128269; Auf Updates prüfen</button>' +
     '</div>' +
-    '<div id="sysUpdateLog" style="display:none;margin-top:16px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:300px;overflow-y:auto;">' +
-      '<div style="font-size:11px;font-family:var(--font-mono);white-space:pre-wrap;" id="sysUpdateLogContent"></div>' +
+    '<div id="sysUpdateLog" style="display:none;margin-top:16px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:12px;max-height:300px;overflow-y:auto;">' +
+      '<div style="font-size:11px;font-family:var(--mono);white-space:pre-wrap;" id="sysUpdateLogContent"></div>' +
     '</div>'
   ) +
   sectionWrap('&#128260;', 'Container neustarten',
@@ -10569,7 +10870,7 @@ function renderSystem() {
     fInfo('Aktualisiert alle installierten LLM-Modelle auf die neueste Version.') +
     '<div id="sysModelsList" style="margin-bottom:12px;font-size:12px;color:var(--text-secondary);"></div>' +
     '<button class="btn btn-secondary" id="btnSysModels" onclick="doUpdateModels()">&#129302; Modelle aktualisieren</button>' +
-    '<div id="sysModelsLog" style="display:none;margin-top:12px;font-size:12px;font-family:var(--font-mono);color:var(--text-secondary);"></div>'
+    '<div id="sysModelsLog" style="display:none;margin-top:12px;font-size:12px;font-family:var(--mono);color:var(--text-secondary);"></div>'
   );
 }
 
@@ -10604,8 +10905,8 @@ async function loadSystemStatus() {
       return '<div style="margin-bottom:10px;">' +
         '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">' +
           '<strong>' + label + '</strong><span style="color:var(--text-muted);">' + sub + '</span></div>' +
-        '<div style="height:8px;background:var(--bg-secondary);border-radius:4px;overflow:hidden;">' +
-          '<div style="height:100%;width:' + Math.min(100, pct) + '%;background:' + color + ';border-radius:4px;transition:width 0.3s;"></div>' +
+        '<div style="height:8px;background:var(--bg-secondary);border-radius:var(--radius-sm);overflow:hidden;">' +
+          '<div style="height:100%;width:' + Math.min(100, pct) + '%;background:' + color + ';border-radius:var(--radius-sm);transition:width 0.3s;"></div>' +
         '</div></div>';
     }
 
@@ -10648,10 +10949,10 @@ async function loadSystemStatus() {
         <div style="grid-column:1/-1;"><strong>Container:</strong> ${cStatus}</div>
         <div><strong>Ollama:</strong> ${ollama.available ? '<span style="color:var(--success);">Online</span>' : '<span style="color:var(--danger);">Offline</span>'}</div>
       </div>
-      ${git.changes ? '<div style="margin-top:8px;padding:8px;background:var(--bg-hover);border-radius:4px;"><strong>Lokale Änderungen:</strong><pre style="margin:4px 0 0;font-size:11px;">' + esc(git.changes) + '</pre></div>' : ''}
+      ${git.changes ? '<div style="margin-top:8px;padding:8px;background:var(--bg-hover);border-radius:var(--radius-sm);"><strong>Lokale Änderungen:</strong><pre style="margin:4px 0 0;font-size:11px;">' + esc(git.changes) + '</pre></div>' : ''}
     `;
   } catch(e) {
-    box.innerHTML = '<span style="color:var(--danger);">Fehler beim Laden: ' + esc(e.message) + '</span>';
+    box.innerHTML = fErrorMsg('Fehler beim Laden: ' + e.message);
   }
 }
 
@@ -10665,9 +10966,9 @@ async function checkForUpdates() {
     const data = await api('/api/ui/system/update-check');
     if (data.updates_available) {
       const commits = (data.new_commits || []).map(c => '<div style="padding:2px 0;">' + esc(c) + '</div>').join('');
-      box.innerHTML = '<div style="padding:10px;background:var(--bg-hover);border-left:3px solid var(--accent);border-radius:4px;">' +
+      box.innerHTML = '<div style="padding:10px;background:var(--bg-hover);border-left:3px solid var(--accent);border-radius:var(--radius-sm);">' +
         '<strong style="color:var(--accent);">&#9889; Updates verfügbar!</strong> (' + esc(data.local) + ' &rarr; ' + esc(data.remote) + ')' +
-        '<div style="margin-top:8px;font-size:11px;font-family:var(--font-mono);">' + commits + '</div></div>';
+        '<div style="margin-top:8px;font-size:11px;font-family:var(--mono);">' + commits + '</div></div>';
     } else {
       box.innerHTML = '<div style="padding:8px;color:var(--success);"><strong>&#10003;</strong> System ist aktuell (' + esc(data.local || '') + ')</div>';
     }
@@ -10867,8 +11168,8 @@ function renderFacts(facts) {
       <input type="checkbox" class="mem-fact-cb" data-id="${esc(f.fact_id)}" onchange="updateMemFactDeleteBtn()" style="margin-top:3px;min-width:16px;" />
       <div style="flex:1;min-width:0;">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:3px;">
-          <span style="font-size:11px;padding:1px 6px;border-radius:4px;background:var(--primary);color:#fff;">${esc(_factCategoryLabels[f.category] || f.category)}</span>
-          <span style="font-size:11px;padding:1px 6px;border-radius:4px;background:var(--bg-tertiary);color:var(--text-muted);">${esc(f.person)}</span>
+          <span style="font-size:11px;padding:1px 6px;border-radius:var(--radius-sm);background:var(--accent);color:var(--bg-primary);">${esc(_factCategoryLabels[f.category] || f.category)}</span>
+          <span style="font-size:11px;padding:1px 6px;border-radius:var(--radius-sm);background:var(--bg-tertiary);color:var(--text-muted);">${esc(f.person)}</span>
           <span style="font-size:11px;color:var(--text-muted);">${_fmtTs(f.created_at)}</span>
         </div>
         <div style="font-size:13px;line-height:1.4;word-break:break-word;">${esc(f.content)}</div>
@@ -11313,7 +11614,7 @@ function _renderDeclToolList() {
     h += '<div style="border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;margin-bottom:10px;background:var(--bg-card);">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">' +
       '<div><strong style="color:var(--accent);font-size:14px;">' + esc(t.name) + '</strong>' +
-      '<span style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(0,212,255,0.08);color:var(--text-secondary);">' + esc(typeInfo.l) + '</span></div>' +
+      '<span style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:var(--radius-lg);background:var(--accent-dim);color:var(--text-secondary);">' + esc(typeInfo.l) + '</span></div>' +
       '<div style="display:flex;gap:6px;">' +
       '<button class="btn btn-sm" onclick="testDeclTool(\'' + esc(t.name) + '\')" style="padding:4px 10px;font-size:12px;">&#9654; Test</button>' +
       '<button class="btn btn-sm" onclick="editDeclTool(\'' + esc(t.name) + '\')" style="padding:4px 10px;font-size:12px;">&#9998; Bearbeiten</button>' +
@@ -11779,20 +12080,20 @@ function _renderDeclSuggestions() {
       '<div style="flex:1;">' +
       '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
       '<strong style="color:var(--accent);font-size:14px;">' + esc(s.name) + '</strong>' +
-      '<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(0,212,255,0.08);color:var(--text-secondary);">' + esc(typeInfo.l) + '</span>' +
+      '<span style="font-size:11px;padding:2px 8px;border-radius:var(--radius-lg);background:var(--accent-dim);color:var(--text-secondary);">' + esc(typeInfo.l) + '</span>' +
       '</div>' +
       '<div style="margin-top:6px;font-size:13px;color:var(--text-primary);">' + esc(s.description) + '</div>' +
       '<div style="margin-top:4px;font-size:12px;color:var(--text-secondary);font-style:italic;">' + esc(s.reason || '') + '</div>' +
       '</div>' +
       '<div style="display:flex;gap:6px;flex-shrink:0;">' +
-      '<button class="btn btn-sm" onclick="acceptDeclSuggestion(' + i + ')" style="padding:6px 12px;font-size:12px;background:var(--success);color:#fff;border:none;">&#10003; Annehmen</button>' +
+      '<button class="btn btn-sm" onclick="acceptDeclSuggestion(' + i + ')" style="padding:6px 12px;font-size:12px;background:var(--success);color:var(--bg-primary);border:none;">&#10003; Annehmen</button>' +
       '<button class="btn btn-sm" onclick="rejectDeclSuggestion(' + i + ')" style="padding:6px 12px;font-size:12px;">&#10005; Ablehnen</button>' +
       '</div></div></div>';
   });
   // "Alle annehmen" Button wenn mehrere
   if (_declSuggestions.length > 1) {
     h += '<div style="display:flex;gap:8px;margin-top:8px;">' +
-      '<button class="btn btn-sm" onclick="acceptAllDeclSuggestions()" style="padding:6px 16px;font-size:12px;background:var(--success);color:#fff;border:none;">&#10003; Alle annehmen (' + _declSuggestions.length + ')</button>' +
+      '<button class="btn btn-sm" onclick="acceptAllDeclSuggestions()" style="padding:6px 16px;font-size:12px;background:var(--success);color:var(--bg-primary);border:none;">&#10003; Alle annehmen (' + _declSuggestions.length + ')</button>' +
       '<button class="btn btn-sm" onclick="rejectAllDeclSuggestions()" style="padding:6px 16px;font-size:12px;">&#10005; Alle ablehnen</button>' +
       '</div>';
   }
@@ -11871,19 +12172,7 @@ function rejectAllDeclSuggestions() {
 
 // ---- Tab: Intelligenz — Quick Wins ----
 function renderIntelligence() {
-  return sectionWrap('&#127919;', 'Domain-spezifische Autonomie',
-    fInfo('Unterschiedliche Autonomie-Level pro Bereich. Z.B. Level 4 bei Klima (darf Temperatur selbst anpassen), aber Level 2 bei Sicherheit (nur informieren). Wenn deaktiviert gilt das globale Level für alle Bereiche.') +
-    fToggle('autonomy.domain_levels_enabled', 'Domain-Autonomie aktivieren') +
-    fSubheading('Level pro Domaene') +
-    fRange('autonomy.domain_levels.climate', 'Klima & Heizung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
-    fRange('autonomy.domain_levels.light', 'Licht & Beleuchtung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
-    fRange('autonomy.domain_levels.media', 'Medien & Musik', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
-    fRange('autonomy.domain_levels.cover', 'Rollläden', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
-    fRange('autonomy.domain_levels.security', 'Sicherheit', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
-    fRange('autonomy.domain_levels.automation', 'Automationen & Routinen', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
-    fRange('autonomy.domain_levels.notification', 'Benachrichtigungen', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
-  ) +
-  sectionWrap('&#128197;', 'Kalender-Intelligenz',
+  return sectionWrap('&#128197;', 'Kalender-Intelligenz',
     fInfo('Erkennt Gewohnheiten aus wiederkehrenden Terminen, warnt bei Zeitkonflikten (Pendelzeit vs. Meeting) und zeigt freie Zeitfenster an.') +
     fToggle('calendar_intelligence.enabled', 'Kalender-Intelligenz aktiv') +
     fNum('calendar_intelligence.commute_minutes', 'Pendelzeit (Minuten)', 5, 120, 5) +
@@ -11932,7 +12221,8 @@ function renderIntelligence() {
     ], 'Für welche Bereiche sollen Präferenzen übertragen werden?') +
     fSubheading('Raum-Gruppen') +
     fInfo('Räume in der gleichen Gruppe werden als ähnlich betrachtet. Änderungen hier überschreiben die Standard-Gruppen.') +
-    fTextarea('learning_transfer.room_groups', 'Raum-Gruppen (JSON)', 'Format: {"wohnbereich": ["wohnzimmer", "esszimmer"], "schlafbereich": ["schlafzimmer", "gästezimmer"]}')
+    fSubheading('Raum-Gruppen') +
+    fKvArrayEditor('learning_transfer.room_groups', 'Gruppe', 'Raum', 'Aehnliche Raeume gruppieren fuer Lern-Transfer')
   ) +
   sectionWrap('&#128161;', 'Think-Ahead Hinweise',
     fInfo('Nach einer Aktion schlägt Jarvis einen logischen nächsten Schritt vor. Z.B. nach "Licht im Flur an" → "Soll ich auch die Heizung im Flur hochdrehen?" Statisch, kein LLM-Overhead.') +
@@ -12095,7 +12385,7 @@ function renderDeclarativeTools() {
   ) +
   '<div id="declBody">' +
   sectionWrap('&#128202;', 'Aktive Tools',
-    '<div id="declToolList" style="margin-top:12px;"><div style="padding:16px;color:var(--text-secondary);">Lade...</div></div>'
+    '<div id="declToolList" style="margin-top:12px;">' + fLoading() + '</div>'
   ) +
   sectionWrap('&#128161;', 'Jarvis-Vorschläge',
     fInfo('Jarvis analysiert deine Home-Assistant-Entities und schlägt passende Analyse-Tools vor. Du entscheidest bei jedem Vorschlag ob du ihn annimmst oder ablehnst.') +
@@ -12144,8 +12434,10 @@ function renderDeclarativeTools() {
 }
 
 // Phase 9B: Jarvis Insights Widget
+var _insightsIv = null;
 (function() {
   function loadInsights() {
+    if (!document.getElementById('insights-list')) { if (_insightsIv) { clearInterval(_insightsIv); _insightsIv = null; } return; }
     fetch('/api/jarvis/insights').then(function(r) { return r.json(); }).then(function(data) {
       var list = document.getElementById('insights-list');
       if (!list || !data.insights) return;
@@ -12153,12 +12445,14 @@ function renderDeclarativeTools() {
       list.innerHTML = data.insights.map(function(i) { return '<div style="margin:4px 0">\u2022 ' + (i.text || '') + '</div>'; }).join('');
     }).catch(function() {});
   }
-  if (document.getElementById('insights-list')) { loadInsights(); setInterval(loadInsights, 30000); }
+  if (document.getElementById('insights-list')) { loadInsights(); _insightsIv = setInterval(loadInsights, 30000); }
 })();
 
 // Phase 9C: Autonomie & Lernfortschritt
+var _progressIv = null;
 (function() {
   function loadProgress() {
+    if (!document.getElementById('learning-progress')) { if (_progressIv) { clearInterval(_progressIv); _progressIv = null; } return; }
     fetch('/api/jarvis/learning-progress').then(function(r) { return r.json(); }).then(function(data) {
       var el = document.getElementById('learning-progress');
       if (!el) return;
@@ -12171,5 +12465,5 @@ function renderDeclarativeTools() {
     var el = document.getElementById('autonomy-level');
     if (el) el.textContent = 'Autonomie: Level ' + (data.autonomy_level || 2) + '/5';
   }).catch(function() {});
-  if (document.getElementById('learning-progress')) { loadProgress(); setInterval(loadProgress, 60000); }
+  if (document.getElementById('learning-progress')) { loadProgress(); _progressIv = setInterval(loadProgress, 60000); }
 })();

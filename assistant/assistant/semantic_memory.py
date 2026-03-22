@@ -22,28 +22,48 @@ _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Monats-Namen und Lookup fuer Datums-Parsing
 _MONTH_NAMES = {
-    1: "Januar", 2: "Februar", 3: "März", 4: "April",
-    5: "Mai", 6: "Juni", 7: "Juli", 8: "August",
-    9: "September", 10: "Oktober", 11: "November", 12: "Dezember",
+    1: "Januar",
+    2: "Februar",
+    3: "März",
+    4: "April",
+    5: "Mai",
+    6: "Juni",
+    7: "Juli",
+    8: "August",
+    9: "September",
+    10: "Oktober",
+    11: "November",
+    12: "Dezember",
 }
 _MONTH_LOOKUP = {
-    "januar": 1, "februar": 2, "maerz": 3, "marz": 3, "märz": 3, "april": 4,
-    "mai": 5, "juni": 6, "juli": 7, "august": 8,
-    "september": 9, "oktober": 10, "november": 11, "dezember": 12,
+    "januar": 1,
+    "februar": 2,
+    "maerz": 3,
+    "marz": 3,
+    "märz": 3,
+    "april": 4,
+    "mai": 5,
+    "juni": 6,
+    "juli": 7,
+    "august": 8,
+    "september": 9,
+    "oktober": 10,
+    "november": 11,
+    "dezember": 12,
 }
 
 # Fakten-Kategorien
 FACT_CATEGORIES = [
-    "preference",           # "Max mag 21 Grad im Buero"
-    "person",               # "Lisa ist die Freundin von Max"
-    "habit",                # "Max steht um 7 Uhr auf"
-    "health",               # "Max hat eine Haselnuss-Allergie"
-    "work",                 # "Max arbeitet an Projekt Aurora"
-    "personal_date",        # Geburtstage, Jahrestage, persoenliche Daten
-    "intent",               # Phase 8: "Eltern kommen naechstes WE"
-    "conversation_topic",   # Gespraechs-Themen fuer Kontext-Kette
-    "general",              # Sonstige Fakten
-    "scene_preference",     # "Max mag Filmabend mit 15% statt 10%"
+    "preference",  # "Max mag 21 Grad im Buero"
+    "person",  # "Lisa ist die Freundin von Max"
+    "habit",  # "Max steht um 7 Uhr auf"
+    "health",  # "Max hat eine Haselnuss-Allergie"
+    "work",  # "Max arbeitet an Projekt Aurora"
+    "personal_date",  # Geburtstage, Jahrestage, persoenliche Daten
+    "intent",  # Phase 8: "Eltern kommen naechstes WE"
+    "conversation_topic",  # Gespraechs-Themen fuer Kontext-Kette
+    "general",  # Sonstige Fakten
+    "scene_preference",  # "Max mag Filmabend mit 15% statt 10%"
 ]
 
 
@@ -60,7 +80,9 @@ class SemanticFact:
         fact_id: Optional[str] = None,
         date_meta: Optional[dict] = None,
     ):
-        self.fact_id = fact_id or f"fact_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}"
+        self.fact_id = (
+            fact_id or f"fact_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}"
+        )
         self.content = content
         self.category = category if category in FACT_CATEGORIES else "general"
         self.person = person
@@ -135,12 +157,14 @@ class SemanticMemory:
             import chromadb
 
             from urllib.parse import urlparse
+
             _parsed = urlparse(settings.chroma_url)
             self._chroma_client = chromadb.HttpClient(
                 host=_parsed.hostname or "localhost",
                 port=_parsed.port or 8000,
             )
             from .embeddings import get_embedding_function
+
             ef = get_embedding_function()
             col_kwargs = {
                 "name": "mha_semantic_facts",
@@ -148,18 +172,21 @@ class SemanticMemory:
             }
             if ef:
                 col_kwargs["embedding_function"] = ef
-            self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
+            self.chroma_collection = self._chroma_client.get_or_create_collection(
+                **col_kwargs
+            )
             logger.info("Semantic Memory initialisiert (ChromaDB: mha_semantic_facts)")
         except Exception as e:
             logger.warning("Semantic Memory ChromaDB nicht verfuegbar: %s", e)
             self.chroma_collection = None
 
-
     async def store_fact(self, fact: SemanticFact) -> bool:
         """Speichert einen Fakt. Gibt True/False zurueck.
         Widerspruchsinformationen sind nach dem Aufruf ueber ``self._last_contradiction`` abrufbar."""
         # F-007: Lock um den gesamten Read-Write-Zyklus gegen TOCTOU
-        lock_key = f"mha:fact_lock:{hashlib.sha256(fact.content.encode()).hexdigest()[:12]}"
+        lock_key = (
+            f"mha:fact_lock:{hashlib.sha256(fact.content.encode()).hexdigest()[:12]}"
+        )
         lock_acquired = False
         if self.redis:
             try:
@@ -169,7 +196,9 @@ class SemanticMemory:
                     await asyncio.sleep(0.2)
                     lock_acquired = await self.redis.set(lock_key, "1", ex=10, nx=True)
                     if not lock_acquired:
-                        logger.debug("Fakt-Lock nicht erhalten nach Retry: %s", fact.content[:50])
+                        logger.debug(
+                            "Fakt-Lock nicht erhalten nach Retry: %s", fact.content[:50]
+                        )
                         return False
             except Exception as e:
                 logger.debug("Redis Lock nicht verfuegbar, fahre ohne Lock fort: %s", e)
@@ -198,7 +227,8 @@ class SemanticMemory:
         if contradiction:
             logger.info(
                 "Widerspruch erkannt: '%s' vs '%s' -> Alter Fakt wird aktualisiert",
-                fact.content, contradiction.get("content", ""),
+                fact.content,
+                contradiction.get("content", ""),
             )
             old_content = contradiction.get("content", "")
             old_id = contradiction.get("fact_id", "")
@@ -227,14 +257,42 @@ class SemanticMemory:
                     "person": fact.person,
                 }
 
-        dup_threshold = float(yaml_config.get("memory", {}).get("duplicate_threshold", 0.15))
+            # MCU Sprint 4: Store pending contradiction for user confirmation
+            _confirm_enabled = yaml_config.get("semantic_memory", {}).get(
+                "contradiction_confirmation", False
+            )
+            if _confirm_enabled and self.redis and old_content:
+                try:
+                    _pending = json.dumps(
+                        {
+                            "old_value": old_content,
+                            "new_value": fact.content,
+                            "category": fact.category,
+                            "person": fact.person,
+                            "fact_id": fact.fact_id,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                    )
+                    await self.redis.lpush("mha:facts:pending_contradictions", _pending)
+                    await self.redis.ltrim("mha:facts:pending_contradictions", 0, 19)
+                    logger.info(
+                        "Contradiction pending confirmation: %s", fact.content[:60]
+                    )
+                except Exception as e:
+                    logger.debug("Pending contradiction store fehlgeschlagen: %s", e)
+
+        dup_threshold = float(
+            yaml_config.get("memory", {}).get("duplicate_threshold", 0.15)
+        )
         existing = await self.find_similar_fact(fact.content, threshold=dup_threshold)
         if existing:
             return await self._update_existing_fact(existing, fact)
 
         # Wenn BEIDE Backends fehlen → sofort False (DL3-ME2 Fix)
         if not self.chroma_collection and not self.redis:
-            logger.error("store_fact: Weder ChromaDB noch Redis verfuegbar — Fakt verworfen")
+            logger.error(
+                "store_fact: Weder ChromaDB noch Redis verfuegbar — Fakt verworfen"
+            )
             return False
 
         # Redis zuerst schreiben (atomic Pipeline, billiger) — dann ChromaDB.
@@ -259,7 +317,9 @@ class SemanticMemory:
                 pipe.sadd("mha:facts:all", fact.fact_id)
                 await pipe.execute()
             except Exception as e:
-                logger.error("Fehler beim Redis-Index: %s — ChromaDB-Write uebersprungen", e)
+                logger.error(
+                    "Fehler beim Redis-Index: %s — ChromaDB-Write uebersprungen", e
+                )
                 redis_ok = False
 
         chroma_ok = True
@@ -273,7 +333,10 @@ class SemanticMemory:
                 )
             except Exception as e:
                 chroma_ok = False
-                logger.error("Fehler beim Speichern in ChromaDB: %s (Fakt via Redis weiterhin verfuegbar)", e)
+                logger.error(
+                    "Fehler beim Speichern in ChromaDB: %s (Fakt via Redis weiterhin verfuegbar)",
+                    e,
+                )
 
         # Bei person-Fakten Relationship Cache aktualisieren
         if redis_ok and fact.category == "person":
@@ -285,19 +348,22 @@ class SemanticMemory:
         if redis_ok:
             logger.info(
                 "Neuer Fakt gespeichert: [%s] (Person: %s)",
-                fact.category, fact.person,
+                fact.category,
+                fact.person,
             )
         else:
             logger.warning(
                 "Fakt nur in ChromaDB gespeichert (Redis-Index fehlt): [%s] (Person: %s)",
-                fact.category, fact.person,
+                fact.category,
+                fact.person,
             )
             return False
         if not chroma_ok:
             logger.warning(
                 "Fakt nur in Redis gespeichert (ChromaDB fehlt, Redis-Fallback-Suche aktiv): "
                 "[%s] (Person: %s) — Vektor-Suche nicht verfuegbar, Keyword-Suche als Fallback",
-                fact.category, fact.person,
+                fact.category,
+                fact.person,
             )
         return True
 
@@ -339,7 +405,9 @@ class SemanticMemory:
             try:
                 pipe = self.redis.pipeline()
                 pipe.hset(f"mha:fact:{fact_id}", "updated_at", now)
-                pipe.hset(f"mha:fact:{fact_id}", "times_confirmed", str(times_confirmed))
+                pipe.hset(
+                    f"mha:fact:{fact_id}", "times_confirmed", str(times_confirmed)
+                )
                 pipe.hset(f"mha:fact:{fact_id}", "confidence", str(new_confidence))
                 pipe.hset(f"mha:fact:{fact_id}", "content", new_fact.content)
                 await pipe.execute()
@@ -348,7 +416,9 @@ class SemanticMemory:
 
         logger.debug(
             "Fakt bestaetigt: %s (x%d, Confidence: %.2f)",
-            fact_id, times_confirmed, new_confidence,
+            fact_id,
+            times_confirmed,
+            new_confidence,
         )
         return True
 
@@ -357,13 +427,15 @@ class SemanticMemory:
         if not self.redis:
             return
         try:
-            version_entry = json.dumps({
-                "content": old_fact.get("content", ""),
-                "category": old_fact.get("category", ""),
-                "person": old_fact.get("person", ""),
-                "confidence": old_fact.get("confidence", ""),
-                "changed_at": datetime.now(timezone.utc).isoformat(),
-            })
+            version_entry = json.dumps(
+                {
+                    "content": old_fact.get("content", ""),
+                    "category": old_fact.get("category", ""),
+                    "person": old_fact.get("person", ""),
+                    "confidence": old_fact.get("confidence", ""),
+                    "changed_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
             key = f"mha:fact_history:{fact_id}"
             await self.redis.lpush(key, version_entry)
             await self.redis.ltrim(key, 0, 19)
@@ -424,35 +496,42 @@ class SemanticMemory:
                 where=where_filter,
             )
 
-            if not results or not results.get("documents") or not results["documents"][0]:
+            if (
+                not results
+                or not results.get("documents")
+                or not results["documents"][0]
+            ):
                 return None
 
             for i, doc in enumerate(results["documents"][0]):
-                distance = results["distances"][0][i] if results.get("distances") else 1.0
+                distance = (
+                    results["distances"][0][i] if results.get("distances") else 1.0
+                )
                 meta = results["metadatas"][0][i] if results.get("metadatas") else {}
 
                 # Aehnlich genug um verwandt zu sein (< 0.8) aber
                 # verschieden genug um ein Widerspruch zu sein (> 0.15)
                 if 0.15 < distance < 0.8:
                     import re
+
                     is_contradiction = False
 
                     # 1. Numerische Widersprueche (z.B. "21 Grad" vs "22 Grad")
-                    old_nums = set(re.findall(r'\d+(?:\.\d+)?', doc))
-                    new_nums = set(re.findall(r'\d+(?:\.\d+)?', new_fact.content))
+                    old_nums = set(re.findall(r"\d+(?:\.\d+)?", doc))
+                    new_nums = set(re.findall(r"\d+(?:\.\d+)?", new_fact.content))
                     if old_nums and new_nums and old_nums != new_nums:
                         is_contradiction = True
 
                     # 2. Gegensatz-Paare (z.B. "mag Kaffee" vs "hasst Kaffee")
                     if not is_contradiction:
                         _opposites = [
-                            (r'\bmag\b', r'\b(?:hasst|hasse|mag nicht|mag kein)\b'),
-                            (r'\bliebt\b', r'\b(?:hasst|hasse)\b'),
-                            (r'\bkein(?:e|en|er)?\b', r'\b(?:hat|ist|mag|liebt)\b'),
-                            (r'\bnicht\b', r'\b(?:immer|gerne|gern)\b'),
-                            (r'\bmorgens\b', r'\babends\b'),
-                            (r'\bwarm\b', r'\bkalt\b'),
-                            (r'\bkuehl\b', r'\bwarm\b'),
+                            (r"\bmag\b", r"\b(?:hasst|hasse|mag nicht|mag kein)\b"),
+                            (r"\bliebt\b", r"\b(?:hasst|hasse)\b"),
+                            (r"\bkein(?:e|en|er)?\b", r"\b(?:hat|ist|mag|liebt)\b"),
+                            (r"\bnicht\b", r"\b(?:immer|gerne|gern)\b"),
+                            (r"\bmorgens\b", r"\babends\b"),
+                            (r"\bwarm\b", r"\bkalt\b"),
+                            (r"\bkuehl\b", r"\bwarm\b"),
                         ]
                         doc_lower = doc.lower()
                         new_lower = new_fact.content.lower()
@@ -532,14 +611,16 @@ class SemanticMemory:
                 if source == "explicit":
                     decay_rate = 0.005  # 0.5% pro 30-Tage-Zyklus — praktisch permanent
                 else:
-                    decay_rate = 0.02   # 2% pro 30-Tage-Zyklus — ~20 Monate bis unsichtbar
+                    decay_rate = (
+                        0.02  # 2% pro 30-Tage-Zyklus — ~20 Monate bis unsichtbar
+                    )
 
                 # Haeufig bestaetigte Fakten langsamer abbauen
                 times_confirmed = int(data.get("times_confirmed", 1))
                 if times_confirmed >= 5:
                     decay_rate *= 0.25  # 4x langsamer — praktisch permanent
                 elif times_confirmed >= 3:
-                    decay_rate *= 0.5   # 2x langsamer
+                    decay_rate *= 0.5  # 2x langsamer
 
                 new_confidence = max(0.0, confidence - decay_rate)
 
@@ -549,7 +630,9 @@ class SemanticMemory:
                     deleted += 1
                 elif new_confidence != confidence:
                     await self.redis.hset(
-                        f"mha:fact:{fact_id}", "confidence", str(round(new_confidence, 3))
+                        f"mha:fact:{fact_id}",
+                        "confidence",
+                        str(round(new_confidence, 3)),
                     )
                     if self.chroma_collection:
                         try:
@@ -574,7 +657,8 @@ class SemanticMemory:
             if decayed or deleted:
                 logger.info(
                     "Fact Decay: %d Fakten reduziert, %d geloescht",
-                    decayed, deleted,
+                    decayed,
+                    deleted,
                 )
 
         except Exception as e:
@@ -592,8 +676,7 @@ class SemanticMemory:
         try:
             redis_ids = await self.redis.smembers("mha:facts:all")
             redis_ids_set = {
-                (fid if isinstance(fid, str) else fid.decode())
-                for fid in redis_ids
+                (fid if isinstance(fid, str) else fid.decode()) for fid in redis_ids
             }
 
             if not redis_ids_set:
@@ -602,6 +685,7 @@ class SemanticMemory:
             # Stichprobe: Maximal 100 Fakten pruefen (Performance)
             # random.sample statt [:100] — deckt ueber mehrere Runs ALLE Fakten ab
             import random
+
             _all_ids = list(redis_ids_set)
             check_ids = random.sample(_all_ids, min(100, len(_all_ids)))
             orphaned_redis = 0
@@ -636,19 +720,27 @@ class SemanticMemory:
                                     )
                                     reindexed += 1
                                 except Exception as e:
-                                    logger.debug("Re-Index fehlgeschlagen fuer %s: %s", fact_id, e)
+                                    logger.debug(
+                                        "Re-Index fehlgeschlagen fuer %s: %s",
+                                        fact_id,
+                                        e,
+                                    )
                                     orphaned_redis += 1
                         else:
                             # Fakt-ID in Index aber keine Daten → Index bereinigen
                             await self.redis.srem("mha:facts:all", fact_id)
                             orphaned_redis += 1
                 except Exception as e:
-                    logger.debug("Konsistenz-Check fuer %s uebersprungen: %s", fact_id, e)
+                    logger.debug(
+                        "Konsistenz-Check fuer %s uebersprungen: %s", fact_id, e
+                    )
 
             if reindexed or orphaned_redis:
                 logger.info(
                     "Konsistenz-Check: %d re-indexiert, %d verwaist bereinigt (von %d geprueft)",
-                    reindexed, orphaned_redis, len(check_ids),
+                    reindexed,
+                    orphaned_redis,
+                    len(check_ids),
                 )
 
         except Exception as e:
@@ -675,9 +767,17 @@ class SemanticMemory:
             ):
                 distance = results["distances"][0][0]
                 if distance <= threshold:
-                    meta = dict(results["metadatas"][0][0]) if results.get("metadatas") else {}
+                    meta = (
+                        dict(results["metadatas"][0][0])
+                        if results.get("metadatas")
+                        else {}
+                    )
                     # fact_id und content aus ChromaDB-Ergebnis sicherstellen
-                    if not meta.get("fact_id") and results.get("ids") and results["ids"][0]:
+                    if (
+                        not meta.get("fact_id")
+                        and results.get("ids")
+                        and results["ids"][0]
+                    ):
                         meta["fact_id"] = results["ids"][0][0]
                     if not meta.get("content") and results["documents"][0]:
                         meta["content"] = results["documents"][0][0]
@@ -695,7 +795,10 @@ class SemanticMemory:
             try:
                 return await self._search_facts_chromadb(query, limit, person)
             except Exception as e:
-                logger.warning("ChromaDB search_facts fehlgeschlagen, versuche Redis-Fallback: %s", e)
+                logger.warning(
+                    "ChromaDB search_facts fehlgeschlagen, versuche Redis-Fallback: %s",
+                    e,
+                )
 
         # Fallback: Alle Fakten aus Redis laden und nach Query-Keywords filtern
         if self.redis:
@@ -718,9 +821,9 @@ class SemanticMemory:
             where=where_filter,
         )
 
-        min_confidence = float(yaml_config.get("memory", {}).get(
-            "min_confidence_for_context", 0.4
-        ))
+        min_confidence = float(
+            yaml_config.get("memory", {}).get("min_confidence_for_context", 0.4)
+        )
         now = datetime.now(timezone.utc)
         facts = []
         if results and results.get("documents"):
@@ -749,28 +852,84 @@ class SemanticMemory:
                             recency_boost = 0.25 * max(0.0, 1.0 - days_old / 60.0)
                     except (ValueError, TypeError):
                         pass
-                facts.append({
-                    "content": doc,
-                    "category": meta.get("category", "general"),
-                    "person": meta.get("person", "unknown"),
-                    "confidence": confidence,
-                    "times_confirmed": int(meta.get("times_confirmed", 1)),
-                    "relevance": min(1.0, base_relevance + recency_boost),
-                })
+                facts.append(
+                    {
+                        "content": doc,
+                        "category": meta.get("category", "general"),
+                        "person": meta.get("person", "unknown"),
+                        "confidence": confidence,
+                        "times_confirmed": int(meta.get("times_confirmed", 1)),
+                        "relevance": min(1.0, base_relevance + recency_boost),
+                    }
+                )
         # Nach Relevanz sortieren damit aktuellere Fakten oben stehen
         facts.sort(key=lambda f: f["relevance"], reverse=True)
         return facts
 
     # Stoppwoerter fuer Redis-Fallback (haeufige dt. Woerter ohne Bedeutung)
-    _STOPWORDS = frozenset({
-        "der", "die", "das", "den", "dem", "des", "ein", "eine", "einer",
-        "einem", "einen", "und", "oder", "aber", "ist", "sind", "war",
-        "hat", "haben", "wird", "kann", "ich", "du", "er", "sie", "es",
-        "wir", "ihr", "was", "wie", "wo", "wer", "von", "zu", "in",
-        "mit", "auf", "an", "fuer", "für", "ueber", "über", "bei",
-        "nach", "vor", "aus", "um", "nicht", "auch", "noch", "schon",
-        "sehr", "ja", "nein", "mal", "so", "da", "dann", "wenn",
-    })
+    _STOPWORDS = frozenset(
+        {
+            "der",
+            "die",
+            "das",
+            "den",
+            "dem",
+            "des",
+            "ein",
+            "eine",
+            "einer",
+            "einem",
+            "einen",
+            "und",
+            "oder",
+            "aber",
+            "ist",
+            "sind",
+            "war",
+            "hat",
+            "haben",
+            "wird",
+            "kann",
+            "ich",
+            "du",
+            "er",
+            "sie",
+            "es",
+            "wir",
+            "ihr",
+            "was",
+            "wie",
+            "wo",
+            "wer",
+            "von",
+            "zu",
+            "in",
+            "mit",
+            "auf",
+            "an",
+            "fuer",
+            "für",
+            "ueber",
+            "über",
+            "bei",
+            "nach",
+            "vor",
+            "aus",
+            "um",
+            "nicht",
+            "auch",
+            "noch",
+            "schon",
+            "sehr",
+            "ja",
+            "nein",
+            "mal",
+            "so",
+            "da",
+            "dann",
+            "wenn",
+        }
+    )
 
     async def _search_facts_redis_fallback(
         self, query: str, limit: int, person: Optional[str] = None
@@ -796,12 +955,13 @@ class SemanticMemory:
             all_data = await pipe.execute()
 
             now = datetime.now(timezone.utc)
-            min_confidence = float(yaml_config.get("memory", {}).get(
-                "min_confidence_for_context", 0.4
-            ))
+            min_confidence = float(
+                yaml_config.get("memory", {}).get("min_confidence_for_context", 0.4)
+            )
             # Stoppwoerter entfernen, Wortstamm-Prefixe fuer Teilwort-Match
             query_words = {
-                w for w in query.lower().split()
+                w
+                for w in query.lower().split()
                 if w not in self._STOPWORDS and len(w) > 2
             }
             if not query_words:
@@ -834,7 +994,9 @@ class SemanticMemory:
                     stem_matches = len(query_stems & content_stems)
 
                 # Kombinierter Score: exakte Matches zaehlen doppelt
-                total_score = (exact_matches * 2 + stem_matches) / max(len(query_words) * 2 + len(query_stems), 1)
+                total_score = (exact_matches * 2 + stem_matches) / max(
+                    len(query_words) * 2 + len(query_stems), 1
+                )
 
                 if total_score > 0:
                     # Confidence als Boost-Faktor (0.5-1.0 → 0.75-1.0)
@@ -856,15 +1018,21 @@ class SemanticMemory:
                     fact_id = data.get("fact_id", "")
                     if isinstance(fact_id, bytes):
                         fact_id = fact_id.decode()
-                    facts.append({
-                        "content": content,
-                        "fact_id": fact_id,
-                        "category": data.get("category", b"general").decode() if isinstance(data.get("category", b"general"), bytes) else (data.get("category") or "general"),
-                        "person": data.get("person", b"unknown").decode() if isinstance(data.get("person", b"unknown"), bytes) else (data.get("person") or "unknown"),
-                        "confidence": confidence,
-                        "times_confirmed": int(data.get("times_confirmed", 1)),
-                        "relevance": min(1.0, total_score * conf_boost),
-                    })
+                    facts.append(
+                        {
+                            "content": content,
+                            "fact_id": fact_id,
+                            "category": data.get("category", b"general").decode()
+                            if isinstance(data.get("category", b"general"), bytes)
+                            else (data.get("category") or "general"),
+                            "person": data.get("person", b"unknown").decode()
+                            if isinstance(data.get("person", b"unknown"), bytes)
+                            else (data.get("person") or "unknown"),
+                            "confidence": confidence,
+                            "times_confirmed": int(data.get("times_confirmed", 1)),
+                            "relevance": min(1.0, total_score * conf_boost),
+                        }
+                    )
 
             facts.sort(key=lambda f: f["relevance"], reverse=True)
             return facts[:limit]
@@ -891,18 +1059,151 @@ class SemanticMemory:
             facts = []
             for data in results:
                 if data:
-                    facts.append({
-                        "content": data.get("content", ""),
-                        "category": data.get("category", "general"),
-                        "person": data.get("person", person),
-                        "confidence": float(data.get("confidence", 0.5)),
-                        "times_confirmed": int(data.get("times_confirmed", 1)),
-                    })
+                    facts.append(
+                        {
+                            "content": data.get("content", ""),
+                            "category": data.get("category", "general"),
+                            "person": data.get("person", person),
+                            "confidence": float(data.get("confidence", 0.5)),
+                            "times_confirmed": int(data.get("times_confirmed", 1)),
+                        }
+                    )
             facts.sort(key=lambda f: f["confidence"], reverse=True)
             return facts
         except Exception as e:
             logger.error("Fehler bei Person-Fakten: %s", e)
             return []
+
+    async def get_knowledge_gaps(self, room: str = "") -> list[str]:
+        """MCU Sprint 4: Identifies rooms/topics with insufficient preference data.
+
+        Returns list of gap descriptions for rooms with <2 preference facts.
+        """
+        if not self.redis:
+            return []
+
+        gaps = []
+        try:
+            # Get all preference facts
+            pref_ids = await self.redis.smembers("mha:facts:category:preference")
+            if not pref_ids:
+                return ["Noch keine Präferenzen gelernt"]
+
+            # Count preferences per room keyword
+            room_counts: dict[str, int] = {}
+            pipe = self.redis.pipeline()
+            for fid in list(pref_ids)[:200]:  # Cap for performance
+                fid_str = fid.decode() if isinstance(fid, bytes) else fid
+                pipe.hget(f"mha:fact:{fid_str}", "content")
+            contents = await pipe.execute()
+
+            room_keywords = [
+                "wohnzimmer",
+                "schlafzimmer",
+                "küche",
+                "kueche",
+                "bad",
+                "badezimmer",
+                "büro",
+                "buero",
+                "flur",
+                "kinderzimmer",
+                "arbeitszimmer",
+                "esszimmer",
+                "gästezimmer",
+                "gaestezimmer",
+            ]
+            for content in contents:
+                if not content:
+                    continue
+                text = content.decode() if isinstance(content, bytes) else content
+                text_lower = text.lower()
+                for rk in room_keywords:
+                    if rk in text_lower:
+                        room_counts[rk] = room_counts.get(rk, 0) + 1
+
+            # Find rooms with < 2 preferences
+            for rk in room_keywords:
+                if room and rk != room.lower().replace(" ", ""):
+                    continue
+                count = room_counts.get(rk, 0)
+                if count < 2:
+                    gaps.append(rk)
+
+        except Exception as e:
+            logger.debug("Knowledge gap detection fehlgeschlagen: %s", e)
+
+        return gaps[:5]  # Max 5 gaps at a time
+
+    async def generate_learning_report(self, days: int = 90) -> str:
+        """MCU Sprint 4: Generates a summary of learned facts over N days.
+
+        Groups by category, identifies trends, returns human-readable report.
+        """
+        if not self.redis:
+            return ""
+
+        try:
+            all_ids = await self.redis.smembers("mha:facts:all")
+            if not all_ids:
+                return "Noch keine Fakten gelernt."
+
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            categories: dict[str, int] = {}
+            total = 0
+            recent = 0
+
+            pipe = self.redis.pipeline()
+            id_list = list(all_ids)[:500]  # Cap for performance
+            for fid in id_list:
+                fid_str = fid.decode() if isinstance(fid, bytes) else fid
+                pipe.hgetall(f"mha:fact:{fid_str}")
+            results = await pipe.execute()
+
+            for data in results:
+                if not data:
+                    continue
+                total += 1
+                cat = data.get("category", b"general")
+                if isinstance(cat, bytes):
+                    cat = cat.decode()
+                categories[cat] = categories.get(cat, 0) + 1
+
+                created = data.get("created_at", b"")
+                if isinstance(created, bytes):
+                    created = created.decode()
+                if created:
+                    try:
+                        ct = datetime.fromisoformat(created)
+                        if ct >= cutoff:
+                            recent += 1
+                    except (ValueError, TypeError):
+                        pass
+
+            # Build report
+            lines = [f"Lernbericht der letzten {days} Tage:"]
+            lines.append(
+                f"Gesamt: {total} Fakten, davon {recent} in den letzten {days} Tagen."
+            )
+
+            if categories:
+                sorted_cats = sorted(
+                    categories.items(), key=lambda x: x[1], reverse=True
+                )
+                lines.append(
+                    "Kategorien: "
+                    + ", ".join(f"{cat} ({count})" for cat, count in sorted_cats[:5])
+                )
+
+            if recent > 20:
+                lines.append("Trend: Schnelles Lernen — viele neue Fakten.")
+            elif recent < 3:
+                lines.append("Trend: Wenig Neues gelernt — mehr Interaktion nötig.")
+
+            return " ".join(lines)
+        except Exception as e:
+            logger.debug("Learning report generation fehlgeschlagen: %s", e)
+            return ""
 
     _RELATIONSHIP_CACHE_TTL = 300.0  # 5 Minuten
 
@@ -916,6 +1217,7 @@ class SemanticMemory:
         ein Name bekannt ist.  Cache wird nach 5 Minuten als stale betrachtet.
         """
         import time as _time
+
         cache = getattr(self, "_relationship_cache", None)
         cache_ts = getattr(self, "_relationship_cache_ts", 0.0)
         if cache and (_time.monotonic() - cache_ts) < self._RELATIONSHIP_CACHE_TTL:
@@ -981,6 +1283,7 @@ class SemanticMemory:
                                 break
 
             import time as _time
+
             self._relationship_cache = cache
             self._relationship_cache_ts = _time.monotonic()
             if cache:
@@ -1007,12 +1310,14 @@ class SemanticMemory:
             facts = []
             for data in results:
                 if data:
-                    facts.append({
-                        "content": data.get("content", ""),
-                        "category": category,
-                        "person": data.get("person", "unknown"),
-                        "confidence": float(data.get("confidence", 0.5)),
-                    })
+                    facts.append(
+                        {
+                            "content": data.get("content", ""),
+                            "category": category,
+                            "person": data.get("person", "unknown"),
+                            "confidence": float(data.get("confidence", 0.5)),
+                        }
+                    )
             return facts
         except Exception as e:
             logger.error("Fehler bei Kategorie-Fakten: %s", e)
@@ -1037,16 +1342,18 @@ class SemanticMemory:
             facts = []
             for fact_id, data in zip(fact_ids_list, results):
                 if data:
-                    facts.append({
-                        "fact_id": data.get("fact_id", fact_id),
-                        "content": data.get("content", ""),
-                        "category": data.get("category", "general"),
-                        "person": data.get("person", "unknown"),
-                        "confidence": float(data.get("confidence", 0.5)),
-                        "times_confirmed": int(data.get("times_confirmed", 1)),
-                        "created_at": data.get("created_at", ""),
-                        "updated_at": data.get("updated_at", ""),
-                    })
+                    facts.append(
+                        {
+                            "fact_id": data.get("fact_id", fact_id),
+                            "content": data.get("content", ""),
+                            "category": data.get("category", "general"),
+                            "person": data.get("person", "unknown"),
+                            "confidence": float(data.get("confidence", 0.5)),
+                            "times_confirmed": int(data.get("times_confirmed", 1)),
+                            "created_at": data.get("created_at", ""),
+                            "updated_at": data.get("updated_at", ""),
+                        }
+                    )
             facts.sort(key=lambda f: f["confidence"], reverse=True)
             return facts
         except Exception as e:
@@ -1129,9 +1436,7 @@ class SemanticMemory:
             logger.info("Expliziter Fakt gespeichert: %s", content)
         return success
 
-    async def search_by_topic(
-        self, topic: str, limit: int = 10
-    ) -> list[dict]:
+    async def search_by_topic(self, topic: str, limit: int = 10) -> list[dict]:
         """
         Sucht alle Fakten zu einem Thema (semantisch).
         Gibt auch niedrig-relevante Treffer zurueck.
@@ -1148,29 +1453,46 @@ class SemanticMemory:
                 facts = []
                 if results and results.get("documents"):
                     for i, doc in enumerate(results["documents"][0]):
-                        meta = results["metadatas"][0][i] if results.get("metadatas") else {}
-                        distance = (
-                            results["distances"][0][i] if results.get("distances") else 1.0
+                        meta = (
+                            results["metadatas"][0][i]
+                            if results.get("metadatas")
+                            else {}
                         )
-                        fact_id = results["ids"][0][i] if results.get("ids") and results["ids"][0] else ""
+                        distance = (
+                            results["distances"][0][i]
+                            if results.get("distances")
+                            else 1.0
+                        )
+                        fact_id = (
+                            results["ids"][0][i]
+                            if results.get("ids") and results["ids"][0]
+                            else ""
+                        )
                         confidence = float(meta.get("confidence", 0.5))
                         # Grosszuegigerer Filter als search_facts, aber
                         # Confidence-Filter um veraltete Fakten auszuschliessen
                         if distance < 1.5 and confidence >= 0.3:
-                            facts.append({
-                                "content": doc,
-                                "fact_id": fact_id,
-                                "category": meta.get("category", "general"),
-                                "person": meta.get("person", "unknown"),
-                                "confidence": confidence,
-                                "times_confirmed": int(meta.get("times_confirmed", 1)),
-                                "relevance": 1.0 - min(distance, 1.0),
-                                "source": meta.get("source_conversation", ""),
-                                "created_at": meta.get("created_at", ""),
-                            })
+                            facts.append(
+                                {
+                                    "content": doc,
+                                    "fact_id": fact_id,
+                                    "category": meta.get("category", "general"),
+                                    "person": meta.get("person", "unknown"),
+                                    "confidence": confidence,
+                                    "times_confirmed": int(
+                                        meta.get("times_confirmed", 1)
+                                    ),
+                                    "relevance": 1.0 - min(distance, 1.0),
+                                    "source": meta.get("source_conversation", ""),
+                                    "created_at": meta.get("created_at", ""),
+                                }
+                            )
                 return facts
             except Exception as e:
-                logger.warning("ChromaDB search_by_topic fehlgeschlagen, versuche Redis-Fallback: %s", e)
+                logger.warning(
+                    "ChromaDB search_by_topic fehlgeschlagen, versuche Redis-Fallback: %s",
+                    e,
+                )
 
         # Redis-Fallback: Keyword-basierte Suche
         if self.redis:
@@ -1191,7 +1513,8 @@ class SemanticMemory:
         results = await self.search_by_topic(topic, limit=limit * 3)
         # Nur conversation_topic Fakten
         convos = [
-            r for r in results
+            r
+            for r in results
             if r.get("category") == "conversation_topic" and r.get("relevance", 0) > 0.3
         ]
         # Sortieren: Relevanz * Aktualitaets-Bonus
@@ -1201,6 +1524,7 @@ class SemanticMemory:
             if created:
                 try:
                     from datetime import datetime
+
                     _parsed_cr = datetime.fromisoformat(created)
                     if _parsed_cr.tzinfo is None:
                         _parsed_cr = _parsed_cr.replace(tzinfo=timezone.utc)
@@ -1244,9 +1568,13 @@ class SemanticMemory:
                         target = fact.get("content", "")
                         for fid, fdata in zip(all_ids, contents):
                             if fdata:
-                                fdata_str = fdata if isinstance(fdata, str) else fdata.decode()
+                                fdata_str = (
+                                    fdata if isinstance(fdata, str) else fdata.decode()
+                                )
                                 if fdata_str == target:
-                                    fact_id = fid if isinstance(fid, str) else fid.decode()
+                                    fact_id = (
+                                        fid if isinstance(fid, str) else fid.decode()
+                                    )
                                     break
                 except Exception as e:
                     logger.debug("Redis fact_id Lookup fehlgeschlagen: %s", e)
@@ -1283,14 +1611,16 @@ class SemanticMemory:
                 if data:
                     source = data.get("source_conversation", "")
                     if source.startswith("correction:"):
-                        corrections.append({
-                            "content": data.get("content", ""),
-                            "category": data.get("category", "general"),
-                            "person": data.get("person", "unknown"),
-                            "confidence": float(data.get("confidence", 0.5)),
-                            "source": source.replace("correction:", "", 1),
-                            "created_at": data.get("created_at", ""),
-                        })
+                        corrections.append(
+                            {
+                                "content": data.get("content", ""),
+                                "category": data.get("category", "general"),
+                                "person": data.get("person", "unknown"),
+                                "confidence": float(data.get("confidence", 0.5)),
+                                "source": source.replace("correction:", "", 1),
+                                "created_at": data.get("created_at", ""),
+                            }
+                        )
             corrections.sort(key=lambda f: f.get("created_at", ""), reverse=True)
             return corrections
         except Exception as e:
@@ -1318,13 +1648,15 @@ class SemanticMemory:
                 if data:
                     created = data.get("created_at", "")
                     if created.startswith(today):
-                        todays.append({
-                            "content": data.get("content", ""),
-                            "category": data.get("category", "general"),
-                            "person": data.get("person", "unknown"),
-                            "confidence": float(data.get("confidence", 0.5)),
-                            "source": data.get("source_conversation", ""),
-                        })
+                        todays.append(
+                            {
+                                "content": data.get("content", ""),
+                                "category": data.get("category", "general"),
+                                "person": data.get("person", "unknown"),
+                                "confidence": float(data.get("confidence", 0.5)),
+                                "source": data.get("source_conversation", ""),
+                            }
+                        )
             return todays
         except Exception as e:
             logger.error("Fehler bei heutigen Learnings: %s", e)
@@ -1361,8 +1693,11 @@ class SemanticMemory:
         # Lesbaren Content erzeugen
         try:
             from datetime import datetime as _dt
+
             parsed = _dt.strptime(date_mm_dd, "%m-%d")
-            date_readable = f"{parsed.day}. {_MONTH_NAMES.get(parsed.month, str(parsed.month))}"
+            date_readable = (
+                f"{parsed.day}. {_MONTH_NAMES.get(parsed.month, str(parsed.month))}"
+            )
         except (ValueError, TypeError):
             date_readable = date_mm_dd
 
@@ -1458,17 +1793,19 @@ class SemanticMemory:
                     except (ValueError, TypeError):
                         pass
 
-                results.append({
-                    "fact_id": data.get("fact_id", fact_id),
-                    "person": data.get("person", "unknown"),
-                    "date_type": data.get("date_type", ""),
-                    "date_mm_dd": date_mm_dd,
-                    "year": stored_year,
-                    "label": data.get("date_label", ""),
-                    "content": data.get("content", ""),
-                    "days_until": days_until,
-                    "anniversary_years": anniversary_years,
-                })
+                results.append(
+                    {
+                        "fact_id": data.get("fact_id", fact_id),
+                        "person": data.get("person", "unknown"),
+                        "date_type": data.get("date_type", ""),
+                        "date_mm_dd": date_mm_dd,
+                        "year": stored_year,
+                        "label": data.get("date_label", ""),
+                        "content": data.get("content", ""),
+                        "days_until": days_until,
+                        "anniversary_years": anniversary_years,
+                    }
+                )
 
             results.sort(key=lambda r: r["days_until"])
             return results
@@ -1517,6 +1854,7 @@ class SemanticMemory:
     def parse_year_from_text(text: str) -> str:
         """Extrahiert ein Jahreszahl aus Text (1900-2099)."""
         import re
+
         m = re.search(r"\b(19\d{2}|20\d{2})\b", text)
         return m.group(1) if m else ""
 
@@ -1591,14 +1929,19 @@ class SemanticMemory:
             try:
                 self._chroma_client.delete_collection("mha_semantic_facts")
                 from .embeddings import get_embedding_function
+
                 ef = get_embedding_function()
                 col_kwargs = {
                     "name": "mha_semantic_facts",
-                    "metadata": {"description": "MindHome Assistant - Extrahierte Fakten"},
+                    "metadata": {
+                        "description": "MindHome Assistant - Extrahierte Fakten"
+                    },
                 }
                 if ef:
                     col_kwargs["embedding_function"] = ef
-                self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
+                self.chroma_collection = self._chroma_client.get_or_create_collection(
+                    **col_kwargs
+                )
                 logger.info("Semantisches Gedaechtnis geloescht (%d Fakten)", deleted)
             except Exception as e:
                 logger.error("Fehler beim Neuerstellen der ChromaDB-Collection: %s", e)
@@ -1644,15 +1987,22 @@ class SemanticMemory:
             # Batch-Loeschung
             for fact_id in stale_ids:
                 try:
-                    await asyncio.to_thread(self.chroma_collection.delete, ids=[fact_id])
+                    await asyncio.to_thread(
+                        self.chroma_collection.delete, ids=[fact_id]
+                    )
                     await self.redis.delete(f"mha:fact:{fact_id}")
                     deleted += 1
                 except Exception as e:
-                    logger.debug("Stale fact %s Loeschung fehlgeschlagen: %s", fact_id, e)
+                    logger.debug(
+                        "Stale fact %s Loeschung fehlgeschlagen: %s", fact_id, e
+                    )
 
             if deleted:
-                logger.info("expire_stale_facts: %d Fakten aelter als %d Tage entfernt",
-                            deleted, max_age_days)
+                logger.info(
+                    "expire_stale_facts: %d Fakten aelter als %d Tage entfernt",
+                    deleted,
+                    max_age_days,
+                )
         except Exception as e:
             logger.warning("expire_stale_facts Fehler: %s", e)
 
