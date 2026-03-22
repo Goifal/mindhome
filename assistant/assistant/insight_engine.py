@@ -411,7 +411,7 @@ class InsightEngine:
                         logger.info(
                             "Insight [%s]: %s",
                             insight.get("check"),
-                            insight.get("message", "")[:80],
+                            insight.get("message", "")[:200],
                         )
             except asyncio.CancelledError:
                 break
@@ -1001,6 +1001,30 @@ class InsightEngine:
                     unique_active.append(c)
             if not unique_active:
                 return None
+            # Bei vielen Konflikten (>10) pruefen ob Schlafenszeit-Muster vorliegt
+            if len(unique_active) > 10:
+                bedtime_hints = [
+                    c for c in unique_active if "schlafenszeit" in c.get("hint", "").lower()
+                ]
+                if len(bedtime_hints) > 5:
+                    # Viele Schlafenszeit-Regeln aktiv → Gute-Nacht-Routine vorschlagen
+                    return {
+                        "check": "bedtime_suggestion",
+                        "message": "Es ist Schlafenszeit — mehrere Geraete sollten angepasst werden.",
+                        "urgency": "medium",
+                        "data": {
+                            "conflicts": unique_active[:5],
+                            "count": len(unique_active),
+                            "bedtime_hints": [c.get("hint", "") for c in bedtime_hints[:5]],
+                        },
+                    }
+                # Nicht-Schlafenszeit: nur high/critical melden
+                important = [
+                    c for c in unique_active if c.get("severity") in ("high", "critical")
+                ]
+                if not important:
+                    return None
+                unique_active = important
             hints = [c.get("hint", "") for c in unique_active[:3]]
             count = len(unique_active)
             return {

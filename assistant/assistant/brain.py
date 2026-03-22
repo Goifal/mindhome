@@ -551,6 +551,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Letzte fehlgeschlagene Anfrage für Retry bei "Ja"
         self._last_failed_query: Optional[str] = None
+        # Bedtime-Routine-Vorschlag: Timestamp wann Jarvis gefragt hat
+        self._pending_bedtime_routine: float = 0.0
 
         # Aktuelle Person (gesetzt in process(), nutzbar für Executor-Methoden)
         self._current_person: str = ""
@@ -2516,6 +2518,28 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 emitted=True,
             )
         # whisper_cmd gesetzt aber >3 Woerter: Modus aktiv, Befehl weiterverarbeiten
+
+        # Bedtime-Routine-Bestaetigung: User sagt "Ja" auf "Soll ich die
+        # Gute-Nacht-Routine starten?" — innerhalb von 5 Minuten gueltig
+        import time as _time_mod
+
+        _confirm_words = (
+            "ja", "ok", "okay", "bitte", "ja bitte", "ja gerne", "mach",
+            "mach das", "gerne", "klar", "na klar",
+        )
+        if (
+            self._pending_bedtime_routine
+            and (_time_mod.time() - self._pending_bedtime_routine) < 300
+            and text.strip().lower().rstrip("!.") in _confirm_words
+        ):
+            self._pending_bedtime_routine = 0.0
+            logger.info("Bedtime-Routine bestaetigt — starte Gute-Nacht-Routine")
+            if hasattr(self, "routines") and self.routines:
+                result = await self.routines.execute_goodnight(person or "")
+                return result if result else "Gute Nacht! Die Routine wurde gestartet."
+            return "Die Gute-Nacht-Routine ist leider nicht verfuegbar."
+        if text.strip().lower().rstrip("!.") in ("nein", "nee", "nicht", "lass mal"):
+            self._pending_bedtime_routine = 0.0
 
         # Retry-Erkennung: Wenn letzte Anfrage fehlgeschlagen ist und User "Ja" sagt,
         # die urspruengliche Anfrage nochmal verarbeiten.
@@ -17443,6 +17467,13 @@ Regeln:
             return
         urgency = insight.get("urgency", "low")
         check = insight.get("check", "unknown")
+
+        # Bedtime-Suggestion: An ProactivePlanner weiterleiten statt
+        # generische Conflict-Meldung — Jarvis fragt "Soll ich...?"
+        if check == "bedtime_suggestion":
+            await self._handle_bedtime_suggestion(insight)
+            return
+
         if not await self._callback_should_speak(urgency, source=f"Insight/{check}"):
             logger.info(
                 "Insight unterdrückt (Silence Matrix): [%s] %s", check, message[:500]
@@ -17493,6 +17524,32 @@ Regeln:
             )
         except Exception as e:
             logger.debug("Insight-Aktivitaetslog fehlgeschlagen: %s", e)
+
+    async def _handle_bedtime_suggestion(self, insight: dict):
+        """Leitet Schlafenszeit-Insight an ProactivePlanner weiter.
+
+        Statt 93 Conflict-Warnings fragt Jarvis: 'Soll ich die
+        Gute-Nacht-Routine starten?'
+        """
+        import time as _time_mod
+
+        urgency = insight.get("urgency", "medium")
+        if not await self._callback_should_speak(urgency, source="Insight/bedtime"):
+            logger.info("Bedtime-Suggestion unterdrueckt (Silence Matrix)")
+            return
+        if await self.notification_dedup.is_duplicate(
+            "bedtime_suggestion", source="insight/bedtime_suggestion", urgency=urgency
+        ):
+            logger.info("Bedtime-Suggestion unterdrueckt (Dedup)")
+            return
+
+        # Proaktive Frage formulieren
+        message = "Es ist Schlafenszeit. Soll ich die Gute-Nacht-Routine starten?"
+        formatted = await self._safe_format(message, urgency)
+        await self._speak_and_emit(formatted)
+        self._remember_exchange("[proaktiv: Schlafenszeit]", formatted)
+        self._pending_bedtime_routine = _time_mod.time()
+        logger.info("Bedtime-Suggestion zugestellt — warte auf Bestaetigung")
 
     async def _handle_intent_reminder(self, reminder: dict):
         """Callback für Intent-Erinnerungen."""
