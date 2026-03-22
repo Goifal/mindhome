@@ -340,7 +340,7 @@ MCU-Jarvis warnt Tony vor Vereisung beim Flug (Iron Man 1), rettet ihn im freien
 1. **Insight-to-Proactive Bridge** — InsightEngine-Erkenntnisse (Energie-Anomalie, Wetter-Kontrast) direkt als LOW-Priority ProactiveManager-Events einspeisen statt nur passiv abrufbar zu sein. `[WÖCHENTLICH]`
 2. **Ankunfts-Event-Zusammenfassung** — "Während du weg warst: Die Waschmaschine ist fertig, der Paketdienst war da, und im Bad sind es 19 Grad." StateChangeLog + ProactiveManager verbinden. `[TÄGLICH]`
 3. **Domain-spezifische Kalender-Vorbereitungen** — Meeting → Büro-Licht auf, Sport → Wecker, Gäste → Gäste-Modus. Aktuell generische Vorschläge. `[WÖCHENTLICH]`
-4. 🆕 **Wetter-Vorhersage-Integration** — Alle proaktiven Checks sind reaktiv (Regen jetzt → Fenster-Warnung). MCU-Jarvis würde vorausschauend handeln: "In 2 Stunden regnet es — Fenster jetzt schließen?" HA weather.*-Entities haben Forecast-Daten. `[FEHLT KOMPLETT]` `[WÖCHENTLICH]` *Hinzugefügt in Durchlauf #2*
+4. 🆕 **Proaktive Wetter-Vorhersage-Warnungen** — Forecast-Daten werden bereits genutzt (insight_engine.py:2283-2326, anticipation.py:1149+1887, energy_optimizer.py:1277), aber nur reaktiv. MCU-Jarvis würde vorausschauend handeln: "In 2 Stunden regnet es — Fenster jetzt schließen?" `[VERBESSERBAR]` `[WÖCHENTLICH]` *Korrigiert in Durchlauf #2 Session 5: war FEHLT KOMPLETT, ist VERBESSERBAR*
 5. 🆕 **Kontextuelle Routine-Varianten** — "Das Übliche" ist global, aber MCU-Jarvis würde Kontext berücksichtigen: Montag-Morgen ≠ Sonntag-Morgen, Regen ≠ Sonne. Patterns müssten nach (Wochentag + Wetter + Anwesenheit) clustern. `[FEHLT KOMPLETT]` `[WÖCHENTLICH]` *Hinzugefügt in Durchlauf #2*
 
 ### Konkrete Verbesserungsvorschläge
@@ -528,6 +528,14 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 ---
 
 ## Changelog
+
+### Durchlauf #2 — Session 5 (Gegenprüfung) — 2026-03-22
+- 1 Erkenntnis als [KORRIGIERT] markiert: Wetter-Vorhersage war FEHLT KOMPLETT → ist VERBESSERBAR (insight_engine.py:2283, anticipation.py:1149, energy_optimizer.py:1277 nutzen Forecast-Daten)
+- 0 Zeilenreferenzen aktualisiert (Stichproben bestätigt)
+- 0 neue Erkenntnisse hinzugefügt
+- Score-Berechnung verifiziert: 86.6% ✓ korrekt
+- Schutzliste: 17 Einträge, kein Sprint-6-Task verletzt sie
+- Qualitätskriterien: Alle Sprint-Tasks haben konkrete Dateipfade, Aufgaben sind ausführbar
 
 ### Durchlauf #2 — Session 4 — 2026-03-22
 - Alle 5 Sprints als `[x] Abgeschlossen` markiert
@@ -1539,7 +1547,7 @@ Die folgenden 15 Aufgaben wurden in Durchlauf #2 identifiziert und sind noch off
 7. `[ ]` Insight-to-Proactive Bridge (Cat 3) — Klein
 8. `[ ]` Ankunfts-Event-Log-Zusammenfassung (Cat 3+4) — Mittel
 9. `[ ]` Domain-spezifische Kalender-Vorbereitung (Cat 3) — Mittel
-10. `[ ]` Wetter-Vorhersage-Integration (Cat 3) — Mittel
+10. `[ ]` Proaktive Wetter-Vorhersage-Warnungen (Cat 3) — Klein (Forecast-Daten existieren bereits)
 11. `[ ]` Kontextuelle Routine-Clustering (Cat 3) — Groß
 12. `[ ]` Guest-Mode Notification-Filter (Cat 4) — Klein
 
