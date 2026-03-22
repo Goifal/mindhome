@@ -944,7 +944,9 @@ class ProactiveManager:
                 )
                 logger.error(
                     "HA WebSocket Fehler (Versuch %d, naechster in %ds): %s",
-                    _reconnect_attempt, backoff, e,
+                    _reconnect_attempt,
+                    backoff,
+                    e,
                 )
                 if self._running:
                     await asyncio.sleep(backoff)
@@ -2114,6 +2116,31 @@ class ProactiveManager:
                         return
             except Exception as e:
                 logger.warning("Follow-up Cooldown-Check fehlgeschlagen: %s", e)
+
+        # MCU Sprint 2: Also check ConversationMemory follow-ups
+        if (
+            hasattr(self.brain, "conversation_memory")
+            and self.brain.conversation_memory
+        ):
+            try:
+                cm_followups = (
+                    await self.brain.conversation_memory.get_pending_followups()
+                )
+                for fu in cm_followups:
+                    topic = fu.get("topic", "")
+                    if topic and not any(
+                        c.get("topic", "") == topic for c in candidates
+                    ):
+                        candidates.append(
+                            {
+                                "topic": topic,
+                                "context": fu.get("context", ""),
+                                "person": fu.get("person", ""),
+                                "age_minutes": 120,  # Treat as old enough
+                            }
+                        )
+            except Exception as e:
+                logger.debug("ConversationMemory Follow-up Check fehlgeschlagen: %s", e)
 
         # Aeltestes Thema zuerst
         candidates.sort(key=lambda t: t.get("age_minutes", 0), reverse=True)

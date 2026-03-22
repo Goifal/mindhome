@@ -31,20 +31,43 @@ logger = logging.getLogger(__name__)
 
 # Referenz-Woerter die auf vorherige Entitaeten/Raeume verweisen
 ENTITY_REFERENCES_DE = {
-    "es", "das", "den", "die", "ihn", "ihm", "ihr", "dem",
-    "das gleiche", "den gleichen", "die gleiche", "dasselbe",
-    "das licht", "die lampe", "das ding",
+    "es",
+    "das",
+    "den",
+    "die",
+    "ihn",
+    "ihm",
+    "ihr",
+    "dem",
+    "das gleiche",
+    "den gleichen",
+    "die gleiche",
+    "dasselbe",
+    "das licht",
+    "die lampe",
+    "das ding",
 }
 
 ROOM_REFERENCES_DE = {
-    "dort", "da", "dahin", "drin", "dorthin",
-    "im gleichen raum", "im selben raum", "da drin",
+    "dort",
+    "da",
+    "dahin",
+    "drin",
+    "dorthin",
+    "im gleichen raum",
+    "im selben raum",
+    "da drin",
     "hier",  # bezieht sich auf aktuellen Raum
 }
 
 ACTION_REFERENCES_DE = {
-    "nochmal", "das gleiche", "genauso", "wieder",
-    "auch", "ebenfalls", "dasselbe",
+    "nochmal",
+    "das gleiche",
+    "genauso",
+    "wieder",
+    "auch",
+    "ebenfalls",
+    "dasselbe",
 }
 
 # C5: Temporale Referenzen fuer cross-session Aktionen
@@ -93,6 +116,7 @@ class DialogueState:
         self.multi_step_context: Optional[dict] = None
         self.last_update: float = time.time()
         self.turn_count: int = 0
+        self._last_turn_words: set[str] = set()  # MCU Sprint 2: Topic-Switch-Detection
 
     def is_stale(self, timeout_seconds: int = 300) -> bool:
         """Prueft ob der Dialog-Zustand veraltet ist."""
@@ -156,7 +180,11 @@ class DialogueStateManager:
             if len(self._states) > 50:
                 oldest = sorted(
                     self._states,
-                    key=lambda k: self._states[k].last_update if hasattr(self._states[k], 'last_update') else 0,
+                    key=lambda k: (
+                        self._states[k].last_update
+                        if hasattr(self._states[k], "last_update")
+                        else 0
+                    ),
                 )[:25]
                 for old_key in oldest:
                     del self._states[old_key]
@@ -193,6 +221,84 @@ class DialogueStateManager:
         state.last_update = time.time()
         state.turn_count += 1
 
+        # MCU Sprint 2: Topic-Switch-Detection via Jaccard word overlap
+        if text and state.turn_count > 1 and state._last_turn_words:
+            _reference_words = {
+                "es",
+                "das",
+                "die",
+                "der",
+                "den",
+                "dem",
+                "dort",
+                "da",
+                "hier",
+                "nochmal",
+                "auch",
+                "wieder",
+                "genau",
+                "gleich",
+                "selbe",
+            }
+            current_words = set(text.lower().split()) - _reference_words
+            prev_words = state._last_turn_words
+            if current_words and prev_words:
+                intersection = current_words & prev_words
+                union = current_words | prev_words
+                jaccard = len(intersection) / len(union) if union else 0
+                has_reference = bool(set(text.lower().split()) & _reference_words)
+                if jaccard < 0.1 and not has_reference:
+                    logger.info(
+                        "Topic-Switch erkannt (Jaccard=%.2f): '%s'",
+                        jaccard,
+                        text[:60],
+                    )
+                    state.reset()
+                    state.last_update = time.time()
+                    state.turn_count = 1  # Restart count after reset
+
+        # Update last turn words for next comparison
+        if text:
+            _stop = {
+                "ich",
+                "du",
+                "ein",
+                "eine",
+                "einer",
+                "und",
+                "oder",
+                "ist",
+                "sind",
+                "hat",
+                "habe",
+                "der",
+                "die",
+                "das",
+                "den",
+                "dem",
+                "in",
+                "im",
+                "am",
+                "an",
+                "auf",
+                "zu",
+                "für",
+                "fuer",
+                "mit",
+                "von",
+                "nicht",
+                "kein",
+                "keine",
+                "ja",
+                "nein",
+                "bitte",
+                "danke",
+                "mal",
+                "noch",
+                "schon",
+            }
+            state._last_turn_words = set(text.lower().split()) - _stop
+
         if room:
             # Duplikate vermeiden, neueste zuerst
             if room.lower() not in state.last_rooms:
@@ -222,16 +328,20 @@ class DialogueStateManager:
                 loop = asyncio.get_running_loop()
                 task = loop.create_task(self._save_important_references(person))
                 task.add_done_callback(
-                    lambda t: logger.warning(
-                        "save_important_references failed: %s", t.exception()
+                    lambda t: (
+                        logger.warning(
+                            "save_important_references failed: %s", t.exception()
+                        )
+                        if not t.cancelled() and t.exception()
+                        else None
                     )
-                    if not t.cancelled() and t.exception()
-                    else None
                 )
             except RuntimeError:
                 pass  # Kein laufender Event-Loop
 
-    def resolve_references(self, text: str, person: str = "", current_room: str = "") -> dict:
+    def resolve_references(
+        self, text: str, person: str = "", current_room: str = ""
+    ) -> dict:
         """Loest Referenzen im User-Text auf.
 
         Erkennt Pronomen/Referenzen und ersetzt sie durch konkrete Entities/Raeume.
@@ -267,7 +377,7 @@ class DialogueStateManager:
 
         # Entity-Referenzen aufloesen ("mach es aus", "schalte das ein")
         for ref in ENTITY_REFERENCES_DE:
-            if re.search(r'\b' + re.escape(ref) + r'\b', text_lower):
+            if re.search(r"\b" + re.escape(ref) + r"\b", text_lower):
                 if state.last_entities:
                     last_ent = state.last_entities[0]
                     resolved_entities.append(last_ent)
@@ -277,7 +387,7 @@ class DialogueStateManager:
 
         # Raum-Referenzen aufloesen ("mach dort das Licht an")
         for ref in ROOM_REFERENCES_DE:
-            if re.search(r'\b' + re.escape(ref) + r'\b', text_lower):
+            if re.search(r"\b" + re.escape(ref) + r"\b", text_lower):
                 if ref == "hier" and current_room:
                     resolved_rooms.append(current_room)
                     had_references = True
@@ -291,10 +401,15 @@ class DialogueStateManager:
 
         # Aktions-Referenzen ("nochmal", "das gleiche", "auch im Buero")
         for ref in ACTION_REFERENCES_DE:
-            if re.search(r'\b' + re.escape(ref) + r'\b', text_lower) and state.last_actions:
+            if (
+                re.search(r"\b" + re.escape(ref) + r"\b", text_lower)
+                and state.last_actions
+            ):
                 last_action = state.last_actions[0]
                 had_references = True
-                hints.append(f"'{ref}' bezieht sich auf letzte Aktion: {last_action.get('description', str(last_action))}")
+                hints.append(
+                    f"'{ref}' bezieht sich auf letzte Aktion: {last_action.get('description', str(last_action))}"
+                )
                 break
 
         # C5: Temporale Referenzen ("wie gestern", "wie letzte Woche")
@@ -342,8 +457,13 @@ class DialogueStateManager:
         # Wochentag-spezifische Referenzen ("wie am Montag")
         if not matched_ref:
             weekday_map = {
-                "montag": 0, "dienstag": 1, "mittwoch": 2, "donnerstag": 3,
-                "freitag": 4, "samstag": 5, "sonntag": 6,
+                "montag": 0,
+                "dienstag": 1,
+                "mittwoch": 2,
+                "donnerstag": 3,
+                "freitag": 4,
+                "samstag": 5,
+                "sonntag": 6,
             }
             for day_name, day_num in weekday_map.items():
                 pattern = f"wie am {day_name}"
@@ -395,7 +515,7 @@ class DialogueStateManager:
                 # Deduplizieren und max 3 Aktionen zeigen
                 unique = list(dict.fromkeys(matching_actions))[:3]
                 actions_str = ", ".join(unique)
-                return (f"'{matched_ref}' referenziert fruehere Aktionen: {actions_str}")
+                return f"'{matched_ref}' referenziert fruehere Aktionen: {actions_str}"
 
         except Exception as e:
             logger.debug("C5 Temporal Reference Fehler: %s", e)
@@ -451,7 +571,11 @@ class DialogueStateManager:
             matching_actions = []
             for entry_raw in raw:
                 try:
-                    entry_str = entry_raw.decode() if isinstance(entry_raw, bytes) else entry_raw
+                    entry_str = (
+                        entry_raw.decode()
+                        if isinstance(entry_raw, bytes)
+                        else entry_raw
+                    )
                     entry = json.loads(entry_str)
                     ts_str = entry.get("timestamp", "")
                     if not ts_str:
@@ -459,7 +583,11 @@ class DialogueStateManager:
                     ts = datetime.fromisoformat(ts_str)
                     if window_start <= ts <= window_end:
                         # Person-Filter wenn angegeben
-                        if person and entry.get("person", "") and entry.get("person", "").lower() != person.lower():
+                        if (
+                            person
+                            and entry.get("person", "")
+                            and entry.get("person", "").lower() != person.lower()
+                        ):
                             continue
                         action = entry.get("action", entry.get("function", ""))
                         desc = entry.get("description", action)
@@ -499,17 +627,22 @@ class DialogueStateManager:
         key = (person or "_default").lower()
 
         try:
-            ref_data = json.dumps({
-                "entities": list(state.last_entities)[:10],
-                "rooms": list(state.last_rooms),
-                "actions": [
-                    {"action": a.get("action", a.get("function", "")),
-                     "description": a.get("description", "")[:100]}
-                    for a in list(state.last_actions)[:3]
-                ],
-                "domains": list(state.last_domains),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }, ensure_ascii=False)
+            ref_data = json.dumps(
+                {
+                    "entities": list(state.last_entities)[:10],
+                    "rooms": list(state.last_rooms),
+                    "actions": [
+                        {
+                            "action": a.get("action", a.get("function", "")),
+                            "description": a.get("description", "")[:100],
+                        }
+                        for a in list(state.last_actions)[:3]
+                    ],
+                    "domains": list(state.last_domains),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+                ensure_ascii=False,
+            )
 
             await self._redis.hset(self._XREF_KEY, key, ref_data)
             await self._redis.expire(self._XREF_KEY, 14 * 86400)  # 14 Tage TTL
@@ -579,7 +712,9 @@ class DialogueStateManager:
 
             hints = []
             if entities:
-                hints.append(f"Letzte Entitaeten (Cross-Session): {', '.join(entities[:3])}")
+                hints.append(
+                    f"Letzte Entitaeten (Cross-Session): {', '.join(entities[:3])}"
+                )
             if rooms:
                 hints.append(f"Letzte Raeume: {', '.join(rooms[:3])}")
 
@@ -614,13 +749,15 @@ class DialogueStateManager:
         state.state = "awaiting_clarification"
         state.pending_clarification = {
             "question": question,
-            "options": options[:self.max_clarification_options],
+            "options": options[: self.max_clarification_options],
             "original_text": original_text,
             "domain": domain,
             "timestamp": time.time(),
         }
         state.last_update = time.time()
-        logger.info("Klaerungsfrage gestartet: '%s' (Optionen: %s)", question, options[:3])
+        logger.info(
+            "Klaerungsfrage gestartet: '%s' (Optionen: %s)", question, options[:3]
+        )
 
     def check_clarification_answer(self, text: str, person: str = "") -> Optional[dict]:
         """Prueft ob der Text eine Antwort auf eine Klaerungsfrage ist.
@@ -722,7 +859,9 @@ class DialogueStateManager:
         state = self._get_state(person)
         return state.to_dict()
 
-    def needs_clarification(self, text: str, entities: list[str], person: str = "") -> Optional[dict]:
+    def needs_clarification(
+        self, text: str, entities: list[str], person: str = ""
+    ) -> Optional[dict]:
         """Prueft ob eine Klaerungsfrage noetig ist.
 
         Z.B. wenn "Mach das Licht an" in einem Raum mit 5 Lichtern gesagt wird.
@@ -745,14 +884,20 @@ class DialogueStateManager:
         # Wenn der Text schon spezifisch genug ist, keine Klaerung
         text_lower = text.lower()
         specificity_markers = [
-            "alle", "alles", "komplett", "ueberall", "jede", "jeden",
-            "zusammen", "gleichzeitig",
+            "alle",
+            "alles",
+            "komplett",
+            "ueberall",
+            "jede",
+            "jeden",
+            "zusammen",
+            "gleichzeitig",
         ]
         if any(m in text_lower for m in specificity_markers):
             return None
 
         # Max. Optionen begrenzen
-        options = entities[:self.max_clarification_options]
+        options = entities[: self.max_clarification_options]
 
         return {
             "question": f"Welches meinst du? ({', '.join(options[:3])}{'...' if len(options) > 3 else ''})",
@@ -777,23 +922,44 @@ class DialogueStateManager:
         state = self._get_state(person)
 
         if state.turn_count == 0:
-            return {"is_continuation": False, "confidence": 0.0, "suggested_context": ""}
+            return {
+                "is_continuation": False,
+                "confidence": 0.0,
+                "suggested_context": "",
+            }
 
         text_lower = text.lower()
 
         # Explizite Topic-Wechsel-Marker
         topic_switch_markers = [
-            "anderes thema", "etwas anderes", "uebrigens", "ach ja",
-            "mal was anderes", "andere frage", "neues thema",
+            "anderes thema",
+            "etwas anderes",
+            "uebrigens",
+            "ach ja",
+            "mal was anderes",
+            "andere frage",
+            "neues thema",
         ]
         if any(m in text_lower for m in topic_switch_markers):
-            return {"is_continuation": False, "confidence": 0.9, "suggested_context": ""}
+            return {
+                "is_continuation": False,
+                "confidence": 0.9,
+                "suggested_context": "",
+            }
 
         # Continuation-Marker
         continuation_markers = [
-            "und", "ausserdem", "noch", "auch", "dazu",
-            "was ist mit", "wie waere es mit", "kannst du auch",
-            "und was", "und wie", "noch eine",
+            "und",
+            "ausserdem",
+            "noch",
+            "auch",
+            "dazu",
+            "was ist mit",
+            "wie waere es mit",
+            "kannst du auch",
+            "und was",
+            "und wie",
+            "noch eine",
         ]
 
         is_cont = any(text_lower.startswith(m) for m in continuation_markers)
@@ -838,7 +1004,9 @@ class DialogueStateManager:
             action_name = last.get("action", "unbekannt")
             parts.append(f"Letzte Aktion: {action_name}")
         if state.state == "awaiting_clarification" and state.pending_clarification:
-            parts.append(f"Offene Frage: {state.pending_clarification.get('question', '')}")
+            parts.append(
+                f"Offene Frage: {state.pending_clarification.get('question', '')}"
+            )
 
         return " | ".join(parts) if parts else ""
 
@@ -937,7 +1105,9 @@ class DialogueStateManager:
                 negated_entity = match.group(1).strip()
                 if not hasattr(state, "negated_entities"):
                     state.negated_entities = []
-                state.negated_entities = [negated_entity] + getattr(state, "negated_entities", [])
+                state.negated_entities = [negated_entity] + getattr(
+                    state, "negated_entities", []
+                )
                 state.negated_entities = state.negated_entities[:5]
                 logger.debug("Negation erkannt: '%s'", negated_entity)
                 return negated_entity

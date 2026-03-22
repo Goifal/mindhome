@@ -1082,6 +1082,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Phase 6: Redis für Personality Engine (Formality Score, Counter)
         self.personality.set_redis(self.memory.redis)
+        # MCU Sprint 2: SemanticMemory für Meinungs-Engine
+        if hasattr(self, "semantic_memory"):
+            self.personality.set_semantic_memory(self.semantic_memory)
 
         # C5: Redis fuer cross-session Intent-Referenzierung
         self.dialogue_state.set_redis(self.memory.redis)
@@ -1092,6 +1095,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Gelernten Sarkasmus-Level laden
         await self.personality.load_learned_sarcasm_level()
+        # MCU Sprint 2: Running Gags + Learned Opinions aus Redis laden
+        await self.personality.load_running_gags_from_redis()
+        await self.personality.load_learned_opinions()
 
         # F-069: Nicht-kritische Module in try/except wrappen für Degraded Startup.
         # Wenn ein Modul fehlschlaegt, laeuft der Assistent trotzdem —
@@ -1881,6 +1887,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 self.latency_tracker.flush_to_redis(),
                 name="latency_flush",
             )
+
+        # MCU Sprint 2: Record response pattern for variation tracking
+        if response:
+            try:
+                self.personality.record_response_pattern(response)
+            except Exception:
+                pass  # Non-critical, silent fallback
+
         return d
 
     async def _llm_with_cascade(
@@ -4471,6 +4485,33 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             logger.info(
                 "Explain Fast-Path: keine Entscheidungen vorhanden, Fallback auf LLM"
             )
+
+        # ----------------------------------------------------------------
+        # MCU Sprint 2: Streaming Feedback — sofort "Ich prüfe das" bei
+        # Voice-Interaktion und erwarteter Latenz >2s (Smart/Deep Modell)
+        # ----------------------------------------------------------------
+        if (
+            voice_metadata
+            and profile.category not in ("device_command", "device_query", "explain")
+            and not self._request_from_pipeline
+        ):
+            from .config import get_person_title as _gpt
+
+            _ack_title = _gpt()
+            _ack_text = f"Ich prüfe das, {_ack_title}."
+            try:
+                _ack_tts = self.tts_enhancer.enhance(
+                    _ack_text, message_type="confirmation"
+                )
+                _ack_task = asyncio.create_task(
+                    self._speak_and_emit(_ack_text, room=room, tts_data=_ack_tts)
+                )
+                _ack_task.add_done_callback(
+                    lambda t: t.exception() if not t.cancelled() else None
+                )
+                logger.debug("Streaming-Feedback: '%s' gesendet", _ack_text)
+            except Exception as e:
+                logger.debug("Streaming-Feedback fehlgeschlagen: %s", e)
 
         # ----------------------------------------------------------------
         # MEGA-PARALLEL GATHER: Context Build, alle Subsysteme, Running Gag,
@@ -9256,9 +9297,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         original = text
 
         try:
-            return self._filter_response_inner(
+            text = self._filter_response_inner(
                 text, filter_config, max_sentences_override
             )
+            # MCU Sprint 2: Humor Quality Gate — filter low-quality humor
+            text = self.personality.filter_humor_quality(text)
+            return text
         except re.error as e:
             logger.error(
                 "Regex-Fehler in _filter_response: %s (text=%r)",

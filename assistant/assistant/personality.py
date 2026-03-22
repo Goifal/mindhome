@@ -177,6 +177,96 @@ CONTEXTUAL_HUMOR_TRIGGERS = {
         "Wochenende und schon wach, {title}?",
         "Wochenendmorgens? Ambitioniert, {title}.",
     ],
+    # MCU Sprint 2: Erweiterte Humor-Trigger (30+)
+    # Wiederholte Anfragen
+    ("any", "repeated_request"): [
+        "Schon wieder, {title}? Wird erledigt.",
+        "Déjà-vu, {title}. Aber natürlich.",
+        "Wie eben. Selbstverständlich.",
+    ],
+    # Widersprüchliche Befehle
+    ("any", "contradicting_command"): [
+        "Erst {prev_action}, jetzt {action}? Flexibel, {title}.",
+        "Wir ändern die Strategie. Wird umgesetzt.",
+        "Planänderung registriert, {title}.",
+    ],
+    # Ungewöhnliche Uhrzeiten (3-5 Uhr)
+    ("any", "very_late_night"): [
+        "Um {hour} Uhr? Ambitioniert, {title}.",
+        "{hour} Uhr. Ich frage nicht nach, {title}.",
+        "Technisch gesehen ist das morgen, {title}.",
+    ],
+    # Wetter-Kontraste
+    ("set_climate", "heating_summer"): [
+        "Heizung bei {outdoor_temp}° Außentemperatur? Sehr wohl, {title}.",
+        "Heizen im Sommer. Wird umgesetzt.",
+    ],
+    ("set_climate", "cooling_winter"): [
+        "Kühlen bei {outdoor_temp}° draußen. Darf ich das hinterfragen, {title}?",
+        "Fenster öffnen wäre effizienter. Aber wird gemacht.",
+    ],
+    # Rekorde
+    ("any", "daily_record"): [
+        "Das ist der {count}. Befehl heute. Neuer Rekord, {title}.",
+        "Befehl Nummer {count} für heute. Beeindruckend, {title}.",
+    ],
+    ("set_light", "light_command_record"): [
+        "Der {count}. Lichtbefehl heute. Ich halte die Statistik, {title}.",
+        "{count} Lichtbefehle an einem Tag. Respektabel.",
+    ],
+    # Szenen-Humor
+    ("set_scene", "frequent_scene"): [
+        "Ihre Lieblingsszene, {title}. Wird aktiviert.",
+        "Szene '{scene}'. Wie immer eine gute Wahl.",
+    ],
+    ("set_scene", "scene_immediately_changed"): [
+        "Szene gewechselt nach {seconds} Sekunden. Schnelle Entscheidung, {title}.",
+        "Doch nicht '{prev_scene}'? Wird geändert.",
+    ],
+    # Heizung-Extreme
+    ("set_climate", "extreme_temp"): [
+        "{temp} Grad. Ich nehme an, das ist Absicht, {title}.",
+        "{temp} Grad. Ambitioniert, aber wird umgesetzt.",
+    ],
+    # Timer-Humor
+    ("set_timer", "many_timers"): [
+        "Timer Nummer {count}. Ich behalte alle im Auge, {title}.",
+        "{count} gleichzeitige Timer. Organisiert, {title}.",
+    ],
+    ("set_timer", "very_short_timer"): [
+        "{seconds} Sekunden? Ich starte den Countdown, {title}.",
+        "Kurzfristig. Wird eingerichtet.",
+    ],
+    # Musik-Humor
+    ("play_media", "volume_extreme"): [
+        "Lautstärke auf {volume}%. Die Nachbarn werden begeistert sein, {title}.",
+        "{volume}% Lautstärke. Wird umgesetzt.",
+    ],
+    # Rollladen-Kontraste
+    ("set_cover", "close_sunny"): [
+        "Rollladen zu bei Sonnenschein. Verdunkelung gewünscht, {title}?",
+        "Die Sonne aussperren. Verstanden, {title}.",
+    ],
+    # Fenster-Humor
+    ("any", "window_open_cold"): [
+        "Fenster offen bei {temp}° Außentemperatur. Frische Luft, {title}?",
+        "Lüften bei {temp} Grad. Kurz und knackig empfohlen.",
+    ],
+    # Abwesenheits-Humor
+    ("any", "command_while_away"): [
+        "Fernsteuerung, {title}? Wird erledigt.",
+        "Von unterwegs. Selbstverständlich, {title}.",
+    ],
+    # Gäste-Humor
+    ("any", "guest_present"): [
+        "Mit Rücksicht auf die Gäste, {title}. Wird umgesetzt.",
+        "Vor Publikum besonders elegant, {title}.",
+    ],
+    # Energieverbrauch
+    ("any", "high_energy_time"): [
+        "Hoher Verbrauch gerade. Aber wird gemacht, {title}.",
+        "Der Stromzähler notiert es, {title}.",
+    ],
 }
 
 # Humor-Kategorien für Feedback-Tracking
@@ -398,6 +488,8 @@ class PersonalityEngine:
         )
         self._redis = None
         self._ollama = None
+        self._semantic_memory = None  # MCU Sprint 2: Opinion Fact-Base
+        self._learned_opinions: dict[str, str] = {}  # MCU Sprint 2: Cached opinions
         # F-021: Per-User Confirmation-Tracking (statt shared Instanzvariable)
         self._last_confirmations: dict[str, list[str]] = {}
         # F-022: Per-User Interaction-Time (statt shared float)
@@ -414,6 +506,9 @@ class PersonalityEngine:
 
         # Phase 2A: Running-Gag tracking (max 3 active)
         self._running_gags: dict = {}
+
+        # MCU Sprint 2: Response-Varianz — letzte Antwort-Strukturen tracken
+        self._response_patterns: collections.deque = collections.deque(maxlen=5)
 
         # Easter Eggs laden
         self._easter_eggs = self._load_easter_eggs()
@@ -457,6 +552,10 @@ class PersonalityEngine:
         """Setzt Redis-Client für State-Persistenz."""
         self._redis = redis_client
 
+    def set_semantic_memory(self, semantic_memory):
+        """MCU Sprint 2: Setzt SemanticMemory für Meinungs-Engine."""
+        self._semantic_memory = semantic_memory
+
     def set_response_quality(self, response_quality):
         """D5: Setzt die Referenz zum ResponseQualityTracker."""
         self._response_quality = response_quality
@@ -482,11 +581,13 @@ class PersonalityEngine:
                 loop = asyncio.get_running_loop()
                 task = loop.create_task(self.refresh_relationship_days())
                 task.add_done_callback(
-                    lambda t: logger.warning(
-                        "refresh_relationship_days failed: %s", t.exception()
+                    lambda t: (
+                        logger.warning(
+                            "refresh_relationship_days failed: %s", t.exception()
+                        )
+                        if not t.cancelled() and t.exception()
+                        else None
                     )
-                    if not t.cancelled() and t.exception()
-                    else None
                 )
             except RuntimeError:
                 pass  # Kein laufender Event-Loop
@@ -1128,6 +1229,7 @@ class PersonalityEngine:
         """Prüft ob Jarvis eine Meinung zu einer Aktion hat.
         Unterdrückt Meinungen wenn User gestresst oder frustriert ist.
 
+        MCU Sprint 2: Additionally checks SemanticMemory for learned opinions.
         F-020: mood wird explizit übergeben statt aus Instanzvariable gelesen.
         """
         if self.opinion_intensity == 0:
@@ -1151,7 +1253,74 @@ class PersonalityEngine:
                 logger.info("Opinion triggered: %s", rule.get("id", "?"))
                 return random.choice(responses).replace("Sir", get_person_title())
 
+        # MCU Sprint 2: Check learned opinions from SemanticMemory
+        learned = self._check_learned_opinion(action, args)
+        if learned:
+            return learned
+
         return None
+
+    def _check_learned_opinion(self, action: str, args: dict) -> Optional[str]:
+        """Checks cached learned opinions about entities/topics.
+
+        Opinions are preloaded from SemanticMemory into Redis cache
+        during initialization via load_learned_opinions().
+        """
+        if not self._learned_opinions:
+            return None
+
+        # Build search keys from action + args
+        entity = args.get("entity_id", "") or args.get("room", "") or ""
+        if not entity:
+            return None
+
+        entity_lower = entity.lower()
+        for topic, opinion_text in self._learned_opinions.items():
+            if topic.lower() in entity_lower or entity_lower in topic.lower():
+                logger.info(
+                    "Learned opinion matched for '%s': %s", entity, opinion_text[:80]
+                )
+                return opinion_text
+
+        return None
+
+    async def load_learned_opinions(self) -> None:
+        """Loads learned opinions from Redis cache.
+
+        Called during startup. Opinions are stored by brain.py when
+        entities are mentioned repeatedly in negative context.
+        """
+        self._learned_opinions: dict[str, str] = {}
+        if not self._redis:
+            return
+        try:
+            data = await self._redis.get("mha:personality:learned_opinions")
+            if data:
+                raw = data.decode() if isinstance(data, bytes) else data
+                loaded = json.loads(raw)
+                if isinstance(loaded, dict):
+                    self._learned_opinions = loaded
+                    logger.info(
+                        "Learned Opinions geladen: %d Themen",
+                        len(self._learned_opinions),
+                    )
+        except Exception as e:
+            logger.debug("Learned Opinions laden fehlgeschlagen: %s", e)
+
+    async def store_learned_opinion(self, topic: str, opinion: str) -> None:
+        """Stores a learned opinion to Redis and local cache."""
+        self._learned_opinions[topic] = opinion
+        if not self._redis:
+            return
+        try:
+            data = json.dumps(self._learned_opinions)
+            await self._redis.set(
+                "mha:personality:learned_opinions",
+                data,
+                ex=7776000,  # 90 days
+            )
+        except Exception as e:
+            logger.debug("Learned Opinion speichern fehlgeschlagen: %s", e)
 
     def check_opinion_with_context(
         self,
@@ -2268,6 +2437,134 @@ class PersonalityEngine:
             )
 
         return humor_text
+
+    # ------------------------------------------------------------------
+    # MCU Sprint 2: Response-Varianz-Engine
+    # ------------------------------------------------------------------
+
+    _RESPONSE_STRUCTURES = [
+        "confirmation",  # "Erledigt. Licht ist aus."
+        "comment_then_action",  # "25 Grad? Ambitioniert. Wird umgesetzt."
+        "action_then_comment",  # "Heizung auf 22. Das sollte reichen."
+        "question",  # "Soll ich auch die Rolllaeden runterfahren?"
+        "information",  # "Die Temperatur liegt bei 21.5 Grad."
+        "narrative",  # "Ich habe das Licht eingeschaltet und die..."
+    ]
+
+    def record_response_pattern(self, response_text: str) -> None:
+        """Classifies and records the response structure pattern."""
+        text = response_text.strip().lower()
+        if not text:
+            return
+
+        # Simple heuristic classification
+        if text.endswith("?"):
+            pattern = "question"
+        elif any(
+            text.startswith(w)
+            for w in ("erledigt", "gemacht", "wird", "ist passiert", "ok", "alles klar")
+        ):
+            pattern = "confirmation"
+        elif len(text.split(".")) >= 3:
+            pattern = "narrative"
+        elif any(
+            w in text[:50]
+            for w in ("grad", "temperatur", "liegt bei", "aktuell", "status")
+        ):
+            pattern = "information"
+        else:
+            pattern = "action_then_comment"
+
+        self._response_patterns.append(pattern)
+
+    def _get_variation_hint(self) -> str:
+        """Returns a prompt hint to vary response structure.
+
+        Checks last 5 response patterns and suggests variation
+        if a dominant pattern is detected.
+        """
+        if len(self._response_patterns) < 2:
+            return ""
+
+        patterns = list(self._response_patterns)
+        last_3 = patterns[-3:] if len(patterns) >= 3 else patterns
+
+        # Count dominant pattern
+        from collections import Counter
+
+        counts = Counter(last_3)
+        dominant, count = counts.most_common(1)[0]
+
+        if count < 2:
+            return ""  # No dominant pattern
+
+        # Suggest alternatives
+        alternatives = [s for s in self._RESPONSE_STRUCTURES if s != dominant]
+        alt_text = ", ".join(random.sample(alternatives, min(3, len(alternatives))))
+
+        pattern_labels = {
+            "confirmation": "Bestätigungen",
+            "comment_then_action": "Kommentar-dann-Aktion",
+            "action_then_comment": "Aktion-dann-Kommentar",
+            "question": "Rückfragen",
+            "information": "Fakten-Antworten",
+            "narrative": "Erzählende Antworten",
+        }
+        dominant_label = pattern_labels.get(dominant, dominant)
+
+        return (
+            f"\nANTWORT-VARIANZ: Letzte Antworten waren {dominant_label}. "
+            f"Variiere: {alt_text}. Keine zwei gleichen Strukturen nacheinander."
+        )
+
+    # ------------------------------------------------------------------
+    # MCU Sprint 2: Humor Quality Gate
+    # ------------------------------------------------------------------
+
+    # Patterns die auf niedrige Humor-Qualitaet hinweisen
+    _BAD_HUMOR_PATTERNS = re.compile(
+        r"(?:haha|hihi|hoho|lol|😂|😄|🤣|😆|😅|🙈|👀|🎉|✨"
+        r"|(?:witz|kalauer|scherz)\s*(?:beiseite|am rande)"
+        r"|kleiner (?:witz|scherz|spass)"
+        r"|nicht wahr\?!?"
+        r"|verstehst du\?|kapiert\?"
+        r"|ba dum tss"
+        r"|(?:hehe|höhö|muhaha)"
+        r"|;[-)]"  # Smiley-Emoticons
+        r"|:-?[)D]"
+        r")",
+        re.IGNORECASE,
+    )
+
+    def filter_humor_quality(self, text: str) -> str:
+        """Filters low-quality humor patterns from LLM response.
+
+        At sarcasm_level >= 3, ensures humor is dry and British-butler-style,
+        not emoji-laden or slapstick. Removes offending patterns.
+        """
+        if self.sarcasm_level < 3:
+            return text
+
+        # Remove emoji clusters and bad humor patterns
+        cleaned = self._BAD_HUMOR_PATTERNS.sub("", text)
+
+        # Remove standalone emojis (any emoji character)
+        cleaned = re.sub(
+            r"[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF"
+            r"\U0001F680-\U0001F6FF\U0001F900-\U0001F9FF"
+            r"\U00002702-\U000027B0\U0001FA00-\U0001FA6F]+",
+            "",
+            cleaned,
+        )
+
+        # Clean up leftover whitespace from removals
+        cleaned = re.sub(r"  +", " ", cleaned).strip()
+        cleaned = re.sub(r"\n\s*\n\s*\n", "\n\n", cleaned)
+
+        if cleaned != text:
+            logger.debug("Humor Quality Gate: bereinigt")
+
+        return cleaned
 
     # Scene → Personality Adjustments
     _SCENE_PERSONALITY = {
@@ -3535,7 +3832,9 @@ class PersonalityEngine:
         # Sarkasmus-Hinweis je nach Level
         sarcasm_hint = ""
         if sarcasm >= 4:
-            sarcasm_hint = "Sarkasmus-Level HOCH: Bissig, pointiert, intellektuell scharf. "
+            sarcasm_hint = (
+                "Sarkasmus-Level HOCH: Bissig, pointiert, intellektuell scharf. "
+            )
         elif sarcasm >= 3:
             sarcasm_hint = "Sarkasmus-Level MITTEL: Trockener Humor, subtile Ironie. "
         elif sarcasm >= 2:
@@ -3736,6 +4035,11 @@ class PersonalityEngine:
             person=current_person_name,
             crisis_mode=crisis_mode,
         )
+
+        # MCU Sprint 2: Response-Varianz-Hint an Humor-Section anhaengen
+        _variation_hint = self._get_variation_hint()
+        if _variation_hint:
+            humor_section += _variation_hint
 
         # Phase 6: Complexity-Section — F-022: person durchreichen für per-User Tracking
         complexity_section = self._build_complexity_section(
@@ -5057,19 +5361,29 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
     # Phase 2A: Running-Gag Tracking
     # ------------------------------------------------------------------
 
+    _RUNNING_GAG_REDIS_KEY = "mha:personality:running_gags"
+
     def track_running_gag(self, gag_id: str, context: str) -> None:
         """Verfolgt einen Running-Gag und inkrementiert den Zaehler.
 
         Maximal 3 aktive Gags gleichzeitig. Bei Ueberlauf wird der
-        aelteste (niedrigster Count) entfernt.
+        aelteste (niedrigster Count) entfernt. Persists to Redis.
 
         Args:
             gag_id: Eindeutige ID des Gags.
             context: Kontextbeschreibung des Gags.
         """
+        now = datetime.now(timezone.utc).isoformat()
         if gag_id in self._running_gags:
             self._running_gags[gag_id]["count"] += 1
             self._running_gags[gag_id]["context"] = context
+            self._running_gags[gag_id]["last_used"] = now
+            # Evolution: escalate at count > 3
+            count = self._running_gags[gag_id]["count"]
+            if count > 3:
+                self._running_gags[gag_id]["evolution_stage"] = min(
+                    3, self._running_gags[gag_id].get("evolution_stage", 0) + 1
+                )
         else:
             # Max 3 aktive Gags — aeltesten entfernen wenn noetig
             if len(self._running_gags) >= 3:
@@ -5077,7 +5391,53 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
                     self._running_gags, key=lambda k: self._running_gags[k]["count"]
                 )
                 del self._running_gags[oldest]
-            self._running_gags[gag_id] = {"count": 1, "context": context}
+            self._running_gags[gag_id] = {
+                "count": 1,
+                "context": context,
+                "last_used": now,
+                "evolution_stage": 0,
+            }
+
+        # Persist to Redis (fire-and-forget)
+        self._save_running_gags_to_redis()
+
+    def _save_running_gags_to_redis(self) -> None:
+        """Saves running gags to Redis (non-blocking)."""
+        if not self._redis:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            data = json.dumps(self._running_gags)
+            task = loop.create_task(
+                self._redis.set(
+                    self._RUNNING_GAG_REDIS_KEY,
+                    data,
+                    ex=259200,  # 3 days TTL
+                )
+            )
+            task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
+            )
+        except RuntimeError:
+            pass  # No running event loop
+
+    async def load_running_gags_from_redis(self) -> None:
+        """Loads running gags from Redis on startup."""
+        if not self._redis:
+            return
+        try:
+            data = await self._redis.get(self._RUNNING_GAG_REDIS_KEY)
+            if data:
+                raw = data.decode() if isinstance(data, bytes) else data
+                loaded = json.loads(raw)
+                if isinstance(loaded, dict):
+                    self._running_gags = loaded
+                    logger.info(
+                        "Running Gags aus Redis geladen: %d Gags",
+                        len(self._running_gags),
+                    )
+        except Exception as e:
+            logger.debug("Running Gags Redis-Load fehlgeschlagen: %s", e)
 
     def get_active_running_gag(self) -> Optional[str]:
         """Gibt den reifsten Running-Gag zurueck (hoechster Count).
@@ -5088,4 +5448,14 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         if not self._running_gags:
             return None
         best = max(self._running_gags, key=lambda k: self._running_gags[k]["count"])
-        return self._running_gags[best]["context"]
+        gag = self._running_gags[best]
+
+        # MCU Sprint 2: Evolution — escalate formulation based on stage
+        stage = gag.get("evolution_stage", 0)
+        context = gag["context"]
+        if stage >= 2:
+            context += " (Mittlerweile ein Klassiker.)"
+        elif stage >= 1:
+            context += " (Wie wir beide wissen.)"
+
+        return context
