@@ -1101,6 +1101,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # MCU Sprint 2: Running Gags + Learned Opinions aus Redis laden
         await self.personality.load_running_gags_from_redis()
         await self.personality.load_learned_opinions()
+        # MCU Sprint 6: Cross-Session Sarcasm-Streaks aus Redis laden
+        await self.personality.load_sarcasm_streaks_from_redis()
 
         # F-069: Nicht-kritische Module in try/except wrappen für Degraded Startup.
         # Wenn ein Modul fehlschlaegt, laeuft der Assistent trotzdem —
