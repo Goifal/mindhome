@@ -5013,6 +5013,17 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if whatif_prompt:
             _upgrade_signals += 3  # Hypothetisches Denken braucht Deep
             _has_reasoning_need = True
+
+        # Konversations-Komplexitaet: Wenn der Dialog-State zeigt dass der User
+        # eine mehrstufige Anfrage stellt (>2 Turns, gleiche Domain, Verfeinerungen),
+        # braucht das LLM mehr Reasoning-Kapazitaet.
+        if not _is_device_cmd and not _is_simple_greeting:
+            _ds = self.dialogue_state._get_state(person or "")
+            if _ds.turn_count >= 3 and _ds.last_domains:
+                # Multi-Turn im selben Thema → wahrscheinlich Diagnose/Verfeinerung
+                _upgrade_signals += 2
+                _has_reasoning_need = True
+
         if not _is_simple_greeting and not _is_device_cmd:
             # Intelligence-Signals auch in Konversationen zaehlen,
             # aber Conversation-Mode erhoet den Threshold (+2) um
@@ -16813,6 +16824,31 @@ Regeln:
                             )
                         )
 
+            # --- Physikalische Abhaengigkeiten als kausale Hinweise ---
+            # Explizite Kausalverbindungen die das LLM sonst selbst inferieren muesste.
+            _open_windows = []
+            _heating_rooms = []
+            for _room_name, _room_data in house.get("rooms", {}).items():
+                if isinstance(_room_data, dict):
+                    if _room_data.get("windows_open"):
+                        _open_windows.append(_room_name)
+                    if _room_data.get("heating_active"):
+                        _heating_rooms.append(_room_name)
+
+            # Fenster offen + Heizung aktiv im selben Raum = kausale Warnung
+            _conflict_rooms = set(_open_windows) & set(_heating_rooms)
+            if _conflict_rooms:
+                _rooms_str = ", ".join(_conflict_rooms)
+                results.append(
+                    (
+                        1,
+                        f"KAUSAL-WARNUNG: In {_rooms_str} ist das Fenster offen "
+                        f"waehrend die Heizung laeuft. Physikalische Abhaengigkeit: "
+                        f"Heizenergie entweicht → Heizen ist ineffektiv. "
+                        f"Empfehlung: Zuerst Fenster schliessen, dann heizen.",
+                    )
+                )
+
         except Exception as e:
             logger.debug("Cross-Referenz Fehler: %s", e)
 
@@ -17017,12 +17053,42 @@ Regeln:
                 )
 
                 # Self-Improvement: Correction Memory — strukturiert speichern
+                # mit kausalem Kontext (Fenster, Wetter, Aktivitaet) fuer Root-Cause
                 _corr_action, _corr_args = await self._get_last_action(person)
+                _corr_causal = {}
+                try:
+                    _corr_states = (
+                        await self.get_states_cached() if self.ha else []
+                    )
+                    _corr_room = (
+                        _corr_args.get("room", "")
+                        if isinstance(_corr_args, dict) else ""
+                    )
+                    _corr_room_lower = _corr_room.lower().replace(" ", "_")
+                    # Fenster-Status im Raum
+                    for _s in _corr_states:
+                        _eid = _s.get("entity_id", "")
+                        if (
+                            _eid.startswith("binary_sensor.")
+                            and ("window" in _eid or "fenster" in _eid)
+                            and _s.get("state") == "on"
+                            and (not _corr_room_lower or _corr_room_lower in _eid.lower())
+                        ):
+                            _corr_causal["windows_open"] = True
+                            break
+                    # Aktivitaet
+                    if self.activity:
+                        _act = self.activity.get_current_activity()
+                        if _act:
+                            _corr_causal["activity"] = _act
+                except Exception:
+                    pass
                 await self.correction_memory.store_correction(
                     original_action=_corr_action,
                     original_args=_corr_args,
                     correction_text=fact_text,
                     person=person,
+                    causal_context=_corr_causal if _corr_causal else None,
                 )
 
                 # Pattern Invalidation: Korrektur invalidiert zugehoerige Patterns

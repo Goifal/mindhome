@@ -962,6 +962,48 @@ class AnticipationEngine:
             if occurrences is not None and occurrences < self._min_observations:
                 continue
 
+            # Plausibilitaets-Check fuer Causal-Chains: Ketten deren Aktionen
+            # in komplett unverwandten Domains liegen, sind wahrscheinlich
+            # Korrelation statt Kausalitaet → Confidence reduzieren.
+            if pattern.get("type") == "causal_chain":
+                _chain_actions = pattern.get("actions", [])
+                if len(_chain_actions) >= 2:
+                    _domains = set()
+                    for _ca in _chain_actions:
+                        if "light" in _ca or "lamp" in _ca:
+                            _domains.add("light")
+                        elif "climate" in _ca or "temp" in _ca or "heat" in _ca:
+                            _domains.add("climate")
+                        elif "cover" in _ca or "blind" in _ca or "rollladen" in _ca:
+                            _domains.add("cover")
+                        elif "media" in _ca or "play" in _ca or "music" in _ca:
+                            _domains.add("media")
+                        elif "lock" in _ca or "alarm" in _ca:
+                            _domains.add("security")
+                        else:
+                            _domains.add("other")
+                    # Verwandte Domain-Paare (physikalisch verbunden)
+                    _RELATED_DOMAINS = {
+                        frozenset({"light", "cover"}),  # Licht + Rolllaeden
+                        frozenset({"climate", "cover"}),  # Heizung + Rolllaeden
+                        frozenset({"climate", "light"}),  # Heizung + Licht (Komfort)
+                        frozenset({"lock", "security"}),  # Schloss + Alarm
+                        frozenset({"light", "security"}),  # Licht + Sicherheit
+                    }
+                    if len(_domains) >= 2 and "other" not in _domains:
+                        _all_related = all(
+                            frozenset(pair) in _RELATED_DOMAINS
+                            for pair in __import__("itertools").combinations(_domains, 2)
+                        )
+                        if not _all_related:
+                            # Unverwandte Domains → Confidence um 30% reduzieren
+                            pattern = dict(pattern)
+                            pattern["confidence"] = round(
+                                pattern["confidence"] * 0.7, 2
+                            )
+                            if pattern["confidence"] < self.min_confidence:
+                                continue
+
             # Before suggesting: Check correction memory
             if hasattr(self, "_correction_memory") and self._correction_memory:
                 try:

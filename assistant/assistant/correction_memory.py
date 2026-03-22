@@ -75,8 +75,21 @@ class CorrectionMemory:
         corrected_args: Optional[dict] = None,
         person: str = "",
         room: str = "",
+        causal_context: Optional[dict] = None,
     ):
-        """Speichert eine strukturierte Korrektur."""
+        """Speichert eine strukturierte Korrektur mit optionalem kausalem Kontext.
+
+        Args:
+            original_action: Die urspruengliche Aktion die korrigiert wird.
+            original_args: Die urspruenglichen Parameter.
+            correction_text: Der Korrektur-Text des Users.
+            corrected_args: Die korrigierten Parameter.
+            person: Person die korrigiert hat.
+            room: Raum-Kontext.
+            causal_context: Optionaler kausaler Kontext zum Zeitpunkt der Korrektur
+                (z.B. Fenster-Status, Wetter, Aktivitaet). Ermoeglicht Root-Cause-
+                Analyse: WARUM wurde korrigiert, nicht nur WAS.
+        """
         if not self.enabled or not self.redis:
             return
 
@@ -95,6 +108,18 @@ class CorrectionMemory:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "hour": datetime.now(_LOCAL_TZ).hour,
         }
+
+        # Kausaler Kontext: Umgebungsbedingungen zum Zeitpunkt der Korrektur
+        if causal_context:
+            # Nur relevante, kompakte Felder speichern (max 500 Bytes)
+            _allowed_keys = {
+                "windows_open", "outdoor_temp", "activity",
+                "weather", "season", "occupancy",
+            }
+            entry["causal_context"] = {
+                k: v for k, v in causal_context.items()
+                if k in _allowed_keys and v is not None
+            }
 
         try:
             await self.redis.lpush(
@@ -154,6 +179,32 @@ class CorrectionMemory:
             )
             if hour_diff <= 2:
                 score += 0.5
+
+            # Kausaler Kontext-Match: Wenn die aktuelle Situation dem
+            # kausalen Kontext der Korrektur aehnelt, ist die Korrektur
+            # besonders relevant (gleiche Ursache → gleiche Korrektur).
+            _entry_ctx = entry.get("causal_context", {})
+            if _entry_ctx and args:
+                _current_ctx = args.get("_causal_context", {})
+                if _current_ctx:
+                    # Fenster-Status-Match
+                    if (
+                        _entry_ctx.get("windows_open")
+                        and _current_ctx.get("windows_open")
+                    ):
+                        score += 1.5  # Starker Indikator: gleiche Ursache
+                    # Aktivitaets-Match
+                    if (
+                        _entry_ctx.get("activity")
+                        and _entry_ctx.get("activity") == _current_ctx.get("activity")
+                    ):
+                        score += 1.0
+                    # Wetter-Match
+                    if (
+                        _entry_ctx.get("weather")
+                        and _entry_ctx.get("weather") == _current_ctx.get("weather")
+                    ):
+                        score += 0.5
 
             if score > 0:
                 scored.append((score, entry))

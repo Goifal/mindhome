@@ -327,13 +327,16 @@ class OutcomeTracker:
             for entry in raw:
                 data = json.loads(entry)
                 if data.get("outcome") == OUTCOME_NEGATIVE:
-                    failures.append(
-                        {
-                            "action_type": data.get("action_type", "unbekannt"),
-                            "reason": data.get("room", ""),
-                            "timestamp": data.get("timestamp", ""),
-                        }
-                    )
+                    _failure = {
+                        "action_type": data.get("action_type", "unbekannt"),
+                        "reason": data.get("room", ""),
+                        "timestamp": data.get("timestamp", ""),
+                    }
+                    # Ursache einschliessen wenn vorhanden
+                    _cause = data.get("failure_cause")
+                    if _cause:
+                        _failure["cause"] = _cause
+                    failures.append(_failure)
                     if len(failures) >= limit:
                         break
             return failures
@@ -541,16 +544,27 @@ class OutcomeTracker:
             outcome = self._classify_outcome(state_after, state_now, action_type)
             person = pending.get("person", "")
 
+            # Ursachen-Analyse bei negativem Outcome: WARUM wurde es korrigiert?
+            failure_cause = None
+            if outcome in (OUTCOME_NEGATIVE, OUTCOME_PARTIAL) and self.ha:
+                failure_cause = await self._analyze_failure_cause(
+                    entity_id, action_type, state_after, state_now,
+                    room=pending.get("room", ""),
+                )
+
             await self._store_outcome(
-                action_type, outcome, person, room=pending.get("room", "")
+                action_type, outcome, person,
+                room=pending.get("room", ""),
+                failure_cause=failure_cause,
             )
 
             logger.info(
-                "Outcome [%s]: %s (Entity: %s, Person: %s)",
+                "Outcome [%s]: %s (Entity: %s, Person: %s%s)",
                 outcome,
                 action_type,
                 entity_id,
                 person or "unbekannt",
+                f", Ursache: {failure_cause}" if failure_cause else "",
             )
 
         except asyncio.CancelledError:
@@ -639,8 +653,77 @@ class OutcomeTracker:
 
         return OUTCOME_NEUTRAL
 
+    async def _analyze_failure_cause(
+        self,
+        entity_id: str,
+        action_type: str,
+        state_after: dict,
+        state_now: dict,
+        room: str = "",
+    ) -> Optional[str]:
+        """Analysiert die Ursache eines negativen Outcomes (regelbasiert).
+
+        Prueft haeufige Fehlerursachen:
+        - Fenster offen bei Klima-Aktionen
+        - Geraet unavailable/offline
+        - Konfliktierende Automation
+        - User-Revert (bewusste Korrektur)
+
+        Returns:
+            Ursachen-String oder None.
+        """
+        try:
+            causes = []
+
+            # 1. Geraet unavailable?
+            now_state_val = state_now.get("state", "")
+            if now_state_val == "unavailable":
+                return "device_unavailable"
+
+            # 2. Bei Klima: Fenster offen?
+            if "climate" in action_type or "temperature" in action_type:
+                states = await self.ha.get_states() if self.ha else []
+                room_lower = room.lower().replace(" ", "_") if room else ""
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    if (
+                        eid.startswith("binary_sensor.")
+                        and ("window" in eid or "fenster" in eid)
+                        and s.get("state") == "on"
+                        and (not room_lower or room_lower in eid.lower())
+                    ):
+                        causes.append("window_open")
+                        break
+
+            # 3. State wurde komplett zurueckgesetzt (User-Revert)
+            after_state = state_after.get("state", "")
+            if after_state != now_state_val:
+                causes.append("user_reverted")
+
+            # 4. Attribute stark veraendert (partielle Korrektur)
+            after_attrs = state_after.get("attributes", {})
+            now_attrs = state_now.get("attributes", {})
+            _changed = sum(
+                1 for k in set(after_attrs) | set(now_attrs)
+                if k not in ("friendly_name", "icon", "supported_features")
+                and after_attrs.get(k) != now_attrs.get(k)
+            )
+            if _changed > 0 and after_state == now_state_val:
+                causes.append("parameters_adjusted")
+
+            return "|".join(causes) if causes else None
+
+        except Exception as e:
+            logger.debug("Failure cause analysis Fehler: %s", e)
+            return None
+
     async def _store_outcome(
-        self, action_type: str, outcome: str, person: str = "", room: str = ""
+        self,
+        action_type: str,
+        outcome: str,
+        person: str = "",
+        room: str = "",
+        failure_cause: Optional[str] = None,
     ):
         """Speichert Outcome in Redis und aktualisiert Scores."""
         if not self.redis:
@@ -671,6 +754,8 @@ class OutcomeTracker:
         }
         if _dep_influenced:
             _entry_data["dependency_influenced"] = True
+        if failure_cause:
+            _entry_data["failure_cause"] = failure_cause
         entry = json.dumps(_entry_data, ensure_ascii=False)
 
         # Ergebnis-Liste (max N Eintraege)
