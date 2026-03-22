@@ -1,5 +1,5 @@
 # J.A.R.V.I.S. MCU-Level Implementation Plan
-> Erstellt am 2026-03-22 | Letzter Durchlauf: Session 4 am 2026-03-22
+> Erstellt am 2026-03-22 | Letzter Durchlauf: Session 5 (Gegenprüfung) am 2026-03-22
 > Aktueller Stand: 78.0% (FINAL — alle 12 Kategorien analysiert)
 > Dieses Dokument ist die Single Source of Truth für alle MCU-Level Verbesserungen.
 
@@ -17,6 +17,7 @@
 | 2       | 2026-03-22 | 5-9 (×2/×1.5) | 16 |
 | 3       | 2026-03-22 | 10-12 (×1) | 8 |
 | 4       | 2026-03-22 | Roadmap & Sprints | 43 (5 Sprints) |
+| 5       | 2026-03-22 | Gegenprüfung | 2 Korrekturen |
 
 ## Schutzliste — Besser als MCU (NICHT beschädigen!)
 
@@ -495,6 +496,17 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 - Ziel-Score nach Umsetzung: **78.0% → ~87-94%**
 - Empfehlung: Sprint 1 (7 Quick Wins) sofort starten
 
+### Durchlauf #5 — Session 5 (Gegenprüfung) — 2026-03-22
+- 0 Aufgaben als erledigt markiert
+- 2 Zeilenreferenzen korrigiert (🔄): `proactive.py::_check_loop()` → `_run_*_loop()`, `calendar_intelligence.py::get_upcoming_events()` → `get_context_hint()`/`analyze_events()`
+- 0 neue Erkenntnisse hinzugefügt — alle 12 Kategorien bestätigt
+- Gewichteter MCU-Score: **78.0%** (unverändert — keine Score-Korrekturen nötig)
+- Korrekturen: 2 Method-Referenzen in Sprint 3 (Aufgaben 3.1 und 3.6) aktualisiert
+- **Qualitätsprüfung:** Alle 43 Aufgaben haben konkrete Dateipfade, verifizierte Zeilenreferenzen, testbare Akzeptanzkriterien
+- **Schutzliste:** Alle 15 "Besser als MCU" Features intakt — kein Sprint verletzt sie
+- **Sprint-Reihenfolge:** Abhängigkeiten korrekt — keine versteckten Abhängigkeiten gefunden
+- **Fazit:** Plan-Datei ist **bereit zur Umsetzung** via `docs/prompts/jarvis-mcu-executor.md`
+
 ---
 
 ## Roadmap & Sprint-Plan
@@ -681,7 +693,7 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 **Status:** `[ ]` | **Priorität:** Hoch | **Aufwand:** Mittel
 - **Datei:** `assistant/assistant/proactive.py` + `calendar_intelligence.py`
 - **Ist:** ProactiveManager reagiert auf HA-Events, nicht auf Kalender-Events
-- **Soll:** In `_check_loop()`: alle 15min `calendar_intelligence.get_upcoming_events(30)` abfragen. Für Events in 10-30min: MEDIUM-Priority Vorbereitungsvorschlag ("Meeting in 20 Min — Büro-Licht vorbereiten?").
+- **Soll:** 🔄 In einer der bestehenden `_run_*_loop()` Methoden (z.B. `_run_diagnostics_loop()` Zeile 3979) oder als neuer Loop: alle 15min `calendar_intelligence.get_context_hint()` (Zeile 381) oder `analyze_events()` (Zeile 161) abfragen. Für Events in 10-30min: MEDIUM-Priority Vorbereitungsvorschlag ("Meeting in 20 Min — Büro-Licht vorbereiten?").
 - **Akzeptanz:** `[ ]` Kalender-basierte Vorbereitungsvorschläge 10-30min vor Events
 
 #### Aufgabe 3.2: "Guten Abend"-Orchestrierung / Ankunfts-Begrüßung
@@ -716,7 +728,7 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 **Status:** `[ ]` | **Priorität:** Niedrig | **Aufwand:** Klein
 - **Datei:** `assistant/assistant/proactive.py`
 - **Ist:** Vacation-Modus nur manuell aktivierbar
-- **Soll:** In `_check_loop()`: Wenn `is_anyone_home() == False` für >48h (Redis-Timestamp): LOW-Notification "Soll ich den Urlaubsmodus aktivieren?" Max 1× pro 7 Tage.
+- **Soll:** 🔄 In einem der bestehenden `_run_*_loop()` Methoden (z.B. `_run_ambient_presence_loop()` Zeile 8755): Wenn `is_anyone_home() == False` für >48h (Redis-Timestamp): LOW-Notification "Soll ich den Urlaubsmodus aktivieren?" Max 1× pro 7 Tage.
 - **Akzeptanz:** `[ ]` Nach >48h Abwesenheit: automatischer Urlaubsmodus-Vorschlag
 
 #### Aufgabe 3.7: Critical-Eskalation mit steigender Dringlichkeit
