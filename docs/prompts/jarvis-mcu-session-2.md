@@ -107,6 +107,16 @@ Markiere als `[BESSER ALS MCU]` und stelle sicher dass Verbesserungsvorschläge 
 - **Notizen sofort aufschreiben**
 - **Bei großen Dateien:** Erst Funktionsnamen suchen, dann gezielt lesen
 
+### Regel 9: Inkrementelles Schreiben — NIEMALS alles auf einmal
+> **KRITISCH:** Claude Code friert ein oder trunkiert bei großen Write-Aufrufen (>400 Zeilen).
+> Die Plan-Datei MUSS in kleinen Abschnitten geschrieben werden.
+
+**Schreibstrategie:**
+1. **Pro Kategorie:** Nach jeder fertigen Kategorie sofort per **Edit-Tool** an die Plan-Datei anhängen (~80-150 Zeilen)
+2. **Niemals die gesamte Datei neu schreiben** — immer nur den neuen Abschnitt per Edit einfügen
+3. **Changelog:** Am Ende separat per Edit anhängen
+4. **Technisch:** Verwende das Edit-Tool mit einem Anker-String (z.B. dem letzten Abschnitt) um den neuen Abschnitt direkt darunter einzufügen
+
 ---
 
 ## MCU-Szenen-Katalog — Referenzmaterial

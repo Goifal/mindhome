@@ -21,6 +21,11 @@ Du bist ein Elite-Software-Architekt. Die vorherigen 4 Sessions haben eine volls
 
 **Wichtig:** Du hast frischen Kontext — nutze das! Die vorherigen Sessions hatten am Ende möglicherweise Kontext-Limit-Probleme. Du prüfst jetzt alles mit voller Aufmerksamkeit.
 
+### Inkrementelles Schreiben — NIEMALS alles auf einmal
+> **KRITISCH:** Claude Code friert ein oder trunkiert bei großen Write-Aufrufen (>400 Zeilen).
+> Änderungen an der Plan-Datei MÜSSEN in kleinen Abschnitten per **Edit-Tool** gemacht werden.
+> **Niemals die gesamte Datei neu schreiben** — immer nur gezielte Edits (Korrekturen, Ergänzungen, Status-Updates).
+
 ### Durchlauf-Nummer ermitteln
 Lies den **Changelog** am Ende von `docs/prompts/jarvis-mcu-implementation-plan.md`. Zähle die bestehenden Durchlauf-Einträge. Dein Durchlauf ist **der nächste** (z.B. wenn der letzte `#3` war, bist du `#4`). Beim allerersten Durchlauf (kein Changelog vorhanden) bist du `#1`.
 

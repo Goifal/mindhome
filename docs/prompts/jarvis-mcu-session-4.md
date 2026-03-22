@@ -44,6 +44,15 @@ Kein Sprint-Task darf ein "Besser als MCU" Feature beschädigen. Prüfe jede Auf
 - Sprints sequentiell ausarbeiten — nicht alle gleichzeitig im Kontext halten
 - Nach jedem Sprint sofort in die Plan-Datei schreiben
 
+### Regel 5: Inkrementelles Schreiben — NIEMALS alles auf einmal
+> **KRITISCH:** Claude Code friert ein oder trunkiert bei großen Write-Aufrufen (>400 Zeilen).
+> Die Plan-Datei MUSS in kleinen Abschnitten geschrieben werden.
+
+**Schreibstrategie:**
+1. **Pro Sprint:** Nach jedem fertigen Sprint sofort per **Edit-Tool** an die Plan-Datei anhängen
+2. **Niemals die gesamte Datei neu schreiben** — immer nur den neuen Abschnitt per Edit einfügen
+3. **Technisch:** Verwende das Edit-Tool mit einem Anker-String (z.B. dem letzten Abschnitt) um den neuen Abschnitt direkt darunter einzufügen
+
 ---
 
 ## Phase 2: Abhängigkeitsgraph & Sprint-Plan
