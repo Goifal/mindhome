@@ -1852,10 +1852,10 @@ MCU-Jarvis erklärt seine Empfehlungen, nennt Gründe für Entscheidungen und ha
 - Natürlicher Rückbezug, nicht erzwungen
 
 ##### Implementierungsschritte
-1. In `personality.py`, Running-Gag-Storage (Zeile ~509): Kontext-Dict zu jedem Gag hinzufügen: `{"room": str, "device": str, "trigger": str}`
+1. In `personality.py`, Running-Gag-Storage (Zeile ~5476): `context`-Feld existiert BEREITS im Gag-Dict 🔄 — dieses Feld mit strukturiertem Kontext befüllen: `{"room": str, "device": str, "trigger": str}` statt generischem String
 2. In Gag-Auswahl-Methode: Wenn aktueller Kontext zu einem aktiven Gag passt (gleicher Raum + Gerät) → Rückbezug-Template: "Ah, {device} mal wieder — {gag_text}"
 3. Rückbezug-Cooldown: Max 1× pro Tag pro Gag
-4. In Redis-Storage: Kontext mitspeichern
+4. Redis-Storage: Kontext wird bereits persistiert (Zeile 5504-5510 `_save_running_gags_to_redis()`) — kein zusätzlicher Aufwand
 
 ##### Verknüpfungen
 - **SCHUTZLISTE:** Running Gags sind "Besser als MCU" → NUR erweitern
