@@ -20,6 +20,7 @@ from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
 from zoneinfo import ZoneInfo
+
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
@@ -38,7 +39,7 @@ class FollowMeEngine:
     def _load_config(self):
         """Laedt Konfiguration aus settings.yaml."""
         cfg = yaml_config.get("follow_me", {})
-        self.enabled = cfg.get("enabled", False)
+        self.enabled = cfg.get("enabled", True)
         self.cooldown_seconds = cfg.get("cooldown_seconds", 60)
         self.transfer_music = cfg.get("transfer_music", True)
         self.transfer_lights = cfg.get("transfer_lights", True)
@@ -49,7 +50,9 @@ class FollowMeEngine:
         """Holt das Follow-Me Profil einer Person."""
         return self.profiles.get(person, self.profiles.get(person.lower(), {}))
 
-    async def handle_motion(self, motion_entity: str, person: str = "") -> Optional[dict]:
+    async def handle_motion(
+        self, motion_entity: str, person: str = ""
+    ) -> Optional[dict]:
         """Verarbeitet ein Motion-Event und fuehrt ggf. Transfer durch.
 
         Args:
@@ -94,7 +97,9 @@ class FollowMeEngine:
 
             # Cooldown pruefen
             last = self._last_transfer.get(person_key)
-            if last and datetime.now(timezone.utc) - last < timedelta(seconds=self.cooldown_seconds):
+            if last and datetime.now(timezone.utc) - last < timedelta(
+                seconds=self.cooldown_seconds
+            ):
                 return None
 
             # Raumwechsel registrieren
@@ -108,13 +113,18 @@ class FollowMeEngine:
             # Pruefen ob Person allein im alten Raum war
             # (wenn andere noch da sind, nichts abschalten)
             others_in_old_room = [
-                p for p, r in self._person_room.items()
+                p
+                for p, r in self._person_room.items()
                 if r and r.lower() == old_room.lower() and p != person_key
             ]
 
         logger.info(
             "Follow-Me: %s wechselt von %s nach %s (andere in %s: %d)",
-            person_key, old_room, new_room, old_room, len(others_in_old_room),
+            person_key,
+            old_room,
+            new_room,
+            old_room,
+            len(others_in_old_room),
         )
 
         result = {
@@ -130,17 +140,32 @@ class FollowMeEngine:
         # 1-3: Musik, Licht, Klima parallel transferieren
         transfer_coros = []
         if self.transfer_music:
-            transfer_coros.append(self._transfer_music(
-                old_room, new_room, room_speakers, others_in_old_room,
-            ))
+            transfer_coros.append(
+                self._transfer_music(
+                    old_room,
+                    new_room,
+                    room_speakers,
+                    others_in_old_room,
+                )
+            )
         if self.transfer_lights:
-            transfer_coros.append(self._transfer_lights(
-                old_room, new_room, profile, others_in_old_room,
-            ))
+            transfer_coros.append(
+                self._transfer_lights(
+                    old_room,
+                    new_room,
+                    profile,
+                    others_in_old_room,
+                )
+            )
         if self.transfer_climate:
-            transfer_coros.append(self._transfer_climate(
-                old_room, new_room, profile, others_in_old_room,
-            ))
+            transfer_coros.append(
+                self._transfer_climate(
+                    old_room,
+                    new_room,
+                    profile,
+                    others_in_old_room,
+                )
+            )
 
         if transfer_coros:
             actions = await asyncio.gather(*transfer_coros, return_exceptions=True)
@@ -153,8 +178,11 @@ class FollowMeEngine:
         return None
 
     async def _transfer_music(
-        self, old_room: str, new_room: str,
-        room_speakers: dict, others_in_old: list,
+        self,
+        old_room: str,
+        new_room: str,
+        room_speakers: dict,
+        others_in_old: list,
     ) -> Optional[dict]:
         """Transferiert Musik vom alten in den neuen Raum."""
         old_speaker = self._find_speaker(old_room, room_speakers)
@@ -172,13 +200,15 @@ class FollowMeEngine:
             # Pause im alten Raum (nur wenn allein)
             if not others_in_old:
                 await self.ha.call_service(
-                    "media_player", "media_pause",
+                    "media_player",
+                    "media_pause",
                     {"entity_id": old_speaker},
                 )
 
             # Play im neuen Raum
             await self.ha.call_service(
-                "media_player", "media_play",
+                "media_player",
+                "media_play",
                 {"entity_id": new_speaker},
             )
 
@@ -190,8 +220,11 @@ class FollowMeEngine:
             return None
 
     async def _transfer_lights(
-        self, old_room: str, new_room: str,
-        profile: dict, others_in_old: list,
+        self,
+        old_room: str,
+        new_room: str,
+        profile: dict,
+        others_in_old: list,
     ) -> Optional[dict]:
         """Schaltet Licht im neuen Raum ein, im alten aus.
 
@@ -200,6 +233,7 @@ class FollowMeEngine:
         """
         try:
             from .config import get_room_profiles
+
             room_profiles = get_room_profiles().get("rooms", {})
             transition = int(
                 yaml_config.get("lighting", {}).get("default_transition", 2)
@@ -242,11 +276,14 @@ class FollowMeEngine:
                     old_entities = [f"light.{old_room.lower().replace(' ', '_')}"]
                 for entity_id in old_entities:
                     await self.ha.call_service(
-                        "light", "turn_off",
+                        "light",
+                        "turn_off",
                         {"entity_id": entity_id, "transition": transition},
                     )
 
-            logger.info("Follow-Me Licht: %s aus → %s an (%d%%)", old_room, new_room, brightness)
+            logger.info(
+                "Follow-Me Licht: %s aus → %s an (%d%%)", old_room, new_room, brightness
+            )
             return {"type": "lights", "from": old_room, "to": new_room}
 
         except Exception as e:
@@ -254,28 +291,41 @@ class FollowMeEngine:
             return None
 
     async def _transfer_climate(
-        self, old_room: str, new_room: str,
-        profile: dict, others_in_old: list,
+        self,
+        old_room: str,
+        new_room: str,
+        profile: dict,
+        others_in_old: list,
     ) -> Optional[dict]:
         """Setzt Klima im neuen Raum auf Komfort, im alten auf Eco."""
         try:
             comfort_temp = profile.get("comfort_temp", 22)
 
             # Neuen Raum auf Komfort
-            await self.ha.call_service("climate", "set_temperature", {
-                "entity_id": f"climate.{new_room.lower().replace(' ', '_')}",
-                "temperature": comfort_temp,
-            })
+            await self.ha.call_service(
+                "climate",
+                "set_temperature",
+                {
+                    "entity_id": f"climate.{new_room.lower().replace(' ', '_')}",
+                    "temperature": comfort_temp,
+                },
+            )
 
             # Alten Raum auf Eco (nur wenn allein)
             if not others_in_old:
                 eco_temp = comfort_temp - profile.get("eco_temp_offset", 3)
-                await self.ha.call_service("climate", "set_temperature", {
-                    "entity_id": f"climate.{old_room.lower().replace(' ', '_')}",
-                    "temperature": eco_temp,
-                })
+                await self.ha.call_service(
+                    "climate",
+                    "set_temperature",
+                    {
+                        "entity_id": f"climate.{old_room.lower().replace(' ', '_')}",
+                        "temperature": eco_temp,
+                    },
+                )
 
-            logger.info("Follow-Me Klima: %s→Eco, %s→%d°C", old_room, new_room, comfort_temp)
+            logger.info(
+                "Follow-Me Klima: %s→Eco, %s→%d°C", old_room, new_room, comfort_temp
+            )
             return {"type": "climate", "from": old_room, "to": new_room}
 
         except Exception as e:
@@ -294,14 +344,17 @@ class FollowMeEngine:
         """Raeumt veraltete Person-Room-Eintraege auf."""
         now = datetime.now(timezone.utc)
         stale = [
-            p for p, t in self._last_transfer.items()
+            p
+            for p, t in self._last_transfer.items()
             if now - t > timedelta(hours=max_age_hours)
         ]
         for p in stale:
             self._person_room.pop(p, None)
             self._last_transfer.pop(p, None)
         if stale:
-            logger.debug("Follow-Me: %d veraltete Tracking-Eintraege bereinigt", len(stale))
+            logger.debug(
+                "Follow-Me: %d veraltete Tracking-Eintraege bereinigt", len(stale)
+            )
 
     def health_status(self) -> dict:
         """Status fuer Diagnostik."""
@@ -343,7 +396,8 @@ class FollowMeEngine:
         """Gibt alle Personen in einem bestimmten Raum zurueck."""
         room_lower = room.lower().replace(" ", "_")
         return [
-            p for p, r in self._person_room.items()
+            p
+            for p, r in self._person_room.items()
             if r.lower().replace(" ", "_") == room_lower
         ]
 
@@ -384,7 +438,9 @@ class FollowMeEngine:
         if seconds_away <= 10.0:
             logger.debug(
                 "Rueckkehr erkannt: %s war nur %.1fs weg von %s — kein Transfer",
-                person, seconds_away, room,
+                person,
+                seconds_away,
+                room,
             )
             return True
         return False
@@ -406,7 +462,9 @@ class FollowMeEngine:
         if seconds_present >= 180.0:
             logger.debug(
                 "Verweildauer erreicht: %s ist seit %.0fs in %s — angekommen",
-                person, seconds_present, room,
+                person,
+                seconds_present,
+                room,
             )
             return True
         return False
