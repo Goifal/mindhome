@@ -717,54 +717,66 @@ class AnticipationEngine:
         if light_level is not None and temp is not None:
             try:
                 if float(light_level) < 30 and float(temp) < 19:
-                    suggestions.append({
-                        "suggestion": "light_and_heating",
-                        "confidence": 0.85,
-                        "reason": "Dunkel und kalt — Licht und Heizung empfohlen",
-                    })
+                    suggestions.append(
+                        {
+                            "suggestion": "light_and_heating",
+                            "confidence": 0.85,
+                            "reason": "Dunkel und kalt — Licht und Heizung empfohlen",
+                        }
+                    )
             except (ValueError, TypeError):
                 pass
 
         # Spaet + Kuechenaktivitaet -> Kochassistent
         if hour is not None and hour >= 17 and "kueche" in activity:
-            suggestions.append({
-                "suggestion": "cooking_assistant",
-                "confidence": 0.75,
-                "reason": "Abends in der Kueche — Kochassistent koennte helfen",
-            })
+            suggestions.append(
+                {
+                    "suggestion": "cooking_assistant",
+                    "confidence": 0.75,
+                    "reason": "Abends in der Kueche — Kochassistent koennte helfen",
+                }
+            )
 
         # Morgens + alle noch da -> Abfahrt-Check
         if hour is not None and 6 <= hour <= 9 and persons_home:
-            suggestions.append({
-                "suggestion": "departure_check",
-                "confidence": 0.7,
-                "reason": "Morgens, noch niemand gegangen — Abfahrt-Check vorschlagen",
-            })
+            suggestions.append(
+                {
+                    "suggestion": "departure_check",
+                    "confidence": 0.7,
+                    "reason": "Morgens, noch niemand gegangen — Abfahrt-Check vorschlagen",
+                }
+            )
 
         # Sturm/Regen + Fenster-Kontext
         if weather in ("rain", "storm", "regen", "sturm", "gewitter"):
-            suggestions.append({
-                "suggestion": "close_windows",
-                "confidence": 0.9,
-                "reason": "Schlechtes Wetter — Fenster-Check empfohlen",
-            })
+            suggestions.append(
+                {
+                    "suggestion": "close_windows",
+                    "confidence": 0.9,
+                    "reason": "Schlechtes Wetter — Fenster-Check empfohlen",
+                }
+            )
 
         # Spaetabends -> Gute-Nacht Routine
         if hour is not None and hour >= 22:
-            suggestions.append({
-                "suggestion": "goodnight_routine",
-                "confidence": 0.7,
-                "reason": "Spaeter Abend — Gute-Nacht-Routine vorschlagen",
-            })
+            suggestions.append(
+                {
+                    "suggestion": "goodnight_routine",
+                    "confidence": 0.7,
+                    "reason": "Spaeter Abend — Gute-Nacht-Routine vorschlagen",
+                }
+            )
 
         # Lange Abwesenheit + Geraete an
         devices_on = context.get("devices_on", [])
         if not persons_home and devices_on:
-            suggestions.append({
-                "suggestion": "away_device_check",
-                "confidence": 0.8,
-                "reason": "Niemand zu Hause, Geraete noch aktiv",
-            })
+            suggestions.append(
+                {
+                    "suggestion": "away_device_check",
+                    "confidence": 0.8,
+                    "reason": "Niemand zu Hause, Geraete noch aktiv",
+                }
+            )
 
         return [s for s in suggestions if s["confidence"] >= min_conf]
 
@@ -986,6 +998,12 @@ class AnticipationEngine:
                     }
 
             if suggestion:
+                # MCU Sprint 7: Kontextuelle Routine-Varianten
+                # Boost/Penalize basierend auf aktuellem Kontext-Match
+                suggestion = await self._apply_context_scoring(
+                    suggestion, pattern, person
+                )
+
                 # Bidirektionaler Outcome-Feedback-Loop:
                 # Score < 0.4 = schlecht → Confidence senken (30% Penalty)
                 # Score > 0.7 = gut → Confidence boosten (15% Bonus)
@@ -1061,7 +1079,10 @@ class AnticipationEngine:
                     {
                         "pattern": {"type": "predictive_comfort"},
                         "action": cs.get("action", ""),
-                        "args": {"room": cs.get("room", ""), "target_temp": cs.get("target_temp")},
+                        "args": {
+                            "room": cs.get("room", ""),
+                            "target_temp": cs.get("target_temp"),
+                        },
                         "confidence": cs.get("confidence", 0.6),
                         "description": cs.get("description", ""),
                         "mode": "suggest",
@@ -1105,6 +1126,140 @@ class AnticipationEngine:
         except Exception as e:
             logger.debug("Weather cache retrieval failed: %s", e)
         return ""
+
+    # ------------------------------------------------------------------
+    # MCU Sprint 7: Kontextuelle Routine-Varianten
+    # ------------------------------------------------------------------
+
+    async def _apply_context_scoring(
+        self, suggestion: dict, pattern: dict, person: str = ""
+    ) -> dict:
+        """Bewertet Vorschlaege nach aktuellem Kontext-Vektor.
+
+        Montag-Morgen ≠ Sonntag-Morgen: Gleiche Aktion wird je nach Kontext
+        (Wochentag-Typ, Wetter, Anwesenheit) unterschiedlich bewertet.
+
+        Kontext-Dimensionen:
+        - Tagestyp: Werktag vs. Wochenende
+        - Wetter: Aktuell vs. Muster-Wetter
+        - Anwesenheit: Allein vs. Gaeste
+
+        Returns:
+            Suggestion mit angepasster Confidence.
+        """
+        if not self.redis:
+            return suggestion
+
+        try:
+            now = datetime.now(_LOCAL_TZ)
+            context_boost = 0.0
+
+            # 1. Tagestyp-Scoring: Werktag vs. Wochenende
+            is_weekend = now.weekday() >= 5
+            action_key = suggestion.get("action", "")
+            ctx_key = f"mha:anticipation:ctx:{action_key}:{person or 'global'}"
+
+            raw = await self.redis.hgetall(ctx_key)
+            if raw:
+                weekday_count = int(
+                    raw.get(b"weekday_count", raw.get("weekday_count", 0)) or 0
+                )
+                weekend_count = int(
+                    raw.get(b"weekend_count", raw.get("weekend_count", 0)) or 0
+                )
+                total = weekday_count + weekend_count
+
+                if total >= 3:
+                    if is_weekend:
+                        ratio = weekend_count / total if total > 0 else 0.5
+                    else:
+                        ratio = weekday_count / total if total > 0 else 0.5
+
+                    # Starker Boost wenn Aktion zum aktuellen Tagestyp passt
+                    if ratio >= 0.8:
+                        context_boost += 0.10  # Dominant am aktuellen Tagestyp
+                    elif ratio >= 0.6:
+                        context_boost += 0.05  # Leicht bevorzugt
+                    elif ratio <= 0.2:
+                        context_boost -= 0.15  # Untypisch fuer diesen Tagestyp
+
+            # 2. Wetter-Scoring: Passt das Muster zum aktuellen Wetter?
+            current_weather = await self._get_current_weather()
+            if current_weather and raw:
+                pattern_weather = raw.get(
+                    b"dominant_weather", raw.get("dominant_weather", b"")
+                )
+                if isinstance(pattern_weather, bytes):
+                    pattern_weather = pattern_weather.decode()
+
+                if pattern_weather:
+                    if current_weather == pattern_weather:
+                        context_boost += 0.05  # Wetter-Match
+                    elif self._is_weather_opposite(current_weather, pattern_weather):
+                        context_boost -= 0.10  # Gegenteiliges Wetter
+
+            # 3. Confidence anpassen (Grenzen: 0.1 bis 0.98)
+            original_conf = suggestion["confidence"]
+            adjusted_conf = max(0.1, min(0.98, original_conf + context_boost))
+            suggestion["confidence"] = round(adjusted_conf, 3)
+
+            if abs(context_boost) > 0.01:
+                logger.debug(
+                    "Context scoring: %s boost=%+.2f (%.2f→%.2f, weekend=%s, weather=%s)",
+                    action_key,
+                    context_boost,
+                    original_conf,
+                    adjusted_conf,
+                    is_weekend,
+                    current_weather,
+                )
+
+        except Exception as e:
+            logger.debug("Context scoring fehlgeschlagen: %s", e)
+
+        return suggestion
+
+    @staticmethod
+    def _is_weather_opposite(w1: str, w2: str) -> bool:
+        """Prueft ob zwei Wetterbedingungen gegensaetzlich sind."""
+        _OPPOSITES = {
+            frozenset({"sunny", "rainy"}),
+            frozenset({"sunny", "pouring"}),
+            frozenset({"sunny", "snowy"}),
+            frozenset({"clear-night", "rainy"}),
+        }
+        return frozenset({w1, w2}) in _OPPOSITES
+
+    async def track_context_for_action(self, action: str, person: str = "") -> None:
+        """Trackt Kontext-Daten fuer eine ausgefuehrte Aktion.
+
+        Wird nach jeder manuellen Aktion aufgerufen, um den Kontext-Vektor
+        (Tagestyp, Wetter) fuer die kontextuelle Routine-Erkennung zu aktualisieren.
+        """
+        if not self.redis:
+            return
+
+        try:
+            now = datetime.now(_LOCAL_TZ)
+            is_weekend = now.weekday() >= 5
+            ctx_key = f"mha:anticipation:ctx:{action}:{person or 'global'}"
+
+            # Tagestyp zaehlen
+            if is_weekend:
+                await self.redis.hincrby(ctx_key, "weekend_count", 1)
+            else:
+                await self.redis.hincrby(ctx_key, "weekday_count", 1)
+
+            # Dominantes Wetter aktualisieren (einfache Heuristik: letztes Wetter)
+            current_weather = await self._get_current_weather()
+            if current_weather:
+                await self.redis.hset(ctx_key, "dominant_weather", current_weather)
+
+            # TTL: 90 Tage
+            await self.redis.expire(ctx_key, 90 * 86400)
+
+        except Exception as e:
+            logger.debug("Context tracking fehlgeschlagen: %s", e)
 
     # ------------------------------------------------------------------
     # Kalender x Wetter Kreuzreferenz

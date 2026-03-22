@@ -3634,6 +3634,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
                         # Letzte Aktion merken (für Pronomen-Shortcut im nächsten Turn)
                         await self._set_last_action(func_name, func_args, person)
+                        # MCU Sprint 7: Context-Tracking für kontextuelle Routinen
+                        if hasattr(self, "anticipation") and self.anticipation:
+                            self._task_registry.create_task(
+                                self.anticipation.track_context_for_action(
+                                    func_name, person=person or ""
+                                ),
+                                name="ctx_track",
+                            )
                         return self._result(
                             response_text,
                             actions=all_actions,
@@ -3705,6 +3713,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
                     # Letzte Aktion merken (für Pronomen-Shortcut im nächsten Turn)
                     await self._set_last_action(func_name, func_args, person)
+                    # MCU Sprint 7: Context-Tracking für kontextuelle Routinen
+                    if hasattr(self, "anticipation") and self.anticipation:
+                        self._task_registry.create_task(
+                            self.anticipation.track_context_for_action(
+                                func_name, person=person or ""
+                            ),
+                            name="ctx_track",
+                        )
                     return self._result(
                         response_text,
                         actions=[
