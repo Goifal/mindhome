@@ -975,6 +975,23 @@ multi_room:
     # schlafzimmer: binary_sensor.occupancy_schlafzimmer
     # kueche: binary_sensor.motion_kueche
     # buero: binary_sensor.motion_buero
+# Follow-Me: JARVIS folgt dir von Raum zu Raum
+# Transferiert Musik, Licht und Klima automatisch bei Raumwechsel.
+# Erfordert konfigurierte room_motion_sensors (oben) fuer Raumwechsel-Erkennung.
+follow_me:
+  enabled: true                    # Follow-Me aktivieren (Default: true)
+  cooldown_seconds: 60             # Min. Sekunden zwischen Transfers (verhindert Ping-Pong)
+  transfer_music: true             # Musik beim Raumwechsel transferieren
+  transfer_lights: true            # Licht im alten Raum aus, im neuen an
+  transfer_climate: false          # Klimasteuerung beim Raumwechsel (Eco/Comfort)
+  # Per-Person Profile (ueberschreiben globale Einstellungen)
+  profiles: {}
+    # max:
+    #   light_brightness: 80       # Licht-Helligkeit im neuen Raum (%)
+    #   light_color_temp: 3500     # Farbtemperatur (Kelvin)
+    #   comfort_temp: 22           # Komfort-Temperatur im neuen Raum
+    #   eco_temp_offset: 3         # Eco-Absenkung im alten Raum (Grad)
+
 person_profiles:
   enabled: true
   profiles: {}

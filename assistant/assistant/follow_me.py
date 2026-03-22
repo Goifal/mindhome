@@ -12,6 +12,7 @@ Cooldown verhindert Ping-Pong bei schnellen Raumwechseln.
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -35,6 +36,11 @@ class FollowMeEngine:
         self._person_room: dict[str, str] = {}
         self._last_transfer: dict[str, datetime] = {}
         self._tracking_lock = asyncio.Lock()
+        self._brain = None  # MCU Sprint 5: Brain reference for topic resumption
+
+    def set_brain(self, brain) -> None:
+        """MCU Sprint 5: Sets brain reference for conversation context tracking."""
+        self._brain = brain
 
     def _load_config(self):
         """Laedt Konfiguration aus settings.yaml."""
@@ -127,11 +133,30 @@ class FollowMeEngine:
             len(others_in_old_room),
         )
 
+        # MCU Sprint 5: Check if recent conversation exists for topic resumption
+        _last_interaction_age = None
+        _last_topic = ""
+        try:
+            if hasattr(self, "_brain") and self._brain:
+                _ts = getattr(self._brain, "_last_interaction_ts", 0)
+                if _ts:
+                    _last_interaction_age = time.time() - _ts
+                    if _last_interaction_age < 300:  # < 5 minutes
+                        # Get last topic from dialogue state
+                        if hasattr(self._brain, "dialogue_state"):
+                            _ds = self._brain.dialogue_state._get_state(person_key)
+                            if _ds and _ds.last_actions:
+                                _last_act = _ds.last_actions[0]
+                                _last_topic = _last_act.get("description", "")[:80]
+        except Exception:
+            pass
+
         result = {
             "person": person_key,
             "from_room": old_room,
             "to_room": new_room,
             "actions": [],
+            "last_topic": _last_topic,  # MCU Sprint 5
         }
 
         room_speakers = multi_room_cfg.get("room_speakers", {})
@@ -197,22 +222,58 @@ class FollowMeEngine:
             return None
 
         try:
-            # Pause im alten Raum (nur wenn allein)
-            if not others_in_old:
-                await self.ha.call_service(
-                    "media_player",
-                    "media_pause",
-                    {"entity_id": old_speaker},
-                )
+            # MCU Sprint 5: Crossfade — get current volume for gradual transition
+            old_attrs = state.get("attributes", {})
+            old_volume = old_attrs.get("volume_level", 0.8)
 
-            # Play im neuen Raum
+            # Start new room at low volume, will ramp up
+            await self.ha.call_service(
+                "media_player",
+                "volume_set",
+                {"entity_id": new_speaker, "volume_level": 0.1},
+            )
             await self.ha.call_service(
                 "media_player",
                 "media_play",
                 {"entity_id": new_speaker},
             )
 
-            logger.info("Follow-Me Musik: %s → %s", old_room, new_room)
+            # Crossfade: 10 steps over 2 seconds
+            crossfade_steps = 10
+            for step in range(1, crossfade_steps + 1):
+                progress = step / crossfade_steps
+                # New room ramps up
+                new_vol = round(old_volume * progress, 2)
+                await self.ha.call_service(
+                    "media_player",
+                    "volume_set",
+                    {"entity_id": new_speaker, "volume_level": new_vol},
+                )
+                # Old room ramps down (only if alone)
+                if not others_in_old:
+                    old_vol = round(old_volume * (1 - progress), 2)
+                    await self.ha.call_service(
+                        "media_player",
+                        "volume_set",
+                        {"entity_id": old_speaker, "volume_level": old_vol},
+                    )
+                await asyncio.sleep(0.2)
+
+            # Pause old room after crossfade (only if alone)
+            if not others_in_old:
+                await self.ha.call_service(
+                    "media_player",
+                    "media_pause",
+                    {"entity_id": old_speaker},
+                )
+                # Restore old speaker volume for next use
+                await self.ha.call_service(
+                    "media_player",
+                    "volume_set",
+                    {"entity_id": old_speaker, "volume_level": old_volume},
+                )
+
+            logger.info("Follow-Me Musik (crossfade): %s → %s", old_room, new_room)
             return {"type": "music", "from": old_room, "to": new_room}
 
         except Exception as e:

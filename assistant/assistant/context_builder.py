@@ -229,11 +229,43 @@ class ContextBuilder:
         self._weather_cache_ts: float = 0.0
         self._WEATHER_CACHE_TTL = 300.0  # 5 Minuten
 
-        # HA-States TTL Cache
+        # HA-States TTL Cache — MCU Sprint 5: reduced to 2s with event-driven updates
         ctx_cfg = yaml_config.get("context", {})
-        self._state_cache_ttl: float = float(ctx_cfg.get("state_cache_ttl_seconds", 5))
+        self._state_cache_ttl: float = float(ctx_cfg.get("state_cache_ttl_seconds", 2))
         self._state_cache: Optional[list] = None
         self._state_cache_time: float = 0.0
+        self._state_cache_lock = threading.Lock()
+
+    def update_state_from_event(
+        self, entity_id: str, new_state: str, attributes: dict = None
+    ) -> None:
+        """MCU Sprint 5: Event-driven cache update — patches single entity in cache.
+
+        Called by ProactiveManager's HA event listener to keep cache fresh
+        without full HA state reload.
+        """
+        with self._state_cache_lock:
+            if not self._state_cache:
+                return
+            for i, state in enumerate(self._state_cache):
+                if state.get("entity_id") == entity_id:
+                    self._state_cache[i] = {
+                        **state,
+                        "state": new_state,
+                        "attributes": {
+                            **state.get("attributes", {}),
+                            **(attributes or {}),
+                        },
+                    }
+                    return
+            # Entity not in cache yet — append
+            self._state_cache.append(
+                {
+                    "entity_id": entity_id,
+                    "state": new_state,
+                    "attributes": attributes or {},
+                }
+            )
 
     def set_semantic_memory(self, semantic: SemanticMemory):
         """Setzt die Referenz zum Semantic Memory."""
