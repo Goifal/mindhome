@@ -33,6 +33,7 @@ from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
 from zoneinfo import ZoneInfo
+
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Redis-Key-Prefix
@@ -40,20 +41,41 @@ _PREFIX = "mha:insight"
 
 # Reise-Keywords im Kalender
 _TRAVEL_KEYWORDS = [
-    "flug", "flight", "hotel", "reise", "urlaub", "vacation",
-    "zug", "train", "bahn", "abflug", "departure", "airport",
-    "flughafen", "check-in", "checkin", "boarding",
+    "flug",
+    "flight",
+    "hotel",
+    "reise",
+    "urlaub",
+    "vacation",
+    "zug",
+    "train",
+    "bahn",
+    "abflug",
+    "departure",
+    "airport",
+    "flughafen",
+    "check-in",
+    "checkin",
+    "boarding",
 ]
 
 # Wetter-Conditions die Regen/Sturm bedeuten
 _RAIN_CONDITIONS = [
-    "rainy", "pouring", "lightning-rainy", "lightning",
-    "hail", "exceptional",
+    "rainy",
+    "pouring",
+    "lightning-rainy",
+    "lightning",
+    "hail",
+    "exceptional",
 ]
 
 _STORM_CONDITIONS = [
-    "pouring", "lightning-rainy", "lightning", "windy",
-    "exceptional", "hail",
+    "pouring",
+    "lightning-rainy",
+    "lightning",
+    "windy",
+    "exceptional",
+    "hail",
 ]
 
 
@@ -85,15 +107,23 @@ class InsightEngine:
         self.check_away_devices = checks_cfg.get("away_devices", True)
         self.check_temp_drop = checks_cfg.get("temp_drop", True)
         self.check_window_temp = checks_cfg.get("window_temp_drop", True)
-        self.check_calendar_weather_cross = checks_cfg.get("calendar_weather_cross", True)
+        self.check_calendar_weather_cross = checks_cfg.get(
+            "calendar_weather_cross", True
+        )
         self.check_comfort_contradiction = checks_cfg.get("comfort_contradiction", True)
 
         # Phase 18: Neue 3D+ Cross-Reference Checks
         insight_checks_cfg = yaml_config.get("insight_checks", {})
         self.check_guest_preparation = insight_checks_cfg.get("guest_preparation", True)
-        self.check_away_security_full = insight_checks_cfg.get("away_security_full", True)
-        self.check_health_work_pattern = insight_checks_cfg.get("health_work_pattern", True)
-        self.check_humidity_contradiction = insight_checks_cfg.get("humidity_contradiction", True)
+        self.check_away_security_full = insight_checks_cfg.get(
+            "away_security_full", True
+        )
+        self.check_health_work_pattern = insight_checks_cfg.get(
+            "health_work_pattern", True
+        )
+        self.check_humidity_contradiction = insight_checks_cfg.get(
+            "humidity_contradiction", True
+        )
         self.check_night_security = insight_checks_cfg.get("night_security", True)
         self.check_heating_vs_sun = insight_checks_cfg.get("heating_vs_sun", True)
         self.check_forgotten_devices = insight_checks_cfg.get("forgotten_devices", True)
@@ -134,7 +164,9 @@ class InsightEngine:
         if self.enabled:
             self._running = True
             self._task = asyncio.create_task(self._insight_loop())
-            self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+            self._task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
+            )
             logger.info(
                 "InsightEngine initialisiert (Intervall: %d Min, Cooldown: %d Std)",
                 self.check_interval // 60,
@@ -152,7 +184,10 @@ class InsightEngine:
             if states:
                 persons = []
                 for s in states:
-                    if s.get("entity_id", "").startswith("person.") and s.get("state") == "home":
+                    if (
+                        s.get("entity_id", "").startswith("person.")
+                        and s.get("state") == "home"
+                    ):
                         name = s.get("attributes", {}).get("friendly_name", "")
                         if name:
                             persons.append(name)
@@ -197,15 +232,23 @@ class InsightEngine:
         self.check_away_devices = checks_cfg.get("away_devices", True)
         self.check_temp_drop = checks_cfg.get("temp_drop", True)
         self.check_window_temp = checks_cfg.get("window_temp_drop", True)
-        self.check_calendar_weather_cross = checks_cfg.get("calendar_weather_cross", True)
+        self.check_calendar_weather_cross = checks_cfg.get(
+            "calendar_weather_cross", True
+        )
         self.check_comfort_contradiction = checks_cfg.get("comfort_contradiction", True)
 
         # Phase 18: 3D+ Cross-Reference Checks
         insight_checks_cfg = yaml_config.get("insight_checks", {})
         self.check_guest_preparation = insight_checks_cfg.get("guest_preparation", True)
-        self.check_away_security_full = insight_checks_cfg.get("away_security_full", True)
-        self.check_health_work_pattern = insight_checks_cfg.get("health_work_pattern", True)
-        self.check_humidity_contradiction = insight_checks_cfg.get("humidity_contradiction", True)
+        self.check_away_security_full = insight_checks_cfg.get(
+            "away_security_full", True
+        )
+        self.check_health_work_pattern = insight_checks_cfg.get(
+            "health_work_pattern", True
+        )
+        self.check_humidity_contradiction = insight_checks_cfg.get(
+            "humidity_contradiction", True
+        )
         self.check_night_security = insight_checks_cfg.get("night_security", True)
         self.check_heating_vs_sun = insight_checks_cfg.get("heating_vs_sun", True)
         self.check_forgotten_devices = insight_checks_cfg.get("forgotten_devices", True)
@@ -226,7 +269,9 @@ class InsightEngine:
         if self.enabled and not was_enabled and not self._running:
             self._running = True
             self._task = asyncio.create_task(self._insight_loop())
-            self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+            self._task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
+            )
             logger.info("InsightEngine via Hot-Reload gestartet")
 
     # ------------------------------------------------------------------
@@ -306,7 +351,7 @@ class InsightEngine:
             if "<think>" in content:
                 think_end = content.find("</think>")
                 if think_end != -1:
-                    content = content[think_end + 8:].strip()
+                    content = content[think_end + 8 :].strip()
 
             if content and 10 < len(content) < len(original) * 3:
                 insight["message"] = content
@@ -365,16 +410,20 @@ class InsightEngine:
                         data["forecast"] = forecast[:5]
 
                 # Offene Fenster
-                elif (eid.startswith("binary_sensor.") and
-                      state == "on" and
-                      any(kw in eid for kw in ("window", "fenster"))):
+                elif (
+                    eid.startswith("binary_sensor.")
+                    and state == "on"
+                    and any(kw in eid for kw in ("window", "fenster"))
+                ):
                     name = attrs.get("friendly_name", eid)
                     data["open_windows"].append(name)
 
                 # Offene Türen
-                elif (eid.startswith("binary_sensor.") and
-                      state == "on" and
-                      any(kw in eid for kw in ("door", "tuer", "eingang"))):
+                elif (
+                    eid.startswith("binary_sensor.")
+                    and state == "on"
+                    and any(kw in eid for kw in ("door", "tuer", "eingang"))
+                ):
                     # Ausschluss: Garagentore, Briefkasten etc.
                     if not any(x in eid for x in ("garage", "briefkasten", "mailbox")):
                         name = attrs.get("friendly_name", eid)
@@ -387,15 +436,17 @@ class InsightEngine:
 
                 # Climate / Heizung
                 elif eid.startswith("climate.") and state != "unavailable":
-                    data["climate"].append({
-                        "entity_id": eid,
-                        "name": attrs.get("friendly_name", eid),
-                        "state": state,
-                        "current_temp": attrs.get("current_temperature"),
-                        "target_temp": attrs.get("temperature"),
-                        "preset_mode": attrs.get("preset_mode", ""),
-                        "hvac_action": attrs.get("hvac_action", ""),
-                    })
+                    data["climate"].append(
+                        {
+                            "entity_id": eid,
+                            "name": attrs.get("friendly_name", eid),
+                            "state": state,
+                            "current_temp": attrs.get("current_temperature"),
+                            "target_temp": attrs.get("temperature"),
+                            "preset_mode": attrs.get("preset_mode", ""),
+                            "hvac_action": attrs.get("hvac_action", ""),
+                        }
+                    )
 
                 # Personen
                 elif eid.startswith("person."):
@@ -410,9 +461,11 @@ class InsightEngine:
                     data["alarm_state"] = state
 
                 # Temperatur-Sensoren
-                elif (eid.startswith("sensor.") and
-                      "temperature" in eid and
-                      state not in ("unavailable", "unknown", "")):
+                elif (
+                    eid.startswith("sensor.")
+                    and "temperature" in eid
+                    and state not in ("unavailable", "unknown", "")
+                ):
                     try:
                         data["temperatures"][eid] = {
                             "name": attrs.get("friendly_name", eid),
@@ -441,7 +494,8 @@ class InsightEngine:
             return []
 
         calendar_entities = [
-            s["entity_id"] for s in states
+            s["entity_id"]
+            for s in states
             if s.get("entity_id", "").startswith("calendar.")
             and "holiday" not in s["entity_id"]
             and "birthday" not in s["entity_id"]
@@ -458,10 +512,11 @@ class InsightEngine:
         end = now + timedelta(hours=24)
         all_events = []
 
-        for cal_entity in calendar_entities[:self.max_calendars]:  # H5: Konfigurierbar
+        for cal_entity in calendar_entities[: self.max_calendars]:  # H5: Konfigurierbar
             try:
                 result = await self.ha.call_service_with_response(
-                    "calendar", "get_events",
+                    "calendar",
+                    "get_events",
                     {
                         "entity_id": cal_entity,
                         "start_date_time": now.isoformat(),
@@ -505,7 +560,14 @@ class InsightEngine:
             (self.check_heating_vs_sun, self._check_heating_vs_sun),
             (self.check_forgotten_devices, self._check_forgotten_devices),
             (True, self._check_device_dependency_conflicts),  # DEVICE_DEPENDENCIES
-            (self._llm_causal_enabled, self._check_llm_causal),  # LLM-basierte Kausalanalyse
+            (
+                self._llm_causal_enabled,
+                self._check_llm_causal,
+            ),  # LLM-basierte Kausalanalyse
+            (
+                self.check_weather_windows,
+                self._check_weather_forecast_warning,
+            ),  # MCU Sprint 6
         ]
 
     async def get_recently_checked_domains(self) -> set[str]:
@@ -554,12 +616,16 @@ class InsightEngine:
             return []
 
         # E5: Gelernte Muster aus LearningObserver einbeziehen
-        if self.learning_observer and hasattr(self.learning_observer, 'get_learning_report'):
+        if self.learning_observer and hasattr(
+            self.learning_observer, "get_learning_report"
+        ):
             try:
                 report = await self.learning_observer.get_learning_report()
                 data["learned_patterns"] = report.get("active_patterns", [])
             except Exception as e:
-                logger.debug("LearningObserver-Daten fuer Insights fehlgeschlagen: %s", e)
+                logger.debug(
+                    "LearningObserver-Daten fuer Insights fehlgeschlagen: %s", e
+                )
 
         insights = []
         self._current_cycle_entities.clear()
@@ -574,7 +640,9 @@ class InsightEngine:
                 if result and not await self._is_on_cooldown(result["check"]):
                     if self._dedup_enabled:
                         result_entities = self._extract_insight_entities(result)
-                        if result_entities and result_entities.issubset(self._current_cycle_entities):
+                        if result_entities and result_entities.issubset(
+                            self._current_cycle_entities
+                        ):
                             logger.debug(
                                 "Insight %s uebersprungen (Dedup: Entities bereits abgedeckt)",
                                 result.get("check"),
@@ -680,7 +748,9 @@ class InsightEngine:
             cal_lines = []
             for e in events:
                 if isinstance(e, dict):
-                    cal_lines.append(f"  {e.get('summary', '?')} ({e.get('start', '?')})")
+                    cal_lines.append(
+                        f"  {e.get('summary', '?')} ({e.get('start', '?')})"
+                    )
                 elif isinstance(e, str):
                     cal_lines.append(f"  {e}")
             if cal_lines:
@@ -696,7 +766,11 @@ class InsightEngine:
             for c in data["climate"][:4]:
                 if isinstance(c, dict):
                     eid = c.get("entity_id", "?")
-                    attrs = c.get("attributes", {}) if isinstance(c.get("attributes"), dict) else {}
+                    attrs = (
+                        c.get("attributes", {})
+                        if isinstance(c.get("attributes"), dict)
+                        else {}
+                    )
                     cur = attrs.get("current_temperature", "?")
                     target = attrs.get("temperature", "?")
                     climate_lines.append(f"  {eid}: {cur}°C (Ziel: {target}°C)")
@@ -749,7 +823,7 @@ class InsightEngine:
             if "<think>" in content:
                 think_end = content.find("</think>")
                 if think_end != -1:
-                    content = content[think_end + 8:].strip()
+                    content = content[think_end + 8 :].strip()
 
             if not content or content.upper() == "NICHTS" or len(content) < 10:
                 # Cooldown trotzdem setzen
@@ -765,7 +839,10 @@ class InsightEngine:
                 "check": "llm_causal",
                 "message": content,
                 "urgency": "medium",
-                "data": {"source": "llm_causal_analysis", "summary_length": len(data_summary)},
+                "data": {
+                    "source": "llm_causal_analysis",
+                    "summary_length": len(data_summary),
+                },
             }
 
         except asyncio.TimeoutError:
@@ -779,12 +856,12 @@ class InsightEngine:
         """Prueft aktive Device-Dependency-Konflikte via DEVICE_DEPENDENCIES."""
         try:
             from .state_change_log import StateChangeLog
+
             states = data.get("states", [])
             if not states:
                 return None
             state_dict = {
-                s["entity_id"]: s.get("state", "")
-                for s in states if "entity_id" in s
+                s["entity_id"]: s.get("state", "") for s in states if "entity_id" in s
             }
             scl = StateChangeLog.__new__(StateChangeLog)
             conflicts = scl.detect_conflicts(state_dict)
@@ -830,7 +907,9 @@ class InsightEngine:
                     try:
                         fc_dt = datetime.fromisoformat(fc_time.replace("Z", "+00:00"))
                         fc_local = fc_dt.astimezone(_LOCAL_TZ)
-                        hours_until = (fc_local - datetime.now(_LOCAL_TZ)).total_seconds() / 3600
+                        hours_until = (
+                            fc_local - datetime.now(_LOCAL_TZ)
+                        ).total_seconds() / 3600
                         if hours_until <= 0:
                             time_hint = "jetzt"
                         elif hours_until < 1:
@@ -845,7 +924,11 @@ class InsightEngine:
                         time_hint = "bald"
 
                 windows = ", ".join(data["open_windows"][:3])
-                extra = f" (und {len(data['open_windows']) - 3} weitere)" if len(data["open_windows"]) > 3 else ""
+                extra = (
+                    f" (und {len(data['open_windows']) - 3} weitere)"
+                    if len(data["open_windows"]) > 3
+                    else ""
+                )
 
                 is_storm = condition in _STORM_CONDITIONS
                 urgency = "high" if is_storm else "medium"
@@ -915,6 +998,73 @@ class InsightEngine:
             },
         }
 
+    async def _check_weather_forecast_warning(self, data: dict) -> Optional[dict]:
+        """MCU Sprint 6: Proaktive Wetter-Vorhersage-Warnung.
+
+        Warnt vor Regen/Sturm in den naechsten 2 Stunden — unabhaengig von
+        offenen Fenstern. Ermoeglicht vorausschauendes Handeln.
+        """
+        if not data["forecast"]:
+            return None
+
+        for fc in data["forecast"][:4]:
+            condition = str(fc.get("condition", "")).lower()
+            precipitation = fc.get("precipitation", 0) or 0
+            wind_speed = fc.get("wind_speed", 0) or 0
+
+            is_storm = condition in _STORM_CONDITIONS or wind_speed > 60
+            is_rain = condition in _RAIN_CONDITIONS or precipitation > 5
+
+            if not is_storm and not is_rain:
+                continue
+
+            # Nur wenn in den naechsten 2 Stunden
+            fc_time = fc.get("datetime", "")
+            if not fc_time:
+                continue
+
+            try:
+                fc_dt = datetime.fromisoformat(fc_time.replace("Z", "+00:00"))
+                hours_until = (
+                    fc_dt.astimezone(_LOCAL_TZ) - datetime.now(_LOCAL_TZ)
+                ).total_seconds() / 3600
+                if hours_until > 2 or hours_until < 0:
+                    continue
+            except (ValueError, TypeError):
+                continue
+
+            # Fenster-basierte Warnung wird von _check_weather_windows abgedeckt
+            # → nur feuern wenn KEINE Fenster offen sind (sonst Duplikat)
+            if data.get("open_windows"):
+                return None
+
+            if hours_until < 1:
+                time_hint = "in Kuerze"
+            else:
+                time_hint = f"in etwa {int(hours_until)} Stunden"
+
+            weather_word = "Sturm" if is_storm else "Regen"
+            urgency = "medium" if is_storm else "low"
+
+            return {
+                "check": "weather_forecast_warning",
+                "urgency": urgency,
+                "message": (
+                    f"{await self._get_title_for_home()}, {time_hint} wird "
+                    f"{weather_word} erwartet"
+                    f"{f' (Wind: {wind_speed:.0f} km/h)' if wind_speed > 40 else ''}. "
+                    f"Falls Waesche draussen haengt oder Fenster auf Kipp stehen."
+                ),
+                "data": {
+                    "condition": condition,
+                    "precipitation": precipitation,
+                    "wind_speed": wind_speed,
+                    "forecast_time": fc_time,
+                },
+            }
+
+        return None
+
     async def _check_calendar_travel(self, data: dict) -> Optional[dict]:
         """Reise-Event im Kalender + Alarm deaktiviert."""
         if not data["calendar_events"]:
@@ -950,7 +1100,8 @@ class InsightEngine:
 
         # Heizung normal (sollte auf Away)
         normal_heating = [
-            cl["name"] for cl in data["climate"]
+            cl["name"]
+            for cl in data["climate"]
             if cl.get("state") not in ("off", "unavailable")
             and cl.get("preset_mode", "").lower() not in ("away", "eco", "abwesend")
         ]
@@ -1075,12 +1226,18 @@ class InsightEngine:
         if self.redis:
             away_since = await self.redis.get(away_key)
             if not away_since:
-                await self.redis.setex(away_key, 86400, datetime.now(timezone.utc).isoformat())
+                await self.redis.setex(
+                    away_key, 86400, datetime.now(timezone.utc).isoformat()
+                )
                 return None  # Gerade erst gegangen
             try:
-                away_since = away_since.decode() if isinstance(away_since, bytes) else away_since
+                away_since = (
+                    away_since.decode() if isinstance(away_since, bytes) else away_since
+                )
                 since_dt = datetime.fromisoformat(away_since)
-                minutes_away = (datetime.now(timezone.utc) - since_dt).total_seconds() / 60
+                minutes_away = (
+                    datetime.now(timezone.utc) - since_dt
+                ).total_seconds() / 60
                 if minutes_away < self.away_minutes:
                     return None  # Noch nicht lang genug weg
             except (ValueError, TypeError):
@@ -1092,7 +1249,11 @@ class InsightEngine:
         issues = []
         if data["lights_on"]:
             lights = ", ".join(data["lights_on"][:3])
-            extra = f" (+{len(data['lights_on']) - 3})" if len(data["lights_on"]) > 3 else ""
+            extra = (
+                f" (+{len(data['lights_on']) - 3})"
+                if len(data["lights_on"]) > 3
+                else ""
+            )
             issues.append(f"Licht: {lights}{extra}")
 
         if data["open_windows"]:
@@ -1194,7 +1355,8 @@ class InsightEngine:
 
         # Innentemperatur aus Climate-Entities
         inside_temps = [
-            cl["current_temp"] for cl in data["climate"]
+            cl["current_temp"]
+            for cl in data["climate"]
             if cl.get("current_temp") is not None
         ]
         if not inside_temps:
@@ -1280,7 +1442,9 @@ class InsightEngine:
                     if result:
                         if self._dedup_enabled:
                             result_entities = self._extract_insight_entities(result)
-                            if result_entities and result_entities.issubset(on_demand_entities):
+                            if result_entities and result_entities.issubset(
+                                on_demand_entities
+                            ):
                                 continue
                             on_demand_entities.update(result_entities)
                         insights.append(result)
@@ -1317,9 +1481,13 @@ class InsightEngine:
             try:
                 await self.redis.lpush(
                     "mha:insight:temp_history",
-                    json.dumps({"ts": datetime.now(timezone.utc).isoformat(), "temps": temps}),
+                    json.dumps(
+                        {"ts": datetime.now(timezone.utc).isoformat(), "temps": temps}
+                    ),
                 )
-                await self.redis.ltrim("mha:insight:temp_history", 0, self.max_temp_snapshots - 1)
+                await self.redis.ltrim(
+                    "mha:insight:temp_history", 0, self.max_temp_snapshots - 1
+                )
                 await self.redis.expire("mha:insight:temp_history", 6 * 3600)
             except Exception as e:
                 logger.debug("Temp snapshot error: %s", e)
@@ -1333,7 +1501,9 @@ class InsightEngine:
         await self._store_temp_snapshot(data)
 
         try:
-            snapshots_raw = await self.redis.lrange("mha:insight:temp_history", 0, self.max_temp_snapshots - 1)  # H5
+            snapshots_raw = await self.redis.lrange(
+                "mha:insight:temp_history", 0, self.max_temp_snapshots - 1
+            )  # H5
         except Exception as e:
             logger.debug("Insight-Analyse fehlgeschlagen: %s", e)
             return None
@@ -1498,8 +1668,17 @@ class InsightEngine:
     # ------------------------------------------------------------------
 
     _GUEST_KEYWORDS = [
-        "gast", "gaeste", "besuch", "party", "feier", "einladung",
-        "dinner", "abendessen", "geburtstag", "grillen", "brunch",
+        "gast",
+        "gaeste",
+        "besuch",
+        "party",
+        "feier",
+        "einladung",
+        "dinner",
+        "abendessen",
+        "geburtstag",
+        "grillen",
+        "brunch",
     ]
 
     async def _check_guest_preparation(self, data: dict) -> Optional[dict]:
@@ -1548,7 +1727,10 @@ class InsightEngine:
         states = data.get("states", [])
         for s in states:
             eid = s.get("entity_id", "")
-            if "alarm_control_panel" in eid and s.get("state") in ("armed_away", "armed_home"):
+            if "alarm_control_panel" in eid and s.get("state") in (
+                "armed_away",
+                "armed_home",
+            ):
                 issues.append("Alarm ist noch scharf")
                 break
 
@@ -1614,7 +1796,8 @@ class InsightEngine:
 
         persons_home = [
             s.get("attributes", {}).get("friendly_name", "")
-            for s in person_entities if s.get("state") == "home"
+            for s in person_entities
+            if s.get("state") == "home"
         ]
         if persons_home:
             return None  # Jemand ist zuhause
@@ -1844,8 +2027,10 @@ class InsightEngine:
         # Aktivitaets-Check: Wenn jemand aktiv arbeitet, nicht stoeren
         if self.activity:
             try:
-                if self.activity.current_activity == "working" and \
-                   self.activity.current_duration_hours < 2:
+                if (
+                    self.activity.current_activity == "working"
+                    and self.activity.current_duration_hours < 2
+                ):
                     return None
             except (AttributeError, TypeError):
                 pass
@@ -2006,8 +2191,7 @@ class InsightEngine:
             "check": "forgotten_devices",
             "urgency": urgency,
             "message": (
-                f"{title}, {devices}{extra} läuft noch, "
-                f"obwohl {reason}. Ausschalten?"
+                f"{title}, {devices}{extra} läuft noch, obwohl {reason}. Ausschalten?"
             ),
             "data": {
                 "active_media": active_media,
@@ -2084,22 +2268,28 @@ class InsightEngine:
             # Cover-Entities (Markise, Rollladen etc.)
             elif eid.startswith("cover."):
                 position = attrs.get("current_position")
-                covers.append({
-                    "entity_id": eid,
-                    "name": attrs.get("friendly_name", eid),
-                    "state": state,
-                    "position": position,
-                    "is_open": state == "open" or (position is not None and position > 20),
-                })
-
-            # Fenstersensoren
-            elif (eid.startswith("binary_sensor.") and
-                  any(kw in eid for kw in ("window", "fenster"))):
-                if state == "on":
-                    open_windows.append({
+                covers.append(
+                    {
                         "entity_id": eid,
                         "name": attrs.get("friendly_name", eid),
-                    })
+                        "state": state,
+                        "position": position,
+                        "is_open": state == "open"
+                        or (position is not None and position > 20),
+                    }
+                )
+
+            # Fenstersensoren
+            elif eid.startswith("binary_sensor.") and any(
+                kw in eid for kw in ("window", "fenster")
+            ):
+                if state == "on":
+                    open_windows.append(
+                        {
+                            "entity_id": eid,
+                            "name": attrs.get("friendly_name", eid),
+                        }
+                    )
 
             # Innentemperatur aus Climate-Entities
             elif eid.startswith("climate.") and state != "unavailable":
@@ -2137,7 +2327,9 @@ class InsightEngine:
                     pass
 
             # Regen erkennen
-            if not rain_forecast and (condition in _RAIN_CONDITIONS or precipitation > 2):
+            if not rain_forecast and (
+                condition in _RAIN_CONDITIONS or precipitation > 2
+            ):
                 rain_forecast = fc
                 hours_until_rain = hours_ahead
 
@@ -2168,13 +2360,15 @@ class InsightEngine:
                 else:
                     time_hint = f"Regen in {int(hours_until_rain)}h erwartet"
 
-                suggestions.append({
-                    "action": "set_cover",
-                    "entity": cover["entity_id"],
-                    "target": "close",
-                    "reason": time_hint,
-                    "urgency": "high" if hours_until_rain < 1 else "medium",
-                })
+                suggestions.append(
+                    {
+                        "action": "set_cover",
+                        "entity": cover["entity_id"],
+                        "target": "close",
+                        "reason": time_hint,
+                        "urgency": "high" if hours_until_rain < 1 else "medium",
+                    }
+                )
                 self._set_weather_action_cooldown(action_key)
 
         # -- Vorschlag 2: Sturm erwartet + Fenster offen --
@@ -2191,11 +2385,13 @@ class InsightEngine:
                 else:
                     time_hint = f"Sturm in {int(hours_until_storm)}h"
 
-                suggestions.append({
-                    "action": "notify",
-                    "message": f"{time_hint} — Fenster noch offen: {windows_str}",
-                    "urgency": "critical" if hours_until_storm < 1 else "high",
-                })
+                suggestions.append(
+                    {
+                        "action": "notify",
+                        "message": f"{time_hint} — Fenster noch offen: {windows_str}",
+                        "urgency": "critical" if hours_until_storm < 1 else "high",
+                    }
+                )
                 self._set_weather_action_cooldown(action_key)
 
                 # Auch offene Covers bei Sturm einfahren
@@ -2204,13 +2400,15 @@ class InsightEngine:
                     cover_key = f"storm_cover:{cover['entity_id']}"
                     if self._weather_action_on_cooldown(cover_key):
                         continue
-                    suggestions.append({
-                        "action": "set_cover",
-                        "entity": cover["entity_id"],
-                        "target": "close",
-                        "reason": f"{time_hint} — {cover['name']} einfahren",
-                        "urgency": "critical" if hours_until_storm < 1 else "high",
-                    })
+                    suggestions.append(
+                        {
+                            "action": "set_cover",
+                            "entity": cover["entity_id"],
+                            "target": "close",
+                            "reason": f"{time_hint} — {cover['name']} einfahren",
+                            "urgency": "critical" if hours_until_storm < 1 else "high",
+                        }
+                    )
                     self._set_weather_action_cooldown(cover_key)
 
         # -- Vorschlag 3: Kalte Nacht (<5°C) + Covers offen → Daemmung --
@@ -2222,33 +2420,47 @@ class InsightEngine:
                     continue
 
                 templow = cold_night_forecast.get("templow", "?")
-                suggestions.append({
-                    "action": "set_cover",
-                    "entity": cover["entity_id"],
-                    "target": "close",
-                    "reason": f"Nacht wird kalt ({templow}°C) — Rollladen schliessen fuer Daemmung",
-                    "urgency": "low",
-                })
+                suggestions.append(
+                    {
+                        "action": "set_cover",
+                        "entity": cover["entity_id"],
+                        "target": "close",
+                        "reason": f"Nacht wird kalt ({templow}°C) — Rollladen schliessen fuer Daemmung",
+                        "urgency": "low",
+                    }
+                )
                 self._set_weather_action_cooldown(action_key)
 
         # -- Vorschlag 4: Starke Sonne + Innentemperatur steigt → Suedseiten-Covers --
         current_condition = str(weather_data.get("condition", "")).lower()
         outdoor_temp = weather_data.get("temp")
 
-        if (current_condition in ("sunny", "partlycloudy") and
-                outdoor_temp is not None and outdoor_temp > 24 and
-                indoor_temps):
+        if (
+            current_condition in ("sunny", "partlycloudy")
+            and outdoor_temp is not None
+            and outdoor_temp > 24
+            and indoor_temps
+        ):
             avg_indoor = sum(indoor_temps) / len(indoor_temps)
 
             # Innen > 25°C bei Sonne = Beschattung sinnvoll
             if avg_indoor > 25:
                 # Suedseiten-Covers finden (Heuristik: 'sued', 'south', 'terrasse',
                 # 'balkon', 'markise' im Namen)
-                south_keywords = ("sued", "south", "terrasse", "balkon", "markise",
-                                  "wintergarten", "wohnzimmer")
+                south_keywords = (
+                    "sued",
+                    "south",
+                    "terrasse",
+                    "balkon",
+                    "markise",
+                    "wintergarten",
+                    "wohnzimmer",
+                )
                 open_covers = [
-                    c for c in covers
-                    if c["is_open"] and any(
+                    c
+                    for c in covers
+                    if c["is_open"]
+                    and any(
                         kw in c["entity_id"].lower() or kw in c["name"].lower()
                         for kw in south_keywords
                     )
@@ -2263,16 +2475,18 @@ class InsightEngine:
                     if self._weather_action_on_cooldown(action_key):
                         continue
 
-                    suggestions.append({
-                        "action": "set_cover",
-                        "entity": cover["entity_id"],
-                        "target": "close",
-                        "reason": (
-                            f"Sonne bei {outdoor_temp:.0f}°C — "
-                            f"Innentemperatur {avg_indoor:.0f}°C, Beschattung empfohlen"
-                        ),
-                        "urgency": "medium" if avg_indoor < 28 else "high",
-                    })
+                    suggestions.append(
+                        {
+                            "action": "set_cover",
+                            "entity": cover["entity_id"],
+                            "target": "close",
+                            "reason": (
+                                f"Sonne bei {outdoor_temp:.0f}°C — "
+                                f"Innentemperatur {avg_indoor:.0f}°C, Beschattung empfohlen"
+                            ),
+                            "urgency": "medium" if avg_indoor < 28 else "high",
+                        }
+                    )
                     self._set_weather_action_cooldown(action_key)
 
         logger.debug(
@@ -2313,13 +2527,16 @@ class InsightEngine:
         try:
             # Hole gelernte Muster die mit Insight-Checks korrelieren
             if hasattr(self.learning_observer, "get_person_patterns"):
-                patterns = await self.learning_observer.get_person_patterns("", limit=20)
+                patterns = await self.learning_observer.get_person_patterns(
+                    "", limit=20
+                )
             else:
                 return []
 
             # Korrelation: Fenster-Muster + Wetter-Insights
             window_patterns = [
-                p for p in patterns
+                p
+                for p in patterns
                 if "cover" in p.get("entity", "") or "window" in p.get("entity", "")
             ]
             if window_patterns:
@@ -2328,32 +2545,37 @@ class InsightEngine:
                     condition = str(weather.get("condition", "")).lower()
                     if condition in ("rainy", "pouring", "lightning-rainy"):
                         for wp in window_patterns[:2]:
-                            insights.append({
-                                "type": "pattern_weather_correlation",
-                                "message": (
-                                    f"Du schliesst {wp['entity']} regelmaessig bei Regen. "
-                                    f"Soll ich das automatisieren?"
-                                ),
-                                "confidence": min(wp.get("count", 0) / 10, 0.9),
-                                "urgency": "low",
-                            })
+                            insights.append(
+                                {
+                                    "type": "pattern_weather_correlation",
+                                    "message": (
+                                        f"Du schliesst {wp['entity']} regelmaessig bei Regen. "
+                                        f"Soll ich das automatisieren?"
+                                    ),
+                                    "confidence": min(wp.get("count", 0) / 10, 0.9),
+                                    "urgency": "low",
+                                }
+                            )
 
             # Korrelation: Licht-Muster + Abwesenheit
             light_off_patterns = [
-                p for p in patterns
+                p
+                for p in patterns
                 if "light" in p.get("entity", "") and p.get("state") == "off"
             ]
             if light_off_patterns and len(light_off_patterns) >= 3:
-                insights.append({
-                    "type": "pattern_automation_suggestion",
-                    "message": (
-                        f"Du schaltest regelmaessig Lichter aus "
-                        f"({len(light_off_patterns)} Muster erkannt). "
-                        f"Soll ich eine Automatisierung vorschlagen?"
-                    ),
-                    "confidence": 0.7,
-                    "urgency": "low",
-                })
+                insights.append(
+                    {
+                        "type": "pattern_automation_suggestion",
+                        "message": (
+                            f"Du schaltest regelmaessig Lichter aus "
+                            f"({len(light_off_patterns)} Muster erkannt). "
+                            f"Soll ich eine Automatisierung vorschlagen?"
+                        ),
+                        "confidence": 0.7,
+                        "urgency": "low",
+                    }
+                )
 
         except Exception as e:
             logger.debug("Learning-Insight Kreuzreferenz Fehler: %s", e)

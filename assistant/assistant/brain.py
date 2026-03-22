@@ -1536,6 +1536,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 "GLOBAL: Alle Lern-Features deaktiviert (learning.enabled=false)"
             )
 
+        # MCU Sprint 6: Auto-Opinion-Learning — PersonalityEngine mit OutcomeTracker verbinden
+        if self.outcome_tracker.enabled and hasattr(
+            self.outcome_tracker, "set_personality"
+        ):
+            self.outcome_tracker.set_personality(self.personality)
+
         await _safe_init("Proactive.start", self.proactive.start())
 
         # Entity-Katalog: Echte Raum-/Entity-Namen aus HA laden
@@ -3360,6 +3366,26 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 _la_args,
             )
             device_cmd = {"function": _la, "args": _la_args}
+        # MCU Sprint 6: Deterministic Action-Replay — "nochmal", "das gleiche",
+        # "noch mal", "nochmal bitte" → letzte Aktion 1:1 wiederholen ohne LLM
+        if not device_cmd and _la_person and _la_person.startswith("set_"):
+            _replay_match = re.match(
+                r"^(?:bitte\s+)?(?:nochmal|noch\s*mal|das\s+gleiche|"
+                r"das\s+selbe|dasselbe|das\s+nochmal|bitte\s+nochmal|"
+                r"wiederhol(?:e|en)?(?:\s+das)?)\s*[.!]?$",
+                text.lower().strip(),
+            )
+            if _replay_match:
+                _la = _la_person
+                _la_args = dict(_la_args_person or {})
+                logger.info(
+                    "Action-Replay: '%s' -> %s(%s) (exakte Wiederholung)",
+                    text,
+                    _la,
+                    _la_args,
+                )
+                device_cmd = {"function": _la, "args": _la_args}
+
         _pronoun_match = re.match(
             r"^(?:bitte\s+)?(?:mach|schalt|dreh|fahr)\w*\s+"
             r"(?:es|das|die|den|ihn|sie)\s+"

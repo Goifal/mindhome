@@ -68,7 +68,9 @@ class OutcomeTracker:
         self._lo_feedback_enabled = self._cfg.get("learning_observer_feedback", True)
         self._lo_learning_boost = float(self._cfg.get("learning_boost", 0.1))
         self._anticipation = None
-        self._anticipation_feedback_enabled = self._cfg.get("anticipation_feedback", True)
+        self._anticipation_feedback_enabled = self._cfg.get(
+            "anticipation_feedback", True
+        )
         self._anticipation_success_boost = float(
             self._cfg.get("success_confidence_boost", 0.1)
         )
@@ -714,6 +716,10 @@ class OutcomeTracker:
         ):
             await self._notify_anticipation_engine(action_type, outcome)
 
+        # MCU Sprint 6: Auto-Opinion-Learning — Meinungen aus Geraete-Feedback bilden
+        if outcome in (OUTCOME_POSITIVE, OUTCOME_NEGATIVE):
+            await self._update_auto_opinion(action_type, outcome, room)
+
         # Letzten Aktionstyp merken (fuer verbal feedback ohne Kontext)
         await self.redis.setex("mha:outcome:last_action_type", 300, action_type)
 
@@ -799,7 +805,6 @@ class OutcomeTracker:
         except Exception as e:
             logger.debug("LearningObserver notification failed: %s", e)
 
-
     async def _notify_anticipation_engine(self, action_type: str, outcome: str):
         """Adjusts anticipation pattern confidence based on outcome result.
 
@@ -848,6 +853,95 @@ class OutcomeTracker:
             )
         except Exception as e:
             logger.debug("Anticipation feedback failed: %s", e)
+
+    # ------------------------------------------------------------------
+    # MCU Sprint 6: Auto-Opinion-Learning aus Geraete-Feedback
+    # ------------------------------------------------------------------
+
+    _AUTO_OPINION_FAILURE_THRESHOLD = 5
+    _AUTO_OPINION_SUCCESS_THRESHOLD = 20
+    _AUTO_OPINION_WINDOW_DAYS = 30
+
+    async def _update_auto_opinion(
+        self, action_type: str, outcome: str, room: str
+    ) -> None:
+        """Zaehlt Erfolge/Fehler pro Geraetetyp+Raum und bildet automatisch Meinungen.
+
+        Bei >=5 Fehlern in 30 Tagen: negative Meinung.
+        Bei >=20 Erfolgen ohne Fehler: positive Meinung.
+        """
+        if not self.redis:
+            return
+
+        device_key = f"{action_type}:{room}" if room else action_type
+        redis_key = f"mha:auto_opinion:{device_key}"
+
+        try:
+            # Zaehler atomar inkrementieren
+            if outcome == OUTCOME_NEGATIVE:
+                await self.redis.hincrby(redis_key, "failures", 1)
+            elif outcome == OUTCOME_POSITIVE:
+                await self.redis.hincrby(redis_key, "successes", 1)
+                # Bei Erfolg: failure streak unterbrechen
+                await self.redis.hset(redis_key, "last_success", "1")
+
+            # TTL setzen (30 Tage Fenster)
+            await self.redis.expire(redis_key, self._AUTO_OPINION_WINDOW_DAYS * 86400)
+
+            # Zaehler lesen
+            raw_failures = await self.redis.hget(redis_key, "failures")
+            raw_successes = await self.redis.hget(redis_key, "successes")
+            failures = int(raw_failures or 0)
+            successes = int(raw_successes or 0)
+
+            # Cooldown: Meinung nur einmal pro Gerät bilden
+            opinion_key = f"mha:auto_opinion:formed:{device_key}"
+            already_formed = await self.redis.get(opinion_key)
+            if already_formed:
+                return
+
+            personality = getattr(self, "_personality", None)
+            if not personality:
+                return
+
+            # Negative Meinung bei vielen Fehlern
+            if failures >= self._AUTO_OPINION_FAILURE_THRESHOLD:
+                room_nice = room.replace("_", " ").capitalize() if room else ""
+                device_nice = (
+                    action_type.replace("set_", "").replace("_", " ").capitalize()
+                )
+                topic = f"{device_nice} {room_nice}".strip()
+                opinion = (
+                    f"Das {device_nice.lower()} "
+                    f"{'im ' + room_nice if room_nice else ''} "
+                    f"macht oefter Probleme — {failures} Fehler in letzter Zeit."
+                ).strip()
+                await personality.store_learned_opinion(topic, opinion)
+                await self.redis.set(opinion_key, "negative", ex=30 * 86400)
+                logger.info("Auto-Opinion (negativ): %s — %d Fehler", topic, failures)
+
+            # Positive Meinung bei vielen Erfolgen ohne Fehler
+            elif successes >= self._AUTO_OPINION_SUCCESS_THRESHOLD and failures == 0:
+                room_nice = room.replace("_", " ").capitalize() if room else ""
+                device_nice = (
+                    action_type.replace("set_", "").replace("_", " ").capitalize()
+                )
+                topic = f"{device_nice} {room_nice}".strip()
+                opinion = (
+                    f"Das {device_nice.lower()} "
+                    f"{'im ' + room_nice if room_nice else ''} "
+                    f"funktioniert zuverlaessig."
+                ).strip()
+                await personality.store_learned_opinion(topic, opinion)
+                await self.redis.set(opinion_key, "positive", ex=30 * 86400)
+                logger.info("Auto-Opinion (positiv): %s — %d Erfolge", topic, successes)
+
+        except Exception as e:
+            logger.debug("Auto-Opinion Update fehlgeschlagen: %s", e)
+
+    def set_personality(self, personality) -> None:
+        """Setzt die PersonalityEngine-Referenz fuer Auto-Opinion-Learning."""
+        self._personality = personality
 
 
 def _extract_state_key(state) -> dict:

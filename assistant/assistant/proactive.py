@@ -9839,10 +9839,22 @@ class ProactiveManager:
                     await self.brain.memory.redis.set(_dedup_key, "1", ex=86400)
 
                 title = get_person_title()
-                msg = (
-                    f"{title}, {event['summary']} in {event['minutes']} Minuten. "
-                    f"Soll ich etwas vorbereiten?"
-                )
+
+                # MCU Sprint 6: Domain-spezifische Kalender-Vorbereitung
+                # Keyword-Matching → konkrete Aktionsvorschlaege statt generisch
+                prep_suggestion = self._get_calendar_preparation(event["summary"])
+
+                if prep_suggestion:
+                    msg = (
+                        f"{title}, {event['summary']} in {event['minutes']} Minuten. "
+                        f"{prep_suggestion}"
+                    )
+                else:
+                    msg = (
+                        f"{title}, {event['summary']} in {event['minutes']} Minuten. "
+                        f"Soll ich etwas vorbereiten?"
+                    )
+
                 await self._deliver(
                     msg,
                     event_type="calendar_preparation",
@@ -9851,13 +9863,60 @@ class ProactiveManager:
                     volume=0.6,
                 )
                 logger.info(
-                    "Calendar-Trigger: %s in %d min",
+                    "Calendar-Trigger: %s in %d min (prep=%s)",
                     event["summary"][:50],
                     event["minutes"],
+                    "domain-specific" if prep_suggestion else "generic",
                 )
 
         except Exception as e:
             logger.debug("Calendar-Trigger Fehler: %s", e)
+
+    # MCU Sprint 6: Domain-spezifische Kalender-Vorbereitung
+    # Keyword → Aktionsvorschlag (konfigurierbar in settings.yaml)
+    _DEFAULT_CALENDAR_PREPARATIONS = {
+        "meeting": "Soll ich das Buero-Licht einschalten und auf Arbeiten umstellen?",
+        "besprechung": "Soll ich das Buero-Licht einschalten und auf Arbeiten umstellen?",
+        "videokonferenz": "Soll ich das Buero-Licht einschalten und auf Arbeiten umstellen?",
+        "video call": "Soll ich das Buero-Licht einschalten und auf Arbeiten umstellen?",
+        "sport": "Soll ich einen Wecker stellen?",
+        "training": "Soll ich einen Wecker stellen?",
+        "fitness": "Soll ich einen Wecker stellen?",
+        "gaeste": "Soll ich den Gaeste-Modus aktivieren?",
+        "gäste": "Soll ich den Gaeste-Modus aktivieren?",
+        "besuch": "Soll ich den Gaeste-Modus aktivieren?",
+        "party": "Soll ich den Gaeste-Modus aktivieren und die Party-Szene vorbereiten?",
+        "arzt": "Soll ich rechtzeitig an die Abfahrt erinnern?",
+        "termin": "Soll ich rechtzeitig an die Abfahrt erinnern?",
+        "kino": "Soll ich die Kino-Szene vorbereiten?",
+        "film": "Soll ich die Filmabend-Szene vorbereiten?",
+        "kochen": "Soll ich das Kuechenlicht einschalten?",
+        "abendessen": "Soll ich das Kuechenlicht einschalten?",
+        "schlafen": "Soll ich die Gute-Nacht-Routine vorbereiten?",
+    }
+
+    def _get_calendar_preparation(self, event_summary: str) -> str:
+        """Mappt Kalender-Event-Titel auf domain-spezifische Vorbereitung.
+
+        Prueft zuerst settings.yaml, dann Default-Mappings.
+
+        Returns:
+            Konkreter Vorschlag oder leerer String.
+        """
+        summary_lower = event_summary.lower().strip()
+
+        # User-konfigurierte Mappings aus settings.yaml
+        user_preps = yaml_config.get("calendar_preparations", {})
+        for keyword, suggestion in user_preps.items():
+            if keyword.lower() in summary_lower:
+                return suggestion
+
+        # Default-Mappings
+        for keyword, suggestion in self._DEFAULT_CALENDAR_PREPARATIONS.items():
+            if keyword in summary_lower:
+                return suggestion
+
+        return ""
 
     async def _run_scene_schedule_loop(self):
         """Prueft jede Minute ob geplante Szenen aktiviert werden muessen."""
