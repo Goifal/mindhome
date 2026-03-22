@@ -1,5 +1,5 @@
 # J.A.R.V.I.S. MCU-Level Implementation Plan
-> Erstellt am 2026-03-22 | Letzter Durchlauf: Session 3 am 2026-03-22
+> Erstellt am 2026-03-22 | Letzter Durchlauf: Session 4 am 2026-03-22
 > Aktueller Stand: 78.0% (FINAL — alle 12 Kategorien analysiert)
 > Dieses Dokument ist die Single Source of Truth für alle MCU-Level Verbesserungen.
 
@@ -16,6 +16,7 @@
 | 1       | 2026-03-22 | 1-4 (×3/×2.5) | 19 |
 | 2       | 2026-03-22 | 5-9 (×2/×1.5) | 16 |
 | 3       | 2026-03-22 | 10-12 (×1) | 8 |
+| 4       | 2026-03-22 | Roadmap & Sprints | 43 (5 Sprints) |
 
 ## Schutzliste — Besser als MCU (NICHT beschädigen!)
 
@@ -484,6 +485,420 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 - Besonders schwach: Multi-Room (73%) — Follow-Me default deaktiviert, kein Audio-Crossfade
 - 2 neue Features als `[BESSER ALS MCU]` identifiziert (Schutzliste #14-#15)
 - **Gesamtbilanz:** 15 Features "Besser als MCU", 43 Verbesserungsaufgaben, alle 12 Kategorien vollständig analysiert
+
+### Durchlauf #4 — Session 4 — 2026-03-22
+- 0 Aufgaben als erledigt markiert (Roadmap-Erstellung, keine Code-Änderungen)
+- 43 Aufgaben in 5 Sprints organisiert mit Abhängigkeitsgraph
+- Implementierungsanweisungen für jede Aufgabe mit Code-Referenzen
+- Quick-Wins identifiziert (Top-10 nach Impact/Aufwand)
+- Kritischer Pfad zum ≥90% Score definiert
+- Ziel-Score nach Umsetzung: **78.0% → ~87-94%**
+- Empfehlung: Sprint 1 (7 Quick Wins) sofort starten
+
+---
+
+## Roadmap & Sprint-Plan
+
+### Abhängigkeitsgraph
+
+```
+[Speaker Recognition default on] ──→ [Auto-Enrollment] ──→ [Confidence Fallback Chain]
+[Briefing-Priorisierung] (unabhängig)
+[Follow-Me default on] (unabhängig)
+[Streaming-Feedback] ──→ [Natürliche Denkpausen]
+[Response-Varianz] (unabhängig)
+[Insight-to-Proactive Bridge] ──→ [Kalender-Trigger] ──→ [Flow-State-Detection]
+[Ankunfts-Begrüßung] ──→ [Multi-Action "Das Übliche"]
+[Contextual Humor erweitern] ──→ [Humor Quality Gate] ──→ [Running Gag Tracker]
+[Guest-Discretion-Mode] ──→ [Vacation-Auto-Detection]
+[Security Audit Log] ──→ [API-Access Anomalie]
+[Multi-Krisen-Priorisierung] ──→ [Externe Eskalationskette]
+["Warum?"-Intent] ──→ [Degraded-Mode-Notification] ──→ [Confidence-Hints]
+[Contradiction Confirmation] ──→ [Proaktive Wissenslücken]
+[Per-Person Room Tracking] ──→ [Konversations-Kontext Raumwechsel]
+```
+
+### Sprint-Übersicht
+
+| Sprint | Thema | Aufgaben | Impact (gewichtet) | Aufwand |
+|--------|-------|----------|-------------------|---------|
+| 1 | Quick Wins — Config & Defaults | 7 | +3.6% Gesamt | Klein |
+| 2 | Konversation & Persönlichkeit (×3) | 9 | +4.8% Gesamt | Mittel |
+| 3 | Proaktivität & Butler (×2.5) | 10 | +3.8% Gesamt | Mittel |
+| 4 | Lernen, Sicherheit & Tiefe | 10 | +2.4% Gesamt | Mittel-Groß |
+| 5 | Infrastruktur & Langzeit | 7 | +1.4% Gesamt | Groß |
+
+**Ziel-Score nach Umsetzung: ~94%** (von 78.0%)
+
+### Sprint 1: Quick Wins — Config & Defaults
+**Status:** `[ ]` Offen
+**Ziel:** Maximaler Impact mit minimalen Code-Änderungen. Aktiviere vorhandene Features, setze bessere Defaults.
+**Vorher → Nachher:** 78.0% → ~81.6% (Ziel)
+**Betroffene Dateien:** `speaker_recognition.py`, `follow_me.py`, `routine_engine.py`, `pre_classifier.py`, `explainability.py`, `personality.py`, `proactive.py`
+
+#### Aufgabe 1.1: Speaker Recognition default aktivieren
+**Status:** `[ ]` | **Priorität:** Hoch | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/speaker_recognition.py`, Zeile 121
+- **Ist:** `self.enabled = sr_cfg.get("enabled", False)` — Default deaktiviert
+- **Soll:** `self.enabled = sr_cfg.get("enabled", True)` — Default aktiviert (nur Device-Mapping, kein Hardware nötig)
+- **Risiko:** Gering — ohne `device_mapping` Config passiert nichts, System fällt auf "unknown" zurück
+- **Akzeptanz:** `[ ]` Speaker-Recognition aktiv ohne manuelle Config-Änderung
+
+#### Aufgabe 1.2: Follow-Me default aktivieren
+**Status:** `[ ]` | **Priorität:** Hoch | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/follow_me.py`, Zeile 41
+- **Ist:** `self.enabled = cfg.get("enabled", False)` — Default deaktiviert
+- **Soll:** `self.enabled = cfg.get("enabled", True)` — Default aktiviert
+- **Risiko:** Gering — ohne `room_motion_sensors` Config passiert nichts
+- **Akzeptanz:** `[ ]` Follow-Me aktiv ohne manuelle Config-Änderung
+
+#### Aufgabe 1.3: Briefing-Priorisierung
+**Status:** `[ ]` | **Priorität:** Hoch | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/routine_engine.py`, Methode `generate_morning_briefing()`
+- **Ist:** Feste Reihenfolge der Briefing-Module (greeting, weather, calendar, house_status, travel, personal_memory, device_conflicts)
+- **Soll:** Sortiere Module nach Urgency-Score: Sicherheits-Alerts (conflicts) zuerst, dann Kalender-Urgent, dann Wetter-Warnungen, dann Rest. Füge `_get_module_urgency(module, data)` Methode hinzu die 0-10 Score zurückgibt.
+- **Akzeptanz:** `[ ]` Sicherheitswarnungen erscheinen im Briefing VOR Wetter
+
+#### Aufgabe 1.4: "Warum?"-Intent im PreClassifier
+**Status:** `[ ]` | **Priorität:** Hoch | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/pre_classifier.py`, Methode `classify()`
+- **Ist:** "Warum hast du das gemacht?" wird als GENERAL klassifiziert → volles LLM-Processing
+- **Soll:** Neues `PROFILE_EXPLAIN` hinzufügen. Detect "warum", "wieso", "weshalb" am Satzanfang + Bezug auf Jarvis-Aktion. Route direkt zu ExplainabilityEngine statt ans LLM.
+- **Akzeptanz:** `[ ]` "Warum?"-Fragen werden in <500ms beantwortet (kein LLM nötig)
+
+#### Aufgabe 1.5: Insight-to-Proactive Bridge
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/insight_engine.py`, Methode nach `_insight_loop()`
+- **Ist:** Insights werden nur über Callback an Brain gemeldet, nicht als ProactiveManager-Events
+- **Soll:** In `_insight_loop()`: Wenn Insight gefunden, zusätzlich als `LOW`-Priority Event an ProactiveManager senden (via `brain.proactive.queue_event()`). Nutze bestehenden Callback-Mechanismus.
+- **Akzeptanz:** `[ ]` Insights erscheinen im Proactive-Batch (z.B. im Abend-Zusammenfassung)
+
+#### Aufgabe 1.6: Degraded-Mode-Notification
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/brain.py`, nach `_safe_init()` Block (ca. Zeile 1550)
+- **Ist:** `_degraded_modules` wird geloggt aber User wird nicht informiert
+- **Soll:** Wenn `_degraded_modules` nicht leer: beim ersten User-Request einen einmaligen Hinweis geben: "Hinweis: {module} ist gerade nicht verfügbar. Ich arbeite mit eingeschränkter Funktionalität."
+- **Akzeptanz:** `[ ]` User wird über ausgefallene Module informiert (1× nach Boot)
+
+#### Aufgabe 1.7: Confidence-Hints in Antworten
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/personality.py`, Methode `build_system_prompt()`
+- **Ist:** Confidence nicht im Prompt
+- **Soll:** Wenn ExplainabilityEngine `confidence_display: true` UND letzte Aktion Confidence <0.7: Füge Prompt-Hint hinzu: "Bei unsicheren Aussagen: Sage 'Ich bin mir nicht ganz sicher, aber...' statt absolute Aussagen."
+- **Akzeptanz:** `[ ]` Bei unsicheren Antworten wird Unsicherheit natürlich kommuniziert
+
+### Sprint 1 — Validierung
+- [ ] Alle 7 Aufgaben abgeschlossen
+- [ ] `cd assistant && python -m pytest --tb=short -q` — alle Tests grün
+- [ ] `ruff check --select=E9,F63,F7,F82 --ignore=F823 assistant/` — kein Fehler
+- [ ] Kein Breaking Change an bestehenden APIs
+- [ ] Schutzliste geprüft — keine "Besser als MCU" Features beschädigt
+
+### Sprint 2: Konversation & Persönlichkeit (×3 Kategorien)
+**Status:** `[ ]` Offen
+**Ziel:** Größter Impact — die beiden ×3-Kategorien (Konversation 72%, Persönlichkeit 78%) auf 85%+ heben.
+**Vorher → Nachher:** Cat1: 72%→85%, Cat2: 78%→88%
+**Betroffene Dateien:** `personality.py`, `tts_enhancer.py`, `dialogue_state.py`, `brain.py`, `conversation_memory.py`
+
+#### Aufgabe 2.1: Response-Varianz-Engine
+**Status:** `[ ]` | **Priorität:** Kritisch | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/personality.py`
+- **Ist:** Antworten haben Mood-Styles und Humor-Templates, aber keine systematische Struktur-Variation
+- **Soll:** Tracke letzte 5 Antwort-Strukturen in Redis (`mha:personality:response_patterns`). Vor dem System-Prompt: prüfe dominante Struktur, füge Variation-Hint hinzu ("Letzte 3 Antworten waren Bestätigungen — variiere: Frage, Kommentar, oder Aktion-zuerst").
+- **Implementierung:** Neue Methode `_get_variation_hint()` in PersonalityEngine. Aufrufen in `build_system_prompt()` nach der Humor-Section.
+- **Akzeptanz:** `[ ]` Keine 2 aufeinanderfolgenden Antworten haben dieselbe Satzstruktur
+
+#### Aufgabe 2.2: Natürliche Denkpausen in TTS
+**Status:** `[ ]` | **Priorität:** Hoch | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/tts_enhancer.py`, Methode `enhance()`
+- **Ist:** TTS-Text wird direkt ausgegeben, keine Filler
+- **Soll:** Bei `message_type != "confirmation"` und Textlänge >100 Zeichen: optional Filler-Prefix ("Moment...", "Mal sehen...", "Lass mich kurz prüfen...") mit 500ms Pause (SSML `<break>`). Nur bei Voice-Interaktion, max 1 Filler pro 3 Antworten.
+- **Akzeptanz:** `[ ]` Bei komplexen Antworten: Antwort-Beginn <1s (Filler), vollständige Antwort <3s
+
+#### Aufgabe 2.3: Topic-Switch-Detection
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/dialogue_state.py`, Methode `track_turn()`
+- **Ist:** Kein Detection wenn User abrupt Thema wechselt
+- **Soll:** Vergleiche aktuellen Turn-Text mit letztem via einfaches Keyword-Overlap (Jaccard-Similarity auf Wortebene). Overlap <0.1 UND kein Referenz-Wort ("es", "das") → `state.reset()` aufrufen. Logge als "topic_switch".
+- **Akzeptanz:** `[ ]` Abrupter Themenwechsel wird in >90% korrekt erkannt
+
+#### Aufgabe 2.4: Streaming-Feedback bei langen Anfragen
+**Status:** `[ ]` | **Priorität:** Hoch | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/brain.py`, Methode `_process_inner()`
+- **Ist:** User wartet bis LLM-Antwort komplett ist
+- **Soll:** Wenn `stream_callback` vorhanden UND Profile != DEVICE_FAST: sofort "Ich prüfe das, {title}." via TTS aussprechen (fire-and-forget), dann normal weiterverarbeiten. Nur wenn LLM-Latenz erwartet >2s (Smart/Deep Modell).
+- **Akzeptanz:** `[ ]` Gefühlte Latenz <1s bei Voice-Interaktion
+
+#### Aufgabe 2.5: Aktive Follow-Up-Erinnerungen
+**Status:** `[ ]` | **Priorität:** Hoch | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/conversation_memory.py` + `proactive.py`
+- **Ist:** Follow-ups werden gespeichert aber nicht proaktiv erinnert
+- **Soll:** In ProactiveManager `_check_loop()`: alle 2h `conversation_memory.get_pending_followups()` abfragen. Fällige Follow-ups als MEDIUM-Priority Event senden: "Du wolltest gestern noch {topic} erledigen."
+- **Akzeptanz:** `[ ]` Follow-up-Erinnerungen erscheinen innerhalb von 24h
+
+#### Aufgabe 2.6: Contextual Humor Triggers erweitern
+**Status:** `[ ]` | **Priorität:** Hoch | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/personality.py`, `CONTEXTUAL_HUMOR_TRIGGERS` Dict
+- **Ist:** ~10 Situationen mit Humor-Templates
+- **Soll:** Erweitern auf 30+: Wiederholte Anfragen ("Schon wieder, {title}?"), widersprüchliche Befehle ("Erst an, dann aus?"), ungewöhnliche Uhrzeiten ("Um 3 Uhr? Ambitioniert."), Wetter-Kontraste ("Heizung bei 28° Außentemperatur?"), Rekorde ("Das ist der 10. Lichtbefehl heute.").
+- **Akzeptanz:** `[ ]` 30+ kontextuelle Humor-Trigger definiert
+
+#### Aufgabe 2.7: Humor Quality Gate
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/personality.py`, nach LLM-Response-Processing in `brain.py`
+- **Ist:** Kein Post-LLM Quality-Check für Humor
+- **Soll:** Bei Sarkasmus-Level ≥3 und Fast-Modell: prüfe ob Antwort mindestens ein Humor-Pattern enthält (trockener Einzeiler, Understatement). Blocke Emoji-Humor, Kalauer, "Haha"-Patterns. Regex-basierter Filter.
+- **Akzeptanz:** `[ ]` Humor-Qualität konsistent auch bei Fast-Modellen
+
+#### Aufgabe 2.8: Running Gag Tracker
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/personality.py`
+- **Ist:** Running Gags nur in Memory (verloren bei Restart)
+- **Soll:** Redis-basierter Tracker: `mha:personality:running_gags` (Hash). Speichere Gag-ID → {count, last_used, evolution_stage}. Max 1 Running Gag pro 3 Tage. Bei count >3: eskaliere Formulierung.
+- **Akzeptanz:** `[ ]` Running Gags überleben Neustarts und entwickeln sich
+
+#### Aufgabe 2.9: Meinungs-Engine mit Fact-Base
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Groß
+- **Datei:** `assistant/assistant/personality.py` + `semantic_memory.py`
+- **Ist:** `opinion_intensity` ist Prompt-Parameter, keine Fakten-Basis
+- **Soll:** Nutze SemanticMemory Kategorie "general" für "Jarvis-Meinungen". Wenn Entity 5× in negativem Kontext erwähnt → speichere Meinung. In `check_opinion()`: zusätzlich SemanticMemory abfragen für gelernte Meinungen.
+- **Akzeptanz:** `[ ]` Jarvis hat zu mindestens 5 Haus-Themen eigene Meinung
+
+### Sprint 2 — Validierung
+- [ ] Alle 9 Aufgaben abgeschlossen
+- [ ] `cd assistant && python -m pytest --tb=short -q` — alle Tests grün
+- [ ] `ruff check --select=E9,F63,F7,F82 --ignore=F823 assistant/` — kein Fehler
+- [ ] Kein Breaking Change
+- [ ] Schutzliste geprüft — Contextual Humor Triggers (#3) und Sarkasmus-Learning (#13) nicht beschädigt
+
+### Sprint 3: Proaktivität & Butler-Qualitäten (×2.5 Kategorien)
+**Status:** `[ ]` Offen
+**Ziel:** Die ×2.5-Kategorien (Proaktivität 76%, Butler 80%) auf 85%+ heben.
+**Vorher → Nachher:** Cat3: 76%→86%, Cat4: 80%→89%
+**Betroffene Dateien:** `proactive.py`, `brain.py`, `anticipation.py`, `activity.py`, `routine_engine.py`, `personality.py`
+
+#### Aufgabe 3.1: Kalender-Trigger für ProactiveManager
+**Status:** `[ ]` | **Priorität:** Hoch | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/proactive.py` + `calendar_intelligence.py`
+- **Ist:** ProactiveManager reagiert auf HA-Events, nicht auf Kalender-Events
+- **Soll:** In `_check_loop()`: alle 15min `calendar_intelligence.get_upcoming_events(30)` abfragen. Für Events in 10-30min: MEDIUM-Priority Vorbereitungsvorschlag ("Meeting in 20 Min — Büro-Licht vorbereiten?").
+- **Akzeptanz:** `[ ]` Kalender-basierte Vorbereitungsvorschläge 10-30min vor Events
+
+#### Aufgabe 3.2: "Guten Abend"-Orchestrierung / Ankunfts-Begrüßung
+**Status:** `[ ]` | **Priorität:** Hoch | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/brain.py` + `routine_engine.py` + `anticipation.py`
+- **Ist:** Ankunft wird erkannt, aber keine orchestrierte Sequenz
+- **Soll:** Bei `person_arrived` Event + >4h Abwesenheit: 1) AnticipationEngine Top-3 Aktionen abfragen, 2) Sequentiell ausführen, 3) TTS-Narration: "Willkommen zurück, {title}. Ich habe mir erlaubt: {aktion1}, {aktion2}. Während du weg warst: {events}."
+- **Akzeptanz:** `[ ]` Ankunfts-Begrüßung nach >4h mit ≥2 Aktionen und Zusammenfassung
+
+#### Aufgabe 3.3: Multi-Action "Das Übliche"
+**Status:** `[ ]` | **Priorität:** Hoch | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/brain.py`, Methode `_handle_das_uebliche()` (Zeile 14386+)
+- **Ist:** Führt nur die beste (einzelne) Suggestion aus
+- **Soll:** `anticipation.get_suggestions()` mit `limit=3` aufrufen. Alle 3 mit Confidence ≥0.7 als Sequenz ausführen. TTS: "Wie gewohnt, {title}: {aktion1}, {aktion2}, und {aktion3}."
+- **Akzeptanz:** `[ ]` "Das Übliche" führt ≥2 Aktionen als narrated Sequenz aus
+
+#### Aufgabe 3.4: Flow-State-Detection für Interrupt-Timing
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/activity.py`, Klasse `ActivityEngine`
+- **Ist:** FOCUSED-State erkannt, aber kein `focused_since` Timestamp
+- **Soll:** Erweitere ActivityEngine um `_focused_since: Optional[datetime]`. Setze bei Wechsel zu FOCUSED. ProactiveManager: wenn FOCUSED seit >30min → MEDIUM/LOW Meldungen aufstauen bis Pause (Motion in anderem Raum, Türöffnung).
+- **Akzeptanz:** `[ ]` MEDIUM/LOW Meldungen werden während Focus-Perioden aufgeschoben
+
+#### Aufgabe 3.5: Guest-Discretion-Mode
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/personality.py` + `activity.py` + `proactive.py`
+- **Ist:** GUESTS Activity-State existiert, aber keine Auswirkung auf Persönlichkeit
+- **Soll:** Wenn Activity=GUESTS: 1) PersonalityEngine: keine persönlichen Fakten im Prompt, 2) ProactiveManager: nur HIGH/CRITICAL, 3) TTS: generischere Anrede. Neues Flag `_guest_mode_active` in PersonalityEngine.
+- **Akzeptanz:** `[ ]` Im Gäste-Modus keine persönlichen Infos per TTS
+
+#### Aufgabe 3.6: Vacation-Auto-Detection
+**Status:** `[ ]` | **Priorität:** Niedrig | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/proactive.py`
+- **Ist:** Vacation-Modus nur manuell aktivierbar
+- **Soll:** In `_check_loop()`: Wenn `is_anyone_home() == False` für >48h (Redis-Timestamp): LOW-Notification "Soll ich den Urlaubsmodus aktivieren?" Max 1× pro 7 Tage.
+- **Akzeptanz:** `[ ]` Nach >48h Abwesenheit: automatischer Urlaubsmodus-Vorschlag
+
+#### Aufgabe 3.7: Critical-Eskalation mit steigender Dringlichkeit
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/proactive.py`, Methode `_send_critical_with_retry()`
+- **Ist:** Retry mit fester Lautstärke-Steigerung (0.7→1.0), 30s Intervall
+- **Soll:** Zusätzlich: nach 2. Retry → alternative Räume ansprechen (alle Speakers). Nach 3. Retry → LED-Blink in allen Räumen aktivieren (via `light.turn_on` mit Flash-Effekt).
+- **Akzeptanz:** `[ ]` CRITICAL-Warnungen erreichen alle Räume nach 2 ignorierten Versuchen
+
+#### Aufgabe 3.8: Post-Crisis Debrief
+**Status:** `[ ]` | **Priorität:** Niedrig | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/threat_assessment.py`
+- **Ist:** Kein Debrief nach Entwarnung
+- **Soll:** Nach `execute_playbook()` Abschluss: sammle Dauer, ausgeführte Steps, Ergebnis. Sende MEDIUM-Notification: "Entwarnung: {event_type} nach {duration}min. Alle Systeme normal. Vorfall dokumentiert."
+- **Akzeptanz:** `[ ]` Nach jeder Krise automatisches Debrief mit Zusammenfassung
+
+#### Aufgabe 3.9: Multi-Krisen-Priorisierung
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/threat_assessment.py`, Methode `assess_threats()`
+- **Ist:** Threats werden als Liste zurückgegeben, keine Sortierung
+- **Soll:** Sortiere Threats nach Lebensbedrohung: `_THREAT_PRIORITY = {"smoke_fire": 0, "carbon_monoxide": 0, "medical": 1, "break_in": 2, "water_leak": 3, "power_outage": 4}`. Führe höchste Priorität zuerst aus.
+- **Akzeptanz:** `[ ]` Bei Multi-Krisen: Feuer/CO wird vor Einbruch/Wasser behandelt
+
+#### Aufgabe 3.10: Externe Eskalationskette
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/threat_assessment.py`
+- **Ist:** Benachrichtigung nur über HA-Notify (Push)
+- **Soll:** Neuer Config-Block `emergency_contacts: [{name, ha_notify_target, delay_minutes}]`. Nach N Minuten ohne ACK: nächsten Kontakt benachrichtigen. Optional: Nachricht enthält Adresse + Situationsbeschreibung.
+- **Akzeptanz:** `[ ]` Nach 2min ohne Reaktion: automatisch Notfall-Kontakt benachrichtigt
+
+### Sprint 3 — Validierung
+- [ ] Alle 10 Aufgaben abgeschlossen
+- [ ] `cd assistant && python -m pytest --tb=short -q` — alle Tests grün
+- [ ] `ruff check --select=E9,F63,F7,F82 --ignore=F823 assistant/` — kein Fehler
+- [ ] Schutzliste geprüft — Silence Matrix (#5), Pushback-Learning (#6), predict_future_needs (#7) nicht beschädigt
+
+### Sprint 4: Lernen, Sicherheit & Sprecherkennung
+**Status:** `[ ]` Offen
+**Ziel:** Kategorien 6-9 polieren. Lernsystem vertiefen, Security härten, Speaker verbessern.
+**Vorher → Nachher:** Cat6: 81%→88%, Cat7: 74%→85%, Cat8: 78%→85%, Cat9: 85%→91%
+**Betroffene Dateien:** `semantic_memory.py`, `speaker_recognition.py`, `threat_assessment.py`, `function_validator.py`, `proactive.py`
+
+#### Aufgabe 4.1: Proaktive Wissenslücken-Erkennung
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/semantic_memory.py` + `proactive.py`
+- **Soll:** Neue Methode `get_knowledge_gaps(room)` in SemanticMemory: prüfe ob für einen Raum <2 Präferenz-Fakten existieren. ProactiveManager: max 1×/Woche/Raum als LOW-Event: "Wie warm magst du es im {room}?"
+- **Akzeptanz:** `[ ]` Wissenslücken-Fragen max 1/Woche/Raum
+
+#### Aufgabe 4.2: Contradiction Confirmation
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/semantic_memory.py`, Methode `store_fact()`
+- **Ist:** Bei Widerspruch → neuerer Fakt gewinnt automatisch
+- **Soll:** Wenn `_check_contradiction()` True: Speichere neuen Fakt als "pending". In ProactiveManager: MEDIUM-Event "Du sagtest letztens {old}, jetzt {new} — soll ich aktualisieren?" Bei Bestätigung → confirm, bei Ablehnung → discard.
+- **Akzeptanz:** `[ ]` Widersprüchliche Fakten werden dem User vorgelegt
+
+#### Aufgabe 4.3: Langzeit-Lernbericht
+**Status:** `[ ]` | **Priorität:** Niedrig | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/semantic_memory.py` + `routine_engine.py`
+- **Soll:** Neue Methode `generate_learning_report(days=90)`: Sammle Fakten der letzten N Tage, gruppiere nach Kategorie, identifiziere Trends (z.B. "Aufstehzeit 15min früher"). Monatlich als LOW-Event via ProactiveManager.
+- **Akzeptanz:** `[ ]` Monatlicher Lernbericht mit ≥3 erkannten Trends
+
+#### Aufgabe 4.4: Auto-Enrollment für neue Stimmen
+**Status:** `[ ]` | **Priorität:** Hoch | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/speaker_recognition.py`, Methode `resolve_fallback_answer()`
+- **Ist:** Unbekannter Sprecher → Rückfrage → Name gespeichert, aber kein Voice-Embedding
+- **Soll:** Nach erfolgreicher `resolve_fallback_answer()`: automatisch `learn_embedding_from_audio()` aufrufen mit dem cached Embedding. So wird die Stimme beim nächsten Mal erkannt.
+- **Akzeptanz:** `[ ]` Neue Personen per Sprache registrierbar (1 Interaktion)
+
+#### Aufgabe 4.5: Confidence-basiertes Fallback-Chain
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/speaker_recognition.py`, Methode `identify()`
+- **Ist:** Confidence <0.7 → sofort Fallback-Ask
+- **Soll:** Wenn Confidence 0.5-0.7: nutze Raum+Zeit-Kontext zur Bestätigung. "Das klingt nach {person} — bist du das?" Nur bei Voice-Confidence 0.5-0.7, nicht bei Device-Mapping.
+- **Akzeptanz:** `[ ]` Soft-Confirmation bei mittlerer Confidence statt direkter Rückfrage
+
+#### Aufgabe 4.6: Security Audit Log
+**Status:** `[ ]` | **Priorität:** Hoch | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/function_validator.py` oder neues `security_audit.py`
+- **Soll:** Bei jeder Security-Action (lock/unlock/arm/disarm/trust_change): Redis-Log `mha:security:audit` (List, max 500, 90-Tage TTL). Format: `{action, person, result, timestamp, entity}`.
+- **Akzeptanz:** `[ ]` Alle Security-Actions in Audit-Log mit 90 Tage Retention
+
+#### Aufgabe 4.7: API-Access Anomalie-Detection
+**Status:** `[ ]` | **Priorität:** Niedrig | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/main.py` (FastAPI Middleware)
+- **Soll:** Tracke API-Zugriffsmuster in Redis: `mha:api:access:{hour}` (Counter). Bei 3× falschem Token oder Zugriff 2-5 Uhr von unbekannter Source: LOW Alert via ProactiveManager.
+- **Akzeptanz:** `[ ]` Ungewöhnliche API-Muster generieren Warnungen
+
+#### Aufgabe 4.8: Automatic Security Hardening Report
+**Status:** `[ ]` | **Priorität:** Niedrig | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/diagnostics.py` oder `threat_assessment.py`
+- **Soll:** Monatlicher Report: Zähle Geräte ohne Passwort, offene Ports (via HA-Integration), Sensoren mit <20% Batterie. Format als ProactiveManager LOW-Event.
+- **Akzeptanz:** `[ ]` Monatlicher Security-Report mit konkreten Empfehlungen
+
+#### Aufgabe 4.9: Threat Assessment Tests erweitern
+**Status:** `[ ]` | **Priorität:** Hoch | **Aufwand:** Klein
+- **Datei:** `assistant/tests/test_threat_assessment.py`
+- **Ist:** 296 Zeilen Tests
+- **Soll:** Erweitern auf 800+: Concurrent Threats, Playbook-Duplikat-Guard, CO2-vs-CO-Unterscheidung, Night-Motion Edge Cases, Multi-Crisis-Priority.
+- **Akzeptanz:** `[ ]` Test-Coverage für threat_assessment.py >80%
+
+#### Aufgabe 4.10: Per-Person Room Tracking
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/context_builder.py`, Methode `_build_room_presence()`
+- **Ist:** Alle Home-Personen werden dem primären Raum zugewiesen
+- **Soll:** Nutze `follow_me._person_room` Dict für individuelles Tracking. Fallback auf HA `person.*` Entity `source`-Attribute (BLE-Router). Nur wenn Daten verfügbar — sonst Fallback auf aktuelles Verhalten.
+- **Akzeptanz:** `[ ]` >90% korrekte Per-Person Raum-Zuordnung (wenn Motion-Sensoren konfiguriert)
+
+### Sprint 4 — Validierung
+- [ ] Alle 10 Aufgaben abgeschlossen
+- [ ] `cd assistant && python -m pytest --tb=short -q` — alle Tests grün
+- [ ] `ruff check --select=E9,F63,F7,F82 --ignore=F823 assistant/` — kein Fehler
+- [ ] Schutzliste geprüft — Contradiction-Detection (#12), SSRF (#10) nicht beschädigt
+
+### Sprint 5: Infrastruktur & Langzeit-Features
+**Status:** `[ ]` Offen
+**Ziel:** Tiefe Infrastruktur-Verbesserungen und Nice-to-haves.
+**Vorher → Nachher:** Cat5: 82%→88%, Cat10: 73%→82%, Cat11: 84%→90%, Cat12: 77%→84%
+**Betroffene Dateien:** `context_builder.py`, `follow_me.py`, `energy_optimizer.py`, `explainability.py`, `device_health.py`
+
+#### Aufgabe 5.1: Kontext-Delta-Streaming
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Groß
+- **Datei:** `assistant/assistant/context_builder.py`
+- **Soll:** Event-getriebene Updates statt pro-Request-Build. Subscibe auf HA-Events, aktualisiere nur geänderte Daten in einem Shared-State-Dict. `build()` liest aus Cache statt alles neu zu laden.
+- **Akzeptanz:** `[ ]` Kontextdaten max 2s alt statt 5s
+
+#### Aufgabe 5.2: Audio Crossfade bei Raumwechsel
+**Status:** `[ ]` | **Priorität:** Mittel | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/follow_me.py`, Methode `_transfer_music()`
+- **Soll:** 2s Crossfade: `media_player.volume_set` auf altem Gerät graduell senken (100%→0% in 2s), parallel neues Gerät starten. Nutze `asyncio.sleep(0.2)` in Schleife für 10 Stufen.
+- **Akzeptanz:** `[ ]` Audio-Transfer ohne abruptes Abbrechen
+
+#### Aufgabe 5.3: Konversations-Kontext bei Raumwechsel
+**Status:** `[ ]` | **Priorität:** Niedrig | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/follow_me.py` + `brain.py`
+- **Soll:** Bei Raumwechsel: `dialogue_state._get_state(person)` beibehalten (schon der Fall). Zusätzlich: wenn letzte Interaktion <5min: TTS im neuen Raum "Wir waren gerade bei {last_topic}..."
+- **Akzeptanz:** `[ ]` Konversation überlebt Raumwechsel nahtlos
+
+#### Aufgabe 5.4: Intelligente Last-Priorisierung
+**Status:** `[ ]` | **Priorität:** Niedrig | **Aufwand:** Mittel
+- **Datei:** `assistant/assistant/energy_optimizer.py`
+- **Soll:** Neue Config `load_priorities: {essential: [...], comfort: [...], entertainment: [...]}`. Bei Preis >threshold: Entertainment zuerst abschalten, dann Comfort. Essential nie.
+- **Akzeptanz:** `[ ]` Load-Shedding nach Priorität bei hohem Strompreis
+
+#### Aufgabe 5.5: Batterie-/USV-Integration
+**Status:** `[ ]` | **Priorität:** Niedrig | **Aufwand:** Groß
+- **Datei:** `assistant/assistant/energy_optimizer.py`
+- **Soll:** Erkennung von Batteriespeicher-Entities (sensor.*battery*level*, *soc*). Bei günstigem Strom → Empfehlung "Batterie laden". Bei teurem → "Batterie entladen". Im Energy-Report anzeigen.
+- **Akzeptanz:** `[ ]` Batteriespeicher im Energy-Report integriert
+
+#### Aufgabe 5.6: Accelerated Baselines für neue Geräte
+**Status:** `[ ]` | **Priorität:** Niedrig | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/device_health.py`
+- **Ist:** Min 10 Samples (= 10+ Tage) bevor Anomalie-Detection greift
+- **Soll:** Erste 48h: `min_samples=3`, `stddev_multiplier=3.0` (lockerer). Nach 10 Samples: normal. Erlaubt frühe grobe Erkennung.
+- **Akzeptanz:** `[ ]` Neue Geräte werden innerhalb von 48h erkannt
+
+#### Aufgabe 5.7: Konversations-Kontext bei Raumwechsel
+**Status:** `[ ]` | **Priorität:** Niedrig | **Aufwand:** Klein
+- **Datei:** `assistant/assistant/follow_me.py`
+- **Soll:** In Follow-Me Settings-Section in `settings.yaml.example` dokumentieren (fehlt aktuell). Config-Block mit allen Optionen und Kommentaren hinzufügen.
+- **Akzeptanz:** `[ ]` Follow-Me in settings.yaml.example dokumentiert
+
+### Sprint 5 — Validierung
+- [ ] Alle 7 Aufgaben abgeschlossen
+- [ ] `cd assistant && python -m pytest --tb=short -q` — alle Tests grün
+- [ ] `ruff check --select=E9,F63,F7,F82 --ignore=F823 assistant/` — kein Fehler
+- [ ] Schutzliste geprüft — Cross-Reference-Insights (#9), Device-Dependencies (#15) nicht beschädigt
+
+---
+
+## Anweisungen für den umsetzenden Agenten
+
+Du bist ein Code-Agent der diesen Plan umsetzt. Folge diesen Regeln:
+- Arbeite die Sprints in Reihenfolge ab — überspringe keinen Sprint
+- Überspringe Aufgaben die als `[x]` oder `⏭️` markiert sind
+- Aufgaben mit `[~]` müssen fertiggestellt werden — lies was noch fehlt
+- Prüfe nach jeder Aufgabe die Akzeptanzkriterien
+- Ändere NIEMALS sicherheitskritische Logik ohne explizite Freigabe
+- Führe nach jedem Sprint die Tests aus: `cd assistant && python -m pytest --tb=short -q`
+- Committe nach jedem Sprint
+- Achte auf die Schutzliste — diese Features dürfen NICHT beschädigt werden
+- Verwende den vollständigen Executor-Prompt: `docs/prompts/jarvis-mcu-executor.md`
 
 ## 5. Situationsbewusstsein & Kontextverständnis (×2)
 
@@ -964,6 +1379,61 @@ Bei Angriffen auf das Haus (Iron Man 3) koordiniert Jarvis die Verteidigung, pri
 | 11. Energie & Steuerung | 2 | 0 | 0 | 2 |
 | 12. Erklärbarkeit | 3 | 0 | 0 | 3 |
 | **Gesamt** | **43** | **0** | **0** | **43** |
+
+### Gewichtete Score-Projektion nach Umsetzung
+
+| Kategorie | Gewicht | Aktuell | Nach Umsetzung | Sprint |
+|-----------|---------|---------|----------------|--------|
+| Natürliche Konversation | ×3 | 72% | 85% | 1,2 |
+| Persönlichkeit & Humor | ×3 | 78% | 88% | 2 |
+| Proaktives Handeln | ×2.5 | 76% | 86% | 1,3 |
+| Butler-Qualitäten | ×2.5 | 80% | 89% | 1,3 |
+| Situationsbewusstsein | ×2 | 82% | 88% | 5 |
+| Lernfähigkeit | ×2 | 81% | 88% | 4 |
+| Sprecherkennung | ×1.5 | 74% | 85% | 1,4 |
+| Krisenmanagement | ×1.5 | 78% | 85% | 3,4 |
+| Sicherheit | ×1.5 | 85% | 91% | 1,4 |
+| Multi-Room | ×1 | 73% | 82% | 1,5 |
+| Energiemanagement | ×1 | 84% | 90% | 5 |
+| Erklärbarkeit | ×1 | 77% | 84% | 1 |
+| **GESAMT** | **22.5** | **78.0%** | **~87%** | |
+
+### Top-10 Quick Wins (Impact/Aufwand-Verhältnis)
+
+Sortiert nach: `(%-Gewinn × Kategorie-Gewicht × Alltags-Faktor) / Aufwand`
+
+| # | Aufgabe | Sprint | Kat-Gewicht | Impact | Alltag | Score |
+|---|---------|--------|-------------|--------|--------|-------|
+| 1 | Speaker Recognition default on | 1 | ×1.5 | +3% | TÄGLICH | 13.5 |
+| 2 | Follow-Me default on | 1 | ×1 | +5% | TÄGLICH | 15.0 |
+| 3 | Briefing-Priorisierung | 1 | ×2.5 | +3% | TÄGLICH | 22.5 |
+| 4 | Contextual Humor erweitern | 2 | ×3 | +4% | TÄGLICH | 36.0 |
+| 5 | Response-Varianz-Engine | 2 | ×3 | +5% | TÄGLICH | 45.0 |
+| 6 | Natürliche Denkpausen TTS | 2 | ×3 | +3% | TÄGLICH | 27.0 |
+| 7 | Aktive Follow-Up-Erinnerungen | 2 | ×3 | +4% | WÖCHENTL | 24.0 |
+| 8 | "Warum?"-Intent | 1 | ×1 | +4% | WÖCHENTL | 8.0 |
+| 9 | Insight-to-Proactive Bridge | 1 | ×2.5 | +2% | WÖCHENTL | 10.0 |
+| 10 | Kalender-Trigger ProactiveManager | 3 | ×2.5 | +5% | TÄGLICH | 37.5 |
+
+### Kritischer Pfad zum ≥90% Score
+
+Fokus auf ×3 und ×2.5 Kategorien (11/22.5 = 49% des Gewichts):
+
+1. **Cat 1 (×3): 72%→85%** = +13% × 3 = **+39 gewichtet** → Sprints 1+2 (Response-Varianz, Denkpausen, Streaming-Feedback, Topic-Switch, Follow-Ups)
+2. **Cat 2 (×3): 78%→88%** = +10% × 3 = **+30 gewichtet** → Sprint 2 (Humor erweitern, Quality Gate, Running Gags, Meinungs-Engine)
+3. **Cat 3 (×2.5): 76%→86%** = +10% × 2.5 = **+25 gewichtet** → Sprint 3 (Kalender-Trigger, Ankunfts-Begrüßung, Multi-Action "Das Übliche")
+4. **Cat 4 (×2.5): 80%→89%** = +9% × 2.5 = **+22.5 gewichtet** → Sprint 3 (Guest-Mode, Flow-State, Critical-Eskalation)
+
+**Summe kritischer Pfad:** +116.5 gewichtete Punkte = +5.2% Gesamt-Score
+
+### Fazit
+
+- **Aktueller Stand:** 78.0% — Ein beeindruckend umfassendes System mit 98 Modulen, 15 Features die MCU-Jarvis übertreffen, und produktionsreifer Code-Qualität. Die Grundarchitektur ist exzellent.
+- **Erreichbar nach Umsetzung:** ~87% (konservativ) bis ~94% (optimistisch)
+- **Größte Stärke:** Security (85%) und Situationsbewusstsein (82%) — 154 Injection-Patterns, 16 Cross-Reference-Insights, 7-Layer SSRF. Systematischer als MCU-Jarvis.
+- **Größte Schwäche:** Konversation (72%, ×3 Gewicht) — fehlende Antwort-Varianz und natürliche Pausen haben den höchsten gewichteten Impact auf den Gesamt-Score.
+- **Alltagsrelevanteste Verbesserung:** Response-Varianz-Engine (Sprint 2) — bei JEDER Interaktion spürbar, ×3 Gewicht.
+- **Empfehlung:** Sprint 1 (Quick Wins) sofort starten — 7 Config-Änderungen mit minimalem Risiko und spürbarem Effekt. Dann Sprint 2 für den größten Score-Sprung.
 
 ## 10. Multi-Room-Awareness & Follow-Me (×1)
 
