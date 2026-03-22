@@ -3565,6 +3565,16 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("personality", "trait_unlock_days_per_stage"): (7, 60),
         # What-If Simulation (extended)
         ("whatif_simulation", "proactive_min_confidence"): (0.5, 0.9),
+        # MCU Sprint 3-5: Calendar, Arrival, Energy
+        ("calendar_triggers", "check_interval_minutes"): (5, 60),
+        ("calendar_triggers", "lead_time_min"): (5, 30),
+        ("calendar_triggers", "lead_time_max"): (15, 60),
+        ("arrival_greeting", "min_absence_hours"): (1, 12),
+        ("arrival_greeting", "max_actions"): (1, 5),
+        ("arrival_greeting", "min_confidence"): (0.5, 0.95),
+        ("energy", "load_shed_price_cent"): (20, 100),
+        ("tts", "filler", "interval"): (1, 10),
+        ("follow_me", "cooldown_seconds"): (10, 300),
     }
     # Model Profiles dynamisch validieren (alle Sub-Profile)
     MP_RANGES = {
