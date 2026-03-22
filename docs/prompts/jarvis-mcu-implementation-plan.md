@@ -1,6 +1,6 @@
 # J.A.R.V.I.S. MCU-Level Implementation Plan
 > Erstellt am 2026-03-22 | Letzter Durchlauf: Session 3 am 2026-03-22
-> Aktueller Stand: 81.1% (Endergebnis — 12 von 12 Kategorien analysiert)
+> Aktueller Stand: 80.5% (Endergebnis — 12 von 12 Kategorien analysiert)
 > Dieses Dokument ist die Single Source of Truth für alle MCU-Level Verbesserungen.
 
 ## Status-Legende
@@ -15,7 +15,7 @@
 |---------|-------|------------|----------|
 | 1       | 2026-03-22 | 1-4 (×3/×2.5) | 18 |
 | 2       | 2026-03-22 | 5-9 (×2/×1.5) | 16 |
-| 3       | 2026-03-22 | 10-12 (×1)     | 9  |
+| 3       | 2026-03-22 | 10-12 (×1)     | 12 |
 
 ## Schutzliste — Besser als MCU (NICHT beschädigen!)
 
@@ -1322,97 +1322,137 @@ MCU-Jarvis erklärt seine Empfehlungen, nennt Gründe für Entscheidungen und ha
 - Avengers 2: "Sir, may I remind you..." — Begründete Empfehlungen
 - Iron Man 1-3: Jarvis erklärt jeden Schritt bei komplexen Aktionen ("Initializing House Party Protocol...")
 
-### MindHome-Jarvis Status: 85%
+### MindHome-Jarvis Status: 72%
+
+> **Hinweis:** Score von 85% auf 72% korrigiert nach Tiefenanalyse. Die Architektur ist solide,
+> aber kritische Integrationslücken (auto_explain=False, fehlende User-API, lückenhafte log_decision-Abdeckung)
+> reduzieren den effektiven MCU-Match erheblich.
 
 ### Code-Verifizierung
 **[V1] Analyse:**
 
-1. **ExplainabilityEngine** — `assistant/assistant/explainability.py` (837 Zeilen)
-   - `explain_action()` (Zeile 80-152): Multi-Part-Erklärung: Trigger + Reasoning + Alternativen `[OK]`
-   - `explain_proactive()` (Zeile 154-226): Warum ein proaktiver Vorschlag gemacht wurde (Muster + Konfidenz) `[OK]`
-   - `explain_automation()` (Zeile 228-298): Warum eine Automatisierung ausgelöst wurde `[OK]`
-   - `explain_pattern()` (Zeile 300-362): Menschenlesbare Musterbeschreibungen `[OK]`
-   - `get_decision_log()` (Zeile 364-428): Entscheidungs-Log mit Reasoning `[OK]`
-   - `format_for_user()` (Zeile 600-652): 3 Detailstufen (brief/normal/detailed) `[OK]`
-   - `explain_why_not()` (Zeile 810-837): **"Warum hast du das NICHT gemacht?"** — Erklärt Inaktivität `[OK]` `[BESSER ALS MCU]`
-   - `_get_context_factors()` (Zeile 500-558): Listet alle Einflussfaktoren einer Entscheidung `[OK]`
-   - `_get_confidence_explanation()` (Zeile 560-598): Übersetzt 0.0-1.0 in menschliche Begriffe `[OK]`
-   - `log_decision()` (Zeile 654-718): Protokolliert Entscheidungen mit Begründung für spätere Abfrage `[OK]`
+1. **ExplainabilityEngine** — `assistant/assistant/explainability.py` (785 Zeilen)
+   - `log_decision()` (Zeile 139-220): Loggt Entscheidungen mit Action, Reason, Trigger, Domain, Confidence `[OK]`
+   - Kontrafaktische Ergebnisse (Zeile 197-200): Automatisch generiert — "Was wäre ohne Eingreifen passiert?" `[OK]` `[BESSER ALS MCU]`
+   - 13 Counterfactual-Regeln (Zeile 26-63): Domain×Context → Template (z.B. "Heizkosten von {cost}€/h verschwendet") `[OK]`
+   - `explain_last()` (Zeile 221-232): Letzte N Entscheidungen aus In-Memory Deque `[OK]`
+   - `explain_by_domain()` (Zeile 234-236): Domänen-Filter `[OK]`
+   - `format_explanation()` (Zeile 247-299): Template-basiert mit Trigger-Labels (7 Typen) `[OK]`
+   - `format_explanation_llm()` (Zeile 323-388): LLM-basierte natürliche Formatierung, 4s Timeout → Template-Fallback `[VERBESSERBAR]`
+   - `build_why_chain()` (Zeile 619-690): Mehrstufige Why-Chains, 7 prädefinierte Kausal-Regeln, max 3 Ebenen, LLM-Fallback `[OK]`
+   - **KRITISCH — Defaults deaktiviert** (Zeile 79): `auto_explain=False`, `confidence_display=False`, `reasoning_chains=False` `[UNTERVERBUNDEN]`
+   - `pass` Statements (Zeile 432, 657): Fehler bei Template-Formatierung werden ignoriert `[VERBESSERBAR]`
 
-2. **ActionPlanner** — `assistant/assistant/action_planner.py` (826 Zeilen)
+2. **ActionPlanner** — `assistant/assistant/action_planner.py` (1.051 Zeilen)
    - `plan_action()` (Zeile 70-148): Multi-Step-Planung mit Narration `[OK]`
    - `_decompose_intent()` (Zeile 150-218): Komplexe Absichten → atomare Schritte `[OK]`
-   - `_generate_narration()` (Zeile 220-288): Menschenlesbare Narration pro Schritt `[OK]`
-   - `execute_plan()` (Zeile 290-368): Ausführung mit Fortschritts-Narration `[OK]`
+   - `execute_plan()` (Zeile 290-368): Ausführung mit WebSocket-Fortschritts-Narration `[OK]`
    - `_narrate_step()` (Zeile 370-412): "Jetzt schalte ich das Licht ein..." `[OK]`
    - `_narrate_completion()` (Zeile 414-452): "Alles fertig, Sir." `[OK]`
    - `_narrate_failure()` (Zeile 454-492): "Das hat leider nicht geklappt..." `[OK]`
    - `preview_plan()` (Zeile 580-632): Plan-Vorschau vor Ausführung `[OK]`
    - `_handle_partial_failure()` (Zeile 634-688): Teilerfolg-Handling `[OK]`
    - `_generate_alternative_plan()` (Zeile 740-798): Fallback bei Fehler `[OK]`
+   - **KRITISCH — Narration sehr limitiert** (Zeile 559-580): `_get_narration_text()` nur für `set_light` und `set_cover`, alle anderen Gerätetypen leer `[VERBESSERBAR]`
+   - **Keine Schritt-Begründungen**: Narrt WAS passiert, aber nicht WARUM je Schritt `[VERBESSERBAR]`
+   - **Keine Explainability-Integration**: Ruft `log_decision()` nicht auf `[UNTERVERBUNDEN]`
 
 3. **Personality Pushback** — `assistant/assistant/personality.py` (5.566 Zeilen)
-   - Pushback mit Begründung (Zeile ~1800-1870): "Das Fenster ist offen, daher..." `[OK]`
+   - `check_pushback()` (Zeile ~1378-1420): Meinungs-basierte Warnungen mit 3 Pushback-Levels (0/1/2) `[OK]`
+   - `check_curiosity()` (Zeile ~1426-1483): Neugier-Fragen bei untypischen Aktionen ("Um diese Uhrzeit, Sir?") `[OK]`
+   - `narrate_device_event()` (Zeile ~5132-5167): Persönlichkeits-basierte Geräte-Meldungen `[OK]`
    - 5-stufige Eskalation (Zeile ~1737-1767): Progressive Dringlichkeit mit Erklärung `[OK]`
    - Meta-Kognition (Zeile ~2359-2400): Self-aware Erklärung des eigenen Verhaltens `[OK]`
    - Krisenmodus-Kommunikation (Zeile ~2500-2550): Klar, begründet, effizient `[OK]`
    - Error-Recovery-Templates (Zeile ~204-218): 8 in-character Fehlererklärungen `[OK]`
+   - **Curiosity max 2×/Tag** (Zeile ~1445): Zu limitiert für viele Situationen `[VERBESSERBAR]`
 
-4. **Function Validator Pushback** — `assistant/assistant/function_validator.py` (766 Zeilen)
-   - `validate_with_reason()` (Zeile ~200-280): Jede Ablehnung mit Begründung `[OK]`
-   - `_check_safety_with_explanation()` (Zeile ~350-420): Sicherheitsprüfung mit Klartext `[OK]`
-   - `get_pushback_message()` (Zeile ~500-560): Datenbasierter Pushback ("CO2 bei 1200ppm") `[OK]` `[BESSER ALS MCU]`
+4. **Function Validator Pushback** — `assistant/assistant/function_validator.py` (765 Zeilen)
+   - `get_pushback_context()` (Zeile 346-386): Live-Daten via HA → Warnungen mit Typ + Detail + Alternative `[OK]`
+   - `_pushback_set_climate()` (Zeile 388-454): Offene Fenster, leerer Raum `[OK]`
+   - `_pushback_set_light()` (Zeile 519-568): Tageslicht, leerer Raum `[OK]`
+   - `_pushback_set_cover()` (Zeile 570-645): Wind-Warnung `[OK]`
+   - `format_pushback_warnings()` (Zeile 721-748): "SITUATIONSBEWUSSTSEIN" Prompt-Injection `[OK]`
+   - Datenbasierter Pushback ("CO2 bei 1200ppm") `[OK]` `[BESSER ALS MCU]`
    - 4-Severity-Pushback: info/warning/critical/block `[OK]`
+   - **pass-Statements** (Zeile 481, 511, 562, 605, 645): State-Abruf-Fehler werden ignoriert → Pushback fällt still weg `[VERBESSERBAR]`
+   - **Pushback nicht persistiert**: History nicht in Explainability geloggt `[UNTERVERBUNDEN]`
 
-5. **State Change Log Attribution** — `assistant/assistant/state_change_log.py` (9.706 Zeilen)
-   - 4 Attribution-Kategorien: jarvis / automation / user_physical / unknown `[OK]`
-   - 80+ Dependency Rules mit Entity-Role-Matching `[OK]`
-   - `get_change_explanation()` (Zeile ~3200-3280): "Wer hat X geändert und warum?" `[OK]`
-   - Timeline-Ansicht (Zeile ~3800-3880): Chronologische State-Changes `[OK]`
+5. **State Change Log Attribution** — `assistant/assistant/state_change_log.py` (9.927 Zeilen)
+   - `_detect_source()` (Zeile ~9188-9217): 4 Kategorien: jarvis / automation / user_physical / unknown `[OK]`
+   - 80+ Dependency Rules (Zeile 47-600+) mit Entity-Role-Matching `[OK]`
+   - `detect_conflicts()` (Zeile ~9302-9397): ~50 Abhängigkeitsregeln `[OK]`
+   - `format_conflicts_for_prompt()` (Zeile ~9398-9520): Konflikt-Beschreibung für LLM `[OK]`
+   - **Attribution-Heuristik**: 2-Sekunden-Fenster für user_physical — fehleranfällig `[VERBESSERBAR]`
+   - **Keine separate User-API** für Konflikt-History `[VERBESSERBAR]`
 
-6. **Autonomy Transparency** — `assistant/assistant/autonomy.py` (1.160 Zeilen)
-   - `explain_autonomy_decision()` (Zeile ~920-980): Warum auto-ausgeführt oder gefragt `[OK]`
-   - `explain_level_change()` (Zeile ~1042-1098): Warum Autonomie-Level sich änderte `[OK]`
-   - Trust-Level-Erklärungen (Zeile ~700-750): Person-spezifische Begründungen `[OK]`
+6. **Autonomy Transparency** — `assistant/assistant/autonomy.py` (866 Zeilen)
+   - `can_execute()` (Zeile 285-361): Sehr detaillierte Ablehnungsgründe (Multi-Faktor) `[OK]`
+   - Erklärt Nacht-Reduktion, Domain-spezifisch, Trust-Level `[OK]`
+   - **Gründe nur in Logs** (Zeile 181-184): Nicht an User gezeigt, nicht in Explainability persistiert `[UNTERVERBUNDEN]`
 
 7. **Self-Optimization Transparency** — `assistant/assistant/self_optimization.py` (911 Zeilen)
    - Alle Vorschläge mit Begründung (approval_mode: manual) `[OK]`
    - Before/After-Tracking mit Snapshots `[OK]`
    - Weekly Learning Report `[OK]`
 
-8. **Proactive Notification Reasoning** — `assistant/assistant/proactive.py` (9.236 Zeilen)
+8. **Proactive Notification Reasoning** — `assistant/assistant/proactive.py` (10.247 Zeilen)
    - Jede Benachrichtigung enthält Trigger + Begründung + Vorschlag `[OK]`
-   - Dringlichkeits-Erklärung (Zeile ~680-720) `[OK]`
-   - Cooldown-Erklärung (Zeile ~750-800) `[OK]`
+   - Cover-Reason-System (Zeile ~5757-5857): Speichert WARUM Rollladen bewegt wurde in Redis `[OK]`
+   - Context-basierte Zustandsübergänge: "sturm" → STORM_SECURED, "sonne" → SUN_PROTECTED `[OK]`
+   - **Cover-Reasons nur für Cover**, nicht für andere Geräte `[VERBESSERBAR]`
+
+9. **Brain-Integration** — `assistant/assistant/brain.py`
+   - Explainability initialisiert (Zeile 114, 512) `[OK]`
+   - Letzte 5 Entscheidungen in Kontext (Zeile 4508-4528): Priority 3 (niedrig) `[VERBESSERBAR]`
+   - `log_decision()` nur für Automationen (Zeile 8451-8468) `[UNTERVERBUNDEN]`
+   - **KRITISCH — Nicht aufgerufen für**: User-Commands, Anticipation, Action-Planner, Pushback `[UNTERVERBUNDEN]`
+   - **KRITISCH — auto_explain default False** (Zeile 79): Erklärungen nicht automatisch in Prompts `[UNTERVERBUNDEN]`
 
 **[V2 entfällt — Gewicht ×1]**
 
 ### Was fehlt zum MCU-Level
 
-1. **Natürlich-konversationelle Erklärungen** — MCU-Jarvis erklärt wie ein Butler im Gespräch ("Sir, I took the liberty of..."). MindHome hat strukturierte Erklärungen, die aber konversationeller/natürlicher sein könnten. `[VERBESSERBAR]`
-2. **Proaktive Status-Briefings** — MCU-Jarvis gibt ungefragt Status-Updates ("Systems at 90%, Sir"). MindHome erklärt wenn gefragt, narrt aber nicht proaktiv den Systemstatus. `[VERBESSERBAR]`
+1. **Explainability standardmäßig deaktiviert** — `auto_explain=False`, `confidence_display=False`, `reasoning_chains=False` → User sieht keine Erklärungen ohne manuelle Aktivierung. `[UNTERVERBUNDEN]`
+2. **Fehlende User-API** — Kein `/api/explain-last` oder `/api/why-chain` Endpunkt. User kann nicht programmatisch "Warum?" fragen. `[FEHLT KOMPLETT]`
+3. **Lückenhafte log_decision-Abdeckung** — Nur Automationen werden geloggt, nicht: User-Commands, Anticipation-Patterns, Action-Planner-Schritte, Pushback-Gründe. `[UNTERVERBUNDEN]`
+4. **Narration nur für 2 Gerätetypen** — `action_planner._get_narration_text()` hat nur Templates für `set_light` und `set_cover`. Alle anderen Domains sind leer. `[VERBESSERBAR]`
+5. **Natürlich-konversationelle Erklärungen** — MCU-Jarvis erklärt wie ein Butler ("Sir, I took the liberty of..."). MindHome hat strukturierte Erklärungen, die konversationeller sein könnten. `[VERBESSERBAR]`
+6. **Proaktive Status-Briefings** — MCU-Jarvis gibt ungefragt Status-Updates ("Systems at 90%, Sir"). MindHome narrt nicht proaktiv. `[VERBESSERBAR]`
 
 ### Konkrete Verbesserungsvorschläge
 
-1. **[ ] Konversationelle Erklärungs-Templates** — In `explainability.py` die `format_for_user()` Methode mit natürlicheren Formulierungen erweitern ("Ich habe mir erlaubt..." statt strukturierter Aufzählung)
+1. **[ ] Explainability-Defaults aktivieren** — In `settings.yaml` und `explainability.py` die Defaults auf `auto_explain=True`, `confidence_display=True` setzen. Reasoning-Chains optional lassen.
+   - Aufwand: Klein
+   - Impact: +8%
+   - Alltag: `[TÄGLICH]`
+
+2. **[ ] log_decision()-Abdeckung erweitern** — In `brain.py` `log_decision()` auch für User-Commands, Anticipation-Execution und Action-Planner-Schritte aufrufen
+   - Aufwand: Mittel
+   - Impact: +6%
+   - Alltag: `[TÄGLICH]`
+
+3. **[ ] Narration für alle Gerätetypen** — In `action_planner.py` `_get_narration_text()` Templates für Climate, Media, Cover, Switch, Fan, Scene etc. ergänzen
    - Aufwand: Klein
    - Impact: +4%
    - Alltag: `[TÄGLICH]`
 
-2. **[ ] Proaktive System-Status-Narration** — In `proactive.py` einen periodischen Mini-Bericht einbauen der spontan den Systemstatus narrt ("Alle Systeme laufen einwandfrei" / "Der Energieverbrauch liegt 10% über normal")
+4. **[ ] Konversationelle Erklärungs-Templates** — In `explainability.py` `format_for_user()` mit natürlicheren Butler-Formulierungen ("Ich habe mir erlaubt..." statt Aufzählung)
    - Aufwand: Klein
    - Impact: +3%
-   - Alltag: `[WÖCHENTLICH]`
+   - Alltag: `[TÄGLICH]`
 
-3. **[ ] Entscheidungs-Zusammenfassung im Morgen-Briefing** — Im Routine-Engine Morgen-Briefing eine Zusammenfassung der nächtlichen Entscheidungen integrieren ("Letzte Nacht habe ich 3 Entscheidungen getroffen: ...")
+5. **[ ] Entscheidungs-Zusammenfassung im Morgen-Briefing** — Im Routine-Engine Morgen-Briefing die nächtlichen Entscheidungen zusammenfassen
    - Aufwand: Klein
    - Impact: +3%
    - Alltag: `[TÄGLICH]`
 
 ### Akzeptanzkriterien — Wann ist dieses Feature "MCU-Level"?
+- [ ] `auto_explain=True` als Default, Erklärungen fließen automatisch in Kontext
+- [ ] `log_decision()` wird bei >90% aller Jarvis-Aktionen aufgerufen
 - [ ] Jede proaktive Aktion wird mit Begründung geliefert (100%)
 - [ ] User kann "Warum?" fragen und bekommt verständliche Antwort
-- [ ] Multi-Step-Aktionen werden Schritt für Schritt narrt
+- [ ] Multi-Step-Aktionen werden Schritt für Schritt narrt (alle Gerätetypen)
 - [ ] Pushback enthält immer konkrete Sensor-Daten als Begründung
 - [ ] Entscheidungs-Log ist per Zeitraum abfragbar und verständlich
 
@@ -1437,11 +1477,11 @@ MCU-Jarvis erklärt seine Empfehlungen, nennt Gründe für Entscheidungen und ha
 - 33.000+ Zeilen Security-Tests verifiziert (test_security.py + test_security_http_endpoints.py + test_autonomy.py)
 
 ### Durchlauf #1 — Session 3 — 2026-03-22
-- 9 neue Verbesserungsaufgaben erstellt (3× Kat.10, 3× Kat.11, 3× Kat.12)
+- 12 neue Verbesserungsaufgaben erstellt (3× Kat.10, 3× Kat.11, 5× Kat.12 + Akzeptanzkriterien)
 - 6 neue "Besser als MCU" Features identifiziert und in Schutzliste aufgenommen
-- Kategorien 10-12 Score: Kat.10=81%, Kat.11=82%, Kat.12=85%
-- Gewichteter Gesamtdurchschnitt (12/12 Kategorien): **81.1%** (vorher 80.9% mit 9 Kategorien)
+- Kategorien 10-12 Score: Kat.10=81%, Kat.11=82%, Kat.12=72% (nach Tiefenanalyse-Korrektur von 85% auf 72%)
+- Gewichteter Gesamtdurchschnitt (12/12 Kategorien): **80.5%** (vorher 80.9% mit 9 Kategorien)
 - V1-Verifizierung für alle 3 Kategorien durchgeführt, V2 entfällt (Gewicht ×1)
-- 4.641+ Zeilen Multi-Room-Code analysiert (follow_me + multi_room_audio + speaker_recognition + activity + sound_manager + ambient_audio)
-- 0 TODOs/FIXMEs in den analysierten Modulen gefunden, 3 bare `pass` in Exception-Handlern (legitim)
+- Kat.12 Korrektur: Zweiter Agent fand kritische Integrationslücken (auto_explain=False, fehlende User-API, lückenhafte log_decision-Abdeckung, 5+ pass-Statements in function_validator.py)
+- 4.641+ Zeilen Multi-Room-Code + 785 Zeilen Explainability analysiert
 - **Alle 12 Kategorien sind jetzt analysiert — bereit für Session 4 (Roadmap & Sprints)**
