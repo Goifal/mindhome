@@ -1,6 +1,7 @@
 # Session 5: J.A.R.V.I.S. MCU vs. MindHome — Gegenprüfung & Finalisierung
 
 > **Verwendung:** Diesen Prompt an Claude Code geben. NUR Session 5 ausführen.
+> **Scope:** NUR den Assistenten (`assistant/` Verzeichnis). Gegenprüfung bezieht sich ausschließlich auf den Assistenten-Code.
 > **Voraussetzung:** Session 1-4 müssen abgeschlossen sein. Die Plan-Datei muss alle 12 Kategorien + Roadmap enthalten.
 > **Ergebnis:** Verifizierte und finalisierte `docs/prompts/jarvis-mcu-implementation-plan.md`
 > **Empfehlung:** Diese Session idealerweise in einer **separaten Konversation** ausführen für frischen Kontext.

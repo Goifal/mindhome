@@ -1,6 +1,7 @@
 # Session 3: J.A.R.V.I.S. MCU vs. MindHome — Basis-Kategorien (×1)
 
 > **Verwendung:** Diesen Prompt an Claude Code geben. NUR Session 3 ausführen — danach stoppen.
+> **Scope:** NUR den Assistenten analysieren (`assistant/` Verzeichnis). Das Add-on (`addon/`) ist NICHT Teil dieser Analyse.
 > **Voraussetzung:** Session 1 + 2 müssen abgeschlossen sein. Die Plan-Datei muss 9 Kategorien enthalten.
 > **Ergebnis:** Wird in die bestehende `docs/prompts/jarvis-mcu-implementation-plan.md` ergänzt.
 

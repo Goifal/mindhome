@@ -1,6 +1,7 @@
 # J.A.R.V.I.S. MCU-Level Executor — Implementierungs-Agent
 
 > **Verwendung:** Diesen Prompt an einen Claude Code Agent geben der die Aufgaben aus der Plan-Datei umsetzt.
+> **Scope:** NUR den Assistenten (`assistant/` Verzeichnis). Keine Änderungen am Add-on (`addon/`).
 > **Plan-Datei:** `docs/prompts/jarvis-mcu-implementation-plan.md` — NUR LESEN, NIEMALS ÄNDERN.
 > **Ergebnis:** Code-Änderungen im Repository, getestet und committet.
 
@@ -38,7 +39,7 @@ Arbeite **NUR den einen nächsten offenen Sprint** ab, Aufgabe für Aufgabe:
 ### Schritt 3: Sprint validieren
 Nach allen Aufgaben des Sprints:
 1. Tests ausführen: `cd assistant && python -m pytest --tb=short -q`
-2. Lint prüfen: `ruff check --select=E9,F63,F7,F82 --ignore=F823 assistant/ addon/ speech/`
+2. Lint prüfen: `ruff check --select=E9,F63,F7,F82 --ignore=F823 assistant/`
 3. Kompilierung prüfen: `find assistant/assistant -name "*.py" -exec python -m py_compile {} \;`
 4. Schutzliste verifizieren — kein geschütztes Feature beschädigt
 5. Commit erstellen
@@ -92,7 +93,7 @@ Jede Änderung muss diesen Standards entsprechen:
   task = asyncio.create_task(...)
   task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
   ```
-- Locks für shared State: `asyncio.Lock()` im Assistenten, `threading.Lock()` im Add-on
+- Locks für shared State: `asyncio.Lock()` (Assistent ist durchgehend async)
 - Lock NIE halten während I/O — acquire → kopieren → release → verarbeiten
 
 **Sicherheit:**
@@ -153,37 +154,35 @@ Die Plan-Datei enthält eine **Schutzliste** mit "Besser als MCU" Features. Dies
 
 ## Kontext: Was ist MindHome/Jarvis?
 
-MindHome ist ein KI-gesteuertes Home Assistant Add-on das Benutzergewohnheiten lernt und ein Smart Home vollständig lokal steuert. Der Assistent heißt J.A.R.V.I.S.
+MindHome ist ein KI-gesteuertes Home Assistant System das Benutzergewohnheiten lernt und ein Smart Home vollständig lokal steuert. Der Assistent heißt J.A.R.V.I.S.
 
-### 2-PC-Architektur
-- **PC 1 (Add-on auf HAOS):** Flask-App — UI, Geräteverwaltung, Mustererkennung, Automatisierung (`addon/rootfs/opt/mindhome/`)
-- **PC 2 (Ubuntu-Server):** FastAPI-Server — KI-Brain, LLM-Inferenz, Gedächtnis (`assistant/assistant/`)
+**Dein Scope: NUR `assistant/`** — das KI-Brain auf dem Ubuntu-Server.
 
-### Tech-Stack
-- Python 3.12, Flask 3.1 (Add-on), FastAPI 0.115 (Assistent)
-- SQLAlchemy 2.0 + SQLite (Add-on), ChromaDB + Redis (Assistent)
-- Ollama lokal (3 Tiers: Fast 3B / Smart 14B / Deep 32B)
-- React 18 Frontend (JSX via Babel, kein Bundler)
+### Assistent Tech-Stack
+- Python 3.12, FastAPI 0.115, Uvicorn (async)
+- ChromaDB 0.5 (semantische Suche) + Redis 5.2 (Cache, State, Locks)
+- Ollama lokal — **Qwen 3.5** in 3 Tiers:
+  - **Fast:** 9B, 32k Context
+  - **Smart:** 35B MoE, 32k Context
+  - **Deep:** 35B MoE, 64k Context
+- sentence-transformers 3.3 (Embeddings), SpeechBrain (Speaker-ID)
 
 ### Wichtige Patterns
-- **DB-Sessions:** `get_db_session()` Context Manager (bevorzugt), `db_write_with_retry()` für Writes
-- **Datetime:** Immer `local_now()` aus `helpers.py` oder `datetime.now(timezone.utc)` — nie naives `datetime.now()`
-- **Event-Bus:** Thread-safe Pub/Sub mit Wildcards, keine langsamen Ops in Handlern
-- **Domain-Plugins:** Von `DomainPlugin(ABC)` erben, `super().__init__()` aufrufen
-- **Blueprints:** `init_<name>(dependencies)` VOR `register_blueprint()` aufrufen
+- **Async:** Durchgehend `async`/`await` — keine blockierenden Aufrufe! `asyncio.to_thread()` für sync I/O
+- **Fire-and-forget:** Immer mit `task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)`
+- **Redis:** Immer `if self.memory.redis:` prüfen bevor Zugriff
+- **Locks:** `asyncio.Lock()` für shared State, nie Lock halten während I/O
+- **Datetime:** `datetime.now(timezone.utc)` — nie naives `datetime.now()`
 
 ### Häufige Fallstricke
 | Fehler | Lösung |
 |--------|--------|
-| `get_db()` ohne close | `get_db_session()` Context Manager |
-| SQLite "database is locked" | `db_write_with_retry()` |
-| `datetime.now()` naiv | `local_now()` oder `datetime.now(timezone.utc)` |
 | `except Exception: pass` | Verboten — mindestens `logger.warning()` |
 | Blockierender Call in async | `asyncio.to_thread()` |
 | Fire-and-forget ohne Callback | `task.add_done_callback(...)` |
 | User-Input in LLM System-Prompt | Separate User-Message |
 | Redis kann None sein | `if self.memory.redis:` prüfen |
-| Shared State ohne Lock | `asyncio.Lock()` / `threading.Lock()` |
+| Shared State ohne Lock | `asyncio.Lock()` |
 | Lock halten während I/O | Acquire → kopieren → release → verarbeiten |
 
 ---
