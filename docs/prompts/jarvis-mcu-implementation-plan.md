@@ -1,6 +1,6 @@
 # J.A.R.V.I.S. MCU-Level Implementation Plan
-> Erstellt am 2026-03-22 | Letzter Durchlauf: Session 4 am 2026-03-22
-> Aktueller Stand: 80.5% (Endergebnis — 12 von 12 Kategorien analysiert)
+> Erstellt am 2026-03-22 | Letzter Durchlauf: Session 5 (Gegenprüfung) am 2026-03-22
+> Aktueller Stand: 80.5% (Verifiziert — 12 von 12 Kategorien analysiert + Gegenprüfung abgeschlossen)
 > Dieses Dokument ist die Single Source of Truth für alle MCU-Level Verbesserungen.
 
 ## Status-Legende
@@ -17,6 +17,7 @@
 | 2       | 2026-03-22 | 5-9 (×2/×1.5) | 16 |
 | 3       | 2026-03-22 | 10-12 (×1)     | 12 |
 | 4       | 2026-03-22 | Roadmap & Sprints | 25 Aufgaben in 5 Sprints |
+| 5       | 2026-03-22 | Gegenprüfung      | 7 Korrekturen, 4 Module neu identifiziert |
 
 ## Schutzliste — Besser als MCU (NICHT beschädigen!)
 
@@ -50,7 +51,7 @@
 - **Predictive Maintenance** (predictive_maintenance.py) — Device-Lifecycle mit Battery-Drain-Monitoring
 
 ### Kategorie 5: Situationsbewusstsein
-- **State Change Log** (state_change_log.py, 4.196 Zeilen) — 80+ Dependency Rules mit Entity-Role-Matching (generisch für jede Installation)
+- **State Change Log** (state_change_log.py, 9.927 Zeilen 🔄) — 80+ Dependency Rules mit Entity-Role-Matching (generisch für jede Installation)
 - **Prompt Injection Protection** (context_builder.py Zeile 68-156) — 154 Regex-Muster gegen Hijacking, Encoding-Bypasses, Unicode-Tricks
 - **Device Health Baselines** (device_health.py) — 30-Tage saisonale Anomalieerkennung
 - **Insight Engine** (insight_engine.py, 2.687 Zeilen) — Multi-dimensionale Cross-Referencing (4+ Dimensionen)
@@ -81,7 +82,7 @@
 - **Year-over-Year Energievergleich** (seasonal_insight.py Zeile 180-248) — Jahresvergleich mit saisonaler Baseline
 
 ### Kategorie 12: Erklärbarkeit
-- **"Warum nicht?" Erklärungen** (explainability.py Zeile 810-837) — Erklärt Inaktivität, MCU-Jarvis erklärt nur Aktionen
+- **"Warum nicht?" Erklärungen** (explainability.py `build_why_chain()` Zeile 619-690 🔄) — Erklärt Inaktivität, MCU-Jarvis erklärt nur Aktionen
 - **Datenbasierter Pushback** (function_validator.py Zeile ~500-560) — Nutzt echte Sensor-Daten in Begründungen ("CO2 bei 1200ppm")
 
 ## 1. Natürliche Konversation & Sprachverständnis (×3)
@@ -663,7 +664,7 @@ MCU-Jarvis weiß immer was im Haus passiert — Energiestatus, wer wo ist, aktue
    - **Room Presence Tracking** (Zeile 1627): Multi-Room-Occupancy-Matrix basierend auf Bewegungsmeldern + Person-Entities `[OK]`
    - **Anomaly Detection** (Zeile 1321): Ungewöhnliche Gerätezustände (Geräte stecken, etc.) `[OK]`
 
-2. **State Change Log** — `assistant/assistant/state_change_log.py` (4.196 Zeilen) `[BESSER ALS MCU]`
+2. **State Change Log** — `assistant/assistant/state_change_log.py` (9.927 Zeilen 🔄) `[BESSER ALS MCU]`
    - Attribution: WHO changed WHAT — jarvis / automation / user_physical / unknown `[OK]`
    - **80+ Dependency Rules** mit Entity-Role-Matching (nicht Entity-IDs → generisch für jede Installation):
      - Fenster/Türen → Klima/Energie (offenes Fenster + Heizung = Energieverschwendung)
@@ -672,7 +673,7 @@ MCU-Jarvis weiß immer was im Haus passiert — Energiestatus, wer wo ist, aktue
      - Medien → Beleuchtung (TV an + Licht hell = Blendung)
      - Geräte → Benachrichtigungen (Waschmaschine fertig) `[OK]`
 
-3. **Device Health** — `assistant/assistant/device_health.py` (548 Zeilen)
+3. **Device Health** — `assistant/assistant/device_health.py` (951 Zeilen 🔄)
    - 30-Tage-Baseline-Anomalieerkennung (2.0σ Schwelle, Zeile 35) `[OK]`
    - 3 Anomalie-Typen: Value-Anomaly, Stale-Sensor, HVAC-Effizienz `[OK]`
    - Saisonale Baselines (Zeile 90-92): Vergleich gegen gleiche Jahreszeit `[BESSER ALS MCU]`
@@ -683,7 +684,7 @@ MCU-Jarvis weiß immer was im Haus passiert — Energiestatus, wer wo ist, aktue
    - Hysterese 2%, Room-Specific Overrides, 27 Exclude-Patterns `[OK]`
    - NTP-Jump-Detection (F-058, Zeile 149): Erkennt Systemuhr-Sprünge >5min `[OK]`
 
-5. **Activity Engine** — `assistant/assistant/activity.py` (716 Zeilen)
+5. **Activity Engine** — `assistant/assistant/activity.py` (876 Zeilen 🔄)
    - 7 Aktivitätszustände mit Sensor-Detection (Media-Player, Bett, Mikrofon, PC) `[OK]`
    - 5-Sekunden-Cache, manuelle Overrides möglich `[OK]`
    - Flow-State-Tracking ab 30min Focus (MCU Sprint 3) `[OK]`
@@ -1222,7 +1223,7 @@ MCU-Jarvis steuert das gesamte Stark-Anwesen effizient — Licht, Klima, Sicherh
 ### Code-Verifizierung
 **[V1] Analyse:**
 
-1. **EnergyOptimizer** — `assistant/assistant/energy_optimizer.py` (1.318 Zeilen)
+1. **EnergyOptimizer** — `assistant/assistant/energy_optimizer.py` (1.419 Zeilen 🔄)
    - `get_current_price()` (Zeile 150-198): Strompreis-Monitoring, 15-Min-Updates, Price-Tiers (cheap/normal/expensive) `[OK]`
    - `get_price_forecast()` (Zeile 200-264): 24h Preisvorhersage mit stündlicher Aufschlüsselung `[OK]`
    - `get_solar_production()` (Zeile 266-318): Solar-Produktion aus HA-Sensoren `[OK]`
@@ -1256,7 +1257,7 @@ MCU-Jarvis steuert das gesamte Stark-Anwesen effizient — Licht, Klima, Sicherh
    - `_check_hvac_efficiency()` (Zeile 750-800): HVAC-Effizienz-Monitoring `[OK]`
    - `estimate_lifecycle()` (Zeile 630-692): Lebensdauer-Schätzung `[OK]`
 
-4. **DeviceHealthMonitor** — `assistant/assistant/device_health.py` (687 Zeilen)
+4. **DeviceHealthMonitor** — `assistant/assistant/device_health.py` (951 Zeilen 🔄)
    - `build_baselines()` (Zeile 170-238): 30-Tage-Baselines pro Gerät `[OK]`
    - `detect_anomalies()` (Zeile 240-312): Anomalie-Erkennung vs. Baseline `[OK]`
    - `_seasonal_adjustment()` (Zeile 580-618): Saisonale Baseline-Anpassung `[OK]`
@@ -1264,7 +1265,7 @@ MCU-Jarvis steuert das gesamte Stark-Anwesen effizient — Licht, Klima, Sicherh
    - `get_offline_devices()` (Zeile 314-358): Erkennt offline Geräte `[OK]`
    - `track_state_frequency()` (Zeile 530-578): Stuck-Detection `[OK]`
 
-5. **SeasonalInsightEngine** — `assistant/assistant/seasonal_insight.py` (589 Zeilen)
+5. **SeasonalInsightEngine** — `assistant/assistant/seasonal_insight.py` (516 Zeilen 🔄)
    - `get_seasonal_recommendations()` (Zeile 100-178): Saison-spezifische Empfehlungen `[OK]`
    - `compare_year_over_year()` (Zeile 180-248): Jahresvergleich Energieverbrauch `[OK]` `[BESSER ALS MCU]`
    - `get_heating_strategy()` (Zeile 320-382): Optimale Heizstrategie pro Saison `[OK]`
@@ -1567,8 +1568,8 @@ MCU-Jarvis erklärt seine Empfehlungen, nennt Gründe für Entscheidungen und ha
 
 ##### Ist-Zustand
 - Datei: `assistant/assistant/action_planner.py`
-- Aktuelle Implementierung: `_get_narration_text()` (Zeile 559) hat nur Templates für `set_light` und `set_cover`
-- Problem: Climate, Media, Switch, Fan, Scene, Lock etc. haben keine Narration
+- Aktuelle Implementierung: `_get_narration_text()` (Zeile 559) hat 5 Templates (`set_light`, `set_cover`, `set_climate`, `activate_scene`, `play_media`), aber nur `set_light` und `set_cover` produzieren tatsächlich Text — die anderen 3 sind leer 🔄
+- Problem: Climate, Media, Scene geben leeren String zurück; Switch, Fan, Lock etc. fehlen komplett
 
 ##### Soll-Zustand (MCU-Level)
 - Jeder Multi-Step-Schritt wird narrt ("Heizung auf 22 Grad...", "Musik gestartet...", "Rollladen fährt hoch...")
@@ -2195,7 +2196,7 @@ MCU-Jarvis erklärt seine Empfehlungen, nennt Gründe für Entscheidungen und ha
 
 #### Aufgabe 4.4: Kausales Lernen via LLM
 **Status:** [ ] Offen
-**Sprint:** 4 | **Priorität:** Mittel | **Aufwand:** Klein
+**Sprint:** 4 | **Priorität:** Mittel | **Aufwand:** Mittel 🔄 (von Klein korrigiert — LLM-Integration + Fallback + Tests)
 
 ##### Ist-Zustand
 - Datei: `assistant/assistant/correction_memory.py` (912 Zeilen)
@@ -2307,6 +2308,7 @@ MCU-Jarvis erklärt seine Empfehlungen, nennt Gründe für Entscheidungen und ha
 
 ##### Verknüpfungen
 - Nutzt: `person_preferences.py` (Schutzliste!)
+- **⚠️ Vernetzungs-Hinweis:** `follow_me.py` hat KEINEN direkten Import von `person_preferences.py` — Zugriff über `self.brain.person_preferences`
 - Beeinflusst: Klima-Komfort beim Raumwechsel
 
 ##### Akzeptanzkriterien
@@ -2341,6 +2343,7 @@ MCU-Jarvis erklärt seine Empfehlungen, nennt Gründe für Entscheidungen und ha
 ##### Verknüpfungen
 - Nutzt: Anticipation (Geo-Fence), Energy Optimizer (Preis)
 - Abhängig von: Sprint 3, Aufgabe 3.3 (Kalender-Vorbereitung)
+- **⚠️ Vernetzungs-Hinweis:** `energy_optimizer.py` hat KEINEN direkten Import von `anticipation.py` — Integration MUSS über `brain.py` orchestriert werden (Event-Bus/Callback)
 
 ##### Akzeptanzkriterien
 - [ ] Vorheizen wird bei Ankündigung der Ankunft ausgelöst
@@ -2408,6 +2411,7 @@ MCU-Jarvis erklärt seine Empfehlungen, nennt Gründe für Entscheidungen und ha
 
 ##### Verknüpfungen
 - Nutzt: Follow-Me (Raumpräsenz), Multi-Room-Audio (gezielte Durchsage)
+- **⚠️ Vernetzungs-Hinweis:** `threat_assessment.py` hat KEINEN direkten Import von `follow_me.py` — Raumpräsenz muss über `brain.follow_me.get_occupied_rooms()` geholt werden
 - Beeinflusst: Sicherheit (Kat. 8 + 9)
 
 ##### Akzeptanzkriterien
@@ -2506,6 +2510,19 @@ Sortiert nach: `(Prozent-Gewinn × Kategorie-Gewicht × Alltags-Faktor) / Aufwan
 | 9 | **3.5 Proaktive Problemlösung wiederkehrend** | (2×2.5×2)/1 = 10.0 | 3 |
 | 10 | **4.3 Cross-Domain-Combo-Erkennung** | (2×2×2)/1 = 8.0 | 4 |
 
+### 🆕 Nicht analysierte Module (Durchlauf #1, Session 5)
+
+Die folgenden Module existieren im Code, wurden aber in keiner der 12 Kategorien tiefenanalysiert. Sie fallen in die Butler-Qualitäten (Kat.4) und könnten den Score dort beeinflussen:
+
+| Modul | Zeilen | Kategorie | Relevanz |
+|-------|--------|-----------|----------|
+| `web_search.py` | 647 | Butler (4) / Situationsbewusstsein (5) | SearXNG+DDG mit SSRF-Schutz, bereits in CLAUDE.md erwähnt |
+| `workshop_generator.py` | 615 | Butler (4) | Code-Generierung, 3D-Modelle, SVG-Schaltpläne |
+| `repair_planner.py` | 1.774 | Butler (4) | Diagnose, Reparaturanleitungen — größtes unanalysiertes Modul |
+| `calendar_intelligence.py` | 410 | Butler (4) / Proaktivität (3) | Gewohnheitserkennung, Konfliktwarnungen |
+
+**Auswirkung auf Score:** Diese Module sind in der Butler-Kategorie (×2.5) bereits implizit mitgezählt — der 80%-Score für Kat.4 könnte bei Berücksichtigung dieser Module auf ~82% steigen. Kein Sprint-Impact, da keine Verbesserungsvorschläge nötig.
+
 ### Fehlende Features (komplett neu zu bauen)
 
 | Feature | MCU-Referenz | Aufwand | Alltag | Sprint |
@@ -2589,3 +2606,29 @@ Du bist ein Code-Agent der diesen Plan umsetzt. Folge diesen Regeln:
 - Fehlende Features (future): 5 Items identifiziert (Prädiktives Raum-Routing, Sprachwechsel, etc.)
 - Executor-Anweisungen hinzugefügt
 - **Bereit für Session 5 (Gegenprüfung & Finalisierung)**
+
+### Durchlauf #1 — Session 5 (Gegenprüfung) — 2026-03-22
+- 7 Zeilenreferenzen aktualisiert (🔄):
+  - `state_change_log.py`: 4.196 → 9.927 Zeilen
+  - `device_health.py`: 548/687 → 951 Zeilen
+  - `activity.py`: 716 → 876 Zeilen
+  - `energy_optimizer.py`: 1.318 → 1.419 Zeilen
+  - `seasonal_insight.py`: 589 → 516 Zeilen
+  - `explainability.py` Schutzliste: Zeile 810-837 → `build_why_chain()` Zeile 619-690
+  - `action_planner.py` Sprint 1.3: 2 Templates → 5 Templates (3 leer)
+- 1 Aufwand-Schätzung korrigiert: Aufgabe 4.4 Klein → Mittel
+- 4 nicht-analysierte Module identifiziert (🆕): `web_search.py`, `workshop_generator.py`, `repair_planner.py`, `calendar_intelligence.py`
+- 3 Vernetzungs-Hinweise (⚠️) hinzugefügt: energy↔anticipation, follow_me↔person_preferences, threat↔follow_me — alle über brain.py orchestriert
+- 0 Erkenntnisse als [KORRIGIERT] — alle Prozent-Bewertungen bestätigt
+- Gewichteter MCU-Score: 80.5% (unverändert, Δ: ±0%)
+- **Qualitätskriterien-Check:**
+  - [x] Jede Aufgabe hat konkreten Dateipfad
+  - [x] Jede Aufgabe hat verifizierte Zeilenreferenzen
+  - [x] Jede Aufgabe hat testbare Akzeptanzkriterien
+  - [x] Sprint-Reihenfolge respektiert Abhängigkeiten
+  - [x] Executor kann jeden Punkt ohne Rückfragen umsetzen
+  - [x] Keine vagen Formulierungen
+  - [x] Alle Erkenntnisse durch Gegenprüfung bestätigt
+  - [x] Schutzliste vollständig, kein Sprint verletzt sie
+  - [x] Gesamt-Score korrekt berechnet
+- **Plan-Datei ist finalisiert und bereit zur Umsetzung mit dem Executor-Agent**
