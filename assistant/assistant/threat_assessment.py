@@ -1544,6 +1544,68 @@ class ThreatAssessment:
 
         return executed_steps
 
+    async def generate_security_hardening_report(self) -> str:
+        """MCU Sprint 4: Monthly security hardening report.
+
+        Checks for low battery sensors, unavailable devices, and
+        generates actionable recommendations.
+        """
+        try:
+            states = await asyncio.wait_for(self.ha.get_states(), timeout=15)
+        except (asyncio.TimeoutError, Exception):
+            return ""
+
+        if not states:
+            return ""
+
+        issues = []
+
+        # 1. Low battery sensors (<20%)
+        low_battery = []
+        for s in states:
+            eid = s.get("entity_id", "")
+            attrs = s.get("attributes", {})
+            battery = attrs.get("battery_level") or attrs.get("battery")
+            if battery is not None:
+                try:
+                    if float(battery) < 20:
+                        name = attrs.get("friendly_name", eid)
+                        low_battery.append(f"{name} ({battery}%)")
+                except (ValueError, TypeError):
+                    pass
+        if low_battery:
+            issues.append(f"Niedrige Batterie: {', '.join(low_battery[:5])}")
+
+        # 2. Unavailable devices
+        unavailable = []
+        for s in states:
+            if s.get("state") in ("unavailable", "unknown"):
+                eid = s.get("entity_id", "")
+                if not eid.startswith(("automation.", "script.", "scene.")):
+                    name = s.get("attributes", {}).get("friendly_name", eid)
+                    unavailable.append(name)
+        if unavailable:
+            issues.append(
+                f"Nicht erreichbar: {len(unavailable)} Geräte "
+                f"({', '.join(unavailable[:3])}{'...' if len(unavailable) > 3 else ''})"
+            )
+
+        # 3. Open security-relevant entities
+        open_locks = []
+        for s in states:
+            eid = s.get("entity_id", "")
+            if eid.startswith("lock.") and s.get("state") == "unlocked":
+                name = s.get("attributes", {}).get("friendly_name", eid)
+                open_locks.append(name)
+        if open_locks:
+            issues.append(f"Unverschlossene Schlösser: {', '.join(open_locks)}")
+
+        if not issues:
+            return "Sicherheitscheck: Alle Systeme in Ordnung. Keine Auffälligkeiten."
+
+        report = "Monatlicher Sicherheitsbericht: " + " | ".join(issues)
+        return report
+
     async def _was_notified(self, key: str, cooldown_minutes: int = 30) -> bool:
         if not self.redis:
             return False

@@ -263,10 +263,17 @@ class ContextBuilder:
         """Setzt die Referenz zur ConversationMemory (fuer Thread-Kontext)."""
         self._conversation_memory = conversation_memory
 
+    def set_follow_me(self, follow_me):
+        """MCU Sprint 4: Setzt FollowMe-Engine fuer Per-Person Room Tracking."""
+        self._follow_me = follow_me
+
     async def _get_states_cached(self) -> Optional[list]:
         """Returns HA states with short TTL cache to avoid redundant API calls."""
         now = time.monotonic()
-        if self._state_cache is not None and (now - self._state_cache_time) < self._state_cache_ttl:
+        if (
+            self._state_cache is not None
+            and (now - self._state_cache_time) < self._state_cache_ttl
+        ):
             return self._state_cache
 
         states = await self.ha.get_states()
@@ -1660,10 +1667,23 @@ class ContextBuilder:
                         pname = state.get("attributes", {}).get("friendly_name", "User")
                     persons_home.append(pname)
 
-        # Einfache Zuordnung: Personen zum aktivsten Raum
+        # MCU Sprint 4: Per-Person Room Tracking via FollowMe engine
         persons_by_room = {}
-        if active_rooms and persons_home:
-            # Erste Naeherung: Alle Personen im zuletzt aktiven Raum
+        _follow_me = getattr(self, "_follow_me", None)
+        _used_follow_me = False
+        if _follow_me and hasattr(_follow_me, "_person_room"):
+            try:
+                for person_name in persons_home:
+                    pk = person_name.lower().strip()
+                    room = _follow_me._person_room.get(pk, "")
+                    if room:
+                        persons_by_room.setdefault(room, []).append(person_name)
+                        _used_follow_me = True
+            except Exception:
+                pass
+
+        # Fallback: Alle Personen zum aktivsten Raum wenn kein FollowMe data
+        if not _used_follow_me and active_rooms and persons_home:
             primary_room = active_rooms[0]
             persons_by_room[primary_room] = persons_home
 

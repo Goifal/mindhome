@@ -20,6 +20,22 @@ from .config import yaml_config
 logger = logging.getLogger(__name__)
 
 REDIS_PUSHBACK_KEY = "mha:pushback_overrides"
+REDIS_SECURITY_AUDIT_KEY = "mha:security:audit"
+
+# MCU Sprint 4: Security-critical function names
+_SECURITY_ACTIONS = frozenset(
+    {
+        "lock_door",
+        "unlock_door",
+        "set_lock",
+        "set_alarm",
+        "arm_alarm",
+        "disarm_alarm",
+        "set_trust_level",
+        "emergency_stop",
+        "factory_reset",
+    }
+)
 
 
 @dataclass
@@ -70,11 +86,15 @@ class FunctionValidator:
         if not self.redis:
             return
         try:
-            await self.redis.set(REDIS_PUSHBACK_KEY, json.dumps(self._pushback_overrides))
+            await self.redis.set(
+                REDIS_PUSHBACK_KEY, json.dumps(self._pushback_overrides)
+            )
         except Exception as e:
             logger.warning("Pushback-Overrides speichern fehlgeschlagen: %s", e)
 
-    async def record_pushback_override(self, action_type: str, context_key: str) -> None:
+    async def record_pushback_override(
+        self, action_type: str, context_key: str
+    ) -> None:
         """Zeichnet auf, dass der User einen Pushback uebergangen hat."""
         if not self.redis:
             return
@@ -97,7 +117,9 @@ class FunctionValidator:
             self._pushback_overrides[key] = timestamps
 
             await self._save_pushback_overrides()
-            logger.debug("Pushback-Override aufgezeichnet: %s (count=%d)", key, len(timestamps))
+            logger.debug(
+                "Pushback-Override aufgezeichnet: %s (count=%d)", key, len(timestamps)
+            )
 
     async def is_pushback_suppressed(self, action_type: str, context_key: str) -> bool:
         """Prueft ob ein Pushback unterdrueckt werden soll (zu oft uebergangen)."""
@@ -119,13 +141,16 @@ class FunctionValidator:
 
             suppress_after = pushback_cfg.get("suppress_after_overrides", 5)
             if len(recent) >= suppress_after:
-                logger.debug("Pushback unterdrueckt: %s (%d Overrides)", key, len(recent))
+                logger.debug(
+                    "Pushback unterdrueckt: %s (%d Overrides)", key, len(recent)
+                )
                 return True
             return False
 
     def _get_climate_config(self) -> dict:
         """Liest Climate-Limits und Heizungsmodus live aus yaml_config."""
         from .config import yaml_config as cfg
+
         security = cfg.get("security", {})
         limits = security.get("climate_limits", {})
         heating = cfg.get("heating", {})
@@ -163,12 +188,55 @@ class FunctionValidator:
                                 reason=f"Sicherheitsbestaetigung noetig fuer {function_name}:{value}",
                             )
 
+        # MCU Sprint 4: Security Audit Log for critical actions
+        if function_name in _SECURITY_ACTIONS:
+            self._log_security_action(function_name, arguments)
+
         # Spezifische Validierungen
         validator = getattr(self, f"_validate_{function_name}", None)
         if validator:
-            return validator(arguments)
+            result = validator(arguments)
+            if function_name in _SECURITY_ACTIONS:
+                self._log_security_action(
+                    function_name,
+                    arguments,
+                    result="blocked" if not result.ok else "validated",
+                )
+            return result
 
         return ValidationResult(ok=True)
+
+    def _log_security_action(
+        self, action: str, args: dict, result: str = "attempted", person: str = ""
+    ) -> None:
+        """MCU Sprint 4: Logs security action to Redis audit trail."""
+        if not self.redis:
+            return
+        try:
+            from datetime import datetime, timezone
+
+            entry = json.dumps(
+                {
+                    "action": action,
+                    "person": person or args.get("person", "unknown"),
+                    "result": result,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "entity": args.get("entity_id", ""),
+                }
+            )
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(self._async_audit_log(entry))
+            task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
+            )
+        except RuntimeError:
+            pass  # No event loop
+
+    async def _async_audit_log(self, entry: str) -> None:
+        """Writes audit entry to Redis list."""
+        await self.redis.lpush(REDIS_SECURITY_AUDIT_KEY, entry)
+        await self.redis.ltrim(REDIS_SECURITY_AUDIT_KEY, 0, 499)  # Max 500
+        await self.redis.expire(REDIS_SECURITY_AUDIT_KEY, 7776000)  # 90 days
 
     def _validate_set_climate(self, args: dict) -> ValidationResult:
         cc = self._get_climate_config()
@@ -183,7 +251,9 @@ class FunctionValidator:
             try:
                 offset = float(offset)
             except (ValueError, TypeError):
-                return ValidationResult(ok=False, reason=f"Offset '{offset}' ist keine gueltige Zahl")
+                return ValidationResult(
+                    ok=False, reason=f"Offset '{offset}' ist keine gueltige Zahl"
+                )
             if offset < cc["offset_min"]:
                 return ValidationResult(
                     ok=False,
@@ -203,7 +273,9 @@ class FunctionValidator:
             try:
                 temp = float(temp)
             except (ValueError, TypeError):
-                return ValidationResult(ok=False, reason=f"Temperatur '{temp}' ist keine gueltige Zahl")
+                return ValidationResult(
+                    ok=False, reason=f"Temperatur '{temp}' ist keine gueltige Zahl"
+                )
             if temp < cc["temp_min"]:
                 return ValidationResult(
                     ok=False,
@@ -221,17 +293,25 @@ class FunctionValidator:
         if brightness is not None:
             # LLM sendet manchmal "dunkler"/"heller" als brightness statt als state
             _brightness_to_state = {
-                "dunkler": "dimmer", "dimmer": "dimmer",
-                "heller": "brighter", "brighter": "brighter",
+                "dunkler": "dimmer",
+                "dimmer": "dimmer",
+                "heller": "brighter",
+                "brighter": "brighter",
             }
-            if isinstance(brightness, str) and brightness.lower() in _brightness_to_state:
+            if (
+                isinstance(brightness, str)
+                and brightness.lower() in _brightness_to_state
+            ):
                 args["state"] = _brightness_to_state[brightness.lower()]
                 del args["brightness"]
                 return ValidationResult(ok=True)
             try:
                 brightness = int(brightness)
             except (ValueError, TypeError):
-                return ValidationResult(ok=False, reason=f"Helligkeit '{brightness}' ist keine gueltige Zahl")
+                return ValidationResult(
+                    ok=False,
+                    reason=f"Helligkeit '{brightness}' ist keine gueltige Zahl",
+                )
             # LLM sendet manchmal 0-255 (HA-Skala) statt 0-100 (Prozent)
             if 101 <= brightness <= 255:
                 brightness = round(brightness / 255 * 100)
@@ -249,7 +329,9 @@ class FunctionValidator:
             try:
                 position = int(position)
             except (ValueError, TypeError):
-                return ValidationResult(ok=False, reason=f"Position '{position}' ist keine gueltige Zahl")
+                return ValidationResult(
+                    ok=False, reason=f"Position '{position}' ist keine gueltige Zahl"
+                )
             if position < 0 or position > 100:
                 return ValidationResult(
                     ok=False,
@@ -261,9 +343,7 @@ class FunctionValidator:
     # Feature 10: Daten-basierter Widerspruch (Live-Pushback)
     # ------------------------------------------------------------------
 
-    async def get_pushback_context(
-        self, func_name: str, args: dict
-    ) -> Optional[dict]:
+    async def get_pushback_context(self, func_name: str, args: dict) -> Optional[dict]:
         """Prueft Live-Daten und liefert Kontext fuer intelligenten Widerspruch.
 
         Args:
@@ -305,9 +385,7 @@ class FunctionValidator:
         result["severity"] = self._calculate_severity(filtered)
         return result
 
-    async def _pushback_set_climate(
-        self, args: dict, checks: dict
-    ) -> Optional[dict]:
+    async def _pushback_set_climate(self, args: dict, checks: dict) -> Optional[dict]:
         """Pushback fuer Klimasteuerung: offene Fenster, leerer Raum."""
         warnings = []
         room = (args.get("room") or "").lower()
@@ -322,7 +400,11 @@ class FunctionValidator:
         # Check: Fenster offen im gleichen Raum?
         # Nutzt is_heating_relevant_opening um Tore/unbeheizte Bereiche auszuschliessen
         if checks.get("open_windows", True):
-            from .function_calling import is_heating_relevant_opening, get_opening_sensor_config
+            from .function_calling import (
+                is_heating_relevant_opening,
+                get_opening_sensor_config,
+            )
+
             for state in states:
                 eid = state.get("entity_id", "")
                 if not is_heating_relevant_opening(eid, state):
@@ -332,16 +414,20 @@ class FunctionValidator:
                 # Raum-Match: opening_sensors Config oder friendly_name Fallback
                 cfg = get_opening_sensor_config(eid)
                 sensor_room = (cfg.get("room") or "").lower()
-                friendly = (state.get("attributes", {}).get("friendly_name") or eid).lower()
+                friendly = (
+                    state.get("attributes", {}).get("friendly_name") or eid
+                ).lower()
                 if sensor_room == room or (not sensor_room and room in friendly):
                     window_name = state.get("attributes", {}).get("friendly_name", eid)
                     target_t = args.get("temperature", "?")
-                    warnings.append({
-                        "type": "open_window",
-                        "detail": f"{window_name} ist offen",
-                        "room": room,
-                        "alternative": f"Erst {window_name} schliessen, dann Heizung auf {target_t}°C",
-                    })
+                    warnings.append(
+                        {
+                            "type": "open_window",
+                            "detail": f"{window_name} ist offen",
+                            "room": room,
+                            "alternative": f"Erst {window_name} schliessen, dann Heizung auf {target_t}°C",
+                        }
+                    )
 
         # Check: Niemand im Raum?
         if checks.get("empty_room", True):
@@ -350,18 +436,22 @@ class FunctionValidator:
                 eid = state.get("entity_id", "")
                 if not eid.startswith("binary_sensor.motion"):
                     continue
-                friendly = (state.get("attributes", {}).get("friendly_name") or eid).lower()
+                friendly = (
+                    state.get("attributes", {}).get("friendly_name") or eid
+                ).lower()
                 if room in friendly and state.get("state") == "on":
                     room_occupied = True
                     break
             if not room_occupied:
                 # Nur warnen wenn kein Motion in den letzten Minuten
-                warnings.append({
-                    "type": "empty_room",
-                    "detail": f"Kein Bewegungsmelder aktiv in {room.title()}",
-                    "room": room,
-                    "alternative": "Absenktemperatur (18°C) setzen oder Timer fuer 30 Minuten",
-                })
+                warnings.append(
+                    {
+                        "type": "empty_room",
+                        "detail": f"Kein Bewegungsmelder aktiv in {room.title()}",
+                        "room": room,
+                        "alternative": "Absenktemperatur (18°C) setzen oder Timer fuer 30 Minuten",
+                    }
+                )
 
         # Check: Hohe Temperatur + warmes Wetter
         if checks.get("unnecessary_heating", True):
@@ -376,13 +466,17 @@ class FunctionValidator:
                     eid = state.get("entity_id", "")
                     if eid.startswith("weather."):
                         try:
-                            outside_temp = float(state.get("attributes", {}).get("temperature", 0))
+                            outside_temp = float(
+                                state.get("attributes", {}).get("temperature", 0)
+                            )
                             if outside_temp >= 20:
-                                warnings.append({
-                                    "type": "unnecessary_heating",
-                                    "detail": f"Draussen sind es {outside_temp}°C",
-                                    "alternative": "Fenster oeffnen statt heizen — draussen warm genug",
-                                })
+                                warnings.append(
+                                    {
+                                        "type": "unnecessary_heating",
+                                        "detail": f"Draussen sind es {outside_temp}°C",
+                                        "alternative": "Fenster oeffnen statt heizen — draussen warm genug",
+                                    }
+                                )
                         except (ValueError, TypeError):
                             pass
                         break
@@ -398,15 +492,21 @@ class FunctionValidator:
                 if _t >= 23:
                     for state in states:
                         eid = state.get("entity_id", "")
-                        if "tariff" in eid or "strompreis" in eid or "electricity_price" in eid:
+                        if (
+                            "tariff" in eid
+                            or "strompreis" in eid
+                            or "electricity_price" in eid
+                        ):
                             try:
                                 price = float(state.get("state", 0))
                                 if price > 0.30:
-                                    warnings.append({
-                                        "type": "peak_tariff",
-                                        "detail": f"Strompreis aktuell {price:.2f} EUR/kWh (Spitze)",
-                                        "alternative": f"Guenstiger in 1-2h oder {_t - 2:.0f}°C setzen",
-                                    })
+                                    warnings.append(
+                                        {
+                                            "type": "peak_tariff",
+                                            "detail": f"Strompreis aktuell {price:.2f} EUR/kWh (Spitze)",
+                                            "alternative": f"Guenstiger in 1-2h oder {_t - 2:.0f}°C setzen",
+                                        }
+                                    )
                             except (ValueError, TypeError):
                                 pass
                             break
@@ -416,9 +516,7 @@ class FunctionValidator:
             result["severity"] = self._calculate_severity(warnings)
         return result
 
-    async def _pushback_set_light(
-        self, args: dict, checks: dict
-    ) -> Optional[dict]:
+    async def _pushback_set_light(self, args: dict, checks: dict) -> Optional[dict]:
         """Pushback fuer Licht: Tageslicht, leerer Raum."""
         warnings = []
         state_val = (args.get("state") or "").lower()
@@ -443,7 +541,10 @@ class FunctionValidator:
 
         # Check: Helles Tageslicht? (lighting.daylight_off aus settings.yaml)
         from .config import yaml_config as _fv_yaml_config
-        _daylight_enabled = _fv_yaml_config.get("lighting", {}).get("daylight_off", True)
+
+        _daylight_enabled = _fv_yaml_config.get("lighting", {}).get(
+            "daylight_off", True
+        )
         if _daylight_enabled and checks.get("daylight", True):
             for state in states:
                 eid = state.get("entity_id", "")
@@ -451,10 +552,12 @@ class FunctionValidator:
                     elevation = state.get("attributes", {}).get("elevation", 0)
                     try:
                         if float(elevation) > 25:
-                            warnings.append({
-                                "type": "daylight",
-                                "detail": f"Die Sonne steht hoch (Elevation {elevation}°)",
-                            })
+                            warnings.append(
+                                {
+                                    "type": "daylight",
+                                    "detail": f"Die Sonne steht hoch (Elevation {elevation}°)",
+                                }
+                            )
                     except (ValueError, TypeError):
                         pass
                     break
@@ -464,9 +567,7 @@ class FunctionValidator:
             result["severity"] = self._calculate_severity(warnings)
         return result
 
-    async def _pushback_set_cover(
-        self, args: dict, checks: dict
-    ) -> Optional[dict]:
+    async def _pushback_set_cover(self, args: dict, checks: dict) -> Optional[dict]:
         """Pushback fuer Rolladen: Sturmwarnung, Kaelte, Markisen-Regen."""
         warnings = []
         action = (args.get("action") or args.get("state") or "").lower()
@@ -506,19 +607,23 @@ class FunctionValidator:
         # Sturmwarnung bei Oeffnen
         if is_opening and checks.get("storm_warning", True):
             if wind_speed > 60:
-                warnings.append({
-                    "type": "storm_warning",
-                    "detail": f"Starker Wind mit {wind_speed} km/h",
-                    "alternative": "Rolllaeden geschlossen lassen zum Schutz",
-                })
+                warnings.append(
+                    {
+                        "type": "storm_warning",
+                        "detail": f"Starker Wind mit {wind_speed} km/h",
+                        "alternative": "Rolllaeden geschlossen lassen zum Schutz",
+                    }
+                )
 
         # Rollladen hoch bei extremer Kaelte
         if is_opening and outside_temp is not None and outside_temp < 0:
-            warnings.append({
-                "type": "cold_outside",
-                "detail": f"Aussentemperatur {outside_temp}°C — Kaelte kommt rein",
-                "alternative": "Rollladen auf 20% — Licht rein, Isolierung bleibt",
-            })
+            warnings.append(
+                {
+                    "type": "cold_outside",
+                    "detail": f"Aussentemperatur {outside_temp}°C — Kaelte kommt rein",
+                    "alternative": "Rollladen auf 20% — Licht rein, Isolierung bleibt",
+                }
+            )
 
         # Phase 2B: Solar-Ertrag-Verlust bei geschlossenen Rollladen
         is_closing = not is_opening
@@ -529,11 +634,13 @@ class FunctionValidator:
                     try:
                         power = float(state.get("state", 0))
                         if power > 100:  # > 100W Solar-Produktion
-                            warnings.append({
-                                "type": "solar_loss",
-                                "detail": f"Solar produziert gerade {power:.0f}W",
-                                "alternative": "Rollladen offen lassen — Solar-Ertrag maximieren",
-                            })
+                            warnings.append(
+                                {
+                                    "type": "solar_loss",
+                                    "detail": f"Solar produziert gerade {power:.0f}W",
+                                    "alternative": "Rollladen offen lassen — Solar-Ertrag maximieren",
+                                }
+                            )
                     except (ValueError, TypeError):
                         pass
                     break
@@ -544,17 +651,21 @@ class FunctionValidator:
         if is_markise and is_opening:
             rain_conditions = {"rainy", "pouring", "hail", "lightning-rainy"}
             if condition in rain_conditions:
-                warnings.append({
-                    "type": "rain_markise",
-                    "detail": f"Wetter: {condition} — Markise wird nass/beschaedigt",
-                    "alternative": "Markise eingefahren lassen",
-                })
+                warnings.append(
+                    {
+                        "type": "rain_markise",
+                        "detail": f"Wetter: {condition} — Markise wird nass/beschaedigt",
+                        "alternative": "Markise eingefahren lassen",
+                    }
+                )
             if wind_speed >= 40:
-                warnings.append({
-                    "type": "wind_markise",
-                    "detail": f"Wind {wind_speed} km/h — Markise kann beschaedigt werden",
-                    "alternative": "Markise erst bei Windstille ausfahren",
-                })
+                warnings.append(
+                    {
+                        "type": "wind_markise",
+                        "detail": f"Wind {wind_speed} km/h — Markise kann beschaedigt werden",
+                        "alternative": "Markise erst bei Windstille ausfahren",
+                    }
+                )
 
         result = {"warnings": warnings} if warnings else None
         if result:
@@ -636,7 +747,9 @@ class FunctionValidator:
                 lines.append(f"- {detail}")
         return "\n".join(lines)
 
-    def check_state_age(self, entity_id: str, last_changed: str, max_age_minutes: int = 10) -> bool:
+    def check_state_age(
+        self, entity_id: str, last_changed: str, max_age_minutes: int = 10
+    ) -> bool:
         """Prueft ob der State aktuell genug fuer Pushback ist.
 
         Veraltete States (>10min) sollten keinen Pushback ausloesen,
@@ -644,6 +757,7 @@ class FunctionValidator:
         """
         try:
             from datetime import datetime, timezone
+
             last = datetime.fromisoformat(last_changed.replace("Z", "+00:00"))
             age_minutes = (datetime.now(timezone.utc) - last).total_seconds() / 60
             return age_minutes <= max_age_minutes

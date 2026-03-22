@@ -2205,6 +2205,12 @@ class ProactiveManager:
             except Exception as e:
                 logger.debug("Follow-up Check Fehler: %s", e)
 
+            # MCU Sprint 4: Knowledge gap detection (piggyback on follow-up loop)
+            try:
+                await self._check_knowledge_gaps()
+            except Exception as e:
+                logger.debug("Knowledge gap check Fehler: %s", e)
+
             await asyncio.sleep(600)  # Alle 10 Minuten
 
     async def _check_pending_followups(self):
@@ -2312,6 +2318,44 @@ class ProactiveManager:
                 )
             except Exception as e:
                 logger.warning("Follow-up Cooldown-Marker setzen fehlgeschlagen: %s", e)
+
+    async def _check_knowledge_gaps(self):
+        """MCU Sprint 4: Asks about rooms with <2 preference facts. Max 1/week/room."""
+        if not hasattr(self.brain, "semantic_memory") or not self.brain.semantic_memory:
+            return
+        if self._is_quiet_hours():
+            return
+
+        try:
+            gaps = await self.brain.semantic_memory.get_knowledge_gaps()
+            if not gaps:
+                return
+
+            redis = self.brain.memory.redis
+            if not redis:
+                return
+
+            for room in gaps[:1]:  # Max 1 gap question per check
+                gap_key = f"mha:knowledge_gap:{room}"
+                already = await redis.get(gap_key)
+                if already:
+                    continue
+
+                await redis.set(gap_key, "1", ex=604800)  # 7 days cooldown
+                title = get_person_title()
+                room_nice = room.replace("ue", "ü").replace("ae", "ä").capitalize()
+                msg = f"{title}, wie warm magst du es eigentlich im {room_nice}?"
+                await self._deliver(
+                    msg,
+                    event_type="knowledge_gap",
+                    urgency=LOW,
+                    delivery_method="tts_quiet",
+                    volume=0.5,
+                )
+                logger.info("Knowledge gap question: %s", room)
+                break  # Max 1 per check
+        except Exception as e:
+            logger.debug("Knowledge gap check fehlgeschlagen: %s", e)
 
     async def _generate_followup_message(
         self,

@@ -1055,6 +1055,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # ConversationMemory für Thread-Kontext im Context Builder
         if hasattr(self, "conversation_memory"):
             self.context_builder.set_conversation_memory(self.conversation_memory)
+        # MCU Sprint 4: Per-Person Room Tracking via FollowMe
+        if hasattr(self, "follow_me"):
+            self.context_builder.set_follow_me(self.follow_me)
 
         # Autonomy Evolution: Redis für Interaktions-Tracking
         self.autonomy.set_redis(self.memory.redis)

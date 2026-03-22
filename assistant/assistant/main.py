@@ -15,8 +15,11 @@ os.environ["CHROMA_ANONYMIZED_TELEMETRY"] = "False"
 # PostHog capture()-Signatur inkompatibel mit chromadb 0.5.x → Modul neutralisieren
 try:
     import posthog  # type: ignore
+
     posthog.capture = lambda *_a, **_kw: None  # noqa: E731
-    posthog.Posthog = type("_NoopPosthog", (), {"capture": staticmethod(lambda *_a, **_kw: None)})  # noqa: E731
+    posthog.Posthog = type(
+        "_NoopPosthog", (), {"capture": staticmethod(lambda *_a, **_kw: None)}
+    )  # noqa: E731
 except ImportError:
     pass
 import secrets
@@ -26,7 +29,17 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -39,14 +52,34 @@ from .brain import AssistantBrain
 from .config import settings, yaml_config, load_yaml_config, get_person_title
 
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
-from .constants import ERROR_BUFFER_MAX_SIZE, ACTIVITY_BUFFER_MAX_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_REQUESTS, TOKEN_CLEANUP_INTERVAL, WS_KEEPALIVE_INTERVAL
+from .constants import (
+    ERROR_BUFFER_MAX_SIZE,
+    ACTIVITY_BUFFER_MAX_SIZE,
+    RATE_LIMIT_WINDOW,
+    RATE_LIMIT_MAX_REQUESTS,
+    TOKEN_CLEANUP_INTERVAL,
+    WS_KEEPALIVE_INTERVAL,
+)
 from .cover_config import load_cover_configs, save_cover_configs
 from .file_handler import (
-    allowed_file, ensure_upload_dir,
-    get_file_path, save_upload, MAX_FILE_SIZE,
+    allowed_file,
+    ensure_upload_dir,
+    get_file_path,
+    save_upload,
+    MAX_FILE_SIZE,
 )
-from .request_context import RequestContextMiddleware, setup_structured_logging, get_request_id
-from .websocket import ws_manager, emit_speaking, emit_stream_start, emit_stream_token, emit_stream_end
+from .request_context import (
+    RequestContextMiddleware,
+    setup_structured_logging,
+    get_request_id,
+)
+from .websocket import (
+    ws_manager,
+    emit_speaking,
+    emit_stream_start,
+    emit_stream_token,
+    emit_stream_end,
+)
 
 # Structured Logging (mit Request-ID Support)
 setup_structured_logging()
@@ -60,6 +93,7 @@ _REDIS_ERROR_BUFFER_TTL = 7 * 86400  # 7 Tage
 
 # F-067: Sensitive Patterns die aus Error-Buffer-Nachrichten entfernt werden
 import re as _re
+
 _SENSITIVE_PATTERNS = _re.compile(
     r'(api[_-]?key|token|password|secret|credential|auth)[=:"\s]+\S+',
     _re.IGNORECASE,
@@ -78,15 +112,18 @@ class _ErrorBufferHandler(logging.Handler):
             msg = self.format(record)
             # F-067: Sensitive Daten maskieren
             msg = _SENSITIVE_PATTERNS.sub("[REDACTED]", msg)
-            _error_buffer.append({
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "level": record.levelname,
-                "logger": record.name,
-                "message": msg,
-            })
+            _error_buffer.append(
+                {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "level": record.levelname,
+                    "logger": record.name,
+                    "message": msg,
+                }
+            )
         except Exception as e:
             # E1: Nicht-stumm loggen — Activity-Log-Formatierungsfehler sichtbar machen
             import sys
+
             print(f"ErrorBufferHandler format error: {e}", file=sys.stderr)
 
 
@@ -102,12 +139,21 @@ _REDIS_ACTIVITY_BUFFER_TTL = 3 * 86400  # 3 Tage
 
 # Module deren Logs im Aktivitaetsprotokoll erscheinen
 _ACTIVITY_LOGGERS = {
-    "assistant.proactive", "assistant.brain", "assistant.health_monitor",
-    "assistant.device_health", "assistant.diagnostics", "assistant.activity",
-    "assistant.anticipation", "assistant.ha_client", "assistant.function_calling",
-    "assistant.insight_engine", "assistant.learning_observer",
-    "assistant.situation_model", "assistant.personality",
-    "assistant.latency_tracker", "assistant.response_cache",
+    "assistant.proactive",
+    "assistant.brain",
+    "assistant.health_monitor",
+    "assistant.device_health",
+    "assistant.diagnostics",
+    "assistant.activity",
+    "assistant.anticipation",
+    "assistant.ha_client",
+    "assistant.function_calling",
+    "assistant.insight_engine",
+    "assistant.learning_observer",
+    "assistant.situation_model",
+    "assistant.personality",
+    "assistant.latency_tracker",
+    "assistant.response_cache",
     "mindhome-assistant",
 }
 
@@ -145,16 +191,21 @@ class _ActivityBufferHandler(logging.Handler):
             msg = self.format(record)
             # Sensitive Daten maskieren
             msg = _SENSITIVE_PATTERNS.sub("[REDACTED]", msg)
-            _activity_buffer.append({
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "level": record.levelname,
-                "module": _ACTIVITY_MODULE_LABELS.get(record.name, record.name.split(".")[-1]),
-                "logger": record.name,
-                "message": msg,
-            })
+            _activity_buffer.append(
+                {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "level": record.levelname,
+                    "module": _ACTIVITY_MODULE_LABELS.get(
+                        record.name, record.name.split(".")[-1]
+                    ),
+                    "logger": record.name,
+                    "message": msg,
+                }
+            )
         except Exception as e:
             # E2: Dashboard-Event-Serialisierung nicht stumm verschlucken
             import sys
+
             print(f"ActivityBufferHandler format error: {e}", file=sys.stderr)
 
 
@@ -224,7 +275,9 @@ async def _persist_activity_buffer(redis_client) -> None:
 brain = AssistantBrain()
 
 
-async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict, cfg: dict):
+async def _boot_announcement(
+    brain_instance: "AssistantBrain", health_data: dict, cfg: dict
+):
     """Jarvis Boot-Sequenz — kuendigt sich nach dem Start gesprochenen an."""
     delay = cfg.get("delay_seconds", 5)
     await asyncio.sleep(delay)
@@ -240,7 +293,7 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
         sensor_ids = rt_cfg.get("sensors", []) or []
         if sensor_ids:
             temps = []
-            for s in (states or []):
+            for s in states or []:
                 if s.get("entity_id") in sensor_ids:
                     try:
                         temps.append(float(s.get("state", "")))
@@ -250,7 +303,8 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
                 temp = sum(temps) / len(temps)
 
         from .function_calling import is_window_or_door, get_opening_type
-        for s in (states or []):
+
+        for s in states or []:
             eid = s.get("entity_id", "")
             state_val = s.get("state", "")
             attrs = s.get("attributes", {})
@@ -289,7 +343,8 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
         _OK_PREFIXES = ("connected", "active", "running")
         components = health_data.get("components", {})
         failed = [
-            c for c, s in components.items()
+            c
+            for c, s in components.items()
             if isinstance(s, str) and not s.startswith(_OK_PREFIXES)
         ]
         if failed:
@@ -316,7 +371,8 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
         logger.info("Boot-Sequenz: %s", msg)
         try:
             await brain_instance.ha.log_activity(
-                "system", "boot",
+                "system",
+                "boot",
                 f"System gestartet: {msg[:150]}",
             )
         except Exception as e:
@@ -355,7 +411,9 @@ async def lifespan(app: FastAPI):
             logger.info("Fehlerspeicher wiederhergestellt: %d Eintraege", restored)
         restored_act = await _restore_activity_buffer(brain.memory.redis)
         if restored_act:
-            logger.info("Aktivitaetsprotokoll wiederhergestellt: %d Eintraege", restored_act)
+            logger.info(
+                "Aktivitaetsprotokoll wiederhergestellt: %d Eintraege", restored_act
+            )
 
     # Cover-Settings initial an Addon synchronisieren
     cover_auto = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
@@ -370,23 +428,35 @@ async def lifespan(app: FastAPI):
         icon = "OK" if status == "connected" else "!!"
         logger.info(" [%s] %s: %s", icon, component, status)
 
-    logger.info(" Autonomie: Level %d (%s)",
+    logger.info(
+        " Autonomie: Level %d (%s)",
         health["autonomy"]["level"],
-        health["autonomy"]["name"])
+        health["autonomy"]["name"],
+    )
     logger.info("=" * 50)
-    logger.info(" MindHome Assistant bereit auf %s:%d",
-        settings.assistant_host, settings.assistant_port)
+    logger.info(
+        " MindHome Assistant bereit auf %s:%d",
+        settings.assistant_host,
+        settings.assistant_port,
+    )
     logger.info("=" * 50)
 
     # Boot-Sequenz: Jarvis kuendigt sich an
     boot_cfg = yaml_config.get("boot_sequence", {})
     if boot_cfg.get("enabled", True):
         task = asyncio.create_task(_boot_announcement(brain, health, boot_cfg))
-        task.add_done_callback(lambda t: t.exception() and logger.error("Boot-Sequenz Task Fehler: %s", t.exception()))
+        task.add_done_callback(
+            lambda t: (
+                t.exception()
+                and logger.error("Boot-Sequenz Task Fehler: %s", t.exception())
+            )
+        )
 
     # Periodischer Token-Cleanup (alle 15 Min)
     cleanup_task = asyncio.create_task(_periodic_token_cleanup())
-    cleanup_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+    cleanup_task.add_done_callback(
+        lambda t: t.exception() if not t.cancelled() else None
+    )
 
     yield
 
@@ -394,7 +464,9 @@ async def lifespan(app: FastAPI):
 
     # F-065: WebSocket-Clients ueber Shutdown benachrichtigen
     try:
-        await ws_manager.broadcast("system", {"event": "shutdown", "message": "System wird heruntergefahren"})
+        await ws_manager.broadcast(
+            "system", {"event": "shutdown", "message": "System wird heruntergefahren"}
+        )
         await asyncio.sleep(0.5)  # Kurz warten damit Clients die Nachricht empfangen
     except Exception as e:
         logger.debug("F-065: WS-Shutdown-Broadcast fehlgeschlagen: %s", e)
@@ -466,12 +538,74 @@ async def auth_header_middleware(request: Request, call_next):
         token = auth[7:]
         # URL-encode token to prevent parameter injection (e.g. token containing '&admin=true')
         from urllib.parse import quote
+
         safe_token = quote(token, safe="")
         scope = request.scope
         qs = scope.get("query_string", b"").decode()
         sep = "&" if qs else ""
         scope["query_string"] = f"{qs}{sep}token={safe_token}".encode()
     return await call_next(request)
+
+
+# MCU Sprint 4: API Access Anomaly Detection
+_api_failed_auth_count: int = 0
+_api_failed_auth_reset_hour: int = -1
+
+
+@app.middleware("http")
+async def api_anomaly_middleware(request: Request, call_next):
+    """MCU Sprint 4: Track API access patterns for anomaly detection."""
+    global _api_failed_auth_count, _api_failed_auth_reset_hour
+
+    response = await call_next(request)
+
+    # Track failed auth attempts
+    if response.status_code in (401, 403):
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        if now.hour != _api_failed_auth_reset_hour:
+            _api_failed_auth_count = 0
+            _api_failed_auth_reset_hour = now.hour
+
+        _api_failed_auth_count += 1
+
+        # Alert after 3 failed attempts
+        if _api_failed_auth_count == 3:
+            client_ip = request.client.host if request.client else "unknown"
+            logger.warning(
+                "API Anomaly: 3+ failed auth attempts from %s in hour %d",
+                client_ip,
+                now.hour,
+            )
+            # Try to notify via brain's proactive system
+            try:
+                if hasattr(app.state, "brain") and app.state.brain:
+                    from .websocket import emit_proactive
+
+                    await emit_proactive(
+                        f"Sicherheitshinweis: {_api_failed_auth_count} fehlgeschlagene API-Zugriffe von {client_ip}.",
+                        "api_anomaly",
+                        "low",
+                    )
+            except Exception:
+                pass  # Non-critical
+
+    # Log unusual access times (2-5 AM)
+    if response.status_code == 200 and request.url.path.startswith("/api/assistant"):
+        from datetime import datetime, timezone
+
+        hour = datetime.now(timezone.utc).hour
+        if 2 <= hour <= 5:
+            client_ip = request.client.host if request.client else "unknown"
+            logger.info(
+                "API access at unusual hour %d from %s: %s",
+                hour,
+                client_ip,
+                request.url.path,
+            )
+
+    return response
 
 
 # ----- API Key Authentication fuer /api/assistant/* Endpoints -----
@@ -488,14 +622,16 @@ _assistant_api_key: str = ""
 _api_key_required: bool = False
 
 # Pfade die OHNE API Key zugaenglich bleiben (Health fuer Discovery/Config-Flow)
-_API_KEY_EXEMPT_PATHS = frozenset({
-    "/api/assistant/health",
-    "/api/assistant/ws",  # WebSocket hat eigene Auth-Pruefung im Endpoint
-    "/",
-    "/docs",
-    "/openapi.json",
-    "/redoc",
-})
+_API_KEY_EXEMPT_PATHS = frozenset(
+    {
+        "/api/assistant/health",
+        "/api/assistant/ws",  # WebSocket hat eigene Auth-Pruefung im Endpoint
+        "/",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
+    }
+)
 
 
 def _init_api_key():
@@ -544,16 +680,24 @@ def _init_api_key():
         if "api_key_required" not in security:
             security["api_key_required"] = True
         with open(config_path, "w") as f:
-            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        logger.info("API Key auto-generiert und in settings.yaml gespeichert (Enforcement AKTIV)")
+            yaml.safe_dump(
+                cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False
+            )
+        logger.info(
+            "API Key auto-generiert und in settings.yaml gespeichert (Enforcement AKTIV)"
+        )
     except Exception as e:
-        logger.warning("API Key konnte nicht in settings.yaml gespeichert werden: %s", e)
+        logger.warning(
+            "API Key konnte nicht in settings.yaml gespeichert werden: %s", e
+        )
 
 
 _init_api_key()
 
 if not _assistant_api_key:
-    logger.error("SICHERHEIT: API Key konnte nicht initialisiert werden! Generiere Fallback-Key.")
+    logger.error(
+        "SICHERHEIT: API Key konnte nicht initialisiert werden! Generiere Fallback-Key."
+    )
     _assistant_api_key = secrets.token_urlsafe(32)
 
 
@@ -582,11 +726,15 @@ async def api_key_middleware(request: Request, call_next):
     # Nur pruefen wenn Enforcement aktiviert ist
     if _api_key_required:
         # F-086: Workshop-API ebenfalls schuetzen (physische Aktoren!)
-        if (path.startswith("/api/assistant/") or path == "/api/assistant"
-                or path.startswith("/api/workshop/")):
+        if (
+            path.startswith("/api/assistant/")
+            or path == "/api/assistant"
+            or path.startswith("/api/workshop/")
+        ):
             if path not in _API_KEY_EXEMPT_PATHS:
                 if not _check_api_key(request):
                     from fastapi.responses import JSONResponse
+
                     return JSONResponse(
                         status_code=403,
                         content={"detail": "Ungueltiger oder fehlender API Key"},
@@ -613,7 +761,8 @@ async def rate_limit_middleware(request: Request, call_next):
         # F-011: Periodischer Cleanup aller abgelaufenen IPs (alle 5 Min)
         if now - _rate_limit_last_cleanup > _RATE_CLEANUP_INTERVAL:
             expired_ips = [
-                ip for ip, timestamps in _rate_limits.items()
+                ip
+                for ip, timestamps in _rate_limits.items()
                 if all(now - t >= _RATE_WINDOW for t in timestamps)
             ]
             for ip in expired_ips:
@@ -625,6 +774,7 @@ async def rate_limit_middleware(request: Request, call_next):
         # F-011: Schutz gegen unbegrenztes Wachstum bei IP-Scan/DDoS
         if client_ip not in _rate_limits and len(_rate_limits) >= _RATE_MAX_IPS:
             from fastapi.responses import JSONResponse
+
             return JSONResponse(
                 status_code=429,
                 content={"detail": "Zu viele Anfragen. Bitte warten."},
@@ -637,6 +787,7 @@ async def rate_limit_middleware(request: Request, call_next):
 
         if len(_rate_limits[client_ip]) >= _RATE_MAX_REQUESTS:
             from fastapi.responses import JSONResponse
+
             return JSONResponse(
                 status_code=429,
                 content={"detail": "Zu viele Anfragen. Bitte warten."},
@@ -648,6 +799,7 @@ async def rate_limit_middleware(request: Request, call_next):
 
 
 # ----- Request/Response Modelle -----
+
 
 class ChatRequest(BaseModel):
     text: str
@@ -689,6 +841,7 @@ class SettingsUpdate(BaseModel):
 
 # ----- API Endpoints -----
 
+
 @app.get("/api/assistant/health")
 async def health():
     """Health Check - Status aller Komponenten."""
@@ -698,6 +851,7 @@ async def health():
 # ------------------------------------------------------------------
 # Phase 9: Jarvis Status, Insights & Learning-Progress API
 # ------------------------------------------------------------------
+
 
 @app.get("/api/jarvis/status")
 async def jarvis_status():
@@ -714,7 +868,9 @@ async def jarvis_status():
             status["inner_mood"] = getattr(brain.inner_state, "current_mood", "neutral")
         if hasattr(brain, "mood"):
             _mood = brain.mood.get_current_mood()
-            status["mood"] = _mood if isinstance(_mood, str) else _mood.get("mood", "neutral")
+            status["mood"] = (
+                _mood if isinstance(_mood, str) else _mood.get("mood", "neutral")
+            )
         if hasattr(brain, "autonomy"):
             status["autonomy_level"] = getattr(brain.autonomy, "level", 2)
         status["processing"] = getattr(brain, "_is_processing", False)
@@ -738,14 +894,18 @@ async def jarvis_insights():
     """Letzte proaktive Beobachtungen und Insights."""
     insights = []
     try:
-        if hasattr(brain, "spontaneous") and hasattr(brain.spontaneous, "_observation_history"):
+        if hasattr(brain, "spontaneous") and hasattr(
+            brain.spontaneous, "_observation_history"
+        ):
             history = list(brain.spontaneous._observation_history)[-5:]
             for obs in history:
-                insights.append({
-                    "text": obs.get("text", ""),
-                    "timestamp": obs.get("timestamp", ""),
-                    "type": obs.get("type", "observation"),
-                })
+                insights.append(
+                    {
+                        "text": obs.get("text", ""),
+                        "timestamp": obs.get("timestamp", ""),
+                        "type": obs.get("type", "observation"),
+                    }
+                )
     except Exception as e:
         logger.debug("Jarvis insights error: %s", e)
     return {"insights": insights}
@@ -769,8 +929,14 @@ async def jarvis_learning_progress():
             progress["corrections_applied"] = len(rules)
         # Aktive Features auflisten
         _features = []
-        for attr in ["spontaneous", "anticipation", "wellness_advisor",
-                      "follow_me", "insight_engine", "self_optimization"]:
+        for attr in [
+            "spontaneous",
+            "anticipation",
+            "wellness_advisor",
+            "follow_me",
+            "insight_engine",
+            "self_optimization",
+        ]:
             if hasattr(brain, attr):
                 mod = getattr(brain, attr)
                 if getattr(mod, "enabled", False):
@@ -819,8 +985,11 @@ async def character_break_stats():
     log_entries = []
     if brain.memory and brain.memory.redis:
         try:
-            raw = await brain.memory.redis.lrange("mha:self_opt:character_break_log", 0, 19)
+            raw = await brain.memory.redis.lrange(
+                "mha:self_opt:character_break_log", 0, 19
+            )
             import json as _json
+
             log_entries = [_json.loads(e) for e in (raw or []) if e]
         except Exception as e:
             logger.debug("Unhandled: %s", e)
@@ -847,13 +1016,19 @@ async def chat(request: ChatRequest):
 
     # Phase 9: Voice-Metadaten an MoodDetector weiterleiten
     if request.voice_metadata:
-        brain.mood.analyze_voice_metadata(request.voice_metadata, person=request.person or "")
+        brain.mood.analyze_voice_metadata(
+            request.voice_metadata, person=request.person or ""
+        )
 
     try:
         result = await asyncio.wait_for(
-            brain.process(request.text, request.person, request.room,
-                          voice_metadata=request.voice_metadata,
-                          device_id=request.device_id),
+            brain.process(
+                request.text,
+                request.person,
+                request.room,
+                voice_metadata=request.voice_metadata,
+                device_id=request.device_id,
+            ),
             timeout=60.0,
         )
     except asyncio.TimeoutError:
@@ -865,7 +1040,12 @@ async def chat(request: ChatRequest):
             "context_room": request.room or "unbekannt",
         }
     except Exception as e:
-        logger.error("brain.process() Exception fuer '%s': %s", request.text[:100], e, exc_info=True)
+        logger.error(
+            "brain.process() Exception fuer '%s': %s",
+            request.text[:100],
+            e,
+            exc_info=True,
+        )
         error_type = type(e).__name__
         _error_msgs = [
             "Da lief etwas nicht nach Plan. Einen Moment, ich versuche es anders.",
@@ -882,14 +1062,20 @@ async def chat(request: ChatRequest):
     # Aktionen ans Addon melden fuer Aktivitaeten-Log
     actions = result.get("actions", [])
     if actions:
-        task = asyncio.ensure_future(brain.ha.log_actions(
-            actions, user_text=request.text,
-            response_text=result.get("response", ""),
-            person=request.person or "",
-        ))
+        task = asyncio.ensure_future(
+            brain.ha.log_actions(
+                actions,
+                user_text=request.text,
+                response_text=result.get("response", ""),
+                person=request.person or "",
+            )
+        )
         task.add_done_callback(
-            lambda t: logger.warning("log_actions fehlgeschlagen: %s", t.exception())
-            if t.exception() else None
+            lambda t: (
+                logger.warning("log_actions fehlgeschlagen: %s", t.exception())
+                if t.exception()
+                else None
+            )
         )
 
     # TTS-Daten als TTSInfo-Modell wrappen
@@ -929,6 +1115,7 @@ async def search_memory(q: str):
 
 # ----- Semantic Memory Endpoints (Phase 2) -----
 
+
 @app.get("/api/assistant/memory/facts")
 async def get_all_facts():
     """Alle gespeicherten Fakten im semantischen Gedaechtnis."""
@@ -942,9 +1129,7 @@ async def search_facts(q: str, person: Optional[str] = None):
     """Sucht relevante Fakten per Vektor-Suche."""
     if not q.strip():
         raise HTTPException(status_code=400, detail="Kein Suchbegriff")
-    results = await brain.memory.semantic.search_facts(
-        query=q, limit=10, person=person
-    )
+    results = await brain.memory.semantic.search_facts(query=q, limit=10, person=person)
     return {"query": q, "person": person, "results": results}
 
 
@@ -1116,6 +1301,7 @@ async def ui_factory_reset(req: FactoryResetRequest, request: Request, token: st
 
 # ----- Feedback Endpoints (Phase 5) -----
 
+
 @app.put("/api/assistant/feedback")
 async def submit_feedback(request: FeedbackRequest):
     """
@@ -1171,6 +1357,7 @@ async def feedback_scores():
 
 # ----- Mood Detector Endpoints (Phase 3) -----
 
+
 @app.get("/api/assistant/mood")
 async def get_mood():
     """Aktuelle Stimmungserkennung des Benutzers."""
@@ -1178,6 +1365,7 @@ async def get_mood():
 
 
 # ----- Status Report Endpoint -----
+
 
 @app.get("/api/assistant/status")
 async def get_status_report(person: Optional[str] = None):
@@ -1187,6 +1375,7 @@ async def get_status_report(person: Optional[str] = None):
 
 
 # ----- Activity Engine Endpoints (Phase 6) -----
+
 
 @app.get("/api/assistant/activity")
 async def get_activity():
@@ -1203,6 +1392,7 @@ async def get_delivery(urgency: str = "medium"):
 
 
 # ----- Summarizer Endpoints (Phase 7) -----
+
 
 @app.get("/api/assistant/summaries")
 async def get_summaries():
@@ -1225,11 +1415,16 @@ async def generate_summary(date: str):
     """Erstellt manuell eine Tages-Zusammenfassung fuer ein bestimmtes Datum."""
     summary = await brain.summarizer.summarize_day(date)
     if not summary:
-        return {"date": date, "summary": None, "message": "Keine Konversationen fuer diesen Tag"}
+        return {
+            "date": date,
+            "summary": None,
+            "message": "Keine Konversationen fuer diesen Tag",
+        }
     return {"date": date, "summary": summary}
 
 
 # ----- Action Planner Endpoints (Phase 4) -----
+
 
 @app.get("/api/assistant/planner/last")
 async def get_last_plan():
@@ -1262,11 +1457,14 @@ async def update_settings(update: SettingsUpdate, token: str = ""):
         if not success:
             raise HTTPException(status_code=400, detail="Level muss 1-5 sein")
         result["autonomy"] = brain.autonomy.get_level_info()
-        _audit_log("autonomy_level_changed", {"old": old_level, "new": update.autonomy_level})
+        _audit_log(
+            "autonomy_level_changed", {"old": old_level, "new": update.autonomy_level}
+        )
     return result
 
 
 # ----- Phase 9: TTS & Sound Endpoints -----
+
 
 @app.get("/api/assistant/tts/status")
 async def tts_status():
@@ -1313,14 +1511,18 @@ async def voice_output(request: VoiceRequest):
 
     # WebSocket-Event senden (assistant.audio)
     from .websocket import ws_manager
-    await ws_manager.broadcast("assistant.audio", {
-        "text": request.text,
-        "ssml": tts_data.get("ssml", request.text),
-        "message_type": "announcement",
-        "speed": tts_data.get("speed", 100),
-        "volume": tts_data.get("volume", 0.8),
-        "room": request.room,
-    })
+
+    await ws_manager.broadcast(
+        "assistant.audio",
+        {
+            "text": request.text,
+            "ssml": tts_data.get("ssml", request.text),
+            "message_type": "announcement",
+            "speed": tts_data.get("speed", 100),
+            "volume": tts_data.get("volume", 0.8),
+            "room": request.room,
+        },
+    )
 
     return {
         "success": True,
@@ -1342,16 +1544,23 @@ _WHISPER_PORT = int(os.getenv("WHISPER_PORT", "10300"))
 async def _wyoming_tts(text: str) -> bytes:
     """Generiert Audio via Wyoming TTS (Piper). Gibt rohe PCM-Daten zurueck."""
     import struct
+
     reader, writer = await asyncio.wait_for(
-        asyncio.open_connection(_PIPER_HOST, _PIPER_PORT), timeout=5.0,
+        asyncio.open_connection(_PIPER_HOST, _PIPER_PORT),
+        timeout=5.0,
     )
     try:
         # Wyoming Protocol: JSON-Header + Newline
         # 1. Synthesize request senden
-        synth_event = json.dumps({
-            "type": "synthesize",
-            "data": {"text": text},
-        }) + "\n"
+        synth_event = (
+            json.dumps(
+                {
+                    "type": "synthesize",
+                    "data": {"text": text},
+                }
+            )
+            + "\n"
+        )
         writer.write(synth_event.encode("utf-8"))
         await writer.drain()
 
@@ -1374,15 +1583,20 @@ async def _wyoming_tts(text: str) -> bytes:
                 sample_width = d.get("width", sample_width)
                 channels = d.get("channels", channels)
                 # Payload lesen (0 bytes bei audio-start)
-                payload_len = event.get("data_length", 0) or event.get("payload_length", 0)
+                payload_len = event.get("data_length", 0) or event.get(
+                    "payload_length", 0
+                )
                 if payload_len:
                     await reader.readexactly(payload_len)
 
             elif etype == "audio-chunk":
-                payload_len = event.get("data_length", 0) or event.get("payload_length", 0)
+                payload_len = event.get("data_length", 0) or event.get(
+                    "payload_length", 0
+                )
                 if payload_len and payload_len > 0:
                     chunk = await asyncio.wait_for(
-                        reader.readexactly(payload_len), timeout=10.0,
+                        reader.readexactly(payload_len),
+                        timeout=10.0,
                     )
                     audio_chunks.append(chunk)
 
@@ -1414,36 +1628,54 @@ async def _wyoming_tts(text: str) -> bytes:
             await writer.wait_closed()
         except Exception as e:
             logger.debug("Unhandled: %s", e)
+
+
 async def _wyoming_stt(audio_data: bytes, sample_rate: int = 16000) -> str:
     """Transkribiert Audio via Wyoming STT (Whisper). Erwartet 16-bit PCM mono."""
     reader, writer = await asyncio.wait_for(
-        asyncio.open_connection(_WHISPER_HOST, _WHISPER_PORT), timeout=5.0,
+        asyncio.open_connection(_WHISPER_HOST, _WHISPER_PORT),
+        timeout=5.0,
     )
     try:
         # 1. Transcribe-Event senden
-        transcribe_event = json.dumps({
-            "type": "transcribe",
-            "data": {"language": "de"},
-        }) + "\n"
+        transcribe_event = (
+            json.dumps(
+                {
+                    "type": "transcribe",
+                    "data": {"language": "de"},
+                }
+            )
+            + "\n"
+        )
         writer.write(transcribe_event.encode("utf-8"))
 
         # 2. Audio-Start senden
-        audio_start = json.dumps({
-            "type": "audio-start",
-            "data": {"rate": sample_rate, "width": 2, "channels": 1},
-        }) + "\n"
+        audio_start = (
+            json.dumps(
+                {
+                    "type": "audio-start",
+                    "data": {"rate": sample_rate, "width": 2, "channels": 1},
+                }
+            )
+            + "\n"
+        )
         writer.write(audio_start.encode("utf-8"))
 
         # 3. Audio in Chunks senden (je 4096 bytes)
         chunk_size = 4096
         for i in range(0, len(audio_data), chunk_size):
-            chunk = audio_data[i:i + chunk_size]
-            chunk_event = json.dumps({
-                "type": "audio-chunk",
-                "data": {"rate": sample_rate, "width": 2, "channels": 1},
-                "data_length": len(chunk),
-                "payload_length": len(chunk),
-            }) + "\n"
+            chunk = audio_data[i : i + chunk_size]
+            chunk_event = (
+                json.dumps(
+                    {
+                        "type": "audio-chunk",
+                        "data": {"rate": sample_rate, "width": 2, "channels": 1},
+                        "data_length": len(chunk),
+                        "payload_length": len(chunk),
+                    }
+                )
+                + "\n"
+            )
             writer.write(chunk_event.encode("utf-8"))
             writer.write(chunk)
 
@@ -1469,6 +1701,8 @@ async def _wyoming_stt(audio_data: bytes, sample_rate: int = 16000) -> str:
             await writer.wait_closed()
         except Exception as e:
             logger.debug("Unhandled: %s", e)
+
+
 class TTSGenerateRequest(BaseModel):
     text: str
 
@@ -1511,7 +1745,12 @@ async def stt_transcribe(audio: UploadFile = File(...)):
 
             def _read_wav():
                 with wave.open(io.BytesIO(audio_bytes), "rb") as wf:
-                    return wf.getframerate(), wf.readframes(wf.getnframes()), wf.getnchannels(), wf.getsampwidth()
+                    return (
+                        wf.getframerate(),
+                        wf.readframes(wf.getnframes()),
+                        wf.getnchannels(),
+                        wf.getsampwidth(),
+                    )
 
             sample_rate, pcm_data, _nch, _sw = await asyncio.to_thread(_read_wav)
             # Resample zu 16kHz mono wenn noetig
@@ -1536,9 +1775,18 @@ async def stt_transcribe(audio: UploadFile = File(...)):
 async def _convert_audio_to_16k_mono(audio_bytes: bytes) -> bytes:
     """Konvertiert beliebiges Audio zu 16kHz 16-bit mono PCM via ffmpeg."""
     proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-i", "pipe:0",
-        "-ar", "16000", "-ac", "1", "-f", "s16le",
-        "-acodec", "pcm_s16le", "pipe:1",
+        "ffmpeg",
+        "-i",
+        "pipe:0",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        "-f",
+        "s16le",
+        "-acodec",
+        "pcm_s16le",
+        "pipe:1",
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -1560,6 +1808,7 @@ async def _convert_audio_to_16k_mono(audio_bytes: bytes) -> bytes:
 
 
 # ----- Voice Chat: Full Voice Conversation Endpoint -----
+
 
 class VoiceChatRequest(BaseModel):
     person: Optional[str] = None
@@ -1593,7 +1842,12 @@ async def voice_chat(
 
             def _read_wav_vc():
                 with wave.open(io.BytesIO(audio_bytes), "rb") as wf:
-                    return wf.readframes(wf.getnframes()), wf.getframerate(), wf.getnchannels(), wf.getsampwidth()
+                    return (
+                        wf.readframes(wf.getnframes()),
+                        wf.getframerate(),
+                        wf.getnchannels(),
+                        wf.getsampwidth(),
+                    )
 
             pcm_data, sr, _nch, _sw = await asyncio.to_thread(_read_wav_vc)
             if _nch > 1 or sr != 16000 or _sw != 2:
@@ -1643,15 +1897,18 @@ async def voice_chat(
         raise HTTPException(status_code=504, detail="Verarbeitung Timeout")
     except Exception as e:
         logger.error("Voice-Chat fehlgeschlagen: %s", e, exc_info=True)
-        _voice_err = random.choice([
-            "Da lief etwas nicht nach Plan. Einen Moment.",
-            "Nicht ganz wie vorgesehen. Ich bleibe dran.",
-            "Suboptimal. Ich pruefe eine Alternative.",
-        ])
+        _voice_err = random.choice(
+            [
+                "Da lief etwas nicht nach Plan. Einen Moment.",
+                "Nicht ganz wie vorgesehen. Ich bleibe dran.",
+                "Suboptimal. Ich pruefe eine Alternative.",
+            ]
+        )
         raise HTTPException(status_code=500, detail=_voice_err)
 
 
 # ----- Phase 9: Speaker Recognition Endpoints -----
+
 
 @app.get("/api/assistant/speaker/profiles")
 async def get_speaker_profiles():
@@ -1674,14 +1931,19 @@ class EnrollRequest(BaseModel):
 async def enroll_speaker(req: EnrollRequest):
     """Phase 9: Neues Stimm-Profil anlegen oder aktualisieren."""
     if not brain.speaker_recognition.enabled:
-        raise HTTPException(status_code=400, detail="Speaker Recognition ist deaktiviert")
+        raise HTTPException(
+            status_code=400, detail="Speaker Recognition ist deaktiviert"
+        )
     success = await brain.speaker_recognition.enroll(
-        req.person_id, req.name,
+        req.person_id,
+        req.name,
         audio_features=req.audio_features,
         device_id=req.device_id,
     )
     if not success:
-        raise HTTPException(status_code=400, detail="Enrollment fehlgeschlagen (max Profile erreicht?)")
+        raise HTTPException(
+            status_code=400, detail="Enrollment fehlgeschlagen (max Profile erreicht?)"
+        )
     return {"enrolled": True, "person_id": req.person_id, "name": req.name}
 
 
@@ -1703,6 +1965,7 @@ async def get_speaker_history(limit: int = 20):
 
 # ----- Phase 10: Diagnostik Endpoints -----
 
+
 @app.get("/api/assistant/diagnostics")
 async def diagnostics():
     """Phase 10: System-Diagnostik — Prueft Entities auf Probleme."""
@@ -1718,6 +1981,7 @@ async def diagnostics_status():
 
 # ----- Phase 10: Wartungs-Assistent Endpoints -----
 
+
 @app.get("/api/assistant/maintenance")
 async def maintenance_tasks():
     """Phase 10: Alle Wartungsaufgaben und faellige Tasks."""
@@ -1732,11 +1996,17 @@ async def complete_maintenance(task_name: str, token: str = ""):
     await _check_token(token)
     success = brain.diagnostics.complete_task(task_name)
     if not success:
-        raise HTTPException(status_code=404, detail=f"Aufgabe '{task_name}' nicht gefunden")
-    return {"completed": task_name, "date": datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")}
+        raise HTTPException(
+            status_code=404, detail=f"Aufgabe '{task_name}' nicht gefunden"
+        )
+    return {
+        "completed": task_name,
+        "date": datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d"),
+    }
 
 
 # ----- Phase 14.3: Ambient Audio Endpoints -----
+
 
 @app.get("/api/assistant/ambient-audio")
 async def ambient_audio_info():
@@ -1765,10 +2035,14 @@ async def ambient_audio_webhook(
     )
     if result:
         return {"processed": True, "event": result}
-    return {"processed": False, "reason": "Event unterdrueckt (Cooldown, Confidence oder deaktiviert)"}
+    return {
+        "processed": False,
+        "reason": "Event unterdrueckt (Cooldown, Confidence oder deaktiviert)",
+    }
 
 
 # ----- Phase 16.1: Conflict Resolver Endpoints -----
+
 
 @app.get("/api/assistant/conflicts")
 async def conflict_info():
@@ -1783,6 +2057,7 @@ async def conflict_history(limit: int = 20):
 
 
 # ----- Phase 11: Koch-Assistent Endpoints -----
+
 
 @app.get("/api/assistant/cooking/status")
 async def cooking_status():
@@ -1822,6 +2097,7 @@ async def cooking_stop():
 
 # ----- Phase 12: Datei-Upload im Chat -----
 
+
 @app.post("/api/assistant/chat/upload")
 async def chat_upload(
     file: UploadFile = File(...),
@@ -1849,8 +2125,8 @@ async def chat_upload(
     # Save file and extract text (sync I/O + potential OCR → run in thread)
     file_info = await asyncio.to_thread(save_upload, file.filename, content)
 
-    text = caption.strip() if caption.strip() else (
-        f"Datei erhalten: {file_info['name']}"
+    text = (
+        caption.strip() if caption.strip() else (f"Datei erhalten: {file_info['name']}")
     )
 
     # Process through brain with file context
@@ -1862,7 +2138,12 @@ async def chat_upload(
             files=[file_info],
         )
     except Exception as e:
-        logger.error("brain.process() Exception bei Upload '%s': %s", file_info.get("name", "?"), e, exc_info=True)
+        logger.error(
+            "brain.process() Exception bei Upload '%s': %s",
+            file_info.get("name", "?"),
+            e,
+            exc_info=True,
+        )
         result = {
             "response": "Datei empfangen, aber bei der Verarbeitung ist ein Fehler aufgetreten.",
             "actions": [],
@@ -1902,6 +2183,7 @@ async def chat_serve_file(filename: str):
 
 
 # ----- Phase 10: Trust-Level Endpoints -----
+
 
 @app.get("/api/assistant/trust")
 async def trust_info():
@@ -1986,7 +2268,8 @@ async def websocket_endpoint(websocket: WebSocket):
         origin = websocket.headers.get("origin", "")
         host = websocket.headers.get("host", "")
         is_same_origin = bool(
-            origin and host
+            origin
+            and host
             and (origin == f"http://{host}" or origin == f"https://{host}")
         )
         if not is_same_origin:
@@ -2005,13 +2288,17 @@ async def websocket_endpoint(websocket: WebSocket):
                 try:
                     await websocket.send_json({"event": "ping", "data": {}})
                 except Exception as e:
-                    logger.debug("WebSocket Keepalive fehlgeschlagen, beende Schleife: %s", e)
+                    logger.debug(
+                        "WebSocket Keepalive fehlgeschlagen, beende Schleife: %s", e
+                    )
                     break
         except asyncio.CancelledError:
             pass
 
     keepalive_task = asyncio.create_task(_ws_keepalive())
-    keepalive_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+    keepalive_task.add_done_callback(
+        lambda t: t.exception() if not t.cancelled() else None
+    )
 
     # F-063: WebSocket Rate-Limiting (max 30 Nachrichten pro 10 Sekunden)
     _ws_msg_times: list[float] = []
@@ -2033,13 +2320,17 @@ async def websocket_endpoint(websocket: WebSocket):
 
             # F-063: Rate-Limit pruefen
             import time as _t
+
             now = _t.time()
             _ws_msg_times = [t for t in _ws_msg_times if now - t < _WS_RATE_WINDOW]
             if len(_ws_msg_times) >= _WS_RATE_LIMIT:
                 # Nur alle 10 Sekunden loggen um Log-Spam zu vermeiden
                 if now - _ws_rate_warned > _WS_RATE_WINDOW:
-                    logger.warning("F-063: WebSocket Rate-Limit ueberschritten (%d msgs in %.0fs)",
-                                   len(_ws_msg_times), _WS_RATE_WINDOW)
+                    logger.warning(
+                        "F-063: WebSocket Rate-Limit ueberschritten (%d msgs in %.0fs)",
+                        len(_ws_msg_times),
+                        _WS_RATE_WINDOW,
+                    )
                     _ws_rate_warned = now
                 await ws_manager.send_personal(
                     websocket, "error", {"message": "Rate limit exceeded"}
@@ -2067,233 +2358,327 @@ async def websocket_endpoint(websocket: WebSocket):
 
                         # Phase 9: Voice-Metadaten verarbeiten
                         if voice_meta:
-                            brain.mood.analyze_voice_metadata(voice_meta, person=person or "")
-
-                        if use_stream:
-                          try:
-                            # Streaming: Token-fuer-Token an Client senden
-                            # Reasoning-Guard: Erste Tokens buffern um Chain-of-Thought
-                            # zu erkennen bevor sie an den Client gehen.
-                            stream_tokens_sent = []
-                            _stream_buffer = []
-                            _stream_suppressed = False
-                            _BUFFER_THRESHOLD = 12  # Tokens buffern bevor Streaming startet
-                            _REASONING_STARTERS = [
-                                "okay, the user", "ok, the user", "the user",
-                                "let me ", "i need to", "i should ", "i'll ",
-                                "first, i", "hmm,", "so, the user", "now, i",
-                                "alright,", "so the user", "wait,",
-                                "okay, so", "right,", "let's ",
-                            ]
-
-                            # Sentence-Level TTS: Saetze waehrend Streaming an TTS schicken
-                            _tts_sentence_buf = []  # Tokens seit letzter Satz-Grenze
-                            _tts_sentences_sent = 0
-                            _SENTENCE_ENDS = frozenset(".!?")
-                            _tts_enabled = (
-                                hasattr(brain, 'sound_manager')
-                                and brain.sound_manager.enabled
-                                and not getattr(brain, "_request_from_pipeline", False)
+                            brain.mood.analyze_voice_metadata(
+                                voice_meta, person=person or ""
                             )
 
-                            async def _flush_tts_sentence():
-                                """Sendet den aktuellen Satz-Buffer an TTS."""
-                                nonlocal _tts_sentences_sent
-                                sentence = "".join(_tts_sentence_buf).strip()
-                                _tts_sentence_buf.clear()
-                                if not sentence or len(sentence) < 3:
-                                    return
-                                _tts_sentences_sent += 1
-                                try:
-                                    tts_data = brain.tts_enhancer.enhance(
-                                        sentence, message_type="response",
+                        if use_stream:
+                            try:
+                                # Streaming: Token-fuer-Token an Client senden
+                                # Reasoning-Guard: Erste Tokens buffern um Chain-of-Thought
+                                # zu erkennen bevor sie an den Client gehen.
+                                stream_tokens_sent = []
+                                _stream_buffer = []
+                                _stream_suppressed = False
+                                _BUFFER_THRESHOLD = (
+                                    12  # Tokens buffern bevor Streaming startet
+                                )
+                                _REASONING_STARTERS = [
+                                    "okay, the user",
+                                    "ok, the user",
+                                    "the user",
+                                    "let me ",
+                                    "i need to",
+                                    "i should ",
+                                    "i'll ",
+                                    "first, i",
+                                    "hmm,",
+                                    "so, the user",
+                                    "now, i",
+                                    "alright,",
+                                    "so the user",
+                                    "wait,",
+                                    "okay, so",
+                                    "right,",
+                                    "let's ",
+                                ]
+
+                                # Sentence-Level TTS: Saetze waehrend Streaming an TTS schicken
+                                _tts_sentence_buf = []  # Tokens seit letzter Satz-Grenze
+                                _tts_sentences_sent = 0
+                                _SENTENCE_ENDS = frozenset(".!?")
+                                _tts_enabled = (
+                                    hasattr(brain, "sound_manager")
+                                    and brain.sound_manager.enabled
+                                    and not getattr(
+                                        brain, "_request_from_pipeline", False
                                     )
-                                    _tts_task = asyncio.ensure_future(
-                                        brain.sound_manager.speak_response(
-                                            sentence, room=room, tts_data=tts_data,
+                                )
+
+                                async def _flush_tts_sentence():
+                                    """Sendet den aktuellen Satz-Buffer an TTS."""
+                                    nonlocal _tts_sentences_sent
+                                    sentence = "".join(_tts_sentence_buf).strip()
+                                    _tts_sentence_buf.clear()
+                                    if not sentence or len(sentence) < 3:
+                                        return
+                                    _tts_sentences_sent += 1
+                                    try:
+                                        tts_data = brain.tts_enhancer.enhance(
+                                            sentence,
+                                            message_type="response",
                                         )
-                                    )
-                                    _tts_task.add_done_callback(
-                                        lambda t: logger.warning("Sentence-TTS Task fehlgeschlagen: %s", t.exception())
-                                        if not t.cancelled() and t.exception() else None
-                                    )
-                                except Exception as e:
-                                    logger.debug("Sentence-TTS Fehler: %s", e)
-
-                            async def _guarded_stream_token(token: str):
-                                """Buffert initiale Tokens um Reasoning zu erkennen."""
-                                nonlocal _stream_suppressed
-                                # Interrupt-Check: Wenn unterbrochen, nicht weiter streamen
-                                if _ws_interrupt_flag:
-                                    raise asyncio.CancelledError("Stream interrupted by user")
-                                if _stream_suppressed:
-                                    return  # Reasoning erkannt — nichts senden
-
-                                _stream_buffer.append(token)
-                                buf_text = "".join(_stream_buffer).lstrip()
-
-                                # Noch im Buffer-Modus: pruefen ob Reasoning
-                                if len(_stream_buffer) <= _BUFFER_THRESHOLD:
-                                    buf_lower = buf_text.lower()
-                                    for starter in _REASONING_STARTERS:
-                                        if buf_lower.startswith(starter):
-                                            _stream_suppressed = True
-                                            logger.info(
-                                                "Stream-Reasoning erkannt ('%s...'), "
-                                                "Streaming unterdrueckt",
-                                                buf_text[:500],
+                                        _tts_task = asyncio.ensure_future(
+                                            brain.sound_manager.speak_response(
+                                                sentence,
+                                                room=room,
+                                                tts_data=tts_data,
                                             )
-                                            return
-                                    return  # Noch im Buffer, warten
-
-                                # Buffer-Phase vorbei, kein Reasoning → alles senden
-                                if not stream_tokens_sent:
-                                    await emit_stream_start()
-                                    # Gebufferte Tokens nachholen
-                                    for bt in _stream_buffer[:-1]:
-                                        stream_tokens_sent.append(bt)
-                                        await emit_stream_token(bt)
-                                stream_tokens_sent.append(token)
-                                await emit_stream_token(token)
-
-                                # Sentence-Level TTS: Satz-Grenzen erkennen
-                                if _tts_enabled:
-                                    _tts_sentence_buf.append(token)
-                                    stripped = token.rstrip()
-                                    if stripped and stripped[-1] in _SENTENCE_ENDS:
-                                        await _flush_tts_sentence()
-
-                            # brain.process als Task starten damit Interrupts empfangen werden
-                            async def _run_brain():
-                                return await brain.process(
-                                    text, person, room=room,
-                                    stream_callback=_guarded_stream_token,
-                                    voice_metadata=voice_meta,
-                                    device_id=ws_device_id,
-                                )
-
-                            _brain_task = asyncio.create_task(_run_brain())
-
-                            # Concurrent: Empfange Nachrichten waehrend brain laeuft
-                            result = None
-                            while not _brain_task.done():
-                                _recv_task = asyncio.create_task(websocket.receive_text())
-                                _recv_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
-                                done, _ = await asyncio.wait(
-                                    [_brain_task, _recv_task],
-                                    return_when=asyncio.FIRST_COMPLETED,
-                                )
-                                if _recv_task in done:
-                                    try:
-                                        interim_data = _recv_task.result()
-                                        interim_msg = json.loads(interim_data)
-                                        if interim_msg.get("event") == "assistant.interrupt":
-                                            logger.info("Interrupt waehrend Streaming empfangen")
-                                            _ws_interrupt_flag = True
-                                            _brain_task.cancel()
-                                            # TTS stoppen
-                                            if hasattr(brain, 'sound_manager') and brain.sound_manager.enabled:
-                                                try:
-                                                    speaker = await brain.sound_manager._resolve_speaker(None)
-                                                    if speaker:
-                                                        _tts_stop_task = asyncio.create_task(brain.ha.call_service(
-                                                            "media_player", "media_stop",
-                                                            {"entity_id": speaker},
-                                                        ))
-                                                        _tts_stop_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
-                                                except Exception as e:
-                                                    logger.debug("Unhandled: %s", e)
-                                            if stream_tokens_sent:
-                                                await emit_stream_end(
-                                                    "".join(stream_tokens_sent),
-                                                    tts_data={"interrupted": True},
-                                                )
-                                            break
-                                        elif interim_msg.get("event") == "pong":
-                                            pass  # Keep-alive ignorieren
-                                    except json.JSONDecodeError:
-                                        pass
-                                    except WebSocketDisconnect:
-                                        logger.info("WebSocket disconnected waehrend Brain-Processing")
-                                        _ws_interrupt_flag = True
-                                        break
-                                    except Exception as _interim_err:
-                                        _err_msg = str(_interim_err)
-                                        if "disconnect" in _err_msg.lower():
-                                            logger.info("WebSocket disconnected waehrend Brain-Processing")
-                                            _ws_interrupt_flag = True
-                                            break
-                                        logger.warning(
-                                            "Interim-Nachricht Fehler: %s", _interim_err,
                                         )
-                                else:
-                                    # recv_task noch nicht fertig — canceln und awaiten
-                                    _recv_task.cancel()
-                                    try:
-                                        await _recv_task
-                                    except (asyncio.CancelledError, Exception) as e:
-                                        logger.debug("Unhandled: %s", e)
-                                if _brain_task in done:
-                                    if not _recv_task.done():
+                                        _tts_task.add_done_callback(
+                                            lambda t: (
+                                                logger.warning(
+                                                    "Sentence-TTS Task fehlgeschlagen: %s",
+                                                    t.exception(),
+                                                )
+                                                if not t.cancelled() and t.exception()
+                                                else None
+                                            )
+                                        )
+                                    except Exception as e:
+                                        logger.debug("Sentence-TTS Fehler: %s", e)
+
+                                async def _guarded_stream_token(token: str):
+                                    """Buffert initiale Tokens um Reasoning zu erkennen."""
+                                    nonlocal _stream_suppressed
+                                    # Interrupt-Check: Wenn unterbrochen, nicht weiter streamen
+                                    if _ws_interrupt_flag:
+                                        raise asyncio.CancelledError(
+                                            "Stream interrupted by user"
+                                        )
+                                    if _stream_suppressed:
+                                        return  # Reasoning erkannt — nichts senden
+
+                                    _stream_buffer.append(token)
+                                    buf_text = "".join(_stream_buffer).lstrip()
+
+                                    # Noch im Buffer-Modus: pruefen ob Reasoning
+                                    if len(_stream_buffer) <= _BUFFER_THRESHOLD:
+                                        buf_lower = buf_text.lower()
+                                        for starter in _REASONING_STARTERS:
+                                            if buf_lower.startswith(starter):
+                                                _stream_suppressed = True
+                                                logger.info(
+                                                    "Stream-Reasoning erkannt ('%s...'), "
+                                                    "Streaming unterdrueckt",
+                                                    buf_text[:500],
+                                                )
+                                                return
+                                        return  # Noch im Buffer, warten
+
+                                    # Buffer-Phase vorbei, kein Reasoning → alles senden
+                                    if not stream_tokens_sent:
+                                        await emit_stream_start()
+                                        # Gebufferte Tokens nachholen
+                                        for bt in _stream_buffer[:-1]:
+                                            stream_tokens_sent.append(bt)
+                                            await emit_stream_token(bt)
+                                    stream_tokens_sent.append(token)
+                                    await emit_stream_token(token)
+
+                                    # Sentence-Level TTS: Satz-Grenzen erkennen
+                                    if _tts_enabled:
+                                        _tts_sentence_buf.append(token)
+                                        stripped = token.rstrip()
+                                        if stripped and stripped[-1] in _SENTENCE_ENDS:
+                                            await _flush_tts_sentence()
+
+                                # brain.process als Task starten damit Interrupts empfangen werden
+                                async def _run_brain():
+                                    return await brain.process(
+                                        text,
+                                        person,
+                                        room=room,
+                                        stream_callback=_guarded_stream_token,
+                                        voice_metadata=voice_meta,
+                                        device_id=ws_device_id,
+                                    )
+
+                                _brain_task = asyncio.create_task(_run_brain())
+
+                                # Concurrent: Empfange Nachrichten waehrend brain laeuft
+                                result = None
+                                while not _brain_task.done():
+                                    _recv_task = asyncio.create_task(
+                                        websocket.receive_text()
+                                    )
+                                    _recv_task.add_done_callback(
+                                        lambda t: (
+                                            t.exception() if not t.cancelled() else None
+                                        )
+                                    )
+                                    done, _ = await asyncio.wait(
+                                        [_brain_task, _recv_task],
+                                        return_when=asyncio.FIRST_COMPLETED,
+                                    )
+                                    if _recv_task in done:
+                                        try:
+                                            interim_data = _recv_task.result()
+                                            interim_msg = json.loads(interim_data)
+                                            if (
+                                                interim_msg.get("event")
+                                                == "assistant.interrupt"
+                                            ):
+                                                logger.info(
+                                                    "Interrupt waehrend Streaming empfangen"
+                                                )
+                                                _ws_interrupt_flag = True
+                                                _brain_task.cancel()
+                                                # TTS stoppen
+                                                if (
+                                                    hasattr(brain, "sound_manager")
+                                                    and brain.sound_manager.enabled
+                                                ):
+                                                    try:
+                                                        speaker = await brain.sound_manager._resolve_speaker(
+                                                            None
+                                                        )
+                                                        if speaker:
+                                                            _tts_stop_task = asyncio.create_task(
+                                                                brain.ha.call_service(
+                                                                    "media_player",
+                                                                    "media_stop",
+                                                                    {
+                                                                        "entity_id": speaker
+                                                                    },
+                                                                )
+                                                            )
+                                                            _tts_stop_task.add_done_callback(
+                                                                lambda t: (
+                                                                    t.exception()
+                                                                    if not t.cancelled()
+                                                                    else None
+                                                                )
+                                                            )
+                                                    except Exception as e:
+                                                        logger.debug("Unhandled: %s", e)
+                                                if stream_tokens_sent:
+                                                    await emit_stream_end(
+                                                        "".join(stream_tokens_sent),
+                                                        tts_data={"interrupted": True},
+                                                    )
+                                                break
+                                            elif interim_msg.get("event") == "pong":
+                                                pass  # Keep-alive ignorieren
+                                        except json.JSONDecodeError:
+                                            pass
+                                        except WebSocketDisconnect:
+                                            logger.info(
+                                                "WebSocket disconnected waehrend Brain-Processing"
+                                            )
+                                            _ws_interrupt_flag = True
+                                            break
+                                        except Exception as _interim_err:
+                                            _err_msg = str(_interim_err)
+                                            if "disconnect" in _err_msg.lower():
+                                                logger.info(
+                                                    "WebSocket disconnected waehrend Brain-Processing"
+                                                )
+                                                _ws_interrupt_flag = True
+                                                break
+                                            logger.warning(
+                                                "Interim-Nachricht Fehler: %s",
+                                                _interim_err,
+                                            )
+                                    else:
+                                        # recv_task noch nicht fertig — canceln und awaiten
                                         _recv_task.cancel()
                                         try:
                                             await _recv_task
                                         except (asyncio.CancelledError, Exception) as e:
                                             logger.debug("Unhandled: %s", e)
-                                    try:
-                                        result = _brain_task.result()
-                                    except (asyncio.CancelledError, Exception) as e:
-                                        logger.info("Brain-Task abgebrochen: %s: %s", type(e).__name__, e)
-                                        if not isinstance(e, asyncio.CancelledError):
-                                            logger.error("Brain-Task Traceback:", exc_info=e)
+                                    if _brain_task in done:
+                                        if not _recv_task.done():
+                                            _recv_task.cancel()
+                                            try:
+                                                await _recv_task
+                                            except (
+                                                asyncio.CancelledError,
+                                                Exception,
+                                            ) as e:
+                                                logger.debug("Unhandled: %s", e)
+                                        try:
+                                            result = _brain_task.result()
+                                        except (asyncio.CancelledError, Exception) as e:
+                                            logger.info(
+                                                "Brain-Task abgebrochen: %s: %s",
+                                                type(e).__name__,
+                                                e,
+                                            )
+                                            if not isinstance(
+                                                e, asyncio.CancelledError
+                                            ):
+                                                logger.error(
+                                                    "Brain-Task Traceback:", exc_info=e
+                                                )
 
-                            # Ergebnis verarbeiten (nur wenn nicht unterbrochen)
-                            if result and not _ws_interrupt_flag:
-                                # Restlichen Satz-Buffer an TTS senden
-                                if _tts_enabled and _tts_sentence_buf:
-                                    await _flush_tts_sentence()
+                                # Ergebnis verarbeiten (nur wenn nicht unterbrochen)
+                                if result and not _ws_interrupt_flag:
+                                    # Restlichen Satz-Buffer an TTS senden
+                                    if _tts_enabled and _tts_sentence_buf:
+                                        await _flush_tts_sentence()
 
-                                tts_data = result.get("tts")
+                                    tts_data = result.get("tts")
+                                    if stream_tokens_sent:
+                                        await emit_stream_end(
+                                            result["response"], tts_data=tts_data
+                                        )
+                                    elif not result.get("_emitted"):
+                                        await emit_speaking(
+                                            result["response"], tts_data=tts_data
+                                        )
+                            except asyncio.CancelledError:
+                                logger.info("Streaming durch Interrupt abgebrochen")
+                                # Stream sauber beenden damit Client nicht haengen bleibt
                                 if stream_tokens_sent:
-                                    await emit_stream_end(result["response"], tts_data=tts_data)
-                                elif not result.get("_emitted"):
-                                    await emit_speaking(result["response"], tts_data=tts_data)
-                          except asyncio.CancelledError:
-                            logger.info("Streaming durch Interrupt abgebrochen")
-                            # Stream sauber beenden damit Client nicht haengen bleibt
-                            if stream_tokens_sent:
-                                try:
-                                    await emit_stream_end(
-                                        "".join(stream_tokens_sent),
-                                        tts_data={"interrupted": True})
-                                except Exception as e:
-                                    logger.debug("Unhandled: %s", e)
-                          except Exception as e:
-                            logger.error("Streaming-Fehler: %s", e, exc_info=True)
-                            # Sicherstellen dass der Client nicht haengen bleibt
-                            _stream_error = "Nicht ganz wie vorgesehen. Ich bleibe dran."
-                            if stream_tokens_sent:
-                                await emit_stream_end(_stream_error)
-                            else:
-                                await emit_speaking(_stream_error)
+                                    try:
+                                        await emit_stream_end(
+                                            "".join(stream_tokens_sent),
+                                            tts_data={"interrupted": True},
+                                        )
+                                    except Exception as e:
+                                        logger.debug("Unhandled: %s", e)
+                            except Exception as e:
+                                logger.error("Streaming-Fehler: %s", e, exc_info=True)
+                                # Sicherstellen dass der Client nicht haengen bleibt
+                                _stream_error = (
+                                    "Nicht ganz wie vorgesehen. Ich bleibe dran."
+                                )
+                                if stream_tokens_sent:
+                                    await emit_stream_end(_stream_error)
+                                else:
+                                    await emit_speaking(_stream_error)
                         else:
                             # brain.process() sendet intern via _speak_and_emit
-                            result = await brain.process(text, person, room=room,
-                                                         voice_metadata=voice_meta,
-                                                         device_id=ws_device_id)
+                            result = await brain.process(
+                                text,
+                                person,
+                                room=room,
+                                voice_metadata=voice_meta,
+                                device_id=ws_device_id,
+                            )
 
                         # Aktionen ans Addon melden fuer Aktivitaeten-Log
                         if result:
                             actions = result.get("actions", [])
                             if actions:
-                                _ws_task = asyncio.ensure_future(brain.ha.log_actions(
-                                    actions, user_text=text,
-                                    response_text=result.get("response", ""),
-                                    person=person or "",
-                                ))
+                                _ws_task = asyncio.ensure_future(
+                                    brain.ha.log_actions(
+                                        actions,
+                                        user_text=text,
+                                        response_text=result.get("response", ""),
+                                        person=person or "",
+                                    )
+                                )
                                 _ws_task.add_done_callback(
-                                    lambda t: logger.warning("log_actions fehlgeschlagen: %s", t.exception())
-                                    if t.exception() else None
+                                    lambda t: (
+                                        logger.warning(
+                                            "log_actions fehlgeschlagen: %s",
+                                            t.exception(),
+                                        )
+                                        if t.exception()
+                                        else None
+                                    )
                                 )
 
                 elif event == "assistant.feedback":
@@ -2301,35 +2686,58 @@ async def websocket_endpoint(websocket: WebSocket):
                     fb_data = message.get("data", {})
                     notification_id = fb_data.get("notification_id", "")
                     event_type = fb_data.get("event_type", "")
-                    feedback_type = fb_data.get("response", fb_data.get("feedback_type", "ignored"))
+                    feedback_type = fb_data.get(
+                        "response", fb_data.get("feedback_type", "ignored")
+                    )
                     identifier = notification_id or event_type
                     if identifier:
                         await brain.feedback.record_feedback(identifier, feedback_type)
                         # Autonomy Evolution: Feedback als Interaktion tracken
-                        _fb_positive = feedback_type in ("acknowledged", "engaged", "thanked")
+                        _fb_positive = feedback_type in (
+                            "acknowledged",
+                            "engaged",
+                            "thanked",
+                        )
                         _auto_task = asyncio.ensure_future(
-                            brain.autonomy.track_interaction("proactive_feedback", _fb_positive)
+                            brain.autonomy.track_interaction(
+                                "proactive_feedback", _fb_positive
+                            )
                         )
                         _auto_task.add_done_callback(
-                            lambda t: logger.warning("autonomy.track_interaction fehlgeschlagen: %s", t.exception())
-                            if not t.cancelled() and t.exception() else None
+                            lambda t: (
+                                logger.warning(
+                                    "autonomy.track_interaction fehlgeschlagen: %s",
+                                    t.exception(),
+                                )
+                                if not t.cancelled() and t.exception()
+                                else None
+                            )
                         )
 
                 elif event == "assistant.interrupt":
                     # Interrupt ausserhalb von Streaming (z.B. TTS laeuft nach non-stream Antwort)
                     logger.info("WebSocket Interrupt empfangen (nicht-streaming)")
                     _ws_interrupt_flag = True
-                    if hasattr(brain, 'sound_manager') and brain.sound_manager.enabled:
+                    if hasattr(brain, "sound_manager") and brain.sound_manager.enabled:
                         try:
                             speaker = await brain.sound_manager._resolve_speaker(None)
                             if speaker:
-                                _stop_task = asyncio.ensure_future(brain.ha.call_service(
-                                    "media_player", "media_stop",
-                                    {"entity_id": speaker},
-                                ))
+                                _stop_task = asyncio.ensure_future(
+                                    brain.ha.call_service(
+                                        "media_player",
+                                        "media_stop",
+                                        {"entity_id": speaker},
+                                    )
+                                )
                                 _stop_task.add_done_callback(
-                                    lambda t: logger.warning("media_stop fehlgeschlagen: %s", t.exception())
-                                    if not t.cancelled() and t.exception() else None
+                                    lambda t: (
+                                        logger.warning(
+                                            "media_stop fehlgeschlagen: %s",
+                                            t.exception(),
+                                        )
+                                        if not t.cancelled() and t.exception()
+                                        else None
+                                    )
                                 )
                         except Exception as e:
                             logger.debug("Unhandled: %s", e)
@@ -2341,11 +2749,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Alle unerwarteten Fehler abfangen — Verbindung darf NICHT sterben
                 logger.error(
                     "WebSocket Nachricht-Verarbeitung Fehler: %s",
-                    _ws_proc_err, exc_info=True,
+                    _ws_proc_err,
+                    exc_info=True,
                 )
                 try:
                     await ws_manager.send_personal(
-                        websocket, "error",
+                        websocket,
+                        "error",
                         {"message": "Interner Fehler bei der Verarbeitung"},
                     )
                 except Exception as e:
@@ -2390,12 +2800,18 @@ async def _check_pin_rate_limit(client_ip: str) -> bool:
 
         # Alte Eintraege bereinigen
         if client_ip in _pin_attempts:
-            _pin_attempts[client_ip] = [t for t in _pin_attempts[client_ip] if t > cutoff]
+            _pin_attempts[client_ip] = [
+                t for t in _pin_attempts[client_ip] if t > cutoff
+            ]
             if not _pin_attempts[client_ip]:
                 del _pin_attempts[client_ip]
 
         # Leere IPs bereinigen (andere IPs mit nur alten Eintraegen)
-        stale_ips = [ip for ip, timestamps in _pin_attempts.items() if all(t <= cutoff for t in timestamps)]
+        stale_ips = [
+            ip
+            for ip, timestamps in _pin_attempts.items()
+            if all(t <= cutoff for t in timestamps)
+        ]
         for ip in stale_ips:
             del _pin_attempts[ip]
 
@@ -2463,7 +2879,9 @@ def _verify_hash(value: str, stored: str) -> bool:
     return secrets.compare_digest(hashlib.sha256(value.encode()).hexdigest(), stored)
 
 
-def _save_dashboard_config(pin_hash: str, recovery_hash: str, setup_complete: bool = True):
+def _save_dashboard_config(
+    pin_hash: str, recovery_hash: str, setup_complete: bool = True
+):
     """Speichert Dashboard-Konfiguration in settings.yaml."""
     try:
         with open(SETTINGS_YAML_PATH) as f:
@@ -2476,9 +2894,12 @@ def _save_dashboard_config(pin_hash: str, recovery_hash: str, setup_complete: bo
         # Alten Klartext-PIN entfernen falls vorhanden
         config["dashboard"].pop("pin", None)
         with open(SETTINGS_YAML_PATH, "w") as f:
-            yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            yaml.safe_dump(
+                config, f, allow_unicode=True, default_flow_style=False, sort_keys=False
+            )
         # Config im Speicher aktualisieren
         import assistant.config as cfg
+
         _new = load_yaml_config()
         cfg.yaml_config.clear()
         cfg.yaml_config.update(_new)
@@ -2522,7 +2943,9 @@ async def ui_setup(req: SetupRequest):
         raise HTTPException(status_code=400, detail="PINs stimmen nicht ueberein")
 
     if len(req.pin) < 4:
-        raise HTTPException(status_code=400, detail="PIN muss mindestens 4 Zeichen haben")
+        raise HTTPException(
+            status_code=400, detail="PIN muss mindestens 4 Zeichen haben"
+        )
 
     # Recovery-Key generieren (12 Zeichen, alphanumerisch)
     recovery_key = secrets.token_urlsafe(16)[:12].upper()
@@ -2560,7 +2983,7 @@ async def ui_auth(req: PinRequest, request: Request):
         valid = secrets.compare_digest(req.pin, env_pin)
     else:
         stored_hash = _get_dashboard_config().get("pin_hash", "")
-        valid = (stored_hash and _verify_hash(req.pin, stored_hash))
+        valid = stored_hash and _verify_hash(req.pin, stored_hash)
         # Legacy-Migration: SHA-256 ohne Salt → PBKDF2 mit Salt
         if valid and stored_hash and ":" not in stored_hash:
             legacy_migration = True
@@ -2584,7 +3007,9 @@ async def ui_auth(req: PinRequest, request: Request):
         except Exception as e:
             logger.warning("PIN-Hash Migration fehlgeschlagen: %s", e)
 
-    token = hashlib.sha256(f"{req.pin}{datetime.now(timezone.utc).isoformat()}{secrets.token_hex(8)}".encode()).hexdigest()[:32]
+    token = hashlib.sha256(
+        f"{req.pin}{datetime.now(timezone.utc).isoformat()}{secrets.token_hex(8)}".encode()
+    ).hexdigest()[:32]
     async with _token_lock:
         _active_tokens[token] = datetime.now(timezone.utc).timestamp()
         # Abgelaufene Tokens aufraumen
@@ -2607,11 +3032,15 @@ async def ui_reset_pin(req: ResetPinRequest, request: Request):
         raise HTTPException(status_code=400, detail="PINs stimmen nicht ueberein")
 
     if len(req.new_pin) < 4:
-        raise HTTPException(status_code=400, detail="PIN muss mindestens 4 Zeichen haben")
+        raise HTTPException(
+            status_code=400, detail="PIN muss mindestens 4 Zeichen haben"
+        )
 
     # Recovery-Key pruefen
     stored_recovery_hash = _get_dashboard_config().get("recovery_key_hash", "")
-    if not stored_recovery_hash or not _verify_hash(req.recovery_key, stored_recovery_hash):
+    if not stored_recovery_hash or not _verify_hash(
+        req.recovery_key, stored_recovery_hash
+    ):
         await _record_pin_failure(client_ip)
         raise HTTPException(status_code=401, detail="Falscher Recovery-Key")
 
@@ -2653,12 +3082,17 @@ def _audit_log(action: str, details: dict = None):
         _AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
         # F-066: Rotation
-        if _AUDIT_LOG_PATH.exists() and _AUDIT_LOG_PATH.stat().st_size > _AUDIT_LOG_MAX_SIZE:
+        if (
+            _AUDIT_LOG_PATH.exists()
+            and _AUDIT_LOG_PATH.stat().st_size > _AUDIT_LOG_MAX_SIZE
+        ):
             bak = _AUDIT_LOG_PATH.with_suffix(".jsonl.bak")
             if bak.exists():
                 bak.unlink()
             _AUDIT_LOG_PATH.rename(bak)
-            logger.info("Audit-Log rotiert (> %d MB)", _AUDIT_LOG_MAX_SIZE // (1024 * 1024))
+            logger.info(
+                "Audit-Log rotiert (> %d MB)", _AUDIT_LOG_MAX_SIZE // (1024 * 1024)
+            )
 
         entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -2674,7 +3108,9 @@ def _audit_log(action: str, details: dict = None):
 def _cleanup_expired_tokens_inner():
     """Entfernt abgelaufene Tokens (muss unter _token_lock aufgerufen werden)."""
     now = datetime.now(timezone.utc).timestamp()
-    expired = [t for t, ts in _active_tokens.items() if now - ts > _TOKEN_EXPIRY_SECONDS]
+    expired = [
+        t for t, ts in _active_tokens.items() if now - ts > _TOKEN_EXPIRY_SECONDS
+    ]
     for t in expired:
         _active_tokens.pop(t, None)
     # Safety cap: prevent unbounded growth
@@ -2691,7 +3127,11 @@ async def _cleanup_expired_tokens():
 async def _check_token(token: str):
     """Prueft ob ein UI-Token gueltig ist und nicht abgelaufen."""
     # API Key als Token akzeptieren (fuer Addon-Proxy)
-    if _assistant_api_key and token and secrets.compare_digest(token, _assistant_api_key):
+    if (
+        _assistant_api_key
+        and token
+        and secrets.compare_digest(token, _assistant_api_key)
+    ):
         return
     async with _token_lock:
         if token not in _active_tokens:
@@ -2701,7 +3141,9 @@ async def _check_token(token: str):
         now = datetime.now(timezone.utc).timestamp()
         if now - created > _TOKEN_EXPIRY_SECONDS:
             _active_tokens.pop(token, None)
-            raise HTTPException(status_code=401, detail="Sitzung abgelaufen. Bitte erneut anmelden.")
+            raise HTTPException(
+                status_code=401, detail="Sitzung abgelaufen. Bitte erneut anmelden."
+            )
 
 
 @app.get("/api/ui/api-key")
@@ -2723,18 +3165,31 @@ async def ui_regenerate_api_key(token: str = ""):
     _assistant_api_key = secrets.token_urlsafe(32)
 
     try:
+
         def _do_io():
             with open(SETTINGS_YAML_PATH) as f:
                 cfg = yaml.safe_load(f) or {}
             cfg.setdefault("security", {})["api_key"] = _assistant_api_key
             with open(SETTINGS_YAML_PATH, "w") as f:
-                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                yaml.safe_dump(
+                    cfg,
+                    f,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=False,
+                )
+
         await asyncio.to_thread(_do_io)
         _audit_log("api_key_regenerated", {})
-        return {"api_key": _assistant_api_key, "message": "Neuer API Key generiert. Addon und HA-Integration muessen aktualisiert werden."}
+        return {
+            "api_key": _assistant_api_key,
+            "message": "Neuer API Key generiert. Addon und HA-Integration muessen aktualisiert werden.",
+        }
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/recovery-key/regenerate")
@@ -2745,18 +3200,31 @@ async def ui_regenerate_recovery_key(token: str = ""):
     recovery_hash = _hash_value(new_recovery_key)
 
     try:
+
         def _do_io():
             with open(SETTINGS_YAML_PATH) as f:
                 cfg = yaml.safe_load(f) or {}
             cfg.setdefault("dashboard", {})["recovery_key_hash"] = recovery_hash
             with open(SETTINGS_YAML_PATH, "w") as f:
-                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                yaml.safe_dump(
+                    cfg,
+                    f,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=False,
+                )
+
         await asyncio.to_thread(_do_io)
         _audit_log("recovery_key_regenerated", {})
-        return {"recovery_key": new_recovery_key, "message": "Neuer Recovery-Key generiert. Bitte sicher aufbewahren!"}
+        return {
+            "recovery_key": new_recovery_key,
+            "message": "Neuer Recovery-Key generiert. Bitte sicher aufbewahren!",
+        }
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 class ApiKeyEnforcementRequest(BaseModel):
@@ -2783,20 +3251,33 @@ async def ui_set_api_key_enforcement(req: ApiKeyEnforcementRequest, token: str =
     _api_key_required = req.enabled
 
     try:
+
         def _do_io():
             with open(SETTINGS_YAML_PATH) as f:
                 cfg = yaml.safe_load(f) or {}
             cfg.setdefault("security", {})["api_key_required"] = req.enabled
             with open(SETTINGS_YAML_PATH, "w") as f:
-                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                yaml.safe_dump(
+                    cfg,
+                    f,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=False,
+                )
+
         await asyncio.to_thread(_do_io)
         _audit_log("api_key_enforcement_changed", {"enabled": req.enabled})
         status = "aktiviert" if req.enabled else "deaktiviert"
         logger.info("API Key Enforcement %s", status)
-        return {"enforcement": _api_key_required, "message": f"API Key Pruefung {status}."}
+        return {
+            "enforcement": _api_key_required,
+            "message": f"API Key Pruefung {status}.",
+        }
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/known-devices")
@@ -2811,7 +3292,11 @@ async def ui_get_known_devices(token: str = ""):
 
         # Bekannte Geraete aus Redis
         known_raw = await ta.redis.smembers("mha:security:known_devices")
-        known = {d.decode() if isinstance(d, bytes) else d for d in known_raw} if known_raw else set()
+        known = (
+            {d.decode() if isinstance(d, bytes) else d for d in known_raw}
+            if known_raw
+            else set()
+        )
 
         # Aktuelle States fuer Friendly Names + Status
         states = await brain.ha.get_states() if brain.ha else []
@@ -2819,11 +3304,13 @@ async def ui_get_known_devices(token: str = ""):
 
         for entity_id in sorted(known):
             s = state_map.get(entity_id, {})
-            devices.append({
-                "entity_id": entity_id,
-                "friendly_name": s.get("attributes", {}).get("friendly_name", ""),
-                "state": s.get("state", "not_home"),
-            })
+            devices.append(
+                {
+                    "entity_id": entity_id,
+                    "friendly_name": s.get("attributes", {}).get("friendly_name", ""),
+                    "state": s.get("state", "not_home"),
+                }
+            )
     except Exception as e:
         logger.warning("Known-Devices abrufen fehlgeschlagen: %s", e)
     return {"devices": devices}
@@ -2847,7 +3334,9 @@ async def ui_delete_known_device(req: dict, token: str = ""):
         raise
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/settings")
@@ -2855,14 +3344,18 @@ async def ui_get_settings(token: str = ""):
     """Alle Settings aus settings.yaml als JSON."""
     await _check_token(token)
     try:
+
         def _read():
             with open(SETTINGS_YAML_PATH) as f:
                 return yaml.safe_load(f) or {}
+
         config = await asyncio.to_thread(_read)
         return config
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # F-041: Settings-Validierung
@@ -3075,9 +3568,13 @@ def _validate_settings_values(settings: dict) -> list[str]:
     }
     # Model Profiles dynamisch validieren (alle Sub-Profile)
     MP_RANGES = {
-        "temperature": (0, 2), "top_p": (0, 1), "top_k": (1, 100),
-        "min_p": (0, 0.5), "repeat_penalty": (1, 2),
-        "think_temperature": (0, 1), "think_top_p": (0, 1),
+        "temperature": (0, 2),
+        "top_p": (0, 1),
+        "top_k": (1, 100),
+        "min_p": (0, 0.5),
+        "repeat_penalty": (1, 2),
+        "think_temperature": (0, 1),
+        "think_top_p": (0, 1),
     }
     mp = settings.get("model_profiles", {})
     if isinstance(mp, dict):
@@ -3089,9 +3586,13 @@ def _validate_settings_values(settings: dict) -> list[str]:
                         try:
                             fval = float(val)
                             if fval < lo or fval > hi:
-                                errors.append(f"model_profiles.{profile_name}.{field}: {val} (erlaubt: {lo}-{hi})")
+                                errors.append(
+                                    f"model_profiles.{profile_name}.{field}: {val} (erlaubt: {lo}-{hi})"
+                                )
                         except (ValueError, TypeError):
-                            errors.append(f"model_profiles.{profile_name}.{field}: ungueltig")
+                            errors.append(
+                                f"model_profiles.{profile_name}.{field}: ungueltig"
+                            )
     # Personality: mood_styles.*.max_sentences_mod validieren
     mood_styles = (settings.get("personality") or {}).get("mood_styles", {})
     if isinstance(mood_styles, dict):
@@ -3102,15 +3603,21 @@ def _validate_settings_values(settings: dict) -> list[str]:
                     try:
                         num = int(mod_val)
                         if num < -3 or num > 3:
-                            errors.append(f"personality.mood_styles.{mood_name}.max_sentences_mod={mod_val} (erlaubt: -3 bis 3)")
+                            errors.append(
+                                f"personality.mood_styles.{mood_name}.max_sentences_mod={mod_val} (erlaubt: -3 bis 3)"
+                            )
                     except (ValueError, TypeError):
-                        errors.append(f"personality.mood_styles.{mood_name}.max_sentences_mod: ungueltig")
+                        errors.append(
+                            f"personality.mood_styles.{mood_name}.max_sentences_mod: ungueltig"
+                        )
     # Personality: confirmations muessen Listen mit mind. 1 Eintrag sein
     confs = (settings.get("personality") or {}).get("confirmations", {})
     if isinstance(confs, dict):
         for conf_key, conf_list in confs.items():
             if isinstance(conf_list, list) and len(conf_list) == 0:
-                errors.append(f"personality.confirmations.{conf_key}: mindestens 1 Eintrag noetig")
+                errors.append(
+                    f"personality.confirmations.{conf_key}: mindestens 1 Eintrag noetig"
+                )
     # Autonomie-Permissions: Werte 1-5
     ap = (settings.get("autonomy") or {}).get("action_permissions", {})
     if isinstance(ap, dict):
@@ -3118,7 +3625,9 @@ def _validate_settings_values(settings: dict) -> list[str]:
             try:
                 iv = int(val)
                 if iv < 1 or iv > 5:
-                    errors.append(f"autonomy.action_permissions.{key}={val} (erlaubt: 1-5)")
+                    errors.append(
+                        f"autonomy.action_permissions.{key}={val} (erlaubt: 1-5)"
+                    )
             except (ValueError, TypeError):
                 errors.append(f"autonomy.action_permissions.{key}: ungueltig")
     # Evolution Criteria: acceptance 0.5-1.0
@@ -3131,9 +3640,13 @@ def _validate_settings_values(settings: dict) -> list[str]:
                     try:
                         fv = float(acc)
                         if fv < 0.5 or fv > 1.0:
-                            errors.append(f"autonomy.evolution_criteria.{level}.min_acceptance={acc} (erlaubt: 0.5-1.0)")
+                            errors.append(
+                                f"autonomy.evolution_criteria.{level}.min_acceptance={acc} (erlaubt: 0.5-1.0)"
+                            )
                     except (ValueError, TypeError):
-                        errors.append(f"autonomy.evolution_criteria.{level}.min_acceptance: ungueltig")
+                        errors.append(
+                            f"autonomy.evolution_criteria.{level}.min_acceptance: ungueltig"
+                        )
     # Memory Category Confidence: 0.0-1.0
     cc = (settings.get("memory") or {}).get("category_confidence", {})
     if isinstance(cc, dict):
@@ -3141,7 +3654,9 @@ def _validate_settings_values(settings: dict) -> list[str]:
             try:
                 fv = float(val)
                 if fv < 0.0 or fv > 1.0:
-                    errors.append(f"memory.category_confidence.{cat}={val} (erlaubt: 0.0-1.0)")
+                    errors.append(
+                        f"memory.category_confidence.{cat}={val} (erlaubt: 0.0-1.0)"
+                    )
             except (ValueError, TypeError):
                 errors.append(f"memory.category_confidence.{cat}: ungueltig")
     # Safe Limits: min < max
@@ -3153,7 +3668,9 @@ def _validate_settings_values(settings: dict) -> list[str]:
                     if isinstance(range_val, list) and len(range_val) == 2:
                         try:
                             if float(range_val[0]) >= float(range_val[1]):
-                                errors.append(f"conflict_resolution.safe_limits.{domain}.{param}: min muss < max sein")
+                                errors.append(
+                                    f"conflict_resolution.safe_limits.{domain}.{param}: min muss < max sein"
+                                )
                         except (ValueError, TypeError):
                             pass
     # Erlaubte Werte fuer Strings (Whitelist)
@@ -3258,9 +3775,13 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
     """
     global _last_reload_ts
     import time as _time
+
     now = _time.monotonic()
     if now - _last_reload_ts < 5.0:
-        logger.debug("_reload_all_modules: Debounce — uebersprungen (%.1fs seit letztem Reload)", now - _last_reload_ts)
+        logger.debug(
+            "_reload_all_modules: Debounce — uebersprungen (%.1fs seit letztem Reload)",
+            now - _last_reload_ts,
+        )
         return []
     _last_reload_ts = now
 
@@ -3280,16 +3801,27 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
 
     # ActionPlanner: MAX_ITERATIONS + COMPLEX_KEYWORDS
     if "planner" in changed_settings:
+
         def _reload_planner():
             import assistant.action_planner as ap
+
             planner_cfg = yaml_cfg.get("planner", {})
-            ap.MAX_ITERATIONS = int(planner_cfg.get("max_iterations", ap._DEFAULT_MAX_ITERATIONS))
-            ap.COMPLEX_KEYWORDS = planner_cfg.get("complex_keywords", ap._DEFAULT_COMPLEX_KEYWORDS)
-            logger.info("ActionPlanner Settings aktualisiert (max_iterations=%d)", ap.MAX_ITERATIONS)
+            ap.MAX_ITERATIONS = int(
+                planner_cfg.get("max_iterations", ap._DEFAULT_MAX_ITERATIONS)
+            )
+            ap.COMPLEX_KEYWORDS = planner_cfg.get(
+                "complex_keywords", ap._DEFAULT_COMPLEX_KEYWORDS
+            )
+            logger.info(
+                "ActionPlanner Settings aktualisiert (max_iterations=%d)",
+                ap.MAX_ITERATIONS,
+            )
+
         _try_reload("planner", _reload_planner)
 
     # Proactive: Cooldowns, Batch-Settings und Quiet-Hours
     if "proactive" in changed_settings and hasattr(brain, "proactive"):
+
         def _reload_proactive():
             pro_cfg = yaml_cfg.get("proactive", {})
             brain.proactive.enabled = bool(pro_cfg.get("enabled", True))
@@ -3299,49 +3831,62 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             brain.proactive.batch_interval = int(batch_cfg.get("interval_minutes", 30))
             brain.proactive.batch_max_items = int(batch_cfg.get("max_items", 10))
             logger.info("Proactive Settings aktualisiert")
+
         _try_reload("proactive", _reload_proactive)
 
     # Quiet Hours (aus ambient_presence)
     if "ambient_presence" in changed_settings and hasattr(brain, "proactive"):
+
         def _reload_quiet_hours():
             quiet_cfg = yaml_cfg.get("ambient_presence", {})
             brain.proactive._quiet_start = int(quiet_cfg.get("quiet_start", 22))
             brain.proactive._quiet_end = int(quiet_cfg.get("quiet_end", 7))
             logger.info("Quiet Hours aktualisiert")
+
         _try_reload("ambient_presence", _reload_quiet_hours)
 
     # Routines: Morning/Evening Briefing (proactive) + RoutineEngine (actions, triggers)
     if "routines" in changed_settings:
+
         def _reload_routines():
             routines_cfg = yaml_cfg.get("routines", {})
             # Proactive: Briefing-Fenster
             if hasattr(brain, "proactive"):
                 mb_cfg = routines_cfg.get("morning_briefing", {})
                 brain.proactive._mb_enabled = bool(mb_cfg.get("enabled", True))
-                brain.proactive._mb_window_start = int(mb_cfg.get("window_start_hour", 6))
+                brain.proactive._mb_window_start = int(
+                    mb_cfg.get("window_start_hour", 6)
+                )
                 brain.proactive._mb_window_end = int(mb_cfg.get("window_end_hour", 10))
                 eb_cfg = routines_cfg.get("evening_briefing", {})
                 brain.proactive._eb_enabled = bool(eb_cfg.get("enabled", True))
-                brain.proactive._eb_window_start = int(eb_cfg.get("window_start_hour", 20))
+                brain.proactive._eb_window_start = int(
+                    eb_cfg.get("window_start_hour", 20)
+                )
                 brain.proactive._eb_window_end = int(eb_cfg.get("window_end_hour", 22))
             # RoutineEngine: Morning-Actions, GoodNight-Actions, Guest-Mode
             if hasattr(brain, "routines"):
                 brain.routines.reload_config()
             logger.info("Routine Settings aktualisiert (proactive + routine_engine)")
+
         _try_reload("routines", _reload_routines)
 
     # Seasonal Actions / Cover Automation: Config wird in seasonal_loop per Zyklus
     # frisch aus yaml_config gelesen — kein expliziter Reload noetig, aber Logging.
     if "seasonal_actions" in changed_settings:
-        logger.info("Seasonal Actions Settings aktualisiert (live aus yaml_config im naechsten Zyklus)")
+        logger.info(
+            "Seasonal Actions Settings aktualisiert (live aus yaml_config im naechsten Zyklus)"
+        )
         # Addon-Sync: Cover-Einstellungen an CoverControlManager weitergeben
         cover_auto = yaml_cfg.get("seasonal_actions", {}).get("cover_automation", {})
         _sync_cover_settings_to_addon(cover_auto)
 
     # Autonomy: Trust-Levels
     if "autonomy" in changed_settings and hasattr(brain, "autonomy"):
+
         def _reload_autonomy():
             from .autonomy import ACTION_PERMISSIONS
+
             auto_cfg = yaml_cfg.get("autonomy", {})
             brain.autonomy.level = int(auto_cfg.get("level", brain.autonomy.level))
             # Defaults als Basis, Config-Werte ueberschreiben einzelne Keys (wie in __init__)
@@ -3352,19 +3897,27 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             brain.autonomy._action_permissions = _merged_perms
             raw_evo = auto_cfg.get("evolution_criteria")
             if raw_evo:
-                brain.autonomy._evolution_criteria = {int(k): v for k, v in raw_evo.items()}
-            logger.info("Autonomy Settings aktualisiert (inkl. Permissions + Evolution)")
+                brain.autonomy._evolution_criteria = {
+                    int(k): v for k, v in raw_evo.items()
+                }
+            logger.info(
+                "Autonomy Settings aktualisiert (inkl. Permissions + Evolution)"
+            )
+
         _try_reload("autonomy", _reload_autonomy)
 
     # Activity: Entity-Listen und Schwellwerte
     if "activity" in changed_settings and hasattr(brain, "activity"):
+
         def _reload_activity():
             activity_cfg = yaml_cfg.get("activity", {})
             brain.activity.reload_config(activity_cfg)
+
         _try_reload("activity", _reload_activity)
 
     # Threat Assessment: Nacht-Zeiten
     if "threat_assessment" in changed_settings and hasattr(brain, "threat_assessment"):
+
         def _reload_threat():
             ta_cfg = yaml_cfg.get("threat_assessment", {})
             ta = brain.threat_assessment
@@ -3372,10 +3925,12 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             ta.night_end = int(ta_cfg.get("night_end_hour", ta.night_end))
             ta.enabled = bool(ta_cfg.get("enabled", ta.enabled))
             logger.info("Threat Assessment Settings aktualisiert")
+
         _try_reload("threat_assessment", _reload_threat)
 
     # TTS Enhancer
     if "tts" in changed_settings and hasattr(brain, "tts_enhancer"):
+
         def _reload_tts():
             tts_cfg = yaml_cfg.get("tts", {})
             te = brain.tts_enhancer
@@ -3386,10 +3941,12 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             if not isinstance(pitch_val, dict):
                 te.pitch = float(pitch_val)
             logger.info("TTS Enhancer Settings aktualisiert")
+
         _try_reload("tts", _reload_tts)
 
     # Web Search
     if "web_search" in changed_settings and hasattr(brain, "web_search"):
+
         def _reload_web_search():
             ws_cfg = yaml_cfg.get("web_search", {})
             ws = brain.web_search
@@ -3398,15 +3955,26 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             ws.searxng_url = ws_cfg.get("searxng_url", ws.searxng_url)
             ws.max_results = int(ws_cfg.get("max_results", ws.max_results))
             ws.timeout = int(ws_cfg.get("timeout_seconds", ws.timeout))
-            ws.cache_ttl = int(ws_cfg.get("cache_ttl_seconds", getattr(ws, "cache_ttl", 300)))
-            ws.rate_limit_max = int(ws_cfg.get("rate_limit_max", getattr(ws, "rate_limit_max", 10)))
-            ws.rate_limit_window = int(ws_cfg.get("rate_limit_window", getattr(ws, "rate_limit_window", 60)))
-            logger.info("Web Search Settings aktualisiert (enabled=%s, engine=%s)",
-                        ws.enabled, ws.engine)
+            ws.cache_ttl = int(
+                ws_cfg.get("cache_ttl_seconds", getattr(ws, "cache_ttl", 300))
+            )
+            ws.rate_limit_max = int(
+                ws_cfg.get("rate_limit_max", getattr(ws, "rate_limit_max", 10))
+            )
+            ws.rate_limit_window = int(
+                ws_cfg.get("rate_limit_window", getattr(ws, "rate_limit_window", 60))
+            )
+            logger.info(
+                "Web Search Settings aktualisiert (enabled=%s, engine=%s)",
+                ws.enabled,
+                ws.engine,
+            )
+
         _try_reload("web_search", _reload_web_search)
 
     # Health Monitor: Schwellwerte + Exclude-Patterns
     if "health_monitor" in changed_settings and hasattr(brain, "health_monitor"):
+
         def _reload_health_monitor():
             hm_cfg = yaml_cfg.get("health_monitor", {})
             hm = brain.health_monitor
@@ -3422,8 +3990,12 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             # Exclude-Patterns neu laden
             user_excludes = hm_cfg.get("exclude_patterns", [])
             if isinstance(user_excludes, str):
-                user_excludes = [p.strip() for p in user_excludes.splitlines() if p.strip()]
-            hm._exclude_patterns = [p.lower() for p in (hm._default_excludes + user_excludes)]
+                user_excludes = [
+                    p.strip() for p in user_excludes.splitlines() if p.strip()
+                ]
+            hm._exclude_patterns = [
+                p.lower() for p in (hm._default_excludes + user_excludes)
+            ]
             # Humidity-Sensor Allowlist neu laden
             raw_sensors = hm_cfg.get("humidity_sensors") or []
             if isinstance(raw_sensors, str):
@@ -3441,11 +4013,16 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             hm._hydration_start = int(hm_cfg.get("hydration_start_hour", 8))
             hm._hydration_end = int(hm_cfg.get("hydration_end_hour", 21))
             logger.info("Health Monitor Settings aktualisiert")
+
         _try_reload("health_monitor", _reload_health_monitor)
 
     # Humidor: Auch bei separater Aenderung (ohne health_monitor) hot-reloaden
-    if "humidor" in changed_settings and "health_monitor" not in changed_settings \
-            and hasattr(brain, "health_monitor"):
+    if (
+        "humidor" in changed_settings
+        and "health_monitor" not in changed_settings
+        and hasattr(brain, "health_monitor")
+    ):
+
         def _reload_humidor():
             humidor_cfg = yaml_cfg.get("humidor", {})
             hm = brain.health_monitor
@@ -3455,17 +4032,21 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             hm.humidor_warn_below = int(humidor_cfg.get("warn_below", 62))
             hm.humidor_warn_above = int(humidor_cfg.get("warn_above", 75))
             logger.info("Humidor Settings aktualisiert")
+
         _try_reload("humidor", _reload_humidor)
 
     # InsightEngine: Alle Einstellungen hot-reloadbar
     if "insights" in changed_settings and hasattr(brain, "insight_engine"):
+
         def _reload_insights():
             brain.insight_engine.reload_config()
             logger.info("InsightEngine Settings aktualisiert")
+
         _try_reload("insights", _reload_insights)
 
     # Situation Model: Schwellwerte + Toggle
     if "situation_model" in changed_settings and hasattr(brain, "situation_model"):
+
         def _reload_situation_model():
             sm_cfg = yaml_cfg.get("situation_model", {})
             sm = brain.situation_model
@@ -3474,6 +4055,7 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             sm.max_changes = int(sm_cfg.get("max_changes", 5))
             sm.temp_threshold = float(sm_cfg.get("temp_threshold", 2))
             logger.info("Situation Model Settings aktualisiert")
+
         _try_reload("situation_model", _reload_situation_model)
 
     # Music DJ: Config hot-reload
@@ -3493,6 +4075,7 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
 
     # Vacuum-Trigger: Tasks starten wenn noetig (Config wird im Loop gelesen)
     if "vacuum" in changed_settings and hasattr(brain, "proactive"):
+
         def _reload_vacuum():
             pro = brain.proactive
             vacuum_cfg = yaml_cfg.get("vacuum", {})
@@ -3501,23 +4084,35 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
                 pt_task = getattr(pro, "_vacuum_power_task", None)
                 if not pt_task or pt_task.done():
                     if vacuum_cfg.get("power_trigger", {}).get("enabled"):
-                        pro._vacuum_power_task = asyncio.create_task(pro._run_vacuum_power_trigger())
-                        pro._vacuum_power_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+                        pro._vacuum_power_task = asyncio.create_task(
+                            pro._run_vacuum_power_trigger()
+                        )
+                        pro._vacuum_power_task.add_done_callback(
+                            lambda t: t.exception() if not t.cancelled() else None
+                        )
                         logger.info("Vacuum Power-Trigger Task (neu) gestartet")
                 # Scene-Trigger Task starten falls nicht laufend
                 st_task = getattr(pro, "_vacuum_scene_task", None)
                 if not st_task or st_task.done():
                     if vacuum_cfg.get("scene_trigger", {}).get("enabled"):
-                        pro._vacuum_scene_task = asyncio.create_task(pro._run_vacuum_scene_trigger())
-                        pro._vacuum_scene_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+                        pro._vacuum_scene_task = asyncio.create_task(
+                            pro._run_vacuum_scene_trigger()
+                        )
+                        pro._vacuum_scene_task.add_done_callback(
+                            lambda t: t.exception() if not t.cancelled() else None
+                        )
                         logger.info("Vacuum Scene-Trigger Task (neu) gestartet")
             logger.info("Vacuum Settings aktualisiert")
+
         _try_reload("vacuum", _reload_vacuum)
 
     # --- Fehlende Hot-Reloads fuer Module die Config im __init__ cachen ---
 
     # ConflictResolver: Fenster, Limits, Mediation, Thresholds, Rule-Toggles
-    if "conflict_resolution" in changed_settings and hasattr(brain, "conflict_resolver"):
+    if "conflict_resolution" in changed_settings and hasattr(
+        brain, "conflict_resolver"
+    ):
+
         def _reload_conflict_resolver():
             cr = brain.conflict_resolver
             cr.reload_config()
@@ -3527,7 +4122,10 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             med_cfg = cfg.get("mediation", {})
             cr._mediation_enabled = med_cfg.get("enabled", True)
             from .config import resolve_model
-            cr._mediation_model = resolve_model(med_cfg.get("model", ""), fallback_tier="deep")
+
+            cr._mediation_model = resolve_model(
+                med_cfg.get("model", ""), fallback_tier="deep"
+            )
             cr._mediation_max_tokens = int(med_cfg.get("max_tokens", 256))
             cr._mediation_temperature = med_cfg.get("temperature", 0.7)
             cr._domain_configs = cfg.get("conflict_domains", {})
@@ -3538,18 +4136,26 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
                     cr._safe_limits[domain] = {}
                     for param, vals in limits.items():
                         if isinstance(vals, list) and len(vals) == 2:
-                            cr._safe_limits[domain][param] = (float(vals[0]), float(vals[1]))
+                            cr._safe_limits[domain][param] = (
+                                float(vals[0]),
+                                float(vals[1]),
+                            )
+
         _try_reload("conflict_resolution", _reload_conflict_resolver)
 
     # Prompt-Injection-Config: Modulebene-Cache aktualisieren
     if "prompt_injection" in changed_settings:
+
         def _reload_injection():
             from .context_builder import reload_injection_config
+
             reload_injection_config()
+
         _try_reload("prompt_injection", _reload_injection)
 
     # AmbientAudio: Sensor-Mappings, Cooldowns, Night-Mode
     if "ambient_audio" in changed_settings and hasattr(brain, "ambient_audio"):
+
         def _reload_ambient_audio():
             cfg = yaml_cfg.get("ambient_audio", {})
             aa = brain.ambient_audio
@@ -3567,22 +4173,28 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             aa._poll_interval = cfg.get("poll_interval_seconds", 5)
             # Default-Reaktionen neu laden
             from .ambient_audio import DEFAULT_EVENT_REACTIONS
+
             yaml_reactions = cfg.get("default_reactions")
             if yaml_reactions and isinstance(yaml_reactions, dict):
                 aa._default_reactions = dict(DEFAULT_EVENT_REACTIONS)
                 for evt, info in yaml_reactions.items():
                     if isinstance(info, dict):
                         if evt in aa._default_reactions:
-                            aa._default_reactions[evt] = {**aa._default_reactions[evt], **info}
+                            aa._default_reactions[evt] = {
+                                **aa._default_reactions[evt],
+                                **info,
+                            }
                         else:
                             aa._default_reactions[evt] = info
             else:
                 aa._default_reactions = dict(DEFAULT_EVENT_REACTIONS)
             logger.info("AmbientAudio Settings aktualisiert (inkl. Reaktionen)")
+
         _try_reload("ambient_audio", _reload_ambient_audio)
 
     # CameraManager: Vision-Model, Camera-Map
     if "cameras" in changed_settings and hasattr(brain, "camera_manager"):
+
         def _reload_cameras():
             cfg = yaml_cfg.get("cameras", {})
             cm = brain.camera_manager
@@ -3590,17 +4202,21 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             cm.vision_model = cfg.get("vision_model", "llava")
             cm.camera_map = cfg.get("camera_map", {})
             logger.info("CameraManager Settings aktualisiert")
+
         _try_reload("cameras", _reload_cameras)
 
     # OCREngine: Sprachen, Vision-Model, Limits
     if "ocr" in changed_settings and hasattr(brain, "ocr"):
+
         def _reload_ocr():
             brain.ocr.reload_config()
             logger.info("OCREngine Settings aktualisiert")
+
         _try_reload("ocr", _reload_ocr)
 
     # CookingAssistant: Portionen, Steps, Tokens
     if "cooking" in changed_settings and hasattr(brain, "cooking"):
+
         def _reload_cooking():
             cfg = yaml_cfg.get("cooking", {})
             ca = brain.cooking
@@ -3610,10 +4226,12 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             ca.max_tokens = int(cfg.get("max_tokens", 1024))
             ca.timer_notify_tts = cfg.get("timer_notify_tts", True)
             logger.info("CookingAssistant Settings aktualisiert")
+
         _try_reload("cooking", _reload_cooking)
 
     # EnergyOptimizer: Sensoren, Schwellwerte
     if "energy" in changed_settings and hasattr(brain, "energy_optimizer"):
+
         def _reload_energy():
             cfg = yaml_cfg.get("energy", {})
             eo = brain.energy_optimizer
@@ -3630,10 +4248,14 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             eo.anomaly_percent = thresholds.get("anomaly_increase_percent", 30)
             eo.essential_entities = set(cfg.get("essential_entities", []))
             logger.info("EnergyOptimizer Settings aktualisiert")
+
         _try_reload("energy", _reload_energy)
 
     # ConversationMemory: Limits, TTLs
-    if "conversation_memory" in changed_settings and hasattr(brain, "conversation_memory"):
+    if "conversation_memory" in changed_settings and hasattr(
+        brain, "conversation_memory"
+    ):
+
         def _reload_conv_memory():
             cfg = yaml_cfg.get("conversation_memory", {})
             cm = brain.conversation_memory
@@ -3643,10 +4265,12 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             cm.summary_retention_days = cfg.get("summary_retention_days", 30)
             cm.question_ttl_days = cfg.get("question_ttl_days", 14)
             logger.info("ConversationMemory Settings aktualisiert")
+
         _try_reload("conversation_memory", _reload_conv_memory)
 
     # MultiRoomAudio: Gruppen, Lautstaerke, Gruppierung
     if "multi_room_audio" in changed_settings and hasattr(brain, "multi_room_audio"):
+
         def _reload_multi_room_audio():
             cfg = yaml_cfg.get("multi_room_audio", {})
             mra = brain.multi_room_audio
@@ -3655,10 +4279,12 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             mra.default_volume = cfg.get("default_volume", 40)
             mra.use_native_grouping = cfg.get("use_native_grouping", False)
             logger.info("MultiRoomAudio Settings aktualisiert")
+
         _try_reload("multi_room_audio", _reload_multi_room_audio)
 
     # LearningObserver: Repetitions, Zeitfenster
     if "learning" in changed_settings and hasattr(brain, "learning_observer"):
+
         def _reload_learning():
             cfg = yaml_cfg.get("learning", {})
             lo = brain.learning_observer
@@ -3666,19 +4292,23 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             lo.min_repetitions = cfg.get("min_repetitions", 3)
             lo.time_window_minutes = cfg.get("time_window_minutes", 30)
             logger.info("LearningObserver Settings aktualisiert")
+
         _try_reload("learning", _reload_learning)
 
     # MusicDJ: Config + Enabled
     if "music_dj" in changed_settings and hasattr(brain, "music_dj"):
+
         def _reload_music_dj():
             cfg = yaml_cfg.get("music_dj", {})
             brain.music_dj._config = cfg
             brain.music_dj.enabled = cfg.get("enabled", True)
             logger.info("MusicDJ Settings aktualisiert")
+
         _try_reload("music_dj", _reload_music_dj)
 
     # ProtocolEngine: Max-Protocols, Max-Steps
     if "protocols" in changed_settings and hasattr(brain, "protocol_engine"):
+
         def _reload_protocols():
             cfg = yaml_cfg.get("protocols") or {}
             pe = brain.protocol_engine
@@ -3686,22 +4316,27 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             pe.max_protocols = cfg.get("max_protocols") or 20
             pe.max_steps = cfg.get("max_steps") or 10
             logger.info("ProtocolEngine Settings aktualisiert")
+
         _try_reload("protocols", _reload_protocols)
 
     # SelfAutomation: Config, Security, Limits
     if "self_automation" in changed_settings and hasattr(brain, "self_automation"):
+
         def _reload_self_automation():
             cfg = yaml_cfg.get("self_automation", {})
             sa = brain.self_automation
             sa._cfg = cfg
             raw_max = cfg.get("max_per_day", 5)
             sa._max_per_day = max(1, min(20, int(raw_max)))
-            logger.info("SelfAutomation Settings aktualisiert (max_per_day=%d)",
-                        sa._max_per_day)
+            logger.info(
+                "SelfAutomation Settings aktualisiert (max_per_day=%d)", sa._max_per_day
+            )
+
         _try_reload("self_automation", _reload_self_automation)
 
     # SelfOptimization: Approval-Mode, Intervall, Model, Bounds
     if "self_optimization" in changed_settings and hasattr(brain, "self_optimization"):
+
         def _reload_self_optimization():
             cfg = yaml_cfg.get("self_optimization", {})
             so = brain.self_optimization
@@ -3711,13 +4346,18 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             so._interval = cfg.get("analysis_interval", "weekly")
             so._max_proposals = cfg.get("max_proposals_per_cycle", 3)
             from .config import resolve_model
+
             so._model = resolve_model(cfg.get("model", ""), fallback_tier="deep")
             so._bounds = cfg.get("parameter_bounds", {})
-            logger.info("SelfOptimization Settings aktualisiert (enabled=%s)", so._enabled)
+            logger.info(
+                "SelfOptimization Settings aktualisiert (enabled=%s)", so._enabled
+            )
+
         _try_reload("self_optimization", _reload_self_optimization)
 
     # VisitorManager: Guest-Mode, Cooldown, History-Max
     if "visitor_management" in changed_settings and hasattr(brain, "visitor_manager"):
+
         def _reload_visitor():
             cfg = yaml_cfg.get("visitor_management", {})
             vm = brain.visitor_manager
@@ -3726,50 +4366,82 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             vm.ring_cooldown_seconds = cfg.get("ring_cooldown_seconds", 30)
             vm.history_max = cfg.get("history_max", 100)
             logger.info("VisitorManager Settings aktualisiert")
+
         _try_reload("visitor_management", _reload_visitor)
 
     # DeviceHealth: Alle Schwellwerte + Exclude-Patterns (erweitert partiellen Reload)
     if "device_health" in changed_settings and hasattr(brain, "device_health"):
+
         def _reload_device_health():
             from assistant.device_health import DEFAULTS
+
             cfg = yaml_cfg.get("device_health", {})
             dh = brain.device_health
             dh.enabled = cfg.get("enabled", True)
-            dh.check_interval = cfg.get("check_interval_minutes", DEFAULTS["check_interval_minutes"])
-            dh.baseline_days = cfg.get("baseline_history_days", DEFAULTS["baseline_history_days"])
-            dh.stddev_multiplier = cfg.get("stddev_multiplier", DEFAULTS["stddev_multiplier"])
+            dh.check_interval = cfg.get(
+                "check_interval_minutes", DEFAULTS["check_interval_minutes"]
+            )
+            dh.baseline_days = cfg.get(
+                "baseline_history_days", DEFAULTS["baseline_history_days"]
+            )
+            dh.stddev_multiplier = cfg.get(
+                "stddev_multiplier", DEFAULTS["stddev_multiplier"]
+            )
             dh.min_samples = cfg.get("min_samples", DEFAULTS["min_samples"])
             dh.stale_days = cfg.get("stale_sensor_days", DEFAULTS["stale_sensor_days"])
-            dh.hvac_timeout = cfg.get("hvac_timeout_minutes", DEFAULTS["hvac_timeout_minutes"])
-            dh.hvac_tolerance = cfg.get("hvac_temp_tolerance", DEFAULTS["hvac_temp_tolerance"])
-            dh.alert_cooldown = cfg.get("alert_cooldown_minutes", DEFAULTS["alert_cooldown_minutes"])
+            dh.hvac_timeout = cfg.get(
+                "hvac_timeout_minutes", DEFAULTS["hvac_timeout_minutes"]
+            )
+            dh.hvac_tolerance = cfg.get(
+                "hvac_temp_tolerance", DEFAULTS["hvac_temp_tolerance"]
+            )
+            dh.alert_cooldown = cfg.get(
+                "alert_cooldown_minutes", DEFAULTS["alert_cooldown_minutes"]
+            )
             dh.track_domains = cfg.get("track_domains", DEFAULTS["track_domains"])
-            dh.exclude_patterns = cfg.get("exclude_patterns", DEFAULTS["exclude_patterns"])
-            dh.energy_keywords = cfg.get("energy_sensor_keywords", DEFAULTS["energy_sensor_keywords"])
+            dh.exclude_patterns = cfg.get(
+                "exclude_patterns", DEFAULTS["exclude_patterns"]
+            )
+            dh.energy_keywords = cfg.get(
+                "energy_sensor_keywords", DEFAULTS["energy_sensor_keywords"]
+            )
             dh.monitored_entities = cfg.get("monitored_entities", [])
             logger.info("DeviceHealth Settings aktualisiert")
+
         _try_reload("device_health", _reload_device_health)
 
     # Self-Improvement Module: enabled-Flag + Config-Werte aktualisieren
     _self_improvement_keys = {
-        "outcome_tracker", "correction_memory", "response_quality",
-        "error_patterns", "self_report", "adaptive_thresholds",
+        "outcome_tracker",
+        "correction_memory",
+        "response_quality",
+        "error_patterns",
+        "self_report",
+        "adaptive_thresholds",
     }
     for si_key in _self_improvement_keys & set(changed_settings.keys()):
         attr_name = si_key  # brain.outcome_tracker, brain.correction_memory, etc.
         if hasattr(brain, attr_name):
+
             def _make_reload(key, attr):
                 def _do():
                     cfg = yaml_cfg.get(key, {})
                     mod = getattr(brain, attr)
-                    mod.enabled = bool(cfg.get("enabled", True)) and mod.redis is not None
+                    mod.enabled = (
+                        bool(cfg.get("enabled", True)) and mod.redis is not None
+                    )
                     mod._cfg = cfg
-                    logger.info("%s Settings aktualisiert (enabled=%s)", key, mod.enabled)
+                    logger.info(
+                        "%s Settings aktualisiert (enabled=%s)", key, mod.enabled
+                    )
+
                 return _do
+
             _try_reload(si_key, _make_reload(si_key, attr_name))
 
     # Global Learning Kill Switch
     if "learning" in changed_settings:
+
         def _reload_learning():
             learning_enabled = yaml_cfg.get("learning", {}).get("enabled", True)
             for si_key in _self_improvement_keys:
@@ -3778,35 +4450,50 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
                     if not learning_enabled:
                         mod.enabled = False
             logger.info("Learning global: enabled=%s", learning_enabled)
+
         _try_reload("learning", _reload_learning)
 
     # --- Brain: Konfigurierbare Daten (STT, Fehler-Templates, Befehls-Erkennung, etc.) ---
     _brain_config_keys = {
-        "stt_corrections", "command_detection", "response_filter",
-        "das_uebliche", "personality",
+        "stt_corrections",
+        "command_detection",
+        "response_filter",
+        "das_uebliche",
+        "personality",
     }
     if _brain_config_keys & set(changed_settings.keys()) and brain:
         _try_reload("brain_configurable_data", brain.reload_configurable_data)
 
     # Memory: Category-Confidence
     if "memory" in changed_settings and hasattr(brain, "memory_extractor"):
+
         def _reload_memory():
             from .memory_extractor import CATEGORY_CONFIDENCE
+
             mem_cfg = yaml_cfg.get("memory", {})
-            brain.memory_extractor._category_confidence = mem_cfg.get("category_confidence") or dict(CATEGORY_CONFIDENCE)
+            brain.memory_extractor._category_confidence = mem_cfg.get(
+                "category_confidence"
+            ) or dict(CATEGORY_CONFIDENCE)
             logger.info("MemoryExtractor Category-Confidence aktualisiert")
+
         _try_reload("memory_category_confidence", _reload_memory)
 
     # Entity-Roles: Separate YAML + User-Overrides
     if "entity_roles" in changed_settings:
+
         def _reload_entity_roles():
             from .function_calling import reload_entity_roles
+
             reload_entity_roles()
             logger.info("Entity-Roles aktualisiert")
+
         _try_reload("entity_roles", _reload_entity_roles)
 
     # SpeakerRecognition: Enabled, Confidence, Device-Mapping, DOA
-    if "speaker_recognition" in changed_settings and hasattr(brain, "speaker_recognition"):
+    if "speaker_recognition" in changed_settings and hasattr(
+        brain, "speaker_recognition"
+    ):
+
         def _reload_speaker_recognition():
             cfg = yaml_cfg.get("speaker_recognition", {})
             sr = brain.speaker_recognition
@@ -3826,15 +4513,23 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
                     parts = str(angle_range).split("-")
                     if len(parts) == 2:
                         try:
-                            sr._doa_person_map[(int(parts[0]), int(parts[1]))] = person.lower()
+                            sr._doa_person_map[(int(parts[0]), int(parts[1]))] = (
+                                person.lower()
+                            )
                         except ValueError:
                             pass
             sr._doa_tolerance = cfg.get("doa_tolerance", 30)
-            logger.info("SpeakerRecognition Settings aktualisiert (enabled=%s)", sr.enabled)
+            logger.info(
+                "SpeakerRecognition Settings aktualisiert (enabled=%s)", sr.enabled
+            )
+
         _try_reload("speaker_recognition", _reload_speaker_recognition)
 
     # Intelligenz-Features: Quick Wins + Medium Effort
-    if "calendar_intelligence" in changed_settings and hasattr(brain, "calendar_intelligence"):
+    if "calendar_intelligence" in changed_settings and hasattr(
+        brain, "calendar_intelligence"
+    ):
+
         def _reload_calendar_intelligence():
             ci_cfg = yaml_cfg.get("calendar_intelligence", {})
             ci = brain.calendar_intelligence
@@ -3843,9 +4538,11 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             ci.habit_min_occurrences = ci_cfg.get("habit_min_occurrences", 3)
             ci.commute_minutes = ci_cfg.get("commute_minutes", 30)
             logger.info("CalendarIntelligence Settings aktualisiert")
+
         _try_reload("calendar_intelligence", _reload_calendar_intelligence)
 
     if "explainability" in changed_settings and hasattr(brain, "explainability"):
+
         def _reload_explainability():
             ex_cfg = yaml_cfg.get("explainability", {})
             ex = brain.explainability
@@ -3853,9 +4550,11 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             ex.detail_level = ex_cfg.get("detail_level", "normal")
             ex.auto_explain = ex_cfg.get("auto_explain", False)
             logger.info("Explainability Settings aktualisiert")
+
         _try_reload("explainability", _reload_explainability)
 
     if "learning_transfer" in changed_settings and hasattr(brain, "learning_transfer"):
+
         def _reload_learning_transfer():
             lt_cfg = yaml_cfg.get("learning_transfer", {})
             lt = brain.learning_transfer
@@ -3865,9 +4564,11 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             lt.transfer_confidence = lt_cfg.get("transfer_confidence", 0.7)
             lt.domains_enabled = lt_cfg.get("domains", ["light", "climate", "media"])
             logger.info("LearningTransfer Settings aktualisiert")
+
         _try_reload("learning_transfer", _reload_learning_transfer)
 
     if "dialogue" in changed_settings and hasattr(brain, "dialogue_state"):
+
         def _reload_dialogue():
             dlg_cfg = yaml_cfg.get("dialogue", {})
             dlg = brain.dialogue_state
@@ -3876,53 +4577,77 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             dlg.auto_resolve_references = dlg_cfg.get("auto_resolve_references", True)
             dlg.clarification_enabled = dlg_cfg.get("clarification_enabled", True)
             logger.info("DialogueState Settings aktualisiert")
+
         _try_reload("dialogue", _reload_dialogue)
 
     if "climate_model" in changed_settings and hasattr(brain, "climate_model"):
+
         def _reload_climate_model():
             from .climate_model import DEFAULT_ROOM_THERMAL
+
             cm_cfg = yaml_cfg.get("climate_model", {})
             cm = brain.climate_model
             cm.enabled = cm_cfg.get("enabled", True)
             cm.max_simulation_minutes = cm_cfg.get("max_simulation_minutes", 240)
-            cm._default_params = {**DEFAULT_ROOM_THERMAL, **cm_cfg.get("default_params", {})}
+            cm._default_params = {
+                **DEFAULT_ROOM_THERMAL,
+                **cm_cfg.get("default_params", {}),
+            }
             cm._room_params = cm_cfg.get("room_params", {})
             logger.info("ClimateModel Settings aktualisiert")
+
         _try_reload("climate_model", _reload_climate_model)
 
-    if "predictive_maintenance" in changed_settings and hasattr(brain, "predictive_maintenance"):
+    if "predictive_maintenance" in changed_settings and hasattr(
+        brain, "predictive_maintenance"
+    ):
+
         def _reload_predictive_maintenance():
             from .predictive_maintenance import DEFAULT_LIFESPANS
+
             pm_cfg = yaml_cfg.get("predictive_maintenance", {})
             pm = brain.predictive_maintenance
             pm.enabled = pm_cfg.get("enabled", True)
             pm._lifespans = {**DEFAULT_LIFESPANS, **pm_cfg.get("typical_lifespans", {})}
-            pm.battery_drain_alert_pct = pm_cfg.get("battery_drain_alert_pct_per_week", 5.0)
+            pm.battery_drain_alert_pct = pm_cfg.get(
+                "battery_drain_alert_pct_per_week", 5.0
+            )
             logger.info("PredictiveMaintenance Settings aktualisiert")
+
         _try_reload("predictive_maintenance", _reload_predictive_maintenance)
 
     if "autonomy" in changed_settings and hasattr(brain, "autonomy"):
         # Domain-spezifische Autonomie-Level nachladen
         def _reload_autonomy_domains():
             auto_cfg = yaml_cfg.get("autonomy", {})
-            brain.autonomy._domain_levels_enabled = auto_cfg.get("domain_levels_enabled", False)
+            brain.autonomy._domain_levels_enabled = auto_cfg.get(
+                "domain_levels_enabled", False
+            )
             raw_domains = auto_cfg.get("domain_levels", {})
             if raw_domains:
-                brain.autonomy._domain_levels = {k: int(v) for k, v in raw_domains.items()}
+                brain.autonomy._domain_levels = {
+                    k: int(v) for k, v in raw_domains.items()
+                }
             logger.info("Autonomy Domain-Levels aktualisiert")
+
         _try_reload("autonomy_domains", _reload_autonomy_domains)
 
     # ProactiveSequencePlanner: enabled + min_autonomy (cached in __init__)
     if "proactive_planner" in changed_settings and hasattr(brain, "proactive_planner"):
+
         def _reload_proactive_planner():
             pp_cfg = yaml_cfg.get("proactive_planner", {})
             brain.proactive_planner.enabled = bool(pp_cfg.get("enabled", True))
-            brain.proactive_planner.min_autonomy_for_auto = int(pp_cfg.get("min_autonomy_for_auto", 4))
+            brain.proactive_planner.min_autonomy_for_auto = int(
+                pp_cfg.get("min_autonomy_for_auto", 4)
+            )
             logger.info("ProactivePlanner Settings aktualisiert")
+
         _try_reload("proactive_planner", _reload_proactive_planner)
 
     # SeasonalInsightEngine: enabled + check_interval + min_history (cached in __init__)
     if "seasonal_insights" in changed_settings and hasattr(brain, "seasonal_insight"):
+
         def _reload_seasonal():
             si_cfg = yaml_cfg.get("seasonal_insights", {})
             si = brain.seasonal_insight
@@ -3930,17 +4655,23 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             si.check_interval = si_cfg.get("check_interval_hours", 24) * 3600
             si.min_history_months = int(si_cfg.get("min_history_months", 2))
             logger.info("SeasonalInsight Settings aktualisiert")
+
         _try_reload("seasonal_insights", _reload_seasonal)
 
     # Response Cache: enabled + TTL nachladen
     if "response_cache" in changed_settings and hasattr(brain, "response_cache"):
+
         def _reload_response_cache():
             rc_cfg = yaml_cfg.get("response_cache", {})
             brain.response_cache.configure(
                 enabled=rc_cfg.get("enabled", True),
                 ttl_overrides=rc_cfg.get("ttl", {}),
             )
-            logger.info("ResponseCache Settings aktualisiert (enabled=%s)", rc_cfg.get("enabled", True))
+            logger.info(
+                "ResponseCache Settings aktualisiert (enabled=%s)",
+                rc_cfg.get("enabled", True),
+            )
+
         _try_reload("response_cache", _reload_response_cache)
 
     # Incremental LLM: liest yaml_config live in brain.process() — nur Logging
@@ -3948,9 +4679,17 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
         logger.info("incremental_llm Settings aktualisiert (live aus yaml_config)")
 
     # Phase 18 Personality/Intelligence: lesen yaml_config live — nur Logging
-    for key in ("memorable_interactions", "running_gag_evolution", "escalating_concern",
-                "curiosity", "next_step_hints", "consequence_checks", "observation_loop",
-                "insight_checks", "anticipation"):
+    for key in (
+        "memorable_interactions",
+        "running_gag_evolution",
+        "escalating_concern",
+        "curiosity",
+        "next_step_hints",
+        "consequence_checks",
+        "observation_loop",
+        "insight_checks",
+        "anticipation",
+    ):
         if key in changed_settings:
             logger.info("%s Settings aktualisiert (live aus yaml_config)", key)
 
@@ -4006,10 +4745,12 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
 
     # Trust Levels: Hot-Reload Autonomy trust config
     if "trust_levels" in changed_settings and hasattr(brain, "autonomy"):
+
         def _reload_trust_levels():
             tl_cfg = yaml_cfg.get("trust_levels", {})
             brain.autonomy._trust_config = tl_cfg
             logger.info("Trust Levels Settings aktualisiert")
+
         _try_reload("trust_levels", _reload_trust_levels)
 
     # Core Identity: liest yaml_config live — nur Logging
@@ -4022,16 +4763,25 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
 
     # Mood: LLM-Sentiment nachladen
     if "mood" in changed_settings and hasattr(brain, "mood_detector"):
+
         def _reload_mood():
             mood_cfg = yaml_cfg.get("mood", {})
-            brain.mood_detector.llm_sentiment = bool(mood_cfg.get("llm_sentiment", False))
-            logger.info("Mood Settings aktualisiert (llm_sentiment=%s)",
-                        brain.mood_detector.llm_sentiment)
+            brain.mood_detector.llm_sentiment = bool(
+                mood_cfg.get("llm_sentiment", False)
+            )
+            logger.info(
+                "Mood Settings aktualisiert (llm_sentiment=%s)",
+                brain.mood_detector.llm_sentiment,
+            )
+
         _try_reload("mood", _reload_mood)
 
     if failed_modules:
-        logger.warning("Settings-Reload: %d Module fehlgeschlagen: %s",
-                        len(failed_modules), ", ".join(failed_modules))
+        logger.warning(
+            "Settings-Reload: %d Module fehlgeschlagen: %s",
+            len(failed_modules),
+            ", ".join(failed_modules),
+        )
     return failed_modules
 
 
@@ -4041,8 +4791,12 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
 # "self_optimization.immutable_keys" → Schutz vor Manipulation der Immutable-Liste
 _SETTINGS_STRIP_KEYS = frozenset({"dashboard"})
 _SETTINGS_STRIP_SUBKEYS = {
-    "security": frozenset({"api_key", "api_key_required"}),  # Nur via dedizierte Endpoints
-    "self_optimization": frozenset({"immutable_keys"}),       # Darf nicht per UI geaendert werden
+    "security": frozenset(
+        {"api_key", "api_key_required"}
+    ),  # Nur via dedizierte Endpoints
+    "self_optimization": frozenset(
+        {"immutable_keys"}
+    ),  # Darf nicht per UI geaendert werden
 }
 
 
@@ -4053,7 +4807,13 @@ async def _restart_speech_containers(old_speech: dict, new_speech: dict):
     - mha-whisper: wenn sich STT-Settings geaendert haben
     - mha-piper:   wenn sich TTS-Settings geaendert haben
     """
-    STT_KEYS = {"stt_model", "stt_language", "stt_beam_size", "stt_compute", "stt_device"}
+    STT_KEYS = {
+        "stt_model",
+        "stt_language",
+        "stt_beam_size",
+        "stt_compute",
+        "stt_device",
+    }
     TTS_KEYS = {"tts_voice"}
 
     stt_changed = any(old_speech.get(k) != new_speech.get(k) for k in STT_KEYS)
@@ -4096,9 +4856,9 @@ def _build_addon_cover_config(cover_auto: dict) -> dict:
             addon_cfg[dst_key] = conv(cover_auto[src_key])
     # manual_override_hours → manual_override_duration_min (Einheit-Konvertierung)
     if "manual_override_hours" in cover_auto:
-        addon_cfg["manual_override_duration_min"] = int(
-            cover_auto["manual_override_hours"]
-        ) * 60
+        addon_cfg["manual_override_duration_min"] = (
+            int(cover_auto["manual_override_hours"]) * 60
+        )
     return addon_cfg
 
 
@@ -4115,6 +4875,7 @@ def _sync_cover_settings_to_addon(cover_auto: dict):
         return
     try:
         import asyncio
+
         loop = asyncio.get_event_loop()
         if loop.is_running():
             asyncio.ensure_future(
@@ -4124,7 +4885,9 @@ def _sync_cover_settings_to_addon(cover_auto: dict):
             loop.run_until_complete(
                 brain.ha.mindhome_put("/api/covers/settings", addon_cfg)
             )
-        logger.info("Cover-Settings an Addon synchronisiert: %s", list(addon_cfg.keys()))
+        logger.info(
+            "Cover-Settings an Addon synchronisiert: %s", list(addon_cfg.keys())
+        )
     except Exception as e:
         logger.warning("Cover-Settings Addon-Sync fehlgeschlagen: %s", e)
 
@@ -4137,7 +4900,9 @@ async def _async_sync_cover_settings_to_addon(cover_auto: dict):
     if not addon_cfg:
         return
     await brain.ha.mindhome_put("/api/covers/settings", addon_cfg)
-    logger.info("Cover-Settings an Addon synchronisiert (Startup): %s", list(addon_cfg.keys()))
+    logger.info(
+        "Cover-Settings an Addon synchronisiert (Startup): %s", list(addon_cfg.keys())
+    )
 
 
 def _sync_speech_to_env(speech_cfg: dict):
@@ -4170,14 +4935,18 @@ def _sync_speech_to_env(speech_cfg: dict):
                     val = speech_cfg[yaml_key]
                     # Kommentar nach dem Wert beibehalten
                     old_parts = line.split("#", 1)
-                    comment = f"  # {old_parts[1].strip()}" if len(old_parts) > 1 else ""
+                    comment = (
+                        f"  # {old_parts[1].strip()}" if len(old_parts) > 1 else ""
+                    )
                     # Whitespace-Ausrichtung vom Original beibehalten
-                    prefix = line[:len(line) - len(line.lstrip())]
+                    prefix = line[: len(line) - len(line.lstrip())]
                     lines[i] = f"{prefix}{env_key}={val}{comment}"
                     updated.add(env_key)
         env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         if updated:
-            logger.info("Speech-Settings in .env aktualisiert: %s", ", ".join(sorted(updated)))
+            logger.info(
+                "Speech-Settings in .env aktualisiert: %s", ", ".join(sorted(updated))
+            )
     except Exception as e:
         logger.warning("Speech → .env Sync fehlgeschlagen: %s", e)
 
@@ -4196,7 +4965,9 @@ def _strip_protected_settings(data: dict) -> tuple[dict, list[str]]:
             continue
         if key in _SETTINGS_STRIP_SUBKEYS and isinstance(value, dict):
             protected_subkeys = _SETTINGS_STRIP_SUBKEYS[key]
-            filtered_value = {k: v for k, v in value.items() if k not in protected_subkeys}
+            filtered_value = {
+                k: v for k, v in value.items() if k not in protected_subkeys
+            }
             removed = [f"{key}.{k}" for k in value if k in protected_subkeys]
             stripped.extend(removed)
             if filtered_value:
@@ -4221,7 +4992,9 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
             req.settings if isinstance(req.settings, dict) else {}
         )
         if stripped:
-            logger.info("Settings-Update: Geschuetzte Keys herausgefiltert: %s", stripped)
+            logger.info(
+                "Settings-Update: Geschuetzte Keys herausgefiltert: %s", stripped
+            )
 
         if not safe_settings:
             return {"success": True, "message": "Keine aenderbaren Settings vorhanden"}
@@ -4238,6 +5011,7 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         def _read_yaml():
             with open(SETTINGS_YAML_PATH) as f:
                 return yaml.safe_load(f) or {}
+
         config = await asyncio.to_thread(_read_yaml)
 
         # Speech-Settings vor dem Merge merken (fuer Restart-Erkennung)
@@ -4264,11 +5038,19 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         # Zurueckschreiben (non-blocking)
         def _write_yaml():
             with open(SETTINGS_YAML_PATH, "w") as f:
-                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                yaml.safe_dump(
+                    config,
+                    f,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=False,
+                )
+
         await asyncio.to_thread(_write_yaml)
 
         # yaml_config im Speicher aktualisieren
         import assistant.config as cfg
+
         _new = load_yaml_config()
         cfg.yaml_config.clear()
         cfg.yaml_config.update(_new)
@@ -4302,7 +5084,9 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         # Diagnostics: monitored_entities aktualisieren
         if hasattr(brain, "diagnostics"):
             diag_cfg = cfg.yaml_config.get("diagnostics", {})
-            brain.diagnostics.monitored_entities = diag_cfg.get("monitored_entities", [])
+            brain.diagnostics.monitored_entities = diag_cfg.get(
+                "monitored_entities", []
+            )
 
         # SoundManager: alexa_speakers aktualisieren
         if hasattr(brain, "sound_manager"):
@@ -4311,11 +5095,15 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
 
         # Speech-Engine: .env sync + Container automatisch neustarten (non-blocking)
         new_speech = cfg.yaml_config.get("speech", {})
-        speech_changed = (old_speech != new_speech)
+        speech_changed = old_speech != new_speech
         if speech_changed:
             _sync_speech_to_env(new_speech)
-            _speech_restart_task = asyncio.create_task(_restart_speech_containers(old_speech, new_speech))
-            _speech_restart_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+            _speech_restart_task = asyncio.create_task(
+                _restart_speech_containers(old_speech, new_speech)
+            )
+            _speech_restart_task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
+            )
             logger.info("Speech-Container Restart im Hintergrund gestartet")
 
         # F-038: Alle weiteren Module benachrichtigen die Config bei __init__ cachen
@@ -4333,15 +5121,21 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         _audit_log("settings_update", audit_details)
 
         reloaded_count = 4 + len(_get_reloaded_modules(safe_settings))
-        speech_hint = " — Speech-Container werden neu gestartet" if speech_changed else ""
-        fail_hint = f" (Fehler bei: {', '.join(reload_failures)})" if reload_failures else ""
+        speech_hint = (
+            " — Speech-Container werden neu gestartet" if speech_changed else ""
+        )
+        fail_hint = (
+            f" (Fehler bei: {', '.join(reload_failures)})" if reload_failures else ""
+        )
         return {
             "success": True,
             "message": f"Settings gespeichert ({reloaded_count} Module aktualisiert){speech_hint}{fail_hint}",
         }
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/entities")
@@ -4351,26 +5145,31 @@ async def ui_get_entities(token: str = "", domain: str = ""):
     try:
         states = await brain.ha.get_states()
         entities = []
-        for s in (states or []):
+        for s in states or []:
             eid = s.get("entity_id", "")
             if domain and not eid.startswith(f"{domain}."):
                 continue
-            entities.append({
-                "entity_id": eid,
-                "state": s.get("state", "unknown"),
-                "name": s.get("attributes", {}).get("friendly_name", eid),
-                "domain": eid.split(".")[0] if "." in eid else "",
-            })
+            entities.append(
+                {
+                    "entity_id": eid,
+                    "state": s.get("state", "unknown"),
+                    "name": s.get("attributes", {}).get("friendly_name", eid),
+                    "domain": eid.split(".")[0] if "." in eid else "",
+                }
+            )
         entities.sort(key=lambda e: (e["domain"], e["name"]))
         return {"entities": entities, "total": len(entities)}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # ---------------------------------------------------------------
 # Energy Live Dashboard
 # ---------------------------------------------------------------
+
 
 @app.get("/api/ui/energy/live")
 async def ui_energy_live(token: str = ""):
@@ -4383,10 +5182,14 @@ async def ui_energy_live(token: str = ""):
             return {"available": False}
 
         # Sensor-Werte ueber EnergyOptimizer abrufen (nutzt config + keyword fallback)
-        price_raw = eo._find_sensor_value(states, eo.price_sensor, ["price", "strom", "electricity"])
+        price_raw = eo._find_sensor_value(
+            states, eo.price_sensor, ["price", "strom", "electricity"]
+        )
         price = None
         if price_raw is not None:
-            price_unit = eo._find_sensor_unit(states, eo.price_sensor, ["price", "strom", "electricity"])
+            price_unit = eo._find_sensor_unit(
+                states, eo.price_sensor, ["price", "strom", "electricity"]
+            )
             pu = (price_unit or "").lower().replace(" ", "")
             if "eur/mwh" in pu or "€/mwh" in pu:
                 price = price_raw / 10.0
@@ -4401,9 +5204,19 @@ async def ui_energy_live(token: str = ""):
 
         # Solar nur anzeigen wenn explizit konfiguriert (Keyword-Fallback disabled —
         # findet sonst Wetter-Sensoren wie solar_radiation statt PV-Anlagen)
-        solar = eo._find_sensor_value(states, eo.solar_sensor, []) if eo.solar_sensor else None
-        consumption = eo._find_sensor_value(states, eo.consumption_sensor, ["consumption", "verbrauch", "power"])
-        export = eo._find_sensor_value(states, eo.grid_export_sensor, []) if eo.grid_export_sensor else None
+        solar = (
+            eo._find_sensor_value(states, eo.solar_sensor, [])
+            if eo.solar_sensor
+            else None
+        )
+        consumption = eo._find_sensor_value(
+            states, eo.consumption_sensor, ["consumption", "verbrauch", "power"]
+        )
+        export = (
+            eo._find_sensor_value(states, eo.grid_export_sensor, [])
+            if eo.grid_export_sensor
+            else None
+        )
 
         # Selbstversorgungsgrad berechnen
         self_sufficiency = None
@@ -4423,11 +5236,15 @@ async def ui_energy_live(token: str = ""):
         return {
             "available": True,
             "solar_watts": round(solar, 1) if solar is not None else None,
-            "consumption_watts": round(consumption, 1) if consumption is not None else None,
+            "consumption_watts": round(consumption, 1)
+            if consumption is not None
+            else None,
             "grid_export_watts": round(export, 1) if export is not None else None,
             "price_cents": round(price, 2) if price is not None else None,
             "price_status": price_status,
-            "self_sufficiency_percent": round(self_sufficiency, 1) if self_sufficiency is not None else None,
+            "self_sufficiency_percent": round(self_sufficiency, 1)
+            if self_sufficiency is not None
+            else None,
             "thresholds": {
                 "price_low": eo.price_low,
                 "price_high": eo.price_high,
@@ -4443,12 +5260,14 @@ async def ui_energy_live(token: str = ""):
 # Room Temperature Sensors (Mittelwert-Berechnung)
 # ---------------------------------------------------------------
 
+
 @app.get("/api/ui/room-temperature")
 async def ui_get_room_temperature(token: str = ""):
     """Konfigurierte Raumtemperatur-Sensoren mit aktuellem Wert und Mittelwert."""
     await _check_token(token)
     try:
         import assistant.config as cfg
+
         rt_cfg = cfg.yaml_config.get("room_temperature", {})
         sensor_ids = rt_cfg.get("sensors", []) or []
 
@@ -4465,13 +5284,18 @@ async def ui_get_room_temperature(token: str = ""):
                 val = float(s.get("state", ""))
             except (ValueError, TypeError):
                 pass
-            sensors.append({
-                "entity_id": sid,
-                "name": name,
-                "value": val,
-                "unit": s.get("attributes", {}).get("unit_of_measurement", "°C") if s else "°C",
-                "available": s.get("state") not in (None, "unavailable", "unknown", ""),
-            })
+            sensors.append(
+                {
+                    "entity_id": sid,
+                    "name": name,
+                    "value": val,
+                    "unit": s.get("attributes", {}).get("unit_of_measurement", "°C")
+                    if s
+                    else "°C",
+                    "available": s.get("state")
+                    not in (None, "unavailable", "unknown", ""),
+                }
+            )
             if val is not None:
                 temps.append(val)
 
@@ -4485,7 +5309,9 @@ async def ui_get_room_temperature(token: str = ""):
         }
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.put("/api/ui/room-temperature")
@@ -4501,7 +5327,9 @@ async def ui_set_room_temperature(req: Request, token: str = ""):
         # Validierung: nur sensor.* Entity-IDs erlaubt
         for sid in sensor_list:
             if not isinstance(sid, str) or not sid.startswith("sensor."):
-                raise HTTPException(status_code=400, detail=f"Ungueltige Entity-ID: {sid}")
+                raise HTTPException(
+                    status_code=400, detail=f"Ungueltige Entity-ID: {sid}"
+                )
 
         # In settings.yaml speichern
         def _do_io():
@@ -4511,11 +5339,19 @@ async def ui_set_room_temperature(req: Request, token: str = ""):
                 config["room_temperature"] = {}
             config["room_temperature"]["sensors"] = sensor_list
             with open(SETTINGS_YAML_PATH, "w") as f:
-                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                yaml.safe_dump(
+                    config,
+                    f,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=False,
+                )
+
         await asyncio.to_thread(_do_io)
 
         # yaml_config im Speicher aktualisieren
         import assistant.config as cfg
+
         _new = load_yaml_config()
         cfg.yaml_config.clear()
         cfg.yaml_config.update(_new)
@@ -4525,7 +5361,9 @@ async def ui_set_room_temperature(req: Request, token: str = ""):
         raise
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/room-temperature/available")
@@ -4535,7 +5373,7 @@ async def ui_get_available_temp_sensors(token: str = ""):
     try:
         states = await brain.ha.get_states()
         sensors = []
-        for s in (states or []):
+        for s in states or []:
             eid = s.get("entity_id", "")
             if not eid.startswith("sensor."):
                 continue
@@ -4549,17 +5387,21 @@ async def ui_get_available_temp_sensors(token: str = ""):
                     val = float(s.get("state", ""))
                 except (ValueError, TypeError):
                     pass
-                sensors.append({
-                    "entity_id": eid,
-                    "name": attrs.get("friendly_name", eid),
-                    "value": val,
-                    "unit": unit or "°C",
-                })
+                sensors.append(
+                    {
+                        "entity_id": eid,
+                        "name": attrs.get("friendly_name", eid),
+                        "value": val,
+                        "unit": unit or "°C",
+                    }
+                )
         sensors.sort(key=lambda x: x["name"])
         return {"sensors": sensors, "total": len(sensors)}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/room-humidity")
@@ -4568,6 +5410,7 @@ async def ui_get_room_humidity(token: str = ""):
     await _check_token(token)
     try:
         import assistant.config as cfg
+
         hm_cfg = cfg.yaml_config.get("health_monitor", {})
         sensor_ids = hm_cfg.get("humidity_sensors", []) or []
 
@@ -4584,13 +5427,18 @@ async def ui_get_room_humidity(token: str = ""):
                 val = float(s.get("state", ""))
             except (ValueError, TypeError):
                 pass
-            sensors.append({
-                "entity_id": sid,
-                "name": name,
-                "value": val,
-                "unit": s.get("attributes", {}).get("unit_of_measurement", "%") if s else "%",
-                "available": s.get("state") not in (None, "unavailable", "unknown", ""),
-            })
+            sensors.append(
+                {
+                    "entity_id": sid,
+                    "name": name,
+                    "value": val,
+                    "unit": s.get("attributes", {}).get("unit_of_measurement", "%")
+                    if s
+                    else "%",
+                    "available": s.get("state")
+                    not in (None, "unavailable", "unknown", ""),
+                }
+            )
             if val is not None:
                 vals.append(val)
 
@@ -4604,7 +5452,9 @@ async def ui_get_room_humidity(token: str = ""):
         }
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.put("/api/ui/room-humidity")
@@ -4619,7 +5469,9 @@ async def ui_set_room_humidity(req: Request, token: str = ""):
 
         for sid in sensor_list:
             if not isinstance(sid, str) or not sid.startswith("sensor."):
-                raise HTTPException(status_code=400, detail=f"Ungueltige Entity-ID: {sid}")
+                raise HTTPException(
+                    status_code=400, detail=f"Ungueltige Entity-ID: {sid}"
+                )
 
         # In settings.yaml speichern
         def _do_io():
@@ -4629,11 +5481,19 @@ async def ui_set_room_humidity(req: Request, token: str = ""):
                 config["health_monitor"] = {}
             config["health_monitor"]["humidity_sensors"] = sensor_list
             with open(SETTINGS_YAML_PATH, "w") as f:
-                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                yaml.safe_dump(
+                    config,
+                    f,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=False,
+                )
+
         await asyncio.to_thread(_do_io)
 
         # yaml_config im Speicher aktualisieren
         import assistant.config as cfg
+
         _new = load_yaml_config()
         cfg.yaml_config.clear()
         cfg.yaml_config.update(_new)
@@ -4647,7 +5507,9 @@ async def ui_set_room_humidity(req: Request, token: str = ""):
         raise
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/room-humidity/available")
@@ -4657,7 +5519,7 @@ async def ui_get_available_humidity_sensors(token: str = ""):
     try:
         states = await brain.ha.get_states()
         sensors = []
-        for s in (states or []):
+        for s in states or []:
             eid = s.get("entity_id", "")
             if not eid.startswith("sensor."):
                 continue
@@ -4668,10 +5530,20 @@ async def ui_get_available_humidity_sensors(token: str = ""):
                 # Humidor-Sensoren und Batterie-Sensoren ausschliessen
                 eid_lower = eid.lower()
                 fname_lower = attrs.get("friendly_name", "").lower()
-                if any(p in eid_lower or p in fname_lower for p in (
-                    "humidor", "batterie", "battery", "signal", "cpu", "memory",
-                    "disk", "rssi", "linkquality",
-                )):
+                if any(
+                    p in eid_lower or p in fname_lower
+                    for p in (
+                        "humidor",
+                        "batterie",
+                        "battery",
+                        "signal",
+                        "cpu",
+                        "memory",
+                        "disk",
+                        "rssi",
+                        "linkquality",
+                    )
+                ):
                     continue
                 val = None
                 try:
@@ -4681,17 +5553,21 @@ async def ui_get_available_humidity_sensors(token: str = ""):
                 # Nur plausible Humidity-Werte anzeigen (0-100%)
                 if val is not None and (val < 0 or val > 100):
                     continue
-                sensors.append({
-                    "entity_id": eid,
-                    "name": attrs.get("friendly_name", eid),
-                    "value": val,
-                    "unit": unit or "%",
-                })
+                sensors.append(
+                    {
+                        "entity_id": eid,
+                        "name": attrs.get("friendly_name", eid),
+                        "value": val,
+                        "unit": unit or "%",
+                    }
+                )
         sensors.sort(key=lambda x: x["name"])
         return {"sensors": sensors, "total": len(sensors)}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/entities/mindhome")
@@ -4704,12 +5580,14 @@ async def ui_get_mindhome_entities(token: str = ""):
         by_room: dict[str, list] = {}
         for d in devices:
             room = d.get("room", "Unbekannt") or "Unbekannt"
-            by_room.setdefault(room, []).append({
-                "entity_id": d.get("ha_entity_id", ""),
-                "name": d.get("name", d.get("ha_entity_id", "")),
-                "room": room,
-                "domain": d.get("ha_entity_id", "").split(".")[0],
-            })
+            by_room.setdefault(room, []).append(
+                {
+                    "entity_id": d.get("ha_entity_id", ""),
+                    "name": d.get("name", d.get("ha_entity_id", "")),
+                    "room": room,
+                    "domain": d.get("ha_entity_id", "").split(".")[0],
+                }
+            )
         # Aktuelle Whitelist mitgeben
         monitored = brain.device_health.monitored_entities
         return {
@@ -4719,7 +5597,9 @@ async def ui_get_mindhome_entities(token: str = ""):
         }
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/lights")
@@ -4729,7 +5609,7 @@ async def ui_get_lights(token: str = ""):
     try:
         states = await brain.ha.get_states()
         lights = []
-        for s in (states or []):
+        for s in states or []:
             eid = s.get("entity_id", "")
             if not eid.startswith("light."):
                 continue
@@ -4738,17 +5618,21 @@ async def ui_get_lights(token: str = ""):
             raw_br = attrs.get("brightness")
             if s.get("state") == "on" and raw_br is not None:
                 brightness = round(raw_br / 255 * 100)
-            lights.append({
-                "entity_id": eid,
-                "name": attrs.get("friendly_name", eid),
-                "state": s.get("state", "unknown"),
-                "brightness": brightness,
-            })
+            lights.append(
+                {
+                    "entity_id": eid,
+                    "name": attrs.get("friendly_name", eid),
+                    "state": s.get("state", "unknown"),
+                    "brightness": brightness,
+                }
+            )
         lights.sort(key=lambda l: l["name"])
         return {"lights": lights}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/covers")
@@ -4759,25 +5643,31 @@ async def ui_get_covers(token: str = ""):
         states = await brain.ha.get_states()
         configs = load_cover_configs()
         covers = []
-        for s in (states or []):
+        for s in states or []:
             eid = s.get("entity_id", "")
             if not eid.startswith("cover."):
                 continue
             attrs = s.get("attributes", {})
             conf = configs.get(eid, {})
-            covers.append({
-                "entity_id": eid,
-                "name": attrs.get("friendly_name", eid),
-                "state": s.get("state", "unknown"),
-                "device_class": attrs.get("device_class", ""),
-                "cover_type": conf.get("cover_type", attrs.get("device_class", "shutter") or "shutter"),
-                "enabled": conf.get("enabled", True),
-            })
+            covers.append(
+                {
+                    "entity_id": eid,
+                    "name": attrs.get("friendly_name", eid),
+                    "state": s.get("state", "unknown"),
+                    "device_class": attrs.get("device_class", ""),
+                    "cover_type": conf.get(
+                        "cover_type", attrs.get("device_class", "shutter") or "shutter"
+                    ),
+                    "enabled": conf.get("enabled", True),
+                }
+            )
         covers.sort(key=lambda c: c["name"])
         return {"covers": covers}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.put("/api/ui/covers/{entity_id:path}/type")
@@ -4802,7 +5692,8 @@ async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
         # 2. An Addon synchen (fuer Addon-Level set_position/Automationen)
         try:
             await brain.ha.mindhome_put(
-                f"/api/covers/{entity_id}/config", payload,
+                f"/api/covers/{entity_id}/config",
+                payload,
             )
         except Exception as sync_err:
             logger.warning("Cover-Config Sync zum Addon fehlgeschlagen: %s", sync_err)
@@ -4811,10 +5702,13 @@ async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
         raise
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # ── Cover Live-Status & Control (Proxy zum Addon) ──────────────────
+
 
 @app.get("/api/ui/covers/live")
 async def ui_get_covers_live(token: str = ""):
@@ -4824,27 +5718,33 @@ async def ui_get_covers_live(token: str = ""):
         states = await brain.ha.get_states()
         configs = load_cover_configs()
         covers = []
-        for s in (states or []):
+        for s in states or []:
             eid = s.get("entity_id", "")
             if not eid.startswith("cover."):
                 continue
             attrs = s.get("attributes", {})
             conf = configs.get(eid, {})
-            covers.append({
-                "entity_id": eid,
-                "name": attrs.get("friendly_name", eid),
-                "state": s.get("state", "unknown"),
-                "current_position": attrs.get("current_position"),
-                "current_tilt_position": attrs.get("current_tilt_position"),
-                "device_class": attrs.get("device_class", ""),
-                "cover_type": conf.get("cover_type", attrs.get("device_class", "shutter") or "shutter"),
-                "enabled": conf.get("enabled", True),
-            })
+            covers.append(
+                {
+                    "entity_id": eid,
+                    "name": attrs.get("friendly_name", eid),
+                    "state": s.get("state", "unknown"),
+                    "current_position": attrs.get("current_position"),
+                    "current_tilt_position": attrs.get("current_tilt_position"),
+                    "device_class": attrs.get("device_class", ""),
+                    "cover_type": conf.get(
+                        "cover_type", attrs.get("device_class", "shutter") or "shutter"
+                    ),
+                    "enabled": conf.get("enabled", True),
+                }
+            )
         covers.sort(key=lambda c: c["name"])
         return {"covers": covers}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/covers/{entity_id:path}/position")
@@ -4856,13 +5756,20 @@ async def ui_set_cover_position(entity_id: str, request: Request, token: str = "
     if position is None:
         raise HTTPException(status_code=400, detail="position required")
     try:
-        await brain.ha.call_service("cover", "set_cover_position", {
-            "entity_id": entity_id, "position": int(position),
-        })
+        await brain.ha.call_service(
+            "cover",
+            "set_cover_position",
+            {
+                "entity_id": entity_id,
+                "position": int(position),
+            },
+        )
         return {"success": True}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/covers/{entity_id:path}/open")
@@ -4874,7 +5781,9 @@ async def ui_open_cover(entity_id: str, token: str = ""):
         return {"success": True}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/covers/{entity_id:path}/close")
@@ -4886,7 +5795,9 @@ async def ui_close_cover(entity_id: str, token: str = ""):
         return {"success": True}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/covers/{entity_id:path}/stop")
@@ -4898,7 +5809,9 @@ async def ui_stop_cover(entity_id: str, token: str = ""):
         return {"success": True}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/addon/cover-domain-toggle")
@@ -4917,18 +5830,28 @@ async def ui_toggle_addon_cover_domain(token: str = ""):
                 cover_domain = d
                 break
         if not cover_domain:
-            raise HTTPException(status_code=404, detail="Cover-Domain nicht gefunden im Addon")
+            raise HTTPException(
+                status_code=404, detail="Cover-Domain nicht gefunden im Addon"
+            )
         # Toggle
-        result = await brain.ha.mindhome_post(f"/api/domains/{cover_domain['id']}/toggle", {})
-        return {"success": True, "is_enabled": result.get("is_enabled") if result else None}
+        result = await brain.ha.mindhome_post(
+            f"/api/domains/{cover_domain['id']}/toggle", {}
+        )
+        return {
+            "success": True,
+            "is_enabled": result.get("is_enabled") if result else None,
+        }
     except HTTPException:
         raise
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # ── Cover Groups (lokal gespeichert) ─────────────────────────────────
+
 
 @app.get("/api/ui/covers/groups")
 async def ui_get_cover_groups(token: str = ""):
@@ -4936,10 +5859,13 @@ async def ui_get_cover_groups(token: str = ""):
     await _check_token(token)
     try:
         from .cover_config import load_cover_groups
+
         return load_cover_groups()
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/covers/groups")
@@ -4949,10 +5875,13 @@ async def ui_create_cover_group(request: Request, token: str = ""):
     data = await request.json()
     try:
         from .cover_config import create_cover_group
+
         return create_cover_group(data)
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.put("/api/ui/covers/groups/{group_id}")
@@ -4962,6 +5891,7 @@ async def ui_update_cover_group(group_id: int, request: Request, token: str = ""
     data = await request.json()
     try:
         from .cover_config import update_cover_group
+
         result = update_cover_group(group_id, data)
         if result is None:
             raise HTTPException(status_code=404, detail="Gruppe nicht gefunden")
@@ -4970,7 +5900,9 @@ async def ui_update_cover_group(group_id: int, request: Request, token: str = ""
         raise
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.delete("/api/ui/covers/groups/{group_id}")
@@ -4979,6 +5911,7 @@ async def ui_delete_cover_group(group_id: int, token: str = ""):
     await _check_token(token)
     try:
         from .cover_config import delete_cover_group
+
         if not delete_cover_group(group_id):
             raise HTTPException(status_code=404, detail="Gruppe nicht gefunden")
         return {"success": True}
@@ -4986,7 +5919,9 @@ async def ui_delete_cover_group(group_id: int, token: str = ""):
         raise
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/covers/groups/{group_id}/control")
@@ -4997,6 +5932,7 @@ async def ui_control_cover_group(group_id: int, request: Request, token: str = "
     position = data.get("position", 100)
     try:
         from .cover_config import load_cover_groups, _find_by_id
+
         groups = load_cover_groups()
         group = _find_by_id(groups, group_id)
         if not group:
@@ -5004,9 +5940,14 @@ async def ui_control_cover_group(group_id: int, request: Request, token: str = "
         count = 0
         for eid in group.get("entity_ids", []):
             try:
-                await brain.ha.call_service("cover", "set_cover_position", {
-                    "entity_id": eid, "position": int(position),
-                })
+                await brain.ha.call_service(
+                    "cover",
+                    "set_cover_position",
+                    {
+                        "entity_id": eid,
+                        "position": int(position),
+                    },
+                )
                 count += 1
             except Exception as e:
                 logger.warning("Gruppen-Steuerung %s fehlgeschlagen: %s", eid, e)
@@ -5015,10 +5956,13 @@ async def ui_control_cover_group(group_id: int, request: Request, token: str = "
         raise
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # ── Cover Scenes (lokal gespeichert) ─────────────────────────────────
+
 
 @app.get("/api/ui/covers/scenes")
 async def ui_get_cover_scenes(token: str = ""):
@@ -5026,10 +5970,13 @@ async def ui_get_cover_scenes(token: str = ""):
     await _check_token(token)
     try:
         from .cover_config import load_cover_scenes
+
         return load_cover_scenes()
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/covers/scenes")
@@ -5039,10 +5986,13 @@ async def ui_create_cover_scene(request: Request, token: str = ""):
     data = await request.json()
     try:
         from .cover_config import create_cover_scene
+
         return create_cover_scene(data)
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.put("/api/ui/covers/scenes/{scene_id}")
@@ -5052,6 +6002,7 @@ async def ui_update_cover_scene(scene_id: int, request: Request, token: str = ""
     data = await request.json()
     try:
         from .cover_config import update_cover_scene
+
         result = update_cover_scene(scene_id, data)
         if result is None:
             raise HTTPException(status_code=404, detail="Szene nicht gefunden")
@@ -5060,7 +6011,9 @@ async def ui_update_cover_scene(scene_id: int, request: Request, token: str = ""
         raise
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.delete("/api/ui/covers/scenes/{scene_id}")
@@ -5069,6 +6022,7 @@ async def ui_delete_cover_scene(scene_id: int, token: str = ""):
     await _check_token(token)
     try:
         from .cover_config import delete_cover_scene
+
         if not delete_cover_scene(scene_id):
             raise HTTPException(status_code=404, detail="Szene nicht gefunden")
         return {"success": True}
@@ -5076,7 +6030,9 @@ async def ui_delete_cover_scene(scene_id: int, token: str = ""):
         raise
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/covers/scenes/{scene_id}/activate")
@@ -5085,6 +6041,7 @@ async def ui_activate_cover_scene(scene_id: int, token: str = ""):
     await _check_token(token)
     try:
         from .cover_config import load_cover_scenes, _find_by_id
+
         scenes = load_cover_scenes()
         scene = _find_by_id(scenes, scene_id)
         if not scene:
@@ -5095,9 +6052,14 @@ async def ui_activate_cover_scene(scene_id: int, token: str = ""):
             if position is None:
                 continue
             try:
-                await brain.ha.call_service("cover", "set_cover_position", {
-                    "entity_id": eid, "position": int(position),
-                })
+                await brain.ha.call_service(
+                    "cover",
+                    "set_cover_position",
+                    {
+                        "entity_id": eid,
+                        "position": int(position),
+                    },
+                )
                 count += 1
             except Exception as e:
                 logger.warning("Szenen-Aktivierung %s fehlgeschlagen: %s", eid, e)
@@ -5106,10 +6068,13 @@ async def ui_activate_cover_scene(scene_id: int, token: str = ""):
         raise
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # ── Scene Status (HA Szenen Live-Status) ─────────────────────────────
+
 
 @app.get("/api/ui/scenes/status")
 async def ui_scenes_status(token: str = ""):
@@ -5124,35 +6089,47 @@ async def ui_scenes_status(token: str = ""):
             override_until = brain.activity._override_until.isoformat()
 
         # 2. Silence-Szenen aus Config
-        silence_scenes = list(brain.proactive.silence_scenes) if hasattr(brain, "proactive") else []
+        silence_scenes = (
+            list(brain.proactive.silence_scenes) if hasattr(brain, "proactive") else []
+        )
 
         # 3. HA-Szenen mit letztem Aktivierungszeitpunkt
         states = await brain.ha.get_states()
         ha_scenes = []
         now = datetime.now(timezone.utc)
-        for s in (states or []):
+        for s in states or []:
             eid = s.get("entity_id", "")
             if not eid.startswith("scene."):
                 continue
             attrs = s.get("attributes", {})
-            friendly_name = attrs.get("friendly_name", eid.replace("scene.", "").replace("_", " ").title())
+            friendly_name = attrs.get(
+                "friendly_name", eid.replace("scene.", "").replace("_", " ").title()
+            )
             last_changed = s.get("last_changed", "")
             activated_ago = None
             activated_ts = None
             if last_changed:
                 try:
-                    changed_dt = datetime.fromisoformat(last_changed.replace("Z", "+00:00"))
+                    changed_dt = datetime.fromisoformat(
+                        last_changed.replace("Z", "+00:00")
+                    )
                     activated_ts = changed_dt.isoformat()
-                    diff = now.astimezone() - changed_dt if changed_dt.tzinfo else now - changed_dt.replace(tzinfo=None)
+                    diff = (
+                        now.astimezone() - changed_dt
+                        if changed_dt.tzinfo
+                        else now - changed_dt.replace(tzinfo=None)
+                    )
                     activated_ago = max(0, int(diff.total_seconds()))
                 except (ValueError, TypeError):
                     pass
-            ha_scenes.append({
-                "entity_id": eid,
-                "name": friendly_name,
-                "last_activated": activated_ts,
-                "activated_ago_seconds": activated_ago,
-            })
+            ha_scenes.append(
+                {
+                    "entity_id": eid,
+                    "name": friendly_name,
+                    "last_activated": activated_ts,
+                    "activated_ago_seconds": activated_ago,
+                }
+            )
         ha_scenes.sort(key=lambda x: x.get("last_activated") or "", reverse=True)
 
         return {
@@ -5169,7 +6146,9 @@ async def ui_scenes_status(token: str = ""):
         }
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/scenes/history")
@@ -5196,16 +6175,20 @@ async def ui_scene_history(token: str = ""):
 
 # ── Cover Schedules (lokal gespeichert) ──────────────────────────────
 
+
 @app.get("/api/ui/covers/schedules")
 async def ui_get_cover_schedules(token: str = ""):
     """Cover-Zeitplaene aus lokaler JSON laden."""
     await _check_token(token)
     try:
         from .cover_config import load_cover_schedules
+
         return load_cover_schedules()
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/covers/schedules")
@@ -5215,10 +6198,13 @@ async def ui_create_cover_schedule(request: Request, token: str = ""):
     data = await request.json()
     try:
         from .cover_config import create_cover_schedule
+
         return create_cover_schedule(data)
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.put("/api/ui/covers/schedules/{schedule_id}")
@@ -5228,6 +6214,7 @@ async def ui_update_cover_schedule(schedule_id: int, request: Request, token: st
     data = await request.json()
     try:
         from .cover_config import update_cover_schedule
+
         result = update_cover_schedule(schedule_id, data)
         if result is None:
             raise HTTPException(status_code=404, detail="Zeitplan nicht gefunden")
@@ -5236,7 +6223,9 @@ async def ui_update_cover_schedule(schedule_id: int, request: Request, token: st
         raise
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.delete("/api/ui/covers/schedules/{schedule_id}")
@@ -5245,6 +6234,7 @@ async def ui_delete_cover_schedule(schedule_id: int, token: str = ""):
     await _check_token(token)
     try:
         from .cover_config import delete_cover_schedule
+
         if not delete_cover_schedule(schedule_id):
             raise HTTPException(status_code=404, detail="Zeitplan nicht gefunden")
         return {"success": True}
@@ -5252,10 +6242,13 @@ async def ui_delete_cover_schedule(schedule_id: int, token: str = ""):
         raise
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # ── Cover Sensor Assignments (lokal gespeichert) ────────────────────
+
 
 @app.get("/api/ui/covers/sensors")
 async def ui_get_cover_sensors(token: str = ""):
@@ -5263,10 +6256,13 @@ async def ui_get_cover_sensors(token: str = ""):
     await _check_token(token)
     try:
         from .cover_config import load_cover_sensors
+
         return load_cover_sensors()
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/covers/sensors")
@@ -5276,10 +6272,13 @@ async def ui_add_cover_sensor(request: Request, token: str = ""):
     data = await request.json()
     try:
         from .cover_config import create_cover_sensor
+
         return create_cover_sensor(data)
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.delete("/api/ui/covers/sensors/{assignment_id}")
@@ -5288,6 +6287,7 @@ async def ui_delete_cover_sensor(assignment_id: int, token: str = ""):
     await _check_token(token)
     try:
         from .cover_config import delete_cover_sensor
+
         if not delete_cover_sensor(assignment_id):
             raise HTTPException(status_code=404, detail="Zuordnung nicht gefunden")
         return {"success": True}
@@ -5295,7 +6295,9 @@ async def ui_delete_cover_sensor(assignment_id: int, token: str = ""):
         raise
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/covers/discover")
@@ -5306,7 +6308,7 @@ async def ui_discover_covers(token: str = ""):
         states = await brain.ha.get_states()
         covers = []
         sensors = []
-        for s in (states or []):
+        for s in states or []:
             eid = s.get("entity_id", "")
             attrs = s.get("attributes", {})
             name = attrs.get("friendly_name", eid)
@@ -5315,20 +6317,36 @@ async def ui_discover_covers(token: str = ""):
             elif eid.startswith("sensor."):
                 dc = attrs.get("device_class", "")
                 uom = attrs.get("unit_of_measurement", "")
-                if dc in ("temperature", "wind_speed", "illuminance", "humidity") or \
-                   uom in ("°C", "km/h", "lx", "mm/h", "mm", "W/m²"):
-                    sensors.append({"entity_id": eid, "name": name, "device_class": dc, "unit": uom})
+                if dc in (
+                    "temperature",
+                    "wind_speed",
+                    "illuminance",
+                    "humidity",
+                ) or uom in ("°C", "km/h", "lx", "mm/h", "mm", "W/m²"):
+                    sensors.append(
+                        {
+                            "entity_id": eid,
+                            "name": name,
+                            "device_class": dc,
+                            "unit": uom,
+                        }
+                    )
             elif eid.startswith("binary_sensor."):
                 dc = attrs.get("device_class", "")
                 if dc in ("moisture", "rain"):
-                    sensors.append({"entity_id": eid, "name": name, "device_class": dc, "unit": ""})
+                    sensors.append(
+                        {"entity_id": eid, "name": name, "device_class": dc, "unit": ""}
+                    )
         return {"covers": covers, "sensors": sensors}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # ── Cover Action Log (Dashboard) ────────────────────────────────────
+
 
 @app.get("/api/ui/covers/action-log")
 async def ui_get_cover_action_log(token: str = "", limit: int = 10):
@@ -5336,13 +6354,17 @@ async def ui_get_cover_action_log(token: str = "", limit: int = 10):
     await _check_token(token)
     try:
         from .cover_config import load_cover_action_log
+
         return load_cover_action_log(limit)
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # ── Power-Close Regeln (Steckdose → Rollladen) ──────────────────────
+
 
 @app.get("/api/ui/covers/power-close")
 async def ui_get_power_close_rules(token: str = ""):
@@ -5350,10 +6372,13 @@ async def ui_get_power_close_rules(token: str = ""):
     await _check_token(token)
     try:
         from .cover_config import load_power_close_rules
+
         return load_power_close_rules()
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/covers/power-close")
@@ -5363,10 +6388,13 @@ async def ui_create_power_close_rule(request: Request, token: str = ""):
     data = await request.json()
     try:
         from .cover_config import create_power_close_rule
+
         return create_power_close_rule(data)
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.put("/api/ui/covers/power-close/{rule_id}")
@@ -5376,6 +6404,7 @@ async def ui_update_power_close_rule(rule_id: int, request: Request, token: str 
     data = await request.json()
     try:
         from .cover_config import update_power_close_rule
+
         result = update_power_close_rule(rule_id, data)
         if not result:
             raise HTTPException(status_code=404, detail="Regel nicht gefunden")
@@ -5384,7 +6413,9 @@ async def ui_update_power_close_rule(rule_id: int, request: Request, token: str 
         raise
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.delete("/api/ui/covers/power-close/{rule_id}")
@@ -5393,6 +6424,7 @@ async def ui_delete_power_close_rule(rule_id: int, token: str = ""):
     await _check_token(token)
     try:
         from .cover_config import delete_power_close_rule
+
         if not delete_power_close_rule(rule_id):
             raise HTTPException(status_code=404, detail="Regel nicht gefunden")
         return {"ok": True}
@@ -5400,16 +6432,20 @@ async def ui_delete_power_close_rule(rule_id: int, token: str = ""):
         raise
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # ── Opening Sensors (Fenster/Tueren/Tore Zuordnung) ───────────────
+
 
 @app.get("/api/ui/opening-sensors")
 async def ui_get_opening_sensors(token: str = ""):
     """Oeffnungs-Sensoren Konfiguration lesen (settings.yaml)."""
     await _check_token(token)
     from .config import yaml_config
+
     entities = yaml_config.get("opening_sensors", {}).get("entities", {}) or {}
     return {"entities": entities}
 
@@ -5429,12 +6465,15 @@ async def ui_set_opening_sensors(request: Request, token: str = ""):
     valid_types = {"window", "door", "gate"}
     for eid, cfg in entities.items():
         if cfg.get("type") and cfg["type"] not in valid_types:
-            raise HTTPException(status_code=400, detail=f"Ungueltiger Typ fuer {eid}: {cfg['type']}")
+            raise HTTPException(
+                status_code=400, detail=f"Ungueltiger Typ fuer {eid}: {cfg['type']}"
+            )
     try:
         # Frisch vom Disk lesen (nicht in-memory yaml_config verwenden!)
         def _read():
             with open(SETTINGS_YAML_PATH) as f:
                 return yaml.safe_load(f) or {}
+
         config = await asyncio.to_thread(_read)
 
         # Nur opening_sensors.entities mergen
@@ -5443,7 +6482,14 @@ async def ui_set_opening_sensors(request: Request, token: str = ""):
         # Zurueckschreiben
         def _write():
             with open(SETTINGS_YAML_PATH, "w") as f:
-                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                yaml.safe_dump(
+                    config,
+                    f,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=False,
+                )
+
         await asyncio.to_thread(_write)
 
         # In-memory yaml_config auch aktualisieren
@@ -5452,7 +6498,9 @@ async def ui_set_opening_sensors(request: Request, token: str = ""):
         return {"success": True, "count": len(entities)}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/opening-sensors/discover")
@@ -5462,7 +6510,7 @@ async def ui_discover_opening_sensors(token: str = ""):
     try:
         states = await brain.ha.get_states()
         sensors = []
-        for s in (states or []):
+        for s in states or []:
             eid = s.get("entity_id", "")
             if not eid.startswith("binary_sensor."):
                 continue
@@ -5471,44 +6519,63 @@ async def ui_discover_opening_sensors(token: str = ""):
             if device_class not in ("window", "door", "garage_door", "opening"):
                 # Keyword-Fallback
                 lower_id = eid.lower()
-                if not any(kw in lower_id for kw in ("window", "door", "fenster", "tuer", "tor", "gate")):
+                if not any(
+                    kw in lower_id
+                    for kw in ("window", "door", "fenster", "tuer", "tor", "gate")
+                ):
                     continue
             friendly = attrs.get("friendly_name", eid)
             # Typ vorschlagen
-            if device_class == "garage_door" or any(kw in eid.lower() for kw in ("tor", "gate", "garage")):
+            if device_class == "garage_door" or any(
+                kw in eid.lower() for kw in ("tor", "gate", "garage")
+            ):
                 suggested_type = "gate"
-            elif device_class == "door" or "tuer" in eid.lower() or "door" in eid.lower():
+            elif (
+                device_class == "door" or "tuer" in eid.lower() or "door" in eid.lower()
+            ):
                 suggested_type = "door"
             else:
                 suggested_type = "window"
-            sensors.append({
-                "entity_id": eid,
-                "name": friendly,
-                "state": s.get("state", "unknown"),
-                "device_class": device_class,
-                "suggested_type": suggested_type,
-            })
+            sensors.append(
+                {
+                    "entity_id": eid,
+                    "name": friendly,
+                    "state": s.get("state", "unknown"),
+                    "device_class": device_class,
+                    "suggested_type": suggested_type,
+                }
+            )
         sensors.sort(key=lambda x: x["name"])
         return {"sensors": sensors}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # ── Declarative Tools API (Phase 13.3) ────────────────────────────
+
 
 @app.get("/api/ui/declarative-tools")
 async def ui_get_declarative_tools(token: str = ""):
     """Alle deklarativen Tools auflisten."""
     await _check_token(token)
     from .declarative_tools import get_registry
+
     decl_cfg = yaml_config.get("declarative_tools", {})
     enabled = decl_cfg.get("enabled", True)
     use_in_spontaneous = decl_cfg.get("use_in_spontaneous", True)
     max_tools = decl_cfg.get("max_tools", 20)
     registry = get_registry()
     tools = registry.list_tools()
-    return {"tools": tools, "count": len(tools), "enabled": enabled, "use_in_spontaneous": use_in_spontaneous, "max_tools": max_tools}
+    return {
+        "tools": tools,
+        "count": len(tools),
+        "enabled": enabled,
+        "use_in_spontaneous": use_in_spontaneous,
+        "max_tools": max_tools,
+    }
 
 
 @app.post("/api/ui/declarative-tools")
@@ -5518,16 +6585,20 @@ async def ui_create_declarative_tool(request: Request, token: str = ""):
     if not yaml_config.get("declarative_tools", {}).get("enabled", True):
         raise HTTPException(status_code=403, detail="Analyse-Tools sind deaktiviert")
     from .declarative_tools import get_registry
+
     body = await request.json()
     name = body.get("name", "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Name erforderlich")
     registry = get_registry()
-    result = registry.create_tool(name, {
-        "type": body.get("type", ""),
-        "description": body.get("description", ""),
-        "config": body.get("config", {}),
-    })
+    result = registry.create_tool(
+        name,
+        {
+            "type": body.get("type", ""),
+            "description": body.get("description", ""),
+            "config": body.get("config", {}),
+        },
+    )
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("message", "Fehler"))
     return result
@@ -5542,7 +6613,11 @@ async def ui_suggest_declarative_tools(request: Request, token: str = ""):
     await _check_token(token)
     if not yaml_config.get("declarative_tools", {}).get("enabled", True):
         raise HTTPException(status_code=403, detail="Analyse-Tools sind deaktiviert")
-    from .declarative_tools import get_registry, generate_suggestions, refine_suggestions_with_llm
+    from .declarative_tools import (
+        get_registry,
+        generate_suggestions,
+        refine_suggestions_with_llm,
+    )
 
     try:
         body = await request.json()
@@ -5570,7 +6645,8 @@ async def ui_suggest_declarative_tools(request: Request, token: str = ""):
     if use_llm and suggestions and brain.ollama:
         try:
             suggestions = await refine_suggestions_with_llm(
-                suggestions, brain.ollama,
+                suggestions,
+                brain.ollama,
             )
         except Exception as e:
             logger.warning("LLM-Verfeinerung uebersprungen: %s", e)
@@ -5583,10 +6659,13 @@ async def ui_delete_declarative_tool(tool_name: str, token: str = ""):
     """Deklaratives Tool loeschen."""
     await _check_token(token)
     from .declarative_tools import get_registry
+
     registry = get_registry()
     result = registry.delete_tool(tool_name)
     if not result.get("success"):
-        raise HTTPException(status_code=404, detail=result.get("message", "Nicht gefunden"))
+        raise HTTPException(
+            status_code=404, detail=result.get("message", "Nicht gefunden")
+        )
     return result
 
 
@@ -5595,12 +6674,14 @@ async def ui_test_declarative_tool(tool_name: str, token: str = ""):
     """Deklaratives Tool testweise ausfuehren."""
     await _check_token(token)
     from .declarative_tools import DeclarativeToolExecutor
+
     executor = DeclarativeToolExecutor(brain.ha)
     result = await executor.execute(tool_name)
     return result
 
 
 # ── Entity-Annotations API ─────────────────────────────────────────
+
 
 @app.get("/api/ui/entity-annotations")
 async def ui_get_entity_annotations(token: str = ""):
@@ -5622,6 +6703,7 @@ async def ui_set_entity_annotations(request: Request, token: str = ""):
 
     # Dynamische Validierung: Standard + eigene Rollen
     from .function_calling import get_valid_roles
+
     valid_roles = get_valid_roles() | {""}
     for eid, ann in annotations.items():
         role = ann.get("role", "")
@@ -5629,16 +6711,25 @@ async def ui_set_entity_annotations(request: Request, token: str = ""):
             raise HTTPException(status_code=400, detail=f"Unbekannte Rolle: {role}")
 
     try:
+
         def _read():
             with open(SETTINGS_YAML_PATH) as f:
                 return yaml.safe_load(f) or {}
+
         config = await asyncio.to_thread(_read)
 
         config["entity_annotations"] = annotations
 
         def _write():
             with open(SETTINGS_YAML_PATH, "w") as f:
-                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                yaml.safe_dump(
+                    config,
+                    f,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=False,
+                )
+
         await asyncio.to_thread(_write)
 
         yaml_config["entity_annotations"] = annotations
@@ -5646,7 +6737,9 @@ async def ui_set_entity_annotations(request: Request, token: str = ""):
         return {"success": True, "count": len(annotations)}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/entity-annotations/discover")
@@ -5657,9 +6750,10 @@ async def ui_discover_entity_annotations(token: str = ""):
         states = await brain.ha.get_states()
         existing = yaml_config.get("entity_annotations", {}) or {}
         from .function_calling import auto_detect_role
+
         suggestions = []
 
-        for s in (states or []):
+        for s in states or []:
             eid = s.get("entity_id", "")
             if eid in existing:
                 continue
@@ -5673,22 +6767,26 @@ async def ui_discover_entity_annotations(token: str = ""):
             if not role:
                 continue
 
-            suggestions.append({
-                "entity_id": eid,
-                "name": friendly or eid,
-                "state": s.get("state", ""),
-                "device_class": device_class,
-                "unit": unit,
-                "domain": domain,
-                "suggested_role": role,
-                "suggested_description": friendly if friendly != eid else "",
-            })
+            suggestions.append(
+                {
+                    "entity_id": eid,
+                    "name": friendly or eid,
+                    "state": s.get("state", ""),
+                    "device_class": device_class,
+                    "unit": unit,
+                    "domain": domain,
+                    "suggested_role": role,
+                    "suggested_description": friendly if friendly != eid else "",
+                }
+            )
 
         suggestions.sort(key=lambda x: (x["suggested_role"], x["name"]))
         return {"suggestions": suggestions, "count": len(suggestions)}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/entity-roles")
@@ -5696,6 +6794,7 @@ async def ui_get_entity_roles(token: str = ""):
     """Standard-Rollen + eigene Rollen laden."""
     await _check_token(token)
     from .function_calling import _DEFAULT_ROLES_DICT
+
     custom = yaml_config.get("entity_roles", {}) or {}
     return {"default_roles": _DEFAULT_ROLES_DICT, "custom_roles": custom}
 
@@ -5710,19 +6809,31 @@ async def ui_set_entity_roles(request: Request, token: str = ""):
     # Validierung: Jede Rolle braucht mindestens ein label
     for role_id, role_def in custom.items():
         if not isinstance(role_def, dict) or not role_def.get("label"):
-            raise HTTPException(status_code=400, detail=f"Rolle '{role_id}' braucht mindestens ein label")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Rolle '{role_id}' braucht mindestens ein label",
+            )
 
     try:
+
         def _read():
             with open(SETTINGS_YAML_PATH) as f:
                 return yaml.safe_load(f) or {}
+
         config = await asyncio.to_thread(_read)
 
         config["entity_roles"] = custom
 
         def _write():
             with open(SETTINGS_YAML_PATH, "w") as f:
-                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                yaml.safe_dump(
+                    config,
+                    f,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=False,
+                )
+
         await asyncio.to_thread(_write)
 
         yaml_config["entity_roles"] = custom
@@ -5730,7 +6841,9 @@ async def ui_set_entity_roles(request: Request, token: str = ""):
         return {"success": True, "count": len(custom)}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # ── Room-Profiles API (room_profiles.yaml) ─────────────────────────
@@ -5742,14 +6855,18 @@ async def ui_get_room_profiles(token: str = ""):
     """Room-Profiles aus room_profiles.yaml als JSON."""
     await _check_token(token)
     try:
+
         def _read():
             with open(ROOM_PROFILES_YAML_PATH) as f:
                 return yaml.safe_load(f) or {}
+
         data = await asyncio.to_thread(_read)
         return data
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.put("/api/ui/room-profiles")
@@ -5769,13 +6886,18 @@ async def ui_update_room_profiles(request: Request, token: str = ""):
             _deep_merge(config, updates)
             with open(ROOM_PROFILES_YAML_PATH, "w") as f:
                 yaml.safe_dump(
-                    config, f, allow_unicode=True,
-                    default_flow_style=False, sort_keys=False,
+                    config,
+                    f,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=False,
                 )
+
         await asyncio.to_thread(_do_io)
 
         # Zentralen Room-Profiles-Cache invalidieren (config.py)
         import assistant.config as cfg_mod
+
         cfg_mod._room_profiles_cache = {}
         cfg_mod._room_profiles_ts = 0.0
 
@@ -5783,7 +6905,9 @@ async def ui_update_room_profiles(request: Request, token: str = ""):
         return {"success": True, "message": "Room-Profiles gespeichert"}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/action-log")
@@ -5804,7 +6928,9 @@ async def ui_get_action_log(
         return result or {"items": [], "total": 0, "has_more": False}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/stats")
@@ -5834,10 +6960,13 @@ async def ui_get_stats(token: str = ""):
         }
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # ----- Phase 16.3: Live-Status WebSocket Broadcast -----
+
 
 @app.get("/api/ui/live-status")
 async def ui_live_status(token: str = ""):
@@ -5846,7 +6975,11 @@ async def ui_live_status(token: str = ""):
     try:
         health = await brain.health_check()
         mood = brain.mood.get_current_mood()
-        health_status = await brain.health_monitor.get_status() if hasattr(brain, "health_monitor") else {}
+        health_status = (
+            await brain.health_monitor.get_status()
+            if hasattr(brain, "health_monitor")
+            else {}
+        )
         autonomy = brain.autonomy.get_level_info()
         whisper = brain.tts_enhancer.is_whisper_mode
 
@@ -5863,10 +6996,13 @@ async def ui_live_status(token: str = ""):
         }
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # ----- Presence: Live Person Status + Settings -----
+
 
 @app.get("/api/ui/presence")
 async def ui_get_presence(token: str = ""):
@@ -5875,19 +7011,21 @@ async def ui_get_presence(token: str = ""):
     try:
         states = await brain.ha.get_states()
         persons = []
-        for s in (states or []):
+        for s in states or []:
             eid = s.get("entity_id", "")
             if not eid.startswith("person."):
                 continue
             attrs = s.get("attributes", {})
-            persons.append({
-                "entity_id": eid,
-                "name": attrs.get("friendly_name", eid),
-                "state": s.get("state", "unknown"),
-                "source": attrs.get("source"),
-                "latitude": attrs.get("latitude"),
-                "longitude": attrs.get("longitude"),
-            })
+            persons.append(
+                {
+                    "entity_id": eid,
+                    "name": attrs.get("friendly_name", eid),
+                    "state": s.get("state", "unknown"),
+                    "source": attrs.get("source"),
+                    "latitude": attrs.get("latitude"),
+                    "longitude": attrs.get("longitude"),
+                }
+            )
         home_count = sum(1 for p in persons if p["state"] == "home")
         away_count = sum(1 for p in persons if p["state"] == "not_home")
         return {
@@ -5899,7 +7037,9 @@ async def ui_get_presence(token: str = ""):
         }
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/presence/settings")
@@ -5911,7 +7051,9 @@ async def ui_get_presence_settings(token: str = ""):
         return result or {}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.put("/api/ui/presence/settings")
@@ -5924,10 +7066,13 @@ async def ui_update_presence_settings(request: Request, token: str = ""):
         return result or {"success": False}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # ----- Phase 15.4: Notification Kanal-Wahl -----
+
 
 @app.get("/api/ui/notification-channels")
 async def ui_notification_channels(token: str = ""):
@@ -5937,10 +7082,14 @@ async def ui_notification_channels(token: str = ""):
         "websocket": {
             "enabled": True,
             "description": "Browser/Dashboard Push",
-            "connected_clients": len(ws_manager.active_connections) if hasattr(ws_manager, "active_connections") else 0,
+            "connected_clients": len(ws_manager.active_connections)
+            if hasattr(ws_manager, "active_connections")
+            else 0,
         },
         "tts": {
-            "enabled": brain.sound_manager.enabled if hasattr(brain, "sound_manager") else False,
+            "enabled": brain.sound_manager.enabled
+            if hasattr(brain, "sound_manager")
+            else False,
             "description": "Sprachausgabe ueber Lautsprecher",
         },
         "ha_notify": {
@@ -5967,7 +7116,8 @@ class NotificationChannelUpdate(BaseModel):
 
 @app.put("/api/ui/notification-channels")
 async def ui_update_notification_channels(
-    req: NotificationChannelUpdate, token: str = "",
+    req: NotificationChannelUpdate,
+    token: str = "",
 ):
     """Phase 15.4: Kanal-Praeferenzen aktualisieren."""
     await _check_token(token)
@@ -5984,23 +7134,41 @@ async def ui_update_notification_channels(
                 cfg = {}
             cfg.setdefault("notifications", {})["channels"] = channels
             with open(config_path, "w") as f:
-                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                yaml.safe_dump(
+                    cfg,
+                    f,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=False,
+                )
+
         await asyncio.to_thread(_do_io)
 
         # In-memory config aktualisieren
         import assistant.config as _cfg
+
         _new = load_yaml_config()
         _cfg.yaml_config.clear()
         _cfg.yaml_config.update(_new)
 
-        _audit_log("notification_channels_update", {"channels": list(req.channels.keys()) if isinstance(req.channels, dict) else []})
+        _audit_log(
+            "notification_channels_update",
+            {
+                "channels": list(req.channels.keys())
+                if isinstance(req.channels, dict)
+                else []
+            },
+        )
         return {"success": True, "channels": req.channels}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # ----- Phase 15.1: Gesundheits-Trend-Dashboard -----
+
 
 @app.get("/api/ui/health-trends")
 async def ui_health_trends(token: str = "", hours: int = 24):
@@ -6033,14 +7201,17 @@ async def ui_health_trends(token: str = "", hours: int = 24):
                 data = await brain.memory.redis.get(key)
                 if data:
                     import json as _json
+
                     snapshot = _json.loads(data)
                     time_str = ts.strftime("%Y-%m-%d %H:00")
                     for sensor_type in ("co2", "temperature", "humidity"):
                         if sensor_type in snapshot:
-                            trends[sensor_type].append({
-                                "time": time_str,
-                                "value": snapshot[sensor_type],
-                            })
+                            trends[sensor_type].append(
+                                {
+                                    "time": time_str,
+                                    "value": snapshot[sensor_type],
+                                }
+                            )
         except Exception as e:
             logger.debug("Health-Trends laden fehlgeschlagen: %s", e)
 
@@ -6065,12 +7236,23 @@ async def ui_knowledge_info(token: str = ""):
     files = []
     if kb_dir.exists():
         for f in sorted(kb_dir.iterdir()):
-            if f.is_file() and f.suffix in {".txt", ".md", ".yaml", ".yml", ".csv", ".pdf"}:
-                files.append({
-                    "name": f.name,
-                    "size": f.stat().st_size,
-                    "modified": datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).isoformat(),
-                })
+            if f.is_file() and f.suffix in {
+                ".txt",
+                ".md",
+                ".yaml",
+                ".yml",
+                ".csv",
+                ".pdf",
+            }:
+                files.append(
+                    {
+                        "name": f.name,
+                        "size": f.stat().st_size,
+                        "modified": datetime.fromtimestamp(
+                            f.stat().st_mtime, tz=timezone.utc
+                        ).isoformat(),
+                    }
+                )
     return {"stats": stats, "files": files}
 
 
@@ -6080,15 +7262,22 @@ async def ui_knowledge_ingest(token: str = ""):
     await _check_token(token)
     count = await brain.knowledge_base.ingest_all()
     stats = await brain.knowledge_base.get_stats()
-    _audit_log("knowledge_base_ingest", {"new_chunks": count, "total_chunks": stats.get("total_chunks", 0)})
+    _audit_log(
+        "knowledge_base_ingest",
+        {"new_chunks": count, "total_chunks": stats.get("total_chunks", 0)},
+    )
     return {"new_chunks": count, "stats": stats}
 
 
 @app.get("/api/ui/knowledge/chunks")
-async def ui_knowledge_chunks(token: str = "", source: str = "", offset: int = 0, limit: int = 50):
+async def ui_knowledge_chunks(
+    token: str = "", source: str = "", offset: int = 0, limit: int = 50
+):
     """Alle Knowledge-Chunks auflisten (optional gefiltert nach Quelle)."""
     await _check_token(token)
-    chunks = await brain.knowledge_base.get_chunks(source=source, offset=offset, limit=min(limit, 200))
+    chunks = await brain.knowledge_base.get_chunks(
+        source=source, offset=offset, limit=min(limit, 200)
+    )
     stats = await brain.knowledge_base.get_stats()
     return {"chunks": chunks, "total": stats.get("total_chunks", 0)}
 
@@ -6116,7 +7305,9 @@ async def ui_knowledge_file_delete(request: Request, token: str = ""):
     if not filename:
         raise HTTPException(status_code=400, detail="Kein Dateiname angegeben")
     deleted = await brain.knowledge_base.delete_source_chunks(filename)
-    _audit_log("knowledge_file_delete", {"filename": filename, "deleted_chunks": deleted})
+    _audit_log(
+        "knowledge_file_delete", {"filename": filename, "deleted_chunks": deleted}
+    )
     stats = await brain.knowledge_base.get_stats()
     return {"deleted": deleted, "filename": filename, "stats": stats}
 
@@ -6130,7 +7321,9 @@ async def ui_knowledge_file_reingest(request: Request, token: str = ""):
     if not filename:
         raise HTTPException(status_code=400, detail="Kein Dateiname angegeben")
     new_chunks = await brain.knowledge_base.reingest_file(filename)
-    _audit_log("knowledge_file_reingest", {"filename": filename, "new_chunks": new_chunks})
+    _audit_log(
+        "knowledge_file_reingest", {"filename": filename, "new_chunks": new_chunks}
+    )
     stats = await brain.knowledge_base.get_stats()
     return {"new_chunks": new_chunks, "filename": filename, "stats": stats}
 
@@ -6159,7 +7352,10 @@ async def ui_knowledge_upload(file: UploadFile = File(...), token: str = Form(""
 
     suffix = Path(file.filename).suffix.lower()
     if suffix not in KB_UPLOAD_ALLOWED:
-        raise HTTPException(status_code=400, detail=f"Dateityp '{suffix}' nicht erlaubt. Erlaubt: {', '.join(sorted(KB_UPLOAD_ALLOWED))}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Dateityp '{suffix}' nicht erlaubt. Erlaubt: {', '.join(sorted(KB_UPLOAD_ALLOWED))}",
+        )
 
     content = await file.read()
     if len(content) > KB_UPLOAD_MAX_SIZE:
@@ -6182,14 +7378,23 @@ async def ui_knowledge_upload(file: UploadFile = File(...), token: str = Form(""
 
     # Sofort einlesen
     new_chunks = await brain.knowledge_base.ingest_file(target)
-    _audit_log("knowledge_file_upload", {"filename": safe_name, "size": len(content), "chunks": new_chunks})
+    _audit_log(
+        "knowledge_file_upload",
+        {"filename": safe_name, "size": len(content), "chunks": new_chunks},
+    )
     stats = await brain.knowledge_base.get_stats()
-    return {"filename": safe_name, "new_chunks": new_chunks, "size": len(content), "stats": stats}
+    return {
+        "filename": safe_name,
+        "new_chunks": new_chunks,
+        "size": len(content),
+        "stats": stats,
+    }
 
 
 # ---------------------------------------------------------------
 # Recipe Store (Dedizierte Rezeptdatenbank fuer den Koch-Assistenten)
 # ---------------------------------------------------------------
+
 
 @app.get("/api/ui/recipes")
 async def ui_recipes_info(token: str = ""):
@@ -6201,11 +7406,15 @@ async def ui_recipes_info(token: str = ""):
     if recipe_dir.exists():
         for f in sorted(recipe_dir.iterdir()):
             if f.is_file() and f.suffix in {".txt", ".md", ".pdf", ".csv"}:
-                files.append({
-                    "name": f.name,
-                    "size": f.stat().st_size,
-                    "modified": datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).isoformat(),
-                })
+                files.append(
+                    {
+                        "name": f.name,
+                        "size": f.stat().st_size,
+                        "modified": datetime.fromtimestamp(
+                            f.stat().st_mtime, tz=timezone.utc
+                        ).isoformat(),
+                    }
+                )
     return {"stats": stats, "files": files}
 
 
@@ -6215,15 +7424,22 @@ async def ui_recipes_ingest(token: str = ""):
     await _check_token(token)
     count = await brain.recipe_store.ingest_all()
     stats = await brain.recipe_store.get_stats()
-    _audit_log("recipe_store_ingest", {"new_chunks": count, "total_chunks": stats.get("total_chunks", 0)})
+    _audit_log(
+        "recipe_store_ingest",
+        {"new_chunks": count, "total_chunks": stats.get("total_chunks", 0)},
+    )
     return {"new_chunks": count, "stats": stats}
 
 
 @app.get("/api/ui/recipes/chunks")
-async def ui_recipes_chunks(token: str = "", source: str = "", offset: int = 0, limit: int = 50):
+async def ui_recipes_chunks(
+    token: str = "", source: str = "", offset: int = 0, limit: int = 50
+):
     """Alle Rezept-Chunks auflisten (optional gefiltert nach Quelle)."""
     await _check_token(token)
-    chunks = await brain.recipe_store.get_chunks(source=source, offset=offset, limit=min(limit, 200))
+    chunks = await brain.recipe_store.get_chunks(
+        source=source, offset=offset, limit=min(limit, 200)
+    )
     stats = await brain.recipe_store.get_stats()
     return {"chunks": chunks, "total": stats.get("total_chunks", 0)}
 
@@ -6290,7 +7506,10 @@ async def ui_recipes_upload(file: UploadFile = File(...), token: str = Form(""))
 
     suffix = Path(file.filename).suffix.lower()
     if suffix not in REC_UPLOAD_ALLOWED:
-        raise HTTPException(status_code=400, detail=f"Dateityp '{suffix}' nicht erlaubt. Erlaubt: {', '.join(sorted(REC_UPLOAD_ALLOWED))}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Dateityp '{suffix}' nicht erlaubt. Erlaubt: {', '.join(sorted(REC_UPLOAD_ALLOWED))}",
+        )
 
     content = await file.read()
     if len(content) > REC_UPLOAD_MAX_SIZE:
@@ -6310,14 +7529,23 @@ async def ui_recipes_upload(file: UploadFile = File(...), token: str = Form(""))
     target.write_bytes(content)
 
     new_chunks = await brain.recipe_store.ingest_file(target)
-    _audit_log("recipe_file_upload", {"filename": safe_name, "size": len(content), "chunks": new_chunks})
+    _audit_log(
+        "recipe_file_upload",
+        {"filename": safe_name, "size": len(content), "chunks": new_chunks},
+    )
     stats = await brain.recipe_store.get_stats()
-    return {"filename": safe_name, "new_chunks": new_chunks, "size": len(content), "stats": stats}
+    return {
+        "filename": safe_name,
+        "new_chunks": new_chunks,
+        "size": len(content),
+        "stats": stats,
+    }
 
 
 # ---------------------------------------------------------------
 # Personal Dates (Geburtstage, Jahrestage) — Semantic Memory
 # ---------------------------------------------------------------
+
 
 @app.get("/api/ui/personal-dates")
 async def ui_get_personal_dates(token: str = ""):
@@ -6333,15 +7561,17 @@ async def ui_get_personal_dates(token: str = ""):
         for fid in fact_ids:
             data = await semantic.redis.hgetall(f"mha:fact:{fid}")
             if data:
-                dates.append({
-                    "fact_id": data.get("fact_id", fid),
-                    "person": data.get("person", "unknown"),
-                    "date_type": data.get("date_type", ""),
-                    "date_mm_dd": data.get("date_mm_dd", ""),
-                    "year": data.get("date_year", ""),
-                    "label": data.get("date_label", ""),
-                    "content": data.get("content", ""),
-                })
+                dates.append(
+                    {
+                        "fact_id": data.get("fact_id", fid),
+                        "person": data.get("person", "unknown"),
+                        "date_type": data.get("date_type", ""),
+                        "date_mm_dd": data.get("date_mm_dd", ""),
+                        "year": data.get("date_year", ""),
+                        "label": data.get("date_label", ""),
+                        "content": data.get("content", ""),
+                    }
+                )
         dates.sort(key=lambda d: d.get("date_mm_dd", ""))
 
         upcoming = await semantic.get_upcoming_personal_dates(days_ahead=60)
@@ -6365,7 +7595,9 @@ async def ui_add_personal_date(request: Request, token: str = ""):
     if not person_name:
         raise HTTPException(status_code=400, detail="Name fehlt")
     if not date_mm_dd or len(date_mm_dd) != 5 or date_mm_dd[2] != "-":
-        raise HTTPException(status_code=400, detail="Datum im Format MM-DD erwartet (z.B. 03-15)")
+        raise HTTPException(
+            status_code=400, detail="Datum im Format MM-DD erwartet (z.B. 03-15)"
+        )
 
     try:
         semantic = brain.memory.semantic
@@ -6377,10 +7609,15 @@ async def ui_add_personal_date(request: Request, token: str = ""):
             label=label,
         )
         if success:
-            _audit_log("personal_date_add", {
-                "person": person_name, "type": date_type,
-                "date": date_mm_dd, "year": year,
-            })
+            _audit_log(
+                "personal_date_add",
+                {
+                    "person": person_name,
+                    "type": date_type,
+                    "date": date_mm_dd,
+                    "year": year,
+                },
+            )
             return {"success": True, "message": f"{person_name} gespeichert"}
         return {"success": False, "message": "Das liess sich nicht abspeichern."}
     except Exception as e:
@@ -6416,6 +7653,7 @@ async def ui_get_logs(token: str = "", limit: int = 50):
 async def ui_get_audit(token: str = "", limit: int = 50):
     """Audit-Log: Letzte Dashboard-Aenderungen und Auth-Events."""
     await _check_token(token)
+
     def _read():
         entries = []
         if _AUDIT_LOG_PATH.exists():
@@ -6429,8 +7667,9 @@ async def ui_get_audit(token: str = "", limit: int = 50):
                             pass
         entries.reverse()
         return entries
+
     entries = await asyncio.to_thread(_read)
-    return {"entries": entries[:min(limit, 200)], "total": len(entries)}
+    return {"entries": entries[: min(limit, 200)], "total": len(entries)}
 
 
 @app.get("/api/ui/errors")
@@ -6441,7 +7680,7 @@ async def ui_get_errors(token: str = "", limit: int = 100, level: str = ""):
     if level:
         entries = [e for e in entries if e["level"] == level.upper()]
     entries.reverse()  # Neueste zuerst
-    return {"errors": entries[:min(limit, 200)], "total": len(entries)}
+    return {"errors": entries[: min(limit, 200)], "total": len(entries)}
 
 
 @app.delete("/api/ui/errors")
@@ -6453,13 +7692,19 @@ async def ui_clear_errors(token: str = ""):
 
 
 @app.get("/api/ui/activity")
-async def ui_get_activity(token: str = "", limit: int = 200, module: str = "", level: str = ""):
+async def ui_get_activity(
+    token: str = "", limit: int = 200, module: str = "", level: str = ""
+):
     """Aktivitaetsprotokoll: Alles was Jarvis intern macht (INFO+ Logs)."""
     await _check_token(token)
     entries = list(_activity_buffer)
     if module:
-        entries = [e for e in entries if e.get("module", "").lower() == module.lower()
-                   or e.get("logger", "").lower().endswith(module.lower())]
+        entries = [
+            e
+            for e in entries
+            if e.get("module", "").lower() == module.lower()
+            or e.get("logger", "").lower().endswith(module.lower())
+        ]
     if level:
         entries = [e for e in entries if e["level"] == level.upper()]
     entries.reverse()  # Neueste zuerst
@@ -6483,7 +7728,11 @@ _ui_static_dir.mkdir(parents=True, exist_ok=True)
 _chat_static_dir = Path(__file__).parent.parent / "static" / "chat"
 _chat_static_dir.mkdir(parents=True, exist_ok=True)
 
-_NO_CACHE_HEADERS = {"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"}
+_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
 
 
 @app.get("/ui/{path:path}")
@@ -6493,20 +7742,30 @@ async def ui_serve(path: str = ""):
     if path and not path.endswith("/"):
         asset = _ui_static_dir / path
         if asset.is_file() and asset.resolve().is_relative_to(_ui_static_dir.resolve()):
-            media_types = {".js": "application/javascript", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml"}
+            media_types = {
+                ".js": "application/javascript",
+                ".css": "text/css",
+                ".png": "image/png",
+                ".svg": "image/svg+xml",
+            }
             mt = media_types.get(asset.suffix, None)
             return FileResponse(asset, media_type=mt, headers=_NO_CACHE_HEADERS)
     # SPA-Fallback: immer index.html
     index_path = _ui_static_dir / "index.html"
     if index_path.exists():
-        return FileResponse(index_path, media_type="text/html", headers=_NO_CACHE_HEADERS)
-    return HTMLResponse("<h1>Jarvis Dashboard — index.html nicht gefunden</h1>", status_code=404)
+        return FileResponse(
+            index_path, media_type="text/html", headers=_NO_CACHE_HEADERS
+        )
+    return HTMLResponse(
+        "<h1>Jarvis Dashboard — index.html nicht gefunden</h1>", status_code=404
+    )
 
 
 @app.get("/ui")
 async def ui_redirect():
     """Redirect /ui zu /ui/."""
     from fastapi.responses import RedirectResponse
+
     return RedirectResponse("/ui/")
 
 
@@ -6515,14 +7774,19 @@ async def chat_serve(path: str = ""):
     """Jarvis Chat — Standalone Chat-Seite."""
     index_path = _chat_static_dir / "index.html"
     if index_path.exists():
-        return FileResponse(index_path, media_type="text/html", headers=_NO_CACHE_HEADERS)
-    return HTMLResponse("<h1>Jarvis Chat — index.html nicht gefunden</h1>", status_code=404)
+        return FileResponse(
+            index_path, media_type="text/html", headers=_NO_CACHE_HEADERS
+        )
+    return HTMLResponse(
+        "<h1>Jarvis Chat — index.html nicht gefunden</h1>", status_code=404
+    )
 
 
 @app.get("/chat")
 async def chat_redirect():
     """Redirect /chat zu /chat/."""
     from fastapi.responses import RedirectResponse
+
     return RedirectResponse("/chat/")
 
 
@@ -6539,21 +7803,32 @@ async def workshop_serve(path: str = ""):
     """Werkstatt-HUD — Single-Page App."""
     if path and not path.endswith("/"):
         asset = _workshop_static_dir / path
-        if asset.is_file() and asset.resolve().is_relative_to(_workshop_static_dir.resolve()):
-            media_types = {".js": "application/javascript", ".css": "text/css",
-                           ".png": "image/png", ".svg": "image/svg+xml"}
+        if asset.is_file() and asset.resolve().is_relative_to(
+            _workshop_static_dir.resolve()
+        ):
+            media_types = {
+                ".js": "application/javascript",
+                ".css": "text/css",
+                ".png": "image/png",
+                ".svg": "image/svg+xml",
+            }
             mt = media_types.get(asset.suffix, None)
             return FileResponse(asset, media_type=mt, headers=_NO_CACHE_HEADERS)
     index_path = _workshop_static_dir / "index.html"
     if index_path.exists():
-        return FileResponse(index_path, media_type="text/html", headers=_NO_CACHE_HEADERS)
-    return HTMLResponse("<h1>Workshop HUD — index.html nicht gefunden</h1>", status_code=404)
+        return FileResponse(
+            index_path, media_type="text/html", headers=_NO_CACHE_HEADERS
+        )
+    return HTMLResponse(
+        "<h1>Workshop HUD — index.html nicht gefunden</h1>", status_code=404
+    )
 
 
 @app.get("/workshop")
 async def workshop_redirect():
     """Redirect /workshop zu /workshop/."""
     from fastapi.responses import RedirectResponse
+
     return RedirectResponse("/workshop/")
 
 
@@ -6561,7 +7836,8 @@ async def workshop_redirect():
 async def workshop_list_projects(status: str = "", category: str = ""):
     """Listet alle Workshop-Projekte."""
     projects = await brain.repair_planner.list_projects(
-        status_filter=status or None, category_filter=category or None)
+        status_filter=status or None, category_filter=category or None
+    )
     return {"success": True, "projects": projects, "count": len(projects)}
 
 
@@ -6579,7 +7855,9 @@ async def workshop_create_project(request: Request):
         priority=data.get("priority", "normal"),
     )
     if isinstance(project, dict) and project.get("status") == "error":
-        raise HTTPException(500, project.get("message", "Projekt konnte nicht erstellt werden"))
+        raise HTTPException(
+            500, project.get("message", "Projekt konnte nicht erstellt werden")
+        )
     return {"success": True, "project": project}
 
 
@@ -6612,10 +7890,17 @@ async def workshop_delete_project(project_id: str):
     if planner.redis:
         await planner.redis.delete(f"mha:repair:project:{project_id}")
         await planner.redis.srem("mha:repair:projects:all", project_id)
-        for status_key in ("erstellt", "diagnose", "teile_bestellt",
-                           "in_arbeit", "pausiert", "fertig"):
+        for status_key in (
+            "erstellt",
+            "diagnose",
+            "teile_bestellt",
+            "in_arbeit",
+            "pausiert",
+            "fertig",
+        ):
             await planner.redis.srem(
-                f"mha:repair:projects:status:{status_key}", project_id)
+                f"mha:repair:projects:status:{status_key}", project_id
+            )
     return {"success": True}
 
 
@@ -6697,7 +7982,9 @@ async def workshop_get_session():
                 "description": step.description,
                 "tools": step.tools,
                 "parts": step.parts,
-            } if step else None,
+            }
+            if step
+            else None,
         },
     }
 
@@ -6729,7 +8016,14 @@ async def workshop_update_status(project_id: str, request: Request):
     """Aendert den Status eines Projekts."""
     data = await request.json()
     new_status = data.get("status", "").strip()
-    valid = ("erstellt", "diagnose", "teile_bestellt", "in_arbeit", "pausiert", "fertig")
+    valid = (
+        "erstellt",
+        "diagnose",
+        "teile_bestellt",
+        "in_arbeit",
+        "pausiert",
+        "fertig",
+    )
     if new_status not in valid:
         raise HTTPException(400, f"Ungueltiger Status. Erlaubt: {', '.join(valid)}")
     project = await brain.repair_planner.update_project(project_id, status=new_status)
@@ -6746,7 +8040,8 @@ async def workshop_add_part(project_id: str, request: Request):
     if not name:
         raise HTTPException(400, "Bauteil-Name erforderlich")
     result = await brain.repair_planner.add_part(
-        project_id, name,
+        project_id,
+        name,
         quantity=data.get("quantity", 1),
         estimated_cost=data.get("cost", 0),
         source=data.get("source", ""),
@@ -6772,14 +8067,24 @@ async def workshop_download_file(project_id: str, filename: str):
     """Download einer Projekt-Datei als Rohdatei."""
     filepath = brain.workshop_generator.FILES_DIR / project_id / filename
     if not filepath.exists() or not filepath.resolve().is_relative_to(
-            brain.workshop_generator.FILES_DIR.resolve()):
+        brain.workshop_generator.FILES_DIR.resolve()
+    ):
         raise HTTPException(404, "Datei nicht gefunden")
     media_types = {
-        ".py": "text/x-python", ".ino": "text/plain", ".cpp": "text/x-c++src",
-        ".c": "text/x-csrc", ".js": "application/javascript", ".html": "text/html",
-        ".css": "text/css", ".yaml": "text/yaml", ".yml": "text/yaml",
-        ".json": "application/json", ".svg": "image/svg+xml",
-        ".scad": "text/plain", ".md": "text/markdown", ".txt": "text/plain",
+        ".py": "text/x-python",
+        ".ino": "text/plain",
+        ".cpp": "text/x-c++src",
+        ".c": "text/x-csrc",
+        ".js": "application/javascript",
+        ".html": "text/html",
+        ".css": "text/css",
+        ".yaml": "text/yaml",
+        ".yml": "text/yaml",
+        ".json": "application/json",
+        ".svg": "image/svg+xml",
+        ".scad": "text/plain",
+        ".md": "text/markdown",
+        ".txt": "text/plain",
     }
     mt = media_types.get(filepath.suffix.lower(), "application/octet-stream")
     return FileResponse(filepath, filename=filename, media_type=mt)
@@ -6839,8 +8144,9 @@ async def workshop_export(project_id: str):
     zip_path = await brain.workshop_generator.export_project(project_id)
     if not zip_path:
         raise HTTPException(404, "Keine Dateien zum Exportieren")
-    return FileResponse(zip_path, filename=f"workshop_{project_id}.zip",
-                        media_type="application/zip")
+    return FileResponse(
+        zip_path, filename=f"workshop_{project_id}.zip", media_type="application/zip"
+    )
 
 
 @app.post("/api/workshop/chat")
@@ -6867,7 +8173,10 @@ async def workshop_chat(request: Request):
             timeout=60.0,
         )
     except asyncio.TimeoutError:
-        return {"response": "Systeme überlastet. Bitte nochmal versuchen.", "actions": []}
+        return {
+            "response": "Systeme überlastet. Bitte nochmal versuchen.",
+            "actions": [],
+        }
     except Exception as e:
         logger.error("workshop_chat Fehler: %s", e, exc_info=True)
         return {"response": "Fehler bei der Verarbeitung.", "actions": []}
@@ -6880,7 +8189,9 @@ async def workshop_chat(request: Request):
 
 
 @app.post("/api/workshop/files/{project_id}/upload")
-async def workshop_upload_file(project_id: str, request: Request, file: UploadFile = File(...)):
+async def workshop_upload_file(
+    project_id: str, request: Request, file: UploadFile = File(...)
+):
     """Laedt eine Datei in ein Workshop-Projekt hoch."""
     # P06d: Workshop-Upload erfordert Owner-Trust
     _require_hardware_owner(request)
@@ -6904,7 +8215,8 @@ async def workshop_upload_file(project_id: str, request: Request, file: UploadFi
     # In Redis registrieren
     if brain.workshop_generator.redis:
         await brain.workshop_generator.redis.rpush(
-            f"mha:repair:files:{project_id}", filename)
+            f"mha:repair:files:{project_id}", filename
+        )
 
     return {"success": True, "filename": filename, "size": len(content)}
 
@@ -6934,7 +8246,8 @@ async def workshop_save_file(project_id: str, request: Request):
     # In Redis registrieren (nur bei neuen Dateien)
     if is_new and brain.workshop_generator.redis:
         await brain.workshop_generator.redis.rpush(
-            f"mha:repair:files:{project_id}", filename)
+            f"mha:repair:files:{project_id}", filename
+        )
 
     return {"success": True, "filename": filename, "size": len(content), "new": is_new}
 
@@ -6960,26 +8273,28 @@ async def workshop_coding_agent(request: Request):
     gen = brain.workshop_generator
     if action == "generate":
         result = await gen.generate_code(
-            project_id, requirement, language=language,
-            existing_code=existing_code)
+            project_id, requirement, language=language, existing_code=existing_code
+        )
         return result
 
     elif action == "modify":
         prompt_text = f"Modifiziere den folgenden {language} Code: {requirement}\n\nAktueller Code:\n{existing_code[:6000]}"
         result = await gen.generate_code(
-            project_id, prompt_text, language=language,
-            existing_code=existing_code)
+            project_id, prompt_text, language=language, existing_code=existing_code
+        )
         return result
 
     elif action == "explain":
         model = gen.model_router.model_smart if gen.model_router else None
         if not model:
             return {"status": "error", "message": "Kein LLM verfügbar"}
-        prompt = f"Erklaere diesen Code detailliert auf Deutsch:\n\n{existing_code[:6000]}"
+        prompt = (
+            f"Erklaere diesen Code detailliert auf Deutsch:\n\n{existing_code[:6000]}"
+        )
         messages = [{"role": "system", "content": prompt}]
         explanation = await gen.ollama.chat(
-            model=model, messages=messages,
-            temperature=0.3, max_tokens=2048)
+            model=model, messages=messages, temperature=0.3, max_tokens=2048
+        )
         return {"status": "ok", "explanation": explanation}
 
     elif action == "fix":
@@ -6987,8 +8302,8 @@ async def workshop_coding_agent(request: Request):
             raise HTTPException(400, "Code zum Fixen erforderlich")
         prompt_text = f"Finde und behebe Fehler in diesem {language} Code. {requirement or 'Behebe alle Bugs.'}\n\nCode:\n{existing_code[:6000]}"
         result = await gen.generate_code(
-            project_id, prompt_text, language=language,
-            existing_code=existing_code)
+            project_id, prompt_text, language=language, existing_code=existing_code
+        )
         return result
 
     raise HTTPException(400, f"Unbekannte Aktion: {action}")
@@ -7005,8 +8320,11 @@ async def workshop_update_settings(request: Request):
 
     # Nur bestimmte Workshop-Keys erlauben
     allowed_keys = {
-        "enabled", "workshop_room", "default_category",
-        "auto_safety_check", "proactive_suggestions",
+        "enabled",
+        "workshop_room",
+        "default_category",
+        "auto_safety_check",
+        "proactive_suggestions",
         "max_file_size_mb",
     }
     if key not in allowed_keys:
@@ -7021,7 +8339,14 @@ async def workshop_update_settings(request: Request):
             ws = cfg.setdefault("workshop", {})
             ws[key] = value
             with open(config_path, "w") as f:
-                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                yaml.safe_dump(
+                    cfg,
+                    f,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=False,
+                )
+
         await asyncio.to_thread(_do_io)
 
         # Auch im laufenden yaml_config aktualisieren
@@ -7042,7 +8367,8 @@ async def workshop_inventory():
     cursor = 0
     while True:
         cursor, batch = await brain.repair_planner.redis.scan(
-            cursor, match="mha:repair:inventory:*", count=100)
+            cursor, match="mha:repair:inventory:*", count=100
+        )
         keys.extend(batch)
         if cursor == 0:
             break
@@ -7063,7 +8389,8 @@ async def workshop_snippets():
     cursor = 0
     while True:
         cursor, batch = await brain.repair_planner.redis.scan(
-            cursor, match="mha:repair:snippet:*", count=100)
+            cursor, match="mha:repair:snippet:*", count=100
+        )
         keys.extend(batch)
         if cursor == 0:
             break
@@ -7086,7 +8413,8 @@ async def workshop_save_snippet(request: Request):
     if not name:
         raise HTTPException(400, "Snippet-Name erforderlich")
     result = await brain.repair_planner.save_snippet(
-        name, code, language=language, tags=data.get("tags", []))
+        name, code, language=language, tags=data.get("tags", [])
+    )
     return {"success": True, **result}
 
 
@@ -7100,15 +8428,18 @@ async def workshop_add_inventory(request: Request):
     if not brain.repair_planner.redis:
         raise HTTPException(503, "Redis nicht verfügbar")
     key = f"mha:repair:inventory:{name.lower().replace(' ', '_')}"
-    await brain.repair_planner.redis.hset(key, mapping={
-        "name": name,
-        "category": data.get("category", "sonstiges"),
-        "quantity": str(data.get("quantity", 1)),
-        "unit": data.get("unit", "Stueck"),
-        "location": data.get("location", ""),
-        "min_quantity": str(data.get("min_quantity", 0)),
-        "added": datetime.now(timezone.utc).isoformat(),
-    })
+    await brain.repair_planner.redis.hset(
+        key,
+        mapping={
+            "name": name,
+            "category": data.get("category", "sonstiges"),
+            "quantity": str(data.get("quantity", 1)),
+            "unit": data.get("unit", "Stueck"),
+            "location": data.get("location", ""),
+            "min_quantity": str(data.get("min_quantity", 0)),
+            "added": datetime.now(timezone.utc).isoformat(),
+        },
+    )
     return {"success": True, "name": name}
 
 
@@ -7142,8 +8473,7 @@ async def workshop_delete_file(project_id: str, filename: str):
 async def workshop_safety_checklist(project_id: str):
     """Projekt-spezifische Sicherheits-Checkliste."""
     try:
-        result = await brain.repair_planner.generate_safety_checklist(
-            project_id)
+        result = await brain.repair_planner.generate_safety_checklist(project_id)
         return {"success": True, "checklist": result}
     except Exception as e:
         logger.warning("Endpoint error: %s", e)
@@ -7192,7 +8522,8 @@ async def workshop_notify(request: Request):
         raise HTTPException(400, "message erforderlich")
     try:
         result = await brain.repair_planner.notify_user(
-            message, level=data.get("level", "info"))
+            message, level=data.get("level", "info")
+        )
         return {"success": True, **result}
     except Exception as e:
         logger.warning("Endpoint error: %s", e)
@@ -7223,7 +8554,8 @@ async def workshop_gen_3d_model(request: Request):
         raise HTTPException(400, "requirement erforderlich")
     try:
         result = await brain.workshop_generator.generate_3d_model(
-            project_id, requirement)
+            project_id, requirement
+        )
         return {"success": True, **result}
     except Exception as e:
         logger.warning("Endpoint error: %s", e)
@@ -7240,7 +8572,8 @@ async def workshop_gen_schematic(request: Request):
         raise HTTPException(400, "requirement erforderlich")
     try:
         result = await brain.workshop_generator.generate_schematic(
-            project_id, requirement)
+            project_id, requirement
+        )
         return {"success": True, **result}
     except Exception as e:
         logger.warning("Endpoint error: %s", e)
@@ -7258,7 +8591,8 @@ async def workshop_gen_website(request: Request):
         raise HTTPException(400, "requirement erforderlich")
     try:
         result = await brain.workshop_generator.generate_website(
-            project_id, requirement, context=context)
+            project_id, requirement, context=context
+        )
         return {"success": True, **result}
     except Exception as e:
         logger.warning("Endpoint error: %s", e)
@@ -7304,8 +8638,7 @@ async def workshop_gen_tests(request: Request):
     if not project_id or not filename:
         raise HTTPException(400, "project_id und filename erforderlich")
     try:
-        result = await brain.workshop_generator.generate_tests(
-            project_id, filename)
+        result = await brain.workshop_generator.generate_tests(project_id, filename)
         return {"success": True, **result}
     except Exception as e:
         logger.warning("Endpoint error: %s", e)
@@ -7316,8 +8649,11 @@ async def workshop_gen_tests(request: Request):
 async def workshop_duplicate_project(project_id: str, request: Request):
     """Projekt duplizieren."""
     try:
-        data = await request.json() if request.headers.get(
-            "content-type", "").startswith("application/json") else {}
+        data = (
+            await request.json()
+            if request.headers.get("content-type", "").startswith("application/json")
+            else {}
+        )
     except Exception as e:
         logger.debug("JSON body parse failed: %s", e)
         data = {}
@@ -7326,6 +8662,7 @@ async def workshop_duplicate_project(project_id: str, request: Request):
         if not p:
             raise HTTPException(404, "Projekt nicht gefunden")
         import copy
+
         new_data = copy.deepcopy(p)
         new_data["title"] = (new_data.get("title", "") + " (Kopie)").strip()
         new_data["status"] = "erstellt"
@@ -7349,24 +8686,28 @@ async def workshop_notifications():
     notifs = []
     try:
         maint = await brain.repair_planner.check_maintenance_due()
-        for m in (maint or []):
-            notifs.append({
-                "type": "maintenance",
-                "icon": "&#128295;",
-                "message": f"Wartung faellig: {m.get('tool_name', '')}",
-                "time": m.get("last_done", ""),
-            })
+        for m in maint or []:
+            notifs.append(
+                {
+                    "type": "maintenance",
+                    "icon": "&#128295;",
+                    "message": f"Wartung faellig: {m.get('tool_name', '')}",
+                    "time": m.get("last_done", ""),
+                }
+            )
     except Exception as e:
         logger.debug("Unhandled: %s", e)
     try:
         lent = await brain.repair_planner.list_lent_tools()
-        for t in (lent or []):
-            notifs.append({
-                "type": "lending",
-                "icon": "&#128230;",
-                "message": f"Verliehen: {t.get('tool_name', t.get('name', ''))} an {t.get('person', '')}",
-                "time": t.get("lent_at", t.get("date", "")),
-            })
+        for t in lent or []:
+            notifs.append(
+                {
+                    "type": "lending",
+                    "icon": "&#128230;",
+                    "message": f"Verliehen: {t.get('tool_name', t.get('name', ''))} an {t.get('person', '')}",
+                    "time": t.get("lent_at", t.get("date", "")),
+                }
+            )
     except Exception as e:
         logger.debug("Unhandled: %s", e)
     return {"notifications": notifs, "count": len(notifs)}
@@ -7433,8 +8774,7 @@ async def workshop_analyze_error_log(request: Request):
     if not log_text:
         raise HTTPException(400, "log_text erforderlich")
     try:
-        result = await brain.repair_planner.analyze_error_log(
-            project_id, log_text)
+        result = await brain.repair_planner.analyze_error_log(project_id, log_text)
         return {"success": True, "result": result}
     except Exception as e:
         logger.warning("Endpoint error: %s", e)
@@ -7451,7 +8791,8 @@ async def workshop_evaluate_measurement(request: Request):
         raise HTTPException(400, "measurement erforderlich")
     try:
         result = await brain.repair_planner.evaluate_measurement(
-            project_id, measurement_text)
+            project_id, measurement_text
+        )
         return {"success": True, "result": result}
     except Exception as e:
         logger.warning("Endpoint error: %s", e)
@@ -7496,7 +8837,8 @@ async def workshop_scan_object(request: Request):
     camera_name = data.get("camera", "")
     try:
         result = await brain.repair_planner.scan_object(
-            description=description, camera_name=camera_name)
+            description=description, camera_name=camera_name
+        )
         return {"success": True, "result": result}
     except Exception as e:
         logger.warning("Endpoint error: %s", e)
@@ -7545,7 +8887,8 @@ async def workshop_add_maintenance(request: Request):
     if not tool_name:
         raise HTTPException(400, "tool_name erforderlich")
     result = await brain.repair_planner.add_maintenance_schedule(
-        tool_name, interval_days)
+        tool_name, interval_days
+    )
     return {"success": True, **result}
 
 
@@ -7568,8 +8911,7 @@ async def workshop_from_template(request: Request):
     if not template:
         raise HTTPException(400, "template erforderlich")
     try:
-        result = await brain.repair_planner.create_from_template(
-            template, title=title)
+        result = await brain.repair_planner.create_from_template(template, title=title)
         return {"success": True, **result}
     except Exception as e:
         logger.warning("Endpoint error: %s", e)
@@ -7582,7 +8924,8 @@ async def workshop_search_projects(q: str = "", include_completed: bool = True):
     if not q.strip():
         return {"projects": []}
     results = await brain.repair_planner.search_projects(
-        q.strip(), include_completed=include_completed)
+        q.strip(), include_completed=include_completed
+    )
     return {"projects": results}
 
 
@@ -7605,8 +8948,7 @@ async def workshop_add_expense(project_id: str, request: Request):
     cost = data.get("cost", 0)
     if not item:
         raise HTTPException(400, "item erforderlich")
-    result = await brain.repair_planner.add_expense(
-        project_id, item, float(cost))
+    result = await brain.repair_planner.add_expense(project_id, item, float(cost))
     return {"success": True, **result}
 
 
@@ -7622,8 +8964,7 @@ async def workshop_complete_project(project_id: str, request: Request):
     """Projekt als fertig markieren."""
     data = await request.json()
     notes = data.get("notes", "")
-    result = await brain.repair_planner.complete_project(
-        project_id, notes=notes)
+    result = await brain.repair_planner.complete_project(project_id, notes=notes)
     return {"success": True, **result}
 
 
@@ -7660,8 +9001,7 @@ async def workshop_link_device(project_id: str, request: Request):
     entity_id = data.get("entity_id", "").strip()
     if not entity_id:
         raise HTTPException(400, "entity_id erforderlich")
-    result = await brain.repair_planner.link_device_to_project(
-        project_id, entity_id)
+    result = await brain.repair_planner.link_device_to_project(project_id, entity_id)
     return {"success": True, **result}
 
 
@@ -7731,8 +9071,8 @@ async def workshop_printer_start(request: Request):
     _require_hardware_owner(request)
     data = await request.json()
     result = await brain.repair_planner.start_print(
-        project_id=data.get("project_id", ""),
-        filename=data.get("filename", ""))
+        project_id=data.get("project_id", ""), filename=data.get("filename", "")
+    )
     return {"success": True, **result}
 
 
@@ -7819,6 +9159,7 @@ async def workshop_arm_pick_tool(request: Request):
 async def workshop_pinout(board: str):
     """Pinout-Referenz fuer Boards."""
     from assistant.workshop_generator import WorkshopGenerator
+
     pinouts = {
         "esp32": getattr(WorkshopGenerator, "ESP32_PINOUT", {}),
     }
@@ -7835,21 +9176,41 @@ async def workshop_pinout(board: str):
 async def workshop_templates():
     """Verfuegbare Projekt-Templates."""
     templates = [
-        {"id": "esp_sensor", "name": "ESP32 Sensor-Projekt",
-         "description": "Temperatur/Feuchte-Sensor mit WiFi",
-         "category": "maker", "icon": "📡"},
-        {"id": "led_strip", "name": "LED-Strip Steuerung",
-         "description": "WS2812B LED-Streifen mit Effekten",
-         "category": "maker", "icon": "💡"},
-        {"id": "3d_enclosure", "name": "3D-Druck Gehaeuse",
-         "description": "Parametrisches Gehaeuse in OpenSCAD",
-         "category": "maker", "icon": "📦"},
-        {"id": "furniture", "name": "Moebel-Bau",
-         "description": "Holzprojekt mit Massangaben",
-         "category": "bau", "icon": "🪑"},
-        {"id": "repair_standard", "name": "Standard-Reparatur",
-         "description": "Diagnose und Reparatur-Workflow",
-         "category": "reparatur", "icon": "🔧"},
+        {
+            "id": "esp_sensor",
+            "name": "ESP32 Sensor-Projekt",
+            "description": "Temperatur/Feuchte-Sensor mit WiFi",
+            "category": "maker",
+            "icon": "📡",
+        },
+        {
+            "id": "led_strip",
+            "name": "LED-Strip Steuerung",
+            "description": "WS2812B LED-Streifen mit Effekten",
+            "category": "maker",
+            "icon": "💡",
+        },
+        {
+            "id": "3d_enclosure",
+            "name": "3D-Druck Gehaeuse",
+            "description": "Parametrisches Gehaeuse in OpenSCAD",
+            "category": "maker",
+            "icon": "📦",
+        },
+        {
+            "id": "furniture",
+            "name": "Moebel-Bau",
+            "description": "Holzprojekt mit Massangaben",
+            "category": "bau",
+            "icon": "🪑",
+        },
+        {
+            "id": "repair_standard",
+            "name": "Standard-Reparatur",
+            "description": "Diagnose und Reparatur-Workflow",
+            "category": "reparatur",
+            "icon": "🔧",
+        },
     ]
     return {"templates": templates}
 
@@ -7884,14 +9245,18 @@ async def ui_get_easter_eggs(token: str = ""):
     """Alle Easter Eggs aus easter_eggs.yaml."""
     await _check_token(token)
     try:
+
         def _read():
             with open(EASTER_EGGS_PATH) as f:
                 return yaml.safe_load(f) or {}
+
         data = await asyncio.to_thread(_read)
         return {"easter_eggs": data.get("easter_eggs", [])}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 class EasterEggUpdate(BaseModel):
@@ -7907,7 +9272,14 @@ async def ui_update_easter_eggs(req: EasterEggUpdate, token: str = ""):
 
         def _write():
             with open(EASTER_EGGS_PATH, "w") as f:
-                yaml.safe_dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                yaml.safe_dump(
+                    data,
+                    f,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=False,
+                )
+
         await asyncio.to_thread(_write)
 
         # Personality-Engine neu laden
@@ -7915,15 +9287,21 @@ async def ui_update_easter_eggs(req: EasterEggUpdate, token: str = ""):
             brain.personality._easter_eggs = brain.personality._load_easter_eggs()
 
         _audit_log("easter_eggs_update", {"count": len(req.easter_eggs)})
-        return {"success": True, "message": f"{len(req.easter_eggs)} Easter Eggs gespeichert"}
+        return {
+            "success": True,
+            "message": f"{len(req.easter_eggs)} Easter Eggs gespeichert",
+        }
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 # ------------------------------------------------------------------
 # Phase 13.4: Config Snapshots & Rollback API
 # ------------------------------------------------------------------
+
 
 @app.get("/api/ui/snapshots")
 async def ui_list_snapshots(token: str = "", config_file: str = ""):
@@ -7937,7 +9315,9 @@ async def ui_list_snapshots(token: str = "", config_file: str = ""):
         return {"snapshots": snapshots, "total": len(snapshots)}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 class RollbackRequest(BaseModel):
@@ -7956,9 +9336,11 @@ async def ui_rollback(req: RollbackRequest, token: str = ""):
     try:
         # Aktuelle Security-Sections sichern BEVOR Rollback
         try:
+
             def _read_pre():
                 with open(SETTINGS_YAML_PATH) as f:
                     return yaml.safe_load(f) or {}
+
             pre_rollback = await asyncio.to_thread(_read_pre)
         except Exception as e:
             logger.debug("Pre-rollback settings read failed: %s", e)
@@ -7969,6 +9351,7 @@ async def ui_rollback(req: RollbackRequest, token: str = ""):
             # Post-Rollback: Kritische Security-Sections wiederherstellen
             _sections_to_preserve = ("dashboard", "security", "trust_levels")
             try:
+
                 def _patch_security():
                     with open(SETTINGS_YAML_PATH) as f:
                         restored = yaml.safe_load(f) or {}
@@ -7979,29 +9362,43 @@ async def ui_rollback(req: RollbackRequest, token: str = ""):
                             patched = True
                     if patched:
                         with open(SETTINGS_YAML_PATH, "w") as f:
-                            yaml.safe_dump(restored, f, allow_unicode=True,
-                                           default_flow_style=False, sort_keys=False)
+                            yaml.safe_dump(
+                                restored,
+                                f,
+                                allow_unicode=True,
+                                default_flow_style=False,
+                                sort_keys=False,
+                            )
                     return patched
+
                 patched = await asyncio.to_thread(_patch_security)
                 if patched:
-                    logger.info("Rollback: Security-Sections aus Pre-Rollback beibehalten: %s",
-                                _sections_to_preserve)
+                    logger.info(
+                        "Rollback: Security-Sections aus Pre-Rollback beibehalten: %s",
+                        _sections_to_preserve,
+                    )
             except Exception as e:
                 logger.error("Rollback Post-Validation fehlgeschlagen: %s", e)
 
             # yaml_config im Speicher aktualisieren
             import assistant.config as cfg
+
             _new = load_yaml_config()
             cfg.yaml_config.clear()
             cfg.yaml_config.update(_new)
-            _audit_log("config_rollback", {
-                "snapshot_id": req.snapshot_id,
-                "security_sections_preserved": list(_sections_to_preserve),
-            })
+            _audit_log(
+                "config_rollback",
+                {
+                    "snapshot_id": req.snapshot_id,
+                    "security_sections_preserved": list(_sections_to_preserve),
+                },
+            )
         return result
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/self-optimization/status")
@@ -8017,7 +9414,9 @@ async def ui_self_opt_status(token: str = ""):
         }
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 class ProposalAction(BaseModel):
@@ -8033,14 +9432,20 @@ async def ui_self_opt_approve(req: ProposalAction, token: str = ""):
         if result["success"]:
             # yaml_config im Speicher aktualisieren
             import assistant.config as cfg
+
             _new = load_yaml_config()
             cfg.yaml_config.clear()
             cfg.yaml_config.update(_new)
-            _audit_log("self_opt_approve", {"index": req.index, "message": result.get("message", "")})
+            _audit_log(
+                "self_opt_approve",
+                {"index": req.index, "message": result.get("message", "")},
+            )
         return result
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/self-optimization/reject")
@@ -8054,7 +9459,9 @@ async def ui_self_opt_reject(req: ProposalAction, token: str = ""):
         return result
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/self-optimization/reject-all")
@@ -8068,7 +9475,9 @@ async def ui_self_opt_reject_all(token: str = ""):
         return result
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/self-optimization/run-analysis")
@@ -8080,11 +9489,15 @@ async def ui_self_opt_run_analysis(token: str = ""):
         return {
             "success": True,
             "proposals": proposals,
-            "message": f"{len(proposals)} Vorschlag/Vorschlaege generiert" if proposals else "Keine Vorschlaege — alles optimal",
+            "message": f"{len(proposals)} Vorschlag/Vorschlaege generiert"
+            if proposals
+            else "Keine Vorschlaege — alles optimal",
         }
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.get("/api/ui/automations")
@@ -8097,8 +9510,15 @@ async def ui_list_automations(token: str = ""):
         try:
             raw = await brain.ha.get_automations()
             for auto in raw:
-                alias = auto.get("alias") or auto.get("attributes", {}).get("friendly_name") or auto.get("id", "?")
-                entry = {"id": auto.get("id", auto.get("entity_id", "?")), "alias": alias}
+                alias = (
+                    auto.get("alias")
+                    or auto.get("attributes", {}).get("friendly_name")
+                    or auto.get("id", "?")
+                )
+                entry = {
+                    "id": auto.get("id", auto.get("entity_id", "?")),
+                    "alias": alias,
+                }
                 for key in ("trigger", "condition", "action", "mode", "description"):
                     if key in auto:
                         entry[key] = auto[key]
@@ -8126,7 +9546,9 @@ async def ui_list_automations(token: str = ""):
         }
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.delete("/api/ui/automations/jarvis/{config_id}")
@@ -8140,7 +9562,9 @@ async def ui_delete_jarvis_automation(config_id: str, token: str = ""):
         return result
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 @app.post("/api/ui/automations/jarvis/{entity_id:path}/toggle")
@@ -8150,7 +9574,7 @@ async def ui_toggle_jarvis_automation(entity_id: str, token: str = ""):
     try:
         states = await brain.ha.get_states()
         current_state = None
-        for s in (states or []):
+        for s in states or []:
             if s.get("entity_id") == entity_id:
                 current_state = s.get("state")
                 break
@@ -8161,7 +9585,9 @@ async def ui_toggle_jarvis_automation(entity_id: str, token: str = ""):
         return {"success": True, "new_state": "off" if current_state == "on" else "on"}
     except Exception as e:
         logger.error("API error: %s", e)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        raise HTTPException(
+            status_code=500, detail="Ein interner Fehler ist aufgetreten"
+        )
 
 
 def _deep_merge(base: dict, override: dict, _depth: int = 0):
@@ -8189,19 +9615,28 @@ import shutil
 import aiohttp as _aiohttp
 
 # Pfade: /repo ist das gemountete Git-Repo, /repo/assistant hat docker-compose.yml
-_REPO_DIR = Path("/repo") if Path("/repo/.git").exists() else Path(__file__).parent.parent.parent
+_REPO_DIR = (
+    Path("/repo")
+    if Path("/repo/.git").exists()
+    else Path(__file__).parent.parent.parent
+)
 _MHA_DIR = _REPO_DIR / "assistant"
 _OLLAMA_URL = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
 _update_lock = asyncio.Lock()
 _update_log: list[str] = []
 
 
-def _run_cmd_sync(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> tuple[int, str]:
+def _run_cmd_sync(
+    cmd: list[str], cwd: str | None = None, timeout: int = 120
+) -> tuple[int, str]:
     """Synchrone Hilfsfunktion — nicht direkt aus async-Code aufrufen."""
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True,
-            cwd=cwd, timeout=timeout,
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            timeout=timeout,
         )
         return result.returncode, result.stdout + result.stderr
     except subprocess.TimeoutExpired:
@@ -8210,12 +9645,16 @@ def _run_cmd_sync(cmd: list[str], cwd: str | None = None, timeout: int = 120) ->
         return -1, str(e)
 
 
-async def _run_cmd(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> tuple[int, str]:
+async def _run_cmd(
+    cmd: list[str], cwd: str | None = None, timeout: int = 120
+) -> tuple[int, str]:
     """Fuehrt einen Shell-Befehl aus ohne den Event-Loop zu blockieren."""
     return await asyncio.to_thread(_run_cmd_sync, cmd, cwd, timeout)
 
 
-async def _ollama_api(path: str, method: str = "GET", json_data: dict | None = None) -> tuple[bool, dict | str]:
+async def _ollama_api(
+    path: str, method: str = "GET", json_data: dict | None = None
+) -> tuple[bool, dict | str]:
     """Ruft die Ollama HTTP API auf (laeuft auf dem Host, nicht im Container).
 
     F-091: Path-Validierung + Redirect-Blocking + Response-Size-Limit.
@@ -8236,10 +9675,13 @@ async def _ollama_api(path: str, method: str = "GET", json_data: dict | None = N
                         if len(raw) > _MAX_OLLAMA_RESP:
                             return False, "Antwort zu gross"
                         import json as _json
+
                         return True, _json.loads(raw)
                     return False, f"HTTP {resp.status}"
             elif method == "POST":
-                async with session.post(url, json=json_data, allow_redirects=False) as resp:
+                async with session.post(
+                    url, json=json_data, allow_redirects=False
+                ) as resp:
                     raw = await resp.content.read(_MAX_OLLAMA_RESP + 1)
                     if len(raw) > _MAX_OLLAMA_RESP:
                         return False, "Antwort zu gross"
@@ -8271,14 +9713,26 @@ async def ui_system_status(token: str = ""):
     await _check_token(token)
 
     # Git (via gemountetes /repo Volume)
-    _, branch = await _run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR))
-    _, commit = await _run_cmd(["git", "log", "-1", "--format=%h %s"], cwd=str(_REPO_DIR))
+    _, branch = await _run_cmd(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR)
+    )
+    _, commit = await _run_cmd(
+        ["git", "log", "-1", "--format=%h %s"], cwd=str(_REPO_DIR)
+    )
     _, git_status = await _run_cmd(["git", "status", "--short"], cwd=str(_REPO_DIR))
 
     # Container Health (via gemounteten Docker-Socket)
     containers = {}
-    for name in ["mindhome-assistant", "mha-chromadb", "mha-redis", "mha-whisper", "mha-piper"]:
-        rc, out = await _run_cmd(["docker", "inspect", "--format", "{{.State.Health.Status}}", name])
+    for name in [
+        "mindhome-assistant",
+        "mha-chromadb",
+        "mha-redis",
+        "mha-whisper",
+        "mha-piper",
+    ]:
+        rc, out = await _run_cmd(
+            ["docker", "inspect", "--format", "{{.State.Health.Status}}", name]
+        )
         containers[name] = out.strip() if rc == 0 else "unknown"
 
     # Ollama (via HTTP API auf dem Host)
@@ -8286,7 +9740,9 @@ async def ui_system_status(token: str = ""):
     ollama_models = ""
     if ollama_ok and isinstance(ollama_data, dict):
         models = ollama_data.get("models", [])
-        lines = [f"{m.get('name', '?'):30s} {m.get('size', 0) / 1e9:.1f} GB" for m in models]
+        lines = [
+            f"{m.get('name', '?'):30s} {m.get('size', 0) / 1e9:.1f} GB" for m in models
+        ]
         ollama_models = "\n".join(["NAME                           SIZE"] + lines)
 
     # Disk — alle physischen Partitionen erkennen (inkl. zweite SSD)
@@ -8352,6 +9808,7 @@ async def ui_system_status(token: str = ""):
         except Exception as e:
             logger.debug("Unhandled: %s", e)
         return disk_info, ram_info
+
     disk_info, ram_info = await asyncio.to_thread(_read_disk_and_ram)
     # CPU Load
     cpu_info = {}
@@ -8371,6 +9828,7 @@ async def ui_system_status(token: str = ""):
     gpu_info = {}
     _gpu_status_file = Path("/var/lib/mindhome/gpu_status.json")
     try:
+
         def _read_gpu_status():
             if _gpu_status_file.exists():
                 data = json.loads(_gpu_status_file.read_text())
@@ -8383,16 +9841,19 @@ async def ui_system_status(token: str = ""):
                         "temperature_c": int(data["temperature_c"]),
                     }
             return {}
+
         gpu_info = await asyncio.to_thread(_read_gpu_status)
     except Exception as e:
         logger.debug("Unhandled: %s", e)
     # Fallback 1: direktes nvidia-smi (falls Container GPU-Zugriff hat)
     if not gpu_info:
-        rc_gpu, gpu_out = await _run_cmd([
-            "nvidia-smi",
-            "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu",
-            "--format=csv,noheader,nounits",
-        ])
+        rc_gpu, gpu_out = await _run_cmd(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu",
+                "--format=csv,noheader,nounits",
+            ]
+        )
         if rc_gpu == 0 and gpu_out.strip():
             parts = [p.strip() for p in gpu_out.strip().split(",")]
             if len(parts) >= 5:
@@ -8409,12 +9870,20 @@ async def ui_system_status(token: str = ""):
 
     # Fallback 2: nvidia-smi via Host PID namespace (Container hat Docker-Socket)
     if not gpu_info:
-        rc_gpu, gpu_out = await _run_cmd([
-            "nsenter", "--target", "1", "--mount", "--uts", "--",
-            "nvidia-smi",
-            "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu",
-            "--format=csv,noheader,nounits",
-        ], timeout=10)
+        rc_gpu, gpu_out = await _run_cmd(
+            [
+                "nsenter",
+                "--target",
+                "1",
+                "--mount",
+                "--uts",
+                "--",
+                "nvidia-smi",
+                "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            timeout=10,
+        )
         if rc_gpu == 0 and gpu_out.strip():
             parts = [p.strip() for p in gpu_out.strip().split(",")]
             if len(parts) >= 5:
@@ -8433,6 +9902,7 @@ async def ui_system_status(token: str = ""):
     if not gpu_info:
         try:
             import aiohttp as _aio_tmp
+
             async with _aio_tmp.ClientSession(
                 timeout=_aio_tmp.ClientTimeout(total=5)
             ) as _sess:
@@ -8492,8 +9962,11 @@ async def _docker_restart(container: str = "mindhome-assistant", timeout: int = 
     """Restart via Docker Engine API (Unix-Socket). Atomar — Daemon fuehrt komplett aus."""
     # F-090: Container-Name validieren gegen Injection
     import re as _re
-    if not _re.match(r'^[a-zA-Z0-9_.-]+$', container):
-        logger.warning("Docker-Restart: Ungueltiger Container-Name '%s'", container[:50])
+
+    if not _re.match(r"^[a-zA-Z0-9_.-]+$", container):
+        logger.warning(
+            "Docker-Restart: Ungueltiger Container-Name '%s'", container[:50]
+        )
         return False
     sock = "/var/run/docker.sock"
     try:
@@ -8531,7 +10004,9 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
 
     async with _update_lock:
         _update_log.clear()
-        _update_log.append(f"[{datetime.now(_LOCAL_TZ).strftime('%H:%M:%S')}] Update gestartet...")
+        _update_log.append(
+            f"[{datetime.now(_LOCAL_TZ).strftime('%H:%M:%S')}] Update gestartet..."
+        )
 
         # Aktuellen Branch merken (fuer Rollback bei Fehler)
         _, current_branch_raw = await _run_cmd(
@@ -8576,10 +10051,13 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
             _update_log.append(f"Fetch origin/{target_branch}...")
             rc_fetch, out_fetch = await _run_cmd(
                 ["git", "fetch", "origin", target_branch],
-                cwd=str(_REPO_DIR), timeout=60,
+                cwd=str(_REPO_DIR),
+                timeout=60,
             )
             if rc_fetch != 0:
-                _update_log.append(f"FEHLER: git fetch fehlgeschlagen: {out_fetch.strip()}")
+                _update_log.append(
+                    f"FEHLER: git fetch fehlgeschlagen: {out_fetch.strip()}"
+                )
                 # Stash droppen, Config wiederherstellen, abbrechen
                 await _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
                 for cfg_path, content in _saved_configs.items():
@@ -8593,10 +10071,13 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
             _update_log.append(f"Checkout {target_branch}...")
             rc_co, out_co = await _run_cmd(
                 ["git", "checkout", target_branch],
-                cwd=str(_REPO_DIR), timeout=30,
+                cwd=str(_REPO_DIR),
+                timeout=30,
             )
             if rc_co != 0:
-                _update_log.append(f"FEHLER: git checkout fehlgeschlagen: {out_co.strip()}")
+                _update_log.append(
+                    f"FEHLER: git checkout fehlgeschlagen: {out_co.strip()}"
+                )
                 # Zurueck zum alten Branch
                 await _run_cmd(["git", "checkout", old_branch], cwd=str(_REPO_DIR))
                 await _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
@@ -8613,7 +10094,8 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
         _update_log.append(f"Git pull origin/{pull_branch}...")
         rc, out = await _run_cmd(
             ["git", "pull", "--rebase", "origin", pull_branch],
-            cwd=str(_REPO_DIR), timeout=60,
+            cwd=str(_REPO_DIR),
+            timeout=60,
         )
 
         # Stash wieder droppen (User-Config kommt aus _saved_configs, nicht aus stash)
@@ -8640,9 +10122,13 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
                 cfg_path.write_text(content, encoding="utf-8")
                 _update_log.append(f"Config wiederhergestellt: {cfg_path.name}")
             except Exception as e:
-                _update_log.append(f"WARNUNG: {cfg_path.name} konnte nicht wiederhergestellt werden: {e}")
+                _update_log.append(
+                    f"WARNUNG: {cfg_path.name} konnte nicht wiederhergestellt werden: {e}"
+                )
 
-        _update_log.append(f"[{datetime.now(_LOCAL_TZ).strftime('%H:%M:%S')}] Code aktualisiert!")
+        _update_log.append(
+            f"[{datetime.now(_LOCAL_TZ).strftime('%H:%M:%S')}] Code aktualisiert!"
+        )
 
         # 4. Full Update: Docker Compose Build (Rebuild der Container-Images)
         is_full = body.full if body else False
@@ -8650,14 +10136,18 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
             _update_log.append("Full Update: Docker-Image wird neu gebaut...")
             rc_build, out_build = await _run_cmd(
                 ["docker", "compose", "build"],
-                cwd=str(_MHA_DIR), timeout=1200,
+                cwd=str(_MHA_DIR),
+                timeout=1200,
             )
             if rc_build != 0:
-                _update_log.append(f"WARNUNG: Docker build fehlgeschlagen: {out_build.strip()[:500]}")
+                _update_log.append(
+                    f"WARNUNG: Docker build fehlgeschlagen: {out_build.strip()[:500]}"
+                )
             else:
                 _update_log.append("Docker-Image erfolgreich gebaut")
 
             _update_log.append("Container werden neu erstellt...")
+
             # Fire-and-forget: docker compose up -d wuerde den eigenen Container
             # ersetzen und damit diesen Prozess killen. Daher async ausfuehren,
             # damit die Response noch rausgeht bevor der Container gestoppt wird.
@@ -8665,13 +10155,18 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
                 await asyncio.sleep(1)  # Response rauslassen
                 rc_up, out_up = await _run_cmd(
                     ["docker", "compose", "up", "-d"],
-                    cwd=str(_MHA_DIR), timeout=120,
+                    cwd=str(_MHA_DIR),
+                    timeout=120,
                 )
                 if rc_up != 0:
-                    logger.warning("Docker compose up fehlgeschlagen: %s", out_up.strip()[:500])
+                    logger.warning(
+                        "Docker compose up fehlgeschlagen: %s", out_up.strip()[:500]
+                    )
 
             task = asyncio.ensure_future(_deferred_compose_up())
-            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+            task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
+            )
         else:
             # 5. Quick: Restart via Docker Engine API (Code als Volume = sofort aktiv)
             _update_log.append("Container startet neu...")
@@ -8714,12 +10209,16 @@ async def ui_system_update_models(token: str = ""):
         models = [m.get("name", "") for m in data.get("models", []) if m.get("name")]
 
         for model in models:
-            ok, out = await _ollama_api("/api/pull", method="POST", json_data={"name": model})
-            results.append({
-                "model": model,
-                "success": ok,
-                "output": str(out)[-200:],
-            })
+            ok, out = await _ollama_api(
+                "/api/pull", method="POST", json_data={"name": model}
+            )
+            results.append(
+                {
+                    "model": model,
+                    "success": ok,
+                    "output": str(out)[-200:],
+                }
+            )
 
         return {
             "success": all(r["success"] for r in results),
@@ -8747,7 +10246,8 @@ async def ui_system_update_check(token: str = "", branch: str = ""):
     # Fetch
     rc, fetch_out = await _run_cmd(
         ["git", "fetch", "origin", check_branch],
-        cwd=str(_REPO_DIR), timeout=30,
+        cwd=str(_REPO_DIR),
+        timeout=30,
     )
     if rc != 0:
         return {
@@ -8812,6 +10312,7 @@ async def root():
 
 # ----- J2: Redis Data Backup — Runtime-Daten exportieren -----
 
+
 @app.get("/api/admin/redis-backup", tags=["admin"])
 async def redis_backup(token: str = Header(None, alias="X-Auth-Token")):
     """Exportiert alle mha:* Runtime-Daten aus Redis als JSON.
@@ -8872,6 +10373,7 @@ async def redis_backup(token: str = Header(None, alias="X-Auth-Token")):
     logger.info("Redis-Backup erstellt: %d Keys exportiert", key_count)
 
     from fastapi.responses import JSONResponse
+
     return JSONResponse(
         content=backup,
         headers={
@@ -8881,6 +10383,7 @@ async def redis_backup(token: str = Header(None, alias="X-Auth-Token")):
 
 
 # ----- Kubernetes-ready Health Probes -----
+
 
 @app.get("/healthz", tags=["probes"])
 async def healthz():
@@ -8901,12 +10404,14 @@ async def readyz():
             return {"status": "ready", "components": components}
 
         from fastapi.responses import JSONResponse
+
         return JSONResponse(
             status_code=503,
             content={"status": "not_ready", "components": components},
         )
     except Exception as e:
         from fastapi.responses import JSONResponse
+
         return JSONResponse(
             status_code=503,
             content={"status": "error", "detail": str(type(e).__name__)},
@@ -8914,6 +10419,7 @@ async def readyz():
 
 
 # ----- Prometheus-kompatible Metrics -----
+
 
 @app.get("/metrics", tags=["monitoring"])
 async def metrics():
@@ -8924,7 +10430,7 @@ async def metrics():
 
     # System-Info
     lines.append("# HELP mindhome_info MindHome Assistant Info")
-    lines.append('# TYPE mindhome_info gauge')
+    lines.append("# TYPE mindhome_info gauge")
     lines.append('mindhome_info{version="1.4.2"} 1')
 
     # Uptime (approximiert ueber Error-Buffer-Laenge)
@@ -8940,18 +10446,23 @@ async def metrics():
     # Circuit Breaker Status
     try:
         from .circuit_breaker import registry as cb_registry
+
         for cb_status in cb_registry.all_status():
             name = cb_status["name"]
             state_val = 1 if cb_status["state"] == "closed" else 0
-            lines.append(f'# HELP mindhome_circuit_{name}_closed Circuit Breaker Status')
-            lines.append(f'# TYPE mindhome_circuit_{name}_closed gauge')
-            lines.append(f'mindhome_circuit_{name}_closed {state_val}')
-            lines.append(f'mindhome_circuit_{name}_failures {cb_status["failure_count"]}')
+            lines.append(
+                f"# HELP mindhome_circuit_{name}_closed Circuit Breaker Status"
+            )
+            lines.append(f"# TYPE mindhome_circuit_{name}_closed gauge")
+            lines.append(f"mindhome_circuit_{name}_closed {state_val}")
+            lines.append(
+                f"mindhome_circuit_{name}_failures {cb_status['failure_count']}"
+            )
     except Exception as e:
         logger.debug("Unhandled: %s", e)
     # Task Registry Status
     try:
-        if hasattr(brain, '_task_registry'):
+        if hasattr(brain, "_task_registry"):
             lines.append("# HELP mindhome_background_tasks Aktive Background-Tasks")
             lines.append("# TYPE mindhome_background_tasks gauge")
             lines.append(f"mindhome_background_tasks {brain._task_registry.task_count}")
@@ -8968,6 +10479,7 @@ async def metrics():
     except Exception as e:
         logger.debug("Unhandled: %s", e)
     from fastapi.responses import PlainTextResponse
+
     return PlainTextResponse(
         content="\n".join(lines) + "\n",
         media_type="text/plain; version=0.0.4; charset=utf-8",

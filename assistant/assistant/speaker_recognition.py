@@ -335,10 +335,14 @@ class SpeakerRecognition:
                     "voice_embedding",
                     emb_result["confidence"],
                 )
+                _emb_conf = emb_result["confidence"]
+                # MCU Sprint 4: Soft-confirmation at medium confidence
+                _needs_soft_confirm = 0.5 <= _emb_conf < self.min_confidence
                 return {
                     "person": emb_result["person"],
-                    "confidence": emb_result["confidence"],
-                    "fallback": emb_result["confidence"] < self.min_confidence,
+                    "confidence": _emb_conf,
+                    "fallback": _emb_conf < 0.5,  # Only hard fallback below 0.5
+                    "soft_confirm": _needs_soft_confirm,
                     "method": "voice_embedding",
                 }
 
@@ -1025,6 +1029,18 @@ class SpeakerRecognition:
                 except Exception as e:
                     logger.debug("Unhandled: %s", e)
                 logger.info("Fallback-Antwort aufgeloest: %s", person_name)
+
+                # MCU Sprint 4: Auto-Enrollment — learn voice embedding
+                if self._last_embedding:
+                    try:
+                        await self.learn_embedding_from_audio(person_id, {})
+                        logger.info(
+                            "Auto-Enrollment: Voice-Embedding für %s gelernt",
+                            person_name,
+                        )
+                    except Exception as e:
+                        logger.debug("Auto-Enrollment fehlgeschlagen: %s", e)
+
                 return {
                     "person": person_name,
                     "person_id": person_id,
