@@ -1,6 +1,6 @@
 # J.A.R.V.I.S. MCU-Level Implementation Plan
 > Erstellt am 2026-03-22 | Letzter Durchlauf: Durchlauf #3 — Session 1 am 2026-03-22
-> Aktueller Stand: 89.3% (Kategorien 1-4 re-analysiert nach Sprint 6/7 Implementierungen)
+> Aktueller Stand: 86.5% (Kategorien 1-9 re-analysiert nach Sprint 6/7 Implementierungen, Durchlauf #3)
 > Dieses Dokument ist die Single Source of Truth für alle MCU-Level Verbesserungen.
 
 ## Status-Legende
@@ -548,7 +548,7 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 | 4. Butler-Qualitäten | ×2.5 | 80% | 88% | **89%** | +1% |
 
 **Session 1 gewichteter Durchschnitt: 87.7%** (vorher: 84.6%)
-**Gesamt-Score (alle 12 Kategorien, geschätzt): 89.3%** (vorher: 86.6%)
+**Gesamt-Score (alle 12 Kategorien): 86.5%** (vorher: 84.7%)
 
 **Verbesserung durch Sprint 6/7:** +3.1 Prozentpunkte in Session 1. 7 von 8 offenen Aufgaben aus Durchlauf #2 umgesetzt (1 teilweise). 3 neue Verbesserungspunkte identifiziert (fehlende Tests, Context-Clustering-Lücken, Action-Replay Raum-Mutation).
 
@@ -561,6 +561,16 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 ---
 
 ## Changelog
+
+### Durchlauf #3 — Session 2 — 2026-03-22
+- 2 Aufgaben als erledigt markiert (Cat 6: Contradiction Confirmation, Learning Report)
+- 1 neue Aufgabe hinzugefügt (Cat 6: fehlende Tests für Sprint 6 Lern-Features)
+- 1 neuer InsightEngine-Check dokumentiert (Cat 5: Weather Forecast Warning)
+- 1 neues OutcomeTracker-Feature dokumentiert (Cat 6: Auto-Opinion-Learning)
+- Kategorien 5-9 Score: Cat5 85→86%, Cat6 85→88%, Cat7-9 unverändert
+- Gesamt-Score: **84.7% → 86.5%** (+1.8%)
+- Gesamtergebnis-Tabelle auf aktuelle Scores aktualisiert (war noch auf Durchlauf #1 Baseline)
+- Cat 7/8/9: Stichproben-Prüfung — keine Code-Änderungen, Status beibehalten
 
 ### Durchlauf #3 — Session 1 — 2026-03-22
 - 7 Aufgaben als erledigt markiert (Cat 1: 1, Cat 2: 3, Cat 3: 2, Cat 4: 1)
@@ -1077,7 +1087,7 @@ Du bist ein Code-Agent der diesen Plan umsetzt. Folge diesen Regeln:
 ### MCU-Jarvis Benchmark
 MCU-Jarvis weiß immer was im Haus passiert — Energiestatus, wer wo ist, aktuelle Bedrohungen, Wetter, Termine — alles gleichzeitig. Er scannt das Stark Tower Energiesystem (Avengers 1), erkennt Vereisung beim Flug (Iron Man 1), diagnostiziert Systeme auf Befehl. Sein Situationsbild ist lückenlos und in Echtzeit.
 
-### MindHome-Jarvis Status: 85% 🔄 (vorher: 82% — Durchlauf #1)
+### MindHome-Jarvis Status: 86% 🔄 (vorher: 85% — Durchlauf #2)
 
 ### Code-Verifizierung
 
@@ -1094,9 +1104,10 @@ MCU-Jarvis weiß immer was im Haus passiert — Energiestatus, wer wo ist, aktue
    - `[BESSER ALS MCU]` Prompt-Injection-Defense mit 154 Patterns — MCU-Jarvis hat kein LLM-Sicherheitsproblem
    - ✅ `[OK]` Per-Person Room Tracking (Zeile 1703-1726): FollowMe-Integration, mappt jede Person individuell auf ihren Raum. Fallback auf primären Raum. Wired in brain.py:1058-1060. *Erledigt in Sprint 4 — Durchlauf #2*
 
-2. **InsightEngine** (`assistant/assistant/insight_engine.py`, 2407 Zeilen)
-   - `[BESSER ALS MCU]` 16 Cross-Reference-Checks die 3-5 Datenquellen korrelieren:
+2. **InsightEngine** (`assistant/assistant/insight_engine.py`, 2407+ Zeilen)
+   - `[BESSER ALS MCU]` 17 Cross-Reference-Checks die 3-5 Datenquellen korrelieren:
      - Wetter↔Fenster, Frost↔Heizung, Kalender↔Reise, Energie-Anomalie, Abwesend↔Geräte, Temp-Abfall, Fenster↔Temp, Kalender↔Wetter, Komfort-Widerspruch, Gäste-Vorbereitung, Nacht-Sicherheit, Heizung↔Sonne, Vergessene Geräte, Feuchtigkeit-Widerspruch, Away-Security-Full, Health↔Work
+     - ✅ 🆕 **Wetter-Vorhersage-Warnung** (`_check_weather_forecast_warning()`, Zeile 1001-1066): Warnt vor Regen/Sturm in den nächsten 2h unabhängig von Fensterstatus. Duplikat-frei mit Window-Check. *Hinzugefügt in Sprint 6 — Durchlauf #3*
    - `[OK]` 30min Check-Intervall, 4h Cooldown pro Insight-Typ, LLM-Rewrite optional
    - `[OK]` Deduplication verhindert mehrfache Insights pro Entity pro Zyklus
 
@@ -1122,11 +1133,11 @@ MCU-Jarvis weiß immer was im Haus passiert — Energiestatus, wer wo ist, aktue
    - `[OK]` Batterie (<20%), Stale-Sensoren (6h), Offline-Geräte (30min)
    - `[OK]` Eskalierende Cooldowns (1× → 2× → 4× → 7× max) verhindern Spam
 
-**[V2]:** V2 übersprungen — V1 unauffällig. Keine TODOs/stubs gefunden, umfangreiche Tests (context_builder ~1200, insight_engine ~1500, device_health ~1200, health_monitor ~700 Zeilen).
+**[V2]:** V2 übersprungen — V1 unauffällig. Sprint 6 Wetter-Vorhersage-Warnung korrekt integriert (Config: `check_weather_windows`, Duplikat-Vermeidung mit Window-Check). Keine neuen TODOs/stubs. Tests: context_builder ~1200, insight_engine ~1500 Zeilen (aber kein Test für `_check_weather_forecast_warning()`).
 
 ### Was fehlt zum MCU-Level
 
-1. **Room Presence zu simplistisch** — Alle Home-Personen werden dem "primären Raum" zugewiesen statt individuell per Sensor getrackt. MCU-Jarvis weiß exakt wer wo ist. `[WÖCHENTLICH]`
+1. ~~**Room Presence zu simplistisch**~~ ✅ Erledigt in Durchlauf #2 — Per-Person Room Tracking via FollowMe-Integration.
 2. **Initiale Device-Baselines langsam** — 10+ Samples nötig (= 10+ Tage), neue Geräte sind anfangs "blind". `[SELTEN]`
 3. **Kein Echtzeit-Streaming** — Kontext wird pro Request gebaut (5s Cache), nicht als Live-Stream. MCU-Jarvis hat immer aktuelles Bild. `[TÄGLICH]`
 
@@ -1153,7 +1164,7 @@ MCU-Jarvis weiß immer was im Haus passiert — Energiestatus, wer wo ist, aktue
 ### MCU-Jarvis Benchmark
 MCU-Jarvis lernt aus Tonys Verhalten, wird über die Filme hinweg immer besser: versteht Gewohnheiten, passt Reaktionen an, lernt aus Fehlern. Er hilft bei der Entdeckung des neuen Elements (Iron Man 2) durch Langzeit-Datenanalyse und adaptiert sich an neue Situationen.
 
-### MindHome-Jarvis Status: 85% 🔄 (vorher: 81% — Durchlauf #1)
+### MindHome-Jarvis Status: 88% 🔄 (vorher: 85% — Durchlauf #2)
 
 ### Code-Verifizierung
 
@@ -1167,8 +1178,8 @@ MCU-Jarvis lernt aus Tonys Verhalten, wird über die Filme hinweg immer besser: 
    - `[OK]` Fact Versioning: Widersprüchliche Fakten werden versioniert, neuere gewinnen
    - `[BESSER ALS MCU]` Systematische Faktenextraktion mit Konfidenz und Widerspruchserkennung. MCU-Jarvis "merkt sich" implizit, hat aber kein explizites Wissensmanagement.
    - ✅ `[OK]` Knowledge Gap Detection (Zeile 1077-1136): `get_knowledge_gaps()` identifiziert Räume mit <2 Präferenz-Fakten. Wired in proactive.py:2322-2356 mit 7-Tage-Cooldown/Raum. *Erledigt in Sprint 4 — Durchlauf #2*
-   - `[~]` Contradiction Confirmation (Zeile 260-282): Pending Contradictions in Redis-Liste gespeichert, aber kein ProactiveManager-Flow für User-Bestätigung. *Teilweise erledigt in Sprint 4 — Durchlauf #2*
-   - `[~]` Learning Report (Zeile 1138-1206): `generate_learning_report(days=90)` existiert mit Trend-Detection, aber wird nie aufgerufen. Kein Scheduling in ProactiveManager. *Teilweise erledigt in Sprint 4 — Durchlauf #2*
+   - ✅ `[OK]` Contradiction Confirmation (Zeile 260-282 + 1135-1206): `get_pending_contradictions()` liefert ausstehende Widersprüche, `resolve_contradiction()` löst sie auf. ProactiveManager-Flow: `_check_pending_contradictions_flow()` prüft periodisch (10min), max 1/Tag Cooldown. *Erledigt in Sprint 6 — Durchlauf #3*
+   - ✅ `[OK]` Learning Report (Zeile 1138-1206): `generate_learning_report(days=90)` existiert. Jetzt mit monatlichem Scheduling via `_check_learning_report_schedule()` in proactive.py. 30-Tage-Cooldown via Redis. *Erledigt in Sprint 6 — Durchlauf #3*
 
 2. **MemoryExtractor** (`assistant/assistant/memory_extractor.py`, Zeile 103-133)
    - `[OK]` LLM-basierte Faktenextraktion aus Gesprächen (Fast-Modell, 0.1 Temperature)
@@ -1196,6 +1207,7 @@ MCU-Jarvis lernt aus Tonys Verhalten, wird über die Filme hinweg immer besser: 
    - `[OK]` Vorher/Nachher-Vergleich nach 180s Delay
    - `[OK]` Outcome-Classification: NEGATIVE (reverted), PARTIAL, NEUTRAL
    - `[OK]` Feedback-Loop: Erfolg +0.1 Confidence, Fehlschlag -0.15 zu Anticipation
+   - ✅ 🆕 `[OK]` Auto-Opinion-Learning (`_update_auto_opinion()`, Zeile 860-947): ≥5 Fehler/30 Tage → negative Meinung, ≥20 Erfolge ohne Fehler → positive Meinung. Per-Gerät+Raum Redis-Zähler. Bridge via `set_personality()` in brain.py:1539. *Hinzugefügt in Sprint 6 — Durchlauf #3*
 
 7. **SelfOptimization** (`assistant/assistant/self_optimization.py`, 1624 Test-Zeilen)
    - `[OK]` 10 optimierbare Parameter (sarcasm_level, opinion_intensity, max_response_sentences etc.)
@@ -1215,30 +1227,35 @@ MCU-Jarvis lernt aus Tonys Verhalten, wird über die Filme hinweg immer besser: 
     - `[OK]` OutcomeTracker boostet/bestraft Anticipation-Confidence
     - `[OK]` Seasonal Insight boostet saisonale Patterns +5-10%
 
-**[V2]:** V2 übersprungen — V1 unauffällig. Keine TODOs/stubs, umfangreiche Tests (semantic_memory 2197, learning_observer 1896, self_optimization 1624, learning_transfer 1124 Zeilen).
+**[V2]:** V2 durchgeführt — Sprint 6 hat 3 neue Lern-Features hinzugefügt.
+- ✅ `[OK]` Contradiction Confirmation jetzt vollständig: Storage + ProactiveManager-Flow + Resolution-API
+- ✅ `[OK]` Learning Report jetzt mit monatlichem Scheduling (30-Tage-Cooldown)
+- ✅ `[OK]` Auto-Opinion-Learning: OutcomeTracker → PersonalityEngine Bridge funktioniert
+- `[VERBESSERBAR]` `_check_pending_contradictions_flow()` hat nur 1/Tag Cooldown — bei mehreren Widersprüchen dauert Auflösung Tage
+- `[VERBESSERBAR]` Auto-Opinion `_update_auto_opinion()` hat keinen dedizierten Test — nur `set_personality()` getestet
+- `[VERBESSERBAR]` Learning Report Scheduling hat keinen Test
 
 ### Was fehlt zum MCU-Level
 
-1. **Kein aktives Nachfragen bei Lücken** — MCU-Jarvis fragt proaktiv wenn ihm Informationen fehlen. Der reale Jarvis extrahiert nur aus Gesprächen, fragt aber nicht "Wie warm magst du es eigentlich im Bad?". `[WÖCHENTLICH]`
-2. **Contradiction Resolution ohne User-Feedback** — System hält neueren Fakt für korrekt, fragt aber nicht "Du sagtest letztens 21°C, jetzt 23°C — was gilt?". `[WÖCHENTLICH]`
-3. **Langzeit-Trends schwer zugänglich** — Fakten-Decay funktioniert, aber es gibt keine "Was habe ich in 6 Monaten über den User gelernt?"-Zusammenfassung. `[SELTEN]`
+1. ~~**Kein aktives Nachfragen bei Lücken**~~ ✅ Erledigt in Durchlauf #2 — Knowledge Gap Detection mit proaktiven Fragen.
+2. ~~**Contradiction Resolution ohne User-Feedback**~~ ✅ Erledigt in Durchlauf #3 — ProactiveManager fragt User, `resolve_contradiction()` löst auf.
+3. ~~**Langzeit-Trends schwer zugänglich**~~ ✅ Erledigt in Durchlauf #3 — Monatlicher Learning Report via ProactiveManager.
+4. 🆕 **Fehlende Tests für Sprint 6 Lern-Features** — `_update_auto_opinion()`, `_check_pending_contradictions_flow()`, `_check_learning_report_schedule()` sind ungetestet. `[SELTEN]` *Hinzugefügt in Durchlauf #3*
 
 ### Konkrete Verbesserungsvorschläge
 
 1. **`[x]` Proaktive Wissenslücken-Erkennung** ✅ Erledigt am 2026-03-22 — Durchlauf #2
    - semantic_memory.py:1077-1136 + proactive.py:2322-2356: Räume mit <2 Fakten, 7-Tage-Cooldown, natürliche Fragen
 
-2. **`[~]` Contradiction Confirmation** — Teilweise erledigt: Storage in Redis-Liste implementiert (semantic_memory.py:260-282), aber ProactiveManager-Flow für User-Bestätigung fehlt noch.
-   - Verbleibend: MEDIUM-Event via ProactiveManager wenn Pending-Contradictions existieren, User-Bestätigung/Ablehnung → Fakt updaten
-   - Aufwand: Klein | Impact: +2% | Alltag: `[WÖCHENTLICH]`
+2. **`[x]` Contradiction Confirmation** ✅ Erledigt am 2026-03-22 — Durchlauf #3
+   - semantic_memory.py: `get_pending_contradictions()` + `resolve_contradiction()`. proactive.py: `_check_pending_contradictions_flow()` mit 24h-Cooldown, MEDIUM-Urgency TTS.
 
-3. **`[~]` Langzeit-Lernbericht** — Teilweise erledigt: `generate_learning_report(days=90)` in semantic_memory.py:1138-1206 existiert mit Trend-Detection, aber wird nie aufgerufen.
-   - Verbleibend: Monatliches Scheduling in ProactiveManager als LOW-Event
-   - Aufwand: Klein | Impact: +1% | Alltag: `[SELTEN]`
+3. **`[x]` Langzeit-Lernbericht** ✅ Erledigt am 2026-03-22 — Durchlauf #3
+   - proactive.py: `_check_learning_report_schedule()` — monatliches Scheduling, 30-Tage Redis-Cooldown, LOW-Priority TTS.
 
 ### Akzeptanzkriterien — Wann ist dieses Feature "MCU-Level"?
 - [x] System stellt proaktiv Wissenslücken-Fragen (max 1/Woche/Raum) ✅ Knowledge Gap Detection
-- [~] Widersprüchliche Fakten werden dem User zur Bestätigung vorgelegt — Storage ja, User-Flow fehlt
+- [x] Widersprüchliche Fakten werden dem User zur Bestätigung vorgelegt ✅ `_check_pending_contradictions_flow()` + `resolve_contradiction()`
 - [x] Correction-Memory-Regeln überleben Neustarts und sind über Redis persistiert ✅ Bereits seit Durchlauf #1
 - [x] Sarcasm-Learning konvergiert nach 60 Interaktionen auf stabiles Level ✅ Bereits seit Durchlauf #1
 - [x] LearningObserver erkennt >80% der wiederkehrenden manuellen Muster nach 7 Tagen ✅ Bereits seit Durchlauf #1
@@ -1504,24 +1521,24 @@ Bei Angriffen auf das Haus (Iron Man 3) koordiniert Jarvis die Verteidigung, pri
 
 ## Gesamtergebnis — Alle 12 Kategorien
 
-### Scores (FINAL)
+### Scores (aktualisiert Durchlauf #3)
 
 | # | Kategorie | Gewicht | Score | Gewichtet |
 |---|-----------|---------|-------|-----------|
-| 1 | Natürliche Konversation & Sprachverständnis | ×3 | 72% | 216 |
-| 2 | Persönlichkeit, Sarkasmus & Humor | ×3 | 78% | 234 |
-| 3 | Proaktives Handeln & Antizipation | ×2.5 | 76% | 190 |
-| 4 | Butler-Qualitäten & Servicementalität | ×2.5 | 80% | 200 |
-| 5 | Situationsbewusstsein & Kontextverständnis | ×2 | 85% 🔄 | 170 |
-| 6 | Lernfähigkeit & Adaptation | ×2 | 85% 🔄 | 170 |
-| 7 | Sprecherkennung & Personalisierung | ×1.5 | 82% 🔄 | 123 |
-| 8 | Krisenmanagement & Notfallreaktionen | ×1.5 | 86% 🔄 | 129 |
-| 9 | Sicherheit & Bedrohungserkennung | ×1.5 | 90% 🔄 | 135 |
-| 10 | Multi-Room-Awareness & Follow-Me | ×1 | 82% 🔄 | 82 |
-| 11 | Energiemanagement & Haussteuerung | ×1 | 88% 🔄 | 88 |
+| 1 | Natürliche Konversation & Sprachverständnis | ×3 | 84% 🔄 | 252 |
+| 2 | Persönlichkeit, Sarkasmus & Humor | ×3 | 89% 🔄 | 267 |
+| 3 | Proaktives Handeln & Antizipation | ×2.5 | 89% 🔄 | 222.5 |
+| 4 | Butler-Qualitäten & Servicementalität | ×2.5 | 89% 🔄 | 222.5 |
+| 5 | Situationsbewusstsein & Kontextverständnis | ×2 | 86% 🔄 | 172 |
+| 6 | Lernfähigkeit & Adaptation | ×2 | 88% 🔄 | 176 |
+| 7 | Sprecherkennung & Personalisierung | ×1.5 | 82% | 123 |
+| 8 | Krisenmanagement & Notfallreaktionen | ×1.5 | 86% | 129 |
+| 9 | Sicherheit & Bedrohungserkennung | ×1.5 | 90% | 135 |
+| 10 | Multi-Room-Awareness & Follow-Me | ×1 | 82% | 82 |
+| 11 | Energiemanagement & Haussteuerung | ×1 | 88% | 88 |
 | 12 | Erklärbarkeit & Transparenz | ×1 | 77% | 77 |
-| | **Gesamtsumme** | **22.5** | | **1755.5** |
-| | **GESAMT-SCORE** | | **78.0%** | |
+| | **Gesamtsumme** | **22.5** | | **1946** |
+| | **GESAMT-SCORE** | | **86.5%** | |
 
 ### Aufgaben-Zusammenfassung
 
