@@ -1,6 +1,6 @@
 # J.A.R.V.I.S. MCU-Level Implementation Plan
-> Erstellt am 2026-03-22 | Letzter Durchlauf: Session 1 am 2026-03-22
-> Aktueller Stand: 76.4% (Teilergebnis — 4 von 12 Kategorien analysiert)
+> Erstellt am 2026-03-22 | Letzter Durchlauf: Session 2 am 2026-03-22
+> Aktueller Stand: 78.0% (Teilergebnis — 9 von 12 Kategorien analysiert)
 > Dieses Dokument ist die Single Source of Truth für alle MCU-Level Verbesserungen.
 
 ## Status-Legende
@@ -14,6 +14,7 @@
 | Session | Datum | Kategorien | Aufgaben |
 |---------|-------|------------|----------|
 | 1       | 2026-03-22 | 1-4 (×3/×2.5) | 19 |
+| 2       | 2026-03-22 | 5-9 (×2/×1.5) | 16 |
 
 ## Schutzliste — Besser als MCU (NICHT beschädigen!)
 
@@ -24,6 +25,12 @@
 5. **Silence Matrix** (`activity.py`, Zeile 54-70) — 7×4 Zustellregel-Matrix. Formaler und robuster als MCU-Jarvis' intuitives Schweigen.
 6. **Pushback-Learning** (`function_validator.py`, Zeile 77-109) — Lernt aus übergangenem Widerspruch. MCU-Jarvis passt sich nicht explizit an überstimmte Einwände an.
 7. **predict_future_needs()** (`anticipation.py`, Zeile 1798+) — 7-14 Tage Vorausschau. MCU-Jarvis denkt nicht so weit voraus.
+8. **154 Prompt-Injection-Patterns** (`context_builder.py`, Zeile 48-195) — Enterprise-grade LLM-Sicherheit. MCU-Jarvis hat kein LLM-Sicherheitsproblem.
+9. **16 Cross-Reference-Insights** (`insight_engine.py`) — Systematische Korrelation von 3-5 Datenquellen pro Check. MCU-Jarvis korreliert intuitiv, nicht systematisch.
+10. **7-Layer SSRF-Schutz** (`web_search.py`) — DNS-Rebinding, Redirect-Blocking, Pinned-Resolver. MCU-Jarvis hat keine Web-Sicherheitsprobleme.
+11. **Systematische Graceful Degradation** (`brain.py`, `_safe_init()`) — Pro-Modul Failure-Tracking mit strukturiertem Degraded Mode. MCU-Jarvis degradiert intuitiv.
+12. **Systematische Fakten-Contradiction-Detection** (`semantic_memory.py`, Zeile 391+) — 2-Pass Widerspruchserkennung mit LLM-Validation. MCU-Jarvis merkt sich implizit.
+13. **Adaptive Sarkasmus-Learning** (`personality.py`) — Feedback-Loop alle 20 Interaktionen, 90-Tage Redis-Persistenz. MCU-Jarvis' Humor ist statisch.
 
 ## 1. Natürliche Konversation & Sprachverständnis (×3)
 
@@ -439,28 +446,7 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 
 ## Zwischenergebnis Session 1
 
-### Scores (4 von 12 Kategorien)
-
-| # | Kategorie | Gewicht | Score | Gewichtet |
-|---|-----------|---------|-------|-----------|
-| 1 | Natürliche Konversation & Sprachverständnis | ×3 | 72% | 216 |
-| 2 | Persönlichkeit, Sarkasmus & Humor | ×3 | 78% | 234 |
-| 3 | Proaktives Handeln & Antizipation | ×2.5 | 76% | 190 |
-| 4 | Butler-Qualitäten & Servicementalität | ×2.5 | 80% | 200 |
-| | **Teilsumme (Kat. 1-4)** | **11** | | **840** |
-| | **Teildurchschnitt** | | **76.4%** | |
-
-*Hinweis: Endgültiger Gesamt-Score erst nach Session 5 (alle 12 Kategorien).*
-
-### Aufgaben-Zusammenfassung
-
-| Kategorie | Offen | Teilweise | Erledigt | Gesamt |
-|-----------|-------|-----------|----------|--------|
-| 1. Konversation | 5 | 0 | 0 | 5 |
-| 2. Persönlichkeit | 4 | 0 | 0 | 4 |
-| 3. Proaktivität | 5 | 0 | 0 | 5 |
-| 4. Butler-Qualitäten | 5 | 0 | 0 | 5 |
-| **Gesamt** | **19** | **0** | **0** | **19** |
+*(Siehe aktualisiertes Zwischenergebnis Session 1+2 weiter unten)*
 
 ---
 
@@ -474,3 +460,489 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 - Besonders stark: Butler-Qualitäten (80%) — Silence Matrix, Pushback-Learning, Autonomie-System
 - Besonders schwach: Konversation (72%) — fehlende Antwort-Varianz und natürliche Pausen
 - 5 Features als `[BESSER ALS MCU]` identifiziert und in Schutzliste aufgenommen
+
+### Durchlauf #2 — Session 2 — 2026-03-22
+- 0 Aufgaben als erledigt markiert
+- 16 neue Aufgaben hinzugefügt (Kategorien 5-9)
+- 0 Zeilenreferenzen aktualisiert
+- Kategorien 5-9 Score: Cat5=82%, Cat6=81%, Cat7=74%, Cat8=78%, Cat9=85%
+- Gesamtscore: **76.4% → 78.0%** (9 von 12 Kategorien)
+- Besonders stark: Sicherheit (85%) — 154 Injection-Patterns, 7-Layer SSRF, Immutable Core
+- Besonders schwach: Sprecherkennung (74%) — default deaktiviert, kein Auto-Enrollment
+- 6 neue Features als `[BESSER ALS MCU]` identifiziert (Schutzliste #8-#13)
+
+## 5. Situationsbewusstsein & Kontextverständnis (×2)
+
+### MCU-Jarvis Benchmark
+MCU-Jarvis weiß immer was im Haus passiert — Energiestatus, wer wo ist, aktuelle Bedrohungen, Wetter, Termine — alles gleichzeitig. Er scannt das Stark Tower Energiesystem (Avengers 1), erkennt Vereisung beim Flug (Iron Man 1), diagnostiziert Systeme auf Befehl. Sein Situationsbild ist lückenlos und in Echtzeit.
+
+### MindHome-Jarvis Status: 82%
+
+### Code-Verifizierung
+
+**[V1] Erste Analyse:**
+
+1. **ContextBuilder** (`assistant/assistant/context_builder.py`, 1774 Zeilen)
+   - `[OK]` 16+ parallele Datenquellen in `build()` (Zeile 278-529): HA-States, MindHome-Daten, Activity, Health-Trends, Energy, Calendar, Guest-Mode, Semantic Memory
+   - `[OK]` 15s Timeout via `asyncio.wait_for()` — verhindert Hänger
+   - `[OK]` HA-States Cache: 5s TTL, Weather-Cache: 5min TTL — guter Kompromiss Frische/Performance
+   - `[OK]` Prompt-Injection-Schutz: 154 Regex-Patterns (F-001/F-004/F-080/F-084/F-090/F-091), Unicode-Normalisierung, Zero-Width-Removal
+   - `[OK]` Room Presence: Occupancy-Sensoren → Motion-Sensoren → Fallback (15min Timeout)
+   - `[OK]` Memory-Aware: Erkennt "meine Frau", löst auf echten Namen auf, max 5 Person-Facts + 3 allgemeine Facts
+   - `[OK]` Anomalie-Erkennung: Waschmaschine steckt, niedrige Batterie (<10%), max 3 Anomalien im Kontext
+   - `[BESSER ALS MCU]` Prompt-Injection-Defense mit 154 Patterns — MCU-Jarvis hat kein LLM-Sicherheitsproblem
+
+2. **InsightEngine** (`assistant/assistant/insight_engine.py`, 2407 Zeilen)
+   - `[BESSER ALS MCU]` 16 Cross-Reference-Checks die 3-5 Datenquellen korrelieren:
+     - Wetter↔Fenster, Frost↔Heizung, Kalender↔Reise, Energie-Anomalie, Abwesend↔Geräte, Temp-Abfall, Fenster↔Temp, Kalender↔Wetter, Komfort-Widerspruch, Gäste-Vorbereitung, Nacht-Sicherheit, Heizung↔Sonne, Vergessene Geräte, Feuchtigkeit-Widerspruch, Away-Security-Full, Health↔Work
+   - `[OK]` 30min Check-Intervall, 4h Cooldown pro Insight-Typ, LLM-Rewrite optional
+   - `[OK]` Deduplication verhindert mehrfache Insights pro Entity pro Zyklus
+
+3. **DeviceHealth** (`assistant/assistant/device_health.py`, 941 Zeilen)
+   - `[OK]` Statistische Baselines (σ-basiert): 30-Tage-Fenster, saisonale Partitionierung, min 10 Samples
+   - `[OK]` HVAC-Effizienz-Check: >120min ohne Zieltemp → Alert (mit Fenster-Suppressierung)
+   - `[OK]` Stale-Sensor-Detection: 3+ Tage ohne Änderung → Warnung
+   - `[OK]` Degradation-Trajectory: Woche-über-Woche Trend-Tracking
+
+4. **HealthMonitor** (`assistant/assistant/health_monitor.py`, 660 Zeilen)
+   - `[OK]` CO2 (Warnung 1000ppm, Kritisch 1500ppm), Feuchtigkeit (30-70%), Temperatur (16-27°C)
+   - `[OK]` Hysterese: 2% Buffer verhindert Flapping an Grenzen
+   - `[OK]` Health-Score-Berechnung: Gewichteter Durchschnitt aller Sensoren
+   - `[OK]` Trend-Summary: 6h-Rückblick mit steigend/fallend/stabil
+
+5. **EnergyOptimizer** (`assistant/assistant/energy_optimizer.py`, 1301 Zeilen)
+   - `[OK]` Strompreis-Monitoring, Solar-Production, Verbrauch, Grid-Export
+   - `[OK]` Flexible Lastverschiebung: Waschmaschine, Trockner, Spülmaschine, EV-Charger
+   - `[OK]` Essential-Entities (Kühlschrank, Server) werden nie abgeschaltet
+   - `[OK]` Tägliches Baseline-Tracking in Redis
+
+6. **Diagnostics** (`assistant/assistant/diagnostics.py`, 1152 Zeilen)
+   - `[OK]` Batterie (<20%), Stale-Sensoren (6h), Offline-Geräte (30min)
+   - `[OK]` Eskalierende Cooldowns (1× → 2× → 4× → 7× max) verhindern Spam
+
+**[V2]:** V2 übersprungen — V1 unauffällig. Keine TODOs/stubs gefunden, umfangreiche Tests (context_builder ~1200, insight_engine ~1500, device_health ~1200, health_monitor ~700 Zeilen).
+
+### Was fehlt zum MCU-Level
+
+1. **Room Presence zu simplistisch** — Alle Home-Personen werden dem "primären Raum" zugewiesen statt individuell per Sensor getrackt. MCU-Jarvis weiß exakt wer wo ist. `[WÖCHENTLICH]`
+2. **Initiale Device-Baselines langsam** — 10+ Samples nötig (= 10+ Tage), neue Geräte sind anfangs "blind". `[SELTEN]`
+3. **Kein Echtzeit-Streaming** — Kontext wird pro Request gebaut (5s Cache), nicht als Live-Stream. MCU-Jarvis hat immer aktuelles Bild. `[TÄGLICH]`
+
+### Konkrete Verbesserungsvorschläge
+
+1. **`[ ]` Per-Person Room Tracking** — Ersetze "alle Personen → primärer Raum" durch individuelles Tracking via Motion/Presence-Sensor pro Person. Nutze BLE-Beacons oder HA-Person-Entities.
+   - Aufwand: Mittel
+   - Impact: +4%
+   - Alltag: `[WÖCHENTLICH]`
+
+2. **`[ ]` Accelerated Baselines für neue Geräte** — Erste 48h: kürzere Baseline-Fenster (2σ statt 2σ auf 30 Tagen), dann graduell auf volle Baselines umschalten.
+   - Aufwand: Klein
+   - Impact: +2%
+   - Alltag: `[SELTEN]`
+
+3. **`[ ]` Kontext-Delta-Streaming** — Statt pro Request komplett neu bauen: Event-getriebene Updates die nur geänderte Daten aktualisieren. Reduziert Latenz und erhöht Frische.
+   - Aufwand: Groß
+   - Impact: +4%
+   - Alltag: `[TÄGLICH]`
+
+### Akzeptanzkriterien — Wann ist dieses Feature "MCU-Level"?
+- [ ] System weiß in >90% der Fälle korrekt, welche Person in welchem Raum ist
+- [ ] Neue Geräte werden innerhalb von 48h in die Anomalie-Erkennung aufgenommen
+- [ ] Cross-Reference-Insights haben eine Precision >80% (gemessen via Feedback)
+- [ ] Kontextdaten sind max 5s alt bei Voice-Interaktion
+- [ ] CO2/Humidity/Temp-Warnungen eskalieren korrekt ohne Flapping
+
+## 6. Lernfähigkeit & Adaptation (×2)
+
+### MCU-Jarvis Benchmark
+MCU-Jarvis lernt aus Tonys Verhalten, wird über die Filme hinweg immer besser: versteht Gewohnheiten, passt Reaktionen an, lernt aus Fehlern. Er hilft bei der Entdeckung des neuen Elements (Iron Man 2) durch Langzeit-Datenanalyse und adaptiert sich an neue Situationen.
+
+### MindHome-Jarvis Status: 81%
+
+### Code-Verifizierung
+
+**[V1] Erste Analyse:**
+
+1. **SemanticMemory** (`assistant/assistant/semantic_memory.py`, 1659 Zeilen)
+   - `[OK]` ChromaDB-basierte Fakten-Speicherung mit 10 Kategorien (preference, habit, health, person, work, personal_date, intent, conversation_topic, general, scene_preference)
+   - `[OK]` Konfidenz-basierte Fakten mit Decay über 30-Tage-Zyklen
+   - `[OK]` Contradiction Detection (Zeile 391-430): 2-Pass-Suche (gleiche Kategorie → gleiche Person), LLM-basierter Widerspruchscheck
+   - `[OK]` TOCTOU-Schutz: Redis-Lock um den Read-Write-Zyklus (Zeile 161-172)
+   - `[OK]` Fact Versioning: Widersprüchliche Fakten werden versioniert, neuere gewinnen
+   - `[BESSER ALS MCU]` Systematische Faktenextraktion mit Konfidenz und Widerspruchserkennung. MCU-Jarvis "merkt sich" implizit, hat aber kein explizites Wissensmanagement.
+
+2. **MemoryExtractor** (`assistant/assistant/memory_extractor.py`, Zeile 103-133)
+   - `[OK]` LLM-basierte Faktenextraktion aus Gesprächen (Fast-Modell, 0.1 Temperature)
+   - `[OK]` Konfigurierbar: Min-Wörter (5), Max-Tokens (512), Duplicate-Threshold (0.15)
+   - `[OK]` Category-spezifische Confidence: health=0.95, person=0.9, preference=0.85, habit=0.8
+
+3. **LearningObserver** (`assistant/assistant/learning_observer.py`, 1896 Test-Zeilen)
+   - `[OK]` 4 Pattern-Detection-Strategien: Zeitslot, Wochentag-spezifisch, Wetter-korreliert, Temporal-Cluster
+   - `[OK]` Threshold: ≥3 Wiederholungen im 30min-Fenster
+   - `[OK]` Scene Detection: Gruppiert 2+ gleichzeitige Aktionen als Scene-Kandidaten
+   - `[OK]` LLM-basierte Wochenberichte im Jarvis-Stil
+
+4. **CorrectionMemory** (`assistant/assistant/correction_memory.py`, 913 Zeilen)
+   - `[OK]` 6-dimensionales Similarity-Scoring: Room, Person, Correction-Type, Time-of-Day, Parameter-Overlap, Type-Match
+   - `[OK]` Cross-Domain-Propagation: Raumverwechslung bei Licht → automatisch auch für Klima/Cover
+   - `[OK]` Rule-Generation: 2+ ähnliche Korrekturen → Regel (Confidence: 0.4 + len×0.1 + sim×0.3)
+   - `[OK]` Rate-Limit: 5 Regeln/Tag, max 20 aktive Regeln, Confidence-Decay -5%/30 Tage
+
+5. **FeedbackTracker** (`assistant/assistant/feedback.py`, 557 Zeilen)
+   - `[OK]` Score-basierte Verhaltensanpassung: <0.15 → SUPPRESS, 0.15-0.30 → REDUCE, 0.70+ → BOOST
+   - `[OK]` Per-Person Feedback-Scores mit Exponential-Moving-Average
+   - `[OK]` Auto-Timeout: 120s → "ignoriert" (-0.05 Delta)
+
+6. **OutcomeTracker** (`assistant/assistant/outcome_tracker.py`, 458 Test-Zeilen)
+   - `[OK]` Vorher/Nachher-Vergleich nach 180s Delay
+   - `[OK]` Outcome-Classification: NEGATIVE (reverted), PARTIAL, NEUTRAL
+   - `[OK]` Feedback-Loop: Erfolg +0.1 Confidence, Fehlschlag -0.15 zu Anticipation
+
+7. **SelfOptimization** (`assistant/assistant/self_optimization.py`, 1624 Test-Zeilen)
+   - `[OK]` 10 optimierbare Parameter (sarcasm_level, opinion_intensity, max_response_sentences etc.)
+   - `[OK]` Immutable Core: trust_levels, security, autonomy, models NICHT änderbar
+   - `[OK]` Manual Approval Mode (default): User muss jede Änderung bestätigen
+
+8. **LearningTransfer** (`assistant/assistant/learning_transfer.py`, 662 Zeilen)
+   - `[OK]` Room-Gruppen: wohnbereich, schlafbereich, nassbereich, arbeitsbereich, aussen
+   - `[OK]` Transfer-Detection: Min 3 Beobachtungen, 0.7 Confidence
+   - `[OK]` Max 2 Notifications/Tag, Failure-Learning bei Ablehnung
+
+9. **Sarcasm Learning** (`assistant/assistant/personality.py`)
+   - `[BESSER ALS MCU]` Adaptive Sarkasmus: Feedback-Loop evaluiert alle 20 Interaktionen, >70% positiv → Level +1, <30% → Level -1. Redis-Persistenz 90 Tage. MCU-Jarvis' Humor ist statisch.
+
+10. **Anticipation-Integration**
+    - `[OK]` CorrectionMemory unterdrückt invalidierte Muster
+    - `[OK]` OutcomeTracker boostet/bestraft Anticipation-Confidence
+    - `[OK]` Seasonal Insight boostet saisonale Patterns +5-10%
+
+**[V2]:** V2 übersprungen — V1 unauffällig. Keine TODOs/stubs, umfangreiche Tests (semantic_memory 2197, learning_observer 1896, self_optimization 1624, learning_transfer 1124 Zeilen).
+
+### Was fehlt zum MCU-Level
+
+1. **Kein aktives Nachfragen bei Lücken** — MCU-Jarvis fragt proaktiv wenn ihm Informationen fehlen. Der reale Jarvis extrahiert nur aus Gesprächen, fragt aber nicht "Wie warm magst du es eigentlich im Bad?". `[WÖCHENTLICH]`
+2. **Contradiction Resolution ohne User-Feedback** — System hält neueren Fakt für korrekt, fragt aber nicht "Du sagtest letztens 21°C, jetzt 23°C — was gilt?". `[WÖCHENTLICH]`
+3. **Langzeit-Trends schwer zugänglich** — Fakten-Decay funktioniert, aber es gibt keine "Was habe ich in 6 Monaten über den User gelernt?"-Zusammenfassung. `[SELTEN]`
+
+### Konkrete Verbesserungsvorschläge
+
+1. **`[ ]` Proaktive Wissenslücken-Erkennung** — Wenn ein Raum 0 Präferenz-Fakten hat und der User dort aktiv ist, proaktiv fragen: "Wie warm magst du es hier eigentlich?" Max 1×/Woche/Raum.
+   - Aufwand: Mittel
+   - Impact: +4%
+   - Alltag: `[WÖCHENTLICH]`
+
+2. **`[ ]` Contradiction Confirmation** — Bei Widerspruch den User fragen statt automatisch den neueren Fakt zu bevorzugen. "Du sagtest letztens 21°C, jetzt 23°C — soll ich das aktualisieren?"
+   - Aufwand: Klein
+   - Impact: +3%
+   - Alltag: `[WÖCHENTLICH]`
+
+3. **`[ ]` Langzeit-Lernbericht** — Monatliche/quartalsweise Zusammenfassung: "In den letzten 3 Monaten habe ich gelernt: Du stehst jetzt 15min früher auf, du bevorzugst wärmere Temperaturen, du hörst mehr Jazz."
+   - Aufwand: Mittel
+   - Impact: +2%
+   - Alltag: `[SELTEN]`
+
+### Akzeptanzkriterien — Wann ist dieses Feature "MCU-Level"?
+- [ ] System stellt proaktiv Wissenslücken-Fragen (max 1/Woche/Raum)
+- [ ] Widersprüchliche Fakten werden dem User zur Bestätigung vorgelegt
+- [ ] Correction-Memory-Regeln überleben Neustarts und sind über Redis persistiert
+- [ ] Sarcasm-Learning konvergiert nach 60 Interaktionen auf stabiles Level
+- [ ] LearningObserver erkennt >80% der wiederkehrenden manuellen Muster nach 7 Tagen
+
+## 7. Sprecherkennung & Personalisierung (×1.5)
+
+### MCU-Jarvis Benchmark
+MCU-Jarvis erkennt Tony, Pepper und Rhodey sofort, unterscheidet Fremde von Bewohnern, und passt sein Verhalten an die Person an (Iron Man 2: erkennt Rhodey im War Machine Suit). Er weiß wer spricht und reagiert entsprechend dem Vertrauenslevel.
+
+### MindHome-Jarvis Status: 74%
+
+### Code-Verifizierung
+
+**[V1] Erste Analyse:**
+
+1. **SpeakerRecognition** (`assistant/assistant/speaker_recognition.py`, 1053 Zeilen)
+   - `[OK]` 4-stufige Identifikation (Zeile 198-222):
+     1. Device-Mapping (höchste Confidence) — z.B. `media_player.kueche_speaker: "max"`
+     2. Raum + einzige Person zuhause (hohe Confidence)
+     3. Voice-Feature-Matching via Embedding (mittlere Confidence)
+     4. Letzter bekannter Sprecher (niedrige Confidence)
+   - `[OK]` DoA (Direction of Arrival) Mapping: device_id → Winkelbereich → Person (Zeile 137-143)
+   - `[OK]` Voice-Embedding via Cosinus-Ähnlichkeit (Zeile 727-752): Redis-Pipeline für alle Profile, Float-Vektor (192/256 Dim)
+   - `[OK]` "Wer bist du?"-Rückfrage (Zeile 862+): Fragt aktiv nach wenn Sprecher unbekannt, speichert Kontext
+   - `[OK]` Max 10 Profile, Min-Confidence 0.7 (konfigurierbar)
+   - `[VERBESSERBAR]` Default: `enabled: false` — muss manuell aktiviert werden
+
+2. **Per-Person Personalisierung** (personality.py + brain.py)
+   - `[OK]` Per-Person Humor/Empathy/Response-Style Overrides
+   - `[OK]` Per-Person Formality-Start und Formality-Decay
+   - `[OK]` Per-Person Sarcasm-Streak und Confirmation-History
+   - `[OK]` Per-Person Mood-Tracking (mood_detector.py)
+
+3. **Trust-Level System** (autonomy.py, Zeile 100-121)
+   - `[OK]` 3-Tier: Gast (0), Mitbewohner (1), Owner (2)
+   - `[OK]` Guest-Allowed-Actions: nur Licht, Klima, Media, Status
+   - `[OK]` Security-Actions (Schlösser, Alarm) nur für Trust ≥2
+
+4. **Household Configuration** (settings.yaml)
+   - `[OK]` Primary-User-Entity, Members mit HA-Entities
+   - `[OK]` Per-Person Titles (Anrede)
+   - `[OK]` Device-Mapping für Raum-basierte Erkennung
+
+5. **Per-Person Semantic Memory** (semantic_memory.py)
+   - `[OK]` Alle Fakten mit `person` Feld gespeichert
+   - `[OK]` Person-spezifische Suche: "max_person_facts_in_context: 5"
+   - `[OK]` Beziehungs-Cache: "meine Frau" → echter Name
+
+6. **Multi-User Conflict Resolution** (conflict_resolver.py, 1327 Zeilen)
+   - `[OK]` Multi-User Konflikterkennung: widersprüchliche Befehle innerhalb 300s
+   - `[OK]` Trust-Priority: höherer Trust gewinnt
+   - `[OK]` Room-Presence Resolution: Person physisch im Raum hat Vorrang
+   - `[OK]` LLM-basierte diplomatische Mediation
+
+**[V2]:** V2 übersprungen — V1 unauffällig. Tests: 671 Zeilen test_speaker_recognition.py.
+
+### Was fehlt zum MCU-Level
+
+1. **Voice-Embedding erfordert Setup** — MCU-Jarvis erkennt Stimmen automatisch. Hier muss Voice-Embedding manuell eingerichtet werden, Device-Mapping ist der Hauptweg. `[TÄGLICH]`
+2. **Kein automatisches Voice-Enrollment** — Neue Personen müssen manuell registriert werden. MCU-Jarvis lernt neue Stimmen automatisch. `[SELTEN]`
+3. **Speaker Recognition default deaktiviert** — Muss explizit aktiviert werden. Viele Installationen nutzen nur Device-Mapping. `[TÄGLICH]`
+4. **Kein Stimm-Veränderungs-Tracking** — Wenn jemand erkältet ist, kann die Erkennung scheitern. Kein adaptives Re-Enrollment. `[SELTEN]`
+
+### Konkrete Verbesserungsvorschläge
+
+1. **`[ ]` Auto-Enrollment für neue Stimmen** — Bei unbekanntem Sprecher + Rückfrage "Wer bist du?" → Voice-Embedding automatisch speichern nach Bestätigung.
+   - Aufwand: Mittel
+   - Impact: +5%
+   - Alltag: `[SELTEN]`
+
+2. **`[ ]` Confidence-basiertes Fallback-Chain** — Wenn Voice-Confidence < 0.7 aber > 0.5: frage nicht sofort, sondern nutze Raum+Zeit-Kontext zur Bestätigung. "Das klingt nach Max — bist du das?"
+   - Aufwand: Klein
+   - Impact: +4%
+   - Alltag: `[TÄGLICH]`
+
+3. **`[ ]` Speaker Recognition default aktivieren** — Zumindest Device-Mapping sollte default `enabled: true` sein, da es keine externe Hardware braucht.
+   - Aufwand: Klein
+   - Impact: +3%
+   - Alltag: `[TÄGLICH]`
+
+### Akzeptanzkriterien — Wann ist dieses Feature "MCU-Level"?
+- [ ] Sprecher werden in >85% der Fälle korrekt erkannt (Device-Mapping + Voice)
+- [ ] Neue Personen können sich per Sprache selbst registrieren
+- [ ] Gäste bekommen automatisch eingeschränkte Rechte (Trust Level 0)
+- [ ] Multi-User-Konflikte werden in >90% der Fälle fair gelöst
+- [ ] Per-Person Anpassungen sind nach 1 Woche spürbar (Humor, Formalität, Präferenzen)
+
+## 8. Krisenmanagement & Notfallreaktionen (×1.5)
+
+### MCU-Jarvis Benchmark
+Bei Angriffen auf das Haus (Iron Man 3) koordiniert Jarvis die Verteidigung, priorisiert Menschenleben ("Pepper retten > Haus verteidigen"), bleibt unter Druck funktionsfähig. Nach dem Absturz (Iron Man 3) arbeitet er im Degraded Mode — eingeschränkt aber stabil. In Avengers 2 existiert er verteilt nach Ultrons Angriff.
+
+### MindHome-Jarvis Status: 78%
+
+### Code-Verifizierung
+
+**[V1] Erste Analyse:**
+
+1. **ThreatAssessment** (`assistant/assistant/threat_assessment.py`, 1170 Zeilen)
+   - `[OK]` Strukturierte Emergency Playbooks für: Stromausfall, Feuer/Rauch, Wasserschaden, Einbruch
+   - `[OK]` Playbook-Schritte: check_battery → notify_all → emergency_lighting → secure_doors → log_incident
+   - `[OK]` Auto-Execute-Option für kritische Playbooks (default: false, konfigurierbar)
+   - `[OK]` Threat-Detection: Rauch/CO-Sensoren (device_class aware), Wasser-Sensoren, offene Türen bei Abwesenheit, Nacht-Bewegung
+   - `[OK]` Explicit CO2-Exclusion: CO2-Sensoren werden korrekt als Luftqualität erkannt, nicht als Notfall
+   - `[OK]` Duplikat-Guard: Laufende Playbooks werden nicht doppelt gestartet
+
+2. **AmbientAudio** (`assistant/assistant/ambient_audio.py`, 644 Zeilen)
+   - `[OK]` 8 erkannte Events: Glasbruch (critical), Rauchmelder (critical), CO-Melder (critical), Hundegebell (info), Baby weint (high), Türklingel (info), Schuss/Explosion (critical), Wasseralarm (critical)
+   - `[OK]` Nacht-Modus: Strengere Reaktionen nachts (escalate_severity)
+   - `[OK]` Per-Event Cooldowns verhindern Spam
+   - `[OK]` Deaktivierbare Events (z.B. kein Hund → dog_bark deaktiviert)
+   - `[OK]` Reaktions-Overrides per YAML konfigurierbar
+
+3. **CircuitBreaker** (`assistant/assistant/circuit_breaker.py`, 428 Zeilen)
+   - `[OK]` 3-State Pattern: CLOSED → OPEN (nach 5 Failures) → HALF_OPEN (nach 30s) → CLOSED
+   - `[OK]` CircuitBreakerRegistry: Zentrale Verwaltung aller Breaker
+   - `[OK]` PredictiveWarmer: Proaktives Aufwärmen von Verbindungen basierend auf Failure-History
+   - `[OK]` Thread-safe mit threading.Lock
+   - Tests: 1138 Zeilen — umfangreich
+
+4. **Brain Degraded Mode** (`assistant/assistant/brain.py`, Zeile 1096-1137)
+   - `[OK]` `_safe_init()` Pattern: Jedes Modul wird einzeln initialisiert, Failure → `_degraded_modules` Liste
+   - `[OK]` System läuft weiter auch wenn Module fehlen (graceful degradation)
+   - `[OK]` Logging: "F-069: {module} Initialisierung fehlgeschlagen (degraded)"
+   - `[BESSER ALS MCU]` Systematische graceful degradation mit pro-Modul Tracking. MCU-Jarvis degradiert intuitiv; hier ist es strukturiert und testbar.
+
+5. **Crisis Personality** (personality.py, Zeile 3726-3738)
+   - `[OK]` Crisis Mode: Bei kritischen Alerts wird Humor komplett deaktiviert
+   - `[OK]` Urgency-Section: CRITICAL → "Kurz, direkt, kein Humor. Nur Fakten und Handlungen."
+
+6. **Proactive CRITICAL Handling** (proactive.py)
+   - `[OK]` CRITICAL-Urgency wird IMMER zugestellt — auch bei SLEEPING/IN_CALL (Silence Matrix: TTS_LOUD)
+   - `[OK]` Cooldown wird bei CRITICAL übersprungen
+   - `[OK]` Notification Batching ausgeschlossen für CRITICAL
+
+**[V2]:** V2 übersprungen — V1 unauffällig. Tests vorhanden (threat_assessment 296, circuit_breaker 1138, ambient_audio 443 Zeilen).
+
+### Was fehlt zum MCU-Level
+
+1. **Keine Multi-Krisen-Priorisierung** — Wenn gleichzeitig Feuer UND Wasserschaden: kein Code der priorisiert (Feuer > Wasser). MCU-Jarvis: "Pepper retten > Haus verteidigen". `[SELTEN]`
+2. **Keine externe Eskalation** — Playbooks benachrichtigen Personen per Push, aber kein automatischer Notruf (112), keine Nachbar-Benachrichtigung, keine externe Security-Firma. `[SELTEN]`
+3. **Playbook-Auto-Execute default false** — Nutzer muss manuell aktivieren. Bei echtem Feuer sollte das System sofort handeln. `[SELTEN]`
+4. **Threat Assessment Test-Coverage dünn** — Nur 296 Zeilen Tests für ein sicherheitskritisches Modul. `[SELTEN]`
+
+### Konkrete Verbesserungsvorschläge
+
+1. **`[ ]` Multi-Krisen-Priorisierung** — Wenn mehrere Threats gleichzeitig erkannt werden: Sortiere nach Lebensbedrohung (Feuer > Einbruch > Wasser > Strom). Führe höchste Priorität zuerst aus.
+   - Aufwand: Klein
+   - Impact: +3%
+   - Alltag: `[SELTEN]`
+
+2. **`[ ]` Externe Eskalationskette** — Nach 2min ohne User-Reaktion auf CRITICAL: automatisch Nachbar-Notfall-Kontakt per HA-Notify. Optional: Notruf-Vorbereitung (Adresse + Situation als Text).
+   - Aufwand: Mittel
+   - Impact: +4%
+   - Alltag: `[SELTEN]`
+
+3. **`[ ]` Threat Assessment Tests erweitern** — Von 296 auf 800+ Zeilen. Teste: Concurrent Threats, Playbook-Duplikat-Guard, CO2-vs-CO-Unterscheidung, Night-Motion Edge Cases.
+   - Aufwand: Klein
+   - Impact: +2%
+   - Alltag: `[SELTEN]`
+
+4. **`[ ]` Post-Crisis Debrief** — Nach Entwarnung: "Die Warnung dauerte X Minuten. Alle Systeme wieder normal. Soll ich den Vorfall dokumentieren?" Mit Zusammenfassung was passiert ist.
+   - Aufwand: Klein
+   - Impact: +2%
+   - Alltag: `[SELTEN]`
+
+### Akzeptanzkriterien — Wann ist dieses Feature "MCU-Level"?
+- [ ] Multi-Krisen werden nach Lebensgefahr priorisiert (Feuer > Einbruch > Wasser)
+- [ ] CRITICAL-Alarme erreichen den User innerhalb von 5 Sekunden
+- [ ] System bleibt nach Ausfall von 2+ Subsystemen funktionsfähig (Degraded Mode)
+- [ ] Playbooks führen alle Schritte sequentiell aus und loggen Ergebnisse
+- [ ] Nach Krise: automatisches Debrief mit Zusammenfassung
+
+## 9. Sicherheit & Bedrohungserkennung (×1.5)
+
+### MCU-Jarvis Benchmark
+"Sir, I'm detecting an unauthorized entry." MCU-Jarvis erkennt Einbrüche, ungewöhnliche Aktivitäten, Systemkompromittierungen sofort. In Avengers 2 widersteht er Ultrons Übernahmeversuch und schützt das Netzwerk. Er hat ein starkes Security-Bewusstsein und einen immutablen Kern.
+
+### MindHome-Jarvis Status: 85%
+
+### Code-Verifizierung
+
+**[V1] Erste Analyse:**
+
+1. **Prompt-Injection-Schutz** (`assistant/assistant/context_builder.py`, Zeile 48-195)
+   - `[BESSER ALS MCU]` 154 Regex-Patterns gegen Prompt-Injection:
+     - System-Prompt-Overrides, Persona-Hijacking, Prompt-Leaking
+     - Encoding-Tricks (Base64, ROT13, Unicode Escapes)
+     - Deutsche Patterns (IGNORIERE, VERGISS, NEUE ANWEISUNG)
+     - Spaced-out Keywords, Mixed-Case Obfuscation
+     - HTML-Entities (Hex + Decimal), Control-Chars
+   - `[OK]` Unicode-NFKC-Normalisierung, Zero-Width-Character-Removal
+   - `[OK]` `_sanitize_for_prompt()` auf ALLE externen Texte angewendet
+   - `[OK]` Hot-Reload via `reload_injection_config()`
+
+2. **Web-Search SSRF-Schutz** (`assistant/assistant/web_search.py`, 647 Zeilen)
+   - `[OK]` 7-Schichten SSRF-Schutz (F-012/F-069/F-070/F-076/F-082/F-093):
+     1. Scheme-Validation (nur http/https)
+     2. Hostname-Blocklist (localhost, redis, chromadb, Cloud-Metadata)
+     3. IP-Literal-Block (RFC1918, CGNAT 100.64/10, Link-Local)
+     4. DNS-Rebinding-Schutz (DNS vor Request auflösen)
+     5. Redirect-Blocking (`allow_redirects=False`)
+     6. Pinned-Resolver (DNS-Ergebnis an Connector binden)
+     7. SearXNG als vertrauenswürdiger interner Service (separate Behandlung)
+   - `[BESSER ALS MCU]` Systematischer SSRF-Schutz mit 7 Layern. MCU-Jarvis hat keine Web-Search-Sicherheitsprobleme (keine LLM-Integration).
+
+3. **Immutable Core** (`assistant/assistant/core_identity.py` + `self_optimization.py`)
+   - `[OK]` Unveränderliche Werte: Loyalität, Ehrlichkeit, Diskretion, Sicherheit
+   - `[OK]` Self-Optimization KANN NICHT ändern: trust_levels, security, autonomy, models
+   - `[OK]` Manual-Approval-Mode: Alle Optimierungen brauchen User-Bestätigung
+
+4. **Trust-Level Enforcement** (`assistant/assistant/function_validator.py`, 651 Zeilen)
+   - `[OK]` Pre-Execution Validation: Parameter-Bounds (15-28°C, 0-100% Brightness)
+   - `[OK]` Require-Confirmation für Security-Actions (lock_door, unlock_door, arm_alarm)
+   - `[OK]` Safety Caps: max ±3°C, min 14°C, max 30°C, max 10 Actions/min
+   - `[OK]` Pushback-System mit Learning (nach 5 Overrides → 30 Tage suppress)
+
+5. **Error Redaction** (brain.py + main.py)
+   - `[OK]` Error-Buffer reduziert API-Keys und Tokens automatisch via Regex-Filter
+   - `[OK]` Keine internen Fehlerdetails in API-Responses
+
+6. **Ambient Audio Security** (`assistant/assistant/ambient_audio.py`)
+   - `[OK]` Glasbruch → CRITICAL (Lichter an, Kameras, Owner-Notify)
+   - `[OK]` Nacht-Eskalation: Strengere Reaktionen 22-7 Uhr
+   - `[OK]` Rauchmelder/CO-Melder → CRITICAL mit sofortiger Zustellung
+
+7. **Input-Sanitization** (helpers.py + brain.py)
+   - `[OK]` `sanitize_input()` und `sanitize_dict()` für alle User-Eingaben
+   - `[OK]` User-Input NIE direkt in LLM System-Prompts — als separate User-Messages
+
+8. **Rate-Limiting** (proactive.py + brain.py)
+   - `[OK]` Notification Fatigue Scoring (0-2/h = 1.0, >10 = 0.3)
+   - `[OK]` Max 10 Actions/Minute Safety Cap
+   - `[OK]` Sarcasm Learning Rate: 20 Interaktionen zwischen Adjustments
+
+**[V2]:** V2 übersprungen — V1 unauffällig. Umfangreiche Tests: web_search 838, function_validator 522+379, circuit_breaker 1138 Zeilen.
+
+### Was fehlt zum MCU-Level
+
+1. **Keine aktive Intrusion-Detection** — MCU-Jarvis erkennt Hacking-Versuche auf seine Systeme. Der reale Jarvis hat keine aktive Überwachung von API-Zugriffen oder ungewöhnlichen Login-Mustern. `[SELTEN]`
+2. **Kein Audit-Log für Security-Actions** — Wer hat wann welches Schloss geöffnet? Kein dediziertes Security-Audit-Trail. `[WÖCHENTLICH]`
+
+### Konkrete Verbesserungsvorschläge
+
+1. **`[ ]` Security Audit Log** — Dediziertes Log für sicherheitsrelevante Aktionen (Schlösser, Alarm, Trust-Level-Änderungen) mit Timestamp, Person, und Ergebnis. In Redis mit 90-Tage-Retention.
+   - Aufwand: Klein
+   - Impact: +3%
+   - Alltag: `[WÖCHENTLICH]`
+
+2. **`[ ]` API-Access Anomalie-Detection** — Tracke API-Zugriffsmuster. Bei ungewöhnlichen Mustern (3× falsches Token, unbekannte IP, Zugriff um 3 Uhr nachts) → LOW Alert.
+   - Aufwand: Mittel
+   - Impact: +3%
+   - Alltag: `[SELTEN]`
+
+3. **`[ ]` Automatic Security Hardening Report** — Monatlicher Bericht: "X offene Ports, Y Geräte ohne Passwort, Z Sensoren mit schwacher Batterie. Empfehlung: ..."
+   - Aufwand: Mittel
+   - Impact: +2%
+   - Alltag: `[SELTEN]`
+
+### Akzeptanzkriterien — Wann ist dieses Feature "MCU-Level"?
+- [ ] Alle Security-Actions werden in einem Audit-Log erfasst (90 Tage)
+- [ ] Prompt-Injection wird in >99% der Fälle geblockt (gemessen via Test-Suite)
+- [ ] SSRF-Schutz blockiert alle RFC1918-Adressen, Cloud-Metadata, DNS-Rebinding
+- [ ] Immutable Core kann nicht durch Self-Optimization geändert werden
+- [ ] Ungewöhnliche API-Zugriffsmuster generieren Warnungen
+
+---
+
+## Zwischenergebnis Session 1+2
+
+### Scores (9 von 12 Kategorien)
+
+| # | Kategorie | Gewicht | Score | Gewichtet |
+|---|-----------|---------|-------|-----------|
+| 1 | Natürliche Konversation & Sprachverständnis | ×3 | 72% | 216 |
+| 2 | Persönlichkeit, Sarkasmus & Humor | ×3 | 78% | 234 |
+| 3 | Proaktives Handeln & Antizipation | ×2.5 | 76% | 190 |
+| 4 | Butler-Qualitäten & Servicementalität | ×2.5 | 80% | 200 |
+| 5 | Situationsbewusstsein & Kontextverständnis | ×2 | 82% | 164 |
+| 6 | Lernfähigkeit & Adaptation | ×2 | 81% | 162 |
+| 7 | Sprecherkennung & Personalisierung | ×1.5 | 74% | 111 |
+| 8 | Krisenmanagement & Notfallreaktionen | ×1.5 | 78% | 117 |
+| 9 | Sicherheit & Bedrohungserkennung | ×1.5 | 85% | 127.5 |
+| | **Teilsumme (Kat. 1-9)** | **19.5** | | **1521.5** |
+| | **Teildurchschnitt** | | **78.0%** | |
+
+*Hinweis: Endgültiger Gesamt-Score erst nach Session 5 (alle 12 Kategorien).*
+
+### Aufgaben-Zusammenfassung
+
+| Kategorie | Offen | Teilweise | Erledigt | Gesamt |
+|-----------|-------|-----------|----------|--------|
+| 1. Konversation | 5 | 0 | 0 | 5 |
+| 2. Persönlichkeit | 4 | 0 | 0 | 4 |
+| 3. Proaktivität | 5 | 0 | 0 | 5 |
+| 4. Butler-Qualitäten | 5 | 0 | 0 | 5 |
+| 5. Situationsbewusstsein | 3 | 0 | 0 | 3 |
+| 6. Lernfähigkeit | 3 | 0 | 0 | 3 |
+| 7. Sprecherkennung | 3 | 0 | 0 | 3 |
+| 8. Krisenmanagement | 4 | 0 | 0 | 4 |
+| 9. Sicherheit | 3 | 0 | 0 | 3 |
+| **Gesamt** | **35** | **0** | **0** | **35** |
