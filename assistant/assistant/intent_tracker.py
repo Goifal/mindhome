@@ -72,7 +72,7 @@ def parse_relative_date(text: str, reference: datetime = None) -> Optional[str]:
     import re
 
     # "heute" (als eigenstaendiges Wort)
-    if re.search(r'\bheute\b', text_lower):
+    if re.search(r"\bheute\b", text_lower):
         return reference.strftime("%Y-%m-%d")
 
     # "uebermorgen" (vor "morgen" pruefen)
@@ -80,7 +80,9 @@ def parse_relative_date(text: str, reference: datetime = None) -> Optional[str]:
         return (reference + timedelta(days=2)).strftime("%Y-%m-%d")
 
     # "morgen" (als eigenstaendiges Wort, nicht in "guten morgen", "morgens")
-    if re.search(r'\bmorgen\b', text_lower) and not re.search(r'\bguten\s+morgen\b', text_lower):
+    if re.search(r"\bmorgen\b", text_lower) and not re.search(
+        r"\bguten\s+morgen\b", text_lower
+    ):
         return (reference + timedelta(days=1)).strftime("%Y-%m-%d")
 
     # "in X Tagen/Wochen"
@@ -94,8 +96,13 @@ def parse_relative_date(text: str, reference: datetime = None) -> Optional[str]:
 
     # "naechsten/am Montag/Dienstag/..."
     weekday_map = {
-        "montag": 0, "dienstag": 1, "mittwoch": 2, "donnerstag": 3,
-        "freitag": 4, "samstag": 5, "sonntag": 6,
+        "montag": 0,
+        "dienstag": 1,
+        "mittwoch": 2,
+        "donnerstag": 3,
+        "freitag": 4,
+        "samstag": 5,
+        "sonntag": 6,
     }
     for day_name, day_num in weekday_map.items():
         if day_name in text_lower:
@@ -155,7 +162,9 @@ class IntentTracker:
         if self.enabled and self.redis:
             self._running = True
             self._task = asyncio.create_task(self._reminder_loop())
-            self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+            self._task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
+            )
             logger.info("IntentTracker initialisiert")
 
     def set_notify_callback(self, callback):
@@ -184,20 +193,51 @@ class IntentTracker:
 
         # Schnell-Filter: Enthaelt der Text Zeitangaben?
         time_keywords = [
-            "morgen", "uebermorgen", "naechste", "naechstes", "naechsten",
-            "am montag", "am dienstag", "am mittwoch", "am donnerstag",
-            "am freitag", "am samstag", "am sonntag", "in ", "spaeter",
-            "wochenende", "nacht", "abend", "heute", "bald",
-            "kommt", "kommen", "besucht", "besuch", "termin", "meeting",
-            "arzt", "urlaub", "verreise", "fahre weg", "fliege",
+            "morgen",
+            "uebermorgen",
+            "naechste",
+            "naechstes",
+            "naechsten",
+            "am montag",
+            "am dienstag",
+            "am mittwoch",
+            "am donnerstag",
+            "am freitag",
+            "am samstag",
+            "am sonntag",
+            "in ",
+            "spaeter",
+            "wochenende",
+            "nacht",
+            "abend",
+            "heute",
+            "bald",
+            "kommt",
+            "kommen",
+            "besucht",
+            "besuch",
+            "termin",
+            "meeting",
+            "arzt",
+            "urlaub",
+            "verreise",
+            "fahre weg",
+            "fliege",
         ]
         text_lower = text.lower()
         if not any(kw in text_lower for kw in time_keywords):
             return []
 
         now = datetime.now(timezone.utc)
-        weekdays = ["Montag", "Dienstag", "Mittwoch", "Donnerstag",
-                     "Freitag", "Samstag", "Sonntag"]
+        weekdays = [
+            "Montag",
+            "Dienstag",
+            "Mittwoch",
+            "Donnerstag",
+            "Freitag",
+            "Samstag",
+            "Sonntag",
+        ]
 
         # Phase 8.5: Relative Datumsangaben vorab parsen und als Hint mitgeben
         parsed_date = parse_relative_date(text)
@@ -247,11 +287,13 @@ class IntentTracker:
         end = text.rfind("]")
         if start != -1 and end != -1 and end > start:
             try:
-                result = json.loads(text[start:end + 1])
+                result = json.loads(text[start : end + 1])
                 if isinstance(result, list):
                     for item in result:
                         item["person"] = item.get("person", person)
-                    return [i for i in result if isinstance(i, dict) and i.get("intent")]
+                    return [
+                        i for i in result if isinstance(i, dict) and i.get("intent")
+                    ]
             except json.JSONDecodeError:
                 pass
 
@@ -267,23 +309,30 @@ class IntentTracker:
             return False
 
         try:
-            intent_id = f"intent_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}"
+            intent_id = (
+                f"intent_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}"
+            )
             intent["intent_id"] = intent_id
             intent["created_at"] = datetime.now(timezone.utc).isoformat()
             intent["status"] = "active"
 
             await self.redis.hset(
                 f"mha:intent:{intent_id}",
-                mapping={k: json.dumps(v) if isinstance(v, (list, dict)) else str(v)
-                         for k, v in intent.items()},
+                mapping={
+                    k: json.dumps(v) if isinstance(v, (list, dict)) else str(v)
+                    for k, v in intent.items()
+                },
             )
             await self.redis.sadd("mha:intents:active", intent_id)
 
             # TTL: 30 Tage
             await self.redis.expire(f"mha:intent:{intent_id}", 30 * 86400)
 
-            logger.info("Intent gespeichert: %s (Deadline: %s)",
-                        intent.get("intent", ""), intent.get("deadline", ""))
+            logger.info(
+                "Intent gespeichert: %s (Deadline: %s)",
+                intent.get("intent", ""),
+                intent.get("deadline", ""),
+            )
             return True
         except Exception as e:
             logger.error("Fehler beim Intent-Speichern: %s", e)
@@ -312,7 +361,12 @@ class IntentTracker:
 
             for intent_id, raw_data in zip(decoded_ids, results):
                 if raw_data:
-                    data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_data.items()}
+                    data = {
+                        (k.decode() if isinstance(k, bytes) else k): (
+                            v.decode() if isinstance(v, bytes) else v
+                        )
+                        for k, v in raw_data.items()
+                    }
                     # JSON-Felder dekodieren
                     intent = {}
                     for k, v in data.items():
@@ -383,7 +437,9 @@ class IntentTracker:
                     reminded_key = f"mha:intent:reminded:{intent.get('intent_id', '')}"
                     already = await self.redis.get(reminded_key) if self.redis else None
                     if not already:
-                        intent["time_until_hours"] = round(time_until.total_seconds() / 3600, 1)
+                        intent["time_until_hours"] = round(
+                            time_until.total_seconds() / 3600, 1
+                        )
                         due.append(intent)
 
                         # Merken dass erinnert wurde
@@ -419,11 +475,13 @@ class IntentTracker:
                         )
 
                     if self._notify_callback:
-                        _result = self._notify_callback({
-                            "type": "intent_reminder",
-                            "intent": intent,
-                            "text": reminder,
-                        })
+                        _result = self._notify_callback(
+                            {
+                                "type": "intent_reminder",
+                                "intent": intent,
+                                "text": reminder,
+                            }
+                        )
                         if asyncio.iscoroutine(_result):
                             await _result
 

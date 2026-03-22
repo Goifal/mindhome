@@ -31,6 +31,7 @@ _TZ = ZoneInfo("Europe/Berlin")
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def redis_mock():
     r = AsyncMock()
@@ -54,8 +55,8 @@ def tm_redis(tm, redis_mock):
 
 # ── GeneralTimer Dataclass ────────────────────────────────────────────
 
-class TestGeneralTimer:
 
+class TestGeneralTimer:
     def test_start(self):
         t = GeneralTimer(id="1", label="Test", duration_seconds=60)
         assert t.started_at == 0.0
@@ -67,23 +68,32 @@ class TestGeneralTimer:
         assert t.remaining_seconds == 0.0
 
     def test_remaining_seconds_finished(self):
-        t = GeneralTimer(id="1", label="Test", duration_seconds=60, finished=True, started_at=time.time())
+        t = GeneralTimer(
+            id="1",
+            label="Test",
+            duration_seconds=60,
+            finished=True,
+            started_at=time.time(),
+        )
         assert t.remaining_seconds == 0.0
 
     def test_remaining_seconds_active(self):
-        t = GeneralTimer(id="1", label="Test", duration_seconds=120,
-                         started_at=time.time() - 30)
+        t = GeneralTimer(
+            id="1", label="Test", duration_seconds=120, started_at=time.time() - 30
+        )
         remaining = t.remaining_seconds
         assert 85 <= remaining <= 95
 
     def test_remaining_seconds_expired(self):
-        t = GeneralTimer(id="1", label="Test", duration_seconds=10,
-                         started_at=time.time() - 20)
+        t = GeneralTimer(
+            id="1", label="Test", duration_seconds=10, started_at=time.time() - 20
+        )
         assert t.remaining_seconds == 0.0
 
     def test_remaining_seconds_display(self):
-        t = GeneralTimer(id="1", label="Test", duration_seconds=120,
-                         started_at=time.time() - 30)
+        t = GeneralTimer(
+            id="1", label="Test", duration_seconds=120, started_at=time.time() - 30
+        )
         display = t.remaining_seconds_display
         assert isinstance(display, int)
         assert 85 <= display <= 95
@@ -93,13 +103,15 @@ class TestGeneralTimer:
         assert t.is_done is True
 
     def test_is_done_expired(self):
-        t = GeneralTimer(id="1", label="Test", duration_seconds=10,
-                         started_at=time.time() - 20)
+        t = GeneralTimer(
+            id="1", label="Test", duration_seconds=10, started_at=time.time() - 20
+        )
         assert t.is_done is True
 
     def test_is_done_active(self):
-        t = GeneralTimer(id="1", label="Test", duration_seconds=120,
-                         started_at=time.time())
+        t = GeneralTimer(
+            id="1", label="Test", duration_seconds=120, started_at=time.time()
+        )
         assert t.is_done is False
 
     def test_is_done_not_started(self):
@@ -107,32 +119,42 @@ class TestGeneralTimer:
         assert t.is_done is False
 
     def test_format_remaining_abgelaufen(self):
-        t = GeneralTimer(id="1", label="Test", duration_seconds=10,
-                         started_at=time.time() - 20)
+        t = GeneralTimer(
+            id="1", label="Test", duration_seconds=10, started_at=time.time() - 20
+        )
         assert t.format_remaining() == "abgelaufen"
 
     def test_format_remaining_minutes(self):
-        t = GeneralTimer(id="1", label="Test", duration_seconds=300,
-                         started_at=time.time())
+        t = GeneralTimer(
+            id="1", label="Test", duration_seconds=300, started_at=time.time()
+        )
         result = t.format_remaining()
         assert "Minute" in result
 
     def test_format_remaining_hours_and_minutes(self):
-        t = GeneralTimer(id="1", label="Test", duration_seconds=5400,
-                         started_at=time.time())
+        t = GeneralTimer(
+            id="1", label="Test", duration_seconds=5400, started_at=time.time()
+        )
         result = t.format_remaining()
         assert "Stunde" in result
         assert "Minute" in result
 
     def test_format_remaining_seconds(self):
-        t = GeneralTimer(id="1", label="Test", duration_seconds=30,
-                         started_at=time.time())
+        t = GeneralTimer(
+            id="1", label="Test", duration_seconds=30, started_at=time.time()
+        )
         result = t.format_remaining()
         assert "Sekunde" in result
 
     def test_to_dict(self):
-        t = GeneralTimer(id="abc", label="Pizza", duration_seconds=600,
-                         room="kueche", person="Max", started_at=1000.0)
+        t = GeneralTimer(
+            id="abc",
+            label="Pizza",
+            duration_seconds=600,
+            room="kueche",
+            person="Max",
+            started_at=1000.0,
+        )
         d = t.to_dict()
         assert d["id"] == "abc"
         assert d["label"] == "Pizza"
@@ -143,9 +165,14 @@ class TestGeneralTimer:
 
     def test_from_dict(self):
         data = {
-            "id": "abc", "label": "Pizza", "duration_seconds": 600,
-            "room": "kueche", "person": "Max", "started_at": 1000.0,
-            "finished": False, "action_on_expire": {"function": "set_light"},
+            "id": "abc",
+            "label": "Pizza",
+            "duration_seconds": 600,
+            "room": "kueche",
+            "person": "Max",
+            "started_at": 1000.0,
+            "finished": False,
+            "action_on_expire": {"function": "set_light"},
         }
         t = GeneralTimer.from_dict(data)
         assert t.id == "abc"
@@ -164,8 +191,8 @@ class TestGeneralTimer:
 
 # ── TimerManager Init & Callbacks ─────────────────────────────────────
 
-class TestTimerManagerInit:
 
+class TestTimerManagerInit:
     @pytest.mark.asyncio
     async def test_initialize_no_redis(self, tm):
         await tm.initialize(None)
@@ -190,8 +217,8 @@ class TestTimerManagerInit:
 
 # ── Create Timer ──────────────────────────────────────────────────────
 
-class TestCreateTimer:
 
+class TestCreateTimer:
     @pytest.mark.asyncio
     async def test_too_short(self, tm):
         result = await tm.create_timer(0)
@@ -234,7 +261,8 @@ class TestCreateTimer:
     @pytest.mark.asyncio
     async def test_action_hint_in_message(self, tm_redis):
         result = await tm_redis.create_timer(
-            5, label="Test",
+            5,
+            label="Test",
             action_on_expire={"function": "set_light", "args": {}},
         )
         assert "Aktion" in result["message"]
@@ -253,8 +281,8 @@ class TestCreateTimer:
 
 # ── Cancel Timer ──────────────────────────────────────────────────────
 
-class TestCancelTimer:
 
+class TestCancelTimer:
     @pytest.mark.asyncio
     async def test_cancel_by_id(self, tm_redis):
         result = await tm_redis.create_timer(5, label="Cancel Me")
@@ -280,16 +308,17 @@ class TestCancelTimer:
 
 # ── Get Status ────────────────────────────────────────────────────────
 
-class TestGetStatus:
 
+class TestGetStatus:
     def test_no_timers(self, tm):
         result = tm.get_status()
         assert result["success"] is True
         assert "Keine Timer" in result["message"]
 
     def test_with_active_timer(self, tm):
-        t = GeneralTimer(id="a", label="Test", duration_seconds=300,
-                         started_at=time.time())
+        t = GeneralTimer(
+            id="a", label="Test", duration_seconds=300, started_at=time.time()
+        )
         tm.timers["a"] = t
         result = tm.get_status()
         assert "Aktive Timer" in result["message"]
@@ -297,17 +326,20 @@ class TestGetStatus:
         assert result["active_count"] == 1
 
     def test_with_done_timer(self, tm):
-        t = GeneralTimer(id="a", label="Done", duration_seconds=10,
-                         started_at=time.time() - 20)
+        t = GeneralTimer(
+            id="a", label="Done", duration_seconds=10, started_at=time.time() - 20
+        )
         tm.timers["a"] = t
         result = tm.get_status()
         assert "Abgelaufene Timer" in result["message"]
 
     def test_mixed_timers(self, tm):
-        active = GeneralTimer(id="a", label="Active", duration_seconds=300,
-                              started_at=time.time())
-        done = GeneralTimer(id="b", label="Done", duration_seconds=10,
-                            started_at=time.time() - 20)
+        active = GeneralTimer(
+            id="a", label="Active", duration_seconds=300, started_at=time.time()
+        )
+        done = GeneralTimer(
+            id="b", label="Done", duration_seconds=10, started_at=time.time() - 20
+        )
         tm.timers["a"] = active
         tm.timers["b"] = done
         result = tm.get_status()
@@ -317,15 +349,16 @@ class TestGetStatus:
 
 # ── Context Hints ─────────────────────────────────────────────────────
 
-class TestContextHints:
 
+class TestContextHints:
     def test_no_timers(self, tm):
         hints = tm.get_context_hints()
         assert hints == []
 
     def test_active_timer_hint(self, tm):
-        t = GeneralTimer(id="a", label="Pizza", duration_seconds=300,
-                         started_at=time.time())
+        t = GeneralTimer(
+            id="a", label="Pizza", duration_seconds=300, started_at=time.time()
+        )
         tm.timers["a"] = t
         hints = tm.get_context_hints()
         assert len(hints) == 1
@@ -334,15 +367,16 @@ class TestContextHints:
 
 # ── Timer Watcher ─────────────────────────────────────────────────────
 
-class TestTimerWatcher:
 
+class TestTimerWatcher:
     @pytest.mark.asyncio
     async def test_watcher_fires_notification(self, tm_redis):
         notify = AsyncMock()
         tm_redis.set_notify_callback(notify)
 
-        timer = GeneralTimer(id="w1", label="Watcher", duration_seconds=0,
-                             started_at=time.time() - 10)
+        timer = GeneralTimer(
+            id="w1", label="Watcher", duration_seconds=0, started_at=time.time() - 10
+        )
         tm_redis.timers["w1"] = timer
 
         with patch("assistant.timer_manager.get_person_title", return_value="Sir"):
@@ -361,7 +395,9 @@ class TestTimerWatcher:
         tm_redis.set_action_callback(action_cb)
 
         timer = GeneralTimer(
-            id="w2", label="Light Off", duration_seconds=0,
+            id="w2",
+            label="Light Off",
+            duration_seconds=0,
             started_at=time.time() - 10,
             action_on_expire={"function": "set_light", "args": {"state": "off"}},
         )
@@ -380,7 +416,9 @@ class TestTimerWatcher:
         tm_redis.set_action_callback(action_cb)
 
         timer = GeneralTimer(
-            id="w3", label="Blocked", duration_seconds=0,
+            id="w3",
+            label="Blocked",
+            duration_seconds=0,
             started_at=time.time() - 10,
             action_on_expire={"function": "lock_door", "args": {}},
         )
@@ -392,7 +430,9 @@ class TestTimerWatcher:
         action_cb.assert_not_called()
         # Should still notify about blocked action
         calls = notify.call_args_list
-        blocked_calls = [c for c in calls if c[0][0].get("type") == "timer_action_blocked"]
+        blocked_calls = [
+            c for c in calls if c[0][0].get("type") == "timer_action_blocked"
+        ]
         assert len(blocked_calls) == 1
 
     @pytest.mark.asyncio
@@ -403,7 +443,9 @@ class TestTimerWatcher:
         tm_redis.set_action_callback(action_cb)
 
         timer = GeneralTimer(
-            id="w4", label="ErrTimer", duration_seconds=0,
+            id="w4",
+            label="ErrTimer",
+            duration_seconds=0,
             started_at=time.time() - 10,
             action_on_expire={"function": "set_light", "args": {}},
         )
@@ -416,8 +458,8 @@ class TestTimerWatcher:
 
 # ── Create Reminder ───────────────────────────────────────────────────
 
-class TestCreateReminder:
 
+class TestCreateReminder:
     @pytest.mark.asyncio
     async def test_invalid_time_format(self, tm):
         result = await tm.create_reminder("25:99", "Test")
@@ -441,7 +483,9 @@ class TestCreateReminder:
     @pytest.mark.asyncio
     async def test_successful_reminder_today(self, tm_redis):
         # Use a fixed time far from midnight to avoid midnight-wrap failures
-        fixed_now = datetime.now(_TZ).replace(hour=14, minute=0, second=0, microsecond=0)
+        fixed_now = datetime.now(_TZ).replace(
+            hour=14, minute=0, second=0, microsecond=0
+        )
         future = fixed_now + timedelta(minutes=30)
         time_str = future.strftime("%H:%M")
         with patch("assistant.timer_manager._now", return_value=fixed_now):
@@ -463,8 +507,8 @@ class TestCreateReminder:
 
 # ── Set Wakeup Alarm ─────────────────────────────────────────────────
 
-class TestSetWakeupAlarm:
 
+class TestSetWakeupAlarm:
     @pytest.mark.asyncio
     async def test_invalid_time(self, tm):
         result = await tm.set_wakeup_alarm("99:99")
@@ -508,8 +552,8 @@ class TestSetWakeupAlarm:
 
 # ── Cancel Alarm ──────────────────────────────────────────────────────
 
-class TestCancelAlarm:
 
+class TestCancelAlarm:
     @pytest.mark.asyncio
     async def test_cancel_by_id(self, tm_redis, redis_mock):
         future = datetime.now(_TZ) + timedelta(minutes=5)
@@ -527,7 +571,9 @@ class TestCancelAlarm:
         redis_mock.hgetall = AsyncMock(return_value={b"id1": alarm_data.encode()})
 
         # Also create in-memory timer
-        t = GeneralTimer(id="id1", label="Morning", duration_seconds=600, started_at=time.time())
+        t = GeneralTimer(
+            id="id1", label="Morning", duration_seconds=600, started_at=time.time()
+        )
         tm_redis.timers["id1"] = t
 
         result = await tm_redis.cancel_alarm(label="Morning")
@@ -545,9 +591,12 @@ class TestCancelAlarm:
     async def test_cancel_multiple_ambiguous(self, tm_redis, redis_mock):
         alarm1 = json.dumps({"label": "A", "active": True})
         alarm2 = json.dumps({"label": "B", "active": True})
-        redis_mock.hgetall = AsyncMock(return_value={
-            b"a1": alarm1.encode(), b"b1": alarm2.encode(),
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                b"a1": alarm1.encode(),
+                b"b1": alarm2.encode(),
+            }
+        )
 
         result = await tm_redis.cancel_alarm()
         assert result["success"] is False
@@ -563,8 +612,8 @@ class TestCancelAlarm:
 
 # ── Get Alarms ────────────────────────────────────────────────────────
 
-class TestGetAlarms:
 
+class TestGetAlarms:
     @pytest.mark.asyncio
     async def test_no_redis(self, tm):
         result = await tm.get_alarms()
@@ -579,7 +628,9 @@ class TestGetAlarms:
 
     @pytest.mark.asyncio
     async def test_with_alarms(self, tm_redis, redis_mock):
-        alarm = json.dumps({"label": "Morgen", "time": "07:00", "repeat": "daily", "active": True})
+        alarm = json.dumps(
+            {"label": "Morgen", "time": "07:00", "repeat": "daily", "active": True}
+        )
         redis_mock.hgetall = AsyncMock(return_value={b"a1": alarm.encode()})
         result = await tm_redis.get_alarms()
         assert result["success"] is True
@@ -588,7 +639,9 @@ class TestGetAlarms:
 
     @pytest.mark.asyncio
     async def test_inactive_alarms_excluded(self, tm_redis, redis_mock):
-        alarm = json.dumps({"label": "Old", "time": "06:00", "repeat": "", "active": False})
+        alarm = json.dumps(
+            {"label": "Old", "time": "06:00", "repeat": "", "active": False}
+        )
         redis_mock.hgetall = AsyncMock(return_value={b"a1": alarm.encode()})
         result = await tm_redis.get_alarms()
         assert "Keine Wecker" in result["message"]
@@ -602,8 +655,8 @@ class TestGetAlarms:
 
 # ── Persistence ───────────────────────────────────────────────────────
 
-class TestPersistence:
 
+class TestPersistence:
     @pytest.mark.asyncio
     async def test_persist_timer_no_redis(self, tm):
         timer = GeneralTimer(id="p1", label="Test", duration_seconds=60)
@@ -629,8 +682,8 @@ class TestPersistence:
 
 # ── Restore Timers ───────────────────────────────────────────────────
 
-class TestRestoreTimers:
 
+class TestRestoreTimers:
     @pytest.mark.asyncio
     async def test_restore_no_redis(self, tm):
         await tm._restore_timers()
@@ -645,24 +698,34 @@ class TestRestoreTimers:
     @pytest.mark.asyncio
     async def test_restore_active_timer(self, tm_redis, redis_mock):
         timer_data = {
-            "id": "r1", "label": "Restored", "duration_seconds": 600,
-            "started_at": time.time() - 10, "finished": False,
+            "id": "r1",
+            "label": "Restored",
+            "duration_seconds": 600,
+            "started_at": time.time() - 10,
+            "finished": False,
         }
-        redis_mock.hgetall = AsyncMock(return_value={
-            b"r1": json.dumps(timer_data).encode(),
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                b"r1": json.dumps(timer_data).encode(),
+            }
+        )
         await tm_redis._restore_timers()
         assert "r1" in tm_redis.timers
 
     @pytest.mark.asyncio
     async def test_restore_expired_timer_removed(self, tm_redis, redis_mock):
         timer_data = {
-            "id": "old", "label": "Old", "duration_seconds": 10,
-            "started_at": time.time() - 100, "finished": False,
+            "id": "old",
+            "label": "Old",
+            "duration_seconds": 10,
+            "started_at": time.time() - 100,
+            "finished": False,
         }
-        redis_mock.hgetall = AsyncMock(return_value={
-            b"old": json.dumps(timer_data).encode(),
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                b"old": json.dumps(timer_data).encode(),
+            }
+        )
         await tm_redis._restore_timers()
         assert "old" not in tm_redis.timers
         redis_mock.hdel.assert_called()
@@ -676,8 +739,8 @@ class TestRestoreTimers:
 
 # ── Timer Action Whitelist ───────────────────────────────────────────
 
-class TestTimerActionWhitelist:
 
+class TestTimerActionWhitelist:
     def test_whitelist_contains_safe_actions(self):
         assert "set_light" in TIMER_ACTION_WHITELIST
         assert "set_climate" in TIMER_ACTION_WHITELIST
@@ -694,16 +757,17 @@ class TestTimerActionWhitelist:
 
 # ── Reminders Status ─────────────────────────────────────────────────
 
-class TestRemindersStatus:
 
+class TestRemindersStatus:
     def test_no_reminders(self, tm):
         result = tm.get_reminders_status()
         assert result["success"] is True
         assert "Keine aktiven" in result["message"]
 
     def test_with_active_reminder(self, tm):
-        t = GeneralTimer(id="r1", label="Meeting", duration_seconds=600,
-                         started_at=time.time())
+        t = GeneralTimer(
+            id="r1", label="Meeting", duration_seconds=600, started_at=time.time()
+        )
         tm.timers["r1"] = t
         result = tm.get_reminders_status()
         assert "Meeting" in result["message"]
@@ -713,12 +777,14 @@ class TestRemindersStatus:
 # Phase 5A: Scheduled Actions
 # ============================================================
 
+
 class TestScheduledActions:
     """Tests fuer zeitgesteuerte Geraeteaktionen."""
 
     @pytest.fixture
     def tm(self):
         from assistant.timer_manager import TimerManager
+
         m = TimerManager()
         m.redis = AsyncMock()
         m._action_callback = AsyncMock()
@@ -777,10 +843,26 @@ class TestScheduledActions:
 
     @pytest.mark.asyncio
     async def test_list_scheduled_actions(self, tm):
-        tm.redis.hgetall = AsyncMock(return_value={
-            b"s1": json.dumps({"id": "s1", "action": "set_light", "target_time": "07:00", "active": True}).encode(),
-            b"s2": json.dumps({"id": "s2", "action": "set_climate", "target_time": "18:00", "active": True}).encode(),
-        })
+        tm.redis.hgetall = AsyncMock(
+            return_value={
+                b"s1": json.dumps(
+                    {
+                        "id": "s1",
+                        "action": "set_light",
+                        "target_time": "07:00",
+                        "active": True,
+                    }
+                ).encode(),
+                b"s2": json.dumps(
+                    {
+                        "id": "s2",
+                        "action": "set_climate",
+                        "target_time": "18:00",
+                        "active": True,
+                    }
+                ).encode(),
+            }
+        )
         result = await tm.list_scheduled_actions()
         assert len(result) == 2
         assert result[0]["target_time"] == "07:00"  # Sortiert

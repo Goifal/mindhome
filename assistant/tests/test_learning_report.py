@@ -1,6 +1,7 @@
 """
 Tests fuer Feature 8: Lern-Transparenz (learning_observer reports).
 """
+
 import json
 import pytest
 from unittest.mock import AsyncMock
@@ -33,14 +34,24 @@ class TestGetLearningReport:
     async def test_report_with_observations(self, observer):
         """Report mit Beobachtungen."""
         observer.redis.llen = AsyncMock(return_value=50)
-        observer.redis.lrange = AsyncMock(return_value=[
-            json.dumps({"accepted": True}).encode(),
-            json.dumps({"accepted": False}).encode(),
-            json.dumps({"accepted": True}).encode(),
-        ])
-        observer.get_learned_patterns = AsyncMock(return_value=[
-            {"entity": "light.wz", "time_slot": "08", "count": 5, "weekday": -1, "action": "on"},
-        ])
+        observer.redis.lrange = AsyncMock(
+            return_value=[
+                json.dumps({"accepted": True}).encode(),
+                json.dumps({"accepted": False}).encode(),
+                json.dumps({"accepted": True}).encode(),
+            ]
+        )
+        observer.get_learned_patterns = AsyncMock(
+            return_value=[
+                {
+                    "entity": "light.wz",
+                    "time_slot": "08",
+                    "count": 5,
+                    "weekday": -1,
+                    "action": "on",
+                },
+            ]
+        )
         report = await observer.get_learning_report()
         assert report["total_observations"] == 50
         assert report["suggestions_made"] == 3
@@ -80,8 +91,20 @@ class TestFormatLearningReport:
         """Report mit Mustern zeigt sie an."""
         report = {
             "patterns": [
-                {"entity": "light.wohnzimmer", "time_slot": "08", "count": 5, "weekday": -1, "action": "on"},
-                {"entity": "light.schlafzimmer", "time_slot": "22", "count": 3, "weekday": 0, "action": "off"},
+                {
+                    "entity": "light.wohnzimmer",
+                    "time_slot": "08",
+                    "count": 5,
+                    "weekday": -1,
+                    "action": "on",
+                },
+                {
+                    "entity": "light.schlafzimmer",
+                    "time_slot": "22",
+                    "count": 3,
+                    "weekday": 0,
+                    "action": "off",
+                },
             ],
             "total_observations": 100,
             "suggestions_made": 5,
@@ -98,7 +121,13 @@ class TestFormatLearningReport:
         """Wochentags-Muster wird mit Tagesname angezeigt."""
         report = {
             "patterns": [
-                {"entity": "light.wz", "time_slot": "08", "count": 3, "weekday": 0, "action": "on"},
+                {
+                    "entity": "light.wz",
+                    "time_slot": "08",
+                    "count": 3,
+                    "weekday": 0,
+                    "action": "on",
+                },
             ],
             "total_observations": 10,
             "suggestions_made": 0,
@@ -113,7 +142,13 @@ class TestFormatLearningReport:
         """Entity-ID wird zu lesbarem Namen konvertiert."""
         report = {
             "patterns": [
-                {"entity": "light.schlaf_zimmer_lampe", "time_slot": "22", "count": 4, "weekday": -1, "action": "off"},
+                {
+                    "entity": "light.schlaf_zimmer_lampe",
+                    "time_slot": "22",
+                    "count": 4,
+                    "weekday": -1,
+                    "action": "off",
+                },
             ],
             "total_observations": 20,
             "suggestions_made": 0,
@@ -127,7 +162,15 @@ class TestFormatLearningReport:
     def test_suggestions_line_only_if_present(self, observer):
         """Vorschlaege-Zeile nur wenn Vorschlaege > 0."""
         report_no_suggestions = {
-            "patterns": [{"entity": "light.wz", "time_slot": "08", "count": 3, "weekday": -1, "action": "on"}],
+            "patterns": [
+                {
+                    "entity": "light.wz",
+                    "time_slot": "08",
+                    "count": 3,
+                    "weekday": -1,
+                    "action": "on",
+                }
+            ],
             "total_observations": 10,
             "suggestions_made": 0,
             "accepted": 0,
@@ -139,7 +182,13 @@ class TestFormatLearningReport:
     def test_max_10_patterns(self, observer):
         """Maximal 10 Muster werden angezeigt."""
         patterns = [
-            {"entity": f"light.room{i}", "time_slot": f"{8+i:02d}", "count": 10-i, "weekday": -1, "action": "on"}
+            {
+                "entity": f"light.room{i}",
+                "time_slot": f"{8 + i:02d}",
+                "count": 10 - i,
+                "weekday": -1,
+                "action": "on",
+            }
             for i in range(15)
         ]
         report = {

@@ -35,6 +35,7 @@ from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
 from zoneinfo import ZoneInfo
+
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
@@ -99,8 +100,8 @@ DEFAULT_EVENT_REACTIONS = {
 # Severity -> Prioritaet fuer Benachrichtigungen
 SEVERITY_PRIORITY = {
     "critical": 3,  # Sofort, laut, alle
-    "high": 2,      # Sofort, normal, Owner
-    "info": 1,      # Normal, leise
+    "high": 2,  # Sofort, normal, Owner
+    "info": 1,  # Normal, leise
 }
 
 
@@ -132,7 +133,10 @@ class AmbientAudioClassifier:
             for evt, info in yaml_reactions.items():
                 if isinstance(info, dict):
                     if evt in self._default_reactions:
-                        self._default_reactions[evt] = {**self._default_reactions[evt], **info}
+                        self._default_reactions[evt] = {
+                            **self._default_reactions[evt],
+                            **info,
+                        }
                     else:
                         self._default_reactions[evt] = info
         else:
@@ -165,7 +169,8 @@ class AmbientAudioClassifier:
         logger.info(
             "AmbientAudioClassifier initialisiert (enabled: %s, sensoren: %d, "
             "disabled: %s)",
-            self.enabled, len(self._sensor_mappings),
+            self.enabled,
+            len(self._sensor_mappings),
             list(self._disabled_events) or "keine",
         )
 
@@ -179,7 +184,8 @@ class AmbientAudioClassifier:
                 history_raw = await self._redis.get("mha:ambient:history")
                 if history_raw:
                     import json
-                    self._event_history = json.loads(history_raw)[-self._max_history:]
+
+                    self._event_history = json.loads(history_raw)[-self._max_history :]
                     logger.info(
                         "Ambient Audio History geladen: %d Events",
                         len(self._event_history),
@@ -190,14 +196,21 @@ class AmbientAudioClassifier:
     async def start(self):
         """Startet den Sensor-Polling-Loop."""
         if not self.enabled or not self._sensor_mappings:
-            logger.info("Ambient Audio Polling nicht gestartet (enabled=%s, sensoren=%d)",
-                        self.enabled, len(self._sensor_mappings))
+            logger.info(
+                "Ambient Audio Polling nicht gestartet (enabled=%s, sensoren=%d)",
+                self.enabled,
+                len(self._sensor_mappings),
+            )
             return
 
         self._running = True
         self._poll_task = asyncio.create_task(self._poll_loop())
-        self._poll_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
-        logger.info("Ambient Audio Polling gestartet (Intervall: %ds)", self._poll_interval)
+        self._poll_task.add_done_callback(
+            lambda t: t.exception() if not t.cancelled() else None
+        )
+        logger.info(
+            "Ambient Audio Polling gestartet (Intervall: %ds)", self._poll_interval
+        )
 
     async def stop(self):
         """Stoppt den Polling-Loop."""
@@ -251,12 +264,15 @@ class AmbientAudioClassifier:
 
         # Confidence-Schwelle
         min_confidence = yaml_config.get("ambient_audio", {}).get(
-            "min_confidence", 0.6,
+            "min_confidence",
+            0.6,
         )
         if confidence < min_confidence:
             logger.debug(
                 "Event '%s' unter Confidence-Schwelle (%.2f < %.2f)",
-                event_type, confidence, min_confidence,
+                event_type,
+                confidence,
+                min_confidence,
             )
             return None
 
@@ -304,7 +320,7 @@ class AmbientAudioClassifier:
         # History speichern
         self._event_history.append(event)
         if len(self._event_history) > self._max_history:
-            self._event_history = self._event_history[-self._max_history:]
+            self._event_history = self._event_history[-self._max_history :]
 
         # Redis persistieren (async) – Task in Set halten, damit GC ihn nicht einsammelt
         task = asyncio.create_task(self._save_history())
@@ -332,12 +348,18 @@ class AmbientAudioClassifier:
 
         logger.info(
             "Ambient Audio Event: %s (Raum: %s, Severity: %s, Confidence: %.2f, Quelle: %s)",
-            event_type, room or "?", severity, confidence, source,
+            event_type,
+            room or "?",
+            severity,
+            confidence,
+            source,
         )
 
         return event
 
-    async def process_ha_state_change(self, entity_id: str, new_state: str, attributes: dict = None) -> Optional[dict]:
+    async def process_ha_state_change(
+        self, entity_id: str, new_state: str, attributes: dict = None
+    ) -> Optional[dict]:
         """
         Verarbeitet eine HA State-Change die auf ein Audio-Event hinweisen koennte.
 
@@ -400,7 +422,11 @@ class AmbientAudioClassifier:
                     for entity_id, state_data in zip(entity_ids, state_results):
                         try:
                             if isinstance(state_data, BaseException):
-                                logger.debug("Sensor-Poll fehlgeschlagen (%s): %s", entity_id, state_data)
+                                logger.debug(
+                                    "Sensor-Poll fehlgeschlagen (%s): %s",
+                                    entity_id,
+                                    state_data,
+                                )
                                 continue
                             if not state_data:
                                 continue
@@ -418,14 +444,20 @@ class AmbientAudioClassifier:
                                         attributes=state_data.get("attributes", {}),
                                     )
                         except Exception as e:
-                            logger.debug("Sensor-Poll fehlgeschlagen (%s): %s", entity_id, e)
+                            logger.debug(
+                                "Sensor-Poll fehlgeschlagen (%s): %s", entity_id, e
+                            )
 
                 _consecutive_errors = 0
 
             except Exception as e:
                 _consecutive_errors += 1
-                _backoff = min(self._poll_interval * (2 ** _consecutive_errors), _max_backoff)
-                logger.error("Ambient Audio Poll-Loop Fehler (backoff %.1fs): %s", _backoff, e)
+                _backoff = min(
+                    self._poll_interval * (2**_consecutive_errors), _max_backoff
+                )
+                logger.error(
+                    "Ambient Audio Poll-Loop Fehler (backoff %.1fs): %s", _backoff, e
+                )
                 await asyncio.sleep(_backoff)
                 continue
 
@@ -479,10 +511,23 @@ class AmbientAudioClassifier:
         name = parts[1]
         # Bekannte Raum-Praefixe
         room_names = [
-            "wohnzimmer", "schlafzimmer", "kueche", "bad", "badezimmer",
-            "buero", "flur", "keller", "dachboden", "garage",
-            "kinderzimmer", "gaestezimmer", "esszimmer", "balkon",
-            "terrasse", "garten", "eingang",
+            "wohnzimmer",
+            "schlafzimmer",
+            "kueche",
+            "bad",
+            "badezimmer",
+            "buero",
+            "flur",
+            "keller",
+            "dachboden",
+            "garage",
+            "kinderzimmer",
+            "gaestezimmer",
+            "esszimmer",
+            "balkon",
+            "terrasse",
+            "garten",
+            "eingang",
         ]
         for room in room_names:
             if name.startswith(room):
@@ -501,9 +546,10 @@ class AmbientAudioClassifier:
             return
         try:
             import json
+
             await self._redis.set(
                 "mha:ambient:history",
-                json.dumps(self._event_history[-self._max_history:]),
+                json.dumps(self._event_history[-self._max_history :]),
             )
         except Exception as e:
             logger.debug("Ambient History speichern fehlgeschlagen: %s", e)
@@ -551,7 +597,9 @@ class AmbientAudioClassifier:
     # Event-Korrelation, False-Positive-Lernen & Zeitbasierte Dringlichkeit
     # ------------------------------------------------------------------
 
-    def correlate_events(self, events: list[dict], window_seconds: int = 30) -> list[dict]:
+    def correlate_events(
+        self, events: list[dict], window_seconds: int = 30
+    ) -> list[dict]:
         """Gruppiert Events innerhalb eines Zeitfensters zu Incidents.
 
         Beispiel: glass_break + alarm innerhalb von 30s = ein Incident.
@@ -615,7 +663,9 @@ class AmbientAudioClassifier:
         if not is_false:
             return
 
-        self._false_positive_counts[event_id] = self._false_positive_counts.get(event_id, 0) + 1
+        self._false_positive_counts[event_id] = (
+            self._false_positive_counts.get(event_id, 0) + 1
+        )
         count = self._false_positive_counts[event_id]
         logger.info("False Positive fuer '%s': %d Mal gemeldet", event_id, count)
 
@@ -623,7 +673,8 @@ class AmbientAudioClassifier:
             self._sensitivity_reduced.add(event_id)
             logger.warning(
                 "Sensitivitaet fuer '%s' reduziert — %d False Positives erreicht",
-                event_id, count,
+                event_id,
+                count,
             )
 
     def get_temporal_urgency(self, event_type: str, hour: int) -> str:

@@ -39,32 +39,103 @@ _THINK_PATTERN = re.compile(r"<think>[\s\S]*?</think>\s*", re.DOTALL)
 # Wörter die auf Meta-Kommentar / Reasoning hindeuten (nicht in echter Meldung)
 _META_MARKERS = [
     # Englisches Reasoning
-    "let me", "i need to", "the user", "i should", "i'll ", "i can ",
-    "original:", "original message", "translate", "rephrase", "reformulate",
-    "thinking", "analyze", "however", "therefore", "which means",
-    "looking at", "understand", "consider", "examples given",
-    "in jarvis", "jarvis's style", "jarvis style", "the example",
-    "low urgency", "medium urgency", "high urgency",
-    "short,", "concise", "1-2 sentence", "1-3 sentence",
-    "british butler", "dry humor", "matter-of-fact",
+    "let me",
+    "i need to",
+    "the user",
+    "i should",
+    "i'll ",
+    "i can ",
+    "original:",
+    "original message",
+    "translate",
+    "rephrase",
+    "reformulate",
+    "thinking",
+    "analyze",
+    "however",
+    "therefore",
+    "which means",
+    "looking at",
+    "understand",
+    "consider",
+    "examples given",
+    "in jarvis",
+    "jarvis's style",
+    "jarvis style",
+    "the example",
+    "low urgency",
+    "medium urgency",
+    "high urgency",
+    "short,",
+    "concise",
+    "1-2 sentence",
+    "1-3 sentence",
+    "british butler",
+    "dry humor",
+    "matter-of-fact",
     # Prompt-Echo
-    "formuliere diese", "meldung im jarvis", "dringlichkeit:",
+    "formuliere diese",
+    "meldung im jarvis",
+    "dringlichkeit:",
 ]
 
 # Häufige deutsche Wörter (muessen in einer echten deutschen Meldung vorkommen)
 _GERMAN_MARKERS = [
-    "sir", "ma'am", "der", "die", "das", "ist", "ein", "und", "nicht",
-    "ich", "hab", "mal", "aus", "auf", "mit", "bei", "zur",
-    "noch", "nur", "etwas", "gerade", "bitte", "danke",
-    "grad", "uhr", "haus", "licht", "heiz",
+    "sir",
+    "ma'am",
+    "der",
+    "die",
+    "das",
+    "ist",
+    "ein",
+    "und",
+    "nicht",
+    "ich",
+    "hab",
+    "mal",
+    "aus",
+    "auf",
+    "mit",
+    "bei",
+    "zur",
+    "noch",
+    "nur",
+    "etwas",
+    "gerade",
+    "bitte",
+    "danke",
+    "grad",
+    "uhr",
+    "haus",
+    "licht",
+    "heiz",
     # Verben (häufig in Notifications)
-    "wurde", "wird", "hat", "sind", "kann", "soll",
-    "sollte", "darf", "liegt", "steht", "scheint",
+    "wurde",
+    "wird",
+    "hat",
+    "sind",
+    "kann",
+    "soll",
+    "sollte",
+    "darf",
+    "liegt",
+    "steht",
+    "scheint",
     # Smart-Home Begriffe
-    "temperatur", "fenster", "wasser", "luft",
-    "befeuchter", "humidor", "sensor", "batterie",
+    "temperatur",
+    "fenster",
+    "wasser",
+    "luft",
+    "befeuchter",
+    "humidor",
+    "sensor",
+    "batterie",
     # Allgemein
-    "bereits", "aktuell", "guten", "herr", "frau",
+    "bereits",
+    "aktuell",
+    "guten",
+    "herr",
+    "frau",
 ]
 
 
@@ -86,14 +157,22 @@ def _log_ollama_metrics(result: dict, model: str, endpoint: str = "chat") -> Non
     load_ms = round(load_ns / 1e6, 1) if load_ns else None
 
     # Tokens/s berechnen
-    eval_tps = round(eval_tokens / (eval_ns / 1e9), 1) if eval_tokens and eval_ns else None
+    eval_tps = (
+        round(eval_tokens / (eval_ns / 1e9), 1) if eval_tokens and eval_ns else None
+    )
 
     _metrics_logger.info(
         "ollama_%s model=%s prompt_tokens=%s eval_tokens=%s "
         "total_ms=%s prompt_ms=%s eval_ms=%s load_ms=%s eval_tps=%s",
-        endpoint, model,
-        prompt_tokens, eval_tokens,
-        total_ms, prompt_ms, eval_ms, load_ms, eval_tps,
+        endpoint,
+        model,
+        prompt_tokens,
+        eval_tokens,
+        total_ms,
+        prompt_ms,
+        eval_ms,
+        load_ms,
+        eval_tps,
     )
 
 
@@ -146,16 +225,19 @@ def validate_notification(text: str) -> str:
     # --- Check 0: Meta-Leakage (interne Funktionsnamen/Begriffe) entfernen ---
     # P06f: Qwen 3.5 kann tool_call/speak/emit in Notifications leaken
     import re as _re
+
     text = _re.sub(
-        r'\b(?:speak|tts|emit|tool_call|function_call|call_service'
-        r'|speak_response|emit_speaking|emit_action'
-        r'|set_light|set_cover|set_climate|set_switch|set_vacuum'
-        r'|play_media|get_lights|get_covers|get_climate|get_switches'
-        r'|get_house_status|get_weather|get_entity_state'
-        r'|run_scene|run_script|call_ha_service)\b',
-        '', text, flags=_re.IGNORECASE,
+        r"\b(?:speak|tts|emit|tool_call|function_call|call_service"
+        r"|speak_response|emit_speaking|emit_action"
+        r"|set_light|set_cover|set_climate|set_switch|set_vacuum"
+        r"|play_media|get_lights|get_covers|get_climate|get_switches"
+        r"|get_house_status|get_weather|get_entity_state"
+        r"|run_scene|run_script|call_ha_service)\b",
+        "",
+        text,
+        flags=_re.IGNORECASE,
     )
-    text = _re.sub(r'\s{2,}', ' ', text).strip()
+    text = _re.sub(r"\s{2,}", " ", text).strip()
     if not text:
         return ""
 
@@ -165,7 +247,8 @@ def validate_notification(text: str) -> str:
     if meta_hits >= 2:
         logger.warning(
             "Notification verworfen (Meta-Kommentar, %d Treffer): '%.80s...'",
-            meta_hits, text,
+            meta_hits,
+            text,
         )
         # Versuche letzte Zeile als Antwort zu extrahieren
         extracted = _extract_final_answer(text)
@@ -221,8 +304,13 @@ def _extract_final_answer(text: str) -> str:
 strip_reasoning_leak = validate_notification
 
 
-def _model_options(model: str, temperature: float, max_tokens: int, num_ctx: int,
-                   think_enabled: bool = False) -> dict:
+def _model_options(
+    model: str,
+    temperature: float,
+    max_tokens: int,
+    num_ctx: int,
+    think_enabled: bool = False,
+) -> dict:
     """Erzeugt modell-optimierte Ollama Options aus dem Model Profile.
 
     Parameter (top_k, top_p, min_p, repeat_penalty, temperature) werden
@@ -233,6 +321,7 @@ def _model_options(model: str, temperature: float, max_tokens: int, num_ctx: int
     ollama-Sektion in settings.yaml gelesen.
     """
     from .config import get_model_profile, yaml_config
+
     profile = get_model_profile(model)
 
     opts = {
@@ -304,6 +393,7 @@ class OllamaClient:
         nicht staendig mit verschiedenen Kontextgroessen neu laden muss.
         """
         from .config import yaml_config
+
         ollama_cfg = yaml_config.get("ollama") or {}
 
         # Auch wenn alle Tiers das gleiche Modell nutzen, tier-spezifischen
@@ -315,9 +405,18 @@ class OllamaClient:
         elif tier == "deep":
             return int(ollama_cfg.get("num_ctx_deep", self._DEFAULT_NUM_CTX_DEEP))
         elif tier == "notify":
-            return int(ollama_cfg.get("num_ctx_notify", ollama_cfg.get("num_ctx_fast", self._DEFAULT_NUM_CTX_FAST)))
+            return int(
+                ollama_cfg.get(
+                    "num_ctx_notify",
+                    ollama_cfg.get("num_ctx_fast", self._DEFAULT_NUM_CTX_FAST),
+                )
+            )
         elif tier == "smart":
-            return int(ollama_cfg.get("num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)))
+            return int(
+                ollama_cfg.get(
+                    "num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)
+                )
+            )
 
         # Fallback: Modellname-Matching (Rueckwaertskompatibilitaet)
         if model == settings.model_fast and model != settings.model_smart:
@@ -325,16 +424,30 @@ class OllamaClient:
         elif model == settings.model_deep and model != settings.model_fast:
             return int(ollama_cfg.get("num_ctx_deep", self._DEFAULT_NUM_CTX_DEEP))
         elif model == settings.model_notify and model != settings.model_fast:
-            return int(ollama_cfg.get("num_ctx_notify", ollama_cfg.get("num_ctx_fast", self._DEFAULT_NUM_CTX_FAST)))
+            return int(
+                ollama_cfg.get(
+                    "num_ctx_notify",
+                    ollama_cfg.get("num_ctx_fast", self._DEFAULT_NUM_CTX_FAST),
+                )
+            )
         else:
-            return int(ollama_cfg.get("num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)))
+            return int(
+                ollama_cfg.get(
+                    "num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)
+                )
+            )
 
     @property
     def num_ctx(self) -> int:
         """Liest num_ctx (Smart-Tier) aus yaml_config — Rückwaertskompatibel."""
         from .config import yaml_config
+
         ollama_cfg = yaml_config.get("ollama") or {}
-        return int(ollama_cfg.get("num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)))
+        return int(
+            ollama_cfg.get(
+                "num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)
+            )
+        )
 
     @property
     def keep_alive(self) -> str | int:
@@ -350,6 +463,7 @@ class OllamaClient:
         nackten Zahlen ohne Einheit — daher int statt String.
         """
         from .config import yaml_config
+
         ollama_cfg = yaml_config.get("ollama") or {}
         val = ollama_cfg.get("keep_alive", self._DEFAULT_KEEP_ALIVE)
         try:
@@ -410,6 +524,7 @@ class OllamaClient:
             Ollama API Response dict
         """
         from .config import get_model_profile
+
         model = model or settings.model_smart
         profile = get_model_profile(model)
 
@@ -421,7 +536,10 @@ class OllamaClient:
         #   "smart_off" = Thinking nur fuer Smart-Tier aus (Fast immer aus, Deep auto)
         #   "on"      = Thinking immer aktiviert
         from .config import yaml_config as _yaml_cfg
-        _think_cfg = (_yaml_cfg.get("latency_optimization") or {}).get("think_control", "smart_off")
+
+        _think_cfg = (_yaml_cfg.get("latency_optimization") or {}).get(
+            "think_control", "smart_off"
+        )
 
         if think is not None:
             think_enabled = think
@@ -451,7 +569,10 @@ class OllamaClient:
             "stream": False,
             "keep_alive": self.keep_alive,
             "options": _model_options(
-                model, temperature, max_tokens, self.num_ctx_for(model, tier=tier),
+                model,
+                temperature,
+                max_tokens,
+                self.num_ctx_for(model, tier=tier),
                 think_enabled=think_enabled or False,
             ),
         }
@@ -461,6 +582,7 @@ class OllamaClient:
             # N6: JSON-Mode fuer Tool-Calls — stabilere Tool-Call Erkennung
             if format is None:
                 from .config import yaml_config as _yaml_cfg
+
                 if _yaml_cfg.get("json_mode_tools", {}).get("enabled", True):
                     payload["format"] = "json"
             elif format:
@@ -505,8 +627,12 @@ class OllamaClient:
                 content = msg.get("content", "")
                 if content and "<think>" in content:
                     cleaned, thinking = extract_thinking(content)
-                    logger.debug("Think-Tags extrahiert (%d → %d Zeichen, %d Thinking)",
-                                 len(content), len(cleaned), len(thinking))
+                    logger.debug(
+                        "Think-Tags extrahiert (%d → %d Zeichen, %d Thinking)",
+                        len(content),
+                        len(cleaned),
+                        len(thinking),
+                    )
                     msg["content"] = cleaned
                     if thinking:
                         result["thinking"] = thinking
@@ -545,12 +671,16 @@ class OllamaClient:
             return
 
         from .config import get_model_profile
+
         model = model or settings.model_smart
         profile = get_model_profile(model)
 
         # Thinking Mode (gleiche Logik wie chat(), via Model Profile + settings.yaml)
         from .config import yaml_config as _yaml_cfg
-        _think_cfg = (_yaml_cfg.get("latency_optimization") or {}).get("think_control", "smart_off")
+
+        _think_cfg = (_yaml_cfg.get("latency_optimization") or {}).get(
+            "think_control", "smart_off"
+        )
 
         if think is not None:
             think_enabled = think
@@ -573,7 +703,10 @@ class OllamaClient:
             "stream": True,
             "keep_alive": self.keep_alive,
             "options": _model_options(
-                model, temperature, max_tokens, self.num_ctx_for(model, tier=tier),
+                model,
+                temperature,
+                max_tokens,
+                self.num_ctx_for(model, tier=tier),
                 think_enabled=think_enabled or False,
             ),
         }
@@ -608,8 +741,10 @@ class OllamaClient:
                     try:
                         data = _json.loads(line)
                     except (ValueError, _json.JSONDecodeError):
-                        logger.debug("Ollama Stream: Malformed JSON chunk uebersprungen: %s",
-                                     line[:200] if isinstance(line, str) else line[:200])
+                        logger.debug(
+                            "Ollama Stream: Malformed JSON chunk uebersprungen: %s",
+                            line[:200] if isinstance(line, str) else line[:200],
+                        )
                         continue
 
                     content = data.get("message", {}).get("content", "")
@@ -622,7 +757,9 @@ class OllamaClient:
 
                     # Guard against unbounded buffer growth
                     if len(_think_buffer) > _THINK_BUFFER_MAX_CHARS:
-                        logger.warning("_think_buffer exceeded 100k chars, flushing content")
+                        logger.warning(
+                            "_think_buffer exceeded 100k chars, flushing content"
+                        )
                         # Content retten statt verwerfen — nur Think-Tags strippen
                         _think_buffer = strip_think_tags(_think_buffer)
                         if _think_buffer:
@@ -634,7 +771,9 @@ class OllamaClient:
                     if in_think_block:
                         if "</think>" in _think_buffer:
                             # Think-Block beenden, Content surfacen statt verwerfen
-                            think_content, _, after = _think_buffer.partition("</think>")
+                            think_content, _, after = _think_buffer.partition(
+                                "</think>"
+                            )
                             if think_content.strip():
                                 _thinking_parts.append(think_content.strip())
                             _think_buffer = after.lstrip()
@@ -655,7 +794,9 @@ class OllamaClient:
                         in_think_block = True
                         # Sofort prüfen ob </think> auch schon im Buffer
                         if "</think>" in _think_buffer:
-                            think_content, _, after = _think_buffer.partition("</think>")
+                            think_content, _, after = _think_buffer.partition(
+                                "</think>"
+                            )
                             if think_content.strip():
                                 _thinking_parts.append(think_content.strip())
                             _think_buffer = after.lstrip()
@@ -679,7 +820,9 @@ class OllamaClient:
                     yield _think_buffer
 
                 # Think-Content nach Stream verfügbar machen
-                self._last_stream_thinking = "\n".join(_thinking_parts) if _thinking_parts else ""
+                self._last_stream_thinking = (
+                    "\n".join(_thinking_parts) if _thinking_parts else ""
+                )
 
         except asyncio.TimeoutError:
             logger.error("Ollama Stream Timeout nach %ds", LLM_TIMEOUT_STREAM)
@@ -725,7 +868,10 @@ class OllamaClient:
             "stream": False,
             "keep_alive": self.keep_alive,
             "options": _model_options(
-                model, temperature, max_tokens, self.num_ctx_for(model),
+                model,
+                temperature,
+                max_tokens,
+                self.num_ctx_for(model),
             ),
         }
 
@@ -748,7 +894,9 @@ class OllamaClient:
                 cleaned, _ = extract_thinking(text)
                 return cleaned
         except asyncio.TimeoutError:
-            logger.error("Ollama Generate Timeout nach %ds für Modell %s", timeout, model)
+            logger.error(
+                "Ollama Generate Timeout nach %ds für Modell %s", timeout, model
+            )
             ollama_breaker.record_failure()
             return ""
         except aiohttp.ClientError as e:

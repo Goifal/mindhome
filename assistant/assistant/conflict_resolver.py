@@ -30,6 +30,7 @@ from .ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
 from zoneinfo import ZoneInfo
+
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
@@ -41,10 +42,12 @@ FUNCTION_DOMAIN_MAP = {
     "set_cover": "cover",
 }
 
+
 # Welche Parameter bei Konflikten verglichen werden
 def _get_climate_conflict_params() -> dict:
     """Liefert Konflikt-Parameter je nach Heizungsmodus (live aus Config)."""
     from .config import yaml_config as cfg
+
     mode = cfg.get("heating", {}).get("mode", "room_thermostat")
     if mode == "heating_curve":
         return {"key": "offset", "unit": "°C", "type": "numeric"}
@@ -119,7 +122,10 @@ class ConflictResolver:
         med_cfg = cfg.get("mediation", {})
         self._mediation_enabled = med_cfg.get("enabled", True)
         from .config import resolve_model
-        self._mediation_model = resolve_model(med_cfg.get("model", ""), fallback_tier="deep")
+
+        self._mediation_model = resolve_model(
+            med_cfg.get("model", ""), fallback_tier="deep"
+        )
         self._mediation_max_tokens = int(med_cfg.get("max_tokens", 256))
         self._mediation_temperature = med_cfg.get("temperature", 0.7)
 
@@ -152,7 +158,10 @@ class ConflictResolver:
                 self._safe_limits[domain] = {}
                 for param, val in params.items():
                     if isinstance(val, list) and len(val) == 2:
-                        self._safe_limits[domain][param] = (float(val[0]), float(val[1]))
+                        self._safe_limits[domain][param] = (
+                            float(val[0]),
+                            float(val[1]),
+                        )
                     else:
                         self._safe_limits[domain][param] = val
         else:
@@ -160,7 +169,7 @@ class ConflictResolver:
 
         # State: Letzte Befehle pro Person
         self._recent_commands: dict[str, list[dict]] = defaultdict(list)
-        self._commands_lock = __import__('threading').Lock()
+        self._commands_lock = __import__("threading").Lock()
         # State: Letzte Konfliktloesungen (Cooldown)
         self._last_resolutions: dict[str, float] = {}
         # State: Konflikt-History
@@ -178,9 +187,10 @@ class ConflictResolver:
         self._redis = None
 
         logger.info(
-            "ConflictResolver initialisiert (enabled: %s, window: %ds, "
-            "mediation: %s)",
-            self.enabled, self._conflict_window, self._mediation_enabled,
+            "ConflictResolver initialisiert (enabled: %s, window: %ds, mediation: %s)",
+            self.enabled,
+            self._conflict_window,
+            self._mediation_enabled,
         )
 
     def reload_config(self):
@@ -207,8 +217,12 @@ class ConflictResolver:
         self._prediction_enabled = cfg.get("prediction_enabled", False)
         self._prediction_window_seconds = int(cfg.get("prediction_window_seconds", 180))
 
-        logger.info("ConflictResolver config reloaded (enabled=%s, prediction=%s, rules_enabled=%d custom)",
-                     self.enabled, self._prediction_enabled, len(self._rules_enabled))
+        logger.info(
+            "ConflictResolver config reloaded (enabled=%s, prediction=%s, rules_enabled=%d custom)",
+            self.enabled,
+            self._prediction_enabled,
+            len(self._rules_enabled),
+        )
 
     async def initialize(self, redis_client=None):
         """Initialisiert den Resolver mit Redis-Anbindung."""
@@ -218,9 +232,12 @@ class ConflictResolver:
         if self._redis:
             try:
                 import json
+
                 history_raw = await self._redis.get("mha:conflicts:history")
                 if history_raw:
-                    self._conflict_history = json.loads(history_raw)[-self._max_history:]
+                    self._conflict_history = json.loads(history_raw)[
+                        -self._max_history :
+                    ]
                     logger.info(
                         "Konflikt-History geladen: %d Konflikte",
                         len(self._conflict_history),
@@ -262,8 +279,9 @@ class ConflictResolver:
 
             # Ring-Buffer: Alte Befehle entfernen
             if len(self._recent_commands[person_key]) > self._max_commands:
-                self._recent_commands[person_key] = \
-                    self._recent_commands[person_key][-self._max_commands:]
+                self._recent_commands[person_key] = self._recent_commands[person_key][
+                    -self._max_commands :
+                ]
 
             # Abgelaufene Befehle bereinigen (aelter als conflict_window)
             self._cleanup_old_commands()
@@ -327,7 +345,10 @@ class ConflictResolver:
 
                 # Konflikt-Check: Widersprechen sich die Werte?
                 conflict = self._detect_conflict(
-                    domain, function_args, cmd["args"], domain_cfg,
+                    domain,
+                    function_args,
+                    cmd["args"],
+                    domain_cfg,
                 )
                 if not conflict:
                     continue
@@ -364,17 +385,27 @@ class ConflictResolver:
                 # History speichern
                 self._conflict_history.append(resolution)
                 if len(self._conflict_history) > self._max_history:
-                    self._conflict_history = self._conflict_history[-self._max_history:]
+                    self._conflict_history = self._conflict_history[
+                        -self._max_history :
+                    ]
                 _t = asyncio.create_task(self._save_history())
                 _t.add_done_callback(
-                    lambda t: logger.warning("_save_history fehlgeschlagen: %s", t.exception())
-                    if t.exception() else None
+                    lambda t: (
+                        logger.warning(
+                            "_save_history fehlgeschlagen: %s", t.exception()
+                        )
+                        if t.exception()
+                        else None
+                    )
                 )
 
                 logger.info(
                     "Konflikt erkannt: %s vs %s in Domain '%s' (Raum: %s) -> %s",
-                    other_person, person_lower, domain,
-                    new_room or "?", resolution["strategy"],
+                    other_person,
+                    person_lower,
+                    domain,
+                    new_room or "?",
+                    resolution["strategy"],
                 )
 
                 return resolution
@@ -479,13 +510,18 @@ class ConflictResolver:
         try:
             from .state_change_log import StateChangeLog
             import assistant.main as main_module
+
             if hasattr(main_module, "brain"):
                 _states = await main_module.brain.ha.get_states() or []
                 dep_hints_a = StateChangeLog.check_action_dependencies(
-                    command_a.get("function", ""), command_a.get("args", {}), _states,
+                    command_a.get("function", ""),
+                    command_a.get("args", {}),
+                    _states,
                 )
                 dep_hints_b = StateChangeLog.check_action_dependencies(
-                    function_name_b, args_b, _states,
+                    function_name_b,
+                    args_b,
+                    _states,
                 )
         except Exception as _dep_err:
             logger.debug("Dependency-Check in ConflictResolver: %s", _dep_err)
@@ -532,7 +568,9 @@ class ConflictResolver:
                 resolution["winner"] = winner
                 resolution["loser"] = loser
                 resolution["action"] = "use_winner_values"
-                resolution["modified_args"] = args_b if winner == person_b else command_a["args"]
+                resolution["modified_args"] = (
+                    args_b if winner == person_b else command_a["args"]
+                )
                 resolution["message"] = (
                     f"Interessante Meinungsverschiedenheit bei {self._domain_label(domain)}"
                     f"{' im ' + room if room else ''}. "
@@ -542,7 +580,9 @@ class ConflictResolver:
             else:
                 # Gleicher Trust -> Raum-Scoping: Wer ist im Raum?
                 room_winner = self._resolve_by_room_presence(
-                    person_a, person_b, room,
+                    person_a,
+                    person_b,
+                    room,
                 )
                 if room_winner:
                     winner = room_winner
@@ -561,7 +601,9 @@ class ConflictResolver:
                     resolution["strategy"] = "room_presence"
                 else:
                     # Kein Raum-Vorteil -> Fallback zu average oder mediate
-                    strategy = "average" if conflict_detail["type"] == "numeric" else "mediate"
+                    strategy = (
+                        "average" if conflict_detail["type"] == "numeric" else "mediate"
+                    )
 
         # Strategie 2: Durchschnitt (nur numerisch)
         if strategy == "average" and conflict_detail["type"] == "numeric":
@@ -580,15 +622,22 @@ class ConflictResolver:
                     compromise = max(min_val, min(max_val, compromise))
                     logger.warning(
                         "F-054: Kompromiss %s%s geclampt auf %s%s (Limits: %s-%s)",
-                        old_compromise, unit, compromise, unit, min_val, max_val,
+                        old_compromise,
+                        unit,
+                        compromise,
+                        unit,
+                        min_val,
+                        max_val,
                     )
-            if hasattr(self, '_validator') and self._validator:
+            if hasattr(self, "_validator") and self._validator:
                 test_args = {**args_b, key: compromise}
                 validation = self._validator.validate(f"set_{domain}", test_args)
                 if not validation.ok:
                     logger.warning(
                         "F-054: Kompromiss %s%s Validierung fehlgeschlagen: %s — verwende höher-Trust-Wert",
-                        compromise, unit, validation.reason,
+                        compromise,
+                        unit,
+                        validation.reason,
                     )
                     # F-054: Bei ungültigem Kompromiss den Wert des höher vertrauenswuerdigen Users nehmen
                     compromise = val_a if trust_a >= trust_b else val_b
@@ -726,7 +775,8 @@ class ConflictResolver:
         cutoff = time.time() - self._conflict_window
         for person in list(self._recent_commands.keys()):
             self._recent_commands[person] = [
-                cmd for cmd in self._recent_commands[person]
+                cmd
+                for cmd in self._recent_commands[person]
                 if cmd["timestamp"] > cutoff
             ]
             if not self._recent_commands[person]:
@@ -772,7 +822,11 @@ class ConflictResolver:
             return f"die Musik auf {action}" if action else "die Musik entsprechend"
         elif domain == "cover":
             position = args.get("position")
-            return f"die Rolladen auf {position}%" if position is not None else "die Rolladen entsprechend"
+            return (
+                f"die Rolladen auf {position}%"
+                if position is not None
+                else "die Rolladen entsprechend"
+            )
         return "es entsprechend"
 
     def _resolve_by_room_presence(
@@ -831,9 +885,10 @@ class ConflictResolver:
             return
         try:
             import json
+
             await self._redis.set(
                 "mha:conflicts:history",
-                json.dumps(self._conflict_history[-self._max_history:]),
+                json.dumps(self._conflict_history[-self._max_history :]),
             )
         except Exception as e:
             logger.debug("Konflikt-History speichern fehlgeschlagen: %s", e)
@@ -849,10 +904,7 @@ class ConflictResolver:
     def get_active_commands(self) -> dict:
         """Gibt die aktuell getrackte Befehle pro Person zurück."""
         self._cleanup_old_commands()
-        return {
-            person: len(cmds)
-            for person, cmds in self._recent_commands.items()
-        }
+        return {person: len(cmds) for person, cmds in self._recent_commands.items()}
 
     def health_status(self) -> str:
         """Gibt den Health-Status zurück."""
@@ -982,13 +1034,16 @@ class ConflictResolver:
 
                 detail_str = " ".join(detail_parts)
                 warning_text = (
-                    f"{other_person.title()} hat {time_label} "
-                    f"{detail_str} gestellt"
+                    f"{other_person.title()} hat {time_label} {detail_str} gestellt"
                 ).strip()
 
                 logger.info(
                     "Conflict prediction: %s vs %s in %s/%s (%ds ago)",
-                    person_lower, other_person, domain, room or "?", time_ago,
+                    person_lower,
+                    other_person,
+                    domain,
+                    room or "?",
+                    time_ago,
                 )
 
                 return {
@@ -1084,12 +1139,21 @@ class ConflictResolver:
                 climate_actions = {}  # area_hint -> list of (eid, hvac_action)
                 for eid, val in state_map.items():
                     if eid.startswith("climate."):
-                        attrs = next((s.get("attributes", {}) for s in ha_states
-                                      if s.get("entity_id") == eid), {})
+                        attrs = next(
+                            (
+                                s.get("attributes", {})
+                                for s in ha_states
+                                if s.get("entity_id") == eid
+                            ),
+                            {},
+                        )
                         hvac = attrs.get("hvac_action", val)
                         if hvac in ("cooling", "heating"):
                             # Bereich-Hint aus Entity-ID oder Area extrahieren
-                            area = attrs.get("area_id", "") or eid.split(".")[-1].rsplit("_", 1)[0]
+                            area = (
+                                attrs.get("area_id", "")
+                                or eid.split(".")[-1].rsplit("_", 1)[0]
+                            )
                             climate_actions.setdefault(area, []).append((eid, hvac))
                 # Konflikt nur wenn im gleichen Bereich gegenläufig
                 for area, devices in climate_actions.items():
@@ -1116,21 +1180,37 @@ class ConflictResolver:
                 matched = any(
                     state_map.get(eid) == "on"
                     for eid in state_map
-                    if eid.startswith("binary_sensor.") and ("door" in eid or "tuer" in eid)
+                    if eid.startswith("binary_sensor.")
+                    and ("door" in eid or "tuer" in eid)
                 )
             elif ctx == "sleeping_detected":
                 matched = any(
                     state_map.get(eid) == "on"
                     for eid in state_map
-                    if "sleep" in eid or "schlaf" in eid or "goodnight" in eid
-                    or "gute_nacht" in eid or "bett" in eid or "nachtmodus" in eid
+                    if "sleep" in eid
+                    or "schlaf" in eid
+                    or "goodnight" in eid
+                    or "gute_nacht" in eid
+                    or "bett" in eid
+                    or "nachtmodus" in eid
                 )
             elif ctx == "rain_detected":
                 weather = state_map.get(self._weather_entity, "")
-                matched = weather in ("rainy", "pouring", "lightning-rainy", "hail", "rain", "thunderstorm")
+                matched = weather in (
+                    "rainy",
+                    "pouring",
+                    "lightning-rainy",
+                    "hail",
+                    "rain",
+                    "thunderstorm",
+                )
             elif ctx == "frost_detected":
                 for eid, val in state_map.items():
-                    if eid.startswith("sensor.") and "temperature" in eid and ("outdoor" in eid or "aussen" in eid or "außen" in eid):
+                    if (
+                        eid.startswith("sensor.")
+                        and "temperature" in eid
+                        and ("outdoor" in eid or "aussen" in eid or "außen" in eid)
+                    ):
                         try:
                             if float(val) < self._threshold_frost_c:
                                 matched = True

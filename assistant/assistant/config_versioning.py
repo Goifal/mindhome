@@ -45,7 +45,8 @@ class ConfigVersioning:
         await asyncio.to_thread(_SNAPSHOT_DIR.mkdir, parents=True, exist_ok=True)
         logger.info(
             "ConfigVersioning initialisiert (enabled=%s, max=%d)",
-            self._enabled, self._max_snapshots,
+            self._enabled,
+            self._max_snapshots,
         )
 
     def is_enabled(self) -> bool:
@@ -118,7 +119,12 @@ class ConfigVersioning:
     async def list_all_snapshots(self) -> list[dict]:
         """Listet alle Snapshots aller Config-Dateien."""
         all_snapshots = []
-        for config_name in ["easter_eggs", "opinion_rules", "room_profiles", "settings"]:
+        for config_name in [
+            "easter_eggs",
+            "opinion_rules",
+            "room_profiles",
+            "settings",
+        ]:
             snapshots = await self.list_snapshots(config_name)
             all_snapshots.extend(snapshots)
         all_snapshots.sort(key=lambda s: s.get("timestamp", ""), reverse=True)
@@ -134,7 +140,7 @@ class ConfigVersioning:
 
         # Snapshot IDs are formatted as "{config_file}_{YYYYMMDD}_{HHMMSS}"
         # rsplit("_", 2) breaks on config names with underscores, so use regex
-        match = re.match(r'^(.+)_v(\d+)_(\d{8}_\d{6})$', snapshot_id)
+        match = re.match(r"^(.+)_v(\d+)_(\d{8}_\d{6})$", snapshot_id)
         if not match:
             match = re.match(r"^(.+)_(\d{8}_\d{6})$", snapshot_id)
         config_file = match.group(1) if match else snapshot_id.rsplit("_", 2)[0]
@@ -147,17 +153,24 @@ class ConfigVersioning:
                 break
 
         if not target:
-            return {"success": False, "message": f"Snapshot '{snapshot_id}' nicht gefunden"}
+            return {
+                "success": False,
+                "message": f"Snapshot '{snapshot_id}' nicht gefunden",
+            }
 
         snapshot_path = Path(target["snapshot_path"])
         original_path = Path(target["original_path"])
 
         if not await asyncio.to_thread(snapshot_path.exists):
-            return {"success": False, "message": f"Snapshot-Datei fehlt: {snapshot_path}"}
+            return {
+                "success": False,
+                "message": f"Snapshot-Datei fehlt: {snapshot_path}",
+            }
 
         try:
             await self.create_snapshot(
-                config_file, original_path,
+                config_file,
+                original_path,
                 reason=f"pre_rollback_to_{snapshot_id}",
                 changed_by="user",
             )
@@ -217,7 +230,9 @@ class ConfigVersioning:
         max_bytes = max_mb * 1024 * 1024
 
         def _enforce_sync():
-            total = sum(f.stat().st_size for f in _SNAPSHOT_DIR.iterdir() if f.is_file())
+            total = sum(
+                f.stat().st_size for f in _SNAPSHOT_DIR.iterdir() if f.is_file()
+            )
             if total <= max_bytes:
                 return
             # Aelteste Dateien zuerst loeschen
@@ -274,7 +289,9 @@ class ConfigVersioning:
                 yaml_config.update(backup)
                 raise
 
-            logger.info("Config Hot-Reload: %d Keys geaendert: %s", len(changed), changed)
+            logger.info(
+                "Config Hot-Reload: %d Keys geaendert: %s", len(changed), changed
+            )
             return {"success": True, "changed_keys": changed}
 
         except Exception as e:
@@ -283,7 +300,9 @@ class ConfigVersioning:
 
     def health_status(self) -> dict:
         """Status fuer Diagnostik."""
-        snapshot_count = len(list(_SNAPSHOT_DIR.glob("*.yaml"))) if _SNAPSHOT_DIR.exists() else 0
+        snapshot_count = (
+            len(list(_SNAPSHOT_DIR.glob("*.yaml"))) if _SNAPSHOT_DIR.exists() else 0
+        )
         return {
             "enabled": self._enabled,
             "max_snapshots": self._max_snapshots,

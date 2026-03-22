@@ -48,13 +48,17 @@ class TestTemporalAutonomy:
             },
         }
 
-        with patch("assistant.autonomy.settings", mock_settings), \
-             patch("assistant.autonomy.yaml_config", yaml_mock):
+        with (
+            patch("assistant.autonomy.settings", mock_settings),
+            patch("assistant.autonomy.yaml_config", yaml_mock),
+        ):
             am = AutonomyManager()
 
             # Simuliere Nacht (23:00)
             with patch("assistant.autonomy.datetime") as dt_mock:
-                dt_mock.now.return_value = datetime(2026, 3, 20, 23, 0, tzinfo=timezone.utc)
+                dt_mock.now.return_value = datetime(
+                    2026, 3, 20, 23, 0, tzinfo=timezone.utc
+                )
                 dt_mock.side_effect = lambda *a, **kw: datetime(*a, **kw)
                 level = am.get_effective_level()
                 assert level <= 3  # Sollte reduziert sein
@@ -78,8 +82,10 @@ class TestTemporalAutonomy:
             },
         }
 
-        with patch("assistant.autonomy.settings", mock_settings), \
-             patch("assistant.autonomy.yaml_config", yaml_mock):
+        with (
+            patch("assistant.autonomy.settings", mock_settings),
+            patch("assistant.autonomy.yaml_config", yaml_mock),
+        ):
             am = AutonomyManager()
             level = am.get_effective_level()
             assert level >= 1
@@ -99,8 +105,10 @@ class TestTemporalAutonomy:
             },
         }
 
-        with patch("assistant.autonomy.settings", mock_settings), \
-             patch("assistant.autonomy.yaml_config", yaml_mock):
+        with (
+            patch("assistant.autonomy.settings", mock_settings),
+            patch("assistant.autonomy.yaml_config", yaml_mock),
+        ):
             am = AutonomyManager()
             level = am.get_effective_level()
             assert level == 3
@@ -125,8 +133,10 @@ class TestEmergencyEscalation:
             },
         }
 
-        with patch("assistant.autonomy.settings", mock_settings), \
-             patch("assistant.autonomy.yaml_config", yaml_mock):
+        with (
+            patch("assistant.autonomy.settings", mock_settings),
+            patch("assistant.autonomy.yaml_config", yaml_mock),
+        ):
             am = AutonomyManager()
             am.escalate_for_emergency()
             level = am.get_effective_level()
@@ -145,14 +155,18 @@ class TestEmergencyEscalation:
             "threat_assessment": {"emergency_autonomy_boost": True},
         }
 
-        with patch("assistant.autonomy.settings", mock_settings), \
-             patch("assistant.autonomy.yaml_config", yaml_mock):
+        with (
+            patch("assistant.autonomy.settings", mock_settings),
+            patch("assistant.autonomy.yaml_config", yaml_mock),
+        ):
             am = AutonomyManager()
             am.escalate_for_emergency()
             am.clear_emergency_escalation()
             # Mock datetime auf 12:00 (Tag) damit temporaler Offset keine Rolle spielt
             with patch("assistant.autonomy.datetime") as dt_mock:
-                dt_mock.now.return_value = datetime(2026, 3, 20, 12, 0, tzinfo=timezone.utc)
+                dt_mock.now.return_value = datetime(
+                    2026, 3, 20, 12, 0, tzinfo=timezone.utc
+                )
                 dt_mock.side_effect = lambda *a, **kw: datetime(*a, **kw)
                 level = am.get_effective_level()
                 assert level == 2
@@ -180,8 +194,10 @@ class TestDeescalation:
             },
         }
 
-        with patch("assistant.autonomy.settings", mock_settings), \
-             patch("assistant.autonomy.yaml_config", yaml_mock):
+        with (
+            patch("assistant.autonomy.settings", mock_settings),
+            patch("assistant.autonomy.yaml_config", yaml_mock),
+        ):
             am = AutonomyManager()
             # Simuliere niedrige Akzeptanzrate
             am._stats = {"accepted": 10, "total": 100}
@@ -210,9 +226,12 @@ class TestPlaybookExecutor:
         t = ThreatAssessment(ha)
         t.redis = AsyncMock()
 
-        with patch("assistant.threat_assessment.yaml_config", {
-            "threat_assessment": {"auto_execute_playbooks": True},
-        }):
+        with patch(
+            "assistant.threat_assessment.yaml_config",
+            {
+                "threat_assessment": {"auto_execute_playbooks": True},
+            },
+        ):
             result = await t.execute_playbook_by_name("fire")
             assert isinstance(result, dict)
             assert "playbook" in result
@@ -261,10 +280,12 @@ class TestConflictPrediction:
         with patch("assistant.conflict_resolver.yaml_config", yaml_mock):
             cr = ConflictResolver.__new__(ConflictResolver)
             cr._recent_commands = {}
-            cr._commands_lock = __import__('threading').Lock()
+            cr._commands_lock = __import__("threading").Lock()
             cr.yaml_config = yaml_mock
 
-            result = await cr.predict_conflict("max", "climate", "wohnzimmer", {"temperature": 22})
+            result = await cr.predict_conflict(
+                "max", "climate", "wohnzimmer", {"temperature": 22}
+            )
             assert result is None
 
 
@@ -280,10 +301,14 @@ class TestExplainabilityConfig:
         """Default explanation_style ist 'auto'."""
         from assistant.explainability import ExplainabilityEngine
 
-        with patch("assistant.explainability.yaml_config", {
-            "explainability": {"explanation_style": "auto"},
-        }):
+        with patch(
+            "assistant.explainability.yaml_config",
+            {
+                "explainability": {"explanation_style": "auto"},
+            },
+        ):
             from collections import deque
+
             ee = ExplainabilityEngine.__new__(ExplainabilityEngine)
             ee._decisions = deque(maxlen=50)
             ee.reload_config()
@@ -301,6 +326,7 @@ class TestSettingsDefaults:
     def test_threat_assessment_defaults(self):
         """Threat Assessment hat sichere Defaults."""
         import yaml
+
         with open("config/settings.yaml.example") as f:
             cfg = yaml.safe_load(f)
 
@@ -313,6 +339,7 @@ class TestSettingsDefaults:
     def test_autonomy_temporal_defaults(self):
         """Temporale Autonomie ist default aus."""
         import yaml
+
         with open("config/settings.yaml.example") as f:
             cfg = yaml.safe_load(f)
 
@@ -322,6 +349,7 @@ class TestSettingsDefaults:
     def test_pushback_learning_defaults(self):
         """Pushback-Learning ist default aus."""
         import yaml
+
         with open("config/settings.yaml.example") as f:
             cfg = yaml.safe_load(f)
 
@@ -331,6 +359,7 @@ class TestSettingsDefaults:
     def test_routine_anomaly_defaults(self):
         """Routine-Anomalie ist default aus."""
         import yaml
+
         with open("config/settings.yaml.example") as f:
             cfg = yaml.safe_load(f)
 
@@ -341,6 +370,7 @@ class TestSettingsDefaults:
     def test_mood_reaction_defaults(self):
         """Mood-Reaktion ist default an."""
         import yaml
+
         with open("config/settings.yaml.example") as f:
             cfg = yaml.safe_load(f)
 
@@ -350,13 +380,20 @@ class TestSettingsDefaults:
     def test_all_new_sections_exist(self):
         """Alle neuen YAML-Sektionen existieren."""
         import yaml
+
         with open("config/settings.yaml.example") as f:
             cfg = yaml.safe_load(f)
 
         new_sections = [
-            "threat_assessment", "outcome_tracker", "correction_memory",
-            "routine_anomaly", "weather_forecast", "mood_reaction",
-            "inner_state", "semantic_memory", "whatif_simulation",
+            "threat_assessment",
+            "outcome_tracker",
+            "correction_memory",
+            "routine_anomaly",
+            "weather_forecast",
+            "mood_reaction",
+            "inner_state",
+            "semantic_memory",
+            "whatif_simulation",
         ]
         for section in new_sections:
             assert section in cfg, f"Sektion '{section}' fehlt in settings.yaml.example"

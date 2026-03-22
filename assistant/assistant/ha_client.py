@@ -561,7 +561,10 @@ class HomeAssistantClient:
         return None
 
     async def log_actions(
-        self, actions: list, user_text: str = "", response_text: str = "",
+        self,
+        actions: list,
+        user_text: str = "",
+        response_text: str = "",
         person: str = "",
     ) -> None:
         """Jarvis-Aktionen an MindHome Add-on ActionLog melden."""

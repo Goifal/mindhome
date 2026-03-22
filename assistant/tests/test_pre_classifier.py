@@ -34,28 +34,32 @@ def classifier():
 # DEVICE_FAST: Verb am Satzanfang
 # ============================================================
 
+
 class TestDeviceFastVerbStart:
     """Geraete-Befehle mit Verb am Satzanfang."""
 
-    @pytest.mark.parametrize("text", [
-        "Mach das Licht an",
-        "Schalte das Licht aus",
-        "Schalt die Heizung ein",
-        "Stell die Heizung auf 22 Grad",
-        "Dreh die Heizung hoch",
-        "Fahr die Rollladen runter",
-        "Oeffne das Fenster",
-        "Schliess die Tuer",
-        "Aktivier die Szene",
-        "Deaktivier den Alarm",
-        "Spiel Musik",
-        "Stopp die Musik",
-        "Pause die Musik",
-        "Pausier den Song",
-        "Lauter bitte",
-        "Leiser bitte",
-        "Mache das Licht an",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Mach das Licht an",
+            "Schalte das Licht aus",
+            "Schalt die Heizung ein",
+            "Stell die Heizung auf 22 Grad",
+            "Dreh die Heizung hoch",
+            "Fahr die Rollladen runter",
+            "Oeffne das Fenster",
+            "Schliess die Tuer",
+            "Aktivier die Szene",
+            "Deaktivier den Alarm",
+            "Spiel Musik",
+            "Stopp die Musik",
+            "Pause die Musik",
+            "Pausier den Song",
+            "Lauter bitte",
+            "Leiser bitte",
+            "Mache das Licht an",
+        ],
+    )
     def test_verb_start_commands(self, classifier, text):
         result = classifier.classify(text)
         assert result.category == "device_command", f"'{text}' sollte DEVICE_FAST sein"
@@ -70,24 +74,28 @@ class TestDeviceFastVerbStart:
 # DEVICE_FAST: Nomen + Aktion
 # ============================================================
 
+
 class TestDeviceFastNounAction:
     """Geraete-Befehle mit Nomen + Aktionswort."""
 
-    @pytest.mark.parametrize("text", [
-        "Licht an",
-        "Licht aus",
-        "Lampe an",
-        "Rollladen hoch",
-        "Rollladen runter",
-        "Rolladen auf",
-        "Jalousie zu",
-        "Rollo hoch",
-        "Heizung an",
-        "Heizung aus",
-        "Steckdose ein",
-        "Steckdose aus",
-        "Licht 50%",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Licht an",
+            "Licht aus",
+            "Lampe an",
+            "Rollladen hoch",
+            "Rollladen runter",
+            "Rolladen auf",
+            "Jalousie zu",
+            "Rollo hoch",
+            "Heizung an",
+            "Heizung aus",
+            "Steckdose ein",
+            "Steckdose aus",
+            "Licht 50%",
+        ],
+    )
     def test_noun_action_commands(self, classifier, text):
         result = classifier.classify(text)
         assert result.category == "device_command", f"'{text}' sollte DEVICE_FAST sein"
@@ -97,23 +105,27 @@ class TestDeviceFastNounAction:
 # DEVICE_FAST: Eingebettete Verben (Regression)
 # ============================================================
 
+
 class TestDeviceFastEmbeddedVerbs:
     """Konjugierte Verben mitten im Satz — vorher als GENERAL klassifiziert."""
 
-    @pytest.mark.parametrize("text", [
-        "Ich will das du die Siebtraegermaschine ausschaltest",
-        "Kannst du die Lampe einschalten",
-        "Bitte die Steckdose ausschalten",
-        "Ich moechte das Licht anmachen",
-        "Du sollst die Heizung einschalten",
-        "Bitte den Fernseher ausmachen",
-        "Wuerdest du die Rollladen hochfahren",
-        "Bitte die Tuer oeffnen",
-        "Kannst du die Musik abspielen",
-        "Bitte die Musik stoppen",
-        "Ich will die Szene aktivieren",
-        "Bitte deaktivieren",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Ich will das du die Siebtraegermaschine ausschaltest",
+            "Kannst du die Lampe einschalten",
+            "Bitte die Steckdose ausschalten",
+            "Ich moechte das Licht anmachen",
+            "Du sollst die Heizung einschalten",
+            "Bitte den Fernseher ausmachen",
+            "Wuerdest du die Rollladen hochfahren",
+            "Bitte die Tuer oeffnen",
+            "Kannst du die Musik abspielen",
+            "Bitte die Musik stoppen",
+            "Ich will die Szene aktivieren",
+            "Bitte deaktivieren",
+        ],
+    )
     def test_embedded_verb_commands(self, classifier, text):
         result = classifier.classify(text)
         assert result.category == "device_command", f"'{text}' sollte DEVICE_FAST sein"
@@ -136,6 +148,7 @@ class TestDeviceFastEmbeddedVerbs:
 # DEVICE_FAST: Trennbare Verben (Verb...Praefix-am-Ende)
 # ============================================================
 
+
 class TestDeviceFastSeparatedVerbs:
     """Trennbare Verben: 'schalte die Maschine aus', 'mach das Licht an'."""
 
@@ -143,16 +156,21 @@ class TestDeviceFastSeparatedVerbs:
     def classifier(self):
         return PreClassifier()
 
-    @pytest.mark.parametrize("text", [
-        "schalte die Steckdose im Wohnzimmer aus",
-        "mach die Steckdose an",
-        "Das ist gut und jetzt schaltet die Maschine im Wohnzimmer aus",
-        "dreh die Heizung im Schlafzimmer ab",
-        "stell die Lampe im Flur an",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "schalte die Steckdose im Wohnzimmer aus",
+            "mach die Steckdose an",
+            "Das ist gut und jetzt schaltet die Maschine im Wohnzimmer aus",
+            "dreh die Heizung im Schlafzimmer ab",
+            "stell die Lampe im Flur an",
+        ],
+    )
     def test_separated_verbs_recognized(self, classifier, text):
         result = classifier.classify(text)
-        assert result.category == "device_command", f"'{text}' sollte device_command sein"
+        assert result.category == "device_command", (
+            f"'{text}' sollte device_command sein"
+        )
 
     def test_separated_verb_without_device_noun_goes_general(self, classifier):
         """Trennbares Verb ohne Geraete-Nomen bei >8 Woertern → GENERAL."""
@@ -164,6 +182,7 @@ class TestDeviceFastSeparatedVerbs:
 # ============================================================
 # DEVICE_FAST: Korrekte Profil-Flags
 # ============================================================
+
 
 class TestDeviceFastProfile:
     """DEVICE_FAST aktiviert nur notwendige Subsysteme."""
@@ -192,26 +211,30 @@ class TestDeviceFastProfile:
 # DEVICE_QUERY: Status-Abfragen
 # ============================================================
 
+
 class TestDeviceQuery:
     """Status-Fragen ueber Smart-Home-Geraete."""
 
-    @pytest.mark.parametrize("text", [
-        "Wie warm ist es?",
-        "Wie kalt ist es draussen?",
-        "Ist das Licht an?",
-        "Sind die Rolllaeden offen?",
-        "Was zeigt der Temperatursensor?",
-        "Welche Temperatur hat es?",
-        "Wieviel Grad ist es?",
-        "Wie viel Grad hat es?",
-        "Wie hoch ist der Stromverbrauch?",
-        "Was laeuft gerade?",
-        "Was spielt gerade?",
-        "Status",
-        "Hausstatus",
-        "Ist die Heizung an?",
-        "Sind die Lampen aus?",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Wie warm ist es?",
+            "Wie kalt ist es draussen?",
+            "Ist das Licht an?",
+            "Sind die Rolllaeden offen?",
+            "Was zeigt der Temperatursensor?",
+            "Welche Temperatur hat es?",
+            "Wieviel Grad ist es?",
+            "Wie viel Grad hat es?",
+            "Wie hoch ist der Stromverbrauch?",
+            "Was laeuft gerade?",
+            "Was spielt gerade?",
+            "Status",
+            "Hausstatus",
+            "Ist die Heizung an?",
+            "Sind die Lampen aus?",
+        ],
+    )
     def test_status_queries(self, classifier, text):
         result = classifier.classify(text)
         assert result.category == "device_query", f"'{text}' sollte DEVICE_QUERY sein"
@@ -227,17 +250,21 @@ class TestDeviceQuery:
 # MEMORY: Erinnerungs-Fragen
 # ============================================================
 
+
 class TestMemoryClassification:
     """Fragen nach gespeicherten Erinnerungen."""
 
-    @pytest.mark.parametrize("text", [
-        "Erinnerst du dich an gestern?",
-        "Weisst du noch was ich gesagt habe?",
-        "Was weisst du ueber mich?",
-        "Habe ich dir gesagt dass ich Kaffee mag?",
-        "Hab ich gesagt ich komme spaeter?",
-        "Was war gestern los?",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Erinnerst du dich an gestern?",
+            "Weisst du noch was ich gesagt habe?",
+            "Was weisst du ueber mich?",
+            "Habe ich dir gesagt dass ich Kaffee mag?",
+            "Hab ich gesagt ich komme spaeter?",
+            "Was war gestern los?",
+        ],
+    )
     def test_memory_questions(self, classifier, text):
         result = classifier.classify(text)
         assert result.category == "memory", f"'{text}' sollte MEMORY sein"
@@ -247,56 +274,69 @@ class TestMemoryClassification:
 # KNOWLEDGE: Wissensfragen
 # ============================================================
 
+
 class TestKnowledgeClassification:
     """Wissensfragen OHNE Smart-Home-Bezug."""
 
-    @pytest.mark.parametrize("text", [
-        "Was ist Photosynthese?",
-        "Wie funktioniert ein Motor?",
-        "Wer ist Albert Einstein?",
-        "Was bedeutet Demokratie?",
-        "Erklaer mir was Quantenphysik ist",
-        "Wie kocht man Spaghetti?",
-        "Rezept fuer Pfannkuchen",
-        "Definition von Algorithmus",
-        "Unterschied zwischen Java und Python",
-        "Warum ist der Himmel blau?",
-        "Wie macht man Butter?",
-        "Was passiert wenn Wasser gefriert?",
-        "Wie viele Planeten gibt es?",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Was ist Photosynthese?",
+            "Wie funktioniert ein Motor?",
+            "Wer ist Albert Einstein?",
+            "Was bedeutet Demokratie?",
+            "Erklaer mir was Quantenphysik ist",
+            "Wie kocht man Spaghetti?",
+            "Rezept fuer Pfannkuchen",
+            "Definition von Algorithmus",
+            "Unterschied zwischen Java und Python",
+            "Warum ist der Himmel blau?",
+            "Wie macht man Butter?",
+            "Was passiert wenn Wasser gefriert?",
+            "Wie viele Planeten gibt es?",
+        ],
+    )
     def test_knowledge_questions(self, classifier, text):
         result = classifier.classify(text)
         assert result.category == "knowledge", f"'{text}' sollte KNOWLEDGE sein"
 
-    @pytest.mark.parametrize("text", [
-        "Wie funktioniert die Heizung?",
-        "Was ist die Temperatur?",
-        "Wie viel Strom verbrauchen wir?",
-        "Was bedeutet der Sensor-Wert?",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Wie funktioniert die Heizung?",
+            "Was ist die Temperatur?",
+            "Wie viel Strom verbrauchen wir?",
+            "Was bedeutet der Sensor-Wert?",
+        ],
+    )
     def test_knowledge_with_smart_home_goes_general(self, classifier, text):
         """Wissensfragen MIT Smart-Home-Bezug → GENERAL (nicht KNOWLEDGE)."""
         result = classifier.classify(text)
-        assert result.category != "knowledge", f"'{text}' sollte NICHT KNOWLEDGE sein (Smart-Home-Bezug)"
+        assert result.category != "knowledge", (
+            f"'{text}' sollte NICHT KNOWLEDGE sein (Smart-Home-Bezug)"
+        )
 
 
 # ============================================================
 # GENERAL: Default-Fallback
 # ============================================================
 
+
 class TestGeneralClassification:
     """Alles was in keine andere Kategorie passt."""
 
-    @pytest.mark.parametrize("text", [
-        "Guten Morgen",
-        "Wie geht es dir?",
-        "Erzaehl mir einen Witz",
-        "Was denkst du darueber?",
-        "Danke nichts davon",
-        "Ich bin muede",
-        "Gute Nacht Jarvis",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Guten Morgen",
+            "Wie geht es dir?",
+            "Erzaehl mir einen Witz",
+            "Was denkst du darueber?",
+            "Danke nichts davon",
+            "Ich bin muede",
+            "Gute Nacht Jarvis",
+        ],
+    )
     def test_general_fallback(self, classifier, text):
         result = classifier.classify(text)
         assert result.category == "general", f"'{text}' sollte GENERAL sein"
@@ -305,6 +345,7 @@ class TestGeneralClassification:
 # ============================================================
 # GENERAL: Profil hat alles aktiviert
 # ============================================================
+
 
 class TestGeneralProfile:
     """GENERAL-Profil aktiviert alle Subsysteme (Default-Werte)."""
@@ -330,6 +371,7 @@ class TestGeneralProfile:
 # ============================================================
 # Edge Cases & Regression Tests
 # ============================================================
+
 
 class TestEdgeCases:
     """Grenzfaelle und Regressions-Tests."""
@@ -399,6 +441,7 @@ class TestEdgeCases:
 # DEVICE_FAST: Implizite Befehle ("Mir ist kalt" → Heizung hoch)
 # ============================================================
 
+
 class TestImplicitCommands:
     """Zustandsbeschreibungen die eine Geraete-Aktion implizieren.
 
@@ -409,31 +452,41 @@ class TestImplicitCommands:
     Nur Saetze die NICHT als Status-Query matchen, fallen durch zu Schritt 2b.
     """
 
-    @pytest.mark.parametrize("text", [
-        "Ich friere",
-        "Ich schwitze",
-        "Es zieht hier",
-        "Ich sehe nichts",
-        "Ich kann kaum was sehen",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Ich friere",
+            "Ich schwitze",
+            "Es zieht hier",
+            "Ich sehe nichts",
+            "Ich kann kaum was sehen",
+        ],
+    )
     def test_implicit_commands_classify_as_device(self, classifier, text):
         result = classifier.classify(text)
-        assert result.category == "device_command", f"'{text}' sollte DEVICE_FAST sein (impliziter Befehl)"
+        assert result.category == "device_command", (
+            f"'{text}' sollte DEVICE_FAST sein (impliziter Befehl)"
+        )
 
-    @pytest.mark.parametrize("text", [
-        "Mir ist kalt",
-        "Mir ist warm",
-        "Es ist dunkel hier",
-        "Es ist zu hell",
-        "Es ist viel zu kalt",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Mir ist kalt",
+            "Mir ist warm",
+            "Es ist dunkel hier",
+            "Es ist zu hell",
+            "Es ist viel zu kalt",
+        ],
+    )
     def test_implicit_with_status_noun_goes_device_query(self, classifier, text):
         """Implizite Befehle mit Status-Nomen werden als DEVICE_QUERY erkannt.
 
         Status-Query-Erkennung (Schritt 2) hat Vorrang vor impliziten Befehlen (Schritt 2b).
         """
         result = classifier.classify(text)
-        assert result.category == "device_query", f"'{text}' sollte DEVICE_QUERY sein (Status-Nomen hat Vorrang)"
+        assert result.category == "device_query", (
+            f"'{text}' sollte DEVICE_QUERY sein (Status-Nomen hat Vorrang)"
+        )
 
     def test_implicit_command_too_long(self, classifier):
         """Implizite Befehle mit >10 Woertern → GENERAL."""
@@ -446,17 +499,21 @@ class TestImplicitCommands:
 # DEVICE_FAST: "Alles aus/an" Befehle
 # ============================================================
 
+
 class TestAllesCommands:
     """Befehle mit 'alles/alle/ueberall' + Aktion."""
 
-    @pytest.mark.parametrize("text", [
-        "alles aus",
-        "alle aus",
-        "alles an",
-        "überall aus",
-        "ueberall aus",
-        "alles zu",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "alles aus",
+            "alle aus",
+            "alles an",
+            "überall aus",
+            "ueberall aus",
+            "alles zu",
+        ],
+    )
     def test_alles_action_commands(self, classifier, text):
         result = classifier.classify(text)
         assert result.category == "device_command", f"'{text}' sollte DEVICE_FAST sein"
@@ -466,32 +523,42 @@ class TestAllesCommands:
 # Eszett (ß) Normalisierung
 # ============================================================
 
+
 class TestEszettNormalization:
     """ß wird zu ss normalisiert, damit Patterns greifen."""
 
-    @pytest.mark.parametrize("text", [
-        "Schließe die Tuer",
-        "Schließ die Jalousie",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Schließe die Tuer",
+            "Schließ die Jalousie",
+        ],
+    )
     def test_eszett_normalized_for_matching(self, classifier, text):
         result = classifier.classify(text)
-        assert result.category == "device_command", f"'{text}' sollte trotz ß als DEVICE_FAST erkannt werden"
+        assert result.category == "device_command", (
+            f"'{text}' sollte trotz ß als DEVICE_FAST erkannt werden"
+        )
 
 
 # ============================================================
 # DEVICE_QUERY: Kurz-Queries (1-2 Woerter + ?)
 # ============================================================
 
+
 class TestShortDeviceQueries:
     """1-2 Wort Abfragen mit Fragezeichen."""
 
-    @pytest.mark.parametrize("text", [
-        "Lichter?",
-        "Temperatur?",
-        "Strom?",
-        "Rolllaeden?",
-        "Status?",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Lichter?",
+            "Temperatur?",
+            "Strom?",
+            "Rolllaeden?",
+            "Status?",
+        ],
+    )
     def test_short_queries_with_questionmark(self, classifier, text):
         result = classifier.classify(text)
         assert result.category == "device_query", f"'{text}' sollte DEVICE_QUERY sein"
@@ -505,6 +572,7 @@ class TestShortDeviceQueries:
 # ============================================================
 # Async classify_async Tests
 # ============================================================
+
 
 class TestClassifyAsync:
     """Tests fuer die async Version mit LLM-Fallback."""
@@ -539,6 +607,7 @@ class TestClassifyAsync:
 # Profil-Flags: Andere Profile
 # ============================================================
 
+
 class TestProfileFlags:
     """Verifiziere Flags der verschiedenen Profile."""
 
@@ -572,6 +641,7 @@ class TestProfileFlags:
 # ============================================================
 # Mixed Intent / Ambiguous Cases
 # ============================================================
+
 
 class TestMixedIntentCases:
     """Mehrdeutige Eingaben — pruefe dass eine konsistente Kategorie gewaehlt wird."""

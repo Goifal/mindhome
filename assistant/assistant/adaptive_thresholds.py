@@ -28,15 +28,24 @@ _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 _AUTO_BOUNDS = {
     "insights.cooldown_hours": {
         "path": ["insights", "cooldown_hours"],
-        "min": 2, "max": 8, "default": 4, "step": 1,
+        "min": 2,
+        "max": 8,
+        "default": 4,
+        "step": 1,
     },
     "anticipation.min_confidence": {
         "path": ["anticipation", "min_confidence"],
-        "min": 0.5, "max": 0.8, "default": 0.6, "step": 0.05,
+        "min": 0.5,
+        "max": 0.8,
+        "default": 0.6,
+        "step": 0.05,
     },
     "feedback.base_cooldown_seconds": {
         "path": ["feedback", "base_cooldown_seconds"],
-        "min": 120, "max": 600, "default": 300, "step": 60,
+        "min": 120,
+        "max": 600,
+        "default": 300,
+        "step": 60,
     },
 }
 
@@ -68,8 +77,9 @@ class AdaptiveThresholds:
             self.enabled = False
         logger.info("AdaptiveThresholds initialisiert (enabled=%s)", self.enabled)
 
-    async def run_analysis(self, outcome_tracker=None, correction_memory=None,
-                           feedback_tracker=None) -> dict:
+    async def run_analysis(
+        self, outcome_tracker=None, correction_memory=None, feedback_tracker=None
+    ) -> dict:
         """Analyse + automatische Anpassung innerhalb enger Grenzen."""
         if not self.enabled or not self.redis:
             return {"adjusted": [], "skipped": []}
@@ -138,14 +148,14 @@ class AdaptiveThresholds:
 
         stats = await outcome_tracker.get_stats()
         total_outcomes = sum(
-            s.get("total", 0) for s in stats.values()
-            if isinstance(s, dict)
+            s.get("total", 0) for s in stats.values() if isinstance(s, dict)
         )
 
         return total_outcomes >= MIN_OUTCOMES_FOR_ADJUST
 
-    async def _analyze_parameter(self, param_name: str, bounds: dict,
-                                 outcome_tracker, feedback_tracker) -> Optional[dict]:
+    async def _analyze_parameter(
+        self, param_name: str, bounds: dict, outcome_tracker, feedback_tracker
+    ) -> Optional[dict]:
         """Analysiert einen Parameter und entscheidet ob Anpassung noetig."""
         # Aktuellen Wert lesen
         current = self._get_runtime_value(bounds["path"])
@@ -159,7 +169,9 @@ class AdaptiveThresholds:
                 return {"adjusted": False, "reason": f"self_opt_pending:{param_name}"}
 
         # Daten-basierte Entscheidung
-        direction = await self._determine_direction(param_name, outcome_tracker, feedback_tracker)
+        direction = await self._determine_direction(
+            param_name, outcome_tracker, feedback_tracker
+        )
 
         if direction == 0:
             return None  # Keine Änderung noetig
@@ -181,14 +193,18 @@ class AdaptiveThresholds:
                     total = action_stats.get("total", 0)
                     negative = action_stats.get("negative", 0)
                     if total > 20 and negative / total > 0.8:
-                        logger.warning("ANOMALIE: >80%% negative Outcomes — skip auto-adjust")
+                        logger.warning(
+                            "ANOMALIE: >80%% negative Outcomes — skip auto-adjust"
+                        )
                         return {"adjusted": False, "reason": "anomaly_detected"}
 
         # Auto-Apply (nur Laufzeit, nicht persistent!)
         self._set_runtime_value(bounds["path"], new_value)
 
         reason = f"Score-basiert: {'erhöhen' if direction > 0 else 'senken'}"
-        logger.info("Auto-Adjust: %s %.2f -> %.2f (%s)", param_name, current, new_value, reason)
+        logger.info(
+            "Auto-Adjust: %s %.2f -> %.2f (%s)", param_name, current, new_value, reason
+        )
 
         return {
             "adjusted": True,
@@ -199,8 +215,9 @@ class AdaptiveThresholds:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-    async def _determine_direction(self, param_name: str,
-                                   outcome_tracker, feedback_tracker) -> int:
+    async def _determine_direction(
+        self, param_name: str, outcome_tracker, feedback_tracker
+    ) -> int:
         """Bestimmt Anpassungs-Richtung: +1 (erhöhen), -1 (senken), 0 (keine Änderung)."""
         # Insights Cooldown: Score niedrig = Cooldown erhöhen (weniger Insights)
         if param_name == "insights.cooldown_hours":
@@ -253,7 +270,9 @@ class AdaptiveThresholds:
         # Whitelist: Nur bekannte Auto-Adjust Pfade erlauben
         allowed_paths = [b["path"] for b in _AUTO_BOUNDS.values()]
         if path not in allowed_paths:
-            logger.warning("SICHERHEIT: _set_runtime_value blockiert fuer Pfad %s", path)
+            logger.warning(
+                "SICHERHEIT: _set_runtime_value blockiert fuer Pfad %s", path
+            )
             return
         cfg = yaml_config
         for key in path[:-1]:

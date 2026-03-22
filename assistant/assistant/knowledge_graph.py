@@ -44,8 +44,9 @@ class KnowledgeGraph:
     # Node Operations
     # ------------------------------------------------------------------
 
-    async def add_node(self, node_id: str, node_type: str,
-                       properties: Optional[dict] = None):
+    async def add_node(
+        self, node_id: str, node_type: str, properties: Optional[dict] = None
+    ):
         """Fuegt einen Knoten hinzu oder aktualisiert ihn.
 
         Args:
@@ -59,15 +60,19 @@ class KnowledgeGraph:
         # Node-Count-Guard
         count = await self.redis.scard(f"{_PREFIX}:all_nodes")
         if count >= self.max_nodes:
-            logger.warning("KG: Max Nodes erreicht (%d), ueberspringe %s", count, node_id)
+            logger.warning(
+                "KG: Max Nodes erreicht (%d), ueberspringe %s", count, node_id
+            )
             return
 
         pipe = self.redis.pipeline()
-        node_data = json.dumps({
-            "type": node_type,
-            "updated": time.time(),
-            **(properties or {}),
-        })
+        node_data = json.dumps(
+            {
+                "type": node_type,
+                "updated": time.time(),
+                **(properties or {}),
+            }
+        )
         pipe.hset(f"{_PREFIX}:nodes:{node_type}", node_id, node_data)
         pipe.sadd(f"{_PREFIX}:all_nodes", node_id)
         pipe.sadd(f"{_PREFIX}:type_index:{node_type}", node_id)
@@ -95,8 +100,14 @@ class KnowledgeGraph:
     # Edge Operations
     # ------------------------------------------------------------------
 
-    async def add_edge(self, from_id: str, relation: str, to_id: str,
-                       weight: float = 1.0, metadata: Optional[dict] = None):
+    async def add_edge(
+        self,
+        from_id: str,
+        relation: str,
+        to_id: str,
+        weight: float = 1.0,
+        metadata: Optional[dict] = None,
+    ):
         """Fuegt eine gerichtete Kante hinzu.
 
         Args:
@@ -110,12 +121,14 @@ class KnowledgeGraph:
             return
 
         edge_key = f"{from_id}>{to_id}"
-        meta = json.dumps({
-            "weight": weight,
-            "relation": relation,
-            "updated": time.time(),
-            **(metadata or {}),
-        })
+        meta = json.dumps(
+            {
+                "weight": weight,
+                "relation": relation,
+                "updated": time.time(),
+                **(metadata or {}),
+            }
+        )
 
         pipe = self.redis.pipeline()
         # Forward-Index: Alle Kanten eines Typs
@@ -135,8 +148,9 @@ class KnowledgeGraph:
         pipe.expire(f"{_PREFIX}:neighbors:{from_id}", _EDGE_TTL)
         await pipe.execute()
 
-    async def increment_edge(self, from_id: str, relation: str, to_id: str,
-                             delta: float = 0.05):
+    async def increment_edge(
+        self, from_id: str, relation: str, to_id: str, delta: float = 0.05
+    ):
         """Erhoeht das Gewicht einer bestehenden Kante (z.B. bei Wiederholung)."""
         if not self.redis:
             return
@@ -148,7 +162,9 @@ class KnowledgeGraph:
             data["weight"] = min(1.0, data.get("weight", 0.5) + delta)
             data["updated"] = time.time()
             await self.redis.hset(
-                f"{_PREFIX}:edge_meta:{relation}", edge_key, json.dumps(data),
+                f"{_PREFIX}:edge_meta:{relation}",
+                edge_key,
+                json.dumps(data),
             )
         else:
             await self.add_edge(from_id, relation, to_id, weight=0.5 + delta)
@@ -157,8 +173,9 @@ class KnowledgeGraph:
     # Query Operations
     # ------------------------------------------------------------------
 
-    async def get_related(self, node_id: str, relation: str,
-                          direction: str = "out") -> list[str]:
+    async def get_related(
+        self, node_id: str, relation: str, direction: str = "out"
+    ) -> list[str]:
         """Alle ueber eine Relation verbundenen Knoten.
 
         Args:
@@ -203,8 +220,9 @@ class KnowledgeGraph:
             results.extend(targets)
         return list(set(results))  # Deduplizieren
 
-    async def query_context(self, person: str, room: str = "",
-                            time_slot: str = "") -> list[dict]:
+    async def query_context(
+        self, person: str, room: str = "", time_slot: str = ""
+    ) -> list[dict]:
         """Multi-Attribut-Query: Was ist fuer Person X relevant im Kontext?
 
         Kombiniert Person-Praeferenzen, Raum-Geraete und Zeitmuster.
@@ -222,7 +240,8 @@ class KnowledgeGraph:
         prefs = await self.get_related(person_id, "prefers")
         for pref in prefs:
             meta_raw = await self.redis.hget(
-                f"{_PREFIX}:edge_meta:prefers", f"{person_id}>{pref}",
+                f"{_PREFIX}:edge_meta:prefers",
+                f"{person_id}>{pref}",
             )
             meta = json.loads(meta_raw) if meta_raw else {}
             # Raum-Filter
@@ -231,31 +250,36 @@ class KnowledgeGraph:
             # Zeit-Filter
             if time_slot and meta.get("time_slot") and meta["time_slot"] != time_slot:
                 continue
-            results.append({
-                "type": "preference",
-                "person": person,
-                "target": pref,
-                "weight": meta.get("weight", 0.5),
-                "room": meta.get("room", ""),
-                "time_slot": meta.get("time_slot", ""),
-            })
+            results.append(
+                {
+                    "type": "preference",
+                    "person": person,
+                    "target": pref,
+                    "weight": meta.get("weight", 0.5),
+                    "room": meta.get("room", ""),
+                    "time_slot": meta.get("time_slot", ""),
+                }
+            )
 
         # 2. Geraete die Person oft nutzt
         devices = await self.get_related(person_id, "uses_often")
         for dev in devices:
             meta_raw = await self.redis.hget(
-                f"{_PREFIX}:edge_meta:uses_often", f"{person_id}>{dev}",
+                f"{_PREFIX}:edge_meta:uses_often",
+                f"{person_id}>{dev}",
             )
             meta = json.loads(meta_raw) if meta_raw else {}
             if room and meta.get("room") and meta["room"] != room:
                 continue
-            results.append({
-                "type": "device_usage",
-                "person": person,
-                "device": dev,
-                "weight": meta.get("weight", 0.5),
-                "room": meta.get("room", ""),
-            })
+            results.append(
+                {
+                    "type": "device_usage",
+                    "person": person,
+                    "device": dev,
+                    "weight": meta.get("weight", 0.5),
+                    "room": meta.get("room", ""),
+                }
+            )
 
         # Nach Gewicht sortieren
         results.sort(key=lambda x: x.get("weight", 0), reverse=True)
@@ -277,7 +301,9 @@ class KnowledgeGraph:
             for edge_key, meta_raw in all_edges.items():
                 meta = json.loads(meta_raw)
                 if meta.get("weight", 0) < min_weight:
-                    edge_str = edge_key.decode() if isinstance(edge_key, bytes) else edge_key
+                    edge_str = (
+                        edge_key.decode() if isinstance(edge_key, bytes) else edge_key
+                    )
                     pipe = self.redis.pipeline()
                     pipe.hdel(meta_key, edge_str)
                     pipe.srem(f"{_PREFIX}:edges:{relation}", edge_str)
@@ -290,7 +316,9 @@ class KnowledgeGraph:
                     removed += 1
 
         if removed:
-            logger.info("KG: %d schwache Kanten entfernt (min_weight=%.2f)", removed, min_weight)
+            logger.info(
+                "KG: %d schwache Kanten entfernt (min_weight=%.2f)", removed, min_weight
+            )
         return removed
 
     async def get_stats(self) -> dict:

@@ -83,7 +83,9 @@ class TestExtractTextFromImage:
             ocr_mod._tesseract_available = True
             result = ocr_mod.extract_text_from_image(img_path)
             if result:
-                assert len(result) <= ocr_mod.MAX_OCR_CHARS + 50  # +50 for truncation text
+                assert (
+                    len(result) <= ocr_mod.MAX_OCR_CHARS + 50
+                )  # +50 for truncation text
 
     def test_returns_none_for_empty_text(self, tmp_path):
         """Leerer OCR-Text ergibt None."""
@@ -111,16 +113,20 @@ class TestOCREngine:
 
     def test_init_reads_config(self):
         """Engine liest Konfiguration aus yaml_config."""
-        with patch("assistant.ocr.yaml_config", {
-            "ocr": {
-                "enabled": True,
-                "languages": "deu+eng",
-                "vision_model": "llava",
-                "max_image_size_mb": 10,
-                "description_max_tokens": 256,
-            }
-        }):
+        with patch(
+            "assistant.ocr.yaml_config",
+            {
+                "ocr": {
+                    "enabled": True,
+                    "languages": "deu+eng",
+                    "vision_model": "llava",
+                    "max_image_size_mb": 10,
+                    "description_max_tokens": 256,
+                }
+            },
+        ):
             from assistant.ocr import OCREngine
+
             engine = OCREngine(ollama_client=MagicMock())
             assert engine.enabled is True
             assert engine.languages == "deu+eng"
@@ -132,6 +138,7 @@ class TestOCREngine:
         """Engine hat sinnvolle Defaults."""
         with patch("assistant.ocr.yaml_config", {}):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
             assert engine.enabled is True
             assert engine.languages == "deu+eng"
@@ -141,9 +148,7 @@ class TestOCREngine:
     @pytest.mark.asyncio
     async def test_initialize_checks_vision_model(self):
         """Initialize prueft ob Vision-LLM verfuegbar ist."""
-        with patch("assistant.ocr.yaml_config", {
-            "ocr": {"vision_model": "llava"}
-        }):
+        with patch("assistant.ocr.yaml_config", {"ocr": {"vision_model": "llava"}}):
             from assistant.ocr import OCREngine
 
             mock_ollama = AsyncMock()
@@ -157,9 +162,7 @@ class TestOCREngine:
     @pytest.mark.asyncio
     async def test_initialize_vision_model_not_found(self):
         """Vision-LLM nicht installiert → _vision_available = False."""
-        with patch("assistant.ocr.yaml_config", {
-            "ocr": {"vision_model": "llava"}
-        }):
+        with patch("assistant.ocr.yaml_config", {"ocr": {"vision_model": "llava"}}):
             from assistant.ocr import OCREngine
 
             mock_ollama = AsyncMock()
@@ -175,6 +178,7 @@ class TestOCREngine:
         """describe_image gibt None wenn disabled."""
         with patch("assistant.ocr.yaml_config", {"ocr": {"enabled": False}}):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
             result = await engine.describe_image({"name": "test.jpg"})
             assert result is None
@@ -184,6 +188,7 @@ class TestOCREngine:
         """describe_image gibt None ohne Vision-LLM."""
         with patch("assistant.ocr.yaml_config", {"ocr": {}}):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
             engine._vision_available = False
             result = await engine.describe_image({"name": "test.jpg"})
@@ -192,9 +197,10 @@ class TestOCREngine:
     @pytest.mark.asyncio
     async def test_describe_image_success(self, tmp_path):
         """describe_image liefert Beschreibung via Vision-LLM."""
-        with patch("assistant.ocr.yaml_config", {
-            "ocr": {"vision_model": "llava", "max_image_size_mb": 20}
-        }):
+        with patch(
+            "assistant.ocr.yaml_config",
+            {"ocr": {"vision_model": "llava", "max_image_size_mb": 20}},
+        ):
             from assistant.ocr import OCREngine
 
             # Create test image
@@ -212,7 +218,7 @@ class TestOCREngine:
             with patch("assistant.file_handler.get_file_path", return_value=img_path):
                 result = await engine.describe_image(
                     {"name": "test.jpg", "unique_name": "abc123_test.jpg"},
-                    user_context="Was steht da?"
+                    user_context="Was steht da?",
                 )
 
             assert result is not None
@@ -222,9 +228,7 @@ class TestOCREngine:
     @pytest.mark.asyncio
     async def test_describe_image_uses_cache(self, tmp_path):
         """describe_image nutzt Redis-Cache."""
-        with patch("assistant.ocr.yaml_config", {
-            "ocr": {"vision_model": "llava"}
-        }):
+        with patch("assistant.ocr.yaml_config", {"ocr": {"vision_model": "llava"}}):
             from assistant.ocr import OCREngine
 
             mock_redis = AsyncMock()
@@ -249,18 +253,22 @@ class TestOCREngine:
         """health_status meldet 'disabled' wenn deaktiviert."""
         with patch("assistant.ocr.yaml_config", {"ocr": {"enabled": False}}):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
             assert engine.health_status() == "disabled"
 
     def test_health_status_active(self):
         """health_status zeigt aktive Backends."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = True
 
-        with patch("assistant.ocr.yaml_config", {
-            "ocr": {"vision_model": "llava", "languages": "deu+eng"}
-        }):
+        with patch(
+            "assistant.ocr.yaml_config",
+            {"ocr": {"vision_model": "llava", "languages": "deu+eng"}},
+        ):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
             engine._vision_available = True
             status = engine.health_status()
@@ -281,7 +289,9 @@ class TestFileHandlerOCR:
         img_path = tmp_path / "test.jpg"
         img_path.write_bytes(_create_test_image())
 
-        with patch("assistant.file_handler._extract_ocr", return_value="OCR Text") as mock:
+        with patch(
+            "assistant.file_handler._extract_ocr", return_value="OCR Text"
+        ) as mock:
             result = _extract_text(img_path, "jpg")
             mock.assert_called_once_with(img_path)
             assert result == "OCR Text"
@@ -301,12 +311,14 @@ class TestFileHandlerOCR:
         """build_file_context zeigt OCR-Text fuer Bilder."""
         from assistant.file_handler import build_file_context
 
-        files = [{
-            "name": "screenshot.png",
-            "type": "image",
-            "size": 50000,
-            "extracted_text": "Fehlermeldung: Connection refused",
-        }]
+        files = [
+            {
+                "name": "screenshot.png",
+                "type": "image",
+                "size": 50000,
+                "extracted_text": "Fehlermeldung: Connection refused",
+            }
+        ]
         context = build_file_context(files)
         assert "OCR-Text" in context
         assert "Fehlermeldung: Connection refused" in context
@@ -315,13 +327,15 @@ class TestFileHandlerOCR:
         """build_file_context zeigt Vision-LLM Beschreibung."""
         from assistant.file_handler import build_file_context
 
-        files = [{
-            "name": "foto.jpg",
-            "type": "image",
-            "size": 200000,
-            "extracted_text": None,
-            "vision_description": "Ein Hund im Park bei Sonnenuntergang.",
-        }]
+        files = [
+            {
+                "name": "foto.jpg",
+                "type": "image",
+                "size": 200000,
+                "extracted_text": None,
+                "vision_description": "Ein Hund im Park bei Sonnenuntergang.",
+            }
+        ]
         context = build_file_context(files)
         assert "Bild-Analyse" in context
         assert "Hund im Park" in context
@@ -330,13 +344,15 @@ class TestFileHandlerOCR:
         """build_file_context zeigt OCR-Text UND Vision-Beschreibung."""
         from assistant.file_handler import build_file_context
 
-        files = [{
-            "name": "rechnung.jpg",
-            "type": "image",
-            "size": 100000,
-            "extracted_text": "Rechnungsnr: 12345\nBetrag: 49,99 EUR",
-            "vision_description": "Eine Rechnung von Amazon mit Artikeln.",
-        }]
+        files = [
+            {
+                "name": "rechnung.jpg",
+                "type": "image",
+                "size": 100000,
+                "extracted_text": "Rechnungsnr: 12345\nBetrag: 49,99 EUR",
+                "vision_description": "Eine Rechnung von Amazon mit Artikeln.",
+            }
+        ]
         context = build_file_context(files)
         assert "OCR-Text" in context
         assert "Rechnungsnr: 12345" in context
@@ -347,12 +363,14 @@ class TestFileHandlerOCR:
         """build_file_context zeigt Hinweis wenn kein Text erkannt."""
         from assistant.file_handler import build_file_context
 
-        files = [{
-            "name": "photo.jpg",
-            "type": "image",
-            "size": 300000,
-            "extracted_text": None,
-        }]
+        files = [
+            {
+                "name": "photo.jpg",
+                "type": "image",
+                "size": 300000,
+                "extracted_text": None,
+            }
+        ]
         context = build_file_context(files)
         assert "kein Text erkannt" in context
 
@@ -367,11 +385,10 @@ class TestAnalyzeImage:
     async def test_analyze_combines_ocr_and_vision(self, tmp_path):
         """analyze_image kombiniert OCR und Vision-LLM."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = True
 
-        with patch("assistant.ocr.yaml_config", {
-            "ocr": {"vision_model": "llava"}
-        }):
+        with patch("assistant.ocr.yaml_config", {"ocr": {"vision_model": "llava"}}):
             from assistant.ocr import OCREngine
 
             img_path = tmp_path / "combo.jpg"
@@ -386,10 +403,12 @@ class TestAnalyzeImage:
             engine._vision_available = True
 
             with patch("assistant.file_handler.get_file_path", return_value=img_path):
-                with patch("assistant.ocr.extract_text_from_image", return_value="Hello"):
+                with patch(
+                    "assistant.ocr.extract_text_from_image", return_value="Hello"
+                ):
                     result = await engine.analyze_image(
                         {"name": "combo.jpg", "unique_name": "combo.jpg"},
-                        "Was steht da?"
+                        "Was steht da?",
                     )
 
             assert result["ocr_text"] == "Hello"
@@ -401,6 +420,7 @@ class TestAnalyzeImage:
         """analyze_image gibt leeres Result bei disabled."""
         with patch("assistant.ocr.yaml_config", {"ocr": {"enabled": False}}):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
             result = await engine.analyze_image({"name": "test.jpg"})
             assert result["ocr_text"] is None
@@ -417,18 +437,21 @@ class TestCheckTesseract:
     def test_cached_true(self):
         """Gibt gecachtes True zurueck ohne erneuten Check."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = True
         assert ocr_mod._check_tesseract() is True
 
     def test_cached_false(self):
         """Gibt gecachtes False zurueck ohne erneuten Check."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = False
         assert ocr_mod._check_tesseract() is False
 
     def test_first_check_available(self):
         """Erster Check: Tesseract verfuegbar."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = None
 
         mock_pytesseract = MagicMock()
@@ -444,6 +467,7 @@ class TestCheckTesseract:
     def test_first_check_not_available(self):
         """Erster Check: Tesseract nicht installiert."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = None
 
         mock_pytesseract = MagicMock()
@@ -466,6 +490,7 @@ class TestValidateImagePath:
     def test_valid_tmp_path(self, tmp_path):
         """Pfad in /tmp ist erlaubt."""
         import assistant.ocr as ocr_mod
+
         img = tmp_path / "test.png"
         img.write_bytes(b"fake")
         with patch.object(Path, "resolve", return_value=Path("/tmp/test.png")):
@@ -475,6 +500,7 @@ class TestValidateImagePath:
     def test_dangerous_chars_blocked(self):
         """Dateiname mit Shell-Metazeichen wird blockiert."""
         import assistant.ocr as ocr_mod
+
         dangerous_names = [
             "test;rm -rf.png",
             "test|cat.png",
@@ -489,12 +515,14 @@ class TestValidateImagePath:
     def test_path_traversal_blocked(self):
         """Pfadtraversal ausserhalb erlaubter Verzeichnisse wird blockiert."""
         import assistant.ocr as ocr_mod
+
         result = ocr_mod._validate_image_path(Path("/etc/passwd"))
         assert result is False
 
     def test_oserror_returns_false(self):
         """OSError bei resolve gibt False zurueck."""
         import assistant.ocr as ocr_mod
+
         p = Path("/tmp/normal.png")
         with patch.object(Path, "resolve", side_effect=OSError("disk error")):
             result = ocr_mod._validate_image_path(p)
@@ -510,6 +538,7 @@ class TestExtractTextEdgeCases:
     def test_large_file_rejected(self, tmp_path):
         """Bilder ueber 50 MB werden abgelehnt."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = True
 
         img_path = tmp_path / "huge.png"
@@ -524,6 +553,7 @@ class TestExtractTextEdgeCases:
     def test_invalid_path_rejected(self, tmp_path):
         """Invalider Pfad wird durch Validierung abgelehnt."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = True
 
         with patch("assistant.ocr._validate_image_path", return_value=False):
@@ -533,6 +563,7 @@ class TestExtractTextEdgeCases:
     def test_exception_returns_none(self, tmp_path):
         """Exception waehrend OCR gibt None zurueck."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = True
 
         img_path = tmp_path / "bad.png"
@@ -545,6 +576,7 @@ class TestExtractTextEdgeCases:
     def test_psm6_fallback(self, tmp_path):
         """PSM 6 Fallback wenn PSM 3 wenig Text liefert."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = True
 
         img_path = tmp_path / "test.png"
@@ -570,6 +602,7 @@ class TestExtractTextEdgeCases:
         from PIL import Image
 
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = True
 
         img = Image.new("RGBA", (200, 50), color=(255, 255, 255, 255))
@@ -591,6 +624,7 @@ class TestExtractTextEdgeCases:
         from PIL import Image
 
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = True
 
         # Create a very small image (50x20)
@@ -620,6 +654,7 @@ class TestExtractTextWithConfidence:
     def test_no_tesseract_returns_none(self, tmp_path):
         """Ohne Tesseract gibt None zurueck."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = False
         result = ocr_mod.extract_text_with_confidence(tmp_path / "test.png")
         assert result is None
@@ -627,6 +662,7 @@ class TestExtractTextWithConfidence:
     def test_invalid_path_returns_none(self, tmp_path):
         """Invalider Pfad gibt None zurueck."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = True
         with patch("assistant.ocr._validate_image_path", return_value=False):
             result = ocr_mod.extract_text_with_confidence(tmp_path / "test.png")
@@ -635,6 +671,7 @@ class TestExtractTextWithConfidence:
     def test_successful_extraction(self, tmp_path):
         """Erfolgreiche Confidence-Extraktion."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = True
 
         img_path = tmp_path / "test.png"
@@ -664,6 +701,7 @@ class TestExtractTextWithConfidence:
     def test_no_words_returns_none(self, tmp_path):
         """Keine Woerter erkannt gibt None zurueck."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = True
 
         img_path = tmp_path / "empty.png"
@@ -687,6 +725,7 @@ class TestExtractTextWithConfidence:
     def test_long_text_truncated(self, tmp_path):
         """Langer Text wird auf MAX_OCR_CHARS abgeschnitten."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = True
 
         img_path = tmp_path / "long.png"
@@ -715,6 +754,7 @@ class TestExtractTextWithConfidence:
     def test_exception_returns_none(self, tmp_path):
         """Exception gibt None zurueck."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = True
 
         img_path = tmp_path / "bad.png"
@@ -733,10 +773,12 @@ class TestOCREngineExtended:
 
     def test_reload_config_updates_values(self):
         """reload_config aktualisiert Konfiguration."""
-        with patch("assistant.ocr.yaml_config", {
-            "ocr": {"enabled": True, "vision_model": "llava"}
-        }):
+        with patch(
+            "assistant.ocr.yaml_config",
+            {"ocr": {"enabled": True, "vision_model": "llava"}},
+        ):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
             assert engine.vision_model == "llava"
 
@@ -761,10 +803,9 @@ class TestOCREngineExtended:
 
     def test_reload_config_same_model_keeps_vision(self):
         """reload_config behaelt _vision_available wenn Model gleich bleibt."""
-        with patch("assistant.ocr.yaml_config", {
-            "ocr": {"vision_model": "llava"}
-        }):
+        with patch("assistant.ocr.yaml_config", {"ocr": {"vision_model": "llava"}}):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
             engine._vision_available = True
 
@@ -780,16 +821,22 @@ class TestOCREngineExtended:
         """extract_text gibt None wenn disabled."""
         with patch("assistant.ocr.yaml_config", {"ocr": {"enabled": False}}):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
             result = engine.extract_text(Path("/tmp/test.png"))
         assert result is None
 
     def test_extract_text_enabled(self):
         """extract_text delegiert an extract_text_from_image."""
-        with patch("assistant.ocr.yaml_config", {"ocr": {"enabled": True, "languages": "eng"}}):
+        with patch(
+            "assistant.ocr.yaml_config", {"ocr": {"enabled": True, "languages": "eng"}}
+        ):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
-            with patch("assistant.ocr.extract_text_from_image", return_value="Extracted") as mock:
+            with patch(
+                "assistant.ocr.extract_text_from_image", return_value="Extracted"
+            ) as mock:
                 result = engine.extract_text(Path("/tmp/test.png"))
             mock.assert_called_once_with(Path("/tmp/test.png"), "eng")
             assert result == "Extracted"
@@ -797,10 +844,9 @@ class TestOCREngineExtended:
     @pytest.mark.asyncio
     async def test_initialize_ollama_exception(self):
         """Initialize handelt Ollama-Fehler graceful."""
-        with patch("assistant.ocr.yaml_config", {
-            "ocr": {"vision_model": "llava"}
-        }):
+        with patch("assistant.ocr.yaml_config", {"ocr": {"vision_model": "llava"}}):
             from assistant.ocr import OCREngine
+
             mock_ollama = AsyncMock()
             mock_ollama.list_models.side_effect = ConnectionError("Ollama down")
 
@@ -814,6 +860,7 @@ class TestOCREngineExtended:
         """describe_image gibt None ohne Ollama-Client."""
         with patch("assistant.ocr.yaml_config", {"ocr": {"enabled": True}}):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
             engine._vision_available = True
             engine._ollama = None
@@ -823,9 +870,10 @@ class TestOCREngineExtended:
     @pytest.mark.asyncio
     async def test_describe_image_file_too_large(self, tmp_path):
         """describe_image gibt None fuer zu grosse Bilder."""
-        with patch("assistant.ocr.yaml_config", {
-            "ocr": {"vision_model": "llava", "max_image_size_mb": 1}
-        }):
+        with patch(
+            "assistant.ocr.yaml_config",
+            {"ocr": {"vision_model": "llava", "max_image_size_mb": 1}},
+        ):
             from assistant.ocr import OCREngine
 
             img_path = tmp_path / "big.jpg"
@@ -850,9 +898,7 @@ class TestOCREngineExtended:
     @pytest.mark.asyncio
     async def test_describe_image_no_file_path(self):
         """describe_image gibt None wenn Datei nicht gefunden."""
-        with patch("assistant.ocr.yaml_config", {
-            "ocr": {"vision_model": "llava"}
-        }):
+        with patch("assistant.ocr.yaml_config", {"ocr": {"vision_model": "llava"}}):
             from assistant.ocr import OCREngine
 
             engine = OCREngine(ollama_client=AsyncMock())
@@ -868,9 +914,7 @@ class TestOCREngineExtended:
     @pytest.mark.asyncio
     async def test_describe_image_error_response(self, tmp_path):
         """describe_image gibt None bei LLM-Fehler."""
-        with patch("assistant.ocr.yaml_config", {
-            "ocr": {"vision_model": "llava"}
-        }):
+        with patch("assistant.ocr.yaml_config", {"ocr": {"vision_model": "llava"}}):
             from assistant.ocr import OCREngine
 
             img_path = tmp_path / "err.jpg"
@@ -892,9 +936,7 @@ class TestOCREngineExtended:
     @pytest.mark.asyncio
     async def test_describe_image_empty_description(self, tmp_path):
         """describe_image gibt None bei leerer Beschreibung."""
-        with patch("assistant.ocr.yaml_config", {
-            "ocr": {"vision_model": "llava"}
-        }):
+        with patch("assistant.ocr.yaml_config", {"ocr": {"vision_model": "llava"}}):
             from assistant.ocr import OCREngine
 
             img_path = tmp_path / "empty.jpg"
@@ -916,9 +958,7 @@ class TestOCREngineExtended:
     @pytest.mark.asyncio
     async def test_describe_image_caches_result(self, tmp_path):
         """describe_image speichert Ergebnis im Redis-Cache."""
-        with patch("assistant.ocr.yaml_config", {
-            "ocr": {"vision_model": "llava"}
-        }):
+        with patch("assistant.ocr.yaml_config", {"ocr": {"vision_model": "llava"}}):
             from assistant.ocr import OCREngine
 
             img_path = tmp_path / "cache.jpg"
@@ -946,15 +986,15 @@ class TestOCREngineExtended:
     @pytest.mark.asyncio
     async def test_describe_image_exception_returns_none(self, tmp_path):
         """describe_image faengt allgemeine Exceptions ab."""
-        with patch("assistant.ocr.yaml_config", {
-            "ocr": {"vision_model": "llava"}
-        }):
+        with patch("assistant.ocr.yaml_config", {"ocr": {"vision_model": "llava"}}):
             from assistant.ocr import OCREngine
 
             engine = OCREngine(ollama_client=AsyncMock())
             engine._vision_available = True
 
-            with patch("assistant.file_handler.get_file_path", side_effect=RuntimeError("boom")):
+            with patch(
+                "assistant.file_handler.get_file_path", side_effect=RuntimeError("boom")
+            ):
                 result = await engine.describe_image(
                     {"name": "boom.jpg", "unique_name": "boom.jpg"},
                 )
@@ -964,10 +1004,12 @@ class TestOCREngineExtended:
     def test_health_status_no_backends(self):
         """health_status zeigt 'no backends' wenn nichts verfuegbar."""
         import assistant.ocr as ocr_mod
+
         ocr_mod._tesseract_available = False
 
         with patch("assistant.ocr.yaml_config", {"ocr": {}}):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
             engine._vision_available = False
             status = engine.health_status()
@@ -984,6 +1026,7 @@ class TestPrepareImageB64:
         """Normales Bild wird zu Base64-JPEG konvertiert."""
         with patch("assistant.ocr.yaml_config", {"ocr": {}}):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
 
             img_path = tmp_path / "normal.png"
@@ -993,6 +1036,7 @@ class TestPrepareImageB64:
             assert result is not None
             # Should be valid base64
             import base64
+
             decoded = base64.b64decode(result)
             assert len(decoded) > 0
 
@@ -1002,6 +1046,7 @@ class TestPrepareImageB64:
 
         with patch("assistant.ocr.yaml_config", {"ocr": {}}):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
 
             # Create a large image (2048x1536)
@@ -1014,6 +1059,7 @@ class TestPrepareImageB64:
 
             # Verify the output image was resized
             import base64
+
             decoded = base64.b64decode(result)
             buf = io.BytesIO(decoded)
             resized = Image.open(buf)
@@ -1025,6 +1071,7 @@ class TestPrepareImageB64:
 
         with patch("assistant.ocr.yaml_config", {"ocr": {}}):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
 
             img = Image.new("RGBA", (100, 100), color=(255, 0, 0, 128))
@@ -1040,6 +1087,7 @@ class TestPrepareImageB64:
 
         with patch("assistant.ocr.yaml_config", {"ocr": {}}):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
 
             img = Image.new("P", (100, 100))
@@ -1053,6 +1101,7 @@ class TestPrepareImageB64:
         """Fehlerhafte Bilddatei gibt None zurueck."""
         with patch("assistant.ocr.yaml_config", {"ocr": {}}):
             from assistant.ocr import OCREngine
+
             engine = OCREngine()
 
             bad_path = tmp_path / "bad.jpg"

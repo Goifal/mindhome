@@ -120,11 +120,15 @@ class TestExtractRoom:
         assert result == "wohnzimmer"
 
     def test_kueche(self, classifier):
-        result = classifier._extract_room_from_entity("binary_sensor.kueche_glass_break")
+        result = classifier._extract_room_from_entity(
+            "binary_sensor.kueche_glass_break"
+        )
         assert result == "kueche"
 
     def test_schlafzimmer(self, classifier):
-        result = classifier._extract_room_from_entity("binary_sensor.schlafzimmer_noise")
+        result = classifier._extract_room_from_entity(
+            "binary_sensor.schlafzimmer_noise"
+        )
         assert result == "schlafzimmer"
 
     def test_fallback_underscore_split(self, classifier):
@@ -233,7 +237,7 @@ class TestStartStop:
     @pytest.mark.asyncio
     async def test_start_with_sensors(self, classifier):
         classifier._sensor_mappings = {"sensor.test": "doorbell"}
-        with patch.object(classifier, '_poll_loop', new_callable=AsyncMock):
+        with patch.object(classifier, "_poll_loop", new_callable=AsyncMock):
             await classifier.start()
         assert classifier._running is True
         classifier._poll_task.cancel()
@@ -274,7 +278,10 @@ class TestProcessEvent:
 
     @pytest.mark.asyncio
     async def test_low_confidence(self, classifier):
-        with patch("assistant.ambient_audio.yaml_config", {"ambient_audio": {"min_confidence": 0.8}}):
+        with patch(
+            "assistant.ambient_audio.yaml_config",
+            {"ambient_audio": {"min_confidence": 0.8}},
+        ):
             result = await classifier.process_event("doorbell", confidence=0.3)
         assert result is None
 
@@ -292,10 +299,16 @@ class TestProcessEvent:
     @pytest.mark.asyncio
     async def test_successful_event(self, classifier):
         classifier._last_event_times.clear()
-        with patch("assistant.ambient_audio.yaml_config", {"ambient_audio": {"min_confidence": 0.5}}):
-            with patch.object(classifier, '_is_night', return_value=False):
+        with patch(
+            "assistant.ambient_audio.yaml_config",
+            {"ambient_audio": {"min_confidence": 0.5}},
+        ):
+            with patch.object(classifier, "_is_night", return_value=False):
                 result = await classifier.process_event(
-                    "doorbell", room="flur", confidence=0.9, source="sensor",
+                    "doorbell",
+                    room="flur",
+                    confidence=0.9,
+                    source="sensor",
                 )
         assert result is not None
         assert result["type"] == "doorbell"
@@ -306,10 +319,15 @@ class TestProcessEvent:
     async def test_night_escalation(self, classifier):
         classifier._last_event_times.clear()
         classifier._night_escalate = True
-        with patch("assistant.ambient_audio.yaml_config", {"ambient_audio": {"min_confidence": 0.5}}):
-            with patch.object(classifier, '_is_night', return_value=True):
+        with patch(
+            "assistant.ambient_audio.yaml_config",
+            {"ambient_audio": {"min_confidence": 0.5}},
+        ):
+            with patch.object(classifier, "_is_night", return_value=True):
                 result = await classifier.process_event(
-                    "doorbell", room="flur", confidence=0.9,
+                    "doorbell",
+                    room="flur",
+                    confidence=0.9,
                 )
         assert result is not None
         assert result["severity"] == "high"  # escalated from info
@@ -319,8 +337,11 @@ class TestProcessEvent:
         classifier._last_event_times.clear()
         callback = AsyncMock()
         classifier._notify_callback = callback
-        with patch("assistant.ambient_audio.yaml_config", {"ambient_audio": {"min_confidence": 0.5}}):
-            with patch.object(classifier, '_is_night', return_value=False):
+        with patch(
+            "assistant.ambient_audio.yaml_config",
+            {"ambient_audio": {"min_confidence": 0.5}},
+        ):
+            with patch.object(classifier, "_is_night", return_value=False):
                 await classifier.process_event("doorbell", room="flur", confidence=0.9)
         callback.assert_called_once()
 
@@ -329,8 +350,11 @@ class TestProcessEvent:
         classifier._last_event_times.clear()
         callback = AsyncMock(side_effect=Exception("callback failed"))
         classifier._notify_callback = callback
-        with patch("assistant.ambient_audio.yaml_config", {"ambient_audio": {"min_confidence": 0.5}}):
-            with patch.object(classifier, '_is_night', return_value=False):
+        with patch(
+            "assistant.ambient_audio.yaml_config",
+            {"ambient_audio": {"min_confidence": 0.5}},
+        ):
+            with patch.object(classifier, "_is_night", return_value=False):
                 result = await classifier.process_event("doorbell", confidence=0.9)
         assert result is not None  # Should still return event
 
@@ -338,8 +362,11 @@ class TestProcessEvent:
     async def test_history_truncation(self, classifier):
         classifier._last_event_times.clear()
         classifier._event_history = [{"type": "x"} for _ in range(100)]
-        with patch("assistant.ambient_audio.yaml_config", {"ambient_audio": {"min_confidence": 0.5}}):
-            with patch.object(classifier, '_is_night', return_value=False):
+        with patch(
+            "assistant.ambient_audio.yaml_config",
+            {"ambient_audio": {"min_confidence": 0.5}},
+        ):
+            with patch.object(classifier, "_is_night", return_value=False):
                 await classifier.process_event("doorbell", confidence=0.9)
         assert len(classifier._event_history) <= classifier._max_history
 
@@ -367,10 +394,15 @@ class TestProcessHaStateChange:
     async def test_mapped_entity(self, classifier):
         classifier._sensor_mappings = {"binary_sensor.kueche_smoke": "smoke_alarm"}
         classifier._last_event_times.clear()
-        with patch("assistant.ambient_audio.yaml_config", {"ambient_audio": {"min_confidence": 0.5}}):
-            with patch.object(classifier, '_is_night', return_value=False):
+        with patch(
+            "assistant.ambient_audio.yaml_config",
+            {"ambient_audio": {"min_confidence": 0.5}},
+        ):
+            with patch.object(classifier, "_is_night", return_value=False):
                 result = await classifier.process_ha_state_change(
-                    "binary_sensor.kueche_smoke", "on", {"confidence": 0.95},
+                    "binary_sensor.kueche_smoke",
+                    "on",
+                    {"confidence": 0.95},
                 )
         assert result is not None
         assert result["type"] == "smoke_alarm"
@@ -380,10 +412,15 @@ class TestProcessHaStateChange:
     async def test_confidence_from_attributes(self, classifier):
         classifier._sensor_mappings = {"binary_sensor.test": "glass_break"}
         classifier._last_event_times.clear()
-        with patch("assistant.ambient_audio.yaml_config", {"ambient_audio": {"min_confidence": 0.5}}):
-            with patch.object(classifier, '_is_night', return_value=False):
+        with patch(
+            "assistant.ambient_audio.yaml_config",
+            {"ambient_audio": {"min_confidence": 0.5}},
+        ):
+            with patch.object(classifier, "_is_night", return_value=False):
                 result = await classifier.process_ha_state_change(
-                    "binary_sensor.test", "detected", {"score": 0.8},
+                    "binary_sensor.test",
+                    "detected",
+                    {"score": 0.8},
                 )
         assert result is not None
 
@@ -431,6 +468,7 @@ class TestSetNotifyCallback:
     def test_set_callback(self, classifier):
         async def my_callback(**kwargs):
             pass
+
         classifier.set_notify_callback(my_callback)
         assert classifier._notify_callback is my_callback
 

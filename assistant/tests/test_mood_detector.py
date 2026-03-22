@@ -105,40 +105,58 @@ class TestMoodTrend:
 
     def test_declining_trend(self, detector):
         from collections import deque
+
         sentiments = deque(maxlen=10)
         for s in ["positive", "neutral", "negative", "negative", "negative"]:
             sentiments.append(s)
         detector._interaction_sentiments = sentiments
         detector._person_states["_default"] = {
-            "sentiments": sentiments, "mood": "neutral",
-            "stress": 0.0, "tiredness": 0.0, "frustration": 0, "positive_signals": 0,
-            "last_texts": deque(maxlen=5), "last_decay_time": 0.0,
+            "sentiments": sentiments,
+            "mood": "neutral",
+            "stress": 0.0,
+            "tiredness": 0.0,
+            "frustration": 0,
+            "positive_signals": 0,
+            "last_texts": deque(maxlen=5),
+            "last_decay_time": 0.0,
         }
         assert detector.get_mood_trend() == "declining"
 
     def test_improving_trend(self, detector):
         from collections import deque
+
         sentiments = deque(maxlen=10)
         for s in ["negative", "negative", "neutral", "positive", "positive"]:
             sentiments.append(s)
         detector._interaction_sentiments = sentiments
         detector._person_states["_default"] = {
-            "sentiments": sentiments, "mood": "neutral",
-            "stress": 0.0, "tiredness": 0.0, "frustration": 0, "positive_signals": 0,
-            "last_texts": deque(maxlen=5), "last_decay_time": 0.0,
+            "sentiments": sentiments,
+            "mood": "neutral",
+            "stress": 0.0,
+            "tiredness": 0.0,
+            "frustration": 0,
+            "positive_signals": 0,
+            "last_texts": deque(maxlen=5),
+            "last_decay_time": 0.0,
         }
         assert detector.get_mood_trend() == "improving"
 
     def test_volatile_trend(self, detector):
         from collections import deque
+
         sentiments = deque(maxlen=10)
         for s in ["positive", "negative", "positive", "negative", "positive"]:
             sentiments.append(s)
         detector._interaction_sentiments = sentiments
         detector._person_states["_default"] = {
-            "sentiments": sentiments, "mood": "neutral",
-            "stress": 0.0, "tiredness": 0.0, "frustration": 0, "positive_signals": 0,
-            "last_texts": deque(maxlen=5), "last_decay_time": 0.0,
+            "sentiments": sentiments,
+            "mood": "neutral",
+            "stress": 0.0,
+            "tiredness": 0.0,
+            "frustration": 0,
+            "positive_signals": 0,
+            "last_texts": deque(maxlen=5),
+            "last_decay_time": 0.0,
         }
         assert detector.get_mood_trend() == "volatile"
 
@@ -272,15 +290,23 @@ class TestStorePersonStateEviction:
     def test_evicts_oldest_person_when_over_limit(self, detector):
         """When more than 20 persons, oldest non-default is evicted."""
         import time as _time
+
         # Create 20 person states (+ _default might exist)
         for i in range(21):
             key = f"person_{i}"
             detector._person_states[key] = {
-                "mood": MOOD_NEUTRAL, "stress": 0.0, "tiredness": 0.0,
-                "frustration": 0, "positive": 0,
-                "times": [], "lengths": [], "sentiments": [],
-                "last_texts": [], "last_decay_time": _time.time(),
-                "voice_signals": [], "created_time": _time.time() - (21 - i),
+                "mood": MOOD_NEUTRAL,
+                "stress": 0.0,
+                "tiredness": 0.0,
+                "frustration": 0,
+                "positive": 0,
+                "times": [],
+                "lengths": [],
+                "sentiments": [],
+                "last_texts": [],
+                "last_decay_time": _time.time(),
+                "voice_signals": [],
+                "created_time": _time.time() - (21 - i),
             }
         # Load and store a new person
         detector._load_person_state("new_person")
@@ -292,21 +318,36 @@ class TestStorePersonStateEviction:
     def test_evicts_oldest_not_default(self, detector):
         """_default should never be evicted."""
         import time as _time
+
         detector._person_states["_default"] = {
-            "mood": MOOD_NEUTRAL, "stress": 0.0, "tiredness": 0.0,
-            "frustration": 0, "positive": 0,
-            "times": [], "lengths": [], "sentiments": [],
-            "last_texts": [], "last_decay_time": _time.time(),
-            "voice_signals": [], "created_time": 0,  # oldest
+            "mood": MOOD_NEUTRAL,
+            "stress": 0.0,
+            "tiredness": 0.0,
+            "frustration": 0,
+            "positive": 0,
+            "times": [],
+            "lengths": [],
+            "sentiments": [],
+            "last_texts": [],
+            "last_decay_time": _time.time(),
+            "voice_signals": [],
+            "created_time": 0,  # oldest
         }
         for i in range(21):
             key = f"person_{i}"
             detector._person_states[key] = {
-                "mood": MOOD_NEUTRAL, "stress": 0.0, "tiredness": 0.0,
-                "frustration": 0, "positive": 0,
-                "times": [], "lengths": [], "sentiments": [],
-                "last_texts": [], "last_decay_time": _time.time(),
-                "voice_signals": [], "created_time": _time.time() - (21 - i),
+                "mood": MOOD_NEUTRAL,
+                "stress": 0.0,
+                "tiredness": 0.0,
+                "frustration": 0,
+                "positive": 0,
+                "times": [],
+                "lengths": [],
+                "sentiments": [],
+                "last_texts": [],
+                "last_decay_time": _time.time(),
+                "voice_signals": [],
+                "created_time": _time.time() - (21 - i),
             }
         detector._active_person_key = "person_20"
         detector._created_time = _time.time()
@@ -327,13 +368,20 @@ class TestInitializeFromRedis:
         d = MoodDetector()
         mock_redis = AsyncMock()
         mock_redis.keys = AsyncMock(return_value=["mha:mood:state:max"])
-        mock_redis.hgetall = AsyncMock(side_effect=[
-            # First call: for "mha:mood:state:max"
-            {"mood": "stressed", "stress": "0.5", "tiredness": "0.1",
-             "frustration": "2", "positive": "1"},
-            # Second call: legacy key "mha:mood:state"
-            {},
-        ])
+        mock_redis.hgetall = AsyncMock(
+            side_effect=[
+                # First call: for "mha:mood:state:max"
+                {
+                    "mood": "stressed",
+                    "stress": "0.5",
+                    "tiredness": "0.1",
+                    "frustration": "2",
+                    "positive": "1",
+                },
+                # Second call: legacy key "mha:mood:state"
+                {},
+            ]
+        )
         mock_redis.expire = AsyncMock()
 
         await d.initialize(redis_client=mock_redis)
@@ -346,10 +394,15 @@ class TestInitializeFromRedis:
         d = MoodDetector()
         mock_redis = AsyncMock()
         mock_redis.keys = AsyncMock(return_value=[])
-        mock_redis.hgetall = AsyncMock(return_value={
-            "mood": "tired", "stress": "0.2", "tiredness": "0.7",
-            "frustration": "0", "positive": "0",
-        })
+        mock_redis.hgetall = AsyncMock(
+            return_value={
+                "mood": "tired",
+                "stress": "0.2",
+                "tiredness": "0.7",
+                "frustration": "0",
+                "positive": "0",
+            }
+        )
         mock_redis.expire = AsyncMock()
 
         await d.initialize(redis_client=mock_redis)
@@ -361,11 +414,18 @@ class TestInitializeFromRedis:
         d = MoodDetector()
         mock_redis = AsyncMock()
         mock_redis.keys = AsyncMock(return_value=[b"mha:mood:state:anna"])
-        mock_redis.hgetall = AsyncMock(side_effect=[
-            {b"mood": b"good", b"stress": b"0.0", b"tiredness": b"0.0",
-             b"frustration": b"0", b"positive": b"3"},
-            {},  # legacy
-        ])
+        mock_redis.hgetall = AsyncMock(
+            side_effect=[
+                {
+                    b"mood": b"good",
+                    b"stress": b"0.0",
+                    b"tiredness": b"0.0",
+                    b"frustration": b"0",
+                    b"positive": b"3",
+                },
+                {},  # legacy
+            ]
+        )
         mock_redis.expire = AsyncMock()
 
         await d.initialize(redis_client=mock_redis)
@@ -402,17 +462,25 @@ class TestAnalyzeInnerEdges:
     async def test_rapid_commands_signal(self, detector):
         """4+ rapid commands trigger rapid_commands signal."""
         from collections import deque
+
         now = time.time()
         times = deque(maxlen=20)
         for i in range(5):
             times.append(now - 10 + i * 2)
         # Store the state so _load_person_state finds it
         detector._person_states["_default"] = {
-            "mood": "neutral", "stress": 0.0, "tiredness": 0.0,
-            "frustration": 0, "positive": 0,
-            "times": times, "lengths": deque(maxlen=20),
-            "sentiments": deque(maxlen=10), "last_texts": deque(maxlen=5),
-            "last_decay_time": now, "voice_signals": [], "created_time": now,
+            "mood": "neutral",
+            "stress": 0.0,
+            "tiredness": 0.0,
+            "frustration": 0,
+            "positive": 0,
+            "times": times,
+            "lengths": deque(maxlen=20),
+            "sentiments": deque(maxlen=10),
+            "last_texts": deque(maxlen=5),
+            "last_decay_time": now,
+            "voice_signals": [],
+            "created_time": now,
         }
         result = await detector.analyze("noch ein befehl", "")
         assert "rapid_commands" in result["signals"]
@@ -444,6 +512,7 @@ class TestAnalyzeInnerEdges:
     async def test_late_night_short_message(self, detector):
         from unittest.mock import patch
         from datetime import datetime as dt
+
         mock_now = MagicMock()
         mock_now.hour = 23  # Late hour
         with patch("assistant.mood_detector.datetime") as mock_dt:
@@ -455,6 +524,7 @@ class TestAnalyzeInnerEdges:
     async def test_is_late_when_start_less_than_end(self, detector):
         """Test is_late branch when tired_hour_start <= tired_hour_end."""
         from unittest.mock import patch
+
         detector.tired_hour_start = 2
         detector.tired_hour_end = 6
         mock_now = MagicMock()
@@ -482,8 +552,12 @@ class TestGetCurrentMoodWithState:
 
     def test_returns_state_for_known_person(self, detector):
         detector._person_states["max"] = {
-            "mood": MOOD_STRESSED, "stress": 0.6, "tiredness": 0.1,
-            "frustration": 2, "positive": 1, "voice_emotion": {"emotion": "angry"},
+            "mood": MOOD_STRESSED,
+            "stress": 0.6,
+            "tiredness": 0.1,
+            "frustration": 2,
+            "positive": 1,
+            "voice_emotion": {"emotion": "angry"},
         }
         result = detector.get_current_mood("Max")
         assert result["mood"] == MOOD_STRESSED
@@ -567,6 +641,7 @@ class TestSuggestedActionsExtended:
 
     def test_tired_late_hour_suggests_gute_nacht(self, detector):
         from unittest.mock import patch
+
         detector._current_mood = MOOD_TIRED
         mock_now = MagicMock()
         mock_now.hour = 23
@@ -577,6 +652,7 @@ class TestSuggestedActionsExtended:
 
     def test_good_mood_evening_suggests_gemuetlich(self, detector):
         from unittest.mock import patch
+
         detector._current_mood = MOOD_GOOD
         mock_now = MagicMock()
         mock_now.hour = 20
@@ -615,8 +691,11 @@ class TestMoodPromptHintExtended:
 
     def test_stressed_high_hint(self, detector):
         from collections import deque
+
         detector._person_states["_default"] = {
-            "mood": MOOD_STRESSED, "stress": 0.8, "frustration": 0,
+            "mood": MOOD_STRESSED,
+            "stress": 0.8,
+            "frustration": 0,
             "sentiments": deque(maxlen=10),
         }
         hint = detector.get_mood_prompt_hint()
@@ -625,8 +704,11 @@ class TestMoodPromptHintExtended:
 
     def test_frustrated_high_hint(self, detector):
         from collections import deque
+
         detector._person_states["_default"] = {
-            "mood": MOOD_FRUSTRATED, "stress": 0.3, "frustration": 5,
+            "mood": MOOD_FRUSTRATED,
+            "stress": 0.3,
+            "frustration": 5,
             "sentiments": deque(maxlen=10),
         }
         hint = detector.get_mood_prompt_hint()
@@ -635,8 +717,11 @@ class TestMoodPromptHintExtended:
 
     def test_tired_hint(self, detector):
         from collections import deque
+
         detector._person_states["_default"] = {
-            "mood": MOOD_TIRED, "stress": 0.0, "frustration": 0,
+            "mood": MOOD_TIRED,
+            "stress": 0.0,
+            "frustration": 0,
             "sentiments": deque(maxlen=10),
         }
         hint = detector.get_mood_prompt_hint()
@@ -644,8 +729,11 @@ class TestMoodPromptHintExtended:
 
     def test_good_mood_hint(self, detector):
         from collections import deque
+
         detector._person_states["_default"] = {
-            "mood": MOOD_GOOD, "stress": 0.0, "frustration": 0,
+            "mood": MOOD_GOOD,
+            "stress": 0.0,
+            "frustration": 0,
             "sentiments": deque(maxlen=10),
         }
         hint = detector.get_mood_prompt_hint()
@@ -653,11 +741,14 @@ class TestMoodPromptHintExtended:
 
     def test_three_negatives_warning(self, detector):
         from collections import deque
+
         sentiments = deque(maxlen=10)
         for _ in range(3):
             sentiments.append("negative")
         detector._person_states["_default"] = {
-            "mood": MOOD_NEUTRAL, "stress": 0.3, "frustration": 1,
+            "mood": MOOD_NEUTRAL,
+            "stress": 0.3,
+            "frustration": 1,
             "sentiments": sentiments,
         }
         hint = detector.get_mood_prompt_hint()
@@ -665,11 +756,14 @@ class TestMoodPromptHintExtended:
 
     def test_declining_trend_hint(self, detector):
         from collections import deque
+
         sentiments = deque(maxlen=10)
         for s in ["positive", "neutral", "negative", "negative", "negative"]:
             sentiments.append(s)
         detector._person_states["_default"] = {
-            "mood": MOOD_NEUTRAL, "stress": 0.3, "frustration": 1,
+            "mood": MOOD_NEUTRAL,
+            "stress": 0.3,
+            "frustration": 1,
             "sentiments": sentiments,
         }
         hint = detector.get_mood_prompt_hint()
@@ -677,11 +771,14 @@ class TestMoodPromptHintExtended:
 
     def test_volatile_trend_hint(self, detector):
         from collections import deque
+
         sentiments = deque(maxlen=10)
         for s in ["positive", "negative", "positive", "negative", "positive"]:
             sentiments.append(s)
         detector._person_states["_default"] = {
-            "mood": MOOD_NEUTRAL, "stress": 0.0, "frustration": 0,
+            "mood": MOOD_NEUTRAL,
+            "stress": 0.0,
+            "frustration": 0,
             "sentiments": sentiments,
         }
         hint = detector.get_mood_prompt_hint()
@@ -689,8 +786,11 @@ class TestMoodPromptHintExtended:
 
     def test_voice_signals_in_hint(self, detector):
         from collections import deque
+
         detector._person_states["_default"] = {
-            "mood": MOOD_NEUTRAL, "stress": 0.0, "frustration": 0,
+            "mood": MOOD_NEUTRAL,
+            "stress": 0.0,
+            "frustration": 0,
             "sentiments": deque(maxlen=10),
             "voice_signals": ["voice_fast", "voice_loud"],
         }
@@ -699,8 +799,11 @@ class TestMoodPromptHintExtended:
 
     def test_voice_emotion_in_hint(self, detector):
         from collections import deque
+
         detector._person_states["_default"] = {
-            "mood": MOOD_NEUTRAL, "stress": 0.0, "frustration": 0,
+            "mood": MOOD_NEUTRAL,
+            "stress": 0.0,
+            "frustration": 0,
             "sentiments": deque(maxlen=10),
             "voice_emotion": {"emotion": "angry", "confidence": 0.7},
         }
@@ -710,8 +813,11 @@ class TestMoodPromptHintExtended:
 
     def test_voice_emotion_neutral_not_shown(self, detector):
         from collections import deque
+
         detector._person_states["_default"] = {
-            "mood": MOOD_NEUTRAL, "stress": 0.0, "frustration": 0,
+            "mood": MOOD_NEUTRAL,
+            "stress": 0.0,
+            "frustration": 0,
             "sentiments": deque(maxlen=10),
             "voice_emotion": {"emotion": "neutral", "confidence": 0.8},
         }
@@ -720,8 +826,11 @@ class TestMoodPromptHintExtended:
 
     def test_voice_emotion_low_confidence_not_shown(self, detector):
         from collections import deque
+
         detector._person_states["_default"] = {
-            "mood": MOOD_NEUTRAL, "stress": 0.0, "frustration": 0,
+            "mood": MOOD_NEUTRAL,
+            "stress": 0.0,
+            "frustration": 0,
             "sentiments": deque(maxlen=10),
             "voice_emotion": {"emotion": "angry", "confidence": 0.2},
         }
@@ -772,16 +881,21 @@ class TestAnalyzeVoiceMetadata:
 
     @pytest.mark.asyncio
     async def test_curt_commands(self, detector):
-        result = await detector.analyze_voice_metadata({
-            "duration": 1.0, "word_count": 2,
-        })
+        result = await detector.analyze_voice_metadata(
+            {
+                "duration": 1.0,
+                "word_count": 2,
+            }
+        )
         assert "voice_curt" in result
 
     @pytest.mark.asyncio
     async def test_rapid_follow_up(self, detector):
-        result = await detector.analyze_voice_metadata({
-            "rapid_follow_up": True,
-        })
+        result = await detector.analyze_voice_metadata(
+            {
+                "rapid_follow_up": True,
+            }
+        )
         assert "rapid_follow_up" in result
 
     @pytest.mark.asyncio
@@ -855,24 +969,36 @@ class TestDetectAudioEmotion:
     def test_angry_emotion_integration(self, detector):
         """High score angry emotion integrates into mood state."""
         detector._stress_level = 0.0
-        result = detector.detect_audio_emotion({
-            "wpm": 200, "volume": 0.9, "energy_rms": 0.8,
-        })
+        result = detector.detect_audio_emotion(
+            {
+                "wpm": 200,
+                "volume": 0.9,
+                "energy_rms": 0.8,
+            }
+        )
         assert result["emotion"] == "angry"
         assert detector._stress_level > 0
 
     def test_tired_emotion_integration(self, detector):
         detector._tiredness_level = 0.0
-        result = detector.detect_audio_emotion({
-            "wpm": 60, "volume": 0.15, "pitch_variance": 5, "energy_rms": 0.1,
-        })
+        result = detector.detect_audio_emotion(
+            {
+                "wpm": 60,
+                "volume": 0.15,
+                "pitch_variance": 5,
+                "energy_rms": 0.1,
+            }
+        )
         assert detector._tiredness_level > 0
 
     def test_happy_emotion_reduces_stress(self, detector):
         detector._stress_level = 0.5
-        result = detector.detect_audio_emotion({
-            "wpm": 160, "pitch_variance": 60,
-        })
+        result = detector.detect_audio_emotion(
+            {
+                "wpm": 160,
+                "pitch_variance": 60,
+            }
+        )
         if result["emotion"] == "happy" and result["confidence"] > 0.4:
             assert detector._stress_level < 0.5
 
@@ -949,12 +1075,16 @@ class TestMoodTrendStable:
 
     def test_stable_when_all_neutral(self, detector):
         from collections import deque
+
         sentiments = deque(maxlen=10)
         for _ in range(5):
             sentiments.append("neutral")
         detector._person_states["_default"] = {
-            "sentiments": sentiments, "mood": "neutral",
-            "stress": 0.0, "tiredness": 0.0, "frustration": 0,
+            "sentiments": sentiments,
+            "mood": "neutral",
+            "stress": 0.0,
+            "tiredness": 0.0,
+            "frustration": 0,
         }
         assert detector.get_mood_trend() == "stable"
 
@@ -971,6 +1101,7 @@ class TestPhase2AEmpathy:
     def detector(self):
         with patch("assistant.mood_detector.yaml_config", {"mood": {}}):
             from assistant.mood_detector import MoodDetector
+
             d = MoodDetector()
             return d
 
@@ -1019,6 +1150,7 @@ class TestPhase2AEmotionalBoundaries:
     def detector(self):
         with patch("assistant.mood_detector.yaml_config", {"mood": {}}):
             from assistant.mood_detector import MoodDetector
+
             d = MoodDetector()
             d.redis = AsyncMock()
             return d
@@ -1077,30 +1209,35 @@ class TestIronyDetection:
     def test_irony_marker_with_negative_history(self, detector):
         """'Na super' nach negativen Interaktionen = ironisch."""
         from collections import deque
+
         detector._interaction_sentiments = deque(["negative", "negative", "neutral"])
         assert detector._detect_irony("na super, laeuft ja", "max") is True
 
     def test_irony_marker_without_negative_history(self, detector):
         """'Na super' ohne negative History = nicht ironisch."""
         from collections import deque
+
         detector._interaction_sentiments = deque(["neutral", "neutral", "neutral"])
         assert detector._detect_irony("na super, das freut mich", "max") is False
 
     def test_exaggeration_with_high_negatives(self, detector):
         """'Mega toll' nach 2+ negativen Sentiments = ironisch."""
         from collections import deque
+
         detector._interaction_sentiments = deque(["negative", "impatient", "negative"])
         assert detector._detect_irony("mega toll das ergebnis", "max") is True
 
     def test_exaggeration_without_negatives(self, detector):
         """'Mega toll' ohne negative History = echt gemeint."""
         from collections import deque
+
         detector._interaction_sentiments = deque(["neutral", "neutral"])
         assert detector._detect_irony("mega toll das ergebnis", "max") is False
 
     def test_frustrated_short_positive(self, detector):
         """Kurzes 'super toll' bei hoher Frustration + Stress = ironisch."""
         from collections import deque
+
         detector._frustration_count = 3
         detector._stress_level = 0.6
         detector._interaction_sentiments = deque(["neutral"])
@@ -1109,6 +1246,7 @@ class TestIronyDetection:
     def test_normal_positive_not_ironic(self, detector):
         """Normales positives Feedback wird nicht als Ironie erkannt."""
         from collections import deque
+
         detector._frustration_count = 0
         detector._stress_level = 0.0
         detector._interaction_sentiments = deque(["neutral", "neutral"])
@@ -1117,12 +1255,14 @@ class TestIronyDetection:
     def test_ja_klar_marker(self, detector):
         """'Ja klar' nach negativem Sentiment = ironisch."""
         from collections import deque
+
         detector._interaction_sentiments = deque(["negative"])
         assert detector._detect_irony("ja klar macht sinn", "max") is True
 
     def test_ganz_grosses_kino_marker(self, detector):
         """'Ganz grosses Kino' nach negativem Sentiment = ironisch."""
         from collections import deque
+
         detector._interaction_sentiments = deque(["impatient"])
         assert detector._detect_irony("ganz grosses kino wirklich", "max") is True
 
@@ -1346,8 +1486,16 @@ class TestEdgeCases:
     async def test_repeated_analyze_calls_stable(self, detector):
         """Many sequential calls with varied neutral text should stay low stress."""
         neutral_texts = [
-            "Hallo", "wie geht es", "alles klar", "ja", "verstanden",
-            "in Ordnung", "ok danke", "passt", "gut", "weiter",
+            "Hallo",
+            "wie geht es",
+            "alles klar",
+            "ja",
+            "verstanden",
+            "in Ordnung",
+            "ok danke",
+            "passt",
+            "gut",
+            "weiter",
         ]
         for text in neutral_texts:
             result = await detector.analyze(text)

@@ -83,8 +83,10 @@ class TestChatPayload:
             json=AsyncMock(return_value={"message": {"content": "ok"}}),
             text=AsyncMock(return_value="ok"),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
 
@@ -92,8 +94,11 @@ class TestChatPayload:
 
         # Modell-Profil mocken: supports_think_with_tools=False
         from assistant.config import ModelProfile
+
         no_think_tools_profile = ModelProfile(supports_think_with_tools=False)
-        with patch("assistant.config.get_model_profile", return_value=no_think_tools_profile):
+        with patch(
+            "assistant.config.get_model_profile", return_value=no_think_tools_profile
+        ):
             result = await client.chat(
                 messages=[{"role": "user", "content": "test"}],
                 tools=[{"type": "function", "function": {"name": "test"}}],
@@ -110,13 +115,16 @@ class TestChatPayload:
             status=200,
             json=AsyncMock(return_value={"message": {"content": "ok"}}),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
 
         client = _make_client_with_mock_session(instance)
         from assistant.config import settings
+
         result = await client.chat(
             messages=[{"role": "user", "content": "test"}],
             model=settings.model_fast,
@@ -132,8 +140,10 @@ class TestChatPayload:
             status=200,
             json=AsyncMock(return_value={"message": {"content": "ok"}}),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
 
@@ -156,8 +166,10 @@ class TestChatError:
             status=500,
             text=AsyncMock(return_value="Internal Server Error"),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
 
@@ -173,8 +185,10 @@ class TestChatError:
             status=500,
             text=AsyncMock(return_value="Error"),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
 
@@ -193,8 +207,10 @@ class TestGenerate:
             status=200,
             json=AsyncMock(return_value={"response": "Generated text"}),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
 
@@ -214,8 +230,10 @@ class TestGenerate:
             status=200,
             json=AsyncMock(return_value={"response": "<think>reasoning</think>Answer"}),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
 
@@ -230,8 +248,10 @@ class TestGenerate:
             status=200,
             json=AsyncMock(return_value={"response": "ok"}),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
 
@@ -251,8 +271,10 @@ class TestIsAvailable:
     @pytest.mark.asyncio
     async def test_available_on_200(self):
         mock_resp = MagicMock(status=200)
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.get = MagicMock(return_value=cm)
 
@@ -262,6 +284,7 @@ class TestIsAvailable:
     @pytest.mark.asyncio
     async def test_unavailable_on_error(self):
         import aiohttp
+
         instance = MagicMock()
         instance.get = MagicMock(side_effect=aiohttp.ClientError("Connection refused"))
 
@@ -273,6 +296,7 @@ class TestIsAvailable:
 # Chat — Thinking Field
 # ============================================================
 
+
 class TestChatThinkingField:
     """Tests fuer das 'thinking' Feld in chat() Ergebnissen bei Think-Tags."""
 
@@ -281,12 +305,16 @@ class TestChatThinkingField:
         """chat() extrahiert Think-Content in result['thinking']."""
         mock_resp = MagicMock(
             status=200,
-            json=AsyncMock(return_value={
-                "message": {"content": "<think>reasoning here</think>Answer"},
-            }),
+            json=AsyncMock(
+                return_value={
+                    "message": {"content": "<think>reasoning here</think>Answer"},
+                }
+            ),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
 
@@ -300,12 +328,16 @@ class TestChatThinkingField:
         """Kein 'thinking' Feld wenn keine Think-Tags vorhanden."""
         mock_resp = MagicMock(
             status=200,
-            json=AsyncMock(return_value={
-                "message": {"content": "Normal answer"},
-            }),
+            json=AsyncMock(
+                return_value={
+                    "message": {"content": "Normal answer"},
+                }
+            ),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
 
@@ -318,12 +350,16 @@ class TestChatThinkingField:
         """Leerer Think-Block wird nicht als 'thinking' gespeichert."""
         mock_resp = MagicMock(
             status=200,
-            json=AsyncMock(return_value={
-                "message": {"content": "<think></think>Text"},
-            }),
+            json=AsyncMock(
+                return_value={
+                    "message": {"content": "<think></think>Text"},
+                }
+            ),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
 
@@ -335,6 +371,7 @@ class TestChatThinkingField:
 # ============================================================
 # Stream Chat — Thinking Collection
 # ============================================================
+
 
 class TestStreamChatThinking:
     """Tests fuer stream_chat's _thinking_parts Sammlung."""
@@ -357,8 +394,10 @@ class TestStreamChatThinking:
 
         mock_resp = MagicMock(status=200)
         mock_resp.content = make_stream_content()
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
 
@@ -389,8 +428,10 @@ class TestStreamChatThinking:
 
         mock_resp = MagicMock(status=200)
         mock_resp.content = make_stream_content()
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
 
@@ -409,6 +450,7 @@ class TestStreamChatThinking:
 # Generate — Uses extract_thinking
 # ============================================================
 
+
 class TestGenerateUsesExtractThinking:
     """Tests fuer generate() — Thinking wird gestrippt."""
 
@@ -419,8 +461,10 @@ class TestGenerateUsesExtractThinking:
             status=200,
             json=AsyncMock(return_value={"response": "<think>thought</think>Result"}),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
 
@@ -684,7 +728,9 @@ class TestNumCtxFor:
 
     def test_notify_tier(self):
         client = OllamaClient()
-        with patch("assistant.config.yaml_config", {"ollama": {"num_ctx_notify": 1500}}):
+        with patch(
+            "assistant.config.yaml_config", {"ollama": {"num_ctx_notify": 1500}}
+        ):
             assert client.num_ctx_for("any-model", tier="notify") == 1500
 
     def test_notify_tier_fallback_to_fast(self):
@@ -701,6 +747,7 @@ class TestNumCtxFor:
     def test_fast_model_name_matching(self):
         client = OllamaClient()
         from assistant.config import settings
+
         with patch("assistant.config.yaml_config", {"ollama": {"num_ctx_fast": 1024}}):
             with patch.object(settings, "model_fast", "fast-model"):
                 with patch.object(settings, "model_smart", "smart-model"):
@@ -784,25 +831,32 @@ class TestGetTimeout:
 
     def test_fast_model(self):
         from assistant.constants import LLM_TIMEOUT_FAST
+
         client = OllamaClient()
         from assistant.config import settings
+
         assert client._get_timeout(settings.model_fast) == LLM_TIMEOUT_FAST
 
     def test_deep_model(self):
         from assistant.constants import LLM_TIMEOUT_DEEP
+
         client = OllamaClient()
         from assistant.config import settings
+
         assert client._get_timeout(settings.model_deep) == LLM_TIMEOUT_DEEP
 
     def test_smart_model_default(self):
         from assistant.constants import LLM_TIMEOUT_SMART
+
         client = OllamaClient()
         assert client._get_timeout("unknown-model") == LLM_TIMEOUT_SMART
 
     def test_notify_model(self):
         from assistant.constants import LLM_TIMEOUT_FAST
+
         client = OllamaClient()
         from assistant.config import settings
+
         assert client._get_timeout(settings.model_notify) == LLM_TIMEOUT_FAST
 
 
@@ -833,6 +887,7 @@ class TestChatTimeoutAndClientError:
     @pytest.mark.asyncio
     async def test_chat_timeout(self):
         import asyncio as _asyncio
+
         instance = MagicMock()
         instance.post = MagicMock(side_effect=_asyncio.TimeoutError())
         client = _make_client_with_mock_session(instance)
@@ -843,6 +898,7 @@ class TestChatTimeoutAndClientError:
     @pytest.mark.asyncio
     async def test_chat_client_error(self):
         import aiohttp
+
         instance = MagicMock()
         instance.post = MagicMock(side_effect=aiohttp.ClientError("refused"))
         client = _make_client_with_mock_session(instance)
@@ -852,6 +908,7 @@ class TestChatTimeoutAndClientError:
     @pytest.mark.asyncio
     async def test_generate_timeout(self):
         import asyncio as _asyncio
+
         instance = MagicMock()
         instance.post = MagicMock(side_effect=_asyncio.TimeoutError())
         client = _make_client_with_mock_session(instance)
@@ -861,6 +918,7 @@ class TestChatTimeoutAndClientError:
     @pytest.mark.asyncio
     async def test_generate_client_error(self):
         import aiohttp
+
         instance = MagicMock()
         instance.post = MagicMock(side_effect=aiohttp.ClientError("refused"))
         client = _make_client_with_mock_session(instance)
@@ -877,8 +935,10 @@ class TestChatOllamaErrorInBody:
             status=200,
             json=AsyncMock(return_value={"error": "model not found"}),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
         client = _make_client_with_mock_session(instance)
@@ -894,12 +954,16 @@ class TestListModels:
     async def test_list_models_success(self):
         mock_resp = MagicMock(
             status=200,
-            json=AsyncMock(return_value={
-                "models": [{"name": "qwen:4b"}, {"name": "llama:7b"}],
-            }),
+            json=AsyncMock(
+                return_value={
+                    "models": [{"name": "qwen:4b"}, {"name": "llama:7b"}],
+                }
+            ),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.get = MagicMock(return_value=cm)
         client = _make_client_with_mock_session(instance)
@@ -909,6 +973,7 @@ class TestListModels:
     @pytest.mark.asyncio
     async def test_list_models_error_returns_empty(self):
         import aiohttp
+
         instance = MagicMock()
         instance.get = MagicMock(side_effect=aiohttp.ClientError("fail"))
         client = _make_client_with_mock_session(instance)
@@ -918,6 +983,7 @@ class TestListModels:
     @pytest.mark.asyncio
     async def test_list_models_timeout_returns_empty(self):
         import asyncio as _asyncio
+
         instance = MagicMock()
         instance.get = MagicMock(side_effect=_asyncio.TimeoutError())
         client = _make_client_with_mock_session(instance)
@@ -933,8 +999,10 @@ class TestChatThinkControl:
             status=200,
             json=AsyncMock(return_value={"message": {"content": response_content}}),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
         client = _make_client_with_mock_session(instance)
@@ -945,8 +1013,10 @@ class TestChatThinkControl:
         client, instance = self._make_chat_client()
         with patch("assistant.ollama_client.ollama_breaker") as breaker:
             breaker.is_available = True
-            with patch("assistant.config.yaml_config",
-                        {"latency_optimization": {"think_control": "off"}}):
+            with patch(
+                "assistant.config.yaml_config",
+                {"latency_optimization": {"think_control": "off"}},
+            ):
                 await client.chat(messages=[{"role": "user", "content": "test"}])
         payload = instance.post.call_args[1]["json"]
         assert payload.get("think") is False
@@ -956,8 +1026,10 @@ class TestChatThinkControl:
         client, instance = self._make_chat_client()
         with patch("assistant.ollama_client.ollama_breaker") as breaker:
             breaker.is_available = True
-            with patch("assistant.config.yaml_config",
-                        {"latency_optimization": {"think_control": "on"}}):
+            with patch(
+                "assistant.config.yaml_config",
+                {"latency_optimization": {"think_control": "on"}},
+            ):
                 await client.chat(messages=[{"role": "user", "content": "test"}])
         payload = instance.post.call_args[1]["json"]
         assert payload.get("think") is True
@@ -967,8 +1039,10 @@ class TestChatThinkControl:
         client, instance = self._make_chat_client()
         with patch("assistant.ollama_client.ollama_breaker") as breaker:
             breaker.is_available = True
-            with patch("assistant.config.yaml_config",
-                        {"latency_optimization": {"think_control": "smart_off"}}):
+            with patch(
+                "assistant.config.yaml_config",
+                {"latency_optimization": {"think_control": "smart_off"}},
+            ):
                 await client.chat(
                     messages=[{"role": "user", "content": "test"}],
                     tier="smart",
@@ -985,8 +1059,10 @@ class TestChatFormatParameter:
             status=200,
             json=AsyncMock(return_value={"message": {"content": response_content}}),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
         client = _make_client_with_mock_session(instance)
@@ -1009,8 +1085,9 @@ class TestChatFormatParameter:
         client, instance = self._make_chat_client()
         with patch("assistant.ollama_client.ollama_breaker") as breaker:
             breaker.is_available = True
-            with patch("assistant.config.yaml_config",
-                        {"json_mode_tools": {"enabled": False}}):
+            with patch(
+                "assistant.config.yaml_config", {"json_mode_tools": {"enabled": False}}
+            ):
                 await client.chat(
                     messages=[{"role": "user", "content": "test"}],
                     tools=[{"type": "function", "function": {"name": "t"}}],
@@ -1053,8 +1130,10 @@ class TestStreamChatErrors:
             status=500,
             text=AsyncMock(return_value="Server Error"),
         )
-        cm = AsyncMock(__aenter__=AsyncMock(return_value=mock_resp),
-                       __aexit__=AsyncMock(return_value=False))
+        cm = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )
         instance = MagicMock()
         instance.post = MagicMock(return_value=cm)
         client = _make_client_with_mock_session(instance)
@@ -1070,6 +1149,7 @@ class TestStreamChatErrors:
     @pytest.mark.asyncio
     async def test_stream_timeout(self):
         import asyncio as _asyncio
+
         instance = MagicMock()
         instance.post = MagicMock(side_effect=_asyncio.TimeoutError())
         client = _make_client_with_mock_session(instance)
@@ -1085,6 +1165,7 @@ class TestStreamChatErrors:
     @pytest.mark.asyncio
     async def test_stream_client_error(self):
         import aiohttp
+
         instance = MagicMock()
         instance.post = MagicMock(side_effect=aiohttp.ClientError("refused"))
         client = _make_client_with_mock_session(instance)

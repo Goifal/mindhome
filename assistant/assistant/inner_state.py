@@ -30,12 +30,12 @@ _KEY_MOOD_HISTORY = "mha:inner_state:mood_history"
 # Domain-spezifische Gewichtung fuer Mood-Deltas:
 # Sicherheitsevents wirken staerker, Licht-Aenderungen sind Routine.
 _DOMAIN_CONFIDENCE_DELTAS: dict[str, float] = {
-    "security": 1.5,    # Sicherheitsevents haben staerkeren Mood-Impact
-    "climate": 0.8,     # Klimaaenderungen sind Routine
-    "light": 0.5,       # Lichtaenderungen sind sehr routiniert
-    "media": 0.6,       # Medien sind low-impact
+    "security": 1.5,  # Sicherheitsevents haben staerkeren Mood-Impact
+    "climate": 0.8,  # Klimaaenderungen sind Routine
+    "light": 0.5,  # Lichtaenderungen sind sehr routiniert
+    "media": 0.6,  # Medien sind low-impact
     "automation": 1.0,  # Standard
-    "emergency": 2.0,   # Notfaelle haben maximalen Impact
+    "emergency": 2.0,  # Notfaelle haben maximalen Impact
 }
 _DEFAULT_DOMAIN_WEIGHT = 1.0
 
@@ -229,7 +229,9 @@ class InnerStateEngine:
         self._satisfaction = min(1.0, self._satisfaction + 0.03 * weight)
         await self._update_mood()
 
-    async def on_action_failure(self, action: str = "", error: str = "", domain: str = ""):
+    async def on_action_failure(
+        self, action: str = "", error: str = "", domain: str = ""
+    ):
         """Aktion fehlgeschlagen."""
         weight = self._get_domain_weight(domain)
         self._failed_actions += 1
@@ -276,7 +278,8 @@ class InnerStateEngine:
             elif mood == "good":
                 self._satisfaction = min(1.0, self._satisfaction + 0.1)
                 logger.info(
-                    "Inner-State: satisfaction +0.1 (User '%s' gut gelaunt)", person or "?"
+                    "Inner-State: satisfaction +0.1 (User '%s' gut gelaunt)",
+                    person or "?",
                 )
                 await self._save_state()
 
@@ -495,10 +498,7 @@ class InnerStateEngine:
         Die tatsaechliche State-Mutation erfolgt ueber apply_mood_decay().
         """
         _cfg = yaml_config.get("inner_state", {})
-        if (
-            _cfg.get("mood_decay_enabled", True)
-            and self._mood != MOOD_NEUTRAL
-        ):
+        if _cfg.get("mood_decay_enabled", True) and self._mood != MOOD_NEUTRAL:
             decay_minutes = _cfg.get("mood_decay_minutes", 30)
             elapsed_minutes = (time.time() - self._last_mood_change) / 60.0
             if elapsed_minutes >= decay_minutes:

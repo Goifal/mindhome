@@ -17,6 +17,7 @@ from assistant.predictive_maintenance import (
 # DeviceLifecycleEntry
 # ---------------------------------------------------------------------------
 
+
 class TestDeviceLifecycleEntry:
     def test_defaults_with_no_data(self):
         entry = DeviceLifecycleEntry("sensor.test")
@@ -67,7 +68,9 @@ class TestDeviceLifecycleEntry:
         assert d["total_offline_hours"] == 3.5  # rounded to 1 decimal
 
     def test_to_dict_truncates_battery_history_to_30(self):
-        history = [{"level": 100 - i, "date": f"2024-01-{i+1:02d}"} for i in range(50)]
+        history = [
+            {"level": 100 - i, "date": f"2024-01-{i + 1:02d}"} for i in range(50)
+        ]
         entry = DeviceLifecycleEntry("sensor.x", {"battery_history": history})
         d = entry.to_dict()
         assert len(d["battery_history"]) == 30
@@ -85,6 +88,7 @@ class TestDeviceLifecycleEntry:
 # PredictiveMaintenance.__init__
 # ---------------------------------------------------------------------------
 
+
 @patch("assistant.predictive_maintenance.yaml_config", {})
 class TestPredictiveMaintenanceInit:
     def test_defaults(self):
@@ -96,28 +100,31 @@ class TestPredictiveMaintenanceInit:
         assert pm.redis is None
 
     def test_config_override(self):
-        with patch("assistant.predictive_maintenance.yaml_config", {
-            "predictive_maintenance": {"enabled": False, "lookback_days": 30}
-        }):
+        with patch(
+            "assistant.predictive_maintenance.yaml_config",
+            {"predictive_maintenance": {"enabled": False, "lookback_days": 30}},
+        ):
             pm = PredictiveMaintenance()
             assert pm.enabled is False
             assert pm.lookback_days == 30
 
     def test_custom_lifespans_merged(self):
-        with patch("assistant.predictive_maintenance.yaml_config", {
-            "predictive_maintenance": {
-                "typical_lifespans": {"light_bulb": 2000}
-            }
-        }):
+        with patch(
+            "assistant.predictive_maintenance.yaml_config",
+            {"predictive_maintenance": {"typical_lifespans": {"light_bulb": 2000}}},
+        ):
             pm = PredictiveMaintenance()
             assert pm._lifespans["light_bulb"] == 2000
             # Default ones should still be present
-            assert pm._lifespans["smoke_detector"] == DEFAULT_LIFESPANS["smoke_detector"]
+            assert (
+                pm._lifespans["smoke_detector"] == DEFAULT_LIFESPANS["smoke_detector"]
+            )
 
 
 # ---------------------------------------------------------------------------
 # _get_or_create
 # ---------------------------------------------------------------------------
+
 
 @patch("assistant.predictive_maintenance.yaml_config", {})
 class TestGetOrCreate:
@@ -141,6 +148,7 @@ class TestGetOrCreate:
 # calculate_battery_drain_rate
 # ---------------------------------------------------------------------------
 
+
 @patch("assistant.predictive_maintenance.yaml_config", {})
 class TestCalculateBatteryDrainRate:
     def _make_pm_with_history(self, entity_id, history):
@@ -154,19 +162,22 @@ class TestCalculateBatteryDrainRate:
         assert pm.calculate_battery_drain_rate("sensor.unknown") is None
 
     def test_returns_none_for_less_than_2_entries(self):
-        pm = self._make_pm_with_history("sensor.x", [
-            {"level": 100, "date": "2024-01-01T00:00:00"}
-        ])
+        pm = self._make_pm_with_history(
+            "sensor.x", [{"level": 100, "date": "2024-01-01T00:00:00"}]
+        )
         assert pm.calculate_battery_drain_rate("sensor.x") is None
 
     def test_normal_drain_rate(self):
         """1% drop over 7 days = 1%/week => normal."""
         now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
-        pm = self._make_pm_with_history("sensor.a", [
-            {"level": 100, "date": week_ago.isoformat()},
-            {"level": 99, "date": now.isoformat()},
-        ])
+        pm = self._make_pm_with_history(
+            "sensor.a",
+            [
+                {"level": 100, "date": week_ago.isoformat()},
+                {"level": 99, "date": now.isoformat()},
+            ],
+        )
         result = pm.calculate_battery_drain_rate("sensor.a")
         assert result is not None
         assert result["severity"] == "normal"
@@ -176,10 +187,13 @@ class TestCalculateBatteryDrainRate:
         """5% drop over 7 days = 5%/week => concerning."""
         now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
-        pm = self._make_pm_with_history("sensor.b", [
-            {"level": 100, "date": week_ago.isoformat()},
-            {"level": 95, "date": now.isoformat()},
-        ])
+        pm = self._make_pm_with_history(
+            "sensor.b",
+            [
+                {"level": 100, "date": week_ago.isoformat()},
+                {"level": 95, "date": now.isoformat()},
+            ],
+        )
         result = pm.calculate_battery_drain_rate("sensor.b")
         assert result["severity"] == "concerning"
 
@@ -187,10 +201,13 @@ class TestCalculateBatteryDrainRate:
         """20% drop over 7 days = 20%/week => critical."""
         now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
-        pm = self._make_pm_with_history("sensor.c", [
-            {"level": 100, "date": week_ago.isoformat()},
-            {"level": 80, "date": now.isoformat()},
-        ])
+        pm = self._make_pm_with_history(
+            "sensor.c",
+            [
+                {"level": 100, "date": week_ago.isoformat()},
+                {"level": 80, "date": now.isoformat()},
+            ],
+        )
         result = pm.calculate_battery_drain_rate("sensor.c")
         assert result["severity"] == "critical"
         assert result["pct_per_week"] == pytest.approx(20.0, abs=0.5)
@@ -199,10 +216,13 @@ class TestCalculateBatteryDrainRate:
         """No drain (battery went up or stayed same)."""
         now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
-        pm = self._make_pm_with_history("sensor.d", [
-            {"level": 80, "date": week_ago.isoformat()},
-            {"level": 85, "date": now.isoformat()},
-        ])
+        pm = self._make_pm_with_history(
+            "sensor.d",
+            [
+                {"level": 80, "date": week_ago.isoformat()},
+                {"level": 85, "date": now.isoformat()},
+            ],
+        )
         result = pm.calculate_battery_drain_rate("sensor.d")
         assert result["pct_per_week"] == 0
         assert result["days_until_empty"] is None
@@ -212,37 +232,49 @@ class TestCalculateBatteryDrainRate:
         """10% drop over 10 days = 1%/day => at 50% level, ~50 days left."""
         now = datetime.now(timezone.utc)
         ten_days_ago = now - timedelta(days=10)
-        pm = self._make_pm_with_history("sensor.e", [
-            {"level": 60, "date": ten_days_ago.isoformat()},
-            {"level": 50, "date": now.isoformat()},
-        ])
+        pm = self._make_pm_with_history(
+            "sensor.e",
+            [
+                {"level": 60, "date": ten_days_ago.isoformat()},
+                {"level": 50, "date": now.isoformat()},
+            ],
+        )
         result = pm.calculate_battery_drain_rate("sensor.e")
         assert result["days_until_empty"] == 50
         assert result["current_level"] == 50
 
     def test_invalid_date_format_returns_none(self):
-        pm = self._make_pm_with_history("sensor.f", [
-            {"level": 100, "date": "not-a-date"},
-            {"level": 90, "date": "also-not-a-date"},
-        ])
+        pm = self._make_pm_with_history(
+            "sensor.f",
+            [
+                {"level": 100, "date": "not-a-date"},
+                {"level": 90, "date": "also-not-a-date"},
+            ],
+        )
         result = pm.calculate_battery_drain_rate("sensor.f")
         assert result is None
 
-    @pytest.mark.parametrize("drop,expected_severity", [
-        (1.0, "normal"),       # 1%/week < 2.0
-        (1.9, "normal"),       # just under threshold
-        (5.0, "concerning"),   # == concerning threshold
-        (9.9, "concerning"),   # just under critical
-        (10.0, "critical"),    # == critical threshold
-        (20.0, "critical"),    # well above critical
-    ])
+    @pytest.mark.parametrize(
+        "drop,expected_severity",
+        [
+            (1.0, "normal"),  # 1%/week < 2.0
+            (1.9, "normal"),  # just under threshold
+            (5.0, "concerning"),  # == concerning threshold
+            (9.9, "concerning"),  # just under critical
+            (10.0, "critical"),  # == critical threshold
+            (20.0, "critical"),  # well above critical
+        ],
+    )
     def test_severity_thresholds(self, drop, expected_severity):
         now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
-        pm = self._make_pm_with_history("sensor.thresh", [
-            {"level": 100, "date": week_ago.isoformat()},
-            {"level": 100 - drop, "date": now.isoformat()},
-        ])
+        pm = self._make_pm_with_history(
+            "sensor.thresh",
+            [
+                {"level": 100, "date": week_ago.isoformat()},
+                {"level": 100 - drop, "date": now.isoformat()},
+            ],
+        )
         result = pm.calculate_battery_drain_rate("sensor.thresh")
         assert result["severity"] == expected_severity
 
@@ -250,6 +282,7 @@ class TestCalculateBatteryDrainRate:
 # ---------------------------------------------------------------------------
 # calculate_health_score
 # ---------------------------------------------------------------------------
+
 
 @patch("assistant.predictive_maintenance.yaml_config", {})
 class TestCalculateHealthScore:
@@ -274,7 +307,9 @@ class TestCalculateHealthScore:
         entry = pm._get_or_create("sensor.old")
         entry.device_type = "motion_sensor"
         # Installed 5 years ago (full lifespan)
-        entry.installed_date = (datetime.now(timezone.utc) - timedelta(days=1825)).isoformat()
+        entry.installed_date = (
+            datetime.now(timezone.utc) - timedelta(days=1825)
+        ).isoformat()
         result = pm.calculate_health_score("sensor.old")
         assert "age" in result["factors"]
         assert result["factors"]["age"]["penalty"] == pytest.approx(40, abs=2)
@@ -295,16 +330,19 @@ class TestCalculateHealthScore:
         result = pm.calculate_health_score("sensor.many_fail")
         assert result["factors"]["offline_events"]["penalty"] == 20
 
-    @pytest.mark.parametrize("score,expected_risk", [
-        (100, "low"),
-        (70, "low"),
-        (69, "medium"),
-        (50, "medium"),
-        (49, "high"),
-        (30, "high"),
-        (29, "critical"),
-        (0, "critical"),
-    ])
+    @pytest.mark.parametrize(
+        "score,expected_risk",
+        [
+            (100, "low"),
+            (70, "low"),
+            (69, "medium"),
+            (50, "medium"),
+            (49, "high"),
+            (30, "high"),
+            (29, "critical"),
+            (0, "critical"),
+        ],
+    )
     def test_risk_levels(self, score, expected_risk):
         pm = PredictiveMaintenance()
         entry = pm._get_or_create("sensor.risk")
@@ -318,7 +356,9 @@ class TestCalculateHealthScore:
         if score <= 29:
             # Need large penalties: age=40 + drain=30 + offline=20 = 90 penalty -> score=10
             entry.device_type = "motion_sensor"
-            entry.installed_date = (datetime.now(timezone.utc) - timedelta(days=3650)).isoformat()
+            entry.installed_date = (
+                datetime.now(timezone.utc) - timedelta(days=3650)
+            ).isoformat()
             entry.failure_count = 4
             # Add critical drain
             now = datetime.now(timezone.utc)
@@ -329,12 +369,16 @@ class TestCalculateHealthScore:
             ]
         elif score <= 49:
             entry.device_type = "motion_sensor"
-            entry.installed_date = (datetime.now(timezone.utc) - timedelta(days=1825)).isoformat()
+            entry.installed_date = (
+                datetime.now(timezone.utc) - timedelta(days=1825)
+            ).isoformat()
             entry.failure_count = 3  # 15 penalty
         elif score <= 69:
             entry.failure_count = 4  # 20 penalty + some age
             entry.device_type = "motion_sensor"
-            entry.installed_date = (datetime.now(timezone.utc) - timedelta(days=900)).isoformat()
+            entry.installed_date = (
+                datetime.now(timezone.utc) - timedelta(days=900)
+            ).isoformat()
         # else: no penalties, score ~ 100
 
         result = pm.calculate_health_score("sensor.risk")
@@ -344,7 +388,9 @@ class TestCalculateHealthScore:
         pm = PredictiveMaintenance()
         entry = pm._get_or_create("sensor.floor")
         entry.device_type = "light_bulb"
-        entry.installed_date = (datetime.now(timezone.utc) - timedelta(days=10000)).isoformat()
+        entry.installed_date = (
+            datetime.now(timezone.utc) - timedelta(days=10000)
+        ).isoformat()
         entry.failure_count = 100
         now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
@@ -359,6 +405,7 @@ class TestCalculateHealthScore:
 # ---------------------------------------------------------------------------
 # predict_failures
 # ---------------------------------------------------------------------------
+
 
 @patch("assistant.predictive_maintenance.yaml_config", {})
 class TestPredictFailures:
@@ -379,7 +426,9 @@ class TestPredictFailures:
         entry = pm._get_or_create("sensor.risky")
         entry.device_type = "motion_sensor"
         # Very old device with failures
-        entry.installed_date = (datetime.now(timezone.utc) - timedelta(days=1825)).isoformat()
+        entry.installed_date = (
+            datetime.now(timezone.utc) - timedelta(days=1825)
+        ).isoformat()
         entry.failure_count = 4
         result = pm.predict_failures()
         assert len(result) >= 1
@@ -390,13 +439,17 @@ class TestPredictFailures:
         # High risk device
         e1 = pm._get_or_create("sensor.high")
         e1.device_type = "motion_sensor"
-        e1.installed_date = (datetime.now(timezone.utc) - timedelta(days=1825)).isoformat()
+        e1.installed_date = (
+            datetime.now(timezone.utc) - timedelta(days=1825)
+        ).isoformat()
         e1.failure_count = 3
 
         # Critical risk device
         e2 = pm._get_or_create("sensor.critical")
         e2.device_type = "light_bulb"
-        e2.installed_date = (datetime.now(timezone.utc) - timedelta(days=5000)).isoformat()
+        e2.installed_date = (
+            datetime.now(timezone.utc) - timedelta(days=5000)
+        ).isoformat()
         e2.failure_count = 4
         now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
@@ -413,6 +466,7 @@ class TestPredictFailures:
 # ---------------------------------------------------------------------------
 # get_maintenance_suggestions
 # ---------------------------------------------------------------------------
+
 
 @patch("assistant.predictive_maintenance.yaml_config", {})
 class TestGetMaintenanceSuggestions:
@@ -455,7 +509,9 @@ class TestGetMaintenanceSuggestions:
         entry = pm._get_or_create("sensor.old")
         entry.device_type = "motion_sensor"
         # Installed 4.6 years ago (>= 90% of 5-year lifespan)
-        entry.installed_date = (datetime.now(timezone.utc) - timedelta(days=1680)).isoformat()
+        entry.installed_date = (
+            datetime.now(timezone.utc) - timedelta(days=1680)
+        ).isoformat()
         suggestions = pm.get_maintenance_suggestions()
         eol = [s for s in suggestions if s["type"] == "end_of_life"]
         assert len(eol) >= 1
@@ -475,7 +531,9 @@ class TestGetMaintenanceSuggestions:
         # Medium urgency (end of life)
         e1 = pm._get_or_create("sensor.eol")
         e1.device_type = "motion_sensor"
-        e1.installed_date = (datetime.now(timezone.utc) - timedelta(days=1700)).isoformat()
+        e1.installed_date = (
+            datetime.now(timezone.utc) - timedelta(days=1700)
+        ).isoformat()
 
         # High urgency (battery about to die)
         e2 = pm._get_or_create("sensor.batt_dying")
@@ -510,6 +568,7 @@ class TestGetMaintenanceSuggestions:
 # get_context_hint
 # ---------------------------------------------------------------------------
 
+
 @patch("assistant.predictive_maintenance.yaml_config", {})
 class TestGetContextHint:
     def test_disabled_returns_empty(self):
@@ -537,7 +596,9 @@ class TestGetContextHint:
         pm = PredictiveMaintenance()
         entry = pm._get_or_create("sensor.eol_only")
         entry.device_type = "motion_sensor"
-        entry.installed_date = (datetime.now(timezone.utc) - timedelta(days=1700)).isoformat()
+        entry.installed_date = (
+            datetime.now(timezone.utc) - timedelta(days=1700)
+        ).isoformat()
         hint = pm.get_context_hint()
         assert hint == ""
 
@@ -545,6 +606,7 @@ class TestGetContextHint:
 # ---------------------------------------------------------------------------
 # DEFAULT_LIFESPANS and DRAIN_THRESHOLDS constants
 # ---------------------------------------------------------------------------
+
 
 class TestConstants:
     def test_default_lifespans_has_default_key(self):
@@ -554,9 +616,18 @@ class TestConstants:
         assert DRAIN_THRESHOLDS["normal"] < DRAIN_THRESHOLDS["concerning"]
         assert DRAIN_THRESHOLDS["concerning"] < DRAIN_THRESHOLDS["critical"]
 
-    @pytest.mark.parametrize("device_type", [
-        "motion_sensor", "temperature_sensor", "smoke_detector",
-        "smart_plug", "light_bulb", "thermostat", "lock", "camera",
-    ])
+    @pytest.mark.parametrize(
+        "device_type",
+        [
+            "motion_sensor",
+            "temperature_sensor",
+            "smoke_detector",
+            "smart_plug",
+            "light_bulb",
+            "thermostat",
+            "lock",
+            "camera",
+        ],
+    )
     def test_default_lifespans_positive(self, device_type):
         assert DEFAULT_LIFESPANS[device_type] > 0

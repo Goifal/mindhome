@@ -77,9 +77,15 @@ class ResponseQualityTracker:
             return result
         return None
 
-    async def record_exchange(self, category: str, person: str = "",
-                              had_followup: bool = False, was_rephrased: bool = False,
-                              was_thanked: bool = False, response_text: str = ""):
+    async def record_exchange(
+        self,
+        category: str,
+        person: str = "",
+        had_followup: bool = False,
+        was_rephrased: bool = False,
+        was_thanked: bool = False,
+        response_text: str = "",
+    ):
         """Bewertet einen Austausch und aktualisiert Scores."""
         if not self.enabled or not self.redis:
             return
@@ -116,12 +122,15 @@ class ResponseQualityTracker:
             await self.redis.expire(person_stats_key, 90 * 86400)
 
         # History speichern
-        entry = json.dumps({
-            "category": category,
-            "quality": quality,
-            "person": person,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }, ensure_ascii=False)
+        entry = json.dumps(
+            {
+                "category": category,
+                "quality": quality,
+                "person": person,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            ensure_ascii=False,
+        )
         await self.redis.lpush("mha:response_quality:history", entry)
         await self.redis.ltrim("mha:response_quality:history", 0, 299)
         await self.redis.expire("mha:response_quality:history", 90 * 86400)
@@ -132,7 +141,9 @@ class ResponseQualityTracker:
                 category, self._last_user_text, response_text, person
             )
 
-        logger.debug("Response Quality [%s]: %s (Person: %s)", category, quality, person or "-")
+        logger.debug(
+            "Response Quality [%s]: %s (Person: %s)", category, quality, person or "-"
+        )
 
     def update_last_exchange(self, text: str, category: str):
         """Speichert letzten Text + Kategorie fuer Follow-Up-Erkennung.
@@ -175,13 +186,18 @@ class ResponseQualityTracker:
 
         stats = {}
         for category in ("device_command", "knowledge", "smalltalk", "analysis"):
-            raw_data = await self.redis.hgetall(f"mha:response_quality:stats:{category}")
+            raw_data = await self.redis.hgetall(
+                f"mha:response_quality:stats:{category}"
+            )
             if raw_data:
                 score = await self.get_quality_score(category)
-                data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_data.items()}
-                stats[category] = {
-                    k: float(v) for k, v in data.items()
+                data = {
+                    (k.decode() if isinstance(k, bytes) else k): (
+                        v.decode() if isinstance(v, bytes) else v
+                    )
+                    for k, v in raw_data.items()
                 }
+                stats[category] = {k: float(v) for k, v in data.items()}
                 stats[category]["score"] = score
 
         return stats
@@ -201,22 +217,58 @@ class ResponseQualityTracker:
         # Primaer: Embedding-basierte Aehnlichkeit (semantisch)
         try:
             from .embeddings import get_embedding, cosine_similarity
+
             emb_current = get_embedding(current_text.lower().strip())
             emb_previous = get_embedding(previous_text.lower().strip())
             if emb_current is not None and emb_previous is not None:
                 similarity = cosine_similarity(emb_current, emb_previous)
                 return similarity >= self._rephrase_threshold
         except Exception as e:
-            logger.debug("Embedding-Vergleich fehlgeschlagen, Fallback auf Keyword-Overlap: %s", e)
+            logger.debug(
+                "Embedding-Vergleich fehlgeschlagen, Fallback auf Keyword-Overlap: %s",
+                e,
+            )
 
         # Fallback: Keyword-Overlap (wenn Embeddings nicht verfuegbar)
         current_words = set(current_text.lower().split())
         previous_words = set(previous_text.lower().split())
 
-        stopwords = {"ich", "du", "das", "die", "der", "ein", "eine", "ist", "und",
-                     "oder", "aber", "ja", "nein", "bitte", "mal", "noch", "auch",
-                     "nicht", "mir", "mich", "es", "den", "dem", "was", "wie", "in",
-                     "im", "am", "an", "auf", "fuer", "von", "zu", "mit"}
+        stopwords = {
+            "ich",
+            "du",
+            "das",
+            "die",
+            "der",
+            "ein",
+            "eine",
+            "ist",
+            "und",
+            "oder",
+            "aber",
+            "ja",
+            "nein",
+            "bitte",
+            "mal",
+            "noch",
+            "auch",
+            "nicht",
+            "mir",
+            "mich",
+            "es",
+            "den",
+            "dem",
+            "was",
+            "wie",
+            "in",
+            "im",
+            "am",
+            "an",
+            "auf",
+            "fuer",
+            "von",
+            "zu",
+            "mit",
+        }
         current_words -= stopwords
         previous_words -= stopwords
 
@@ -272,22 +324,27 @@ class ResponseQualityTracker:
         for category in ("device_command", "knowledge", "smalltalk", "analysis"):
             score = await self.get_quality_score(category)
             if score < threshold:
-                stats = await self.redis.hgetall(f"mha:response_quality:stats:{category}")
+                stats = await self.redis.hgetall(
+                    f"mha:response_quality:stats:{category}"
+                )
                 total = int(stats.get("total", stats.get(b"total", 0)))
                 rephrased = int(stats.get("rephrased", stats.get(b"rephrased", 0)))
                 if total >= MIN_EXCHANGES_FOR_SCORE:
-                    weak.append({
-                        "category": category,
-                        "score": round(score, 2),
-                        "rephrase_count": rephrased,
-                        "total": total,
-                    })
+                    weak.append(
+                        {
+                            "category": category,
+                            "score": round(score, 2),
+                            "rephrase_count": rephrased,
+                            "total": total,
+                        }
+                    )
         return weak
 
     # ── D6: Dynamic Few-Shot Examples ──────────────────────────
 
-    async def _store_few_shot_example(self, category: str, user_text: str,
-                                      response_text: str, person: str):
+    async def _store_few_shot_example(
+        self, category: str, user_text: str, response_text: str, person: str
+    ):
         """D6: Speichert einen guten Austausch als Few-Shot-Beispiel.
 
         Wird nur aufgerufen wenn score_target >= 0.8 (gute Qualitaet).
@@ -308,13 +365,16 @@ class ResponseQualityTracker:
             _max_examples = _cfg.get("max_per_category", 10)
             _key = f"mha:few_shot:{category}"
 
-            entry = json.dumps({
-                "user_text": user_text[:200],
-                "response_text": response_text[:300],
-                "category": category,
-                "person": person,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }, ensure_ascii=False)
+            entry = json.dumps(
+                {
+                    "user_text": user_text[:200],
+                    "response_text": response_text[:300],
+                    "category": category,
+                    "person": person,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+                ensure_ascii=False,
+            )
 
             await self.redis.lpush(_key, entry)
             await self.redis.ltrim(_key, 0, _max_examples - 1)
@@ -346,7 +406,9 @@ class ResponseQualityTracker:
             examples = []
             for r in raw:
                 try:
-                    entry = json.loads(r) if isinstance(r, str) else json.loads(r.decode())
+                    entry = (
+                        json.loads(r) if isinstance(r, str) else json.loads(r.decode())
+                    )
                     examples.append(entry)
                 except (json.JSONDecodeError, TypeError):
                     continue

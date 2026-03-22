@@ -23,6 +23,7 @@ from assistant.workshop_generator import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_wg(ollama_mock=None):
     ollama = ollama_mock or AsyncMock()
     wg = WorkshopGenerator(ollama)
@@ -44,6 +45,7 @@ def _make_wg_with_router(model_name="test-model"):
 # calculate: resistor_divider
 # ---------------------------------------------------------------------------
 
+
 class TestCalcResistorDivider:
     def test_basic_divider(self):
         wg = _make_wg()
@@ -64,6 +66,7 @@ class TestCalcResistorDivider:
 # calculate: led_resistor
 # ---------------------------------------------------------------------------
 
+
 class TestCalcLedResistor:
     def test_basic_led(self):
         wg = _make_wg()
@@ -81,6 +84,7 @@ class TestCalcLedResistor:
 # ---------------------------------------------------------------------------
 # calculate: wire_gauge
 # ---------------------------------------------------------------------------
+
 
 class TestCalcWireGauge:
     def test_low_current(self):
@@ -102,6 +106,7 @@ class TestCalcWireGauge:
 # ---------------------------------------------------------------------------
 # calculate: ohms_law
 # ---------------------------------------------------------------------------
+
 
 class TestCalcOhmsLaw:
     def test_v_and_i(self):
@@ -131,6 +136,7 @@ class TestCalcOhmsLaw:
 # calculate: 3d_print_weight
 # ---------------------------------------------------------------------------
 
+
 class TestCalc3dPrintWeight:
     def test_pla_default(self):
         wg = _make_wg()
@@ -140,7 +146,9 @@ class TestCalc3dPrintWeight:
 
     def test_petg(self):
         wg = _make_wg()
-        result = wg.calculate("3d_print_weight", volume_cm3=10, material="petg", infill_pct=50)
+        result = wg.calculate(
+            "3d_print_weight", volume_cm3=10, material="petg", infill_pct=50
+        )
         assert result["material"] == "petg"
         assert result["infill_pct"] == 50
 
@@ -148,6 +156,7 @@ class TestCalc3dPrintWeight:
 # ---------------------------------------------------------------------------
 # calculate: screw_torque
 # ---------------------------------------------------------------------------
+
 
 class TestCalcScrewTorque:
     def test_m6(self):
@@ -170,6 +179,7 @@ class TestCalcScrewTorque:
 # calculate: convert
 # ---------------------------------------------------------------------------
 
+
 class TestCalcConvert:
     def test_mm_to_inch(self):
         wg = _make_wg()
@@ -178,7 +188,9 @@ class TestCalcConvert:
 
     def test_celsius_to_fahrenheit(self):
         wg = _make_wg()
-        result = wg.calculate("convert", value=100, from_unit="celsius", to_unit="fahrenheit")
+        result = wg.calculate(
+            "convert", value=100, from_unit="celsius", to_unit="fahrenheit"
+        )
         assert abs(result["result"] - 212.0) < 0.01
 
     def test_unsupported_conversion(self):
@@ -191,12 +203,17 @@ class TestCalcConvert:
 # calculate: power_supply
 # ---------------------------------------------------------------------------
 
+
 class TestCalcPowerSupply:
     def test_single_component(self):
         wg = _make_wg()
-        result = wg.calculate("power_supply", voltage=5, components=[
-            {"current_ma": 200, "quantity": 2},
-        ])
+        result = wg.calculate(
+            "power_supply",
+            voltage=5,
+            components=[
+                {"current_ma": 200, "quantity": 2},
+            ],
+        )
         assert result["total_ma"] == 400
         assert result["recommended_ma"] == 500  # 400 * 1.25
 
@@ -210,6 +227,7 @@ class TestCalcPowerSupply:
 # calculate: unknown type
 # ---------------------------------------------------------------------------
 
+
 class TestCalcUnknown:
     def test_unknown_type(self):
         wg = _make_wg()
@@ -220,6 +238,7 @@ class TestCalcUnknown:
 # ---------------------------------------------------------------------------
 # _nearest_e24
 # ---------------------------------------------------------------------------
+
 
 class TestNearestE24:
     def test_exact_value(self):
@@ -240,6 +259,7 @@ class TestNearestE24:
 # ---------------------------------------------------------------------------
 # Async: generate_code - no model
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateCode:
     @pytest.mark.asyncio
@@ -265,6 +285,7 @@ class TestGenerateCode:
 # Async: generate_3d_model
 # ---------------------------------------------------------------------------
 
+
 class TestGenerate3dModel:
     @pytest.mark.asyncio
     async def test_no_model(self):
@@ -277,6 +298,7 @@ class TestGenerate3dModel:
 # Async: generate_schematic
 # ---------------------------------------------------------------------------
 
+
 class TestGenerateSchematic:
     @pytest.mark.asyncio
     async def test_no_model(self):
@@ -287,7 +309,9 @@ class TestGenerateSchematic:
     @pytest.mark.asyncio
     async def test_svg_extraction(self):
         ollama = AsyncMock()
-        ollama.chat = AsyncMock(return_value='Some text\n<svg viewBox="0 0 100 100"><circle/></svg>\nMore text')
+        ollama.chat = AsyncMock(
+            return_value='Some text\n<svg viewBox="0 0 100 100"><circle/></svg>\nMore text'
+        )
         wg = _make_wg(ollama)
         wg.model_router = MagicMock()
         wg.model_router.model_deep = "m"
@@ -299,6 +323,7 @@ class TestGenerateSchematic:
 # ---------------------------------------------------------------------------
 # Async: generate_bom
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateBom:
     @pytest.mark.asyncio
@@ -312,6 +337,7 @@ class TestGenerateBom:
 # ---------------------------------------------------------------------------
 # Async: read_file / path traversal protection
 # ---------------------------------------------------------------------------
+
 
 class TestReadFile:
     @pytest.mark.asyncio
@@ -331,6 +357,7 @@ class TestReadFile:
 # Async: list_files
 # ---------------------------------------------------------------------------
 
+
 class TestListFiles:
     @pytest.mark.asyncio
     async def test_no_redis(self):
@@ -343,6 +370,7 @@ class TestListFiles:
 # ---------------------------------------------------------------------------
 # Async: export_project
 # ---------------------------------------------------------------------------
+
 
 class TestExportProject:
     @pytest.mark.asyncio
@@ -357,6 +385,7 @@ class TestExportProject:
 # set_model_router
 # ---------------------------------------------------------------------------
 
+
 class TestSetModelRouter:
     def test_set_router(self):
         wg = _make_wg()
@@ -368,6 +397,7 @@ class TestSetModelRouter:
 # ---------------------------------------------------------------------------
 # initialize
 # ---------------------------------------------------------------------------
+
 
 class TestInitialize:
     @pytest.mark.asyncio
@@ -385,16 +415,19 @@ class TestInitialize:
 # Coverage: lines 162-165 (generate_code with project_id + redis)
 # ---------------------------------------------------------------------------
 
+
 class TestGenerateCodeWithRedis:
     @pytest.mark.asyncio
     async def test_generate_code_with_project_and_redis(self):
         """generate_code fetches project title from Redis when project_id + redis."""
         wg = _make_wg_with_router()
         redis = AsyncMock()
-        redis.hgetall = AsyncMock(return_value={
-            b"title": b"LED Blinker",
-            b"status": b"active",
-        })
+        redis.hgetall = AsyncMock(
+            return_value={
+                b"title": b"LED Blinker",
+                b"status": b"active",
+            }
+        )
         wg.redis = redis
         with tempfile.TemporaryDirectory() as tmpdir:
             wg.FILES_DIR = Path(tmpdir)
@@ -423,7 +456,9 @@ class TestGenerateCodeWithRedis:
         long_code = "x" * 5000
         with tempfile.TemporaryDirectory() as tmpdir:
             wg.FILES_DIR = Path(tmpdir)
-            result = await wg.generate_code(None, "extend", language="cpp", existing_code=long_code)
+            result = await wg.generate_code(
+                None, "extend", language="cpp", existing_code=long_code
+            )
         assert result["status"] == "ok"
         assert result["filename"].endswith(".cpp")
 
@@ -443,15 +478,18 @@ class TestGenerateCodeWithRedis:
 # Coverage: lines 201-220 (generate_3d_model with project + redis)
 # ---------------------------------------------------------------------------
 
+
 class TestGenerate3dModelWithRedis:
     @pytest.mark.asyncio
     async def test_generate_3d_model_with_project(self):
         """generate_3d_model fetches project title from Redis."""
         wg = _make_wg_with_router()
         redis = AsyncMock()
-        redis.hgetall = AsyncMock(return_value={
-            b"title": b"Gehaeuse",
-        })
+        redis.hgetall = AsyncMock(
+            return_value={
+                b"title": b"Gehaeuse",
+            }
+        )
         wg.redis = redis
         with tempfile.TemporaryDirectory() as tmpdir:
             wg.FILES_DIR = Path(tmpdir)
@@ -472,12 +510,15 @@ class TestGenerate3dModelWithRedis:
 # Coverage: lines 245, 253-268 (generate_schematic + generate_website)
 # ---------------------------------------------------------------------------
 
+
 class TestGenerateSchematicSave:
     @pytest.mark.asyncio
     async def test_generate_schematic_saves_file(self):
         """generate_schematic saves SVG file when project_id is given."""
         wg = _make_wg_with_router()
-        wg.ollama.chat = AsyncMock(return_value='<svg viewBox="0 0 100 100"><rect/></svg>')
+        wg.ollama.chat = AsyncMock(
+            return_value='<svg viewBox="0 0 100 100"><rect/></svg>'
+        )
         redis = AsyncMock()
         wg.redis = redis
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -503,7 +544,9 @@ class TestGenerateWebsite:
         wg.redis = redis
         with tempfile.TemporaryDirectory() as tmpdir:
             wg.FILES_DIR = Path(tmpdir)
-            result = await wg.generate_website("proj1", "dashboard", context="sensor data")
+            result = await wg.generate_website(
+                "proj1", "dashboard", context="sensor data"
+            )
         assert result["status"] == "ok"
         assert result["filename"].endswith(".html")
         assert "html" in result
@@ -520,6 +563,7 @@ class TestGenerateWebsite:
 # ---------------------------------------------------------------------------
 # Coverage: lines 277, 281-307 (generate_bom full path)
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateBomFull:
     @pytest.mark.asyncio
@@ -544,20 +588,31 @@ class TestGenerateBomFull:
     async def test_generate_bom_success(self):
         """generate_bom generates a BOM from project data."""
         wg = _make_wg_with_router()
-        wg.ollama.chat = AsyncMock(return_value="| # | Bauteil | Menge |\n| 1 | LED | 3 |")
+        wg.ollama.chat = AsyncMock(
+            return_value="| # | Bauteil | Menge |\n| 1 | LED | 3 |"
+        )
         redis = AsyncMock()
-        redis.hgetall = AsyncMock(return_value={
-            b"title": b"LED Projekt",
-            b"parts": json.dumps(["LED", "Widerstand"]).encode(),
-            b"category": b"electronics",
-        })
+        redis.hgetall = AsyncMock(
+            return_value={
+                b"title": b"LED Projekt",
+                b"parts": json.dumps(["LED", "Widerstand"]).encode(),
+                b"category": b"electronics",
+            }
+        )
         redis.lrange = AsyncMock(return_value=[])
         wg.redis = redis
         # Mock list_files and read_file
-        with patch.object(wg, "list_files", new_callable=AsyncMock, return_value=[
-            {"name": "code.ino", "size": 100},
-        ]):
-            with patch.object(wg, "read_file", new_callable=AsyncMock, return_value="void setup(){}"):
+        with patch.object(
+            wg,
+            "list_files",
+            new_callable=AsyncMock,
+            return_value=[
+                {"name": "code.ino", "size": 100},
+            ],
+        ):
+            with patch.object(
+                wg, "read_file", new_callable=AsyncMock, return_value="void setup(){}"
+            ):
                 result = await wg.generate_bom("proj1")
         assert result["status"] == "ok"
         assert "bom" in result
@@ -566,6 +621,7 @@ class TestGenerateBomFull:
 # ---------------------------------------------------------------------------
 # Coverage: lines 314-349 (generate_documentation)
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateDocumentation:
     @pytest.mark.asyncio
@@ -597,17 +653,24 @@ class TestGenerateDocumentation:
         wg = _make_wg_with_router()
         wg.ollama.chat = AsyncMock(return_value="# Projekt\n\nBeschreibung...")
         redis = AsyncMock()
-        redis.hgetall = AsyncMock(return_value={
-            b"title": b"Sensor Box",
-            b"category": b"electronics",
-            b"description": b"Temp sensor",
-            b"parts": b'["DHT22"]',
-            b"status": b"active",
-        })
+        redis.hgetall = AsyncMock(
+            return_value={
+                b"title": b"Sensor Box",
+                b"category": b"electronics",
+                b"description": b"Temp sensor",
+                b"parts": b'["DHT22"]',
+                b"status": b"active",
+            }
+        )
         wg.redis = redis
-        with patch.object(wg, "list_files", new_callable=AsyncMock, return_value=[
-            {"name": "main.ino"},
-        ]):
+        with patch.object(
+            wg,
+            "list_files",
+            new_callable=AsyncMock,
+            return_value=[
+                {"name": "main.ino"},
+            ],
+        ):
             with tempfile.TemporaryDirectory() as tmpdir:
                 wg.FILES_DIR = Path(tmpdir)
                 result = await wg.generate_documentation("proj1")
@@ -619,6 +682,7 @@ class TestGenerateDocumentation:
 # ---------------------------------------------------------------------------
 # Coverage: lines 356-385 (generate_tests)
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateTests:
     @pytest.mark.asyncio
@@ -639,7 +703,9 @@ class TestGenerateTests:
         """Full test generation path."""
         wg = _make_wg_with_router()
         wg.ollama.chat = AsyncMock(return_value="def test_something(): pass")
-        with patch.object(wg, "read_file", new_callable=AsyncMock, return_value="def hello(): pass"):
+        with patch.object(
+            wg, "read_file", new_callable=AsyncMock, return_value="def hello(): pass"
+        ):
             with tempfile.TemporaryDirectory() as tmpdir:
                 wg.FILES_DIR = Path(tmpdir)
                 result = await wg.generate_tests("proj1", "main.py")
@@ -652,7 +718,9 @@ class TestGenerateTests:
         """Test generation for JavaScript uses Jest framework."""
         wg = _make_wg_with_router()
         wg.ollama.chat = AsyncMock(return_value="test('works', () => {})")
-        with patch.object(wg, "read_file", new_callable=AsyncMock, return_value="function foo(){}"):
+        with patch.object(
+            wg, "read_file", new_callable=AsyncMock, return_value="function foo(){}"
+        ):
             with tempfile.TemporaryDirectory() as tmpdir:
                 wg.FILES_DIR = Path(tmpdir)
                 result = await wg.generate_tests("proj1", "app.js")
@@ -663,6 +731,7 @@ class TestGenerateTests:
 # ---------------------------------------------------------------------------
 # Coverage: lines 482-483 (calculate exception), 500, 502, 508
 # ---------------------------------------------------------------------------
+
 
 class TestCalculateException:
     def test_calculate_missing_key(self):
@@ -709,7 +778,9 @@ class TestSaveFileValidation:
         wg.redis = None
         with tempfile.TemporaryDirectory() as tmpdir:
             wg.FILES_DIR = Path(tmpdir)
-            with patch("assistant.websocket.emit_workshop", side_effect=Exception("ws fail")):
+            with patch(
+                "assistant.websocket.emit_workshop", side_effect=Exception("ws fail")
+            ):
                 result = await wg._save_file("proj1", "test.txt", "content")
         assert result["status"] == "ok"
 
@@ -729,6 +800,7 @@ class TestSaveFileValidation:
 # ---------------------------------------------------------------------------
 # Coverage: lines 540-549, 555-573 (read_file, list_files with data)
 # ---------------------------------------------------------------------------
+
 
 class TestReadFileSuccess:
     @pytest.mark.asyncio
@@ -781,6 +853,7 @@ class TestListFilesWithData:
 # Coverage: lines 577-594 (delete_file)
 # ---------------------------------------------------------------------------
 
+
 class TestDeleteFile:
     @pytest.mark.asyncio
     async def test_delete_existing_file(self):
@@ -825,11 +898,13 @@ class TestDeleteFile:
 # Coverage: lines 604-608 (export_project with files)
 # ---------------------------------------------------------------------------
 
+
 class TestExportProjectWithFiles:
     @pytest.mark.asyncio
     async def test_export_creates_zip(self):
         """export_project creates a ZIP of all project files."""
         import zipfile as zf_mod
+
         wg = _make_wg()
         with tempfile.TemporaryDirectory() as tmpdir:
             wg.FILES_DIR = Path(tmpdir)

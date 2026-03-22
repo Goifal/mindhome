@@ -18,63 +18,146 @@ import pytest
 # Isolierte Funktion (aus brain.py _detect_media_command)
 # ============================================================
 
+
 def detect_media_command(text: str, room: str = "") -> dict | None:
     """Erkennt Musik/Media-Befehle."""
     t = text.lower().strip()
 
     # Ausschluss: Fragen
-    if t.endswith("?") or any(t.startswith(q) for q in [
-        "was ", "wie ", "warum ", "welch", "kannst ",
-    ]):
+    if t.endswith("?") or any(
+        t.startswith(q)
+        for q in [
+            "was ",
+            "wie ",
+            "warum ",
+            "welch",
+            "kannst ",
+        ]
+    ):
         return None
 
     # Muss Musik/Media-Keyword oder Spielen-Verb enthalten
-    _has_media_kw = any(kw in t for kw in [
-        "musik", "song", "lied", "playlist",
-        "podcast", "radio", "hoerbuch", "hörbuch",
-    ])
-    _has_play_verb = any(kw in t for kw in [
-        "spiel", "spiele", "abspielen",
-    ])
+    _has_media_kw = any(
+        kw in t
+        for kw in [
+            "musik",
+            "song",
+            "lied",
+            "playlist",
+            "podcast",
+            "radio",
+            "hoerbuch",
+            "hörbuch",
+        ]
+    )
+    _has_play_verb = any(
+        kw in t
+        for kw in [
+            "spiel",
+            "spiele",
+            "abspielen",
+        ]
+    )
     # Gaming-Kontext
     _GAMING_KEYWORDS = {
-        "zocken", "zock", "game", "gamen", "controller", "konsole",
-        "ps5", "ps4", "playstation", "xbox", "switch", "nintendo",
-        "steam", "pc spiel", "videospiel", "computerspiel",
-        "witcher", "zelda", "minecraft", "fortnite", "valorant",
-        "diablo", "cyberpunk", "skyrim", "elden ring", "baldur",
-        "god of war", "hogwarts", "gta", "fifa", "call of duty",
-        "overwatch", "league of legends", "apex", "destiny",
-        "resident evil", "dark souls", "bloodborne", "sekiro",
-        "horizon", "spider-man", "spiderman", "halo", "starfield",
-        "palworld", "helldivers", "animal crossing", "mario",
-        "pokemon", "tetris", "stardew", "hollow knight",
+        "zocken",
+        "zock",
+        "game",
+        "gamen",
+        "controller",
+        "konsole",
+        "ps5",
+        "ps4",
+        "playstation",
+        "xbox",
+        "switch",
+        "nintendo",
+        "steam",
+        "pc spiel",
+        "videospiel",
+        "computerspiel",
+        "witcher",
+        "zelda",
+        "minecraft",
+        "fortnite",
+        "valorant",
+        "diablo",
+        "cyberpunk",
+        "skyrim",
+        "elden ring",
+        "baldur",
+        "god of war",
+        "hogwarts",
+        "gta",
+        "fifa",
+        "call of duty",
+        "overwatch",
+        "league of legends",
+        "apex",
+        "destiny",
+        "resident evil",
+        "dark souls",
+        "bloodborne",
+        "sekiro",
+        "horizon",
+        "spider-man",
+        "spiderman",
+        "halo",
+        "starfield",
+        "palworld",
+        "helldivers",
+        "animal crossing",
+        "mario",
+        "pokemon",
+        "tetris",
+        "stardew",
+        "hollow knight",
     }
     if _has_play_verb and not _has_media_kw and any(g in t for g in _GAMING_KEYWORDS):
         return None
 
-    _has_control_kw = any(kw in t for kw in [
-        "pausier", "pause", "stopp ", "stop ",
-        "naechster song", "nächster song",
-        "naechstes lied", "nächstes lied",
-        "musik leiser", "musik lauter",
-        "musik aus", "musik stop", "musik stopp",
-        "musik pause",
-    ])
+    _has_control_kw = any(
+        kw in t
+        for kw in [
+            "pausier",
+            "pause",
+            "stopp ",
+            "stop ",
+            "naechster song",
+            "nächster song",
+            "naechstes lied",
+            "nächstes lied",
+            "musik leiser",
+            "musik lauter",
+            "musik aus",
+            "musik stop",
+            "musik stopp",
+            "musik pause",
+        ]
+    )
     if not (_has_media_kw or _has_play_verb or _has_control_kw):
         return None
 
     # Raum extrahieren
     extracted_room = ""
     rm = re.search(
-        r'(?:im|in\s+der|in\s+dem|ins|auf|auf\s+dem|auf\s+der)\s+'
-        r'([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]+)',
-        text, re.IGNORECASE,
+        r"(?:im|in\s+der|in\s+dem|ins|auf|auf\s+dem|auf\s+der)\s+"
+        r"([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]+)",
+        text,
+        re.IGNORECASE,
     )
     if rm:
         candidate = rm.group(1)
-        _SKIP = {"moment", "prinzip", "grunde", "lautstaerke",
-                 "lautsprecher", "maximum", "minimum", "prozent"}
+        _SKIP = {
+            "moment",
+            "prinzip",
+            "grunde",
+            "lautstaerke",
+            "lautsprecher",
+            "maximum",
+            "minimum",
+            "prozent",
+        }
         if candidate.lower() not in _SKIP:
             extracted_room = candidate
     _room_fallback = room if room and room.lower() != "unbekannt" else ""
@@ -89,10 +172,18 @@ def detect_media_command(text: str, room: str = "") -> dict | None:
         action = "pause"
     elif any(kw in t for kw in ["stopp", "stop"]):
         action = "stop"
-    elif any(kw in t for kw in [
-        "naechster", "nächster", "naechstes", "nächstes", "skip",
-        "ueberspringen", "überspringen",
-    ]):
+    elif any(
+        kw in t
+        for kw in [
+            "naechster",
+            "nächster",
+            "naechstes",
+            "nächstes",
+            "skip",
+            "ueberspringen",
+            "überspringen",
+        ]
+    ):
         action = "next"
     elif any(kw in t for kw in ["vorheriger", "vorheriges", "zurueck", "zurück"]):
         action = "previous"
@@ -103,7 +194,9 @@ def detect_media_command(text: str, room: str = "") -> dict | None:
         action = "volume_down"
     elif "lauter" in t:
         action = "volume_up"
-    vol_m = re.search(r'(?:lautstaerke|lautstärke|volume)\s*(?:auf\s+)?(\d{1,3})\s*(?:%|prozent)?', t)
+    vol_m = re.search(
+        r"(?:lautstaerke|lautstärke|volume)\s*(?:auf\s+)?(\d{1,3})\s*(?:%|prozent)?", t
+    )
     if vol_m:
         volume = max(0, min(100, int(vol_m.group(1))))
         action = "volume"
@@ -111,7 +204,7 @@ def detect_media_command(text: str, room: str = "") -> dict | None:
     if action is None and any(kw in t for kw in ["spiel", "spiele", "abspielen"]):
         action = "play"
         q_match = re.search(
-            r'(?:spiele?|abspielen?)\s+(.+?)(?:\s+(?:im|in|auf|vom)\s+|$)',
+            r"(?:spiele?|abspielen?)\s+(.+?)(?:\s+(?:im|in|auf|vom)\s+|$)",
             t,
         )
         if q_match:
@@ -145,14 +238,18 @@ def detect_media_command(text: str, room: str = "") -> dict | None:
 # Play-Befehle
 # ============================================================
 
+
 class TestPlayCommands:
     """Musik abspielen."""
 
-    @pytest.mark.parametrize("text,expected_action", [
-        ("Spiel Musik", "play"),
-        ("Spiele Jazz", "play"),
-        ("Musik abspielen", "play"),
-    ])
+    @pytest.mark.parametrize(
+        "text,expected_action",
+        [
+            ("Spiel Musik", "play"),
+            ("Spiele Jazz", "play"),
+            ("Musik abspielen", "play"),
+        ],
+    )
     def test_play_basic(self, text, expected_action):
         result = detect_media_command(text)
         assert result is not None
@@ -173,6 +270,7 @@ class TestPlayCommands:
 # ============================================================
 # Pause/Stop/Skip
 # ============================================================
+
 
 class TestControlCommands:
     """Pause, Stop, Skip, Previous."""
@@ -207,6 +305,7 @@ class TestControlCommands:
 # Lautstaerke
 # ============================================================
 
+
 class TestVolume:
     """Lautstaerke-Steuerung."""
 
@@ -236,17 +335,21 @@ class TestVolume:
 # Gaming-Ausschluss (Regression)
 # ============================================================
 
+
 class TestGamingExclusion:
     """Gaming-Kontext darf NICHT als Media erkannt werden."""
 
-    @pytest.mark.parametrize("text", [
-        "The Witcher 3 spielen",
-        "Minecraft spielen",
-        "Lass uns Fortnite zocken",
-        "Spiele Zelda auf der Switch",
-        "FIFA spielen",
-        "Spiel Cyberpunk auf Steam",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "The Witcher 3 spielen",
+            "Minecraft spielen",
+            "Lass uns Fortnite zocken",
+            "Spiele Zelda auf der Switch",
+            "FIFA spielen",
+            "Spiel Cyberpunk auf Steam",
+        ],
+    )
     def test_gaming_not_media(self, text):
         result = detect_media_command(text)
         assert result is None, f"'{text}' sollte KEIN Media-Shortcut sein"
@@ -263,13 +366,16 @@ class TestGamingExclusion:
 # "Musik aus den 80ern" Regression
 # ============================================================
 
+
 class TestMusikAusRegression:
     """'Musik aus den 80ern' darf NICHT stop triggern."""
 
     def test_musik_aus_den_80ern_is_play(self):
         result = detect_media_command("Musik aus den 80ern")
         assert result is not None
-        assert result["args"]["action"] == "play", "'Musik aus den 80ern' muss play sein, nicht stop"
+        assert result["args"]["action"] == "play", (
+            "'Musik aus den 80ern' muss play sein, nicht stop"
+        )
 
     def test_musik_aus_is_stop(self):
         result = detect_media_command("Musik aus")
@@ -285,6 +391,7 @@ class TestMusikAusRegression:
 # ============================================================
 # Raum-Extraktion
 # ============================================================
+
 
 class TestRoomExtraction:
     """Raum wird aus Text extrahiert."""
@@ -320,15 +427,19 @@ class TestRoomExtraction:
 # Fragen werden ignoriert
 # ============================================================
 
+
 class TestQuestionsIgnored:
     """Fragen duerfen keinen Media-Shortcut ausloesen."""
 
-    @pytest.mark.parametrize("text", [
-        "Was spielt gerade?",
-        "Wie heisst der Song?",
-        "Welche Musik laeuft?",
-        "Kannst du Musik spielen?",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Was spielt gerade?",
+            "Wie heisst der Song?",
+            "Welche Musik laeuft?",
+            "Kannst du Musik spielen?",
+        ],
+    )
     def test_questions_return_none(self, text):
         assert detect_media_command(text) is None
 
@@ -336,6 +447,7 @@ class TestQuestionsIgnored:
 # ============================================================
 # Edge Cases
 # ============================================================
+
 
 class TestMediaEdgeCases:
     """Grenzfaelle."""

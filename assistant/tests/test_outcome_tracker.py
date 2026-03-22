@@ -37,7 +37,9 @@ class TestTrackAction:
     @pytest.mark.asyncio
     async def test_disabled_tracker_returns(self, tracker):
         tracker.enabled = False
-        await tracker.track_action("set_light", {"room": "wohnzimmer"}, {"success": True})
+        await tracker.track_action(
+            "set_light", {"room": "wohnzimmer"}, {"success": True}
+        )
         tracker.redis.setex.assert_not_called()
 
     @pytest.mark.asyncio
@@ -48,13 +50,18 @@ class TestTrackAction:
 
     @pytest.mark.asyncio
     async def test_tracks_action_with_entity(self, tracker):
-        tracker.ha.get_state = AsyncMock(return_value={
-            "state": "on",
-            "attributes": {"brightness": 100},
-        })
+        tracker.ha.get_state = AsyncMock(
+            return_value={
+                "state": "on",
+                "attributes": {"brightness": 100},
+            }
+        )
         await tracker.track_action(
-            "set_light", {"room": "wohnzimmer"}, {"success": True},
-            person="Max", room="wohnzimmer",
+            "set_light",
+            {"room": "wohnzimmer"},
+            {"success": True},
+            person="Max",
+            room="wohnzimmer",
         )
         tracker.redis.setex.assert_called()
 
@@ -110,8 +117,22 @@ class TestClassifyOutcome:
     def test_changed_attributes_is_partial(self, tracker):
         # 1 of 3 non-volatile attrs changed = 33% < 50% = PARTIAL
         # Note: brightness/color_temp are volatile attrs and are skipped
-        after = {"state": "on", "attributes": {"effect": "rainbow", "rgb_color": [255, 255, 255], "transition": 2}}
-        now = {"state": "on", "attributes": {"effect": "none", "rgb_color": [255, 255, 255], "transition": 2}}
+        after = {
+            "state": "on",
+            "attributes": {
+                "effect": "rainbow",
+                "rgb_color": [255, 255, 255],
+                "transition": 2,
+            },
+        }
+        now = {
+            "state": "on",
+            "attributes": {
+                "effect": "none",
+                "rgb_color": [255, 255, 255],
+                "transition": 2,
+            },
+        }
         assert tracker._classify_outcome(after, now, "set_light") == OUTCOME_PARTIAL
 
     def test_empty_states_neutral(self, tracker):
@@ -152,7 +173,10 @@ class TestExtractStateKey:
     """Tests fuer _extract_state_key()."""
 
     def test_dict_state(self):
-        state = {"state": "on", "attributes": {"brightness": 100, "friendly_name": "Licht"}}
+        state = {
+            "state": "on",
+            "attributes": {"brightness": 100, "friendly_name": "Licht"},
+        }
         result = _extract_state_key(state)
         assert result["state"] == "on"
         assert "brightness" in result["attributes"]
@@ -179,11 +203,14 @@ class TestGetStats:
     @pytest.mark.asyncio
     async def test_filters_room_and_person_keys(self, tracker):
         """Nur globale Stats (4-teilige Keys) sollen in get_stats() erscheinen."""
-        tracker.redis.scan.return_value = (0, [
-            "mha:outcome:stats:set_light",                      # Global ✓
-            "mha:outcome:stats:set_light:wohnzimmer",           # Room ✗
-            "mha:outcome:stats:set_light:person:Max",           # Person ✗
-        ])
+        tracker.redis.scan.return_value = (
+            0,
+            [
+                "mha:outcome:stats:set_light",  # Global ✓
+                "mha:outcome:stats:set_light:wohnzimmer",  # Room ✗
+                "mha:outcome:stats:set_light:person:Max",  # Person ✗
+            ],
+        )
         tracker.redis.hgetall.return_value = {"positive": "5", "total": "10"}
         tracker.redis.get.return_value = "0.75"
         stats = await tracker.get_stats()
@@ -197,11 +224,16 @@ class TestGetStats:
 # Additional Coverage Tests
 # ============================================================
 
+
 class TestInitialize:
     @pytest.mark.asyncio
     async def test_initialize_sets_enabled(self, redis_mock, ha_mock):
         from assistant.outcome_tracker import OutcomeTracker
-        with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {"enabled": True, "observation_delay_seconds": 60}}):
+
+        with patch(
+            "assistant.outcome_tracker.yaml_config",
+            {"outcome_tracker": {"enabled": True, "observation_delay_seconds": 60}},
+        ):
             t = OutcomeTracker()
         await t.initialize(redis_mock, ha_mock)
         assert t.enabled is True
@@ -211,7 +243,11 @@ class TestInitialize:
     @pytest.mark.asyncio
     async def test_initialize_disabled_without_redis(self, ha_mock):
         from assistant.outcome_tracker import OutcomeTracker
-        with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {"enabled": True}}):
+
+        with patch(
+            "assistant.outcome_tracker.yaml_config",
+            {"outcome_tracker": {"enabled": True}},
+        ):
             t = OutcomeTracker()
         await t.initialize(None, ha_mock)
         assert t.enabled is False
@@ -219,7 +255,11 @@ class TestInitialize:
     @pytest.mark.asyncio
     async def test_initialize_with_task_registry(self, redis_mock, ha_mock):
         from assistant.outcome_tracker import OutcomeTracker
-        with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {"enabled": True}}):
+
+        with patch(
+            "assistant.outcome_tracker.yaml_config",
+            {"outcome_tracker": {"enabled": True}},
+        ):
             t = OutcomeTracker()
         registry = MagicMock()
         await t.initialize(redis_mock, ha_mock, task_registry=registry)
@@ -230,6 +270,7 @@ class TestGetWeeklyTrends:
     @pytest.mark.asyncio
     async def test_empty_trends_no_redis(self):
         from assistant.outcome_tracker import OutcomeTracker
+
         with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {}}):
             t = OutcomeTracker()
         result = await t.get_weekly_trends()
@@ -238,6 +279,7 @@ class TestGetWeeklyTrends:
     @pytest.mark.asyncio
     async def test_empty_trends_no_data(self, redis_mock):
         from assistant.outcome_tracker import OutcomeTracker
+
         with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {}}):
             t = OutcomeTracker()
         t.redis = redis_mock
@@ -249,21 +291,26 @@ class TestGetWeeklyTrends:
     @pytest.mark.asyncio
     async def test_weekly_trends_with_data(self, redis_mock):
         from assistant.outcome_tracker import OutcomeTracker
+
         with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {}}):
             t = OutcomeTracker()
         t.redis = redis_mock
         t.enabled = True
         entries = [
-            json.dumps({
-                "action_type": "set_light",
-                "outcome": "positive",
-                "timestamp": "2025-06-01T10:00:00",
-            }),
-            json.dumps({
-                "action_type": "set_light",
-                "outcome": "negative",
-                "timestamp": "2025-06-02T10:00:00",
-            }),
+            json.dumps(
+                {
+                    "action_type": "set_light",
+                    "outcome": "positive",
+                    "timestamp": "2025-06-01T10:00:00",
+                }
+            ),
+            json.dumps(
+                {
+                    "action_type": "set_light",
+                    "outcome": "negative",
+                    "timestamp": "2025-06-02T10:00:00",
+                }
+            ),
         ]
         redis_mock.lrange.return_value = entries
         result = await t.get_weekly_trends()
@@ -275,7 +322,11 @@ class TestDelayedCheck:
     @pytest.mark.asyncio
     async def test_delayed_check_classifies_outcome(self, redis_mock, ha_mock):
         from assistant.outcome_tracker import OutcomeTracker
-        with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {"observation_delay_seconds": 0}}):
+
+        with patch(
+            "assistant.outcome_tracker.yaml_config",
+            {"outcome_tracker": {"observation_delay_seconds": 0}},
+        ):
             t = OutcomeTracker()
         t.redis = redis_mock
         t.ha = ha_mock
@@ -300,7 +351,11 @@ class TestDelayedCheck:
     @pytest.mark.asyncio
     async def test_delayed_check_no_current_state(self, redis_mock, ha_mock):
         from assistant.outcome_tracker import OutcomeTracker
-        with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {"observation_delay_seconds": 0}}):
+
+        with patch(
+            "assistant.outcome_tracker.yaml_config",
+            {"outcome_tracker": {"observation_delay_seconds": 0}},
+        ):
             t = OutcomeTracker()
         t.redis = redis_mock
         t.ha = ha_mock
@@ -324,7 +379,11 @@ class TestDelayedCheck:
     @pytest.mark.asyncio
     async def test_delayed_check_ha_exception(self, redis_mock, ha_mock):
         from assistant.outcome_tracker import OutcomeTracker
-        with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {"observation_delay_seconds": 0}}):
+
+        with patch(
+            "assistant.outcome_tracker.yaml_config",
+            {"outcome_tracker": {"observation_delay_seconds": 0}},
+        ):
             t = OutcomeTracker()
         t.redis = redis_mock
         t.ha = ha_mock
@@ -350,6 +409,7 @@ class TestStoreOutcomeWithContext:
     @pytest.mark.asyncio
     async def test_store_outcome_with_room(self, redis_mock):
         from assistant.outcome_tracker import OutcomeTracker
+
         with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {}}):
             t = OutcomeTracker()
         t.redis = redis_mock
@@ -363,6 +423,7 @@ class TestStoreOutcomeWithContext:
     @pytest.mark.asyncio
     async def test_store_outcome_with_person(self, redis_mock):
         from assistant.outcome_tracker import OutcomeTracker
+
         with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {}}):
             t = OutcomeTracker()
         t.redis = redis_mock
@@ -377,6 +438,7 @@ class TestUpdateScore:
     @pytest.mark.asyncio
     async def test_update_score_not_enough_data(self, redis_mock):
         from assistant.outcome_tracker import OutcomeTracker
+
         with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {}}):
             t = OutcomeTracker()
         t.redis = redis_mock
@@ -387,6 +449,7 @@ class TestUpdateScore:
     @pytest.mark.asyncio
     async def test_update_score_ema_calculation(self, redis_mock):
         from assistant.outcome_tracker import OutcomeTracker
+
         with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {}}):
             t = OutcomeTracker()
         t.redis = redis_mock
@@ -402,6 +465,7 @@ class TestUpdateScore:
     @pytest.mark.asyncio
     async def test_update_score_person_specific(self, redis_mock):
         from assistant.outcome_tracker import OutcomeTracker
+
         with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {}}):
             t = OutcomeTracker()
         t.redis = redis_mock
@@ -414,6 +478,7 @@ class TestUpdateScore:
     @pytest.mark.asyncio
     async def test_update_score_no_redis(self):
         from assistant.outcome_tracker import OutcomeTracker
+
         with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {}}):
             t = OutcomeTracker()
         t.redis = None
@@ -424,7 +489,11 @@ class TestTrackActionEntityConstruction:
     @pytest.mark.asyncio
     async def test_entity_id_from_room_and_action_type(self, redis_mock, ha_mock):
         from assistant.outcome_tracker import OutcomeTracker
-        with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {"enabled": True, "observation_delay_seconds": 0}}):
+
+        with patch(
+            "assistant.outcome_tracker.yaml_config",
+            {"outcome_tracker": {"enabled": True, "observation_delay_seconds": 0}},
+        ):
             t = OutcomeTracker()
         t.redis = redis_mock
         t.ha = ha_mock
@@ -443,7 +512,11 @@ class TestTrackActionEntityConstruction:
     @pytest.mark.asyncio
     async def test_entity_id_from_result(self, redis_mock, ha_mock):
         from assistant.outcome_tracker import OutcomeTracker
-        with patch("assistant.outcome_tracker.yaml_config", {"outcome_tracker": {"enabled": True, "observation_delay_seconds": 0}}):
+
+        with patch(
+            "assistant.outcome_tracker.yaml_config",
+            {"outcome_tracker": {"enabled": True, "observation_delay_seconds": 0}},
+        ):
             t = OutcomeTracker()
         t.redis = redis_mock
         t.ha = ha_mock

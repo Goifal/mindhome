@@ -5436,12 +5436,21 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
     _RUNNING_GAG_REDIS_KEY = "mha:personality:running_gags"
 
     def track_running_gag(
-        self, gag_id: str, context: str, *, user_reaction: str = ""
+        self,
+        gag_id: str,
+        context: str,
+        *,
+        user_reaction: str = "",
+        room: str = "",
+        device: str = "",
+        trigger: str = "",
     ) -> None:
         """Verfolgt einen Running-Gag und inkrementiert den Zaehler.
 
         MCU Sprint 6: Weighted Humor-Score — Gags werden nach Erfolg gewichtet,
         nicht nur nach Haeufigkeit. Score = count * 0.3 + success_rate * 0.7.
+
+        MCU Sprint 2: Strukturierte Kontext-Tags fuer situativen Rueckbezug.
 
         Maximal 3 aktive Gags gleichzeitig. Bei Ueberlauf wird der
         mit dem niedrigsten Score entfernt. Persists to Redis.
@@ -5450,12 +5459,18 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
             gag_id: Eindeutige ID des Gags.
             context: Kontextbeschreibung des Gags.
             user_reaction: User-Reaktion: "positive", "negative", oder "" (neutral).
+            room: Raum in dem der Gag ausgeloest wurde.
+            device: Geraet das den Gag ausgeloest hat.
+            trigger: Ausloeser des Gags.
         """
         now = datetime.now(timezone.utc).isoformat()
+        # MCU Sprint 2: Strukturierte Kontext-Tags
+        _context_tags = {"room": room, "device": device, "trigger": trigger}
         if gag_id in self._running_gags:
             gag = self._running_gags[gag_id]
             gag["count"] += 1
             gag["context"] = context
+            gag["context_tags"] = _context_tags
             gag["last_used"] = now
             # MCU Sprint 6: Track user reactions for humor-score
             if user_reaction == "positive":
@@ -5476,10 +5491,12 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
             self._running_gags[gag_id] = {
                 "count": 1,
                 "context": context,
+                "context_tags": _context_tags,
                 "last_used": now,
                 "evolution_stage": 0,
                 "positive_reactions": 1 if user_reaction == "positive" else 0,
                 "negative_reactions": 1 if user_reaction == "negative" else 0,
+                "last_callback_date": "",
             }
 
         # Persist to Redis (fire-and-forget)
@@ -5500,6 +5517,60 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         # Normalize count to 0-1 range (cap at 10)
         count_norm = min(count / 10.0, 1.0)
         return count_norm * 0.3 + success_rate * 0.7
+
+    def check_gag_callback(self, room: str = "", device: str = "") -> Optional[str]:
+        """Prueft ob eine aktuelle Situation zu einem Running Gag passt.
+
+        MCU Sprint 2: Situativer Gag-Rueckbezug — wenn Raum+Geraet zu einem
+        aktiven Gag passen, wird ein Rueckbezug ausgeloest (max 1x/Tag/Gag).
+
+        Args:
+            room: Aktueller Raum.
+            device: Aktuelles Geraet.
+
+        Returns:
+            Rueckbezug-Text oder None.
+        """
+        if not room and not device:
+            return None
+
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        for gag_id, gag in self._running_gags.items():
+            tags = gag.get("context_tags", {})
+            if not tags:
+                continue
+
+            # Prüfe Kontext-Match: Raum ODER Geraet muss passen
+            tag_room = (tags.get("room") or "").lower()
+            tag_device = (tags.get("device") or "").lower()
+            room_match = (
+                tag_room and room.lower() in tag_room or tag_room in room.lower()
+            )
+            device_match = (
+                tag_device
+                and device.lower() in tag_device
+                or tag_device in device.lower()
+            )
+
+            if not (room_match or device_match):
+                continue
+
+            # Cooldown: Max 1x pro Tag pro Gag
+            if gag.get("last_callback_date") == today:
+                continue
+
+            # Rueckbezug generieren
+            context = gag.get("context", gag_id)
+            gag["last_callback_date"] = today
+            self._save_running_gags_to_redis()
+
+            _device_hint = tag_device or device or "das"
+            return (
+                f"Ah, {_device_hint} mal wieder — wie beim letzten Mal mit {context}."
+            )
+
+        return None
 
     def _save_running_gags_to_redis(self) -> None:
         """Saves running gags to Redis (non-blocking)."""

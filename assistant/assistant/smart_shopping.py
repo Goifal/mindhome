@@ -37,10 +37,10 @@ from .ha_client import HomeAssistantClient
 logger = logging.getLogger(__name__)
 
 # Redis Keys
-_KEY_CONSUMPTION = "mha:shopping:consumption:"       # + item_name_lower
-_KEY_PREDICTIONS = "mha:shopping:predictions"         # Hash
-_KEY_SHOPPING_DAYS = "mha:shopping:shopping_days"     # Hash (weekday -> count)
-_KEY_LAST_REMINDER = "mha:shopping:last_reminder:"    # + item_name_lower
+_KEY_CONSUMPTION = "mha:shopping:consumption:"  # + item_name_lower
+_KEY_PREDICTIONS = "mha:shopping:predictions"  # Hash
+_KEY_SHOPPING_DAYS = "mha:shopping:shopping_days"  # Hash (weekday -> count)
+_KEY_LAST_REMINDER = "mha:shopping:last_reminder:"  # + item_name_lower
 
 # Defaults (aus constants.py)
 _DEFAULT_MIN_PURCHASES = SHOPPING_MIN_PURCHASES
@@ -60,8 +60,12 @@ class SmartShopping:
         cfg = yaml_config.get("smart_shopping", {})
         self.enabled = cfg.get("enabled", True)
         self.min_purchases = cfg.get("min_purchases", _DEFAULT_MIN_PURCHASES)
-        self.reminder_days_before = cfg.get("reminder_days_before", _DEFAULT_REMINDER_DAYS_BEFORE)
-        self.reminder_cooldown_hours = cfg.get("reminder_cooldown_hours", _DEFAULT_REMINDER_COOLDOWN_H)
+        self.reminder_days_before = cfg.get(
+            "reminder_days_before", _DEFAULT_REMINDER_DAYS_BEFORE
+        )
+        self.reminder_cooldown_hours = cfg.get(
+            "reminder_cooldown_hours", _DEFAULT_REMINDER_COOLDOWN_H
+        )
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis-Verbindung."""
@@ -86,10 +90,12 @@ class SmartShopping:
 
         key = _KEY_CONSUMPTION + item_name.lower().replace(" ", "_")
         now = datetime.now(_LOCAL_TZ)
-        entry = json.dumps({
-            "date": now.isoformat(),
-            "quantity": quantity,
-        })
+        entry = json.dumps(
+            {
+                "date": now.isoformat(),
+                "quantity": quantity,
+            }
+        )
 
         try:
             await self.redis.rpush(key, entry)
@@ -167,7 +173,9 @@ class SmartShopping:
                 "data_points": len(intervals),
             }
         except Exception as e:
-            logger.debug("Prognose-Berechnung fehlgeschlagen fuer '%s': %s", item_name, e)
+            logger.debug(
+                "Prognose-Berechnung fehlgeschlagen fuer '%s': %s", item_name, e
+            )
             return None
 
     # ------------------------------------------------------------------
@@ -189,9 +197,7 @@ class SmartShopping:
                 predictions.append(pred)
 
             # Sortiert nach naechstem erwarteten Kauf
-            predictions.sort(
-                key=lambda p: p.get("next_expected", "9999-12-31")
-            )
+            predictions.sort(key=lambda p: p.get("next_expected", "9999-12-31"))
             return predictions
         except Exception as e:
             logger.debug("Prognosen laden fehlgeschlagen: %s", e)
@@ -213,13 +219,18 @@ class SmartShopping:
         for pred in predictions:
             try:
                 next_date = datetime.fromisoformat(pred["next_expected"])
-                if next_date <= threshold and pred.get("confidence", 0) >= SHOPPING_LOW_STOCK_THRESHOLD:
+                if (
+                    next_date <= threshold
+                    and pred.get("confidence", 0) >= SHOPPING_LOW_STOCK_THRESHOLD
+                ):
                     days_until = (next_date - now).days
-                    running_low.append({
-                        **pred,
-                        "days_until": days_until,
-                        "urgency": "high" if days_until <= 0 else "medium",
-                    })
+                    running_low.append(
+                        {
+                            **pred,
+                            "days_until": days_until,
+                            "urgency": "high" if days_until <= 0 else "medium",
+                        }
+                    )
             except (ValueError, KeyError):
                 continue
 
@@ -261,7 +272,9 @@ class SmartShopping:
                 await self._set_reminder_cooldown(item_name)
                 notified.append(item_name)
             except Exception as e:
-                logger.debug("Shopping-Erinnerung fehlgeschlagen fuer '%s': %s", item_name, e)
+                logger.debug(
+                    "Shopping-Erinnerung fehlgeschlagen fuer '%s': %s", item_name, e
+                )
 
         return notified
 
@@ -293,7 +306,11 @@ class SmartShopping:
             Dict mit added (hinzugefuegt) und already_on_list (schon drauf).
         """
         if not ingredients:
-            return {"added": [], "already_on_list": [], "message": "Keine Zutaten angegeben."}
+            return {
+                "added": [],
+                "already_on_list": [],
+                "message": "Keine Zutaten angegeben.",
+            }
 
         # Aktuelle Einkaufsliste holen
         try:
@@ -325,12 +342,16 @@ class SmartShopping:
                     )
                     added.append(clean)
                 except Exception as e:
-                    logger.debug("Zutat '%s' konnte nicht hinzugefuegt werden: %s", clean, e)
+                    logger.debug(
+                        "Zutat '%s' konnte nicht hinzugefuegt werden: %s", clean, e
+                    )
 
         # Ergebnis-Nachricht
         parts = []
         if added:
-            parts.append(f"{len(added)} Zutat(en) auf die Einkaufsliste: {', '.join(added)}")
+            parts.append(
+                f"{len(added)} Zutat(en) auf die Einkaufsliste: {', '.join(added)}"
+            )
         if already:
             parts.append(f"Bereits auf der Liste: {', '.join(already)}")
         if not added and not already:
@@ -361,8 +382,15 @@ class SmartShopping:
             if not raw:
                 return None
 
-            day_names = ["Montag", "Dienstag", "Mittwoch", "Donnerstag",
-                         "Freitag", "Samstag", "Sonntag"]
+            day_names = [
+                "Montag",
+                "Dienstag",
+                "Mittwoch",
+                "Donnerstag",
+                "Freitag",
+                "Samstag",
+                "Sonntag",
+            ]
             counts = {}
             for key, val in raw.items():
                 k = key.decode() if isinstance(key, bytes) else key
@@ -398,13 +426,17 @@ class SmartShopping:
             if items and isinstance(items, list):
                 open_items = [i["name"] for i in items if not i.get("complete")]
                 if open_items:
-                    parts.append(f"Einkaufsliste ({len(open_items)}): {', '.join(open_items[:10])}")
+                    parts.append(
+                        f"Einkaufsliste ({len(open_items)}): {', '.join(open_items[:10])}"
+                    )
         except Exception as e:
             logger.debug("Unhandled: %s", e)
         # Bald aufgebrauchte Artikel
         running_low = await self.get_items_running_low()
         if running_low:
-            low_names = [f"{r['item']} (ca. {r['days_until']}d)" for r in running_low[:5]]
+            low_names = [
+                f"{r['item']} (ca. {r['days_until']}d)" for r in running_low[:5]
+            ]
             parts.append(f"Bald aufgebraucht: {', '.join(low_names)}")
 
         # Einkaufstag-Muster

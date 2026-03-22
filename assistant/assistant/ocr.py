@@ -27,6 +27,7 @@ def _check_tesseract() -> bool:
         return _tesseract_available
     try:
         import pytesseract
+
         version = pytesseract.get_tesseract_version()
         _tesseract_available = True
         logger.info("Tesseract OCR verfuegbar (Version: %s)", version)
@@ -58,7 +59,11 @@ def _validate_image_path(image_path: Path) -> bool:
         resolved = image_path.resolve()
         allowed_bases = [Path("/tmp").resolve(), Path("/app/data/uploads").resolve()]
         if not any(resolved.is_relative_to(base) for base in allowed_bases):
-            logger.warning("F-045: Pfadtraversal erkannt: %s (erlaubt: %s)", image_path, allowed_bases)
+            logger.warning(
+                "F-045: Pfadtraversal erkannt: %s (erlaubt: %s)",
+                image_path,
+                allowed_bases,
+            )
             return False
     except (OSError, ValueError):
         return False
@@ -90,8 +95,11 @@ def extract_text_from_image(
     try:
         size_mb = image_path.stat().st_size / (1024 * 1024)
         if size_mb > 50:
-            logger.warning("Bild zu gross fuer OCR: %.1f MB (max 50 MB) — %s",
-                           size_mb, image_path.name)
+            logger.warning(
+                "Bild zu gross fuer OCR: %.1f MB (max 50 MB) — %s",
+                size_mb,
+                image_path.name,
+            )
             return None
     except OSError:
         pass
@@ -123,7 +131,9 @@ def extract_text_from_image(
         text = text.strip()
 
         if len(text) < 10:
-            text_psm6 = pytesseract.image_to_string(gray, lang=languages, config="--psm 6")
+            text_psm6 = pytesseract.image_to_string(
+                gray, lang=languages, config="--psm 6"
+            )
             text_psm6 = text_psm6.strip()
             if len(text_psm6) > len(text):
                 text = text_psm6
@@ -186,7 +196,9 @@ def extract_text_with_confidence(
 
         # Tesseract data output mit Confidence pro Wort
         data = pytesseract.image_to_data(
-            gray, lang=languages, config="--psm 3",
+            gray,
+            lang=languages,
+            config="--psm 3",
             output_type=pytesseract.Output.DICT,
         )
 
@@ -230,6 +242,7 @@ def extract_text_with_confidence(
 
 
 # ── OCR Engine (full, initialized by brain.py) ───────────────────
+
 
 class OCREngine:
     """
@@ -292,10 +305,17 @@ class OCREngine:
         self.description_max_tokens = cfg.get("description_max_tokens", 512)
         if self.vision_model != old_model:
             self._vision_available = False
-            logger.info("Vision-Model geaendert: '%s' → '%s' (Neustart pruefen)",
-                        old_model, self.vision_model)
-        logger.debug("OCR config reloaded: enabled=%s, lang=%s, model=%s",
-                      self.enabled, self.languages, self.vision_model)
+            logger.info(
+                "Vision-Model geaendert: '%s' → '%s' (Neustart pruefen)",
+                old_model,
+                self.vision_model,
+            )
+        logger.debug(
+            "OCR config reloaded: enabled=%s, lang=%s, model=%s",
+            self.enabled,
+            self.languages,
+            self.vision_model,
+        )
 
     def extract_text(self, image_path: Path) -> Optional[str]:
         """Extrahiert Text aus einem Bild via Tesseract."""
@@ -423,9 +443,7 @@ class OCREngine:
             logger.warning("Bild-Vorbereitung fehlgeschlagen: %s", e)
             return None
 
-    async def analyze_image(
-        self, file_info: dict, user_context: str = ""
-    ) -> dict:
+    async def analyze_image(self, file_info: dict, user_context: str = "") -> dict:
         """
         Komplette Bild-Analyse: OCR + Vision-LLM.
 
@@ -433,8 +451,10 @@ class OCREngine:
             Dict mit ocr_text, description, has_text, ocr_confidence
         """
         result = {
-            "ocr_text": None, "description": None,
-            "has_text": False, "ocr_confidence": None,
+            "ocr_text": None,
+            "description": None,
+            "has_text": False,
+            "ocr_confidence": None,
         }
 
         if not self.enabled:

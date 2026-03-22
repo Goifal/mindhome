@@ -38,6 +38,7 @@ from assistant.inner_state import (
 # Fixtures
 # ============================================================
 
+
 @pytest.fixture
 def engine():
     """Fresh InnerStateEngine with no Redis."""
@@ -67,6 +68,7 @@ def engine_with_redis(engine, redis_mock):
 # Initialization Tests
 # ============================================================
 
+
 class TestInitialization:
     """Tests fuer __init__ und initialize."""
 
@@ -90,11 +92,13 @@ class TestInitialization:
 
     @pytest.mark.asyncio
     async def test_initialize_loads_mood_from_redis(self, redis_mock):
-        redis_mock.get = AsyncMock(side_effect=[
-            b"stolz",   # mood
-            b"0.85",    # confidence
-            b"0.72",    # satisfaction
-        ])
+        redis_mock.get = AsyncMock(
+            side_effect=[
+                b"stolz",  # mood
+                b"0.85",  # confidence
+                b"0.72",  # satisfaction
+            ]
+        )
         engine = InnerStateEngine()
         await engine.initialize(redis_mock)
         assert engine.mood == MOOD_PROUD
@@ -104,11 +108,13 @@ class TestInitialization:
     @pytest.mark.asyncio
     async def test_initialize_loads_string_mood(self, redis_mock):
         """Redis may return str instead of bytes."""
-        redis_mock.get = AsyncMock(side_effect=[
-            "amuesiert",
-            "0.4",
-            "0.3",
-        ])
+        redis_mock.get = AsyncMock(
+            side_effect=[
+                "amuesiert",
+                "0.4",
+                "0.3",
+            ]
+        )
         engine = InnerStateEngine()
         await engine.initialize(redis_mock)
         assert engine.mood == MOOD_AMUSED
@@ -117,33 +123,39 @@ class TestInitialization:
 
     @pytest.mark.asyncio
     async def test_initialize_ignores_invalid_mood(self, redis_mock):
-        redis_mock.get = AsyncMock(side_effect=[
-            b"ungueltig_mood",
-            None,
-            None,
-        ])
+        redis_mock.get = AsyncMock(
+            side_effect=[
+                b"ungueltig_mood",
+                None,
+                None,
+            ]
+        )
         engine = InnerStateEngine()
         await engine.initialize(redis_mock)
         assert engine.mood == MOOD_NEUTRAL
 
     @pytest.mark.asyncio
     async def test_initialize_clamps_confidence(self, redis_mock):
-        redis_mock.get = AsyncMock(side_effect=[
-            None,
-            b"5.0",    # over 1.0
-            b"-2.0",   # will not be reached for satisfaction
-        ])
+        redis_mock.get = AsyncMock(
+            side_effect=[
+                None,
+                b"5.0",  # over 1.0
+                b"-2.0",  # will not be reached for satisfaction
+            ]
+        )
         engine = InnerStateEngine()
         await engine.initialize(redis_mock)
         assert engine.confidence == 1.0
 
     @pytest.mark.asyncio
     async def test_initialize_clamps_satisfaction_low(self, redis_mock):
-        redis_mock.get = AsyncMock(side_effect=[
-            None,
-            None,
-            b"-0.5",
-        ])
+        redis_mock.get = AsyncMock(
+            side_effect=[
+                None,
+                None,
+                b"-0.5",
+            ]
+        )
         engine = InnerStateEngine()
         await engine.initialize(redis_mock)
         assert engine.satisfaction == 0.0
@@ -161,6 +173,7 @@ class TestInitialization:
 # ============================================================
 # Event Handler Tests
 # ============================================================
+
 
 class TestEventHandlers:
     """Tests fuer alle Event-Tracking-Methoden."""
@@ -249,6 +262,7 @@ class TestEventHandlers:
 # Confidence / Satisfaction Clamping
 # ============================================================
 
+
 class TestValueClamping:
     """Confidence und Satisfaction bleiben im Bereich 0.0–1.0."""
 
@@ -286,6 +300,7 @@ class TestValueClamping:
 # ============================================================
 # Mood Calculation (_update_mood)
 # ============================================================
+
 
 class TestMoodCalculation:
     """Tests fuer die prioritaetsbasierte Mood-Berechnung."""
@@ -355,6 +370,7 @@ class TestMoodCalculation:
 # Counter Decay
 # ============================================================
 
+
 class TestCounterDecay:
     """Counter werden nach 10 Minuten dekrementiert."""
 
@@ -397,6 +413,7 @@ class TestCounterDecay:
 # ============================================================
 # Prompt Generation
 # ============================================================
+
 
 class TestPromptGeneration:
     """Tests fuer get_prompt_section()."""
@@ -477,6 +494,7 @@ class TestPromptGeneration:
 # Properties and get_state
 # ============================================================
 
+
 class TestPropertiesAndState:
     """Tests fuer Properties und get_state()."""
 
@@ -516,6 +534,7 @@ class TestPropertiesAndState:
 # ============================================================
 # Persistence (_save_state)
 # ============================================================
+
 
 class TestPersistence:
     """Tests fuer Redis-Persistenz."""
@@ -562,6 +581,7 @@ class TestPersistence:
 # Callback and No-ops
 # ============================================================
 
+
 class TestCallbackAndNoops:
     """Tests fuer set_notify_callback, stop, reload_config."""
 
@@ -581,13 +601,19 @@ class TestCallbackAndNoops:
 # Constants
 # ============================================================
 
+
 class TestConstants:
     """Tests fuer Modul-Konstanten."""
 
     def test_valid_moods_contains_all(self):
         expected = {
-            MOOD_NEUTRAL, MOOD_CONTENT, MOOD_AMUSED,
-            MOOD_CONCERNED, MOOD_PROUD, MOOD_CURIOUS, MOOD_IRRITATED,
+            MOOD_NEUTRAL,
+            MOOD_CONTENT,
+            MOOD_AMUSED,
+            MOOD_CONCERNED,
+            MOOD_PROUD,
+            MOOD_CURIOUS,
+            MOOD_IRRITATED,
         }
         assert VALID_MOODS == expected
 
@@ -606,6 +632,7 @@ class TestConstants:
 # ============================================================
 # Integration: Event Sequences
 # ============================================================
+
 
 class TestEventSequences:
     """Integrationstests mit Event-Ketten."""
@@ -644,6 +671,7 @@ class TestEventSequences:
 # ============================================================
 # User Mood Change
 # ============================================================
+
 
 class TestUserMoodChange:
     """Tests fuer on_user_mood_change — empathische Reaktion auf User-Stimmung."""
@@ -697,6 +725,7 @@ class TestUserMoodChange:
 # ============================================================
 # Scene Activation
 # ============================================================
+
 
 class TestSceneActivation:
     """Tests fuer on_scene_activated — Szene beeinflusst Stimmung."""
@@ -757,12 +786,15 @@ class TestSceneActivation:
         """All scene mood targets must be valid moods."""
         engine = InnerStateEngine()
         for scene_name, target_mood in engine._SCENE_MOOD_MAP.items():
-            assert target_mood in VALID_MOODS, f"Scene '{scene_name}' maps to invalid mood '{target_mood}'"
+            assert target_mood in VALID_MOODS, (
+                f"Scene '{scene_name}' maps to invalid mood '{target_mood}'"
+            )
 
 
 # ============================================================
 # Mood Transitions
 # ============================================================
+
 
 class TestMoodTransitions:
     """Tests fuer get_transition_comment und MOOD_TRANSITIONS."""
@@ -828,6 +860,7 @@ class TestMoodTransitions:
 # Mood History
 # ============================================================
 
+
 class TestMoodHistory:
     """Tests fuer get_mood_history."""
 
@@ -842,12 +875,14 @@ class TestMoodHistory:
         from datetime import datetime, timezone
 
         now = datetime.now(timezone.utc)
-        entry = json.dumps({
-            "mood": "zufrieden",
-            "confidence": 0.8,
-            "satisfaction": 0.7,
-            "hour": now.strftime("%Y-%m-%d-%H"),
-        })
+        entry = json.dumps(
+            {
+                "mood": "zufrieden",
+                "confidence": 0.8,
+                "satisfaction": 0.7,
+                "hour": now.strftime("%Y-%m-%d-%H"),
+            }
+        )
         engine_with_redis.redis.zrangebyscore = AsyncMock(
             return_value=[(entry.encode(), now.timestamp())]
         )
@@ -864,12 +899,14 @@ class TestMoodHistory:
         from datetime import datetime, timezone
 
         now = datetime.now(timezone.utc)
-        entry = json.dumps({
-            "mood": "neutral",
-            "confidence": 0.5,
-            "satisfaction": 0.5,
-            "hour": "2026-03-20-14",
-        })
+        entry = json.dumps(
+            {
+                "mood": "neutral",
+                "confidence": 0.5,
+                "satisfaction": 0.5,
+                "hour": "2026-03-20-14",
+            }
+        )
         engine_with_redis.redis.zrangebyscore = AsyncMock(
             return_value=[(entry, now.timestamp())]  # str, not bytes
         )
@@ -893,6 +930,7 @@ class TestMoodHistory:
         # min_score should be 30 days ago
         min_score = call_args[0][1]
         import time
+
         expected_min = time.time() - (30 * 86400)
         assert abs(min_score - expected_min) < 5  # within 5 seconds
 
@@ -900,6 +938,7 @@ class TestMoodHistory:
 # ============================================================
 # Mood Summary
 # ============================================================
+
 
 class TestMoodSummary:
     """Tests fuer get_mood_summary — kompakte Stimmungs-Zusammenfassung."""
@@ -917,16 +956,16 @@ class TestMoodSummary:
         now = datetime.now(timezone.utc)
         entries = []
         for i in range(5):
-            entry = json.dumps({
-                "mood": "zufrieden",
-                "confidence": 0.8,
-                "satisfaction": 0.7,
-                "hour": f"2026-03-20-{10+i:02d}",
-            })
+            entry = json.dumps(
+                {
+                    "mood": "zufrieden",
+                    "confidence": 0.8,
+                    "satisfaction": 0.7,
+                    "hour": f"2026-03-20-{10 + i:02d}",
+                }
+            )
             entries.append((entry.encode(), now.timestamp() + i * 3600))
-        engine_with_redis.redis.zrangebyscore = AsyncMock(
-            return_value=entries
-        )
+        engine_with_redis.redis.zrangebyscore = AsyncMock(return_value=entries)
         result = await engine_with_redis.get_mood_summary(days=7)
         assert "zufrieden 100%" in result
         assert "Stimmung letzte 7 Tage" in result
@@ -937,20 +976,30 @@ class TestMoodSummary:
         from datetime import datetime, timezone
 
         now = datetime.now(timezone.utc)
-        moods = ["zufrieden", "zufrieden", "neutral", "besorgt", "zufrieden",
-                 "neutral", "zufrieden", "neutral", "zufrieden", "neutral"]
+        moods = [
+            "zufrieden",
+            "zufrieden",
+            "neutral",
+            "besorgt",
+            "zufrieden",
+            "neutral",
+            "zufrieden",
+            "neutral",
+            "zufrieden",
+            "neutral",
+        ]
         entries = []
         for i, mood in enumerate(moods):
-            entry = json.dumps({
-                "mood": mood,
-                "confidence": 0.5,
-                "satisfaction": 0.5,
-                "hour": f"2026-03-{15+i//4:02d}-{10+i%4:02d}",
-            })
+            entry = json.dumps(
+                {
+                    "mood": mood,
+                    "confidence": 0.5,
+                    "satisfaction": 0.5,
+                    "hour": f"2026-03-{15 + i // 4:02d}-{10 + i % 4:02d}",
+                }
+            )
             entries.append((entry.encode(), now.timestamp() + i * 3600))
-        engine_with_redis.redis.zrangebyscore = AsyncMock(
-            return_value=entries
-        )
+        engine_with_redis.redis.zrangebyscore = AsyncMock(return_value=entries)
         result = await engine_with_redis.get_mood_summary(days=7)
         assert "zufrieden" in result
         assert "neutral" in result
@@ -965,20 +1014,28 @@ class TestMoodSummary:
 
         now = datetime.now(timezone.utc)
         # First half: mostly neutral; second half: mostly content/amused
-        moods = ["neutral", "neutral", "neutral", "besorgt",
-                 "zufrieden", "zufrieden", "amuesiert", "stolz"]
+        moods = [
+            "neutral",
+            "neutral",
+            "neutral",
+            "besorgt",
+            "zufrieden",
+            "zufrieden",
+            "amuesiert",
+            "stolz",
+        ]
         entries = []
         for i, mood in enumerate(moods):
-            entry = json.dumps({
-                "mood": mood,
-                "confidence": 0.5,
-                "satisfaction": 0.5,
-                "hour": f"2026-03-{16+i//4:02d}-{10+i%4:02d}",
-            })
+            entry = json.dumps(
+                {
+                    "mood": mood,
+                    "confidence": 0.5,
+                    "satisfaction": 0.5,
+                    "hour": f"2026-03-{16 + i // 4:02d}-{10 + i % 4:02d}",
+                }
+            )
             entries.append((entry.encode(), now.timestamp() + i * 3600))
-        engine_with_redis.redis.zrangebyscore = AsyncMock(
-            return_value=entries
-        )
+        engine_with_redis.redis.zrangebyscore = AsyncMock(return_value=entries)
         result = await engine_with_redis.get_mood_summary(days=7)
         assert "positiver" in result
 
@@ -990,20 +1047,28 @@ class TestMoodSummary:
 
         now = datetime.now(timezone.utc)
         # First half: positive; second half: negative
-        moods = ["zufrieden", "amuesiert", "stolz", "zufrieden",
-                 "neutral", "neutral", "besorgt", "irritiert"]
+        moods = [
+            "zufrieden",
+            "amuesiert",
+            "stolz",
+            "zufrieden",
+            "neutral",
+            "neutral",
+            "besorgt",
+            "irritiert",
+        ]
         entries = []
         for i, mood in enumerate(moods):
-            entry = json.dumps({
-                "mood": mood,
-                "confidence": 0.5,
-                "satisfaction": 0.5,
-                "hour": f"2026-03-{16+i//4:02d}-{10+i%4:02d}",
-            })
+            entry = json.dumps(
+                {
+                    "mood": mood,
+                    "confidence": 0.5,
+                    "satisfaction": 0.5,
+                    "hour": f"2026-03-{16 + i // 4:02d}-{10 + i % 4:02d}",
+                }
+            )
             entries.append((entry.encode(), now.timestamp() + i * 3600))
-        engine_with_redis.redis.zrangebyscore = AsyncMock(
-            return_value=entries
-        )
+        engine_with_redis.redis.zrangebyscore = AsyncMock(return_value=entries)
         result = await engine_with_redis.get_mood_summary(days=7)
         assert "angespannter" in result
 
@@ -1014,20 +1079,28 @@ class TestMoodSummary:
         from datetime import datetime, timezone
 
         now = datetime.now(timezone.utc)
-        moods = ["zufrieden", "neutral", "zufrieden", "neutral",
-                 "zufrieden", "neutral", "zufrieden", "neutral"]
+        moods = [
+            "zufrieden",
+            "neutral",
+            "zufrieden",
+            "neutral",
+            "zufrieden",
+            "neutral",
+            "zufrieden",
+            "neutral",
+        ]
         entries = []
         for i, mood in enumerate(moods):
-            entry = json.dumps({
-                "mood": mood,
-                "confidence": 0.5,
-                "satisfaction": 0.5,
-                "hour": f"2026-03-{16+i//4:02d}-{10+i%4:02d}",
-            })
+            entry = json.dumps(
+                {
+                    "mood": mood,
+                    "confidence": 0.5,
+                    "satisfaction": 0.5,
+                    "hour": f"2026-03-{16 + i // 4:02d}-{10 + i % 4:02d}",
+                }
+            )
             entries.append((entry.encode(), now.timestamp() + i * 3600))
-        engine_with_redis.redis.zrangebyscore = AsyncMock(
-            return_value=entries
-        )
+        engine_with_redis.redis.zrangebyscore = AsyncMock(return_value=entries)
         result = await engine_with_redis.get_mood_summary(days=7)
         assert "stabil" in result
 
@@ -1041,16 +1114,16 @@ class TestMoodSummary:
         moods = ["zufrieden", "neutral"]
         entries = []
         for i, mood in enumerate(moods):
-            entry = json.dumps({
-                "mood": mood,
-                "confidence": 0.5,
-                "satisfaction": 0.5,
-                "hour": f"2026-03-20-{10+i:02d}",
-            })
+            entry = json.dumps(
+                {
+                    "mood": mood,
+                    "confidence": 0.5,
+                    "satisfaction": 0.5,
+                    "hour": f"2026-03-20-{10 + i:02d}",
+                }
+            )
             entries.append((entry.encode(), now.timestamp() + i * 3600))
-        engine_with_redis.redis.zrangebyscore = AsyncMock(
-            return_value=entries
-        )
+        engine_with_redis.redis.zrangebyscore = AsyncMock(return_value=entries)
         result = await engine_with_redis.get_mood_summary(days=7)
         assert "Tendenz" not in result
 
@@ -1058,6 +1131,7 @@ class TestMoodSummary:
 # ============================================================
 # Additional Edge Cases
 # ============================================================
+
 
 class TestEdgeCases:
     """Zusaetzliche Randfaelle und Grenzwert-Tests."""
@@ -1123,7 +1197,13 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_security_event_overrides_any_mood(self, engine):
         """on_security_event should override any current mood."""
-        for mood in [MOOD_CONTENT, MOOD_AMUSED, MOOD_PROUD, MOOD_CURIOUS, MOOD_IRRITATED]:
+        for mood in [
+            MOOD_CONTENT,
+            MOOD_AMUSED,
+            MOOD_PROUD,
+            MOOD_CURIOUS,
+            MOOD_IRRITATED,
+        ]:
             engine._mood = mood
             await engine.on_security_event()
             assert engine.mood == MOOD_CONCERNED

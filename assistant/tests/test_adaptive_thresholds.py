@@ -35,15 +35,18 @@ class TestRunAnalysis:
     @pytest.mark.asyncio
     async def test_insufficient_data_skips(self, thresholds):
         outcome_tracker = MagicMock()
-        outcome_tracker.get_stats = AsyncMock(return_value={
-            "set_light": {"total": 5, "score": 0.5},  # Unter MIN_OUTCOMES
-        })
+        outcome_tracker.get_stats = AsyncMock(
+            return_value={
+                "set_light": {"total": 5, "score": 0.5},  # Unter MIN_OUTCOMES
+            }
+        )
         result = await thresholds.run_analysis(outcome_tracker=outcome_tracker)
         assert "insufficient_data" in result["skipped"]
 
     @pytest.mark.asyncio
     async def test_rate_limit(self, thresholds):
         from datetime import datetime
+
         thresholds._adjustments_this_week = MAX_ADJUSTMENTS_PER_WEEK
         # Set current week so the counter doesn't get reset
         thresholds._last_adjustment_week = datetime.now().strftime("%Y-W%W")
@@ -62,19 +65,23 @@ class TestHasSufficientData:
     @pytest.mark.asyncio
     async def test_enough_data(self, thresholds):
         tracker = MagicMock()
-        tracker.get_stats = AsyncMock(return_value={
-            "set_light": {"total": 30},
-            "set_climate": {"total": 25},
-        })
+        tracker.get_stats = AsyncMock(
+            return_value={
+                "set_light": {"total": 30},
+                "set_climate": {"total": 25},
+            }
+        )
         result = await thresholds._has_sufficient_data(tracker)
         assert result is True
 
     @pytest.mark.asyncio
     async def test_not_enough_data(self, thresholds):
         tracker = MagicMock()
-        tracker.get_stats = AsyncMock(return_value={
-            "set_light": {"total": 10},
-        })
+        tracker.get_stats = AsyncMock(
+            return_value={
+                "set_light": {"total": 10},
+            }
+        )
         result = await thresholds._has_sufficient_data(tracker)
         assert result is False
 
@@ -83,9 +90,12 @@ class TestRuntimeValues:
     """Tests fuer Runtime-Config-Zugriff."""
 
     def test_get_runtime_value(self, thresholds):
-        with patch("assistant.adaptive_thresholds.yaml_config", {
-            "insights": {"cooldown_hours": 4},
-        }):
+        with patch(
+            "assistant.adaptive_thresholds.yaml_config",
+            {
+                "insights": {"cooldown_hours": 4},
+            },
+        ):
             val = thresholds._get_runtime_value(["insights", "cooldown_hours"])
             assert val == 4
 
@@ -106,11 +116,13 @@ class TestGetAdjustmentHistory:
 
     @pytest.mark.asyncio
     async def test_returns_history(self, thresholds):
-        entry = json.dumps({
-            "parameter": "insights.cooldown_hours",
-            "old_value": 4,
-            "new_value": 5,
-        })
+        entry = json.dumps(
+            {
+                "parameter": "insights.cooldown_hours",
+                "old_value": 4,
+                "new_value": 5,
+            }
+        )
         thresholds.redis.lrange.return_value = [entry]
         history = await thresholds.get_adjustment_history()
         assert len(history) == 1
@@ -127,9 +139,12 @@ class TestInitialize:
 
     @pytest.mark.asyncio
     async def test_initialize_enabled(self, redis_mock):
-        with patch("assistant.adaptive_thresholds.yaml_config", {
-            "adaptive_thresholds": {"enabled": True, "auto_adjust": True},
-        }):
+        with patch(
+            "assistant.adaptive_thresholds.yaml_config",
+            {
+                "adaptive_thresholds": {"enabled": True, "auto_adjust": True},
+            },
+        ):
             t = AdaptiveThresholds()
         await t.initialize(redis_mock)
         assert t.enabled is True
@@ -137,18 +152,24 @@ class TestInitialize:
 
     @pytest.mark.asyncio
     async def test_initialize_disabled_no_redis(self):
-        with patch("assistant.adaptive_thresholds.yaml_config", {
-            "adaptive_thresholds": {"enabled": True},
-        }):
+        with patch(
+            "assistant.adaptive_thresholds.yaml_config",
+            {
+                "adaptive_thresholds": {"enabled": True},
+            },
+        ):
             t = AdaptiveThresholds()
         await t.initialize(None)
         assert t.enabled is False
 
     @pytest.mark.asyncio
     async def test_initialize_auto_adjust_false(self, redis_mock):
-        with patch("assistant.adaptive_thresholds.yaml_config", {
-            "adaptive_thresholds": {"enabled": True, "auto_adjust": False},
-        }):
+        with patch(
+            "assistant.adaptive_thresholds.yaml_config",
+            {
+                "adaptive_thresholds": {"enabled": True, "auto_adjust": False},
+            },
+        ):
             t = AdaptiveThresholds()
         await t.initialize(redis_mock)
         assert t.enabled is False
@@ -162,9 +183,11 @@ class TestRunAnalysisFull:
         thresholds._last_adjustment_week = "1970-W01"
         thresholds._adjustments_this_week = 5
         outcome_tracker = MagicMock()
-        outcome_tracker.get_stats = AsyncMock(return_value={
-            "set_light": {"total": 60},
-        })
+        outcome_tracker.get_stats = AsyncMock(
+            return_value={
+                "set_light": {"total": 60},
+            }
+        )
         # Will skip insufficient data check but proceed
         result = await thresholds.run_analysis(outcome_tracker=outcome_tracker)
         assert thresholds._adjustments_this_week == 0 or "skipped" in result
@@ -173,15 +196,20 @@ class TestRunAnalysisFull:
     async def test_analysis_with_adjustment(self, thresholds):
         """Full flow: sufficient data, parameter adjusted."""
         outcome_tracker = MagicMock()
-        outcome_tracker.get_stats = AsyncMock(return_value={
-            "set_light": {"total": 60, "negative": 0},
-        })
+        outcome_tracker.get_stats = AsyncMock(
+            return_value={
+                "set_light": {"total": 60, "negative": 0},
+            }
+        )
         feedback_tracker = MagicMock()
         feedback_tracker.get_score = AsyncMock(return_value=0.2)
 
-        with patch("assistant.adaptive_thresholds.yaml_config", {
-            "insights": {"cooldown_hours": 4},
-        }):
+        with patch(
+            "assistant.adaptive_thresholds.yaml_config",
+            {
+                "insights": {"cooldown_hours": 4},
+            },
+        ):
             thresholds.redis.get = AsyncMock(return_value=None)
             result = await thresholds.run_analysis(
                 outcome_tracker=outcome_tracker,
@@ -193,10 +221,14 @@ class TestRunAnalysisFull:
     async def test_analysis_exception_in_parameter(self, thresholds):
         """Exception in _analyze_parameter gets caught."""
         outcome_tracker = MagicMock()
-        outcome_tracker.get_stats = AsyncMock(return_value={
-            "set_light": {"total": 60},
-        })
-        with patch.object(thresholds, '_analyze_parameter', side_effect=ValueError("boom")):
+        outcome_tracker.get_stats = AsyncMock(
+            return_value={
+                "set_light": {"total": 60},
+            }
+        )
+        with patch.object(
+            thresholds, "_analyze_parameter", side_effect=ValueError("boom")
+        ):
             result = await thresholds.run_analysis(outcome_tracker=outcome_tracker)
         assert len(result["skipped"]) > 0
 
@@ -205,17 +237,24 @@ class TestRunAnalysisFull:
         """Breaks out of loop if rate limit hit during processing."""
         thresholds._adjustments_this_week = MAX_ADJUSTMENTS_PER_WEEK - 1
         outcome_tracker = MagicMock()
-        outcome_tracker.get_stats = AsyncMock(return_value={
-            "set_light": {"total": 60, "negative": 0},
-        })
+        outcome_tracker.get_stats = AsyncMock(
+            return_value={
+                "set_light": {"total": 60, "negative": 0},
+            }
+        )
         feedback_tracker = MagicMock()
         feedback_tracker.get_score = AsyncMock(return_value=0.2)
 
         async def fake_analyze(*a, **kw):
             thresholds._adjustments_this_week = MAX_ADJUSTMENTS_PER_WEEK
-            return {"adjusted": True, "parameter": "test", "old_value": 1, "new_value": 2}
+            return {
+                "adjusted": True,
+                "parameter": "test",
+                "old_value": 1,
+                "new_value": 2,
+            }
 
-        with patch.object(thresholds, '_analyze_parameter', side_effect=fake_analyze):
+        with patch.object(thresholds, "_analyze_parameter", side_effect=fake_analyze):
             thresholds.redis.get = AsyncMock(return_value=None)
             result = await thresholds.run_analysis(
                 outcome_tracker=outcome_tracker,
@@ -236,14 +275,16 @@ class TestRunAnalysisFull:
     async def test_result_not_adjusted_adds_reason(self, thresholds):
         """When analyze_parameter returns adjusted=False, reason is added to skipped."""
         outcome_tracker = MagicMock()
-        outcome_tracker.get_stats = AsyncMock(return_value={
-            "set_light": {"total": 60},
-        })
+        outcome_tracker.get_stats = AsyncMock(
+            return_value={
+                "set_light": {"total": 60},
+            }
+        )
 
         async def fake_analyze(*a, **kw):
             return {"adjusted": False, "reason": "at_bound"}
 
-        with patch.object(thresholds, '_analyze_parameter', side_effect=fake_analyze):
+        with patch.object(thresholds, "_analyze_parameter", side_effect=fake_analyze):
             result = await thresholds.run_analysis(outcome_tracker=outcome_tracker)
         assert "at_bound" in result["skipped"]
 
@@ -257,9 +298,12 @@ class TestAnalyzeParameter:
         thresholds.redis.get = AsyncMock(return_value=None)
 
         with patch("assistant.adaptive_thresholds.yaml_config", {}):
-            with patch.object(thresholds, '_determine_direction', return_value=0):
+            with patch.object(thresholds, "_determine_direction", return_value=0):
                 result = await thresholds._analyze_parameter(
-                    "insights.cooldown_hours", bounds, None, None,
+                    "insights.cooldown_hours",
+                    bounds,
+                    None,
+                    None,
                 )
         assert result is None  # direction=0 means no change
 
@@ -268,11 +312,17 @@ class TestAnalyzeParameter:
         bounds = _AUTO_BOUNDS["insights.cooldown_hours"]
         thresholds.redis.get = AsyncMock(return_value="pending_value")
 
-        with patch("assistant.adaptive_thresholds.yaml_config", {
-            "insights": {"cooldown_hours": 4},
-        }):
+        with patch(
+            "assistant.adaptive_thresholds.yaml_config",
+            {
+                "insights": {"cooldown_hours": 4},
+            },
+        ):
             result = await thresholds._analyze_parameter(
-                "insights.cooldown_hours", bounds, None, None,
+                "insights.cooldown_hours",
+                bounds,
+                None,
+                None,
             )
         assert result["adjusted"] is False
         assert "self_opt_pending" in result["reason"]
@@ -282,12 +332,18 @@ class TestAnalyzeParameter:
         bounds = _AUTO_BOUNDS["insights.cooldown_hours"]
         thresholds.redis.get = AsyncMock(return_value=None)
 
-        with patch("assistant.adaptive_thresholds.yaml_config", {
-            "insights": {"cooldown_hours": 2},  # Already at min
-        }):
-            with patch.object(thresholds, '_determine_direction', return_value=-1):
+        with patch(
+            "assistant.adaptive_thresholds.yaml_config",
+            {
+                "insights": {"cooldown_hours": 2},  # Already at min
+            },
+        ):
+            with patch.object(thresholds, "_determine_direction", return_value=-1):
                 result = await thresholds._analyze_parameter(
-                    "insights.cooldown_hours", bounds, None, None,
+                    "insights.cooldown_hours",
+                    bounds,
+                    None,
+                    None,
                 )
         assert result["adjusted"] is False
         assert result["reason"] == "at_bound"
@@ -297,16 +353,24 @@ class TestAnalyzeParameter:
         bounds = _AUTO_BOUNDS["insights.cooldown_hours"]
         thresholds.redis.get = AsyncMock(return_value=None)
         outcome_tracker = MagicMock()
-        outcome_tracker.get_stats = AsyncMock(return_value={
-            "set_light": {"total": 30, "negative": 28},
-        })
+        outcome_tracker.get_stats = AsyncMock(
+            return_value={
+                "set_light": {"total": 30, "negative": 28},
+            }
+        )
 
-        with patch("assistant.adaptive_thresholds.yaml_config", {
-            "insights": {"cooldown_hours": 4},
-        }):
-            with patch.object(thresholds, '_determine_direction', return_value=1):
+        with patch(
+            "assistant.adaptive_thresholds.yaml_config",
+            {
+                "insights": {"cooldown_hours": 4},
+            },
+        ):
+            with patch.object(thresholds, "_determine_direction", return_value=1):
                 result = await thresholds._analyze_parameter(
-                    "insights.cooldown_hours", bounds, outcome_tracker, None,
+                    "insights.cooldown_hours",
+                    bounds,
+                    outcome_tracker,
+                    None,
                 )
         assert result["adjusted"] is False
         assert result["reason"] == "anomaly_detected"
@@ -316,16 +380,24 @@ class TestAnalyzeParameter:
         bounds = _AUTO_BOUNDS["insights.cooldown_hours"]
         thresholds.redis.get = AsyncMock(return_value=None)
         outcome_tracker = MagicMock()
-        outcome_tracker.get_stats = AsyncMock(return_value={
-            "set_light": {"total": 30, "negative": 2},
-        })
+        outcome_tracker.get_stats = AsyncMock(
+            return_value={
+                "set_light": {"total": 30, "negative": 2},
+            }
+        )
 
-        with patch("assistant.adaptive_thresholds.yaml_config", {
-            "insights": {"cooldown_hours": 4},
-        }):
-            with patch.object(thresholds, '_determine_direction', return_value=1):
+        with patch(
+            "assistant.adaptive_thresholds.yaml_config",
+            {
+                "insights": {"cooldown_hours": 4},
+            },
+        ):
+            with patch.object(thresholds, "_determine_direction", return_value=1):
                 result = await thresholds._analyze_parameter(
-                    "insights.cooldown_hours", bounds, outcome_tracker, None,
+                    "insights.cooldown_hours",
+                    bounds,
+                    outcome_tracker,
+                    None,
                 )
         assert result["adjusted"] is True
         assert result["new_value"] == 5
@@ -340,7 +412,9 @@ class TestDetermineDirection:
         feedback = MagicMock()
         feedback.get_score = AsyncMock(return_value=0.2)
         result = await thresholds._determine_direction(
-            "insights.cooldown_hours", None, feedback,
+            "insights.cooldown_hours",
+            None,
+            feedback,
         )
         assert result == 1
 
@@ -349,7 +423,9 @@ class TestDetermineDirection:
         feedback = MagicMock()
         feedback.get_score = AsyncMock(return_value=0.8)
         result = await thresholds._determine_direction(
-            "insights.cooldown_hours", None, feedback,
+            "insights.cooldown_hours",
+            None,
+            feedback,
         )
         assert result == -1
 
@@ -358,14 +434,18 @@ class TestDetermineDirection:
         feedback = MagicMock()
         feedback.get_score = AsyncMock(return_value=0.5)
         result = await thresholds._determine_direction(
-            "insights.cooldown_hours", None, feedback,
+            "insights.cooldown_hours",
+            None,
+            feedback,
         )
         assert result == 0
 
     @pytest.mark.asyncio
     async def test_insight_no_feedback(self, thresholds):
         result = await thresholds._determine_direction(
-            "insights.cooldown_hours", None, None,
+            "insights.cooldown_hours",
+            None,
+            None,
         )
         assert result == 0
 
@@ -374,7 +454,9 @@ class TestDetermineDirection:
         outcome = MagicMock()
         outcome.get_success_score = AsyncMock(return_value=0.2)
         result = await thresholds._determine_direction(
-            "anticipation.min_confidence", outcome, None,
+            "anticipation.min_confidence",
+            outcome,
+            None,
         )
         assert result == 1
 
@@ -383,14 +465,18 @@ class TestDetermineDirection:
         outcome = MagicMock()
         outcome.get_success_score = AsyncMock(return_value=0.8)
         result = await thresholds._determine_direction(
-            "anticipation.min_confidence", outcome, None,
+            "anticipation.min_confidence",
+            outcome,
+            None,
         )
         assert result == -1
 
     @pytest.mark.asyncio
     async def test_anticipation_no_tracker(self, thresholds):
         result = await thresholds._determine_direction(
-            "anticipation.min_confidence", None, None,
+            "anticipation.min_confidence",
+            None,
+            None,
         )
         assert result == 0
 
@@ -399,7 +485,9 @@ class TestDetermineDirection:
         feedback = MagicMock()
         feedback.get_all_scores = AsyncMock(return_value={"a": 0.1, "b": 0.2})
         result = await thresholds._determine_direction(
-            "feedback.base_cooldown_seconds", None, feedback,
+            "feedback.base_cooldown_seconds",
+            None,
+            feedback,
         )
         assert result == 1
 
@@ -408,7 +496,9 @@ class TestDetermineDirection:
         feedback = MagicMock()
         feedback.get_all_scores = AsyncMock(return_value={"a": 0.8, "b": 0.9})
         result = await thresholds._determine_direction(
-            "feedback.base_cooldown_seconds", None, feedback,
+            "feedback.base_cooldown_seconds",
+            None,
+            feedback,
         )
         assert result == -1
 
@@ -417,7 +507,9 @@ class TestDetermineDirection:
         feedback = MagicMock()
         feedback.get_all_scores = AsyncMock(return_value={})
         result = await thresholds._determine_direction(
-            "feedback.base_cooldown_seconds", None, feedback,
+            "feedback.base_cooldown_seconds",
+            None,
+            feedback,
         )
         assert result == 0
 
@@ -426,14 +518,18 @@ class TestDetermineDirection:
         feedback = MagicMock()
         feedback.get_all_scores = AsyncMock(return_value={"a": "text", "b": None})
         result = await thresholds._determine_direction(
-            "feedback.base_cooldown_seconds", None, feedback,
+            "feedback.base_cooldown_seconds",
+            None,
+            feedback,
         )
         assert result == 0
 
     @pytest.mark.asyncio
     async def test_unknown_parameter(self, thresholds):
         result = await thresholds._determine_direction(
-            "unknown.param", None, None,
+            "unknown.param",
+            None,
+            None,
         )
         assert result == 0
 
@@ -469,9 +565,12 @@ class TestGetRuntimeValueDeep:
     """Additional _get_runtime_value tests."""
 
     def test_nested_non_dict(self, thresholds):
-        with patch("assistant.adaptive_thresholds.yaml_config", {
-            "insights": "not_a_dict",
-        }):
+        with patch(
+            "assistant.adaptive_thresholds.yaml_config",
+            {
+                "insights": "not_a_dict",
+            },
+        ):
             val = thresholds._get_runtime_value(["insights", "cooldown_hours"])
         assert val is None
 
@@ -545,16 +644,24 @@ class TestBoundsEnforcement:
         bounds = _AUTO_BOUNDS["insights.cooldown_hours"]
         thresholds.redis.get = AsyncMock(return_value=None)
         outcome_tracker = MagicMock()
-        outcome_tracker.get_stats = AsyncMock(return_value={
-            "action": {"total": 30, "negative": 2},
-        })
+        outcome_tracker.get_stats = AsyncMock(
+            return_value={
+                "action": {"total": 30, "negative": 2},
+            }
+        )
 
-        with patch("assistant.adaptive_thresholds.yaml_config", {
-            "insights": {"cooldown_hours": bounds["max"]},
-        }):
-            with patch.object(thresholds, '_determine_direction', return_value=1):
+        with patch(
+            "assistant.adaptive_thresholds.yaml_config",
+            {
+                "insights": {"cooldown_hours": bounds["max"]},
+            },
+        ):
+            with patch.object(thresholds, "_determine_direction", return_value=1):
                 result = await thresholds._analyze_parameter(
-                    "insights.cooldown_hours", bounds, outcome_tracker, None,
+                    "insights.cooldown_hours",
+                    bounds,
+                    outcome_tracker,
+                    None,
                 )
         assert result["adjusted"] is False
         assert result["reason"] == "at_bound"
@@ -565,16 +672,24 @@ class TestBoundsEnforcement:
         bounds = _AUTO_BOUNDS["anticipation.min_confidence"]
         thresholds.redis.get = AsyncMock(return_value=None)
         outcome_tracker = MagicMock()
-        outcome_tracker.get_stats = AsyncMock(return_value={
-            "action": {"total": 30, "negative": 2},
-        })
+        outcome_tracker.get_stats = AsyncMock(
+            return_value={
+                "action": {"total": 30, "negative": 2},
+            }
+        )
 
-        with patch("assistant.adaptive_thresholds.yaml_config", {
-            "anticipation": {"min_confidence": bounds["min"]},
-        }):
-            with patch.object(thresholds, '_determine_direction', return_value=-1):
+        with patch(
+            "assistant.adaptive_thresholds.yaml_config",
+            {
+                "anticipation": {"min_confidence": bounds["min"]},
+            },
+        ):
+            with patch.object(thresholds, "_determine_direction", return_value=-1):
                 result = await thresholds._analyze_parameter(
-                    "anticipation.min_confidence", bounds, outcome_tracker, None,
+                    "anticipation.min_confidence",
+                    bounds,
+                    outcome_tracker,
+                    None,
                 )
         assert result["adjusted"] is False
         assert result["reason"] == "at_bound"
@@ -613,16 +728,24 @@ class TestAnalyzeParameterAnomalyEdgeCases:
         thresholds.redis.get = AsyncMock(return_value=None)
         outcome_tracker = MagicMock()
         # 90% negative but only 10 total — should NOT trigger anomaly
-        outcome_tracker.get_stats = AsyncMock(return_value={
-            "action": {"total": 10, "negative": 9},
-        })
+        outcome_tracker.get_stats = AsyncMock(
+            return_value={
+                "action": {"total": 10, "negative": 9},
+            }
+        )
 
-        with patch("assistant.adaptive_thresholds.yaml_config", {
-            "insights": {"cooldown_hours": 4},
-        }):
-            with patch.object(thresholds, '_determine_direction', return_value=1):
+        with patch(
+            "assistant.adaptive_thresholds.yaml_config",
+            {
+                "insights": {"cooldown_hours": 4},
+            },
+        ):
+            with patch.object(thresholds, "_determine_direction", return_value=1):
                 result = await thresholds._analyze_parameter(
-                    "insights.cooldown_hours", bounds, outcome_tracker, None,
+                    "insights.cooldown_hours",
+                    bounds,
+                    outcome_tracker,
+                    None,
                 )
         assert result["adjusted"] is True
 
@@ -633,16 +756,24 @@ class TestAnalyzeParameterAnomalyEdgeCases:
         thresholds.redis.get = AsyncMock(return_value=None)
         outcome_tracker = MagicMock()
         # Exactly 80% negative — should NOT trigger (check is > 0.8, not >=)
-        outcome_tracker.get_stats = AsyncMock(return_value={
-            "action": {"total": 25, "negative": 20},
-        })
+        outcome_tracker.get_stats = AsyncMock(
+            return_value={
+                "action": {"total": 25, "negative": 20},
+            }
+        )
 
-        with patch("assistant.adaptive_thresholds.yaml_config", {
-            "insights": {"cooldown_hours": 4},
-        }):
-            with patch.object(thresholds, '_determine_direction', return_value=1):
+        with patch(
+            "assistant.adaptive_thresholds.yaml_config",
+            {
+                "insights": {"cooldown_hours": 4},
+            },
+        ):
+            with patch.object(thresholds, "_determine_direction", return_value=1):
                 result = await thresholds._analyze_parameter(
-                    "insights.cooldown_hours", bounds, outcome_tracker, None,
+                    "insights.cooldown_hours",
+                    bounds,
+                    outcome_tracker,
+                    None,
                 )
         assert result["adjusted"] is True
 
@@ -652,17 +783,25 @@ class TestAnalyzeParameterAnomalyEdgeCases:
         bounds = _AUTO_BOUNDS["insights.cooldown_hours"]
         thresholds.redis.get = AsyncMock(return_value=None)
         outcome_tracker = MagicMock()
-        outcome_tracker.get_stats = AsyncMock(return_value={
-            "metadata": "not_a_dict",
-            "action": {"total": 30, "negative": 2},
-        })
+        outcome_tracker.get_stats = AsyncMock(
+            return_value={
+                "metadata": "not_a_dict",
+                "action": {"total": 30, "negative": 2},
+            }
+        )
 
-        with patch("assistant.adaptive_thresholds.yaml_config", {
-            "insights": {"cooldown_hours": 4},
-        }):
-            with patch.object(thresholds, '_determine_direction', return_value=1):
+        with patch(
+            "assistant.adaptive_thresholds.yaml_config",
+            {
+                "insights": {"cooldown_hours": 4},
+            },
+        ):
+            with patch.object(thresholds, "_determine_direction", return_value=1):
                 result = await thresholds._analyze_parameter(
-                    "insights.cooldown_hours", bounds, outcome_tracker, None,
+                    "insights.cooldown_hours",
+                    bounds,
+                    outcome_tracker,
+                    None,
                 )
         assert result["adjusted"] is True
 

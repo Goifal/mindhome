@@ -2495,6 +2495,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                     )
 
                                 _brain_task = asyncio.create_task(_run_brain())
+                                _brain_task_start = _time.time()
 
                                 # Concurrent: Empfange Nachrichten waehrend brain laeuft
                                 result = None
@@ -2556,6 +2557,30 @@ async def websocket_endpoint(websocket: WebSocket):
                                                     await emit_stream_end(
                                                         "".join(stream_tokens_sent),
                                                         tts_data={"interrupted": True},
+                                                    )
+                                                # MCU Sprint 2: Konversationelle Unterbrechungs-Bestaetigung
+                                                try:
+                                                    _task_dur = (
+                                                        _time.time() - _brain_task_start
+                                                        if _brain_task_start
+                                                        else 0.0
+                                                    )
+                                                    _int_text = (
+                                                        brain.get_interruption_response(
+                                                            task_duration_s=_task_dur,
+                                                            person=person or "",
+                                                        )
+                                                    )
+                                                    await emit_speaking(
+                                                        _int_text,
+                                                        tts_data={
+                                                            "interrupted_ack": True
+                                                        },
+                                                    )
+                                                except Exception as _int_err:
+                                                    logger.debug(
+                                                        "Interrupt-Response Fehler: %s",
+                                                        _int_err,
                                                     )
                                                 break
                                             elif interim_msg.get("event") == "pong":
@@ -2741,6 +2766,14 @@ async def websocket_endpoint(websocket: WebSocket):
                                 )
                         except Exception as e:
                             logger.debug("Unhandled: %s", e)
+                    # MCU Sprint 2: Konversationelle Unterbrechungs-Bestaetigung
+                    try:
+                        _int_text = brain.get_interruption_response(person=person or "")
+                        await emit_speaking(
+                            _int_text, tts_data={"interrupted_ack": True}
+                        )
+                    except Exception as _int_err:
+                        logger.debug("Interrupt-Response Fehler: %s", _int_err)
             except json.JSONDecodeError:
                 await ws_manager.send_personal(
                     websocket, "error", {"message": "Ungueltiges JSON"}

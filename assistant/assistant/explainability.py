@@ -76,10 +76,10 @@ class ExplainabilityEngine:
         self.detail_level = cfg.get(
             "detail_level", "normal"
         )  # minimal, normal, verbose
-        self.auto_explain = cfg.get("auto_explain", False)
+        self.auto_explain = cfg.get("auto_explain", True)
         self.counterfactual_enabled = cfg.get("counterfactual_enabled", True)
         self.reasoning_chains = cfg.get("reasoning_chains", False)
-        self.confidence_display = cfg.get("confidence_display", False)
+        self.confidence_display = cfg.get("confidence_display", True)
         self.explanation_style = cfg.get("explanation_style", "auto")
 
         # In-Memory Decision Log (FIFO)
@@ -91,16 +91,18 @@ class ExplainabilityEngine:
         self.enabled = cfg.get("enabled", True)
         self.max_history = cfg.get("max_history", 50)
         self.detail_level = cfg.get("detail_level", "normal")
-        self.auto_explain = cfg.get("auto_explain", False)
+        self.auto_explain = cfg.get("auto_explain", True)
         self.counterfactual_enabled = cfg.get("counterfactual_enabled", True)
         self.reasoning_chains = cfg.get("reasoning_chains", False)
-        self.confidence_display = cfg.get("confidence_display", False)
+        self.confidence_display = cfg.get("confidence_display", True)
         self.explanation_style = cfg.get("explanation_style", "auto")
         if self._decisions.maxlen != self.max_history:
             old_items = list(self._decisions)
             self._decisions.clear()
             # Erstelle neue Deque mit neuem maxlen
-            self._decisions = deque(old_items[-self.max_history:], maxlen=self.max_history)
+            self._decisions = deque(
+                old_items[-self.max_history :], maxlen=self.max_history
+            )
         logger.info(
             "ExplainabilityEngine config reloaded (enabled: %s, style: %s)",
             self.enabled,
@@ -244,14 +246,36 @@ class ExplainabilityEngine:
             if kw in d.get("action", "").lower() or kw in d.get("reason", "").lower()
         ][:n]
 
+    # Butler-Ton Templates: natuerliche Erklaerungen statt Logfile-Stil
+    BUTLER_TEMPLATES: dict[str, str] = {
+        "user_command": "Wie gewuenscht: {action}.",
+        "automation": "Ich habe mir erlaubt, {action} auszufuehren — {reason}.",
+        "anticipation": "Basierend auf Ihren Gewohnheiten habe ich {action} — {reason}.",
+        "proactive": "Mir ist aufgefallen: {reason}. Daher habe ich {action}.",
+        "schedule": "Planmaessig: {action} — {reason}.",
+        "sensor": "Die Sensoren zeigen: {reason}. Ich habe daher {action}.",
+        "conflict": "Ich habe einen Konflikt bemerkt: {reason}. Daher {action}.",
+        "safety": "Aus Sicherheitsgruenden: {action} — {reason}.",
+    }
+
+    # Confidence-Einschuebe fuer Butler-Ton
+    CONFIDENCE_HINTS: list[tuple[float, str]] = [
+        (0.9, ""),  # Sehr sicher — kein Hinweis noetig
+        (0.7, " (ziemlich sicher)"),
+        (0.0, " (unsicher)"),
+    ]
+
     def format_explanation(self, decision: dict) -> str:
         """Formatiert eine Entscheidung als natuerlichsprachliche Erklaerung.
+
+        Nutzt Butler-Templates fuer natuerlichen Ton. Faellt auf strukturiertes
+        Format zurueck wenn kein passendes Template existiert.
 
         Args:
             decision: Entscheidungs-Dict
 
         Returns:
-            Menschenlesbare Erklaerung
+            Menschenlesbare Erklaerung im Butler-Stil
         """
         action = decision.get("action", "Unbekannte Aktion")
         reason = decision.get("reason", "Kein Grund angegeben")
@@ -259,6 +283,25 @@ class ExplainabilityEngine:
         time_str = decision.get("time_str", "")
         confidence = decision.get("confidence", 1.0)
 
+        # Butler-Template waehlen
+        template = self.BUTLER_TEMPLATES.get(trigger)
+        if template:
+            text = template.format(action=action, reason=reason)
+
+            # Confidence-Hinweis anfuegen wenn aktiviert
+            if self.confidence_display:
+                for threshold, hint in self.CONFIDENCE_HINTS:
+                    if confidence >= threshold:
+                        if hint:
+                            text = text.rstrip(".") + hint + "."
+                        break
+
+            if time_str:
+                text = text.rstrip(".") + f" ({time_str})."
+
+            return text
+
+        # Fallback: strukturiertes Format fuer unbekannte Trigger
         trigger_labels = {
             "user_command": "auf deinen Befehl",
             "automation": "durch eine Automation",
@@ -274,7 +317,9 @@ class ExplainabilityEngine:
             if confidence >= 0.9:
                 action_prefix = f"Ich habe '{action}' ausgefuehrt"
             elif confidence >= 0.7:
-                action_prefix = f"Ich habe wahrscheinlich richtig gehandelt: '{action}' ausgefuehrt"
+                action_prefix = (
+                    f"Ich habe wahrscheinlich richtig gehandelt: '{action}' ausgefuehrt"
+                )
             else:
                 action_prefix = f"Ich habe moeglicherweise '{action}' ausgefuehrt"
         else:

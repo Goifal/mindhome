@@ -63,7 +63,9 @@ class TestCheckPattern:
     @pytest.mark.asyncio
     async def test_no_suggestion_below_threshold(self, observer):
         pipe_mock = MagicMock()
-        pipe_mock.execute = AsyncMock(return_value=[2, -2])  # count=2 (unter min_repetitions), ttl=-2
+        pipe_mock.execute = AsyncMock(
+            return_value=[2, -2]
+        )  # count=2 (unter min_repetitions), ttl=-2
         observer.redis.pipeline = MagicMock(return_value=pipe_mock)
         callback = AsyncMock()
         observer._notify_callback = callback
@@ -73,7 +75,9 @@ class TestCheckPattern:
     @pytest.mark.asyncio
     async def test_suggestion_at_threshold(self, observer):
         pipe_mock = MagicMock()
-        pipe_mock.execute = AsyncMock(return_value=[3, 2592000])  # count=3 (at threshold), ttl set
+        pipe_mock.execute = AsyncMock(
+            return_value=[3, 2592000]
+        )  # count=3 (at threshold), ttl set
         observer.redis.pipeline = MagicMock(return_value=pipe_mock)
         observer.redis.get = AsyncMock(return_value=None)  # Noch nicht vorgeschlagen
         callback = AsyncMock()
@@ -107,7 +111,9 @@ class TestWeekdayPattern:
         callback = AsyncMock()
         observer._notify_callback = callback
 
-        await observer._check_weekday_pattern("light.wz:on", "22:00", 0, "light.wz", "on")
+        await observer._check_weekday_pattern(
+            "light.wz:on", "22:00", 0, "light.wz", "on"
+        )
 
         callback.assert_called_once()
         msg = callback.call_args[0][0]
@@ -121,7 +127,9 @@ class TestWeekdayPattern:
         observer.redis.get.side_effect = ["1"]  # Taeglich schon vorgeschlagen
         callback = AsyncMock()
         observer._notify_callback = callback
-        await observer._check_weekday_pattern("light.wz:on", "22:00", 2, "light.wz", "on")
+        await observer._check_weekday_pattern(
+            "light.wz:on", "22:00", 2, "light.wz", "on"
+        )
         callback.assert_not_called()
 
 
@@ -130,13 +138,17 @@ class TestHandleResponse:
 
     @pytest.mark.asyncio
     async def test_accept_response(self, observer):
-        result = await observer.handle_response("light.wohnzimmer", "22:00", accepted=True)
+        result = await observer.handle_response(
+            "light.wohnzimmer", "22:00", accepted=True
+        )
         assert "vorgemerkt" in result
         observer.redis.lpush.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_reject_response(self, observer):
-        result = await observer.handle_response("light.wohnzimmer", "22:00", accepted=False)
+        result = await observer.handle_response(
+            "light.wohnzimmer", "22:00", accepted=False
+        )
         assert "nicht automatisieren" in result
 
     @pytest.mark.asyncio
@@ -161,18 +173,21 @@ class TestWeekdayNames:
 class TestParsePersonPrefix:
     def test_with_person(self):
         from assistant.learning_observer import _parse_person_prefix
+
         person, action = _parse_person_prefix("julia:light.wohnzimmer:on")
         assert person == "julia"
         assert action == "light.wohnzimmer:on"
 
     def test_without_person(self):
         from assistant.learning_observer import _parse_person_prefix
+
         person, action = _parse_person_prefix("light.wohnzimmer:on")
         assert person == ""
         assert action == "light.wohnzimmer:on"
 
     def test_entity_only(self):
         from assistant.learning_observer import _parse_person_prefix
+
         person, action = _parse_person_prefix("light.wz")
         assert person == ""
         assert action == "light.wz"
@@ -223,10 +238,12 @@ class TestObserveStateChangeExtended:
     @pytest.mark.asyncio
     async def test_automated_entity_skipped(self, observer):
         """F-053: Cycle detection — automated entities are skipped."""
+
         async def fake_get(key):
             if "automated" in key:
                 return "1"
             return None
+
         observer.redis.get = AsyncMock(side_effect=fake_get)
         await observer.observe_state_change("light.wz", "on", "off")
         observer.redis.lpush.assert_not_called()
@@ -248,7 +265,9 @@ class TestCheckPatternExtended:
         observer.redis.get = AsyncMock(return_value=None)
         callback = AsyncMock()
         observer._notify_callback = callback
-        await observer._check_pattern("light.wz:on", "22:00", "light.wz", "on", person="julia")
+        await observer._check_pattern(
+            "light.wz:on", "22:00", "light.wz", "on", person="julia"
+        )
         callback.assert_called_once()
         msg = callback.call_args[0][0]
         assert "julia" in msg.get("person", "")
@@ -288,23 +307,33 @@ class TestCheckWeekdayPatternExtended:
     @pytest.mark.asyncio
     async def test_weekday_automated_skipped(self, observer):
         """F-053: Automated weekday patterns are skipped."""
+
         async def fake_get(key):
             if "automated" in key:
                 return "1"
             return None
+
         observer.redis.get = AsyncMock(side_effect=fake_get)
         callback = AsyncMock()
         observer._notify_callback = callback
-        await observer._check_weekday_pattern("light.wz:on", "22:00", 0, "light.wz", "on")
+        await observer._check_weekday_pattern(
+            "light.wz:on", "22:00", 0, "light.wz", "on"
+        )
         callback.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_weekday_already_suggested(self, observer):
         observer.redis.incr.return_value = 3
-        observer.redis.get.side_effect = [None, None, "1"]  # automated=None, daily=None, weekday=already
+        observer.redis.get.side_effect = [
+            None,
+            None,
+            "1",
+        ]  # automated=None, daily=None, weekday=already
         callback = AsyncMock()
         observer._notify_callback = callback
-        await observer._check_weekday_pattern("light.wz:on", "22:00", 2, "light.wz", "on")
+        await observer._check_weekday_pattern(
+            "light.wz:on", "22:00", 2, "light.wz", "on"
+        )
         callback.assert_not_called()
 
     @pytest.mark.asyncio
@@ -312,7 +341,9 @@ class TestCheckWeekdayPatternExtended:
         observer.redis.incr.return_value = 3
         observer.redis.get.side_effect = [None, None, None]
         observer._notify_callback = None
-        await observer._check_weekday_pattern("light.wz:on", "22:00", 0, "light.wz", "on")
+        await observer._check_weekday_pattern(
+            "light.wz:on", "22:00", 0, "light.wz", "on"
+        )
 
     @pytest.mark.asyncio
     async def test_weekday_with_person(self, observer):
@@ -320,7 +351,9 @@ class TestCheckWeekdayPatternExtended:
         observer.redis.get.side_effect = [None, None, None]
         callback = AsyncMock()
         observer._notify_callback = callback
-        await observer._check_weekday_pattern("light.wz:on", "22:00", 0, "light.wz", "on", person="max")
+        await observer._check_weekday_pattern(
+            "light.wz:on", "22:00", 0, "light.wz", "on", person="max"
+        )
         callback.assert_called_once()
         msg = callback.call_args[0][0]
         assert msg["person"] == "max"
@@ -329,19 +362,25 @@ class TestCheckWeekdayPatternExtended:
 class TestHandleResponseExtended:
     @pytest.mark.asyncio
     async def test_accept_with_weekday(self, observer):
-        result = await observer.handle_response("light.wz", "22:00", accepted=True, weekday=2, person="max")
+        result = await observer.handle_response(
+            "light.wz", "22:00", accepted=True, weekday=2, person="max"
+        )
         assert "vorgemerkt" in result
         # Should set automated markers for weekday
         observer.redis.setex.assert_called()
 
     @pytest.mark.asyncio
     async def test_accept_without_weekday(self, observer):
-        result = await observer.handle_response("light.wz", "22:00", accepted=True, weekday=-1)
+        result = await observer.handle_response(
+            "light.wz", "22:00", accepted=True, weekday=-1
+        )
         assert "vorgemerkt" in result
 
     @pytest.mark.asyncio
     async def test_reject_with_person(self, observer):
-        result = await observer.handle_response("light.wz", "22:00", accepted=False, person="max")
+        result = await observer.handle_response(
+            "light.wz", "22:00", accepted=False, person="max"
+        )
         assert "nicht automatisieren" in result
 
 
@@ -360,10 +399,12 @@ class TestGetLearnedPatterns:
 
     @pytest.mark.asyncio
     async def test_with_patterns(self, observer):
-        observer.redis.scan = AsyncMock(side_effect=[
-            (0, ["mha:learning:patterns:light.wz:on:22:00"]),
-            (0, []),
-        ])
+        observer.redis.scan = AsyncMock(
+            side_effect=[
+                (0, ["mha:learning:patterns:light.wz:on:22:00"]),
+                (0, []),
+            ]
+        )
         observer.redis.mget = AsyncMock(return_value=["5"])
         result = await observer.get_learned_patterns()
         assert len(result) >= 1
@@ -371,11 +412,18 @@ class TestGetLearnedPatterns:
 
     @pytest.mark.asyncio
     async def test_filter_by_person(self, observer):
-        observer.redis.scan = AsyncMock(side_effect=[
-            (0, ["mha:learning:patterns:julia:light.wz:on:22:00",
-                 "mha:learning:patterns:light.flur:on:21:00"]),
-            (0, []),
-        ])
+        observer.redis.scan = AsyncMock(
+            side_effect=[
+                (
+                    0,
+                    [
+                        "mha:learning:patterns:julia:light.wz:on:22:00",
+                        "mha:learning:patterns:light.flur:on:21:00",
+                    ],
+                ),
+                (0, []),
+            ]
+        )
         observer.redis.mget = AsyncMock(return_value=["5", "3"])
         result = await observer.get_learned_patterns(person="julia")
         # Only julia patterns should appear
@@ -384,10 +432,12 @@ class TestGetLearnedPatterns:
 
     @pytest.mark.asyncio
     async def test_skip_low_count(self, observer):
-        observer.redis.scan = AsyncMock(side_effect=[
-            (0, ["mha:learning:patterns:light.wz:on:22:00"]),
-            (0, []),
-        ])
+        observer.redis.scan = AsyncMock(
+            side_effect=[
+                (0, ["mha:learning:patterns:light.wz:on:22:00"]),
+                (0, []),
+            ]
+        )
         observer.redis.mget = AsyncMock(return_value=["1"])
         result = await observer.get_learned_patterns()
         assert result == []
@@ -411,10 +461,12 @@ class TestGetLearningReport:
     async def test_with_data(self, observer):
         observer.redis.scan = AsyncMock(return_value=(0, []))
         observer.redis.llen = AsyncMock(return_value=50)
-        observer.redis.lrange = AsyncMock(return_value=[
-            json.dumps({"accepted": True}),
-            json.dumps({"accepted": False}),
-        ])
+        observer.redis.lrange = AsyncMock(
+            return_value=[
+                json.dumps({"accepted": True}),
+                json.dumps({"accepted": False}),
+            ]
+        )
         result = await observer.get_learning_report()
         assert result["total_observations"] == 50
         assert result["accepted"] == 1
@@ -424,25 +476,45 @@ class TestGetLearningReport:
     async def test_with_invalid_response_data(self, observer):
         observer.redis.scan = AsyncMock(return_value=(0, []))
         observer.redis.llen = AsyncMock(return_value=10)
-        observer.redis.lrange = AsyncMock(return_value=[
-            "invalid json",
-            json.dumps({"accepted": True}),
-        ])
+        observer.redis.lrange = AsyncMock(
+            return_value=[
+                "invalid json",
+                json.dumps({"accepted": True}),
+            ]
+        )
         result = await observer.get_learning_report()
         assert result["accepted"] == 1
 
 
 class TestFormatLearningReport:
     def test_empty_report(self, observer):
-        report = {"patterns": [], "total_observations": 0, "suggestions_made": 0, "accepted": 0, "declined": 0}
+        report = {
+            "patterns": [],
+            "total_observations": 0,
+            "suggestions_made": 0,
+            "accepted": 0,
+            "declined": 0,
+        }
         result = observer.format_learning_report(report)
         assert "Noch keine" in result
 
     def test_with_patterns(self, observer):
         report = {
             "patterns": [
-                {"entity": "light.wz", "time_slot": "22:00", "count": 5, "weekday": -1, "action": "light.wz:on"},
-                {"entity": "light.flur", "time_slot": "21:00", "count": 3, "weekday": 0, "action": "light.flur:off"},
+                {
+                    "entity": "light.wz",
+                    "time_slot": "22:00",
+                    "count": 5,
+                    "weekday": -1,
+                    "action": "light.wz:on",
+                },
+                {
+                    "entity": "light.flur",
+                    "time_slot": "21:00",
+                    "count": 3,
+                    "weekday": 0,
+                    "action": "light.flur:off",
+                },
             ],
             "total_observations": 50,
             "suggestions_made": 2,
@@ -456,14 +528,26 @@ class TestFormatLearningReport:
         assert "2 Vorschläge" in result
 
     def test_only_observations_no_patterns(self, observer):
-        report = {"patterns": [], "total_observations": 10, "suggestions_made": 0, "accepted": 0, "declined": 0}
+        report = {
+            "patterns": [],
+            "total_observations": 10,
+            "suggestions_made": 0,
+            "accepted": 0,
+            "declined": 0,
+        }
         result = observer.format_learning_report(report)
         assert "10 manuelle Aktionen" in result
 
     def test_weekday_out_of_range(self, observer):
         report = {
             "patterns": [
-                {"entity": "light.wz", "time_slot": "22:00", "count": 5, "weekday": 10, "action": "light.wz:on"},
+                {
+                    "entity": "light.wz",
+                    "time_slot": "22:00",
+                    "count": 5,
+                    "weekday": 10,
+                    "action": "light.wz:on",
+                },
             ],
             "total_observations": 5,
             "suggestions_made": 0,
@@ -522,23 +606,30 @@ class TestTemporalClustering:
     async def test_cluster_with_recent_actions(self, observer):
         """Mehrere manuelle Aktionen in 5 Min werden als Cluster erkannt."""
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc)
         two_min_ago = (now - __import__("datetime").timedelta(seconds=120)).isoformat()
-        three_min_ago = (now - __import__("datetime").timedelta(seconds=180)).isoformat()
+        three_min_ago = (
+            now - __import__("datetime").timedelta(seconds=180)
+        ).isoformat()
         now_iso = now.isoformat()
 
-        recent1 = json.dumps({
-            "entity_id": "light.wohnzimmer",
-            "new_state": "on",
-            "domain": "light",
-            "timestamp": two_min_ago,
-        })
-        recent2 = json.dumps({
-            "entity_id": "cover.kueche",
-            "new_state": "closed",
-            "domain": "cover",
-            "timestamp": three_min_ago,
-        })
+        recent1 = json.dumps(
+            {
+                "entity_id": "light.wohnzimmer",
+                "new_state": "on",
+                "domain": "light",
+                "timestamp": two_min_ago,
+            }
+        )
+        recent2 = json.dumps(
+            {
+                "entity_id": "cover.kueche",
+                "new_state": "closed",
+                "domain": "cover",
+                "timestamp": three_min_ago,
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[recent1, recent2])
         observer.redis.incr = AsyncMock(return_value=1)
 
@@ -560,9 +651,11 @@ class TestTemporalClustering:
             "entity_id": "light.wohnzimmer",
             "new_state": "on",
             "domain": "light",
-            "timestamp": __import__("datetime").datetime.now(
+            "timestamp": __import__("datetime")
+            .datetime.now(
                 __import__("datetime").timezone.utc,
-            ).isoformat(),
+            )
+            .isoformat(),
         }
         await observer._check_temporal_cluster(action)
         observer.redis.incr.assert_not_called()
@@ -571,20 +664,25 @@ class TestTemporalClustering:
     async def test_cluster_callback_at_min_repetitions(self, observer):
         """Callback wird exakt bei min_repetitions (3) ausgeloest."""
         from datetime import datetime, timedelta, timezone
+
         now = datetime.now(timezone.utc)
 
-        recent1 = json.dumps({
-            "entity_id": "light.wohnzimmer",
-            "new_state": "on",
-            "domain": "light",
-            "timestamp": (now - timedelta(seconds=60)).isoformat(),
-        })
-        recent2 = json.dumps({
-            "entity_id": "cover.wohnzimmer",
-            "new_state": "closed",
-            "domain": "cover",
-            "timestamp": (now - timedelta(seconds=120)).isoformat(),
-        })
+        recent1 = json.dumps(
+            {
+                "entity_id": "light.wohnzimmer",
+                "new_state": "on",
+                "domain": "light",
+                "timestamp": (now - timedelta(seconds=60)).isoformat(),
+            }
+        )
+        recent2 = json.dumps(
+            {
+                "entity_id": "cover.wohnzimmer",
+                "new_state": "closed",
+                "domain": "cover",
+                "timestamp": (now - timedelta(seconds=120)).isoformat(),
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[recent1, recent2])
         # count == min_repetitions (3) → trigger callback
         observer.redis.incr = AsyncMock(return_value=3)
@@ -611,20 +709,25 @@ class TestTemporalClustering:
     async def test_cluster_no_callback_below_min_repetitions(self, observer):
         """Callback wird NICHT ausgeloest wenn count < min_repetitions."""
         from datetime import datetime, timedelta, timezone
+
         now = datetime.now(timezone.utc)
 
-        recent1 = json.dumps({
-            "entity_id": "light.wohnzimmer",
-            "new_state": "on",
-            "domain": "light",
-            "timestamp": (now - timedelta(seconds=60)).isoformat(),
-        })
-        recent2 = json.dumps({
-            "entity_id": "cover.wohnzimmer",
-            "new_state": "closed",
-            "domain": "cover",
-            "timestamp": (now - timedelta(seconds=120)).isoformat(),
-        })
+        recent1 = json.dumps(
+            {
+                "entity_id": "light.wohnzimmer",
+                "new_state": "on",
+                "domain": "light",
+                "timestamp": (now - timedelta(seconds=60)).isoformat(),
+            }
+        )
+        recent2 = json.dumps(
+            {
+                "entity_id": "cover.wohnzimmer",
+                "new_state": "closed",
+                "domain": "cover",
+                "timestamp": (now - timedelta(seconds=120)).isoformat(),
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[recent1, recent2])
         observer.redis.incr = AsyncMock(return_value=2)  # Below threshold
 
@@ -641,20 +744,25 @@ class TestTemporalClustering:
     async def test_cluster_no_callback_above_min_repetitions(self, observer):
         """Callback wird NICHT erneut ausgeloest wenn count > min_repetitions."""
         from datetime import datetime, timedelta, timezone
+
         now = datetime.now(timezone.utc)
 
-        recent1 = json.dumps({
-            "entity_id": "light.wohnzimmer",
-            "new_state": "on",
-            "domain": "light",
-            "timestamp": (now - timedelta(seconds=60)).isoformat(),
-        })
-        recent2 = json.dumps({
-            "entity_id": "cover.wohnzimmer",
-            "new_state": "closed",
-            "domain": "cover",
-            "timestamp": (now - timedelta(seconds=120)).isoformat(),
-        })
+        recent1 = json.dumps(
+            {
+                "entity_id": "light.wohnzimmer",
+                "new_state": "on",
+                "domain": "light",
+                "timestamp": (now - timedelta(seconds=60)).isoformat(),
+            }
+        )
+        recent2 = json.dumps(
+            {
+                "entity_id": "cover.wohnzimmer",
+                "new_state": "closed",
+                "domain": "cover",
+                "timestamp": (now - timedelta(seconds=120)).isoformat(),
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[recent1, recent2])
         observer.redis.incr = AsyncMock(return_value=5)  # Above threshold
 
@@ -671,20 +779,25 @@ class TestTemporalClustering:
     async def test_cluster_first_observation_sets_expire_and_details(self, observer):
         """Erste Beobachtung (count=1) setzt TTL und speichert Cluster-Details."""
         from datetime import datetime, timedelta, timezone
+
         now = datetime.now(timezone.utc)
 
-        recent1 = json.dumps({
-            "entity_id": "light.flur",
-            "new_state": "on",
-            "domain": "light",
-            "timestamp": (now - timedelta(seconds=30)).isoformat(),
-        })
-        recent2 = json.dumps({
-            "entity_id": "light.kueche",
-            "new_state": "on",
-            "domain": "light",
-            "timestamp": (now - timedelta(seconds=90)).isoformat(),
-        })
+        recent1 = json.dumps(
+            {
+                "entity_id": "light.flur",
+                "new_state": "on",
+                "domain": "light",
+                "timestamp": (now - timedelta(seconds=30)).isoformat(),
+            }
+        )
+        recent2 = json.dumps(
+            {
+                "entity_id": "light.kueche",
+                "new_state": "on",
+                "domain": "light",
+                "timestamp": (now - timedelta(seconds=90)).isoformat(),
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[recent1, recent2])
         observer.redis.incr = AsyncMock(return_value=1)
 
@@ -705,20 +818,25 @@ class TestTemporalClustering:
     async def test_cluster_old_actions_excluded(self, observer):
         """Aktionen aelter als 5 Minuten werden nicht in den Cluster aufgenommen."""
         from datetime import datetime, timedelta, timezone
+
         now = datetime.now(timezone.utc)
 
-        old_action = json.dumps({
-            "entity_id": "light.wohnzimmer",
-            "new_state": "on",
-            "domain": "light",
-            "timestamp": (now - timedelta(seconds=600)).isoformat(),  # 10 min ago
-        })
-        recent_action = json.dumps({
-            "entity_id": "cover.wohnzimmer",
-            "new_state": "closed",
-            "domain": "cover",
-            "timestamp": (now - timedelta(seconds=60)).isoformat(),
-        })
+        old_action = json.dumps(
+            {
+                "entity_id": "light.wohnzimmer",
+                "new_state": "on",
+                "domain": "light",
+                "timestamp": (now - timedelta(seconds=600)).isoformat(),  # 10 min ago
+            }
+        )
+        recent_action = json.dumps(
+            {
+                "entity_id": "cover.wohnzimmer",
+                "new_state": "closed",
+                "domain": "cover",
+                "timestamp": (now - timedelta(seconds=60)).isoformat(),
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[old_action, recent_action])
 
         action = {
@@ -735,20 +853,25 @@ class TestTemporalClustering:
     async def test_cluster_no_callback_when_none(self, observer):
         """Kein Fehler wenn _notify_callback None ist bei min_repetitions."""
         from datetime import datetime, timedelta, timezone
+
         now = datetime.now(timezone.utc)
 
-        recent1 = json.dumps({
-            "entity_id": "light.wohnzimmer",
-            "new_state": "on",
-            "domain": "light",
-            "timestamp": (now - timedelta(seconds=60)).isoformat(),
-        })
-        recent2 = json.dumps({
-            "entity_id": "cover.wohnzimmer",
-            "new_state": "closed",
-            "domain": "cover",
-            "timestamp": (now - timedelta(seconds=120)).isoformat(),
-        })
+        recent1 = json.dumps(
+            {
+                "entity_id": "light.wohnzimmer",
+                "new_state": "on",
+                "domain": "light",
+                "timestamp": (now - timedelta(seconds=60)).isoformat(),
+            }
+        )
+        recent2 = json.dumps(
+            {
+                "entity_id": "cover.wohnzimmer",
+                "new_state": "closed",
+                "domain": "cover",
+                "timestamp": (now - timedelta(seconds=120)).isoformat(),
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[recent1, recent2])
         observer.redis.incr = AsyncMock(return_value=3)
         observer._notify_callback = None
@@ -780,20 +903,25 @@ class TestTemporalClustering:
     async def test_cluster_global_key_when_no_person(self, observer):
         """Ohne Person wird 'global' im Cluster-Key verwendet."""
         from datetime import datetime, timedelta, timezone
+
         now = datetime.now(timezone.utc)
 
-        recent1 = json.dumps({
-            "entity_id": "light.wohnzimmer",
-            "new_state": "on",
-            "domain": "light",
-            "timestamp": (now - timedelta(seconds=60)).isoformat(),
-        })
-        recent2 = json.dumps({
-            "entity_id": "cover.wohnzimmer",
-            "new_state": "closed",
-            "domain": "cover",
-            "timestamp": (now - timedelta(seconds=120)).isoformat(),
-        })
+        recent1 = json.dumps(
+            {
+                "entity_id": "light.wohnzimmer",
+                "new_state": "on",
+                "domain": "light",
+                "timestamp": (now - timedelta(seconds=60)).isoformat(),
+            }
+        )
+        recent2 = json.dumps(
+            {
+                "entity_id": "cover.wohnzimmer",
+                "new_state": "closed",
+                "domain": "cover",
+                "timestamp": (now - timedelta(seconds=120)).isoformat(),
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[recent1, recent2])
         observer.redis.incr = AsyncMock(return_value=1)
 
@@ -812,21 +940,26 @@ class TestTemporalClustering:
     async def test_cluster_deduplicates_actions(self, observer):
         """Doppelte entity:state Paare werden im Cluster dedupliziert — kein Cluster bei <2 unique."""
         from datetime import datetime, timedelta, timezone
+
         now = datetime.now(timezone.utc)
 
         # Gleiche Aktion zweimal → nur 1 unique in cluster_actions
-        dup1 = json.dumps({
-            "entity_id": "light.wohnzimmer",
-            "new_state": "on",
-            "domain": "light",
-            "timestamp": (now - timedelta(seconds=60)).isoformat(),
-        })
-        dup2 = json.dumps({
-            "entity_id": "light.wohnzimmer",
-            "new_state": "on",
-            "domain": "light",
-            "timestamp": (now - timedelta(seconds=120)).isoformat(),
-        })
+        dup1 = json.dumps(
+            {
+                "entity_id": "light.wohnzimmer",
+                "new_state": "on",
+                "domain": "light",
+                "timestamp": (now - timedelta(seconds=60)).isoformat(),
+            }
+        )
+        dup2 = json.dumps(
+            {
+                "entity_id": "light.wohnzimmer",
+                "new_state": "on",
+                "domain": "light",
+                "timestamp": (now - timedelta(seconds=120)).isoformat(),
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[dup1, dup2])
 
         action = {
@@ -843,20 +976,25 @@ class TestTemporalClustering:
     async def test_cluster_auto_name_contains_domains(self, observer):
         """Auto-Name enthaelt die beteiligten Domains."""
         from datetime import datetime, timedelta, timezone
+
         now = datetime.now(timezone.utc)
 
-        recent1 = json.dumps({
-            "entity_id": "light.wohnzimmer",
-            "new_state": "on",
-            "domain": "light",
-            "timestamp": (now - timedelta(seconds=60)).isoformat(),
-        })
-        recent2 = json.dumps({
-            "entity_id": "cover.wohnzimmer",
-            "new_state": "closed",
-            "domain": "cover",
-            "timestamp": (now - timedelta(seconds=120)).isoformat(),
-        })
+        recent1 = json.dumps(
+            {
+                "entity_id": "light.wohnzimmer",
+                "new_state": "on",
+                "domain": "light",
+                "timestamp": (now - timedelta(seconds=60)).isoformat(),
+            }
+        )
+        recent2 = json.dumps(
+            {
+                "entity_id": "cover.wohnzimmer",
+                "new_state": "closed",
+                "domain": "cover",
+                "timestamp": (now - timedelta(seconds=120)).isoformat(),
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[recent1, recent2])
         observer.redis.incr = AsyncMock(return_value=3)
 
@@ -939,8 +1077,10 @@ class TestObserveAbstractAction:
     async def test_disabled_observer_skips(self, observer):
         observer.enabled = False
         await observer.observe_abstract_action(
-            [{"entity_id": "light.wz", "new_state": "on"},
-             {"entity_id": "cover.wz", "new_state": "closed"}],
+            [
+                {"entity_id": "light.wz", "new_state": "on"},
+                {"entity_id": "cover.wz", "new_state": "closed"},
+            ],
             "Feierabend",
         )
         observer.redis.lpush.assert_not_called()
@@ -949,8 +1089,10 @@ class TestObserveAbstractAction:
     async def test_no_redis_skips(self, observer):
         observer.redis = None
         await observer.observe_abstract_action(
-            [{"entity_id": "light.wz", "new_state": "on"},
-             {"entity_id": "cover.wz", "new_state": "closed"}],
+            [
+                {"entity_id": "light.wz", "new_state": "on"},
+                {"entity_id": "cover.wz", "new_state": "closed"},
+            ],
             "Feierabend",
         )
 
@@ -965,8 +1107,10 @@ class TestObserveAbstractAction:
     @pytest.mark.asyncio
     async def test_non_concept_text_skips(self, observer):
         await observer.observe_abstract_action(
-            [{"entity_id": "light.wz", "new_state": "on"},
-             {"entity_id": "cover.wz", "new_state": "closed"}],
+            [
+                {"entity_id": "light.wz", "new_state": "on"},
+                {"entity_id": "cover.wz", "new_state": "closed"},
+            ],
             "Mach das Licht an",
         )
         observer.redis.lpush.assert_not_called()
@@ -976,8 +1120,10 @@ class TestObserveAbstractAction:
         """Observation wird gespeichert, aber Konzept noch nicht erstellt."""
         observer.redis.llen = AsyncMock(return_value=2)  # below min_observations
         await observer.observe_abstract_action(
-            [{"entity_id": "light.wz", "new_state": "on"},
-             {"entity_id": "cover.wz", "new_state": "closed"}],
+            [
+                {"entity_id": "light.wz", "new_state": "on"},
+                {"entity_id": "cover.wz", "new_state": "closed"},
+            ],
             "Feierabend",
         )
         observer.redis.lpush.assert_called_once()
@@ -991,8 +1137,10 @@ class TestObserveAbstractAction:
         # _maybe_create_concept will try to lrange; return empty to short-circuit
         observer.redis.lrange = AsyncMock(return_value=[])
         await observer.observe_abstract_action(
-            [{"entity_id": "light.wz", "new_state": "on"},
-             {"entity_id": "cover.wz", "new_state": "closed"}],
+            [
+                {"entity_id": "light.wz", "new_state": "on"},
+                {"entity_id": "cover.wz", "new_state": "closed"},
+            ],
             "Feierabend",
             person="julia",
         )
@@ -1004,18 +1152,29 @@ class TestObserveAbstractAction:
         observer.redis.lpush = AsyncMock(side_effect=Exception("Redis error"))
         # Should not raise
         await observer.observe_abstract_action(
-            [{"entity_id": "light.wz", "new_state": "on"},
-             {"entity_id": "cover.wz", "new_state": "closed"}],
+            [
+                {"entity_id": "light.wz", "new_state": "on"},
+                {"entity_id": "cover.wz", "new_state": "closed"},
+            ],
             "Feierabend",
         )
 
     @pytest.mark.asyncio
     async def test_dynamic_skills_disabled_skips(self, observer):
         """Wenn dynamic_skills.enabled=False, wird nicht beobachtet."""
-        with patch("assistant.learning_observer.yaml_config", {"timezone": "Europe/Berlin", "dynamic_skills": {"enabled": False}, "learning": {}}):
+        with patch(
+            "assistant.learning_observer.yaml_config",
+            {
+                "timezone": "Europe/Berlin",
+                "dynamic_skills": {"enabled": False},
+                "learning": {},
+            },
+        ):
             await observer.observe_abstract_action(
-                [{"entity_id": "light.wz", "new_state": "on"},
-                 {"entity_id": "cover.wz", "new_state": "closed"}],
+                [
+                    {"entity_id": "light.wz", "new_state": "on"},
+                    {"entity_id": "cover.wz", "new_state": "closed"},
+                ],
                 "Feierabend",
             )
             observer.redis.lpush.assert_not_called()
@@ -1036,37 +1195,53 @@ class TestMaybeCreateConcept:
     @pytest.mark.asyncio
     async def test_no_observations_returns(self, observer):
         observer.redis.lrange = AsyncMock(return_value=[])
-        await observer._maybe_create_concept("feierabend", "key", "", {"min_observations": 3})
+        await observer._maybe_create_concept(
+            "feierabend", "key", "", {"min_observations": 3}
+        )
         observer.redis.hset.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_too_few_observations_returns(self, observer):
-        observer.redis.lrange = AsyncMock(return_value=[
-            json.dumps({"actions": ["light.wz:on"], "hour": 18, "weekday": 0}),
-        ])
-        await observer._maybe_create_concept("feierabend", "key", "", {"min_observations": 3})
+        observer.redis.lrange = AsyncMock(
+            return_value=[
+                json.dumps({"actions": ["light.wz:on"], "hour": 18, "weekday": 0}),
+            ]
+        )
+        await observer._maybe_create_concept(
+            "feierabend", "key", "", {"min_observations": 3}
+        )
         observer.redis.hset.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_already_existing_concept_skips(self, observer):
-        obs_data = json.dumps({"actions": ["light.wz:on", "cover.wz:closed"], "hour": 18, "weekday": 0})
+        obs_data = json.dumps(
+            {"actions": ["light.wz:on", "cover.wz:closed"], "hour": 18, "weekday": 0}
+        )
         observer.redis.lrange = AsyncMock(return_value=[obs_data, obs_data, obs_data])
-        observer.redis.hget = AsyncMock(return_value='{"name": "feierabend"}')  # Already exists
-        await observer._maybe_create_concept("feierabend", "key", "", {"min_observations": 3})
+        observer.redis.hget = AsyncMock(
+            return_value='{"name": "feierabend"}'
+        )  # Already exists
+        await observer._maybe_create_concept(
+            "feierabend", "key", "", {"min_observations": 3}
+        )
         # hset should NOT be called because concept already exists
         observer.redis.hset.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_creates_concept_with_core_actions(self, observer):
         """Konzept wird erstellt wenn genug gemeinsame Aktionen vorhanden."""
-        obs = json.dumps({
-            "actions": ["light.wz:on", "cover.wz:closed", "climate.wz:heat"],
-            "hour": 18,
-            "weekday": 0,
-        })
+        obs = json.dumps(
+            {
+                "actions": ["light.wz:on", "cover.wz:closed", "climate.wz:heat"],
+                "hour": 18,
+                "weekday": 0,
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[obs, obs, obs])
         observer.redis.hget = AsyncMock(return_value=None)  # Not existing yet
-        await observer._maybe_create_concept("feierabend", "key", "julia", {"min_observations": 3})
+        await observer._maybe_create_concept(
+            "feierabend", "key", "julia", {"min_observations": 3}
+        )
         observer.redis.hset.assert_called_once()
         # Verify the concept data
         call_args = observer.redis.hset.call_args
@@ -1085,34 +1260,52 @@ class TestMaybeCreateConcept:
     async def test_too_few_core_actions_skips(self, observer):
         """Weniger als 2 gemeinsame Kern-Aktionen → kein Konzept."""
         # Each observation has different actions → no action reaches 50% threshold
-        obs1 = json.dumps({"actions": ["light.wz:on", "cover.wz:closed"], "hour": 18, "weekday": 0})
-        obs2 = json.dumps({"actions": ["light.flur:on", "switch.wz:on"], "hour": 19, "weekday": 1})
-        obs3 = json.dumps({"actions": ["climate.wz:heat", "media_player.wz:playing"], "hour": 20, "weekday": 2})
+        obs1 = json.dumps(
+            {"actions": ["light.wz:on", "cover.wz:closed"], "hour": 18, "weekday": 0}
+        )
+        obs2 = json.dumps(
+            {"actions": ["light.flur:on", "switch.wz:on"], "hour": 19, "weekday": 1}
+        )
+        obs3 = json.dumps(
+            {
+                "actions": ["climate.wz:heat", "media_player.wz:playing"],
+                "hour": 20,
+                "weekday": 2,
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[obs1, obs2, obs3])
         observer.redis.hget = AsyncMock(return_value=None)
-        await observer._maybe_create_concept("feierabend", "key", "", {"min_observations": 3})
+        await observer._maybe_create_concept(
+            "feierabend", "key", "", {"min_observations": 3}
+        )
         observer.redis.hset.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_no_callback_when_none(self, observer):
         """Kein Fehler wenn _notify_callback None ist."""
-        obs = json.dumps({
-            "actions": ["light.wz:on", "cover.wz:closed"],
-            "hour": 18,
-            "weekday": 0,
-        })
+        obs = json.dumps(
+            {
+                "actions": ["light.wz:on", "cover.wz:closed"],
+                "hour": 18,
+                "weekday": 0,
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[obs, obs, obs])
         observer.redis.hget = AsyncMock(return_value=None)
         observer._notify_callback = None
         # Should not raise
-        await observer._maybe_create_concept("feierabend", "key", "", {"min_observations": 3})
+        await observer._maybe_create_concept(
+            "feierabend", "key", "", {"min_observations": 3}
+        )
         observer.redis.hset.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_exception_is_caught(self, observer):
         observer.redis.lrange = AsyncMock(side_effect=Exception("Redis down"))
         # Should not raise
-        await observer._maybe_create_concept("feierabend", "key", "", {"min_observations": 3})
+        await observer._maybe_create_concept(
+            "feierabend", "key", "", {"min_observations": 3}
+        )
 
 
 class TestGetConcept:
@@ -1188,20 +1381,24 @@ class TestGetAllConcepts:
 
     @pytest.mark.asyncio
     async def test_returns_all_concepts(self, observer):
-        observer.redis.hgetall = AsyncMock(return_value={
-            "feierabend": json.dumps({"name": "feierabend"}),
-            "julia:filmabend": json.dumps({"name": "filmabend", "person": "julia"}),
-        })
+        observer.redis.hgetall = AsyncMock(
+            return_value={
+                "feierabend": json.dumps({"name": "feierabend"}),
+                "julia:filmabend": json.dumps({"name": "filmabend", "person": "julia"}),
+            }
+        )
         result = await observer.get_all_concepts()
         assert len(result) == 2
 
     @pytest.mark.asyncio
     async def test_filter_by_person(self, observer):
-        observer.redis.hgetall = AsyncMock(return_value={
-            "feierabend": json.dumps({"name": "feierabend"}),
-            "julia:filmabend": json.dumps({"name": "filmabend"}),
-            "max:gaming": json.dumps({"name": "gaming"}),
-        })
+        observer.redis.hgetall = AsyncMock(
+            return_value={
+                "feierabend": json.dumps({"name": "feierabend"}),
+                "julia:filmabend": json.dumps({"name": "filmabend"}),
+                "max:gaming": json.dumps({"name": "gaming"}),
+            }
+        )
         result = await observer.get_all_concepts(person="julia")
         # Should include "julia:filmabend" and "feierabend" (no person prefix → global)
         names = [c["name"] for c in result]
@@ -1211,10 +1408,12 @@ class TestGetAllConcepts:
 
     @pytest.mark.asyncio
     async def test_invalid_json_skipped(self, observer):
-        observer.redis.hgetall = AsyncMock(return_value={
-            "feierabend": "invalid json{{{",
-            "filmabend": json.dumps({"name": "filmabend"}),
-        })
+        observer.redis.hgetall = AsyncMock(
+            return_value={
+                "feierabend": "invalid json{{{",
+                "filmabend": json.dumps({"name": "filmabend"}),
+            }
+        )
         result = await observer.get_all_concepts()
         assert len(result) == 1
 
@@ -1226,9 +1425,11 @@ class TestGetAllConcepts:
 
     @pytest.mark.asyncio
     async def test_bytes_keys_and_values(self, observer):
-        observer.redis.hgetall = AsyncMock(return_value={
-            b"feierabend": json.dumps({"name": "feierabend"}).encode(),
-        })
+        observer.redis.hgetall = AsyncMock(
+            return_value={
+                b"feierabend": json.dumps({"name": "feierabend"}).encode(),
+            }
+        )
         result = await observer.get_all_concepts()
         assert len(result) == 1
         assert result[0]["name"] == "feierabend"
@@ -1298,6 +1499,7 @@ class TestObserveKnowledgeGap:
     async def test_cooldown_prevents_repeat(self, observer):
         """Innerhalb des Cooldowns wird keine Frage gesendet."""
         from datetime import datetime, timezone
+
         recent = datetime.now(timezone.utc).isoformat()
         observer.redis.get = AsyncMock(return_value=recent)
         await observer.observe_knowledge_gap("Fehler passiert", tool_failed=True)
@@ -1307,6 +1509,7 @@ class TestObserveKnowledgeGap:
     async def test_cooldown_expired_allows_question(self, observer):
         """Nach Cooldown-Ablauf wird wieder gefragt."""
         from datetime import datetime, timedelta, timezone
+
         old = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         observer.redis.get = AsyncMock(return_value=old)
         await observer.observe_knowledge_gap("Fehler passiert", tool_failed=True)
@@ -1327,7 +1530,14 @@ class TestObserveKnowledgeGap:
 
     @pytest.mark.asyncio
     async def test_self_learning_disabled_skips(self, observer):
-        with patch("assistant.learning_observer.yaml_config", {"timezone": "Europe/Berlin", "self_learning": {"enabled": False}, "learning": {}}):
+        with patch(
+            "assistant.learning_observer.yaml_config",
+            {
+                "timezone": "Europe/Berlin",
+                "self_learning": {"enabled": False},
+                "learning": {},
+            },
+        ):
             await observer.observe_knowledge_gap("Fehler", tool_failed=True)
             observer._notify_callback.assert_not_called()
 
@@ -1370,12 +1580,15 @@ class TestObserveSceneActivation:
     async def test_no_relevant_trigger_domain_skips(self, observer):
         """Nur relevante Trigger-Domains (media_player, switch, etc.) werden beruecksichtigt."""
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc)
-        action = json.dumps({
-            "entity_id": "light.wohnzimmer",  # light is NOT a trigger domain
-            "new_state": "on",
-            "timestamp": now.isoformat(),
-        })
+        action = json.dumps(
+            {
+                "entity_id": "light.wohnzimmer",  # light is NOT a trigger domain
+                "new_state": "on",
+                "timestamp": now.isoformat(),
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[action])
         await observer.observe_scene_activation("filmabend")
         observer._notify_callback.assert_not_called()
@@ -1384,12 +1597,15 @@ class TestObserveSceneActivation:
     async def test_suggestion_at_threshold(self, observer):
         """Vorschlag wird bei min_repetitions generiert."""
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc)
-        action = json.dumps({
-            "entity_id": "media_player.tv_wohnzimmer",
-            "new_state": "on",
-            "timestamp": now.isoformat(),
-        })
+        action = json.dumps(
+            {
+                "entity_id": "media_player.tv_wohnzimmer",
+                "new_state": "on",
+                "timestamp": now.isoformat(),
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[action])
         pipe_mock = MagicMock()
         pipe_mock.execute = AsyncMock(return_value=[3, -2])  # count=3, no TTL
@@ -1407,12 +1623,15 @@ class TestObserveSceneActivation:
     async def test_already_suggested_skips(self, observer):
         """Bereits vorgeschlagene Patterns werden nicht erneut vorgeschlagen."""
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc)
-        action = json.dumps({
-            "entity_id": "media_player.tv",
-            "new_state": "on",
-            "timestamp": now.isoformat(),
-        })
+        action = json.dumps(
+            {
+                "entity_id": "media_player.tv",
+                "new_state": "on",
+                "timestamp": now.isoformat(),
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[action])
         pipe_mock = MagicMock()
         pipe_mock.execute = AsyncMock(return_value=[3, 86400])
@@ -1425,12 +1644,15 @@ class TestObserveSceneActivation:
     async def test_below_threshold_skips(self, observer):
         """Unter min_repetitions wird kein Vorschlag gemacht."""
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc)
-        action = json.dumps({
-            "entity_id": "switch.tv_power",
-            "new_state": "on",
-            "timestamp": now.isoformat(),
-        })
+        action = json.dumps(
+            {
+                "entity_id": "switch.tv_power",
+                "new_state": "on",
+                "timestamp": now.isoformat(),
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[action])
         pipe_mock = MagicMock()
         pipe_mock.execute = AsyncMock(return_value=[2, 86400])  # count=2 < 3
@@ -1442,12 +1664,15 @@ class TestObserveSceneActivation:
     async def test_old_action_ignored(self, observer):
         """Aktionen aelter als 5 Minuten werden ignoriert."""
         from datetime import datetime, timedelta, timezone
+
         old_time = datetime.now(timezone.utc) - timedelta(minutes=10)
-        action = json.dumps({
-            "entity_id": "media_player.tv",
-            "new_state": "on",
-            "timestamp": old_time.isoformat(),
-        })
+        action = json.dumps(
+            {
+                "entity_id": "media_player.tv",
+                "new_state": "on",
+                "timestamp": old_time.isoformat(),
+            }
+        )
         observer.redis.lrange = AsyncMock(return_value=[action])
         await observer.observe_scene_activation("filmabend")
         observer._notify_callback.assert_not_called()
@@ -1477,7 +1702,13 @@ class TestFormatLearningReportLlm:
     @pytest.mark.asyncio
     async def test_no_ollama_returns_fallback(self, observer):
         """Ohne Ollama wird der Template-Fallback verwendet."""
-        report = {"patterns": [], "total_observations": 0, "suggestions_made": 0, "accepted": 0, "declined": 0}
+        report = {
+            "patterns": [],
+            "total_observations": 0,
+            "suggestions_made": 0,
+            "accepted": 0,
+            "declined": 0,
+        }
         result = await observer.format_learning_report_llm(report)
         assert "Noch keine" in result
 
@@ -1485,8 +1716,17 @@ class TestFormatLearningReportLlm:
     async def test_llm_report_disabled_returns_fallback(self, observer):
         """Wenn llm_report=False, wird der Template-Fallback verwendet."""
         observer._ollama = AsyncMock()
-        with patch("assistant.learning_observer.yaml_config", {"timezone": "Europe/Berlin", "learning": {"llm_report": False}}):
-            report = {"patterns": [], "total_observations": 5, "suggestions_made": 0, "accepted": 0, "declined": 0}
+        with patch(
+            "assistant.learning_observer.yaml_config",
+            {"timezone": "Europe/Berlin", "learning": {"llm_report": False}},
+        ):
+            report = {
+                "patterns": [],
+                "total_observations": 5,
+                "suggestions_made": 0,
+                "accepted": 0,
+                "declined": 0,
+            }
             result = await observer.format_learning_report_llm(report)
             assert "5 manuelle Aktionen" in result
 
@@ -1494,11 +1734,24 @@ class TestFormatLearningReportLlm:
     async def test_llm_success_returns_generated_text(self, observer):
         """LLM-generierter Text wird zurueckgegeben wenn lang genug."""
         observer._ollama = AsyncMock()
-        observer._ollama.generate = AsyncMock(return_value="Ich habe 50 Aktionen beobachtet und dabei 3 Muster erkannt.")
-        with patch("assistant.learning_observer.yaml_config", {"timezone": "Europe/Berlin", "learning": {"llm_report": True}}), \
-             patch("assistant.config.settings") as mock_settings:
+        observer._ollama.generate = AsyncMock(
+            return_value="Ich habe 50 Aktionen beobachtet und dabei 3 Muster erkannt."
+        )
+        with (
+            patch(
+                "assistant.learning_observer.yaml_config",
+                {"timezone": "Europe/Berlin", "learning": {"llm_report": True}},
+            ),
+            patch("assistant.config.settings") as mock_settings,
+        ):
             mock_settings.model_fast = "test-model"
-            report = {"patterns": [], "total_observations": 50, "suggestions_made": 0, "accepted": 0, "declined": 0}
+            report = {
+                "patterns": [],
+                "total_observations": 50,
+                "suggestions_made": 0,
+                "accepted": 0,
+                "declined": 0,
+            }
             result = await observer.format_learning_report_llm(report)
             assert "50 Aktionen" in result
 
@@ -1507,10 +1760,21 @@ class TestFormatLearningReportLlm:
         """Zu kurze LLM-Antwort (<=20 Zeichen) → Fallback."""
         observer._ollama = AsyncMock()
         observer._ollama.generate = AsyncMock(return_value="Kurz.")
-        with patch("assistant.learning_observer.yaml_config", {"timezone": "Europe/Berlin", "learning": {"llm_report": True}}), \
-             patch("assistant.config.settings") as mock_settings:
+        with (
+            patch(
+                "assistant.learning_observer.yaml_config",
+                {"timezone": "Europe/Berlin", "learning": {"llm_report": True}},
+            ),
+            patch("assistant.config.settings") as mock_settings,
+        ):
             mock_settings.model_fast = "test-model"
-            report = {"patterns": [], "total_observations": 10, "suggestions_made": 0, "accepted": 0, "declined": 0}
+            report = {
+                "patterns": [],
+                "total_observations": 10,
+                "suggestions_made": 0,
+                "accepted": 0,
+                "declined": 0,
+            }
             result = await observer.format_learning_report_llm(report)
             assert "10 manuelle Aktionen" in result
 
@@ -1519,10 +1783,21 @@ class TestFormatLearningReportLlm:
         """LLM-Exception → Fallback."""
         observer._ollama = AsyncMock()
         observer._ollama.generate = AsyncMock(side_effect=Exception("LLM down"))
-        with patch("assistant.learning_observer.yaml_config", {"timezone": "Europe/Berlin", "learning": {"llm_report": True}}), \
-             patch("assistant.config.settings") as mock_settings:
+        with (
+            patch(
+                "assistant.learning_observer.yaml_config",
+                {"timezone": "Europe/Berlin", "learning": {"llm_report": True}},
+            ),
+            patch("assistant.config.settings") as mock_settings,
+        ):
             mock_settings.model_fast = "test-model"
-            report = {"patterns": [], "total_observations": 10, "suggestions_made": 0, "accepted": 0, "declined": 0}
+            report = {
+                "patterns": [],
+                "total_observations": 10,
+                "suggestions_made": 0,
+                "accepted": 0,
+                "declined": 0,
+            }
             result = await observer.format_learning_report_llm(report)
             assert "10 manuelle Aktionen" in result
 
@@ -1582,10 +1857,14 @@ class TestGetLearnedPatternsWeekday:
     @pytest.mark.asyncio
     async def test_weekday_patterns_with_person(self, observer):
         """Weekday patterns with person prefix are parsed correctly."""
+
         async def fake_scan(cursor, match="", count=200):
             if KEY_WEEKDAY_PATTERNS in match:
                 if cursor == 0:
-                    return (0, ["mha:learning:weekday_patterns:julia:light.wz:on:22:00:2"])
+                    return (
+                        0,
+                        ["mha:learning:weekday_patterns:julia:light.wz:on:22:00:2"],
+                    )
                 return (0, [])
             return (0, [])
 
@@ -1599,6 +1878,7 @@ class TestGetLearnedPatternsWeekday:
     @pytest.mark.asyncio
     async def test_weekday_scan_exception(self, observer):
         """Exception in weekday SCAN does not break the whole method."""
+
         # Daily scan works fine
         async def fake_scan(cursor, match="", count=200):
             if KEY_WEEKDAY_PATTERNS in match:
@@ -1612,11 +1892,15 @@ class TestGetLearnedPatternsWeekday:
     @pytest.mark.asyncio
     async def test_max_20_results(self, observer):
         """Results are capped at 20."""
-        keys = [f"mha:learning:patterns:light.room{i}:on:22:0{i % 6}" for i in range(25)]
+        keys = [
+            f"mha:learning:patterns:light.room{i}:on:22:0{i % 6}" for i in range(25)
+        ]
+
         async def fake_scan(cursor, match="", count=200):
             if KEY_PATTERNS in match and KEY_WEEKDAY_PATTERNS not in match:
                 return (0, keys)
             return (0, [])
+
         observer.redis.scan = AsyncMock(side_effect=fake_scan)
         observer.redis.mget = AsyncMock(return_value=["5"] * 25)
         result = await observer.get_learned_patterns()
@@ -1625,13 +1909,18 @@ class TestGetLearnedPatternsWeekday:
     @pytest.mark.asyncio
     async def test_results_sorted_by_count_desc(self, observer):
         """Results are sorted by count descending."""
+
         async def fake_scan(cursor, match="", count=200):
             if KEY_PATTERNS in match and KEY_WEEKDAY_PATTERNS not in match:
-                return (0, [
-                    "mha:learning:patterns:light.wz:on:22:00",
-                    "mha:learning:patterns:light.flur:on:21:00",
-                ])
+                return (
+                    0,
+                    [
+                        "mha:learning:patterns:light.wz:on:22:00",
+                        "mha:learning:patterns:light.flur:on:21:00",
+                    ],
+                )
             return (0, [])
+
         observer.redis.scan = AsyncMock(side_effect=fake_scan)
         observer.redis.mget = AsyncMock(return_value=["3", "7"])
         result = await observer.get_learned_patterns()
@@ -1660,17 +1949,23 @@ class TestObserveSceneActivationEdgeCases:
     @pytest.mark.asyncio
     async def test_auto_learning_disabled_in_config(self, observer):
         """Skips when auto_learning.enabled is False in scenes config."""
-        with patch("assistant.learning_observer.yaml_config", {
-            "timezone": "Europe/Berlin",
-            "scenes": {"auto_learning": {"enabled": False}},
-        }):
+        with patch(
+            "assistant.learning_observer.yaml_config",
+            {
+                "timezone": "Europe/Berlin",
+                "scenes": {"auto_learning": {"enabled": False}},
+            },
+        ):
             from datetime import datetime, timezone
+
             now = datetime.now(timezone.utc)
-            action = json.dumps({
-                "entity_id": "media_player.tv",
-                "new_state": "on",
-                "timestamp": now.isoformat(),
-            })
+            action = json.dumps(
+                {
+                    "entity_id": "media_player.tv",
+                    "new_state": "on",
+                    "timestamp": now.isoformat(),
+                }
+            )
             observer.redis.lrange = AsyncMock(return_value=[action])
             await observer.observe_scene_activation("filmabend")
             observer._notify_callback.assert_not_called()
@@ -1678,20 +1973,26 @@ class TestObserveSceneActivationEdgeCases:
     @pytest.mark.asyncio
     async def test_already_in_device_trigger_map(self, observer):
         """Skips when trigger_entity→scene is already configured in device_trigger_map."""
-        with patch("assistant.learning_observer.yaml_config", {
-            "timezone": "Europe/Berlin",
-            "scenes": {
-                "auto_learning": {"enabled": True},
-                "device_trigger_map": {"media_player.tv": ["filmabend"]},
+        with patch(
+            "assistant.learning_observer.yaml_config",
+            {
+                "timezone": "Europe/Berlin",
+                "scenes": {
+                    "auto_learning": {"enabled": True},
+                    "device_trigger_map": {"media_player.tv": ["filmabend"]},
+                },
             },
-        }):
+        ):
             from datetime import datetime, timezone
+
             now = datetime.now(timezone.utc)
-            action = json.dumps({
-                "entity_id": "media_player.tv",
-                "new_state": "on",
-                "timestamp": now.isoformat(),
-            })
+            action = json.dumps(
+                {
+                    "entity_id": "media_player.tv",
+                    "new_state": "on",
+                    "timestamp": now.isoformat(),
+                }
+            )
             observer.redis.lrange = AsyncMock(return_value=[action])
             pipe_mock = MagicMock()
             pipe_mock.execute = AsyncMock(return_value=[5, 86400])  # count=5
@@ -1704,17 +2005,23 @@ class TestObserveSceneActivationEdgeCases:
     async def test_no_callback_still_completes(self, observer):
         """Runs without error even when no _notify_callback is set."""
         observer._notify_callback = None
-        with patch("assistant.learning_observer.yaml_config", {
-            "timezone": "Europe/Berlin",
-            "scenes": {"auto_learning": {"enabled": True}},
-        }):
+        with patch(
+            "assistant.learning_observer.yaml_config",
+            {
+                "timezone": "Europe/Berlin",
+                "scenes": {"auto_learning": {"enabled": True}},
+            },
+        ):
             from datetime import datetime, timezone
+
             now = datetime.now(timezone.utc)
-            action = json.dumps({
-                "entity_id": "switch.tv_power",
-                "new_state": "on",
-                "timestamp": now.isoformat(),
-            })
+            action = json.dumps(
+                {
+                    "entity_id": "switch.tv_power",
+                    "new_state": "on",
+                    "timestamp": now.isoformat(),
+                }
+            )
             observer.redis.lrange = AsyncMock(return_value=[action])
             pipe_mock = MagicMock()
             pipe_mock.execute = AsyncMock(return_value=[3, -2])
@@ -1725,17 +2032,23 @@ class TestObserveSceneActivationEdgeCases:
     @pytest.mark.asyncio
     async def test_sets_ttl_when_missing(self, observer):
         """Sets 60-day TTL when pattern key has no TTL."""
-        with patch("assistant.learning_observer.yaml_config", {
-            "timezone": "Europe/Berlin",
-            "scenes": {"auto_learning": {"enabled": True}},
-        }):
+        with patch(
+            "assistant.learning_observer.yaml_config",
+            {
+                "timezone": "Europe/Berlin",
+                "scenes": {"auto_learning": {"enabled": True}},
+            },
+        ):
             from datetime import datetime, timezone
+
             now = datetime.now(timezone.utc)
-            action = json.dumps({
-                "entity_id": "switch.tv",
-                "new_state": "on",
-                "timestamp": now.isoformat(),
-            })
+            action = json.dumps(
+                {
+                    "entity_id": "switch.tv",
+                    "new_state": "on",
+                    "timestamp": now.isoformat(),
+                }
+            )
             observer.redis.lrange = AsyncMock(return_value=[action])
             pipe_mock = MagicMock()
             pipe_mock.execute = AsyncMock(return_value=[1, -2])  # count=1, no TTL
@@ -1746,17 +2059,23 @@ class TestObserveSceneActivationEdgeCases:
     @pytest.mark.asyncio
     async def test_bytes_action_decoded(self, observer):
         """Bytes actions from Redis are decoded correctly."""
-        with patch("assistant.learning_observer.yaml_config", {
-            "timezone": "Europe/Berlin",
-            "scenes": {"auto_learning": {"enabled": True}},
-        }):
+        with patch(
+            "assistant.learning_observer.yaml_config",
+            {
+                "timezone": "Europe/Berlin",
+                "scenes": {"auto_learning": {"enabled": True}},
+            },
+        ):
             from datetime import datetime, timezone
+
             now = datetime.now(timezone.utc)
-            action = json.dumps({
-                "entity_id": "switch.tv",
-                "new_state": "on",
-                "timestamp": now.isoformat(),
-            }).encode()
+            action = json.dumps(
+                {
+                    "entity_id": "switch.tv",
+                    "new_state": "on",
+                    "timestamp": now.isoformat(),
+                }
+            ).encode()
             observer.redis.lrange = AsyncMock(return_value=[action])
             pipe_mock = MagicMock()
             pipe_mock.execute = AsyncMock(return_value=[1, 86400])
@@ -1782,21 +2101,28 @@ class TestObserveAbstractActionEdgeCases:
     @pytest.mark.asyncio
     async def test_disabled_skips(self, observer):
         observer.enabled = False
-        await observer.observe_abstract_action([{"entity_id": "a", "new_state": "on"}], "Feierabend")
+        await observer.observe_abstract_action(
+            [{"entity_id": "a", "new_state": "on"}], "Feierabend"
+        )
         observer.redis.lpush.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_no_redis_skips(self, observer):
         observer.redis = None
-        await observer.observe_abstract_action([{"entity_id": "a", "new_state": "on"}], "Feierabend")
+        await observer.observe_abstract_action(
+            [{"entity_id": "a", "new_state": "on"}], "Feierabend"
+        )
 
     @pytest.mark.asyncio
     async def test_less_than_two_actions_skips(self, observer):
         """Needs at least 2 actions for abstract concept."""
-        with patch("assistant.learning_observer.yaml_config", {
-            "timezone": "Europe/Berlin",
-            "dynamic_skills": {"enabled": True},
-        }):
+        with patch(
+            "assistant.learning_observer.yaml_config",
+            {
+                "timezone": "Europe/Berlin",
+                "dynamic_skills": {"enabled": True},
+            },
+        ):
             await observer.observe_abstract_action(
                 [{"entity_id": "a", "new_state": "on"}],
                 "Feierabend",
@@ -1806,12 +2132,18 @@ class TestObserveAbstractActionEdgeCases:
     @pytest.mark.asyncio
     async def test_no_concept_name_extracted_skips(self, observer):
         """If no concept name extracted, skips."""
-        with patch("assistant.learning_observer.yaml_config", {
-            "timezone": "Europe/Berlin",
-            "dynamic_skills": {"enabled": True},
-        }):
+        with patch(
+            "assistant.learning_observer.yaml_config",
+            {
+                "timezone": "Europe/Berlin",
+                "dynamic_skills": {"enabled": True},
+            },
+        ):
             await observer.observe_abstract_action(
-                [{"entity_id": "a", "new_state": "on"}, {"entity_id": "b", "new_state": "off"}],
+                [
+                    {"entity_id": "a", "new_state": "on"},
+                    {"entity_id": "b", "new_state": "off"},
+                ],
                 "Mach mal das Licht an und die Heizung aus",  # No abstract concept
             )
             observer.redis.lpush.assert_not_called()
@@ -1819,13 +2151,19 @@ class TestObserveAbstractActionEdgeCases:
     @pytest.mark.asyncio
     async def test_stores_observation(self, observer):
         """Stores observation in Redis when concept name is found."""
-        with patch("assistant.learning_observer.yaml_config", {
-            "timezone": "Europe/Berlin",
-            "dynamic_skills": {"enabled": True, "min_observations": 5},
-        }):
+        with patch(
+            "assistant.learning_observer.yaml_config",
+            {
+                "timezone": "Europe/Berlin",
+                "dynamic_skills": {"enabled": True, "min_observations": 5},
+            },
+        ):
             observer.redis.llen = AsyncMock(return_value=1)  # Not enough for concept
             await observer.observe_abstract_action(
-                [{"entity_id": "light.wz", "new_state": "on"}, {"entity_id": "switch.tv", "new_state": "on"}],
+                [
+                    {"entity_id": "light.wz", "new_state": "on"},
+                    {"entity_id": "switch.tv", "new_state": "on"},
+                ],
                 "Feierabend",
             )
             observer.redis.lpush.assert_called_once()
@@ -1834,12 +2172,18 @@ class TestObserveAbstractActionEdgeCases:
     @pytest.mark.asyncio
     async def test_dynamic_skills_disabled(self, observer):
         """Skips when dynamic_skills.enabled is False."""
-        with patch("assistant.learning_observer.yaml_config", {
-            "timezone": "Europe/Berlin",
-            "dynamic_skills": {"enabled": False},
-        }):
+        with patch(
+            "assistant.learning_observer.yaml_config",
+            {
+                "timezone": "Europe/Berlin",
+                "dynamic_skills": {"enabled": False},
+            },
+        ):
             await observer.observe_abstract_action(
-                [{"entity_id": "a", "new_state": "on"}, {"entity_id": "b", "new_state": "off"}],
+                [
+                    {"entity_id": "a", "new_state": "on"},
+                    {"entity_id": "b", "new_state": "off"},
+                ],
                 "Feierabend",
             )
             observer.redis.lpush.assert_not_called()
@@ -1847,13 +2191,19 @@ class TestObserveAbstractActionEdgeCases:
     @pytest.mark.asyncio
     async def test_exception_caught(self, observer):
         """Exceptions are caught gracefully."""
-        with patch("assistant.learning_observer.yaml_config", {
-            "timezone": "Europe/Berlin",
-            "dynamic_skills": {"enabled": True},
-        }):
+        with patch(
+            "assistant.learning_observer.yaml_config",
+            {
+                "timezone": "Europe/Berlin",
+                "dynamic_skills": {"enabled": True},
+            },
+        ):
             observer.redis.lpush = AsyncMock(side_effect=Exception("Redis error"))
             await observer.observe_abstract_action(
-                [{"entity_id": "a", "new_state": "on"}, {"entity_id": "b", "new_state": "off"}],
+                [
+                    {"entity_id": "a", "new_state": "on"},
+                    {"entity_id": "b", "new_state": "off"},
+                ],
                 "Feierabend",
             )  # No exception raised
 

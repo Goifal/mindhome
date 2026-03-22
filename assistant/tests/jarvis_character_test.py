@@ -58,15 +58,19 @@ _MOCK_SETTINGS.assistant_name = "Jarvis"
 
 def _make_personality_engine():
     """Erzeugt eine PersonalityEngine mit gemockter Config."""
-    with patch("assistant.personality.settings", _MOCK_SETTINGS), \
-         patch("assistant.personality.yaml_config", _MOCK_YAML_CONFIG):
+    with (
+        patch("assistant.personality.settings", _MOCK_SETTINGS),
+        patch("assistant.personality.yaml_config", _MOCK_YAML_CONFIG),
+    ):
         from assistant.personality import PersonalityEngine
+
         return PersonalityEngine()
 
 
 # ===================================================================
 # Fixtures
 # ===================================================================
+
 
 @pytest.fixture
 def engine():
@@ -85,6 +89,7 @@ def engine_with_redis(redis_mock):
 # ===================================================================
 # 1. SYSTEM PROMPT GRUNDSTRUKTUR
 # ===================================================================
+
 
 class TestSystemPromptStructure:
     """Der System-Prompt enthaelt alle Jarvis-Charakter-Elemente."""
@@ -148,6 +153,7 @@ class TestSystemPromptStructure:
 # 2. MOOD-SYSTEM
 # ===================================================================
 
+
 class TestMoodSystem:
     """Stimmung beeinflusst Prompt-Aufbau und Humor."""
 
@@ -180,10 +186,12 @@ class TestMoodSystem:
     def test_max_sentences_reduced_when_stressed(self, engine):
         """Stress reduziert die maximale Satzanzahl."""
         from assistant.personality import MOOD_STYLES
+
         assert MOOD_STYLES["stressed"]["max_sentences_mod"] < 0
 
     def test_max_sentences_increased_when_good(self, engine):
         from assistant.personality import MOOD_STYLES
+
         assert MOOD_STYLES["good"]["max_sentences_mod"] > 0
 
     def test_max_sentences_never_below_one(self, engine):
@@ -198,13 +206,21 @@ class TestMoodSystem:
 # 3. TAGESZEIT-ANPASSUNG
 # ===================================================================
 
+
 class TestTimeOfDay:
     """Tageszeit bestimmt Stil und max Saetze."""
 
-    @pytest.mark.parametrize("hour,expected", [
-        (3, "night"), (6, "early_morning"), (9, "morning"),
-        (14, "afternoon"), (20, "evening"), (23, "night"),
-    ])
+    @pytest.mark.parametrize(
+        "hour,expected",
+        [
+            (3, "night"),
+            (6, "early_morning"),
+            (9, "morning"),
+            (14, "afternoon"),
+            (20, "evening"),
+            (23, "night"),
+        ],
+    )
     def test_time_categories(self, engine, hour, expected):
         assert engine.get_time_of_day(hour) == expected
 
@@ -223,6 +239,7 @@ class TestTimeOfDay:
 # 4. HUMOR / SARKASMUS
 # ===================================================================
 
+
 class TestHumorSystem:
     """Humor-Level wird nach Kontext angepasst."""
 
@@ -232,6 +249,7 @@ class TestHumorSystem:
 
     def test_humor_templates_all_levels(self):
         from assistant.personality import HUMOR_TEMPLATES
+
         for level in range(1, 6):
             assert level in HUMOR_TEMPLATES
             assert len(HUMOR_TEMPLATES[level]) > 0
@@ -271,14 +289,22 @@ class TestHumorSystem:
 # 5. FORMALITY / CHARAKTER-ENTWICKLUNG
 # ===================================================================
 
+
 class TestFormalitySystem:
     """Formality sinkt ueber Zeit: formal → butler → locker → freund."""
 
-    @pytest.mark.parametrize("score,expected_key", [
-        (80, "formal"), (60, "butler"), (40, "locker"), (25, "freund"),
-    ])
+    @pytest.mark.parametrize(
+        "score,expected_key",
+        [
+            (80, "formal"),
+            (60, "butler"),
+            (40, "locker"),
+            (25, "freund"),
+        ],
+    )
     def test_formality_thresholds(self, engine, score, expected_key):
         from assistant.personality import FORMALITY_PROMPTS
+
         section = engine._build_formality_section(score)
         assert section == FORMALITY_PROMPTS[expected_key]
 
@@ -315,6 +341,7 @@ class TestFormalitySystem:
 # 6. SELBSTIRONIE
 # ===================================================================
 
+
 class TestSelfIrony:
     """Jarvis darf ueber sich selbst lachen — aber nicht zu oft."""
 
@@ -340,6 +367,7 @@ class TestSelfIrony:
 # 7. COMPLEXITY MODES
 # ===================================================================
 
+
 class TestAdaptiveComplexity:
     """Antwort-Komplexitaet passt sich Kontext an."""
 
@@ -364,6 +392,7 @@ class TestAdaptiveComplexity:
     def test_rapid_fire_forces_brief(self, engine):
         """Schnelle Befehle hintereinander → Ultra-kurz."""
         import time
+
         engine._last_interaction_times["_default"] = time.time() - 2  # 2 Sekunden her
         section = engine._build_complexity_section("neutral", "afternoon")
         assert "Ultra-kurz" in section
@@ -373,27 +402,34 @@ class TestAdaptiveComplexity:
 # 8. PERSON ADDRESSING
 # ===================================================================
 
+
 class TestPersonAddressing:
     """Anrede-System: Owner = Du + Sir, Gast = Sie."""
 
     def test_owner_gets_du_and_sir(self, engine):
-        with patch("assistant.personality.settings", _MOCK_SETTINGS), \
-             patch("assistant.personality.yaml_config", _MOCK_YAML_CONFIG):
+        with (
+            patch("assistant.personality.settings", _MOCK_SETTINGS),
+            patch("assistant.personality.yaml_config", _MOCK_YAML_CONFIG),
+        ):
             section = engine._build_person_addressing("Max")
             assert "Sir" in section
             assert "DUZE" in section
             assert "Owner" in section or "Hauptbenutzer" in section
 
     def test_guest_gets_sie(self, engine):
-        with patch("assistant.personality.settings", _MOCK_SETTINGS), \
-             patch("assistant.personality.yaml_config", _MOCK_YAML_CONFIG):
+        with (
+            patch("assistant.personality.settings", _MOCK_SETTINGS),
+            patch("assistant.personality.yaml_config", _MOCK_YAML_CONFIG),
+        ):
             section = engine._build_person_addressing("Unbekannt")
             assert "Gast" in section or "Unbekannt" in section
             assert "SIEZE" in section or "Sie" in section or "DUZE" in section
 
     def test_owner_never_siezen(self, engine):
-        with patch("assistant.personality.settings", _MOCK_SETTINGS), \
-             patch("assistant.personality.yaml_config", _MOCK_YAML_CONFIG):
+        with (
+            patch("assistant.personality.settings", _MOCK_SETTINGS),
+            patch("assistant.personality.yaml_config", _MOCK_YAML_CONFIG),
+        ):
             section = engine._build_person_addressing("Max")
             assert "NIEMALS siezen" in section
 
@@ -401,6 +437,7 @@ class TestPersonAddressing:
 # ===================================================================
 # 9. URGENCY SYSTEM
 # ===================================================================
+
 
 class TestUrgencySystem:
     """Dringlichkeit skaliert Kommunikationsdichte."""
@@ -422,15 +459,14 @@ class TestUrgencySystem:
         assert "KRITISCH" in section
 
     def test_critical_no_humor(self, engine):
-        section = engine._build_urgency_section(
-            {"alerts": ["Alert 1", "Alert 2"]}
-        )
+        section = engine._build_urgency_section({"alerts": ["Alert 1", "Alert 2"]})
         assert "kein Humor" in section
 
 
 # ===================================================================
 # 10. EASTER EGGS
 # ===================================================================
+
 
 class TestEasterEggs:
     """Versteckte Befehle triggern spezielle Reaktionen."""
@@ -486,6 +522,7 @@ class TestEasterEggs:
 # 11. OPINION ENGINE
 # ===================================================================
 
+
 class TestOpinionEngine:
     """Jarvis aeussert Meinung bei fragwuerdigen Aktionen."""
 
@@ -530,6 +567,7 @@ class TestOpinionEngine:
 # 11b. _match_rule() UNIT TESTS
 # ===================================================================
 
+
 class TestMatchRule:
     """Direkte Tests fuer _match_rule() — Operator-Matching, Wraparound, Listen."""
 
@@ -565,21 +603,24 @@ class TestMatchRule:
 
     # --- Operator-Checks ---
 
-    @pytest.mark.parametrize("op,value,actual,expected", [
-        (">", 25, 27, True),
-        (">", 25, 25, False),
-        (">", 25, 20, False),
-        (">=", 25, 25, True),
-        (">=", 25, 24, False),
-        ("<", 15, 12, True),
-        ("<", 15, 15, False),
-        ("<", 15, 18, False),
-        ("<=", 15, 15, True),
-        ("<=", 15, 16, False),
-        ("==", "on", "on", True),
-        ("==", "on", "off", False),
-        ("==", 42, 42, True),
-    ])
+    @pytest.mark.parametrize(
+        "op,value,actual,expected",
+        [
+            (">", 25, 27, True),
+            (">", 25, 25, False),
+            (">", 25, 20, False),
+            (">=", 25, 25, True),
+            (">=", 25, 24, False),
+            ("<", 15, 12, True),
+            ("<", 15, 15, False),
+            ("<", 15, 18, False),
+            ("<=", 15, 15, True),
+            ("<=", 15, 16, False),
+            ("==", "on", "on", True),
+            ("==", "on", "off", False),
+            ("==", 42, 42, True),
+        ],
+    )
     def test_operators(self, engine, op, value, actual, expected):
         rule = self._rule(
             check_field="temperature",
@@ -687,16 +728,24 @@ class TestMatchRule:
     # --- Heating-Mode-Check ---
 
     def test_heating_mode_match(self, engine):
-        with patch("assistant.personality.yaml_config", {
-            **_MOCK_YAML_CONFIG, "heating": {"mode": "heating_curve"},
-        }):
+        with patch(
+            "assistant.personality.yaml_config",
+            {
+                **_MOCK_YAML_CONFIG,
+                "heating": {"mode": "heating_curve"},
+            },
+        ):
             rule = self._rule(check_heating_mode="heating_curve")
             assert engine._match_rule(rule, "set_climate", {}, 12)
 
     def test_heating_mode_mismatch(self, engine):
-        with patch("assistant.personality.yaml_config", {
-            **_MOCK_YAML_CONFIG, "heating": {"mode": "room_thermostat"},
-        }):
+        with patch(
+            "assistant.personality.yaml_config",
+            {
+                **_MOCK_YAML_CONFIG,
+                "heating": {"mode": "room_thermostat"},
+            },
+        ):
             rule = self._rule(check_heating_mode="heating_curve")
             assert not engine._match_rule(rule, "set_climate", {}, 12)
 
@@ -740,6 +789,7 @@ class TestMatchRule:
 # 12. ANTWORT-VARIANZ
 # ===================================================================
 
+
 class TestResponseVariance:
     """Bestaetigungen variieren und wiederholen sich nicht."""
 
@@ -764,6 +814,7 @@ class TestResponseVariance:
     def test_snarky_confirmations_at_high_sarcasm(self, engine):
         """Bei Sarkasmus-Level >= 4 kommen spitzere Varianten."""
         from assistant.personality import CONFIRMATIONS_SUCCESS_SNARKY
+
         engine.sarcasm_level = 5
         engine._last_confirmations = {}  # Reset
         # Bei genug Versuchen sollte mindestens eine Snarky-Variante kommen
@@ -774,6 +825,7 @@ class TestResponseVariance:
     def test_low_sarcasm_no_snarky(self, engine):
         """Bei Sarkasmus-Level < 4 keine snarky Varianten."""
         from assistant.personality import CONFIRMATIONS_SUCCESS_SNARKY
+
         engine.sarcasm_level = 2
         engine._last_confirmations = {}
         results = {engine.get_varied_confirmation(success=True) for _ in range(30)}
@@ -785,32 +837,46 @@ class TestResponseVariance:
 # 13. PERSONALITY STAGES
 # ===================================================================
 
+
 class TestPersonalityStages:
     """Persoenlichkeits-Stufen nach Interaktionen und Formality."""
 
-    @pytest.mark.parametrize("interactions,formality,expected", [
-        (10, 80, "kennenlernphase"),
-        (100, 60, "vertraut_werdend"),
-        (300, 55, "professionell_persönlich"),
-        (500, 40, "eingespielt"),
-        (1000, 20, "alter_freund"),
-    ])
+    @pytest.mark.parametrize(
+        "interactions,formality,expected",
+        [
+            (10, 80, "kennenlernphase"),
+            (100, 60, "vertraut_werdend"),
+            (300, 55, "professionell_persönlich"),
+            (500, 40, "eingespielt"),
+            (1000, 20, "alter_freund"),
+        ],
+    )
     def test_personality_stages(self, interactions, formality, expected):
         from assistant.personality import PersonalityEngine
-        assert PersonalityEngine._get_personality_stage(interactions, formality) == expected
+
+        assert (
+            PersonalityEngine._get_personality_stage(interactions, formality)
+            == expected
+        )
 
 
 # ===================================================================
 # 14. CONTEXT FORMATTING
 # ===================================================================
 
+
 class TestContextFormatting:
     """Kontext wird kompakt und korrekt formatiert."""
 
     def test_formats_temperatures(self, engine):
-        ctx = {"house": {"temperatures": {
-            "Wohnzimmer": {"current": 21.5, "target": 22},
-        }}, "room": "wohnzimmer"}
+        ctx = {
+            "house": {
+                "temperatures": {
+                    "Wohnzimmer": {"current": 21.5, "target": 22},
+                }
+            },
+            "room": "wohnzimmer",
+        }
         prompt = engine.build_system_prompt(context=ctx)
         assert "21.5" in prompt
         assert "Wohnzimmer" in prompt
@@ -840,6 +906,7 @@ class TestContextFormatting:
 # 15. WARNING DEDUP (async)
 # ===================================================================
 
+
 class TestWarningDedup:
     """Warnungen werden nicht wiederholt."""
 
@@ -862,11 +929,14 @@ class TestWarningDedup:
 # 16. SARCASM LEARNING (async)
 # ===================================================================
 
+
 class TestSarcasmLearning:
     """Sarkasmus-Level passt sich langfristig an."""
 
     @pytest.mark.asyncio
-    async def test_sarcasm_increases_on_positive_feedback(self, engine_with_redis, redis_mock):
+    async def test_sarcasm_increases_on_positive_feedback(
+        self, engine_with_redis, redis_mock
+    ):
         engine_with_redis.sarcasm_level = 3
         redis_mock.incr = AsyncMock(return_value=21)
         # Lua-Script simulieren: [did_eval=1, pos=16, total=20] → 80% positiv
@@ -877,7 +947,9 @@ class TestSarcasmLearning:
         assert engine_with_redis.sarcasm_level == 4
 
     @pytest.mark.asyncio
-    async def test_sarcasm_decreases_on_negative_feedback(self, engine_with_redis, redis_mock):
+    async def test_sarcasm_decreases_on_negative_feedback(
+        self, engine_with_redis, redis_mock
+    ):
         engine_with_redis.sarcasm_level = 3
         redis_mock.incr = AsyncMock(return_value=21)
         # Lua-Script simulieren: [did_eval=1, pos=4, total=20] → 20% positiv
@@ -907,20 +979,25 @@ class TestSarcasmLearning:
 # 17. RUNNING GAGS (async)
 # ===================================================================
 
+
 class TestRunningGags:
     """Running Gags basieren auf wiederholten Mustern."""
 
     @pytest.mark.asyncio
     async def test_repeated_question_gag_triggers(self, engine_with_redis, redis_mock):
         redis_mock.incr = AsyncMock(return_value=3)  # 3. Mal
-        result = await engine_with_redis._check_repeated_question_gag("wie ist das wetter")
+        result = await engine_with_redis._check_repeated_question_gag(
+            "wie ist das wetter"
+        )
         assert result is not None
         assert "schon mal" in result.lower() or "heute" in result.lower()
 
     @pytest.mark.asyncio
     async def test_repeated_question_no_gag_at_1(self, engine_with_redis, redis_mock):
         redis_mock.incr = AsyncMock(return_value=1)
-        result = await engine_with_redis._check_repeated_question_gag("wie ist das wetter")
+        result = await engine_with_redis._check_repeated_question_gag(
+            "wie ist das wetter"
+        )
         assert result is None
 
     @pytest.mark.asyncio
@@ -931,7 +1008,9 @@ class TestRunningGags:
         assert "Anpassung" in result or "Thermostat" in result or "Temperatur" in result
 
     @pytest.mark.asyncio
-    async def test_thermostat_no_gag_without_keyword(self, engine_with_redis, redis_mock):
+    async def test_thermostat_no_gag_without_keyword(
+        self, engine_with_redis, redis_mock
+    ):
         result = await engine_with_redis._check_thermostat_war_gag("mach licht an")
         assert result is None
 
@@ -939,9 +1018,11 @@ class TestRunningGags:
     async def test_short_memory_gag(self, engine_with_redis, redis_mock):
         """Erkennt wenn User innerhalb von 30 Sekunden das gleiche fragt."""
         now = datetime.now().timestamp()
-        redis_mock.lrange = AsyncMock(return_value=[
-            f"{now - 10}|wie spät ist es",
-        ])
+        redis_mock.lrange = AsyncMock(
+            return_value=[
+                f"{now - 10}|wie spät ist es",
+            ]
+        )
         result = await engine_with_redis._check_short_memory_gag("wie spät ist es")
         assert result is not None
         assert "gerade eben" in result.lower() or "Wort fuer Wort" in result
@@ -954,38 +1035,47 @@ class TestRunningGags:
 # die Filter-Funktion selbst (die ist in test_brain_filter.py).
 # ===================================================================
 
+
 class TestCharacterIntegrity:
     """Validiert dass alle Charakter-Regeln konsistent sind."""
 
     def test_all_mood_styles_have_required_keys(self):
         from assistant.personality import MOOD_STYLES
+
         for mood, config in MOOD_STYLES.items():
             assert "style_addon" in config, f"{mood}: style_addon fehlt"
             assert "max_sentences_mod" in config, f"{mood}: max_sentences_mod fehlt"
 
     def test_all_five_moods_defined(self):
         from assistant.personality import MOOD_STYLES
+
         expected = {"good", "neutral", "stressed", "frustrated", "tired"}
         assert set(MOOD_STYLES.keys()) == expected
 
     def test_humor_levels_1_to_5(self):
         from assistant.personality import HUMOR_TEMPLATES
+
         assert set(HUMOR_TEMPLATES.keys()) == {1, 2, 3, 4, 5}
 
     def test_complexity_modes_defined(self):
         from assistant.personality import COMPLEXITY_PROMPTS
+
         assert set(COMPLEXITY_PROMPTS.keys()) == {"kurz", "normal", "ausführlich"}
 
     def test_formality_levels_defined(self):
         from assistant.personality import FORMALITY_PROMPTS
+
         assert set(FORMALITY_PROMPTS.keys()) == {"formal", "butler", "locker", "freund"}
 
     def test_confirmation_pools_not_empty(self):
         from assistant.personality import (
-            CONFIRMATIONS_SUCCESS, CONFIRMATIONS_FAILED,
-            CONFIRMATIONS_PARTIAL, CONFIRMATIONS_SUCCESS_SNARKY,
+            CONFIRMATIONS_SUCCESS,
+            CONFIRMATIONS_FAILED,
+            CONFIRMATIONS_PARTIAL,
+            CONFIRMATIONS_SUCCESS_SNARKY,
             CONFIRMATIONS_FAILED_SNARKY,
         )
+
         assert len(CONFIRMATIONS_SUCCESS) >= 5
         assert len(CONFIRMATIONS_FAILED) >= 3
         assert len(CONFIRMATIONS_PARTIAL) >= 2
@@ -994,9 +1084,14 @@ class TestCharacterIntegrity:
 
     def test_system_prompt_template_has_placeholders(self):
         from assistant.personality import SYSTEM_PROMPT_TEMPLATE
+
         placeholders = [
-            "{assistant_name}", "{max_sentences}", "{time_style}",
-            "{mood_section}", "{humor_section}", "{dynamic_context}",
+            "{assistant_name}",
+            "{max_sentences}",
+            "{time_style}",
+            "{mood_section}",
+            "{humor_section}",
+            "{dynamic_context}",
         ]
         for ph in placeholders:
             assert ph in SYSTEM_PROMPT_TEMPLATE, f"Placeholder {ph} fehlt"
@@ -1007,6 +1102,7 @@ class TestCharacterIntegrity:
 # Prueft dass der System-Prompt die Kern-Regeln enthaelt die
 # JARVIS definieren — nicht nur als Text, sondern als Charakter.
 # ===================================================================
+
 
 class TestJarvisCodexCompliance:
     """Der JARVIS-CODEX muss im System-Prompt vollstaendig sein."""
@@ -1022,7 +1118,13 @@ class TestJarvisCodexCompliance:
     def test_no_therapist_phrases(self, engine):
         prompt = engine.build_system_prompt()
         # Anti-therapy rules: either explicit mention or covered by "Moralisieren" ban
-        assert "therapieren" in prompt or "Therapeuten" in prompt or "Ich verstehe wie du dich" in prompt or "Therapeuten-Sprache" in prompt or "Moralisieren" in prompt
+        assert (
+            "therapieren" in prompt
+            or "Therapeuten" in prompt
+            or "Ich verstehe wie du dich" in prompt
+            or "Therapeuten-Sprache" in prompt
+            or "Moralisieren" in prompt
+        )
 
     def test_no_chatbot_greetings(self, engine):
         prompt = engine.build_system_prompt()
@@ -1031,22 +1133,43 @@ class TestJarvisCodexCompliance:
     def test_no_filler_words(self, engine):
         prompt = engine.build_system_prompt()
         # Codex verbietet Fuellwoerter implizit durch Stil-Vorgaben: trocken, praezise, kurze Saetze
-        assert "Trocken" in prompt or "Praezise" in prompt or "Max 3 Saetze" in prompt or "Fuellwoerter" in prompt
+        assert (
+            "Trocken" in prompt
+            or "Praezise" in prompt
+            or "Max 3 Saetze" in prompt
+            or "Fuellwoerter" in prompt
+        )
 
     def test_alternative_statt_geht_nicht(self, engine):
         prompt = engine.build_system_prompt()
         prompt_lower = prompt.lower()
-        assert "alternative" in prompt_lower or "stattdessen" in prompt_lower or "aber ich könnte" in prompt_lower
+        assert (
+            "alternative" in prompt_lower
+            or "stattdessen" in prompt_lower
+            or "aber ich könnte" in prompt_lower
+        )
 
     def test_kontextwechsel_sofort(self, engine):
         """Jarvis wechselt Kontext sofort — implizit durch 'Befehle = kurz' und Handlungsorientierung."""
         prompt = engine.build_system_prompt()
         prompt_lower = prompt.lower()
-        assert "kontextwechsel" in prompt_lower or "sofort" in prompt_lower or "befehle = kurz" in prompt_lower or "befehle: kurz" in prompt_lower or "befehlsmodus: kurz" in prompt_lower or "befehlsmodus: max" in prompt_lower or "befehl: max" in prompt_lower
+        assert (
+            "kontextwechsel" in prompt_lower
+            or "sofort" in prompt_lower
+            or "befehle = kurz" in prompt_lower
+            or "befehle: kurz" in prompt_lower
+            or "befehlsmodus: kurz" in prompt_lower
+            or "befehlsmodus: max" in prompt_lower
+            or "befehl: max" in prompt_lower
+        )
 
     def test_auf_augenhoehe(self, engine):
         prompt = engine.build_system_prompt()
-        assert "Partner" in prompt or "Augenhöhe" in prompt or "Intellektueller Partner" in prompt
+        assert (
+            "Partner" in prompt
+            or "Augenhöhe" in prompt
+            or "Intellektueller Partner" in prompt
+        )
 
     def test_sir_instrument(self, engine):
         """'Sir' wird als Instrument genutzt, nicht als Distanzzeichen."""
@@ -1067,7 +1190,12 @@ BENCHMARK_SCENARIOS = [
     {"id": 2, "input": "Wie spät ist es?", "expect_short": True},
     {"id": 3, "input": "Guten Morgen", "expect_short": True, "expect_context": True},
     {"id": 4, "input": "Es ist kalt hier", "expect_action": True},
-    {"id": 5, "input": "Nichts funktioniert!", "expect_calm": True, "expect_no_sorry": True},
+    {
+        "id": 5,
+        "input": "Nichts funktioniert!",
+        "expect_calm": True,
+        "expect_no_sorry": True,
+    },
     {"id": 6, "input": "Wer bist du?", "expect_identity": True},
     {"id": 7, "input": "Stell die Heizung auf 30 Grad", "expect_pushback": True},
     {"id": 8, "input": "Gute Nacht", "expect_routine": True},
@@ -1087,10 +1215,10 @@ BENCHMARK_SCENARIOS = [
 
 BENCHMARK_CRITERIA = [
     "charakter_konsistenz",  # Haelt Jarvis-Charakter (0-10)
-    "kuerze",                # Antwortet kurz genug (0-10)
-    "keine_floskeln",        # Kein LLM-Floskel-Durchbruch (0-10)
-    "humor_qualitaet",       # Humor-Qualitaet (0-10)
-    "deutsch_qualitaet",     # Deutsche Sprach-Qualitaet (0-10)
+    "kuerze",  # Antwortet kurz genug (0-10)
+    "keine_floskeln",  # Kein LLM-Floskel-Durchbruch (0-10)
+    "humor_qualitaet",  # Humor-Qualitaet (0-10)
+    "deutsch_qualitaet",  # Deutsche Sprach-Qualitaet (0-10)
 ]
 
 
@@ -1125,8 +1253,12 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Jarvis Character Benchmark")
     parser.add_argument("--model", default="qwen3.5:9b", help="Ollama-Modell")
-    parser.add_argument("--output", default="jarvis_benchmark_results.json", help="Output-Datei")
-    parser.add_argument("--judge-model", default="", help="LLM-as-Judge Modell (optional)")
+    parser.add_argument(
+        "--output", default="jarvis_benchmark_results.json", help="Output-Datei"
+    )
+    parser.add_argument(
+        "--judge-model", default="", help="LLM-as-Judge Modell (optional)"
+    )
     args = parser.parse_args()
 
     async def run_benchmark():
@@ -1136,11 +1268,11 @@ if __name__ == "__main__":
             print("httpx wird benoetigt: pip install httpx")
             sys.exit(1)
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  JARVIS Character Benchmark")
         print(f"  Modell: {args.model}")
         print(f"  Szenarien: {len(BENCHMARK_SCENARIOS)}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         eng = _make_personality_engine()
         system_prompt = eng.build_system_prompt(
@@ -1153,7 +1285,11 @@ if __name__ == "__main__":
 
         async with httpx.AsyncClient(timeout=120) as client:
             for scenario in BENCHMARK_SCENARIOS:
-                print(f"  [{scenario['id']:2d}/20] {scenario['input'][:50]}...", end=" ", flush=True)
+                print(
+                    f"  [{scenario['id']:2d}/20] {scenario['input'][:50]}...",
+                    end=" ",
+                    flush=True,
+                )
                 try:
                     resp = await client.post(
                         f"{ollama_url}/api/chat",
@@ -1169,22 +1305,26 @@ if __name__ == "__main__":
                     data = resp.json()
                     answer = data.get("message", {}).get("content", "")
                     print(f"→ {answer[:80]}")
-                    results.append({
-                        "id": scenario["id"],
-                        "input": scenario["input"],
-                        "output": answer,
-                        "model": args.model,
-                        "scores": {},  # Manuell oder per LLM-as-Judge ausfuellen
-                    })
+                    results.append(
+                        {
+                            "id": scenario["id"],
+                            "input": scenario["input"],
+                            "output": answer,
+                            "model": args.model,
+                            "scores": {},  # Manuell oder per LLM-as-Judge ausfuellen
+                        }
+                    )
                 except Exception as e:
                     print(f"FEHLER: {e}")
-                    results.append({
-                        "id": scenario["id"],
-                        "input": scenario["input"],
-                        "output": f"FEHLER: {e}",
-                        "model": args.model,
-                        "scores": {},
-                    })
+                    results.append(
+                        {
+                            "id": scenario["id"],
+                            "input": scenario["input"],
+                            "output": f"FEHLER: {e}",
+                            "model": args.model,
+                            "scores": {},
+                        }
+                    )
 
         # LLM-as-Judge (optional)
         if args.judge_model:
@@ -1197,8 +1337,8 @@ if __name__ == "__main__":
                     judge_prompt = (
                         "Du bewertest Antworten eines KI-Assistenten namens JARVIS "
                         "(wie J.A.R.V.I.S. aus dem MCU, aber fuer ein Smart Home).\n\n"
-                        f"User-Eingabe: \"{r['input']}\"\n"
-                        f"JARVIS-Antwort: \"{r['output']}\"\n\n"
+                        f'User-Eingabe: "{r["input"]}"\n'
+                        f'JARVIS-Antwort: "{r["output"]}"\n\n'
                         "Bewerte auf einer Skala von 0-10 in diesen 5 Kategorien:\n"
                         "1. charakter_konsistenz: Klingt die Antwort wie JARVIS? "
                         "   (Trocken, souveraen, Butler-Ton, kein Chatbot)\n"
@@ -1237,21 +1377,22 @@ if __name__ == "__main__":
         # Zusammenfassung
         scored = [r for r in results if r.get("scores")]
         if scored:
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print(f"  ERGEBNIS: {args.model}")
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
             for criterion in BENCHMARK_CRITERIA:
                 vals = [r["scores"].get(criterion, 0) for r in scored]
                 avg = sum(vals) / len(vals) if vals else 0
                 bar = "█" * int(avg) + "░" * (10 - int(avg))
                 print(f"  {criterion:25s}  {avg:4.1f}/10  {bar}")
             total_avg = sum(
-                sum(r["scores"].values()) / len(r["scores"])
-                for r in scored
+                sum(r["scores"].values()) / len(r["scores"]) for r in scored
             ) / len(scored)
             print(f"\n  {'GESAMT':25s}  {total_avg:4.1f}/10")
         else:
-            print("\n  Keine Bewertungen. Nutze --judge-model fuer automatische Bewertung.")
+            print(
+                "\n  Keine Bewertungen. Nutze --judge-model fuer automatische Bewertung."
+            )
             print(f"  Oder bewerte manuell in {args.output}")
 
         print(f"\n  Ergebnisse gespeichert: {args.output}\n")

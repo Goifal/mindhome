@@ -34,9 +34,19 @@ KEY_WEEKDAY_PATTERNS = "mha:learning:weekday_patterns"
 KEY_SUGGESTED = "mha:learning:suggested"
 KEY_RESPONSES = "mha:learning:responses"
 JARVIS_ACTION_KEY = "mha:learning:jarvis_action"  # Marker fuer Jarvis-Aktionen
-KEY_AUTOMATED = "mha:learning:automated"  # F-053: Tracks automated entity+timeslot pairs
+KEY_AUTOMATED = (
+    "mha:learning:automated"  # F-053: Tracks automated entity+timeslot pairs
+)
 
-WEEKDAY_NAMES_DE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+WEEKDAY_NAMES_DE = [
+    "Montag",
+    "Dienstag",
+    "Mittwoch",
+    "Donnerstag",
+    "Freitag",
+    "Samstag",
+    "Sonntag",
+]
 
 # B8: Redis-Keys fuer abstrakte Konzepte
 KEY_ABSTRACT_CONCEPTS = "mha:learning:abstract_concepts"
@@ -153,8 +163,9 @@ class LearningObserver:
         # Kurzzeitiger Marker (30 Sek) um state_changed Events zu ignorieren
         await self.redis.setex(f"{JARVIS_ACTION_KEY}:{entity_id}", 30, "1")
 
-    async def observe_state_change(self, entity_id: str, new_state: str, old_state: str,
-                                   person: str = ""):
+    async def observe_state_change(
+        self, entity_id: str, new_state: str, old_state: str, person: str = ""
+    ):
         """Beobachtet State-Changes und erkennt manuelle Aktionen.
 
         Wird von proactive.py bei jedem state_changed aufgerufen.
@@ -170,7 +181,10 @@ class LearningObserver:
             return
 
         # Nur relevante Domains
-        if not any(entity_id.startswith(d) for d in ["light.", "cover.", "climate.", "switch.", "media_player."]):
+        if not any(
+            entity_id.startswith(d)
+            for d in ["light.", "cover.", "climate.", "switch.", "media_player."]
+        ):
             return
 
         # Jarvis-Aktion? → Ignorieren
@@ -179,7 +193,10 @@ class LearningObserver:
             return
 
         # Triviale Aenderungen ignorieren
-        if new_state in ("unavailable", "unknown") or old_state in ("unavailable", "unknown"):
+        if new_state in ("unavailable", "unknown") or old_state in (
+            "unavailable",
+            "unknown",
+        ):
             return
 
         try:
@@ -209,7 +226,8 @@ class LearningObserver:
                 if _wc:
                     weather_condition = (
                         _wc.decode("utf-8", errors="ignore")
-                        if isinstance(_wc, bytes) else str(_wc)
+                        if isinstance(_wc, bytes)
+                        else str(_wc)
                     )[:30]
                 _away = await self.redis.get("mha:presence:away_persons")
                 if _away:
@@ -234,10 +252,14 @@ class LearningObserver:
             await self.redis.expire(KEY_MANUAL_ACTIONS, 365 * 86400)
 
             # Pattern-Check: Wurde diese Aktion schon oefter zur gleichen Zeit gemacht?
-            await self._check_pattern(action_key, time_slot, entity_id, new_state, person=person)
+            await self._check_pattern(
+                action_key, time_slot, entity_id, new_state, person=person
+            )
 
             # Wochentag-spezifischer Pattern-Check
-            await self._check_weekday_pattern(action_key, time_slot, weekday, entity_id, new_state, person=person)
+            await self._check_weekday_pattern(
+                action_key, time_slot, weekday, entity_id, new_state, person=person
+            )
 
             # Wetter-Kontext-Pattern: Erkennt wetterbasierte Muster
             if weather_condition:
@@ -248,11 +270,20 @@ class LearningObserver:
             # Temporal Auto-Clustering: Automatisch Cluster erkennen
             # wenn mehrere manuelle Aktionen innerhalb von 5 Minuten passieren
             await self._check_temporal_cluster(action, person=person)
+
+            # MCU Sprint 4: Cross-Domain-Combo-Erkennung
+            await self._check_cross_domain_combo(person, entity_id)
         except Exception as e:
             logger.warning("Learning Observer state_change Fehler: %s", e)
 
-    async def _check_pattern(self, action_key: str, time_slot: str,
-                             entity_id: str, new_state: str, person: str = ""):
+    async def _check_pattern(
+        self,
+        action_key: str,
+        time_slot: str,
+        entity_id: str,
+        new_state: str,
+        person: str = "",
+    ):
         """Prueft ob ein Muster erkannt wurde."""
         person_prefix = f"{person}:" if person else ""
         pattern_key = f"{KEY_PATTERNS}:{person_prefix}{action_key}:{time_slot}"
@@ -279,6 +310,7 @@ class LearningObserver:
             conflict_hint = ""
             try:
                 from .state_change_log import StateChangeLog
+
                 hints = StateChangeLog.check_action_dependencies(
                     entity_id, {"entity_id": entity_id, "state": new_state}, {}
                 )
@@ -292,7 +324,13 @@ class LearningObserver:
 
             # Vorschlag generieren
             friendly = entity_id.split(".", 1)[1].replace("_", " ").title()
-            action_de = "eingeschaltet" if new_state == "on" else "ausgeschaltet" if new_state == "off" else new_state
+            action_de = (
+                "eingeschaltet"
+                if new_state == "on"
+                else "ausgeschaltet"
+                if new_state == "off"
+                else new_state
+            )
 
             title = get_person_title()
             person_hint = f" ({person})" if person else ""
@@ -304,31 +342,48 @@ class LearningObserver:
             if conflict_hint:
                 message += f" Beachte: {conflict_hint}"
 
-            logger.info("Learning: Muster erkannt - %s um %s (%dx, Person: %s)",
-                        action_key, time_slot, count, person or "global")
+            logger.info(
+                "Learning: Muster erkannt - %s um %s (%dx, Person: %s)",
+                action_key,
+                time_slot,
+                count,
+                person or "global",
+            )
 
             if self._notify_callback:
-                await self._notify_callback({
-                    "message": message,
-                    "type": "learning_suggestion",
-                    "entity_id": entity_id,
-                    "new_state": new_state,
-                    "time_slot": time_slot,
-                    "count": count,
-                    "person": person,
-                })
+                await self._notify_callback(
+                    {
+                        "message": message,
+                        "type": "learning_suggestion",
+                        "entity_id": entity_id,
+                        "new_state": new_state,
+                        "time_slot": time_slot,
+                        "count": count,
+                        "person": person,
+                    }
+                )
 
-    async def _check_weekday_pattern(self, action_key: str, time_slot: str,
-                                     weekday: int, entity_id: str, new_state: str,
-                                     person: str = ""):
+    async def _check_weekday_pattern(
+        self,
+        action_key: str,
+        time_slot: str,
+        weekday: int,
+        entity_id: str,
+        new_state: str,
+        person: str = "",
+    ):
         """Prueft Wochentag-spezifische Muster (z.B. nur Werktags)."""
         person_prefix = f"{person}:" if person else ""
         # F-053: Cycle detection for weekday-specific patterns
-        automated_key = f"{KEY_AUTOMATED}:{person_prefix}{action_key}:{time_slot}:{weekday}"
+        automated_key = (
+            f"{KEY_AUTOMATED}:{person_prefix}{action_key}:{time_slot}:{weekday}"
+        )
         if await self.redis.get(automated_key):
             return
 
-        pattern_key = f"{KEY_WEEKDAY_PATTERNS}:{person_prefix}{action_key}:{time_slot}:{weekday}"
+        pattern_key = (
+            f"{KEY_WEEKDAY_PATTERNS}:{person_prefix}{action_key}:{time_slot}:{weekday}"
+        )
 
         count = await self.redis.incr(pattern_key)
         if count == 1:
@@ -339,18 +394,28 @@ class LearningObserver:
             return
 
         # Taeglich schon vorgeschlagen? Dann Wochentag-Vorschlag ueberspringen
-        daily_suggested = await self.redis.get(f"{KEY_SUGGESTED}:{person_prefix}{action_key}:{time_slot}")
+        daily_suggested = await self.redis.get(
+            f"{KEY_SUGGESTED}:{person_prefix}{action_key}:{time_slot}"
+        )
         if daily_suggested:
             return
 
-        suggested_key = f"{KEY_SUGGESTED}:weekday:{person_prefix}{action_key}:{time_slot}:{weekday}"
+        suggested_key = (
+            f"{KEY_SUGGESTED}:weekday:{person_prefix}{action_key}:{time_slot}:{weekday}"
+        )
         if await self.redis.get(suggested_key):
             return
 
         await self.redis.setex(suggested_key, 14 * 86400, "1")  # 14 Tage Cooldown
 
         friendly = entity_id.split(".", 1)[1].replace("_", " ").title()
-        action_de = "eingeschaltet" if new_state == "on" else "ausgeschaltet" if new_state == "off" else new_state
+        action_de = (
+            "eingeschaltet"
+            if new_state == "on"
+            else "ausgeschaltet"
+            if new_state == "off"
+            else new_state
+        )
         day_name = WEEKDAY_NAMES_DE[weekday]
 
         title = get_person_title()
@@ -361,34 +426,53 @@ class LearningObserver:
             f"Soll ich das fuer {day_name}s automatisieren?"
         )
 
-        logger.info("Learning: Wochentag-Muster erkannt - %s am %s um %s (%dx, Person: %s)",
-                     action_key, day_name, time_slot, count, person or "global")
+        logger.info(
+            "Learning: Wochentag-Muster erkannt - %s am %s um %s (%dx, Person: %s)",
+            action_key,
+            day_name,
+            time_slot,
+            count,
+            person or "global",
+        )
 
         if self._notify_callback:
-            await self._notify_callback({
-                "message": message,
-                "type": "learning_suggestion",
-                "entity_id": entity_id,
-                "new_state": new_state,
-                "time_slot": time_slot,
-                "weekday": weekday,
-                "weekday_name": day_name,
-                "count": count,
-                "person": person,
-            })
+            await self._notify_callback(
+                {
+                    "message": message,
+                    "type": "learning_suggestion",
+                    "entity_id": entity_id,
+                    "new_state": new_state,
+                    "time_slot": time_slot,
+                    "weekday": weekday,
+                    "weekday_name": day_name,
+                    "count": count,
+                    "person": person,
+                }
+            )
 
     # Wetter-Bedingungen zu lesbaren deutschen Labels
     _WEATHER_LABELS_DE = {
-        "sunny": "Sonnenschein", "clear-night": "klare Nacht",
-        "cloudy": "bewoelkt", "partlycloudy": "teilweise bewoelkt",
-        "rainy": "Regen", "pouring": "starkem Regen",
-        "lightning-rainy": "Gewitter", "snowy": "Schnee",
-        "fog": "Nebel", "windy": "Wind", "hail": "Hagel",
+        "sunny": "Sonnenschein",
+        "clear-night": "klare Nacht",
+        "cloudy": "bewoelkt",
+        "partlycloudy": "teilweise bewoelkt",
+        "rainy": "Regen",
+        "pouring": "starkem Regen",
+        "lightning-rainy": "Gewitter",
+        "snowy": "Schnee",
+        "fog": "Nebel",
+        "windy": "Wind",
+        "hail": "Hagel",
     }
 
-    async def _check_weather_pattern(self, action_key: str, weather: str,
-                                     entity_id: str, new_state: str,
-                                     person: str = ""):
+    async def _check_weather_pattern(
+        self,
+        action_key: str,
+        weather: str,
+        entity_id: str,
+        new_state: str,
+        person: str = "",
+    ):
         """Prueft wetterbasierte Muster (z.B. 'bei Regen Rolllaeden zu')."""
         person_prefix = f"{person}:" if person else ""
         # Wetter normalisieren (nur Hauptkategorie)
@@ -396,7 +480,9 @@ class LearningObserver:
         if not weather_norm:
             return
 
-        pattern_key = f"mha:learning:weather_patterns:{person_prefix}{action_key}:{weather_norm}"
+        pattern_key = (
+            f"mha:learning:weather_patterns:{person_prefix}{action_key}:{weather_norm}"
+        )
 
         count = await self.redis.incr(pattern_key)
         if count == 1:
@@ -406,14 +492,22 @@ class LearningObserver:
         if count < self.min_repetitions + 1:
             return
 
-        suggested_key = f"{KEY_SUGGESTED}:weather:{person_prefix}{action_key}:{weather_norm}"
+        suggested_key = (
+            f"{KEY_SUGGESTED}:weather:{person_prefix}{action_key}:{weather_norm}"
+        )
         if await self.redis.get(suggested_key):
             return
 
         await self.redis.setex(suggested_key, 14 * 86400, "1")  # 14 Tage Cooldown
 
         friendly = entity_id.split(".", 1)[1].replace("_", " ").title()
-        action_de = "eingeschaltet" if new_state == "on" else "ausgeschaltet" if new_state == "off" else new_state
+        action_de = (
+            "eingeschaltet"
+            if new_state == "on"
+            else "ausgeschaltet"
+            if new_state == "off"
+            else new_state
+        )
         weather_de = self._WEATHER_LABELS_DE.get(weather.lower().strip(), weather)
 
         title = get_person_title()
@@ -426,20 +520,25 @@ class LearningObserver:
 
         logger.info(
             "Learning: Wetter-Muster erkannt - %s bei %s (%dx, Person: %s)",
-            action_key, weather_norm, count, person or "global",
+            action_key,
+            weather_norm,
+            count,
+            person or "global",
         )
 
         if self._notify_callback:
-            await self._notify_callback({
-                "message": message,
-                "type": "learning_suggestion",
-                "subtype": "weather",
-                "entity_id": entity_id,
-                "new_state": new_state,
-                "weather": weather_norm,
-                "count": count,
-                "person": person,
-            })
+            await self._notify_callback(
+                {
+                    "message": message,
+                    "type": "learning_suggestion",
+                    "subtype": "weather",
+                    "entity_id": entity_id,
+                    "new_state": new_state,
+                    "weather": weather_norm,
+                    "count": count,
+                    "person": person,
+                }
+            )
 
     async def _check_temporal_cluster(self, action: dict, person: str = ""):
         """Erkennt automatisch zeitliche Cluster von manuellen Aktionen.
@@ -489,18 +588,21 @@ class LearningObserver:
 
             # Cluster-Observation zaehlen
             import hashlib
+
             sig_hash = hashlib.sha256(cluster_sig.encode()).hexdigest()[:12]
             count_key = f"{cluster_key}:{sig_hash}"
             count = await self.redis.incr(count_key)
             if count == 1:
                 await self.redis.expire(count_key, 90 * 86400)  # 90 Tage TTL
                 # Cluster-Details speichern
-                cluster_data = json.dumps({
-                    "actions": cluster_actions,
-                    "time_slot": time_slot,
-                    "person": person,
-                    "first_seen": action["timestamp"],
-                })
+                cluster_data = json.dumps(
+                    {
+                        "actions": cluster_actions,
+                        "time_slot": time_slot,
+                        "person": person,
+                        "first_seen": action["timestamp"],
+                    }
+                )
                 await self.redis.hset(f"{cluster_key}:details", sig_hash, cluster_data)
                 await self.redis.expire(f"{cluster_key}:details", 90 * 86400)
 
@@ -511,29 +613,40 @@ class LearningObserver:
                 for a in cluster_actions:
                     domain = a.split(".")[0] if "." in a else a
                     domains.add(domain)
-                auto_name = "_".join(sorted(domains)) + f"_routine_{time_slot.replace(':', '')}"
+                auto_name = (
+                    "_".join(sorted(domains)) + f"_routine_{time_slot.replace(':', '')}"
+                )
 
                 logger.info(
                     "Temporal Cluster erkannt: %d Aktionen, %d Wiederholungen, Signatur: %s",
-                    len(cluster_actions), count, auto_name,
+                    len(cluster_actions),
+                    count,
+                    auto_name,
                 )
 
                 # Notify-Callback wenn vorhanden
-                if hasattr(self, '_notify_callback') and self._notify_callback:
-                    await self._notify_callback({
-                        "type": "temporal_cluster",
-                        "actions": cluster_actions,
-                        "cluster_name": auto_name,
-                        "count": count,
-                        "time_slot": time_slot,
-                        "person": person,
-                    })
+                if hasattr(self, "_notify_callback") and self._notify_callback:
+                    await self._notify_callback(
+                        {
+                            "type": "temporal_cluster",
+                            "actions": cluster_actions,
+                            "cluster_name": auto_name,
+                            "count": count,
+                            "time_slot": time_slot,
+                            "person": person,
+                        }
+                    )
         except Exception as e:
             logger.debug("Temporal Cluster Check fehlgeschlagen: %s", e)
 
-    async def handle_response(self, entity_id: str, time_slot: str,
-                              accepted: bool, weekday: int = -1,
-                              person: str = "") -> str:
+    async def handle_response(
+        self,
+        entity_id: str,
+        time_slot: str,
+        accepted: bool,
+        weekday: int = -1,
+        person: str = "",
+    ) -> str:
         """Verarbeitet die Benutzer-Antwort auf einen Automatisierungs-Vorschlag.
 
         Args:
@@ -547,7 +660,9 @@ class LearningObserver:
             Antwort-Text fuer den Benutzer
         """
         if not self.redis:
-            return "Mein Gedaechtnis ist gerade nicht ansprechbar. Redis antwortet nicht."
+            return (
+                "Mein Gedaechtnis ist gerade nicht ansprechbar. Redis antwortet nicht."
+            )
 
         response = {
             "entity_id": entity_id,
@@ -562,11 +677,19 @@ class LearningObserver:
         await self.redis.expire(KEY_RESPONSES, 365 * 86400)
 
         if not accepted:
-            logger.info("Learning: Vorschlag abgelehnt fuer %s um %s", entity_id, time_slot)
-            return f"Verstanden, {get_person_title()}. Ich werde das nicht automatisieren."
+            logger.info(
+                "Learning: Vorschlag abgelehnt fuer %s um %s", entity_id, time_slot
+            )
+            return (
+                f"Verstanden, {get_person_title()}. Ich werde das nicht automatisieren."
+            )
 
-        logger.info("Learning: Vorschlag akzeptiert fuer %s um %s (Wochentag: %d)",
-                     entity_id, time_slot, weekday)
+        logger.info(
+            "Learning: Vorschlag akzeptiert fuer %s um %s (Wochentag: %d)",
+            entity_id,
+            time_slot,
+            weekday,
+        )
 
         # F-053: Mark this entity+timeslot as automated to prevent feedback loops.
         # The observer will skip state changes matching automated patterns, breaking
@@ -575,7 +698,9 @@ class LearningObserver:
         person_prefix = f"{person}:" if person else ""
         states_to_mark = ["on", "off"]  # Mark both directions to avoid partial loops
         for state in states_to_mark:
-            automated_key = f"{KEY_AUTOMATED}:{person_prefix}{entity_id}:{state}:{time_slot}"
+            automated_key = (
+                f"{KEY_AUTOMATED}:{person_prefix}{entity_id}:{state}:{time_slot}"
+            )
             await self.redis.setex(automated_key, 90 * 86400, "1")
         if weekday >= 0:
             for state in states_to_mark:
@@ -641,14 +766,18 @@ class LearningObserver:
                         continue
 
                     entity_state = entity_action.rsplit(":", 1)
-                    patterns.append({
-                        "action": entity_action,
-                        "entity": entity_state[0] if len(entity_state) > 1 else entity_action,
-                        "time_slot": time_slot,
-                        "count": count_val,
-                        "weekday": -1,
-                        "person": pattern_person,
-                    })
+                    patterns.append(
+                        {
+                            "action": entity_action,
+                            "entity": entity_state[0]
+                            if len(entity_state) > 1
+                            else entity_action,
+                            "time_slot": time_slot,
+                            "count": count_val,
+                            "weekday": -1,
+                            "person": pattern_person,
+                        }
+                    )
         except Exception as e:
             logger.warning("L4: Daily patterns SCAN failed: %s", e)
 
@@ -688,14 +817,18 @@ class LearningObserver:
                         continue
 
                     entity_state = entity_action.rsplit(":", 1)
-                    patterns.append({
-                        "action": entity_action,
-                        "entity": entity_state[0] if len(entity_state) > 1 else entity_action,
-                        "time_slot": time_slot,
-                        "count": count_val,
-                        "weekday": weekday_val,
-                        "person": pattern_person,
-                    })
+                    patterns.append(
+                        {
+                            "action": entity_action,
+                            "entity": entity_state[0]
+                            if len(entity_state) > 1
+                            else entity_action,
+                            "time_slot": time_slot,
+                            "count": count_val,
+                            "weekday": weekday_val,
+                            "person": pattern_person,
+                        }
+                    )
         except Exception as e:
             logger.warning("L5: Weekday patterns SCAN failed: %s", e)
 
@@ -790,9 +923,13 @@ class LearningObserver:
                 try:
                     a = json.loads(raw if isinstance(raw, str) else raw.decode())
                     ts = datetime.fromisoformat(a.get("timestamp", ""))
-                    actions.append({"entity_id": a.get("entity_id", ""),
-                                    "ts": ts.timestamp(),
-                                    "new_state": a.get("new_state", "")})
+                    actions.append(
+                        {
+                            "entity_id": a.get("entity_id", ""),
+                            "ts": ts.timestamp(),
+                            "new_state": a.get("new_state", ""),
+                        }
+                    )
                 except (json.JSONDecodeError, ValueError):
                     continue
 
@@ -825,11 +962,13 @@ class LearningObserver:
             for combo, count in combo_counts.items():
                 if count >= self.min_repetitions:
                     entities = combo.split("|")
-                    scenes.append({
-                        "entities": entities,
-                        "count": count,
-                        "suggestion": f"Diese {len(entities)} Geraete werden oft zusammen geschaltet. Szene erstellen?",
-                    })
+                    scenes.append(
+                        {
+                            "entities": entities,
+                            "count": count,
+                            "suggestion": f"Diese {len(entities)} Geraete werden oft zusammen geschaltet. Szene erstellen?",
+                        }
+                    )
 
             return sorted(scenes, key=lambda s: s["count"], reverse=True)[:5]
         except Exception as e:
@@ -905,7 +1044,9 @@ class LearningObserver:
         suggestions = report.get("suggestions_made", 0)
 
         if not patterns and total == 0:
-            return "Noch keine Verhaltensmuster erfasst. Zu frueh fuer belastbare Daten."
+            return (
+                "Noch keine Verhaltensmuster erfasst. Zu frueh fuer belastbare Daten."
+            )
 
         lines.append(f"{total} manuelle Aktionen erfasst.")
 
@@ -913,17 +1054,27 @@ class LearningObserver:
             lines.append(f"\n{len(patterns)} erkannte Muster:")
             for p in patterns[:10]:
                 entity = p.get("entity", p.get("action", "?"))
-                friendly = entity.split(".", 1)[-1].replace("_", " ").title() if "." in entity else entity
+                friendly = (
+                    entity.split(".", 1)[-1].replace("_", " ").title()
+                    if "." in entity
+                    else entity
+                )
                 time_slot = p.get("time_slot", "?")
                 count = p.get("count", 0)
                 weekday = p.get("weekday", -1)
                 if weekday >= 0 and weekday < len(WEEKDAY_NAMES_DE):
-                    lines.append(f"- {friendly} um {time_slot} Uhr ({WEEKDAY_NAMES_DE[weekday]}s, {count}x)")
+                    lines.append(
+                        f"- {friendly} um {time_slot} Uhr ({WEEKDAY_NAMES_DE[weekday]}s, {count}x)"
+                    )
                 else:
-                    lines.append(f"- {friendly} um {time_slot} Uhr (taeglich, {count}x)")
+                    lines.append(
+                        f"- {friendly} um {time_slot} Uhr (taeglich, {count}x)"
+                    )
 
         if suggestions > 0:
-            lines.append(f"\n{suggestions} Vorschläge gemacht: {accepted} akzeptiert, {declined} abgelehnt.")
+            lines.append(
+                f"\n{suggestions} Vorschläge gemacht: {accepted} akzeptiert, {declined} abgelehnt."
+            )
 
         return "\n".join(lines)
 
@@ -943,6 +1094,7 @@ class LearningObserver:
         try:
             from .config import settings
             from .ollama_client import strip_think_tags
+
             prompt = (
                 "Du bist JARVIS, ein britischer Smart-Home-Butler. "
                 "Fasse diesen Lern-Bericht in 3-5 Saetzen zusammen. "
@@ -971,8 +1123,9 @@ class LearningObserver:
     # B8: Dynamic Skill Acquisition — Abstrakte Konzepte
     # ------------------------------------------------------------------
 
-    async def observe_abstract_action(self, actions: list[dict], trigger_text: str,
-                                       person: str = ""):
+    async def observe_abstract_action(
+        self, actions: list[dict], trigger_text: str, person: str = ""
+    ):
         """B8: Beobachtet zusammengehoerige Aktionen und erkennt abstrakte Konzepte.
 
         Wenn ein User z.B. sagt "Feierabend" und dann Licht dimmt, Musik an,
@@ -1005,21 +1158,27 @@ class LearningObserver:
             concept_key = f"{KEY_CONCEPT_OBSERVATIONS}:{person_prefix}{_concept_name}"
 
             # Aktionen serialisieren
-            _action_set = sorted([
-                f"{a.get('entity_id', '')}:{a.get('new_state', '')}"
-                for a in actions if a.get("entity_id")
-            ])
+            _action_set = sorted(
+                [
+                    f"{a.get('entity_id', '')}:{a.get('new_state', '')}"
+                    for a in actions
+                    if a.get("entity_id")
+                ]
+            )
             _action_hash = "|".join(_action_set)
 
-            observation = json.dumps({
-                "actions": _action_set,
-                "action_hash": _action_hash,
-                "trigger": trigger_text[:200],
-                "person": person,
-                "hour": now.hour,
-                "weekday": now.weekday(),
-                "timestamp": now.isoformat(),
-            }, ensure_ascii=False)
+            observation = json.dumps(
+                {
+                    "actions": _action_set,
+                    "action_hash": _action_hash,
+                    "trigger": trigger_text[:200],
+                    "person": person,
+                    "hour": now.hour,
+                    "weekday": now.weekday(),
+                    "timestamp": now.isoformat(),
+                },
+                ensure_ascii=False,
+            )
 
             await self.redis.lpush(concept_key, observation)
             await self.redis.ltrim(concept_key, 0, 29)
@@ -1075,8 +1234,9 @@ class LearningObserver:
 
         return ""
 
-    async def _maybe_create_concept(self, concept_name: str, obs_key: str,
-                                     person: str, cfg: dict):
+    async def _maybe_create_concept(
+        self, concept_name: str, obs_key: str, person: str, cfg: dict
+    ):
         """B8: Prueft Beobachtungen und erstellt ggf. ein abstraktes Konzept."""
         try:
             raw_obs = await self.redis.lrange(obs_key, 0, 29)
@@ -1086,7 +1246,9 @@ class LearningObserver:
             observations = []
             for r in raw_obs:
                 try:
-                    obs = json.loads(r) if isinstance(r, str) else json.loads(r.decode())
+                    obs = (
+                        json.loads(r) if isinstance(r, str) else json.loads(r.decode())
+                    )
                     observations.append(obs)
                 except (json.JSONDecodeError, TypeError):
                     continue
@@ -1096,12 +1258,15 @@ class LearningObserver:
 
             # Pruefen ob Konzept schon existiert
             person_prefix = f"{person}:" if person else ""
-            existing = await self.redis.hget(KEY_ABSTRACT_CONCEPTS, f"{person_prefix}{concept_name}")
+            existing = await self.redis.hget(
+                KEY_ABSTRACT_CONCEPTS, f"{person_prefix}{concept_name}"
+            )
             if existing:
                 return
 
             # Kern-Aktionen extrahieren (Aktionen die in >50% der Beobachtungen vorkommen)
             from collections import Counter
+
             _action_counter = Counter()
             for obs in observations:
                 for action in obs.get("actions", []):
@@ -1109,7 +1274,8 @@ class LearningObserver:
 
             _threshold = len(observations) * 0.5
             _core_actions = [
-                action for action, count in _action_counter.items()
+                action
+                for action, count in _action_counter.items()
                 if count >= _threshold
             ]
 
@@ -1144,7 +1310,10 @@ class LearningObserver:
 
             logger.info(
                 "B8: Abstraktes Konzept '%s' erstellt (%d Kern-Aktionen, %d Beobachtungen, Person: %s)",
-                concept_name, len(_core_actions), len(observations), person or "global",
+                concept_name,
+                len(_core_actions),
+                len(observations),
+                person or "global",
             )
 
             # Vorschlag an User senden
@@ -1162,13 +1331,15 @@ class LearningObserver:
                     f"folgendes bedeutet: {', '.join(friendly_actions)}. "
                     f"Soll ich mir das so merken?"
                 )
-                await self._notify_callback({
-                    "message": msg,
-                    "type": "concept_learned",
-                    "concept": concept_name,
-                    "actions": _core_actions,
-                    "person": person,
-                })
+                await self._notify_callback(
+                    {
+                        "message": msg,
+                        "type": "concept_learned",
+                        "concept": concept_name,
+                        "actions": _core_actions,
+                        "person": person,
+                    }
+                )
 
         except Exception as e:
             logger.debug("B8 Concept Creation Fehler: %s", e)
@@ -1187,13 +1358,19 @@ class LearningObserver:
             return None
         try:
             person_prefix = f"{person}:" if person else ""
-            raw = await self.redis.hget(KEY_ABSTRACT_CONCEPTS, f"{person_prefix}{concept_name}")
+            raw = await self.redis.hget(
+                KEY_ABSTRACT_CONCEPTS, f"{person_prefix}{concept_name}"
+            )
             if not raw:
                 # Fallback: Globales Konzept wenn kein person-spezifisches existiert
                 if person:
                     raw = await self.redis.hget(KEY_ABSTRACT_CONCEPTS, concept_name)
             if raw:
-                return json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode())
+                return (
+                    json.loads(raw)
+                    if isinstance(raw, str)
+                    else json.loads(raw.decode())
+                )
         except Exception as e:
             logger.debug("B8 Get Concept Fehler: %s", e)
         return None
@@ -1210,7 +1387,11 @@ class LearningObserver:
                 if person and not key_str.startswith(f"{person}:") and ":" in key_str:
                     continue
                 try:
-                    concept = json.loads(val) if isinstance(val, str) else json.loads(val.decode())
+                    concept = (
+                        json.loads(val)
+                        if isinstance(val, str)
+                        else json.loads(val.decode())
+                    )
                     concepts.append(concept)
                 except (json.JSONDecodeError, TypeError):
                     continue
@@ -1225,8 +1406,13 @@ class LearningObserver:
 
     _B12_COOLDOWN_KEY = "mha:learning:b12_last_ask"
 
-    async def observe_knowledge_gap(self, user_text: str, tool_failed: bool = False,
-                                     no_tool_match: bool = False, person: str = ""):
+    async def observe_knowledge_gap(
+        self,
+        user_text: str,
+        tool_failed: bool = False,
+        no_tool_match: bool = False,
+        person: str = "",
+    ):
         """B12: Erkennt Wissenslücken und fragt proaktiv nach.
 
         Wird aufgerufen wenn:
@@ -1252,8 +1438,12 @@ class LearningObserver:
         try:
             last_ask = await self.redis.get(self._B12_COOLDOWN_KEY)
             if last_ask:
-                last_dt = datetime.fromisoformat(last_ask.decode() if isinstance(last_ask, bytes) else last_ask)
-                if (datetime.now(timezone.utc) - last_dt).total_seconds() < cooldown_min * 60:
+                last_dt = datetime.fromisoformat(
+                    last_ask.decode() if isinstance(last_ask, bytes) else last_ask
+                )
+                if (
+                    datetime.now(timezone.utc) - last_dt
+                ).total_seconds() < cooldown_min * 60:
                     return
         except Exception as e:
             logger.debug("Cooldown-Pruefung fehlgeschlagen: %s", e)
@@ -1281,11 +1471,13 @@ class LearningObserver:
                     datetime.now(timezone.utc).isoformat(),
                     ex=cooldown_min * 60,
                 )
-                await self._notify_callback({
-                    "message": message,
-                    "type": "knowledge_gap",
-                    "person": person,
-                })
+                await self._notify_callback(
+                    {
+                        "message": message,
+                        "type": "knowledge_gap",
+                        "person": person,
+                    }
+                )
             except Exception as e:
                 logger.debug("B12: Lern-Frage fehlgeschlagen: %s", e)
 
@@ -1316,6 +1508,7 @@ class LearningObserver:
                 return
 
             import time as _time
+
             now = _time.time()
             lookback_seconds = 300  # 5 Minuten
 
@@ -1328,10 +1521,16 @@ class LearningObserver:
                     if age <= lookback_seconds:
                         eid = action.get("entity_id", "")
                         # Nur relevante Trigger-Domains (TV, Buttons, Switches)
-                        if any(eid.startswith(d) for d in (
-                            "media_player.", "remote.", "switch.",
-                            "binary_sensor.", "input_boolean.",
-                        )):
+                        if any(
+                            eid.startswith(d)
+                            for d in (
+                                "media_player.",
+                                "remote.",
+                                "switch.",
+                                "binary_sensor.",
+                                "input_boolean.",
+                            )
+                        ):
                             recent_triggers.append(eid)
                 except Exception as e:
                     logger.debug("Szenen-Trigger Analyse fehlgeschlagen: %s", e)
@@ -1356,7 +1555,8 @@ class LearningObserver:
                     await self.redis.expire(pattern_key, 60 * 86400)  # 60 Tage
 
                 min_reps = scene_cfg.get(
-                    "auto_learning", {},
+                    "auto_learning",
+                    {},
                 ).get("min_repetitions", self.min_repetitions)
 
                 if count < min_reps:
@@ -1396,18 +1596,22 @@ class LearningObserver:
 
                 logger.info(
                     "[16] Scene-Device-Pattern erkannt: %s → %s (%dx)",
-                    trigger_entity, scene_name, count,
+                    trigger_entity,
+                    scene_name,
+                    count,
                 )
 
                 if self._notify_callback:
-                    await self._notify_callback({
-                        "message": message,
-                        "type": "scene_device_suggestion",
-                        "trigger_entity": trigger_entity,
-                        "scene_name": scene_name,
-                        "count": count,
-                        "person": person,
-                    })
+                    await self._notify_callback(
+                        {
+                            "message": message,
+                            "type": "scene_device_suggestion",
+                            "trigger_entity": trigger_entity,
+                            "scene_name": scene_name,
+                            "count": count,
+                            "person": person,
+                        }
+                    )
                 # Nur einen Vorschlag pro Aktivierung
                 break
 
@@ -1437,7 +1641,11 @@ class LearningObserver:
                 for key in keys:
                     key_str = key.decode() if isinstance(key, bytes) else key
                     count = await self.redis.get(key_str)
-                    count = int(count.decode() if isinstance(count, bytes) else count) if count else 0
+                    count = (
+                        int(count.decode() if isinstance(count, bytes) else count)
+                        if count
+                        else 0
+                    )
 
                     # Parse key: mha:learning:patterns:person:entity:state:HH:MM
                     parts = key_str.replace(f"{KEY_PATTERNS}:{person}:", "").split(":")
@@ -1445,13 +1653,15 @@ class LearningObserver:
                         entity = parts[0]
                         state = parts[1] if len(parts) > 1 else ""
                         time_slot = ":".join(parts[-2:]) if len(parts) >= 3 else ""
-                        patterns.append({
-                            "entity": entity,
-                            "state": state,
-                            "time_slot": time_slot,
-                            "count": count,
-                            "person": person,
-                        })
+                        patterns.append(
+                            {
+                                "entity": entity,
+                                "state": state,
+                                "time_slot": time_slot,
+                                "count": count,
+                                "person": person,
+                            }
+                        )
                 if cursor == 0:
                     break
 
@@ -1487,3 +1697,125 @@ class LearningObserver:
             "examples_unique_a": list(unique_a)[:5],
             "examples_unique_b": list(unique_b)[:5],
         }
+
+    # ------------------------------------------------------------------
+    # MCU Sprint 4: Cross-Domain-Combo-Erkennung
+    # ------------------------------------------------------------------
+
+    _COMBO_WINDOW_SECONDS = 60  # 60s Fenster
+    _COMBO_KEY = "mha:learning:cross_domain_last:{person}"
+
+    async def _check_cross_domain_combo(self, person: str, entity_id: str) -> None:
+        """Erkennt Cross-Domain-Combos: 2+ Domains in <60s.
+
+        Wenn Korrekturen in verschiedenen Domains (z.B. light + climate)
+        innerhalb von 60s passieren, wird ein Szene-Vorschlag gemacht.
+
+        Args:
+            person: Person die die Aenderung gemacht hat.
+            entity_id: Entity-ID der aktuellen Aenderung.
+        """
+        if not self.redis:
+            return
+
+        person_key = person or "global"
+        combo_key = self._COMBO_KEY.format(person=person_key)
+
+        # Domain extrahieren
+        domain = entity_id.split(".")[0] if "." in entity_id else ""
+        if not domain:
+            return
+
+        # Room extrahieren (best effort)
+        room = ""
+        try:
+            from .function_calling import get_mindhome_room
+
+            room = get_mindhome_room(entity_id) or ""
+        except Exception:
+            pass
+
+        try:
+            now = datetime.now(timezone.utc)
+            now_iso = now.isoformat()
+
+            # Letzte Aktionen laden
+            raw = await self.redis.get(combo_key)
+            recent_actions = []
+            if raw:
+                try:
+                    recent_actions = json.loads(raw)
+                except (json.JSONDecodeError, ValueError):
+                    recent_actions = []
+
+            # Alte Aktionen (>60s) entfernen
+            recent_actions = [
+                a
+                for a in recent_actions
+                if (now - datetime.fromisoformat(a["ts"])).total_seconds()
+                <= self._COMBO_WINDOW_SECONDS
+            ]
+
+            # Aktuelle Aktion hinzufuegen
+            recent_actions.append(
+                {
+                    "domain": domain,
+                    "entity_id": entity_id,
+                    "room": room,
+                    "ts": now_iso,
+                }
+            )
+
+            # Speichern (kurzes TTL)
+            await self.redis.setex(
+                combo_key,
+                self._COMBO_WINDOW_SECONDS * 2,
+                json.dumps(recent_actions),
+            )
+
+            # Combo pruefen: 2+ verschiedene Domains
+            domains = {a["domain"] for a in recent_actions}
+            if len(domains) < 2:
+                return
+
+            # Gleicher Raum pruefen (reduziert False Positives)
+            rooms = {a["room"] for a in recent_actions if a.get("room")}
+            if rooms and len(rooms) > 1:
+                return  # Verschiedene Raeume → wahrscheinlich Zufall
+
+            # Cooldown: Max 1 Combo-Vorschlag pro Tag
+            combo_cooldown_key = f"mha:learning:combo_cooldown:{person_key}"
+            if await self.redis.get(combo_cooldown_key):
+                return
+            await self.redis.setex(combo_cooldown_key, 86400, "1")
+
+            # Combo-Notification erstellen
+            domain_labels = {
+                "light": "Licht",
+                "climate": "Temperatur",
+                "cover": "Rollladen",
+                "switch": "Schalter",
+                "media_player": "Medien",
+            }
+            domain_names = [domain_labels.get(d, d) for d in sorted(domains)]
+            combo_desc = " und ".join(domain_names)
+            room_hint = f" im {rooms.pop()}" if rooms else ""
+
+            logger.info(
+                "Cross-Domain-Combo erkannt: %s%s (%d Aktionen in %ds)",
+                combo_desc,
+                room_hint,
+                len(recent_actions),
+                self._COMBO_WINDOW_SECONDS,
+            )
+
+            # Notification senden (via Callback wenn vorhanden)
+            if self._notify_callback:
+                await self._notify_callback(
+                    f"Du hast gerade {combo_desc}{room_hint} angepasst — "
+                    f"soll ich das als Szene speichern?",
+                    "combo_scene_suggest",
+                    "low",
+                )
+        except Exception as e:
+            logger.debug("Cross-Domain-Combo Fehler: %s", e)

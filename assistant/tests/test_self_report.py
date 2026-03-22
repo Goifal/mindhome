@@ -25,16 +25,28 @@ class TestGenerateReport:
     @pytest.mark.asyncio
     async def test_generates_report_with_data(self, report):
         outcome_tracker = MagicMock()
-        outcome_tracker.get_stats = AsyncMock(return_value={
-            "set_light": {"positive": 10, "neutral": 5, "negative": 2, "total": 17, "score": 0.75}
-        })
+        outcome_tracker.get_stats = AsyncMock(
+            return_value={
+                "set_light": {
+                    "positive": 10,
+                    "neutral": 5,
+                    "negative": 2,
+                    "total": 17,
+                    "score": 0.75,
+                }
+            }
+        )
         outcome_tracker.get_weekly_trends = AsyncMock(return_value={})
 
         correction_memory = MagicMock()
-        correction_memory.get_stats = AsyncMock(return_value={"total_corrections": 5, "active_rules": 2})
+        correction_memory.get_stats = AsyncMock(
+            return_value={"total_corrections": 5, "active_rules": 2}
+        )
         correction_memory.get_correction_patterns = AsyncMock(return_value=[])
 
-        report.ollama.generate = AsyncMock(return_value="Diese Woche lief es gut. Score: 75%.")
+        report.ollama.generate = AsyncMock(
+            return_value="Diese Woche lief es gut. Score: 75%."
+        )
 
         result = await report.generate_report(
             outcome_tracker=outcome_tracker,
@@ -82,11 +94,13 @@ class TestGetLatestReport:
 
     @pytest.mark.asyncio
     async def test_returns_cached_report(self, report):
-        cached = json.dumps({
-            "generated_at": "2025-01-01T10:00:00",
-            "summary": "Testbericht",
-            "data": {},
-        })
+        cached = json.dumps(
+            {
+                "generated_at": "2025-01-01T10:00:00",
+                "summary": "Testbericht",
+                "data": {},
+            }
+        )
         report.redis.get.return_value = cached
         result = await report.get_latest_report()
         assert result is not None
@@ -113,6 +127,7 @@ class TestFormatFallback:
 
 # ── initialize ───────────────────────────────────────────
 
+
 class TestInitialize:
     """Tests fuer initialize()."""
 
@@ -133,20 +148,30 @@ class TestInitialize:
 
 # ── rate limit Redis recovery ────────────────────────────
 
+
 class TestRateLimitRedisRecovery:
     """Tests fuer rate limit Redis recovery path."""
 
     @pytest.mark.asyncio
     async def test_rate_limit_recovers_from_redis(self, report):
         report._last_report_day = ""
-        report.redis.get = AsyncMock(side_effect=[
-            # First call: recover last day from Redis
-            b"2025-01-15",
-            # Second call: get_latest_report -> cached
-            json.dumps({"summary": "cached report", "data": {}, "generated_at": "2025-01-15T10:00:00"}),
-        ])
+        report.redis.get = AsyncMock(
+            side_effect=[
+                # First call: recover last day from Redis
+                b"2025-01-15",
+                # Second call: get_latest_report -> cached
+                json.dumps(
+                    {
+                        "summary": "cached report",
+                        "data": {},
+                        "generated_at": "2025-01-15T10:00:00",
+                    }
+                ),
+            ]
+        )
         # Simulate today being 2025-01-15
         from unittest.mock import patch as _patch
+
         with _patch("assistant.self_report.datetime") as mock_dt:
             mock_dt.now.return_value.strftime.return_value = "2025-01-15"
             mock_dt.now.return_value.isoformat.return_value = "2025-01-15T10:00:00"
@@ -157,16 +182,19 @@ class TestRateLimitRedisRecovery:
     async def test_rate_limit_redis_recovery_exception(self, report):
         """Redis exception during day recovery should not crash."""
         report._last_report_day = ""
-        report.redis.get = AsyncMock(side_effect=[
-            RuntimeError("Redis down"),  # recovery fails
-            None,  # get_latest_report returns None
-        ])
+        report.redis.get = AsyncMock(
+            side_effect=[
+                RuntimeError("Redis down"),  # recovery fails
+                None,  # get_latest_report returns None
+            ]
+        )
         report.ollama.generate = AsyncMock(return_value="Fresh report text here.")
         result = await report.generate_report()
         assert "summary" in result
 
 
 # ── data collection from subsystems ──────────────────────
+
 
 class TestDataCollection:
     """Tests fuer subsystem data collection paths."""
@@ -231,6 +259,7 @@ class TestDataCollection:
 
 # ── _generate_summary ────────────────────────────────────
 
+
 class TestGenerateSummary:
     """Tests fuer _generate_summary() LLM call."""
 
@@ -242,12 +271,16 @@ class TestGenerateSummary:
     @pytest.mark.asyncio
     async def test_no_ollama_returns_empty(self, report):
         report.ollama = None
-        result = await report._generate_summary({"outcomes": {"set_light": {"score": 0.8, "total": 10}}})
+        result = await report._generate_summary(
+            {"outcomes": {"set_light": {"score": 0.8, "total": 10}}}
+        )
         assert result == ""
 
     @pytest.mark.asyncio
     async def test_successful_llm_summary(self, report):
-        report.ollama.generate = AsyncMock(return_value="Diese Woche war super. Score 80%.")
+        report.ollama.generate = AsyncMock(
+            return_value="Diese Woche war super. Score 80%."
+        )
         data = {"outcomes": {"set_light": {"score": 0.8, "total": 10}}}
         result = await report._generate_summary(data)
         assert "Score 80%" in result
@@ -268,28 +301,36 @@ class TestGenerateSummary:
 
     @pytest.mark.asyncio
     async def test_summary_with_corrections(self, report):
-        report.ollama.generate = AsyncMock(return_value="Korrekturen wurden analysiert. Alles gut.")
+        report.ollama.generate = AsyncMock(
+            return_value="Korrekturen wurden analysiert. Alles gut."
+        )
         data = {"corrections": {"total_corrections": 5, "active_rules": 2}}
         result = await report._generate_summary(data)
         assert len(result) > 20
 
     @pytest.mark.asyncio
     async def test_summary_with_quality_data(self, report):
-        report.ollama.generate = AsyncMock(return_value="Qualitaet war gut diese Woche insgesamt.")
+        report.ollama.generate = AsyncMock(
+            return_value="Qualitaet war gut diese Woche insgesamt."
+        )
         data = {"response_quality": {"device_command": {"score": 0.9}}}
         result = await report._generate_summary(data)
         assert len(result) > 20
 
     @pytest.mark.asyncio
     async def test_summary_with_errors(self, report):
-        report.ollama.generate = AsyncMock(return_value="Fehler waren minimal diese Woche ja.")
+        report.ollama.generate = AsyncMock(
+            return_value="Fehler waren minimal diese Woche ja."
+        )
         data = {"errors": {"last_24h": 2}}
         result = await report._generate_summary(data)
         assert len(result) > 20
 
     @pytest.mark.asyncio
     async def test_summary_with_feedback(self, report):
-        report.ollama.generate = AsyncMock(return_value="Feedback war gemischt diese Woche, ja.")
+        report.ollama.generate = AsyncMock(
+            return_value="Feedback war gemischt diese Woche, ja."
+        )
         data = {"feedback": {"weather": 0.9, "bad_topic": 0.1, "neutral": 0.5}}
         result = await report._generate_summary(data)
         assert len(result) > 20

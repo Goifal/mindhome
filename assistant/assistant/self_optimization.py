@@ -57,11 +57,20 @@ class SelfOptimization:
         self._interval = self._cfg.get("analysis_interval", "weekly")
         self._max_proposals = self._cfg.get("max_proposals_per_cycle", 3)
         from .config import resolve_model
+
         self._model = resolve_model(self._cfg.get("model", ""), fallback_tier="deep")
         self._bounds = self._cfg.get("parameter_bounds", {})
         # SICHERHEIT: Mindestmenge an immutable Keys, die NICHT per Config ueberschrieben werden kann
-        _HARDCODED_IMMUTABLE = {"trust_levels", "security", "autonomy", "dashboard", "models"}
-        self._immutable = _HARDCODED_IMMUTABLE | set(self._cfg.get("immutable_keys", []))
+        _HARDCODED_IMMUTABLE = {
+            "trust_levels",
+            "security",
+            "autonomy",
+            "dashboard",
+            "models",
+        }
+        self._immutable = _HARDCODED_IMMUTABLE | set(
+            self._cfg.get("immutable_keys", [])
+        )
 
         self._redis = None
         self._pending_proposals: list[dict] = []
@@ -74,7 +83,9 @@ class SelfOptimization:
         self._redis = redis_client
         logger.info(
             "SelfOptimization initialisiert (enabled=%s, mode=%s, interval=%s)",
-            self._enabled, self._approval_mode, self._interval,
+            self._enabled,
+            self._approval_mode,
+            self._interval,
         )
 
     def set_notify_callback(self, callback):
@@ -98,15 +109,25 @@ class SelfOptimization:
 
         try:
             # Domain-Corrections aus Redis laden
-            corrections_raw = await self._redis.hgetall("mha:self_opt:domain_corrections")
+            corrections_raw = await self._redis.hgetall(
+                "mha:self_opt:domain_corrections"
+            )
             if not corrections_raw:
                 return None
 
             domain_counts: dict[str, int] = {}
             total = 0
             for domain_bytes, count_bytes in corrections_raw.items():
-                domain = domain_bytes.decode() if isinstance(domain_bytes, bytes) else domain_bytes
-                count = int(count_bytes.decode() if isinstance(count_bytes, bytes) else count_bytes)
+                domain = (
+                    domain_bytes.decode()
+                    if isinstance(domain_bytes, bytes)
+                    else domain_bytes
+                )
+                count = int(
+                    count_bytes.decode()
+                    if isinstance(count_bytes, bytes)
+                    else count_bytes
+                )
                 domain_counts[domain] = count
                 total += count
 
@@ -122,8 +143,12 @@ class SelfOptimization:
                 return None
 
             _DOMAIN_DE = {
-                "climate": "Klima", "light": "Licht", "media": "Medien",
-                "cover": "Rolllaeden", "lock": "Schloesser", "security": "Sicherheit",
+                "climate": "Klima",
+                "light": "Licht",
+                "media": "Medien",
+                "cover": "Rolllaeden",
+                "lock": "Schloesser",
+                "security": "Sicherheit",
             }
             domain_name = _DOMAIN_DE.get(worst_domain, worst_domain.title())
 
@@ -150,8 +175,9 @@ class SelfOptimization:
         except Exception as e:
             logger.debug("Domain correction tracking failed: %s", e)
 
-    async def run_analysis(self, outcome_tracker=None, response_quality=None,
-                           correction_memory=None) -> list[dict]:
+    async def run_analysis(
+        self, outcome_tracker=None, response_quality=None, correction_memory=None
+    ) -> list[dict]:
         """Fuehrt eine Analyse der letzten Interaktionen durch.
 
         Args:
@@ -167,6 +193,7 @@ class SelfOptimization:
         last_run = await self._redis.get("mha:self_opt:last_run")
         if last_run:
             from datetime import timedelta
+
             if isinstance(last_run, bytes):
                 last_run = last_run.decode()
             last_dt = datetime.fromisoformat(last_run)
@@ -191,13 +218,15 @@ class SelfOptimization:
             return []
 
         proposals = await self._generate_proposals(
-            corrections, feedback_stats,
-            outcome_stats=outcome_stats, quality_stats=quality_stats,
+            corrections,
+            feedback_stats,
+            outcome_stats=outcome_stats,
+            quality_stats=quality_stats,
             correction_patterns=correction_patterns,
         )
 
         valid_proposals = []
-        for p in proposals[:self._max_proposals]:
+        for p in proposals[: self._max_proposals]:
             if self._validate_proposal(p):
                 valid_proposals.append(p)
 
@@ -213,22 +242,28 @@ class SelfOptimization:
 
         _INTERVAL_TTL = {"weekly": 8, "3day": 4, "daily": 2}
         ttl = _INTERVAL_TTL.get(self._interval, 8) * 86400
-        await self._redis.setex("mha:self_opt:last_run", ttl, datetime.now(timezone.utc).isoformat())
+        await self._redis.setex(
+            "mha:self_opt:last_run", ttl, datetime.now(timezone.utc).isoformat()
+        )
 
         # Proaktive Insights generieren und ueber Callback melden
         if self._notify_callback and self._proactive_insights:
             insight = await self._generate_proactive_insight()
             if insight:
                 try:
-                    await self._notify_callback({
-                        "message": insight,
-                        "type": "self_optimization_insight",
-                        "urgency": "low",
-                    })
+                    await self._notify_callback(
+                        {
+                            "message": insight,
+                            "type": "self_optimization_insight",
+                            "urgency": "low",
+                        }
+                    )
                 except Exception as e:
                     logger.debug("Proactive insight callback failed: %s", e)
 
-        logger.info("Analyse abgeschlossen: %d Vorschlaege generiert", len(valid_proposals))
+        logger.info(
+            "Analyse abgeschlossen: %d Vorschlaege generiert", len(valid_proposals)
+        )
         return valid_proposals
 
     async def get_pending_proposals(self) -> list[dict]:
@@ -266,7 +301,8 @@ class SelfOptimization:
             return {"success": False, "message": "Vorschlag verletzt Parameter-Grenzen"}
 
         snapshot_id = await self.versioning.create_snapshot(
-            "settings", _SETTINGS_PATH,
+            "settings",
+            _SETTINGS_PATH,
             reason=f"self_opt:{param}={new_value}",
             changed_by="self_optimization",
         )
@@ -289,11 +325,13 @@ class SelfOptimization:
 
                 await self._redis.lpush(
                     "mha:self_opt:history",
-                    json.dumps({
-                        **proposal,
-                        "applied_at": datetime.now(timezone.utc).isoformat(),
-                        "snapshot_id": snapshot_id,
-                    }),
+                    json.dumps(
+                        {
+                            **proposal,
+                            "applied_at": datetime.now(timezone.utc).isoformat(),
+                            "snapshot_id": snapshot_id,
+                        }
+                    ),
                 )
                 await self._redis.ltrim("mha:self_opt:history", 0, 49)
                 await self._redis.expire("mha:self_opt:history", 90 * 86400)
@@ -316,19 +354,26 @@ class SelfOptimization:
         if self._redis:
             if proposals:
                 await self._redis.set(
-                    "mha:self_opt:pending", json.dumps(proposals), ex=7 * 86400,
+                    "mha:self_opt:pending",
+                    json.dumps(proposals),
+                    ex=7 * 86400,
                 )
             else:
                 await self._redis.delete("mha:self_opt:pending")
 
             await self._redis.lpush(
                 "mha:self_opt:rejected",
-                json.dumps({**rejected, "rejected_at": datetime.now(timezone.utc).isoformat()}),
+                json.dumps(
+                    {**rejected, "rejected_at": datetime.now(timezone.utc).isoformat()}
+                ),
             )
             await self._redis.ltrim("mha:self_opt:rejected", 0, 29)
             await self._redis.expire("mha:self_opt:rejected", 90 * 86400)
 
-        return {"success": True, "message": f"Vorschlag '{rejected['parameter']}' abgelehnt"}
+        return {
+            "success": True,
+            "message": f"Vorschlag '{rejected['parameter']}' abgelehnt",
+        }
 
     async def reject_all(self) -> dict:
         """User lehnt alle Vorschlaege ab."""
@@ -355,29 +400,48 @@ class SelfOptimization:
 
         # 1. WHITELIST: Nur bekannte Parameter erlauben
         if param not in _PARAMETER_PATHS:
-            logger.warning("SICHERHEIT: Vorschlag fuer unbekannten Parameter abgelehnt: %s", param)
+            logger.warning(
+                "SICHERHEIT: Vorschlag fuer unbekannten Parameter abgelehnt: %s", param
+            )
             return False
 
         # 2. IMMUTABLE: Geschuetzte Bereiche
         for immutable_key in self._immutable:
             if param.startswith(immutable_key) or immutable_key.startswith(param):
-                logger.warning("SICHERHEIT: Vorschlag fuer immutable Key abgelehnt: %s", param)
+                logger.warning(
+                    "SICHERHEIT: Vorschlag fuer immutable Key abgelehnt: %s", param
+                )
                 return False
 
         # 3. TYP: Nur numerische Werte erlauben (alle Parameter sind numerisch)
         value = proposal.get("proposed")
         if not isinstance(value, (int, float)):
-            logger.warning("SICHERHEIT: Nicht-numerischer Wert abgelehnt: %s=%s (type=%s)", param, value, type(value).__name__)
+            logger.warning(
+                "SICHERHEIT: Nicht-numerischer Wert abgelehnt: %s=%s (type=%s)",
+                param,
+                value,
+                type(value).__name__,
+            )
             return False
 
         # 4. BOUNDS: Grenzen pruefen
         bounds = self._bounds.get(param)
         if bounds:
             if value < bounds.get("min", float("-inf")):
-                logger.warning("Vorschlag unter Minimum: %s=%s (min=%s)", param, value, bounds["min"])
+                logger.warning(
+                    "Vorschlag unter Minimum: %s=%s (min=%s)",
+                    param,
+                    value,
+                    bounds["min"],
+                )
                 return False
             if value > bounds.get("max", float("inf")):
-                logger.warning("Vorschlag ueber Maximum: %s=%s (max=%s)", param, value, bounds["max"])
+                logger.warning(
+                    "Vorschlag ueber Maximum: %s=%s (max=%s)",
+                    param,
+                    value,
+                    bounds["max"],
+                )
                 return False
 
         # 5. KONSISTENZ: Sarkasmus-Formalitaet Sync
@@ -387,21 +451,28 @@ class SelfOptimization:
             if value >= 8 and formality > 75:
                 logger.warning(
                     "KONSISTENZ: sarcasm_level=%s mit formality_start=%s widerspruechlich — abgelehnt",
-                    value, formality,
+                    value,
+                    formality,
                 )
                 return False
             if value <= 1 and formality < 30:
                 logger.warning(
                     "KONSISTENZ: sarcasm_level=%s mit formality_start=%s widerspruechlich — abgelehnt",
-                    value, formality,
+                    value,
+                    formality,
                 )
                 return False
 
         return True
 
-    async def _generate_proposals(self, corrections: list, feedback_stats: dict,
-                                   outcome_stats: dict = None, quality_stats: dict = None,
-                                   correction_patterns: list = None) -> list[dict]:
+    async def _generate_proposals(
+        self,
+        corrections: list,
+        feedback_stats: dict,
+        outcome_stats: dict = None,
+        quality_stats: dict = None,
+        correction_patterns: list = None,
+    ) -> list[dict]:
         """Generiert Vorschlaege via LLM-Analyse."""
         current_values = self._get_current_values()
 
@@ -453,7 +524,9 @@ Wenn keine Aenderung noetig: []"""
             end = text.rfind("]") + 1
             if start >= 0 and end > start:
                 proposals = json.loads(text[start:end])
-                return [p for p in proposals if isinstance(p, dict) and "parameter" in p]
+                return [
+                    p for p in proposals if isinstance(p, dict) and "parameter" in p
+                ]
 
         except Exception as e:
             logger.error("Proposal-Generierung fehlgeschlagen: %s", e)
@@ -482,6 +555,7 @@ Wenn keine Aenderung noetig: []"""
 
             def _read_and_write():
                 import tempfile
+
                 with open(_SETTINGS_PATH) as f:
                     config = yaml.safe_load(f) or {}
 
@@ -493,11 +567,18 @@ Wenn keine Aenderung noetig: []"""
                 node[path[-1]] = new_value
 
                 tmp_fd, tmp_path = tempfile.mkstemp(
-                    dir=_SETTINGS_PATH.parent, suffix=".yaml.tmp",
+                    dir=_SETTINGS_PATH.parent,
+                    suffix=".yaml.tmp",
                 )
                 try:
                     with open(tmp_fd, "w") as f:
-                        yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                        yaml.safe_dump(
+                            config,
+                            f,
+                            allow_unicode=True,
+                            default_flow_style=False,
+                            sort_keys=False,
+                        )
                     Path(tmp_path).replace(_SETTINGS_PATH)
                 except BaseException:
                     Path(tmp_path).unlink(missing_ok=True)
@@ -580,7 +661,9 @@ Wenn keine Aenderung noetig: []"""
             return []
 
     # Feature 9b: Effectiveness Tracking
-    async def save_baseline(self, param: str, outcome_tracker=None, response_quality=None):
+    async def save_baseline(
+        self, param: str, outcome_tracker=None, response_quality=None
+    ):
         """Speichert Baseline-Metriken vor einer Aenderung (Feature 9b)."""
         if not self._redis:
             return
@@ -596,12 +679,14 @@ Wenn keine Aenderung noetig: []"""
             except Exception as e:
                 logger.debug("Unhandled: %s", e)
         await self._redis.setex(
-            f"mha:self_opt:baseline:{param}", 30 * 86400,
+            f"mha:self_opt:baseline:{param}",
+            30 * 86400,
             json.dumps(baseline, ensure_ascii=False, default=str),
         )
 
-    async def check_effectiveness(self, param: str, outcome_tracker=None,
-                                  response_quality=None) -> Optional[dict]:
+    async def check_effectiveness(
+        self, param: str, outcome_tracker=None, response_quality=None
+    ) -> Optional[dict]:
         """Vergleicht aktuelle Metriken mit Baseline (Feature 9b/9c)."""
         if not self._redis:
             return None
@@ -632,7 +717,9 @@ Wenn keine Aenderung noetig: []"""
             if isinstance(stats, dict) and action in baseline_outcomes:
                 old_score = baseline_outcomes[action].get("score", 0.5)
                 new_score = stats.get("score", 0.5)
-                if isinstance(old_score, (int, float)) and isinstance(new_score, (int, float)):
+                if isinstance(old_score, (int, float)) and isinstance(
+                    new_score, (int, float)
+                ):
                     score_changes[action] = round(new_score - old_score, 3)
 
         return {
@@ -650,7 +737,7 @@ Wenn keine Aenderung noetig: []"""
         for i, p in enumerate(proposals):
             conf = int(p.get("confidence", 0) * 100)
             lines.append(
-                f"  [{i+1}] {p['parameter']}: {p['current']} -> {p['proposed']} "
+                f"  [{i + 1}] {p['parameter']}: {p['current']} -> {p['proposed']} "
                 f"({conf}% Confidence)"
             )
             lines.append(f"      Grund: {p['reason']}")
@@ -678,6 +765,7 @@ Wenn keine Aenderung noetig: []"""
             await self._redis.expire(key, 30 * 86400)
         except Exception as e:
             logger.debug("Unhandled: %s", e)
+
     async def track_character_break(self, break_type: str, detail: str = ""):
         """Trackt einen erkannten Charakter-Bruch pro Session.
 
@@ -689,26 +777,35 @@ Wenn keine Aenderung noetig: []"""
             return
         try:
             from datetime import date
+
             day_key = f"mha:self_opt:character_breaks:{date.today().isoformat()}"
             await self._redis.hincrby(day_key, break_type, 1)
             await self._redis.expire(day_key, 30 * 86400)
             # Detail-Log fuer Analyse (letzte 50 Brueche)
             if detail:
                 import json
+
                 log_key = "mha:self_opt:character_break_log"
-                entry = json.dumps({"type": break_type, "detail": detail[:100],
-                                    "ts": datetime.now(timezone.utc).isoformat()})
+                entry = json.dumps(
+                    {
+                        "type": break_type,
+                        "detail": detail[:100],
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
                 await self._redis.lpush(log_key, entry)
                 await self._redis.ltrim(log_key, 0, 49)
                 await self._redis.expire(log_key, 30 * 86400)
         except Exception as e:
             logger.warning("Character break tracking failed: %s", e)
+
     async def get_character_break_stats(self, days: int = 7) -> dict:
         """Gibt Character-Break-Statistiken der letzten N Tage zurueck."""
         if not self._redis:
             return {}
         try:
             from datetime import date, timedelta
+
             stats = {}
             for d in range(days):
                 day = (date.today() - timedelta(days=d)).isoformat()
@@ -738,6 +835,7 @@ Wenn keine Aenderung noetig: []"""
             await self._redis.expire(key, 90 * 86400)
         except Exception as e:
             logger.debug("Unhandled: %s", e)
+
     async def detect_new_banned_phrases(self) -> list[dict]:
         """Erkennt Phrasen die haeufig gefiltert oder korrigiert werden.
 
@@ -751,32 +849,50 @@ Wenn keine Aenderung noetig: []"""
 
         # 1. Phrasen die der Filter oft entfernt (5+ mal)
         try:
-            raw_filter_counts = await self._redis.hgetall("mha:self_opt:phrase_filter_counts")
-            filter_counts = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in (raw_filter_counts or {}).items()}
+            raw_filter_counts = await self._redis.hgetall(
+                "mha:self_opt:phrase_filter_counts"
+            )
+            filter_counts = {
+                (k.decode() if isinstance(k, bytes) else k): (
+                    v.decode() if isinstance(v, bytes) else v
+                )
+                for k, v in (raw_filter_counts or {}).items()
+            }
             for phrase, count_str in filter_counts.items():
                 count = int(count_str or 0)
                 if count >= 5:
-                    suggestions.append({
-                        "phrase": phrase,
-                        "count": count,
-                        "source": "filter",
-                        "reason": f"Wurde {count}x vom Filter entfernt — dauerhaft aufnehmen?",
-                    })
+                    suggestions.append(
+                        {
+                            "phrase": phrase,
+                            "count": count,
+                            "source": "filter",
+                            "reason": f"Wurde {count}x vom Filter entfernt — dauerhaft aufnehmen?",
+                        }
+                    )
         except Exception as e:
             logger.debug("Unhandled: %s", e)
         # 2. Phrasen die User explizit korrigiert hat (2+ mal)
         try:
-            raw_corrections = await self._redis.hgetall("mha:self_opt:phrase_corrections")
-            corrections = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in (raw_corrections or {}).items()}
+            raw_corrections = await self._redis.hgetall(
+                "mha:self_opt:phrase_corrections"
+            )
+            corrections = {
+                (k.decode() if isinstance(k, bytes) else k): (
+                    v.decode() if isinstance(v, bytes) else v
+                )
+                for k, v in (raw_corrections or {}).items()
+            }
             for phrase, count_str in corrections.items():
                 count = int(count_str or 0)
                 if count >= 2:
-                    suggestions.append({
-                        "phrase": phrase,
-                        "count": count,
-                        "source": "correction",
-                        "reason": f"User hat diese Formulierung {count}x korrigiert",
-                    })
+                    suggestions.append(
+                        {
+                            "phrase": phrase,
+                            "count": count,
+                            "source": "correction",
+                            "reason": f"User hat diese Formulierung {count}x korrigiert",
+                        }
+                    )
         except Exception as e:
             logger.debug("Unhandled: %s", e)
         # Sortieren nach Haeufigkeit
@@ -792,6 +908,7 @@ Wenn keine Aenderung noetig: []"""
             return {"success": False, "message": "Phrase zu kurz"}
 
         try:
+
             def _read_config():
                 with open(_SETTINGS_PATH) as f:
                     return yaml.safe_load(f) or {}
@@ -800,7 +917,8 @@ Wenn keine Aenderung noetig: []"""
 
             # Snapshot vor Aenderung
             await self.versioning.create_snapshot(
-                "settings", _SETTINGS_PATH,
+                "settings",
+                _SETTINGS_PATH,
                 reason=f"add_banned_phrase:{phrase[:50]}",
                 changed_by="self_optimization",
             )
@@ -811,13 +929,22 @@ Wenn keine Aenderung noetig: []"""
                 config["response_filter"]["banned_phrases"] = []
 
             if phrase in config["response_filter"]["banned_phrases"]:
-                return {"success": False, "message": f"'{phrase}' ist bereits in der Liste"}
+                return {
+                    "success": False,
+                    "message": f"'{phrase}' ist bereits in der Liste",
+                }
 
             config["response_filter"]["banned_phrases"].append(phrase)
 
             def _write_config():
                 with open(_SETTINGS_PATH, "w") as f:
-                    yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                    yaml.safe_dump(
+                        config,
+                        f,
+                        allow_unicode=True,
+                        default_flow_style=False,
+                        sort_keys=False,
+                    )
 
             await asyncio.to_thread(_write_config)
 
@@ -832,11 +959,17 @@ Wenn keine Aenderung noetig: []"""
                 await self._redis.hdel("mha:self_opt:phrase_corrections", phrase)
 
             logger.info("Banned Phrase hinzugefuegt: '%s'", phrase)
-            return {"success": True, "message": f"'{phrase}' zur Sperrliste hinzugefuegt"}
+            return {
+                "success": True,
+                "message": f"'{phrase}' zur Sperrliste hinzugefuegt",
+            }
 
         except Exception as e:
             logger.error("Banned Phrase Fehler: %s", e)
-            return {"success": False, "message": "Sperrlisten-Aenderung fehlgeschlagen."}
+            return {
+                "success": False,
+                "message": "Sperrlisten-Aenderung fehlgeschlagen.",
+            }
 
     def format_phrase_suggestions(self, suggestions: list[dict]) -> str:
         """Formatiert Phrase-Vorschlaege fuer Chat-Ausgabe."""
@@ -845,8 +978,12 @@ Wenn keine Aenderung noetig: []"""
 
         lines = ["Wiederkehrende Phrasen die ich sperren sollte:", ""]
         for i, s in enumerate(suggestions):
-            source_de = "oft vom Filter entfernt" if s["source"] == "filter" else "von dir korrigiert"
-            lines.append(f"  [{i+1}] \"{s['phrase']}\" ({s['count']}x {source_de})")
+            source_de = (
+                "oft vom Filter entfernt"
+                if s["source"] == "filter"
+                else "von dir korrigiert"
+            )
+            lines.append(f'  [{i + 1}] "{s["phrase"]}" ({s["count"]}x {source_de})')
         lines.append("")
         lines.append("Sage 'Phrase 1 sperren' oder 'alle Phrasen sperren'.")
         return "\n".join(lines)
@@ -866,17 +1003,21 @@ Wenn keine Aenderung noetig: []"""
         # 1. Optimierungs-Vorschlaege (Parameter)
         proposals = await self.get_pending_proposals()
         if proposals:
-            parts.append(f"- {len(proposals)} Optimierungsvorschlag{'e' if len(proposals) > 1 else ''} wartend")
+            parts.append(
+                f"- {len(proposals)} Optimierungsvorschlag{'e' if len(proposals) > 1 else ''} wartend"
+            )
 
         # 2. Angewandte Aenderungen (letzte Woche)
         if self._redis:
             history = await self._redis.lrange("mha:self_opt:history", 0, 4)
             recent = []
-            for item in (history or []):
+            for item in history or []:
                 try:
                     entry = json.loads(item)
                     if entry.get("applied_at"):
-                        recent.append(f"{entry['parameter']}: {entry.get('current')} -> {entry.get('proposed')}")
+                        recent.append(
+                            f"{entry['parameter']}: {entry.get('current')} -> {entry.get('proposed')}"
+                        )
                 except (json.JSONDecodeError, KeyError):
                     pass
             if recent:
@@ -885,7 +1026,9 @@ Wenn keine Aenderung noetig: []"""
         # 3. Phrase-Vorschlaege
         phrase_suggestions = await self.detect_new_banned_phrases()
         if phrase_suggestions:
-            parts.append(f"- {len(phrase_suggestions)} neue Phrase{'n' if len(phrase_suggestions) > 1 else ''} zum Sperren erkannt")
+            parts.append(
+                f"- {len(phrase_suggestions)} neue Phrase{'n' if len(phrase_suggestions) > 1 else ''} zum Sperren erkannt"
+            )
 
         # 4. Korrektur-Statistiken
         if correction_memory:

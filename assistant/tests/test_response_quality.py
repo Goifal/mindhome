@@ -28,6 +28,7 @@ def tracker(redis_mock):
 # check_followup
 # ============================================================
 
+
 class TestCheckFollowup:
     """Tests fuer check_followup()."""
 
@@ -100,6 +101,7 @@ class TestCheckFollowup:
 # ============================================================
 # record_exchange
 # ============================================================
+
 
 class TestRecordExchange:
     """Tests fuer record_exchange()."""
@@ -183,7 +185,9 @@ class TestRecordExchange:
     async def test_few_shot_stored_for_good_exchange(self, tracker):
         """When score_target >= 0.8 and _last_user_text is set, few-shot should be stored."""
         tracker._last_user_text = "Wie warm ist es?"
-        with patch.object(tracker, "_store_few_shot_example", new_callable=AsyncMock) as mock_store:
+        with patch.object(
+            tracker, "_store_few_shot_example", new_callable=AsyncMock
+        ) as mock_store:
             await tracker.record_exchange(
                 "knowledge",
                 was_thanked=True,
@@ -196,20 +200,27 @@ class TestRecordExchange:
 # _detect_rephrase
 # ============================================================
 
+
 class TestDetectRephrase:
     """Tests fuer _detect_rephrase()."""
 
     def test_similar_texts(self, tracker):
-        assert tracker._detect_rephrase(
-            "Licht Wohnzimmer einschalten",
-            "Wohnzimmer Licht einschalten",
-        ) is True
+        assert (
+            tracker._detect_rephrase(
+                "Licht Wohnzimmer einschalten",
+                "Wohnzimmer Licht einschalten",
+            )
+            is True
+        )
 
     def test_different_texts(self, tracker):
-        assert tracker._detect_rephrase(
-            "Wie wird das Wetter morgen?",
-            "Mach die Heizung an",
-        ) is False
+        assert (
+            tracker._detect_rephrase(
+                "Wie wird das Wetter morgen?",
+                "Mach die Heizung an",
+            )
+            is False
+        )
 
     def test_empty_texts(self, tracker):
         assert tracker._detect_rephrase("", "") is False
@@ -238,6 +249,7 @@ class TestDetectRephrase:
 # update_last_exchange
 # ============================================================
 
+
 class TestUpdateLastExchange:
     """Tests fuer update_last_exchange()."""
 
@@ -258,6 +270,7 @@ class TestUpdateLastExchange:
 # ============================================================
 # get_quality_score
 # ============================================================
+
 
 class TestGetQualityScore:
     """Tests fuer get_quality_score()."""
@@ -304,6 +317,7 @@ class TestGetQualityScore:
 # initialize
 # ============================================================
 
+
 class TestInitialize:
     """Tests fuer initialize()."""
 
@@ -331,6 +345,7 @@ class TestInitialize:
 # ============================================================
 # get_person_score
 # ============================================================
+
 
 class TestGetPersonScore:
     """Tests fuer get_person_score()."""
@@ -374,6 +389,7 @@ class TestGetPersonScore:
 # get_stats
 # ============================================================
 
+
 class TestGetStats:
     """Tests fuer get_stats()."""
 
@@ -387,12 +403,14 @@ class TestGetStats:
 
     @pytest.mark.asyncio
     async def test_returns_stats_with_data(self, tracker):
-        tracker.redis.hgetall = AsyncMock(side_effect=[
-            {b"clear": b"10", b"unclear": b"2", b"total": b"12"},  # device_command
-            {},  # knowledge
-            {},  # smalltalk
-            {},  # analysis
-        ])
+        tracker.redis.hgetall = AsyncMock(
+            side_effect=[
+                {b"clear": b"10", b"unclear": b"2", b"total": b"12"},  # device_command
+                {},  # knowledge
+                {},  # smalltalk
+                {},  # analysis
+            ]
+        )
         tracker.redis.get = AsyncMock(return_value="0.85")
         tracker.redis.hget = AsyncMock(return_value="12")
         stats = await tracker.get_stats()
@@ -409,12 +427,14 @@ class TestGetStats:
     @pytest.mark.asyncio
     async def test_multiple_categories(self, tracker):
         """Stats should include all categories with data."""
-        tracker.redis.hgetall = AsyncMock(side_effect=[
-            {b"clear": b"5", b"total": b"5"},  # device_command
-            {b"clear": b"3", b"total": b"3"},  # knowledge
-            {},  # smalltalk
-            {},  # analysis
-        ])
+        tracker.redis.hgetall = AsyncMock(
+            side_effect=[
+                {b"clear": b"5", b"total": b"5"},  # device_command
+                {b"clear": b"3", b"total": b"3"},  # knowledge
+                {},  # smalltalk
+                {},  # analysis
+            ]
+        )
         tracker.redis.get = AsyncMock(return_value="0.7")
         tracker.redis.hget = AsyncMock(return_value="5")
         stats = await tracker.get_stats()
@@ -426,6 +446,7 @@ class TestGetStats:
 # ============================================================
 # _update_score
 # ============================================================
+
 
 class TestUpdateScore:
     """Tests fuer _update_score() EMA calculation."""
@@ -518,6 +539,7 @@ class TestUpdateScore:
 # get_weak_categories
 # ============================================================
 
+
 class TestGetWeakCategories:
     """Tests fuer get_weak_categories()."""
 
@@ -532,10 +554,12 @@ class TestGetWeakCategories:
     async def test_returns_weak_categories(self, tracker):
         """Categories below threshold with enough data should be returned."""
         tracker.redis.get = AsyncMock(return_value="0.2")  # below default 0.3 threshold
-        tracker.redis.hgetall = AsyncMock(return_value={
-            b"total": b"25",
-            b"rephrased": b"10",
-        })
+        tracker.redis.hgetall = AsyncMock(
+            return_value={
+                b"total": b"25",
+                b"rephrased": b"10",
+            }
+        )
         tracker.redis.hget = AsyncMock(return_value=None)
         result = await tracker.get_weak_categories(threshold=0.3)
         assert len(result) > 0
@@ -548,10 +572,12 @@ class TestGetWeakCategories:
     async def test_no_weak_categories_above_threshold(self, tracker):
         """Categories above threshold should not be returned."""
         tracker.redis.get = AsyncMock(return_value="0.8")
-        tracker.redis.hgetall = AsyncMock(return_value={
-            b"total": b"25",
-            b"rephrased": b"0",
-        })
+        tracker.redis.hgetall = AsyncMock(
+            return_value={
+                b"total": b"25",
+                b"rephrased": b"0",
+            }
+        )
         tracker.redis.hget = AsyncMock(return_value=None)
         result = await tracker.get_weak_categories(threshold=0.3)
         assert len(result) == 0
@@ -560,10 +586,12 @@ class TestGetWeakCategories:
     async def test_not_enough_data_excluded(self, tracker):
         """Categories with too few exchanges should not appear."""
         tracker.redis.get = AsyncMock(return_value="0.1")  # very weak
-        tracker.redis.hgetall = AsyncMock(return_value={
-            b"total": str(MIN_EXCHANGES_FOR_SCORE - 1).encode(),
-            b"rephrased": b"0",
-        })
+        tracker.redis.hgetall = AsyncMock(
+            return_value={
+                b"total": str(MIN_EXCHANGES_FOR_SCORE - 1).encode(),
+                b"rephrased": b"0",
+            }
+        )
         tracker.redis.hget = AsyncMock(return_value=None)
         result = await tracker.get_weak_categories()
         assert len(result) == 0
@@ -572,6 +600,7 @@ class TestGetWeakCategories:
 # ============================================================
 # _store_few_shot_example and get_few_shot_examples
 # ============================================================
+
 
 class TestFewShotExamples:
     """Tests fuer D6 Dynamic Few-Shot Examples."""
@@ -597,7 +626,9 @@ class TestFewShotExamples:
     @pytest.mark.asyncio
     async def test_store_without_response_text_skipped(self, tracker):
         """Empty response_text should not store a few-shot example."""
-        await tracker._store_few_shot_example("device_command", "Mach Licht an", "", "Max")
+        await tracker._store_few_shot_example(
+            "device_command", "Mach Licht an", "", "Max"
+        )
         tracker.redis.lpush.assert_not_called()
 
     @pytest.mark.asyncio
@@ -612,8 +643,20 @@ class TestFewShotExamples:
     async def test_get_few_shot_examples(self, tracker):
         """Should parse stored few-shot examples from redis."""
         entries = [
-            json.dumps({"user_text": "Test1", "response_text": "Resp1", "category": "device_command"}).encode(),
-            json.dumps({"user_text": "Test2", "response_text": "Resp2", "category": "device_command"}).encode(),
+            json.dumps(
+                {
+                    "user_text": "Test1",
+                    "response_text": "Resp1",
+                    "category": "device_command",
+                }
+            ).encode(),
+            json.dumps(
+                {
+                    "user_text": "Test2",
+                    "response_text": "Resp2",
+                    "category": "device_command",
+                }
+            ).encode(),
         ]
         tracker.redis.lrange = AsyncMock(return_value=entries)
         result = await tracker.get_few_shot_examples("device_command", limit=5)
@@ -645,7 +688,9 @@ class TestFewShotExamples:
         """Long user_text and response_text should be truncated."""
         long_user = "x" * 500
         long_response = "y" * 500
-        await tracker._store_few_shot_example("knowledge", long_user, long_response, "Max")
+        await tracker._store_few_shot_example(
+            "knowledge", long_user, long_response, "Max"
+        )
         entry = json.loads(tracker.redis.lpush.call_args[0][1])
         assert len(entry["user_text"]) <= 200
         assert len(entry["response_text"]) <= 300

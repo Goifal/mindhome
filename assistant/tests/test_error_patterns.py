@@ -30,13 +30,16 @@ def tracker(redis_mock):
 # record_error
 # ============================================================
 
+
 class TestRecordError:
     """Tests fuer record_error()."""
 
     @pytest.mark.asyncio
     async def test_records_error(self, tracker):
         tracker.redis.incr.return_value = 1
-        await tracker.record_error("timeout", action_type="llm_chat", model="qwen3.5:9b")
+        await tracker.record_error(
+            "timeout", action_type="llm_chat", model="qwen3.5:9b"
+        )
         tracker.redis.lpush.assert_called_once()
         tracker.redis.incr.assert_called()
 
@@ -49,14 +52,18 @@ class TestRecordError:
     @pytest.mark.asyncio
     async def test_activates_mitigation_at_threshold(self, tracker):
         tracker.redis.incr.return_value = 3  # Threshold erreicht
-        await tracker.record_error("timeout", action_type="llm_chat", model="qwen3.5:9b")
+        await tracker.record_error(
+            "timeout", action_type="llm_chat", model="qwen3.5:9b"
+        )
         # Mitigation sollte aktiviert werden
         assert tracker.redis.setex.call_count >= 1
 
     @pytest.mark.asyncio
     async def test_no_mitigation_below_threshold(self, tracker):
         tracker.redis.incr.return_value = 2  # Unter Threshold
-        await tracker.record_error("timeout", action_type="llm_chat", model="qwen3.5:9b")
+        await tracker.record_error(
+            "timeout", action_type="llm_chat", model="qwen3.5:9b"
+        )
         # Nur lpush + expire, kein mitigation setex
         setex_calls = [c for c in tracker.redis.setex.call_args_list]
         mitigation_calls = [c for c in setex_calls if "mitigation" in str(c)]
@@ -118,6 +125,7 @@ class TestRecordError:
 # record_error additional paths
 # ============================================================
 
+
 class TestRecordErrorPaths:
     """Additional tests for record_error()."""
 
@@ -142,7 +150,9 @@ class TestRecordErrorPaths:
     async def test_model_specific_threshold_triggers_mitigation(self, tracker):
         """Model-specific counter reaching threshold triggers mitigation."""
         tracker.redis.incr = AsyncMock(side_effect=[1, 3])  # pattern=1, model=3
-        await tracker.record_error("timeout", action_type="llm_chat", model="qwen3.5:9b")
+        await tracker.record_error(
+            "timeout", action_type="llm_chat", model="qwen3.5:9b"
+        )
         tracker.redis.setex.assert_called()  # mitigation activated
 
     @pytest.mark.asyncio
@@ -189,6 +199,7 @@ class TestRecordErrorPaths:
 # get_mitigation
 # ============================================================
 
+
 class TestGetMitigation:
     """Tests fuer get_mitigation()."""
 
@@ -206,7 +217,9 @@ class TestGetMitigation:
             "original_model": "qwen3.5:9b",
         }
         tracker.redis.get.return_value = json.dumps(mitigation)
-        result = await tracker.get_mitigation(action_type="llm_chat", model="qwen3.5:9b")
+        result = await tracker.get_mitigation(
+            action_type="llm_chat", model="qwen3.5:9b"
+        )
         assert result is not None
         assert result["type"] == MITIGATION_USE_FALLBACK
 
@@ -230,17 +243,23 @@ class TestGetMitigation:
         """Model-specific mitigation found first."""
         model_mit = {"type": "use_fallback", "original_model": "qwen3.5:9b"}
         tracker.redis.get = AsyncMock(return_value=json.dumps(model_mit))
-        result = await tracker.get_mitigation(action_type="llm_chat", model="qwen3.5:9b")
+        result = await tracker.get_mitigation(
+            action_type="llm_chat", model="qwen3.5:9b"
+        )
         assert result["type"] == "use_fallback"
 
     @pytest.mark.asyncio
     async def test_invalid_json_returns_none(self, tracker):
         """Invalid JSON in stored mitigation falls through."""
-        tracker.redis.get = AsyncMock(side_effect=[
-            "not json",  # model mitigation
-            None,        # action mitigation
-        ])
-        result = await tracker.get_mitigation(action_type="set_light", model="some_model")
+        tracker.redis.get = AsyncMock(
+            side_effect=[
+                "not json",  # model mitigation
+                None,  # action mitigation
+            ]
+        )
+        result = await tracker.get_mitigation(
+            action_type="set_light", model="some_model"
+        )
         assert result is None
 
     @pytest.mark.asyncio
@@ -262,11 +281,15 @@ class TestGetMitigation:
     async def test_model_not_found_falls_to_action(self, tracker):
         """When model-specific mitigation not found, falls back to action-type."""
         action_mit = {"type": "warn_user", "reason": "test"}
-        tracker.redis.get = AsyncMock(side_effect=[
-            None,  # model mitigation -> not found
-            json.dumps(action_mit),  # action mitigation -> found
-        ])
-        result = await tracker.get_mitigation(action_type="set_light", model="some_model")
+        tracker.redis.get = AsyncMock(
+            side_effect=[
+                None,  # model mitigation -> not found
+                json.dumps(action_mit),  # action mitigation -> found
+            ]
+        )
+        result = await tracker.get_mitigation(
+            action_type="set_light", model="some_model"
+        )
         assert result is not None
         assert result["type"] == "warn_user"
 
@@ -274,6 +297,7 @@ class TestGetMitigation:
 # ============================================================
 # get_stats
 # ============================================================
+
 
 class TestGetStats:
     """Tests fuer get_stats()."""
@@ -294,7 +318,9 @@ class TestGetStats:
             json.dumps({"error_type": "timeout", "ts": now - 3600}).encode(),
             json.dumps({"error_type": "timeout", "ts": now - 100}).encode(),
             json.dumps({"error_type": "service_unavailable", "ts": now - 200}).encode(),
-            json.dumps({"error_type": "bad_params", "ts": now - 100000}).encode(),  # >24h ago
+            json.dumps(
+                {"error_type": "bad_params", "ts": now - 100000}
+            ).encode(),  # >24h ago
         ]
         tracker.redis.lrange = AsyncMock(return_value=entries)
         tracker.redis.scan = AsyncMock(return_value=(0, [b"key1", b"key2"]))
@@ -309,10 +335,12 @@ class TestGetStats:
     @pytest.mark.asyncio
     async def test_stats_scan_multiple_pages(self, tracker):
         tracker.redis.lrange = AsyncMock(return_value=[])
-        tracker.redis.scan = AsyncMock(side_effect=[
-            (5, [b"k1"]),
-            (0, [b"k2", b"k3"]),
-        ])
+        tracker.redis.scan = AsyncMock(
+            side_effect=[
+                (5, [b"k1"]),
+                (0, [b"k2", b"k3"]),
+            ]
+        )
         stats = await tracker.get_stats()
         assert stats["active_mitigations"] == 3
 
@@ -333,10 +361,12 @@ class TestGetStats:
 
     @pytest.mark.asyncio
     async def test_stats_invalid_json_entries(self, tracker):
-        tracker.redis.lrange = AsyncMock(return_value=[
-            b"not json at all",
-            json.dumps({"error_type": "timeout", "ts": 0}).encode(),
-        ])
+        tracker.redis.lrange = AsyncMock(
+            return_value=[
+                b"not json at all",
+                json.dumps({"error_type": "timeout", "ts": 0}).encode(),
+            ]
+        )
         tracker.redis.scan = AsyncMock(return_value=(0, []))
         stats = await tracker.get_stats()
         assert stats["total_recent"] == 2
@@ -377,6 +407,7 @@ class TestGetStats:
 # initialize
 # ============================================================
 
+
 class TestInitialize:
     """Tests fuer initialize()."""
 
@@ -407,6 +438,7 @@ class TestInitialize:
 # ============================================================
 # _activate_mitigation
 # ============================================================
+
 
 class TestActivateMitigation:
     """Tests fuer _activate_mitigation() all paths."""
@@ -496,7 +528,9 @@ class TestActivateMitigation:
     @pytest.mark.asyncio
     async def test_model_overloaded_creates_retry_delay(self, tracker):
         """model_overloaded with model creates retry_delay mitigation."""
-        await tracker._activate_mitigation("model_overloaded", "llm_chat", "qwen2.5:14b", 3)
+        await tracker._activate_mitigation(
+            "model_overloaded", "llm_chat", "qwen2.5:14b", 3
+        )
         tracker.redis.setex.assert_called_once()
         call_args = tracker.redis.setex.call_args
         stored = json.loads(call_args[0][2])
@@ -507,6 +541,7 @@ class TestActivateMitigation:
 # ============================================================
 # ERROR_TYPES constant
 # ============================================================
+
 
 class TestErrorTypesConstant:
     """Verify the ERROR_TYPES tuple."""

@@ -27,6 +27,7 @@ class TestHaClientStatesCache:
             mock_settings.ha_token = "test-token"
             mock_settings.mindhome_url = "http://localhost:8099"
             from assistant.ha_client import HomeAssistantClient
+
             return HomeAssistantClient()
 
     def test_cache_ttl_is_5_seconds(self):
@@ -71,6 +72,7 @@ class TestHaClientStatesCache:
         assert result1 == states1
 
         import asyncio
+
         await asyncio.sleep(0.02)
 
         result2 = await client.get_states()
@@ -185,8 +187,11 @@ class TestDeviceHealthPipeline:
     """Tests fuer Pipeline-Optimierungen in DeviceHealthMonitor."""
 
     def _make_monitor(self):
-        with patch("assistant.device_health.yaml_config", {"device_health": {"enabled": True}}):
+        with patch(
+            "assistant.device_health.yaml_config", {"device_health": {"enabled": True}}
+        ):
             from assistant.device_health import DeviceHealthMonitor
+
             ha = AsyncMock()
             monitor = DeviceHealthMonitor(ha)
             return monitor
@@ -218,11 +223,13 @@ class TestDeviceHealthPipeline:
 
         # Pipeline-Mock: 3 Tage × lrange
         pipe_mock = MagicMock()
-        pipe_mock.execute = AsyncMock(return_value=[
-            [b"20.0", b"21.0"],  # Heute
-            [b"19.5", b"20.5"],  # Gestern
-            [b"22.0"],           # Vorgestern
-        ])
+        pipe_mock.execute = AsyncMock(
+            return_value=[
+                [b"20.0", b"21.0"],  # Heute
+                [b"19.5", b"20.5"],  # Gestern
+                [b"22.0"],  # Vorgestern
+            ]
+        )
 
         hset_mock = AsyncMock()
         expire_mock = AsyncMock()
@@ -257,8 +264,12 @@ class TestAnticipationPipeline:
     """Tests fuer Pipeline und Limit in AnticipationEngine."""
 
     def _make_engine(self):
-        with patch("assistant.anticipation.yaml_config", {"anticipation": {"enabled": True, "history_days": 30}}):
+        with patch(
+            "assistant.anticipation.yaml_config",
+            {"anticipation": {"enabled": True, "history_days": 30}},
+        ):
             from assistant.anticipation import AnticipationEngine
+
             return AnticipationEngine()
 
     @pytest.mark.asyncio
@@ -305,8 +316,12 @@ class TestConfigVersioningLimits:
     """Tests fuer Snapshot-Limits in ConfigVersioning."""
 
     def _make_versioning(self):
-        with patch("assistant.config_versioning.yaml_config", {"self_optimization": {"rollback": {"enabled": True}}}):
+        with patch(
+            "assistant.config_versioning.yaml_config",
+            {"self_optimization": {"rollback": {"enabled": True}}},
+        ):
             from assistant.config_versioning import ConfigVersioning
+
             cv = ConfigVersioning()
             return cv
 
@@ -326,8 +341,10 @@ class TestConfigVersioningLimits:
         yaml_path = MagicMock()
         yaml_path.exists = MagicMock(return_value=True)
 
-        with patch("assistant.config_versioning._SNAPSHOT_DIR") as snap_dir, \
-             patch("assistant.config_versioning.shutil.copy2"):
+        with (
+            patch("assistant.config_versioning._SNAPSHOT_DIR") as snap_dir,
+            patch("assistant.config_versioning.shutil.copy2"),
+        ):
             snap_dir.__truediv__ = MagicMock(return_value=MagicMock())
 
             result = await cv.create_snapshot("settings", yaml_path, "test_reason")
@@ -351,7 +368,9 @@ class TestConfigVersioningLimits:
         cv._redis = redis_mock
 
         await cv.list_snapshots("settings")
-        redis_mock.lrange.assert_called_once_with("mha:config_snapshots:settings", 0, 49)
+        redis_mock.lrange.assert_called_once_with(
+            "mha:config_snapshots:settings", 0, 49
+        )
 
 
 # =====================================================================
@@ -417,12 +436,17 @@ class TestWeatherWarningsCache:
         assert builder._weather_cache_ts == 0.0
 
     def test_first_call_computes_warnings(self, builder):
-        states = [{
-            "entity_id": "weather.home",
-            "state": "sunny",
-            "attributes": {"temperature": 40, "wind_speed": 10, "humidity": 50},
-        }]
-        with patch("assistant.context_builder.yaml_config", {"weather_warnings": {"enabled": True, "temp_high": 35}}):
+        states = [
+            {
+                "entity_id": "weather.home",
+                "state": "sunny",
+                "attributes": {"temperature": 40, "wind_speed": 10, "humidity": 50},
+            }
+        ]
+        with patch(
+            "assistant.context_builder.yaml_config",
+            {"weather_warnings": {"enabled": True, "temp_high": 35}},
+        ):
             warnings = builder._check_weather_warnings(states)
         assert any("Hitze" in w for w in warnings)
         assert builder._weather_cache_ts > 0
@@ -439,12 +463,17 @@ class TestWeatherWarningsCache:
         builder._weather_cache = ["Old warning"]
         builder._weather_cache_ts = time.time() - 400  # 400s alt, TTL ist 300s
 
-        states = [{
-            "entity_id": "weather.home",
-            "state": "sunny",
-            "attributes": {"temperature": 20, "wind_speed": 5},
-        }]
-        with patch("assistant.context_builder.yaml_config", {"weather_warnings": {"enabled": True}}):
+        states = [
+            {
+                "entity_id": "weather.home",
+                "state": "sunny",
+                "attributes": {"temperature": 20, "wind_speed": 5},
+            }
+        ]
+        with patch(
+            "assistant.context_builder.yaml_config",
+            {"weather_warnings": {"enabled": True}},
+        ):
             result = builder._check_weather_warnings(states)
         # Alte Cache-Warnung ist weg (20°C ist normal)
         assert "Old warning" not in result
@@ -459,8 +488,12 @@ class TestSoundManagerCleanup:
     """Tests fuer das Cleanup des _last_sound_time Dicts."""
 
     def _make_manager(self):
-        with patch("assistant.sound_manager.yaml_config", {"sounds": {"enabled": False}, "multi_room": {}}):
+        with patch(
+            "assistant.sound_manager.yaml_config",
+            {"sounds": {"enabled": False}, "multi_room": {}},
+        ):
             from assistant.sound_manager import SoundManager
+
             ha = AsyncMock()
             return SoundManager(ha)
 
@@ -484,8 +517,7 @@ class TestSoundManagerCleanup:
         # "if len(self._last_sound_time) > 50:"
         if len(mgr._last_sound_time) > 50:
             mgr._last_sound_time = {
-                k: v for k, v in mgr._last_sound_time.items()
-                if now - v < 60
+                k: v for k, v in mgr._last_sound_time.items() if now - v < 60
             }
 
         # Nur die 5 frischen sollten uebrig sein
@@ -516,8 +548,16 @@ class TestOccupiedRoomStateMap:
     def test_state_map_lookup_finds_correct_sensor(self):
         """State-Map findet Sensor per entity_id in O(1)."""
         states = [
-            {"entity_id": "binary_sensor.motion_wz", "state": "off", "last_changed": "2026-01-01T10:00:00"},
-            {"entity_id": "binary_sensor.motion_sz", "state": "on", "last_changed": "2026-01-01T10:05:00"},
+            {
+                "entity_id": "binary_sensor.motion_wz",
+                "state": "off",
+                "last_changed": "2026-01-01T10:00:00",
+            },
+            {
+                "entity_id": "binary_sensor.motion_sz",
+                "state": "on",
+                "last_changed": "2026-01-01T10:05:00",
+            },
             {"entity_id": "light.test", "state": "on"},
         ]
         state_map = {s.get("entity_id"): s for s in states}

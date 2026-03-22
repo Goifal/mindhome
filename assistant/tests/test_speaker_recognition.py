@@ -32,12 +32,12 @@ def redis_mock():
     def _make_pipe():
         pipe_calls = []
         pipe = MagicMock()
-        pipe.get = MagicMock(side_effect=lambda key: pipe_calls.append(('get', key)))
+        pipe.get = MagicMock(side_effect=lambda key: pipe_calls.append(("get", key)))
 
         async def _execute():
             results = []
             for call_type, key in pipe_calls:
-                if call_type == 'get':
+                if call_type == "get":
                     results.append(await r.get(key))
             return results
 
@@ -140,7 +140,9 @@ class TestVoiceMatching:
             p2.update_voice_stats(wpm=100, duration=5.0, volume=0.4)
         recognition._profiles["lisa"] = p2
 
-        result = recognition._match_voice_features({"wpm": 128, "duration": 3.3, "volume": 0.58})
+        result = recognition._match_voice_features(
+            {"wpm": 128, "duration": 3.3, "volume": 0.58}
+        )
         assert result is not None
         assert result["name"] == "Max"  # Naeher an Max's Profil
 
@@ -195,7 +197,9 @@ class TestHistory:
 
     @pytest.mark.asyncio
     async def test_get_history(self, recognition, redis_mock):
-        entry = json.dumps({"person": "max", "method": "device", "confidence": 0.95, "time": 1000})
+        entry = json.dumps(
+            {"person": "max", "method": "device", "confidence": 0.95, "time": 1000}
+        )
         redis_mock.lrange = AsyncMock(return_value=[entry])
         history = await recognition.get_identification_history(limit=5)
         assert len(history) == 1
@@ -299,14 +303,23 @@ class TestFallbackAsk:
     async def test_start_fallback_ask_two_persons(self, recognition, redis_mock):
         """Rueckfrage mit 2 Personen generiert natuerliche Frage."""
         recognition.ha = AsyncMock()
-        recognition.ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "person.max", "state": "home",
-             "attributes": {"friendly_name": "Max"}},
-            {"entity_id": "person.lisa", "state": "home",
-             "attributes": {"friendly_name": "Lisa"}},
-        ])
+        recognition.ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "person.max",
+                    "state": "home",
+                    "attributes": {"friendly_name": "Max"},
+                },
+                {
+                    "entity_id": "person.lisa",
+                    "state": "home",
+                    "attributes": {"friendly_name": "Lisa"},
+                },
+            ]
+        )
         question = await recognition.start_fallback_ask(
-            guessed_person="max", original_text="Mach das Licht an",
+            guessed_person="max",
+            original_text="Mach das Licht an",
         )
         assert "Max" in question
         assert "Lisa" in question
@@ -315,12 +328,14 @@ class TestFallbackAsk:
     @pytest.mark.asyncio
     async def test_resolve_fallback_simple_name(self, recognition, redis_mock):
         """Einfache Namensantwort wird aufgeloest."""
-        pending = json.dumps({
-            "original_text": "Mach das Licht an",
-            "guessed_person": None,
-            "persons": ["Max", "Lisa"],
-            "time": time.time(),
-        })
+        pending = json.dumps(
+            {
+                "original_text": "Mach das Licht an",
+                "guessed_person": None,
+                "persons": ["Max", "Lisa"],
+                "time": time.time(),
+            }
+        )
         redis_mock.get = AsyncMock(return_value=pending)
         result = await recognition.resolve_fallback_answer("Max")
         assert result is not None
@@ -330,11 +345,13 @@ class TestFallbackAsk:
     @pytest.mark.asyncio
     async def test_resolve_fallback_with_prefix(self, recognition, redis_mock):
         """'Ich bin Lisa' wird korrekt aufgeloest."""
-        pending = json.dumps({
-            "original_text": "",
-            "persons": ["Max", "Lisa"],
-            "time": time.time(),
-        })
+        pending = json.dumps(
+            {
+                "original_text": "",
+                "persons": ["Max", "Lisa"],
+                "time": time.time(),
+            }
+        )
         redis_mock.get = AsyncMock(return_value=pending)
         result = await recognition.resolve_fallback_answer("Ich bin Lisa")
         assert result is not None
@@ -343,11 +360,13 @@ class TestFallbackAsk:
     @pytest.mark.asyncio
     async def test_resolve_fallback_unknown_name(self, recognition, redis_mock):
         """Unbekannter Name → None."""
-        pending = json.dumps({
-            "original_text": "",
-            "persons": ["Max", "Lisa"],
-            "time": time.time(),
-        })
+        pending = json.dumps(
+            {
+                "original_text": "",
+                "persons": ["Max", "Lisa"],
+                "time": time.time(),
+            }
+        )
         redis_mock.get = AsyncMock(return_value=pending)
         result = await recognition.resolve_fallback_answer("Tom")
         assert result is None
@@ -402,6 +421,7 @@ class TestWyomingEmbedding:
 
         # Redis gibt zuerst Wyoming-Embedding, dann Profil-Embedding zurueck
         call_count = 0
+
         async def mock_get(key):
             nonlocal call_count
             call_count += 1
@@ -410,6 +430,7 @@ class TestWyomingEmbedding:
             elif "embedding:max" in key:
                 return json.dumps(stored)
             return None
+
         redis_mock.get = AsyncMock(side_effect=mock_get)
 
         result = await recognition.identify()
@@ -434,20 +455,30 @@ class TestHealthStatus:
 # Additional Coverage Tests
 # ============================================================
 
+
 class TestInitializeProfiles:
     """Tests fuer initialize() — Profile aus Redis laden."""
 
     @pytest.mark.asyncio
     async def test_initialize_loads_profiles(self, recognition, redis_mock):
         profiles_data = {
-            "max": {"name": "Max", "person_id": "max", "avg_wpm": 130,
-                    "avg_duration": 3.5, "avg_volume": 0.6, "sample_count": 5,
-                    "last_identified": 0, "devices": ["media_player.kueche"]},
+            "max": {
+                "name": "Max",
+                "person_id": "max",
+                "avg_wpm": 130,
+                "avg_duration": 3.5,
+                "avg_volume": 0.6,
+                "sample_count": 5,
+                "last_identified": 0,
+                "devices": ["media_player.kueche"],
+            },
         }
-        redis_mock.get = AsyncMock(side_effect=lambda key: {
-            "mha:speaker:profiles": json.dumps(profiles_data),
-            "mha:speaker:last_identified": "max",
-        }.get(key))
+        redis_mock.get = AsyncMock(
+            side_effect=lambda key: {
+                "mha:speaker:profiles": json.dumps(profiles_data),
+                "mha:speaker:last_identified": "max",
+            }.get(key)
+        )
 
         await recognition.initialize(redis_mock)
         assert "max" in recognition._profiles
@@ -481,25 +512,40 @@ class TestIdentifyByRoom:
     @pytest.mark.asyncio
     async def test_single_person_home(self, recognition):
         recognition.ha = AsyncMock()
-        recognition.ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "person.max", "state": "home",
-             "attributes": {"friendly_name": "Max"}},
-        ])
+        recognition.ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "person.max",
+                    "state": "home",
+                    "attributes": {"friendly_name": "Max"},
+                },
+            ]
+        )
         result = await recognition._identify_by_room("wohnzimmer")
         assert result == "Max"
 
     @pytest.mark.asyncio
     async def test_multiple_persons_preferred_room(self, recognition):
         recognition.ha = AsyncMock()
-        recognition.ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "person.max", "state": "home",
-             "attributes": {"friendly_name": "Max"}},
-            {"entity_id": "person.lisa", "state": "home",
-             "attributes": {"friendly_name": "Lisa"}},
-        ])
+        recognition.ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "person.max",
+                    "state": "home",
+                    "attributes": {"friendly_name": "Max"},
+                },
+                {
+                    "entity_id": "person.lisa",
+                    "state": "home",
+                    "attributes": {"friendly_name": "Lisa"},
+                },
+            ]
+        )
         with patch("assistant.speaker_recognition.yaml_config") as mock_cfg:
             mock_cfg.get.side_effect = lambda key, default=None: {
-                "speaker_recognition": recognition._sr_cfg_backup if hasattr(recognition, '_sr_cfg_backup') else {},
+                "speaker_recognition": recognition._sr_cfg_backup
+                if hasattr(recognition, "_sr_cfg_backup")
+                else {},
                 "person_profiles": {
                     "profiles": {
                         "max": {"preferred_room": "wohnzimmer"},
@@ -513,10 +559,15 @@ class TestIdentifyByRoom:
     @pytest.mark.asyncio
     async def test_no_persons_home(self, recognition):
         recognition.ha = AsyncMock()
-        recognition.ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "person.max", "state": "not_home",
-             "attributes": {"friendly_name": "Max"}},
-        ])
+        recognition.ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "person.max",
+                    "state": "not_home",
+                    "attributes": {"friendly_name": "Max"},
+                },
+            ]
+        )
         result = await recognition._identify_by_room("wohnzimmer")
         assert result is None
 
@@ -527,22 +578,35 @@ class TestIdentifySolePerson:
     @pytest.mark.asyncio
     async def test_sole_person(self, recognition):
         recognition.ha = AsyncMock()
-        recognition.ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "person.max", "state": "home",
-             "attributes": {"friendly_name": "Max"}},
-        ])
+        recognition.ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "person.max",
+                    "state": "home",
+                    "attributes": {"friendly_name": "Max"},
+                },
+            ]
+        )
         result = await recognition._identify_sole_person()
         assert result == "Max"
 
     @pytest.mark.asyncio
     async def test_multiple_persons(self, recognition):
         recognition.ha = AsyncMock()
-        recognition.ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "person.max", "state": "home",
-             "attributes": {"friendly_name": "Max"}},
-            {"entity_id": "person.lisa", "state": "home",
-             "attributes": {"friendly_name": "Lisa"}},
-        ])
+        recognition.ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "person.max",
+                    "state": "home",
+                    "attributes": {"friendly_name": "Max"},
+                },
+                {
+                    "entity_id": "person.lisa",
+                    "state": "home",
+                    "attributes": {"friendly_name": "Lisa"},
+                },
+            ]
+        )
         result = await recognition._identify_sole_person()
         assert result is None
 
@@ -641,7 +705,9 @@ class TestLearnEmbedding:
 
     @pytest.mark.asyncio
     async def test_learn_unknown_person(self, recognition):
-        await recognition.learn_embedding_from_audio("unknown", {"audio_pcm_b64": "abc"})
+        await recognition.learn_embedding_from_audio(
+            "unknown", {"audio_pcm_b64": "abc"}
+        )
         # Person not in profiles, should return
 
     @pytest.mark.asyncio
@@ -655,7 +721,9 @@ class TestLearnEmbedding:
         recognition._profiles["max"] = SpeakerProfile("Max", "max")
         recognition._last_embedding = [0.1, 0.2, 0.3]
 
-        with patch.object(recognition, "store_embedding", new=AsyncMock()) as mock_store:
+        with patch.object(
+            recognition, "store_embedding", new=AsyncMock()
+        ) as mock_store:
             await recognition.learn_embedding_from_audio("max", {"wpm": 130})
             mock_store.assert_called_once_with("max", [0.1, 0.2, 0.3])
         assert recognition._last_embedding is None
@@ -665,7 +733,13 @@ class TestLearnEmbedding:
         recognition._profiles["max"] = SpeakerProfile("Max", "max")
         recognition._last_embedding = None
 
-        with patch.object(recognition, "_get_wyoming_embedding", new=AsyncMock(return_value=[0.5, 0.6])), \
-             patch.object(recognition, "store_embedding", new=AsyncMock()) as mock_store:
+        with (
+            patch.object(
+                recognition,
+                "_get_wyoming_embedding",
+                new=AsyncMock(return_value=[0.5, 0.6]),
+            ),
+            patch.object(recognition, "store_embedding", new=AsyncMock()) as mock_store,
+        ):
             await recognition.learn_embedding_from_audio("max", {"wpm": 130})
             mock_store.assert_called_once_with("max", [0.5, 0.6])

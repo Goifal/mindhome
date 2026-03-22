@@ -36,12 +36,14 @@ logger = logging.getLogger(__name__)
 _CONFIG_DIR = Path(__file__).parent.parent / "config"
 _TEMPLATES_PATH = _CONFIG_DIR / "automation_templates.yaml"
 
+
 def _load_templates_sync() -> dict:
     """Laedt die Automation-Templates und Security-Config (synchron)."""
     if not _TEMPLATES_PATH.exists():
         example = _TEMPLATES_PATH.with_suffix(".yaml.example")
         if example.exists():
             import shutil
+
             shutil.copy2(example, _TEMPLATES_PATH)
     if _TEMPLATES_PATH.exists():
         try:
@@ -73,23 +75,43 @@ class SelfAutomation:
         self._templates: dict = {}
 
         # Security: Whitelists/Blacklists — Defaults aus constants.py (Single Source of Truth)
-        self._allowed_services = set(self._security.get("allowed_services", ALLOWED_SERVICES))
-        self._blocked_services = set(self._security.get("blocked_services", BLOCKED_SERVICES))
-        self._allowed_trigger_platforms = set(self._security.get("allowed_trigger_platforms", [
-            "state", "time", "sun", "zone",
-            "numeric_state", "template",
-            "homeassistant",
-        ]))
+        self._allowed_services = set(
+            self._security.get("allowed_services", ALLOWED_SERVICES)
+        )
+        self._blocked_services = set(
+            self._security.get("blocked_services", BLOCKED_SERVICES)
+        )
+        self._allowed_trigger_platforms = set(
+            self._security.get(
+                "allowed_trigger_platforms",
+                [
+                    "state",
+                    "time",
+                    "sun",
+                    "zone",
+                    "numeric_state",
+                    "template",
+                    "homeassistant",
+                ],
+            )
+        )
 
         # F-052: Drift detection — warn if security-critical config lists are empty or
         # suspiciously large, which could indicate gradual parameter drift from external
         # modification or misconfiguration.
         if not self._allowed_services:
-            logger.warning("F-052: allowed_services is EMPTY — all services will be blocked")
+            logger.warning(
+                "F-052: allowed_services is EMPTY — all services will be blocked"
+            )
         if not self._blocked_services:
-            logger.warning("F-052: blocked_services is EMPTY — no services are explicitly blocked")
+            logger.warning(
+                "F-052: blocked_services is EMPTY — no services are explicitly blocked"
+            )
         if len(self._allowed_services) > 100:
-            logger.warning("F-052: allowed_services has %d entries — possible drift", len(self._allowed_services))
+            logger.warning(
+                "F-052: allowed_services has %d entries — possible drift",
+                len(self._allowed_services),
+            )
 
         # Rate-Limit
         # F-052: Bounds checking — prevent drift from config changes or external modification.
@@ -98,7 +120,7 @@ class SelfAutomation:
         self._max_per_day = max(1, min(20, int(raw_max)))
         self._daily_count = 0
         self._daily_reset: Optional[datetime] = None
-        self._pending_lock = __import__('threading').Lock()
+        self._pending_lock = __import__("threading").Lock()
 
         # Pending Automations (warten auf Bestaetigung)
         self._pending: dict[str, dict] = {}
@@ -106,6 +128,7 @@ class SelfAutomation:
 
         # Audit-Log (In-Memory + Redis wenn verfuegbar)
         from collections import deque
+
         self._audit_log: deque = deque(maxlen=100)
         self._redis = None
 
@@ -122,7 +145,9 @@ class SelfAutomation:
         if "blocked_services" in self._security:
             self._blocked_services = set(self._security["blocked_services"])
         if "allowed_trigger_platforms" in self._security:
-            self._allowed_trigger_platforms = set(self._security["allowed_trigger_platforms"])
+            self._allowed_trigger_platforms = set(
+                self._security["allowed_trigger_platforms"]
+            )
 
         self._redis = redis_client
         if self._redis:
@@ -168,7 +193,7 @@ class SelfAutomation:
             return {
                 "success": False,
                 "message": f"Tageslimit erreicht ({self._max_per_day} Automationen pro Tag). "
-                           "Morgen koennen wir weitermachen.",
+                "Morgen koennen wir weitermachen.",
             }
 
         # Template-Match versuchen (schnell, ohne LLM)
@@ -183,14 +208,16 @@ class SelfAutomation:
                 return {
                     "success": False,
                     "message": "Automation nicht umsetzbar. "
-                               "Praezisere Beschreibung koennte helfen.",
+                    "Praezisere Beschreibung koennte helfen.",
                 }
             generation_method = "llm"
 
         # Sicherheits-Validierung
         validation = self._validate_automation(automation)
         if not validation["valid"]:
-            self._audit("blocked", description, person, automation, validation["reason"])
+            self._audit(
+                "blocked", description, person, automation, validation["reason"]
+            )
             return {
                 "success": False,
                 "message": f"Sicherheitscheck: {validation['reason']}",
@@ -212,7 +239,10 @@ class SelfAutomation:
         # Vorschau erstellen
         preview = self._build_preview(automation, description)
         yaml_preview = yaml.safe_dump(
-            automation, allow_unicode=True, default_flow_style=False, sort_keys=False,
+            automation,
+            allow_unicode=True,
+            default_flow_style=False,
+            sort_keys=False,
         )
 
         # In Pending speichern
@@ -233,8 +263,7 @@ class SelfAutomation:
             "preview": preview,
             "yaml_preview": yaml_preview,
             "message": (
-                f"Ich wuerde Folgendes einrichten: {preview}. "
-                f"Soll ich das aktivieren?"
+                f"Ich wuerde Folgendes einrichten: {preview}. Soll ich das aktivieren?"
             ),
         }
 
@@ -258,7 +287,10 @@ class SelfAutomation:
 
         _proc_cfg = yaml_config.get("procedural_learning", {})
         if not _proc_cfg.get("enabled", True):
-            return {"success": False, "message": "Prozedurale Automationen sind deaktiviert."}
+            return {
+                "success": False,
+                "message": "Prozedurale Automationen sind deaktiviert.",
+            }
 
         max_steps = int(_proc_cfg.get("max_steps", 10))
 
@@ -306,19 +338,26 @@ class SelfAutomation:
             if "<think>" in content:
                 think_end = content.find("</think>")
                 if think_end != -1:
-                    content = content[think_end + 8:].strip()
+                    content = content[think_end + 8 :].strip()
 
             # JSON extrahieren
             import json as _json
+
             # Finde das JSON-Array im Antworttext
             start = content.find("[")
             end = content.rfind("]")
             if start == -1 or end == -1:
-                return {"success": False, "message": "LLM konnte keine Schritte generieren."}
+                return {
+                    "success": False,
+                    "message": "LLM konnte keine Schritte generieren.",
+                }
 
-            steps = _json.loads(content[start:end + 1])
+            steps = _json.loads(content[start : end + 1])
             if not isinstance(steps, list) or len(steps) == 0:
-                return {"success": False, "message": "Keine gueltige Schrittliste generiert."}
+                return {
+                    "success": False,
+                    "message": "Keine gueltige Schrittliste generiert.",
+                }
 
             # Schritte validieren + limitieren
             _forbidden_domains = {"lock", "alarm_control_panel", "automation"}
@@ -332,7 +371,10 @@ class SelfAutomation:
                 validated_steps.append(step)
 
             if not validated_steps:
-                return {"success": False, "message": "Keine gueltigen Schritte nach Validierung."}
+                return {
+                    "success": False,
+                    "message": "Keine gueltigen Schritte nach Validierung.",
+                }
 
             # HA-Automation mit sequence: Block erstellen
             sequence = []
@@ -351,8 +393,13 @@ class SelfAutomation:
 
             automation = {
                 "alias": f"jarvis_procedure_{description[:30].replace(' ', '_').lower()}",
-                "trigger": [{"platform": "event", "event_type": "jarvis_procedure_trigger",
-                             "event_data": {"procedure": description[:50]}}],
+                "trigger": [
+                    {
+                        "platform": "event",
+                        "event_type": "jarvis_procedure_trigger",
+                        "event_data": {"procedure": description[:50]},
+                    }
+                ],
                 "action": sequence,
                 "mode": "single",
                 "description": f"Prozedur erstellt von {settings.assistant_name}: {description}",
@@ -361,17 +408,27 @@ class SelfAutomation:
             # Sicherheits-Validierung
             validation = self._validate_automation(automation)
             if not validation["valid"]:
-                self._audit("blocked", description, person, automation, validation["reason"])
-                return {"success": False, "message": f"Sicherheitscheck: {validation['reason']}"}
+                self._audit(
+                    "blocked", description, person, automation, validation["reason"]
+                )
+                return {
+                    "success": False,
+                    "message": f"Sicherheitscheck: {validation['reason']}",
+                }
 
             pending_id = str(uuid.uuid4())[:8]
 
             # Vorschau
-            step_descs = [s.get("description", f"{s.get('domain', '?')}.{s.get('service', '?')}")
-                          for s in validated_steps]
+            step_descs = [
+                s.get("description", f"{s.get('domain', '?')}.{s.get('service', '?')}")
+                for s in validated_steps
+            ]
             preview = f"Prozedur '{description}': " + " → ".join(step_descs)
             yaml_preview = yaml.safe_dump(
-                automation, allow_unicode=True, default_flow_style=False, sort_keys=False,
+                automation,
+                allow_unicode=True,
+                default_flow_style=False,
+                sort_keys=False,
             )
 
             with self._pending_lock:
@@ -398,7 +455,10 @@ class SelfAutomation:
             }
 
         except asyncio.TimeoutError:
-            return {"success": False, "message": "LLM Timeout bei Prozedur-Generierung."}
+            return {
+                "success": False,
+                "message": "LLM Timeout bei Prozedur-Generierung.",
+            }
         except Exception as e:
             logger.warning("Prozedur-Generierung Fehler: %s", e)
             return {"success": False, "message": f"Fehler: {e}"}
@@ -427,14 +487,22 @@ class SelfAutomation:
         person = pending["person"]
 
         # HA Automation-ID generieren
-        automation_id = f"jarvis_{pending_id}_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
+        automation_id = (
+            f"jarvis_{pending_id}_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
+        )
 
         # Via HA REST API erstellen
         try:
             result = await self._deploy_to_ha(automation_id, automation)
             if result:
                 self._increment_daily_count()
-                self._audit("deployed", description, person, automation, automation_id=automation_id)
+                self._audit(
+                    "deployed",
+                    description,
+                    person,
+                    automation,
+                    automation_id=automation_id,
+                )
                 alias = automation.get("alias", description)
                 return {
                     "success": True,
@@ -461,7 +529,7 @@ class SelfAutomation:
             states = await self.ha.get_states()
             jarvis_automations = []
 
-            for state in (states or []):
+            for state in states or []:
                 entity_id = state.get("entity_id", "")
                 if not entity_id.startswith("automation."):
                     continue
@@ -473,13 +541,15 @@ class SelfAutomation:
                 if not config_id.startswith("jarvis_"):
                     continue
 
-                jarvis_automations.append({
-                    "entity_id": entity_id,
-                    "config_id": config_id,
-                    "alias": attrs.get("friendly_name", entity_id),
-                    "state": state.get("state", "unknown"),
-                    "last_triggered": attrs.get("last_triggered", "nie"),
-                })
+                jarvis_automations.append(
+                    {
+                        "entity_id": entity_id,
+                        "config_id": config_id,
+                        "alias": attrs.get("friendly_name", entity_id),
+                        "state": state.get("state", "unknown"),
+                        "last_triggered": attrs.get("last_triggered", "nie"),
+                    }
+                )
 
             if not jarvis_automations:
                 return {
@@ -535,7 +605,7 @@ class SelfAutomation:
         states = await self.ha.get_states()
         disabled_count = 0
 
-        for state in (states or []):
+        for state in states or []:
             entity_id = state.get("entity_id", "")
             if not entity_id.startswith("automation."):
                 continue
@@ -569,7 +639,8 @@ class SelfAutomation:
         """Entfernt abgelaufene Pending-Automationen (TTL ueberschritten)."""
         now = datetime.now(timezone.utc)
         expired = [
-            pid for pid, data in self._pending.items()
+            pid
+            for pid, data in self._pending.items()
             if (now - datetime.fromisoformat(data["created"])).total_seconds()
             > self._pending_ttl_seconds
         ]
@@ -578,8 +649,11 @@ class SelfAutomation:
             self._audit("expired", desc, "", {}, f"TTL {self._pending_ttl_seconds}s")
             del self._pending[pid]
         if expired:
-            logger.info("%d Pending-Automation(en) abgelaufen (TTL: %ds)",
-                        len(expired), self._pending_ttl_seconds)
+            logger.info(
+                "%d Pending-Automation(en) abgelaufen (TTL: %ds)",
+                len(expired),
+                self._pending_ttl_seconds,
+            )
 
     def health_status(self) -> str:
         """Status-String fuer Health-Check."""
@@ -605,8 +679,8 @@ Erzeuge aus der Beschreibung eine HA-Automation als JSON.
 VERFUEGBARE ENTITIES (Beispiele):
 {entity_examples}
 
-ERLAUBTE TRIGGER-PLATTFORMEN: {', '.join(sorted(self._allowed_trigger_platforms))}
-ERLAUBTE SERVICES: {', '.join(sorted(self._allowed_services))}
+ERLAUBTE TRIGGER-PLATTFORMEN: {", ".join(sorted(self._allowed_trigger_platforms))}
+ERLAUBTE SERVICES: {", ".join(sorted(self._allowed_services))}
 
 FORMAT — antworte NUR mit validem JSON:
 {{
@@ -629,23 +703,27 @@ REGELN:
 - Kein JSON-Kommentar, nur reines JSON"""
 
         # Sanitize description: limit length, strip control chars, remove role markers
-        description = description[:500].replace('\n', ' ').replace('\r', '')
-        for marker in ('SYSTEM:', 'USER:', 'ASSISTANT:', '[INST]', '[/INST]'):
-            description = description.replace(marker, '')
+        description = description[:500].replace("\n", " ").replace("\r", "")
+        for marker in ("SYSTEM:", "USER:", "ASSISTANT:", "[INST]", "[/INST]"):
+            description = description.replace(marker, "")
         user_prompt = f"Erstelle eine Automation fuer: {description}"
 
         try:
             from .config import resolve_model
+
             model = resolve_model(self._cfg.get("model", ""), fallback_tier="deep")
-            result = await asyncio.wait_for(self.ollama.chat(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                model=model,
-                temperature=0.2,
-                max_tokens=512,
-            ), timeout=30)
+            result = await asyncio.wait_for(
+                self.ollama.chat(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    model=model,
+                    temperature=0.2,
+                    max_tokens=512,
+                ),
+                timeout=30,
+            )
 
             content = result.get("message", {}).get("content", "")
             if not content:
@@ -687,6 +765,7 @@ REGELN:
             if all(kw.lower() in desc_lower for kw in triggers):
                 # Template klonen (deep copy um Original nicht zu aendern)
                 import copy
+
                 automation = {
                     "alias": template.get("alias", description[:60]),
                     "trigger": copy.deepcopy(template.get("trigger", [])),
@@ -745,7 +824,9 @@ REGELN:
             if "PLACEHOLDER" not in str(placeholder_entity):
                 return placeholder_entity
 
-            domain = placeholder_entity.split(".")[0] if "." in placeholder_entity else ""
+            domain = (
+                placeholder_entity.split(".")[0] if "." in placeholder_entity else ""
+            )
 
             # person.PLACEHOLDER -> Hauptperson
             if domain == "person":
@@ -780,7 +861,10 @@ REGELN:
                     # Auch in verschachtelten dicts (target, data)
                     elif isinstance(value, dict):
                         for sub_key, sub_value in list(value.items()):
-                            if isinstance(sub_value, str) and "PLACEHOLDER" in sub_value:
+                            if (
+                                isinstance(sub_value, str)
+                                and "PLACEHOLDER" in sub_value
+                            ):
                                 resolved = resolve_entity(sub_value)
                                 if resolved:
                                     value[sub_key] = resolved
@@ -833,26 +917,30 @@ REGELN:
             # F-006: Umfassende Deobfuskation
             import unicodedata
             import html
+
             # NFKC-Normalisierung (loest Fullwidth + Kompatibilitaetszeichen auf)
             cleaned = unicodedata.normalize("NFKC", value)
             # HTML-Entities dekodieren (&#123; → {, &#x7b; → {)
             cleaned = html.unescape(cleaned)
             # Alle unsichtbaren Unicode-Zeichen entfernen (Format, Mark, Control)
             # Umfassender als einzelne Chars — deckt ALLE Zero-Width, RTL-Override etc. ab
-            cleaned = ''.join(
-                c for c in cleaned
-                if unicodedata.category(c) not in ('Cf', 'Cc', 'Mn')
+            cleaned = "".join(
+                c for c in cleaned if unicodedata.category(c) not in ("Cf", "Cc", "Mn")
             )
             if "{{" in cleaned or "{%" in cleaned or "{#" in cleaned:
                 return True
             # states(), is_state(), etc. — HA Template-Funktionen
             import re
-            if re.search(r'(?:states|is_state|state_attr|expand)\s*\(', cleaned, re.IGNORECASE):
+
+            if re.search(
+                r"(?:states|is_state|state_attr|expand)\s*\(", cleaned, re.IGNORECASE
+            ):
                 return True
             return False
         if isinstance(value, dict):
-            return (any(SelfAutomation._contains_template(k) for k in value.keys())
-                    or any(SelfAutomation._contains_template(v) for v in value.values()))
+            return any(
+                SelfAutomation._contains_template(k) for k in value.keys()
+            ) or any(SelfAutomation._contains_template(v) for v in value.values())
         if isinstance(value, list):
             return any(SelfAutomation._contains_template(v) for v in value)
         return False
@@ -875,7 +963,10 @@ REGELN:
 
             # Explizit geblockte Services
             service_domain = service.split(".")[0] if "." in service else service
-            if service in self._blocked_services or service_domain in self._blocked_services:
+            if (
+                service in self._blocked_services
+                or service_domain in self._blocked_services
+            ):
                 return {
                     "valid": False,
                     "reason": f"Service '{service}' ist aus Sicherheitsgruenden gesperrt.",
@@ -901,9 +992,17 @@ REGELN:
             if isinstance(target, dict):
                 entity_id = target.get("entity_id", "")
                 if entity_id and entity_id != "all":
-                    entity_ids = [entity_id] if isinstance(entity_id, str) else (entity_id if isinstance(entity_id, list) else [])
+                    entity_ids = (
+                        [entity_id]
+                        if isinstance(entity_id, str)
+                        else (entity_id if isinstance(entity_id, list) else [])
+                    )
                     for eid in entity_ids:
-                        if eid and eid != "all" and not self._ENTITY_ID_PATTERN.match(str(eid)):
+                        if (
+                            eid
+                            and eid != "all"
+                            and not self._ENTITY_ID_PATTERN.match(str(eid))
+                        ):
                             return {
                                 "valid": False,
                                 "reason": f"Ungueltiges entity_id-Format: '{eid}'",
@@ -928,7 +1027,11 @@ REGELN:
             # entity_id in Trigger validieren
             trigger_entity = trigger.get("entity_id", "")
             if trigger_entity:
-                trigger_entities = [trigger_entity] if isinstance(trigger_entity, str) else (trigger_entity if isinstance(trigger_entity, list) else [])
+                trigger_entities = (
+                    [trigger_entity]
+                    if isinstance(trigger_entity, str)
+                    else (trigger_entity if isinstance(trigger_entity, list) else [])
+                )
                 for te in trigger_entities:
                     if te and not self._ENTITY_ID_PATTERN.match(str(te)):
                         return {
@@ -953,6 +1056,7 @@ REGELN:
         # 5. Device-Dependency-Check: Pruefen ob Trigger+Actions Konflikte erzeugen
         try:
             from .state_change_log import DEVICE_DEPENDENCIES, StateChangeLog
+
             actions = automation.get("action", [])
             if isinstance(actions, dict):
                 actions = [actions]
@@ -980,12 +1084,16 @@ REGELN:
                         for a_eid in action_entities:
                             a_domain = a_eid.split(".")[0] if "." in a_eid else ""
                             a_role = StateChangeLog._get_entity_role(a_eid)
-                            if a_domain == dep.get("affects") or a_role == dep.get("affects"):
+                            if a_domain == dep.get("affects") or a_role == dep.get(
+                                "affects"
+                            ):
                                 if dep.get("same_room") and t_room:
                                     a_room = StateChangeLog._get_entity_room(a_eid)
                                     if a_room != t_room:
                                         continue
-                                conflict_warnings.append(dep.get("hint", dep.get("effect", "")))
+                                conflict_warnings.append(
+                                    dep.get("hint", dep.get("effect", ""))
+                                )
             if conflict_warnings:
                 warnings_str = "; ".join(conflict_warnings[:3])
                 return {
@@ -1007,7 +1115,9 @@ REGELN:
         """Erstellt eine Automation in HA via REST API (mit Retry)."""
         success = await self.ha.put_config("automation", automation_id, automation)
         if success:
-            logger.info("Automation '%s' deployed: %s", automation_id, automation.get("alias"))
+            logger.info(
+                "Automation '%s' deployed: %s", automation_id, automation.get("alias")
+            )
         else:
             logger.error("Automation '%s' deploy fehlgeschlagen", automation_id)
         return success
@@ -1063,7 +1173,11 @@ REGELN:
 
         # Zusammenbauen
         trigger_text = " und ".join(trigger_parts) if trigger_parts else description
-        action_text = " und ".join(action_parts) if action_parts else "die entsprechende Aktion ausfuehren"
+        action_text = (
+            " und ".join(action_parts)
+            if action_parts
+            else "die entsprechende Aktion ausfuehren"
+        )
 
         return f"{trigger_text} — {action_text}"
 
@@ -1101,7 +1215,11 @@ REGELN:
             return "bei Zustandsaenderung"
 
         domain = entity_id.split(".")[0] if "." in entity_id else ""
-        name = entity_id.split(".", 1)[1].replace("_", " ").title() if "." in entity_id else entity_id
+        name = (
+            entity_id.split(".", 1)[1].replace("_", " ").title()
+            if "." in entity_id
+            else entity_id
+        )
 
         if domain == "person":
             if to_state == "home":
@@ -1126,7 +1244,11 @@ REGELN:
 
         # Entity-Name extrahieren
         if entity and entity != "all":
-            entity_name = entity.split(".", 1)[1].replace("_", " ").title() if "." in entity else entity
+            entity_name = (
+                entity.split(".", 1)[1].replace("_", " ").title()
+                if "." in entity
+                else entity
+            )
         elif entity == "all":
             entity_name = "alle"
         else:
@@ -1179,9 +1301,21 @@ REGELN:
         for s in states:
             entity_id = s.get("entity_id", "")
             domain = entity_id.split(".")[0] if "." in entity_id else ""
-            if domain in ("person", "light", "switch", "climate", "cover",
-                          "media_player", "sensor", "binary_sensor", "scene",
-                          "input_boolean", "input_number", "input_select", "zone"):
+            if domain in (
+                "person",
+                "light",
+                "switch",
+                "climate",
+                "cover",
+                "media_player",
+                "sensor",
+                "binary_sensor",
+                "scene",
+                "input_boolean",
+                "input_number",
+                "input_select",
+                "zone",
+            ):
                 domains.setdefault(domain, []).append(entity_id)
 
         lines = []
@@ -1202,6 +1336,7 @@ REGELN:
 
         # JSON-Block suchen (```json ... ``` oder { ... })
         import re
+
         # Markdown Code-Block
         match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
         if match:
@@ -1221,7 +1356,7 @@ REGELN:
                     depth -= 1
                     if depth == 0:
                         try:
-                            return json.loads(text[brace_start:i + 1])
+                            return json.loads(text[brace_start : i + 1])
                         except (json.JSONDecodeError, TypeError):
                             pass
                         break
@@ -1242,10 +1377,16 @@ REGELN:
             self._daily_count += 1
         if self._redis:
             import asyncio
+
             _t = asyncio.create_task(self._save_daily_count())
             _t.add_done_callback(
-                lambda t: logger.warning("_save_daily_count fehlgeschlagen: %s", t.exception())
-                if t.exception() else None
+                lambda t: (
+                    logger.warning(
+                        "_save_daily_count fehlgeschlagen: %s", t.exception()
+                    )
+                    if t.exception()
+                    else None
+                )
             )
 
     async def _save_daily_count(self):
@@ -1273,7 +1414,9 @@ REGELN:
             "action": action,
             "description": description,
             "person": person,
-            "automation_alias": automation.get("alias", "") if isinstance(automation, dict) else "",
+            "automation_alias": automation.get("alias", "")
+            if isinstance(automation, dict)
+            else "",
             "detail": detail,
             "automation_id": automation_id,
         }
@@ -1284,7 +1427,10 @@ REGELN:
 
         logger.info(
             "Automation-Audit [%s]: %s (Person: %s, Detail: %s)",
-            action, description[:80], person or "?", detail[:80] if detail else "-",
+            action,
+            description[:80],
+            person or "?",
+            detail[:80] if detail else "-",
         )
 
     def get_audit_log(self, limit: int = 20) -> list[dict]:

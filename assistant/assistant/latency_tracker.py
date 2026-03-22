@@ -64,7 +64,9 @@ class LatencyTracker:
     def __init__(self, max_history: int = _MAX_HISTORY):
         self._max_history = max_history
         # Pro Phase: sortierte Liste fuer schnelle Percentil-Berechnung
-        self._phase_values: dict[str, deque] = {p: deque(maxlen=max_history) for p in PHASES}
+        self._phase_values: dict[str, deque] = {
+            p: deque(maxlen=max_history) for p in PHASES
+        }
         # Sortierte Kopien fuer Percentil-Berechnung (lazy, invalidiert bei neuen Werten)
         self._sorted_cache: dict[str, list] = {}
         self._dirty = True
@@ -169,6 +171,7 @@ class LatencyTracker:
             return
         try:
             import json
+
             stats = self.get_stats()
             if stats:
                 await self._redis.set(

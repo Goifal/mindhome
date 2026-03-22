@@ -12,11 +12,14 @@ import pytest
 # Helper: create a HomeAssistantClient with mocked settings and breakers
 # ---------------------------------------------------------------------------
 
+
 def _make_client():
     """Build a HomeAssistantClient with safe defaults and mocked breakers."""
-    with patch("assistant.ha_client.settings") as s_mock, \
-         patch("assistant.ha_client.ha_breaker") as ha_b, \
-         patch("assistant.ha_client.mindhome_breaker") as mh_b:
+    with (
+        patch("assistant.ha_client.settings") as s_mock,
+        patch("assistant.ha_client.ha_breaker") as ha_b,
+        patch("assistant.ha_client.mindhome_breaker") as mh_b,
+    ):
         s_mock.ha_url = "http://ha.local:8123"
         s_mock.ha_token = "test-token"
         s_mock.mindhome_url = "http://mh.local:8099"
@@ -27,6 +30,7 @@ def _make_client():
         mh_b.record_success = MagicMock()
         mh_b.record_failure = MagicMock()
         from assistant.ha_client import HomeAssistantClient
+
         client = HomeAssistantClient()
     # Keep references to the breaker mocks on the client for assertions
     client._ha_breaker = ha_b
@@ -64,6 +68,7 @@ def _mock_session_get(client, json_data=None, status=200, side_effect=None):
 # Constructor
 # ---------------------------------------------------------------------------
 
+
 class TestConstructor:
     def test_initializes_headers(self):
         client = _make_client()
@@ -79,6 +84,7 @@ class TestConstructor:
 # ---------------------------------------------------------------------------
 # close
 # ---------------------------------------------------------------------------
+
 
 class TestClose:
     @pytest.mark.asyncio
@@ -102,6 +108,7 @@ class TestClose:
 # ---------------------------------------------------------------------------
 # get_states (with cache)
 # ---------------------------------------------------------------------------
+
 
 class TestGetStates:
     @pytest.mark.asyncio
@@ -129,6 +136,7 @@ class TestGetStates:
 # get_state
 # ---------------------------------------------------------------------------
 
+
 class TestGetState:
     @pytest.mark.asyncio
     async def test_get_single_state(self):
@@ -146,6 +154,7 @@ class TestGetState:
 # call_service
 # ---------------------------------------------------------------------------
 
+
 class TestCallService:
     @pytest.mark.asyncio
     async def test_call_service_success(self):
@@ -154,13 +163,16 @@ class TestCallService:
         with patch("assistant.ha_client.ha_breaker") as hb:
             hb.is_available = True
             hb.record_success = MagicMock()
-            result = await client.call_service("light", "turn_on", {"entity_id": "light.test"})
+            result = await client.call_service(
+                "light", "turn_on", {"entity_id": "light.test"}
+            )
         assert result is True
 
 
 # ---------------------------------------------------------------------------
 # fire_event
 # ---------------------------------------------------------------------------
+
 
 class TestFireEvent:
     @pytest.mark.asyncio
@@ -177,6 +189,7 @@ class TestFireEvent:
 # ---------------------------------------------------------------------------
 # is_available
 # ---------------------------------------------------------------------------
+
 
 class TestIsAvailable:
     @pytest.mark.asyncio
@@ -204,6 +217,7 @@ class TestIsAvailable:
 # Circuit breaker OPEN
 # ---------------------------------------------------------------------------
 
+
 class TestCircuitBreakerOpen:
     @pytest.mark.asyncio
     async def test_ha_get_skipped_when_breaker_open(self):
@@ -225,6 +239,7 @@ class TestCircuitBreakerOpen:
 # ---------------------------------------------------------------------------
 # MindHome endpoints
 # ---------------------------------------------------------------------------
+
 
 class TestMindHomeEndpoints:
     @pytest.mark.asyncio
@@ -254,6 +269,7 @@ class TestMindHomeEndpoints:
 # search_devices input validation
 # ---------------------------------------------------------------------------
 
+
 class TestSearchDevices:
     @pytest.mark.asyncio
     async def test_invalid_domain_rejected(self):
@@ -277,6 +293,7 @@ class TestSearchDevices:
 # ---------------------------------------------------------------------------
 # mindhome_post
 # ---------------------------------------------------------------------------
+
 
 class TestMindHomePost:
     @pytest.mark.asyncio
@@ -302,6 +319,7 @@ class TestMindHomePost:
 # mindhome_put / mindhome_delete
 # ---------------------------------------------------------------------------
 
+
 class TestMindHomePutDelete:
     @pytest.mark.asyncio
     async def test_put_breaker_open(self):
@@ -323,6 +341,7 @@ class TestMindHomePutDelete:
 # ---------------------------------------------------------------------------
 # put_config / delete_config
 # ---------------------------------------------------------------------------
+
 
 class TestConfigMethods:
     @pytest.mark.asyncio
@@ -359,6 +378,7 @@ class TestConfigMethods:
 # log_actions
 # ---------------------------------------------------------------------------
 
+
 class TestLogActions:
     @pytest.mark.asyncio
     async def test_empty_actions_noop(self):
@@ -371,7 +391,13 @@ class TestLogActions:
     async def test_log_actions_calls_post(self):
         client = _make_client()
         client.mindhome_post = AsyncMock(return_value={"ok": True})
-        actions = [{"function": "test_fn", "args": {}, "result": {"success": True, "message": "done"}}]
+        actions = [
+            {
+                "function": "test_fn",
+                "args": {},
+                "result": {"success": True, "message": "done"},
+            }
+        ]
         await client.log_actions(actions, user_text="hello", response_text="world")
         client.mindhome_post.assert_awaited_once()
         call_args = client.mindhome_post.call_args
@@ -381,6 +407,7 @@ class TestLogActions:
 # ---------------------------------------------------------------------------
 # get_history
 # ---------------------------------------------------------------------------
+
 
 class TestGetHistory:
     @pytest.mark.asyncio
@@ -409,6 +436,7 @@ class TestGetHistory:
 # ---------------------------------------------------------------------------
 # get_camera_snapshot
 # ---------------------------------------------------------------------------
+
 
 class TestGetCameraSnapshot:
     @pytest.mark.asyncio
@@ -589,7 +617,9 @@ class TestCallServiceWithResponse:
         with patch("assistant.ha_client.ha_breaker") as hb:
             hb.is_available = True
             hb.record_success = MagicMock()
-            result = await client.call_service_with_response("weather", "get_forecasts", {"type": "daily"})
+            result = await client.call_service_with_response(
+                "weather", "get_forecasts", {"type": "daily"}
+            )
         assert result == {"forecast": [{"temp": 20}]}
 
 
@@ -696,9 +726,12 @@ class TestMindHomePostRetry:
     async def test_post_client_error_no_retry(self):
         """4xx errors should not retry."""
         client = _make_client()
-        _mock_session_multi(client, [
-            (400, None, "Bad request"),
-        ])
+        _mock_session_multi(
+            client,
+            [
+                (400, None, "Bad request"),
+            ],
+        )
         with patch("assistant.ha_client.mindhome_breaker") as mb:
             mb.is_available = True
             mb.record_failure = MagicMock()
@@ -713,6 +746,7 @@ class TestMindHomePostRetry:
         session.closed = False
 
         call_count = {"i": 0}
+
         def post_side(*a, **kw):
             call_count["i"] += 1
             if call_count["i"] <= 2:
@@ -731,8 +765,10 @@ class TestMindHomePostRetry:
         session.post = MagicMock(side_effect=post_side)
         client._get_session = AsyncMock(return_value=session)
 
-        with patch("assistant.ha_client.mindhome_breaker") as mb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.mindhome_breaker") as mb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             mb.is_available = True
             mb.record_success = MagicMock()
             mb.record_failure = MagicMock()
@@ -742,12 +778,17 @@ class TestMindHomePostRetry:
     @pytest.mark.asyncio
     async def test_post_server_error_retries_exhaust(self):
         client = _make_client()
-        _mock_session_multi(client, [
-            (500, None, "Server error"),
-            (500, None, "Server error"),
-        ])
-        with patch("assistant.ha_client.mindhome_breaker") as mb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        _mock_session_multi(
+            client,
+            [
+                (500, None, "Server error"),
+                (500, None, "Server error"),
+            ],
+        )
+        with (
+            patch("assistant.ha_client.mindhome_breaker") as mb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             mb.is_available = True
             mb.record_failure = MagicMock()
             result = await client.mindhome_post("/api/test", {}, retries=1)
@@ -810,13 +851,18 @@ class TestMindHomePutRetry:
     @pytest.mark.asyncio
     async def test_put_server_error_exhaust_retries(self):
         client = _make_client()
-        _mock_session_multi(client, [
-            (500, None, "Error"),
-            (500, None, "Error"),
-            (500, None, "Error"),
-        ])
-        with patch("assistant.ha_client.mindhome_breaker") as mb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        _mock_session_multi(
+            client,
+            [
+                (500, None, "Error"),
+                (500, None, "Error"),
+                (500, None, "Error"),
+            ],
+        )
+        with (
+            patch("assistant.ha_client.mindhome_breaker") as mb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             mb.is_available = True
             result = await client.mindhome_put("/api/test", {}, retries=3)
         assert result is None
@@ -833,8 +879,10 @@ class TestMindHomePutRetry:
         session.put = MagicMock(return_value=cm)
         client._get_session = AsyncMock(return_value=session)
 
-        with patch("assistant.ha_client.mindhome_breaker") as mb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.mindhome_breaker") as mb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             mb.is_available = True
             mb.record_failure = MagicMock()
             result = await client.mindhome_put("/api/test", {}, retries=2)
@@ -867,13 +915,18 @@ class TestMindHomeDeleteRetry:
     @pytest.mark.asyncio
     async def test_delete_server_error_exhaust(self):
         client = _make_client()
-        _mock_session_multi(client, [
-            (500, None, "Error"),
-            (500, None, "Error"),
-            (500, None, "Error"),
-        ])
-        with patch("assistant.ha_client.mindhome_breaker") as mb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        _mock_session_multi(
+            client,
+            [
+                (500, None, "Error"),
+                (500, None, "Error"),
+                (500, None, "Error"),
+            ],
+        )
+        with (
+            patch("assistant.ha_client.mindhome_breaker") as mb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             mb.is_available = True
             result = await client.mindhome_delete("/api/test", retries=3)
         assert result is None
@@ -889,8 +942,10 @@ class TestMindHomeDeleteRetry:
         session.delete = MagicMock(return_value=cm)
         client._get_session = AsyncMock(return_value=session)
 
-        with patch("assistant.ha_client.mindhome_breaker") as mb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.mindhome_breaker") as mb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             mb.is_available = True
             mb.record_failure = MagicMock()
             result = await client.mindhome_delete("/api/test", retries=2)
@@ -929,8 +984,10 @@ class TestGetHaRetryPaths:
         session.get = MagicMock(return_value=cm)
         client._get_session = AsyncMock(return_value=session)
 
-        with patch("assistant.ha_client.ha_breaker") as hb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.ha_breaker") as hb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             hb.is_available = True
             hb.record_failure = MagicMock()
             result = await client._get_ha("/api/test")
@@ -948,8 +1005,10 @@ class TestGetHaRetryPaths:
         session.get = MagicMock(return_value=cm)
         client._get_session = AsyncMock(return_value=session)
 
-        with patch("assistant.ha_client.ha_breaker") as hb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.ha_breaker") as hb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             hb.is_available = True
             hb.record_failure = MagicMock()
             result = await client._get_ha("/api/test")
@@ -979,13 +1038,18 @@ class TestPostHaRetryPaths:
     @pytest.mark.asyncio
     async def test_server_error_retries(self):
         client = _make_client()
-        _mock_session_multi(client, [
-            (500, None, "Error"),
-            (500, None, "Error"),
-            (500, None, "Error"),
-        ])
-        with patch("assistant.ha_client.ha_breaker") as hb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        _mock_session_multi(
+            client,
+            [
+                (500, None, "Error"),
+                (500, None, "Error"),
+                (500, None, "Error"),
+            ],
+        )
+        with (
+            patch("assistant.ha_client.ha_breaker") as hb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             hb.is_available = True
             hb.record_failure = MagicMock()
             result = await client._post_ha("/api/test", {})
@@ -1002,8 +1066,10 @@ class TestPostHaRetryPaths:
         session.post = MagicMock(return_value=cm)
         client._get_session = AsyncMock(return_value=session)
 
-        with patch("assistant.ha_client.ha_breaker") as hb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.ha_breaker") as hb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             hb.is_available = True
             hb.record_failure = MagicMock()
             result = await client._post_ha("/api/test", {})
@@ -1020,8 +1086,10 @@ class TestPostHaRetryPaths:
         session.post = MagicMock(return_value=cm)
         client._get_session = AsyncMock(return_value=session)
 
-        with patch("assistant.ha_client.ha_breaker") as hb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.ha_breaker") as hb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             hb.is_available = True
             hb.record_failure = MagicMock()
             result = await client._post_ha("/api/test", {})
@@ -1061,13 +1129,18 @@ class TestPutHaRetryPaths:
     @pytest.mark.asyncio
     async def test_server_error_retries(self):
         client = _make_client()
-        _mock_session_multi(client, [
-            (500, None, "Error"),
-            (500, None, "Error"),
-            (500, None, "Error"),
-        ])
-        with patch("assistant.ha_client.ha_breaker") as hb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        _mock_session_multi(
+            client,
+            [
+                (500, None, "Error"),
+                (500, None, "Error"),
+                (500, None, "Error"),
+            ],
+        )
+        with (
+            patch("assistant.ha_client.ha_breaker") as hb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             hb.is_available = True
             hb.record_failure = MagicMock()
             result = await client._put_ha("/api/test", {})
@@ -1084,8 +1157,10 @@ class TestPutHaRetryPaths:
         session.put = MagicMock(return_value=cm)
         client._get_session = AsyncMock(return_value=session)
 
-        with patch("assistant.ha_client.ha_breaker") as hb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.ha_breaker") as hb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             hb.is_available = True
             hb.record_failure = MagicMock()
             result = await client._put_ha("/api/test", {})
@@ -1102,8 +1177,10 @@ class TestPutHaRetryPaths:
         session.put = MagicMock(return_value=cm)
         client._get_session = AsyncMock(return_value=session)
 
-        with patch("assistant.ha_client.ha_breaker") as hb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.ha_breaker") as hb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             hb.is_available = True
             hb.record_failure = MagicMock()
             result = await client._put_ha("/api/test", {})
@@ -1143,13 +1220,18 @@ class TestDeleteHaRetryPaths:
     @pytest.mark.asyncio
     async def test_server_error_retries(self):
         client = _make_client()
-        _mock_session_multi(client, [
-            (500, None, "Error"),
-            (500, None, "Error"),
-            (500, None, "Error"),
-        ])
-        with patch("assistant.ha_client.ha_breaker") as hb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        _mock_session_multi(
+            client,
+            [
+                (500, None, "Error"),
+                (500, None, "Error"),
+                (500, None, "Error"),
+            ],
+        )
+        with (
+            patch("assistant.ha_client.ha_breaker") as hb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             hb.is_available = True
             hb.record_failure = MagicMock()
             result = await client._delete_ha("/api/test")
@@ -1166,8 +1248,10 @@ class TestDeleteHaRetryPaths:
         session.delete = MagicMock(return_value=cm)
         client._get_session = AsyncMock(return_value=session)
 
-        with patch("assistant.ha_client.ha_breaker") as hb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.ha_breaker") as hb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             hb.is_available = True
             hb.record_failure = MagicMock()
             result = await client._delete_ha("/api/test")
@@ -1184,8 +1268,10 @@ class TestDeleteHaRetryPaths:
         session.delete = MagicMock(return_value=cm)
         client._get_session = AsyncMock(return_value=session)
 
-        with patch("assistant.ha_client.ha_breaker") as hb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.ha_breaker") as hb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             hb.is_available = True
             hb.record_failure = MagicMock()
             result = await client._delete_ha("/api/test")
@@ -1207,13 +1293,18 @@ class TestGetMindHomeRetryPaths:
     @pytest.mark.asyncio
     async def test_server_error_retries(self):
         client = _make_client()
-        _mock_session_multi(client, [
-            (500, None, "Error"),
-            (500, None, "Error"),
-            (500, None, "Error"),
-        ])
-        with patch("assistant.ha_client.mindhome_breaker") as mb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        _mock_session_multi(
+            client,
+            [
+                (500, None, "Error"),
+                (500, None, "Error"),
+                (500, None, "Error"),
+            ],
+        )
+        with (
+            patch("assistant.ha_client.mindhome_breaker") as mb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             mb.is_available = True
             mb.record_failure = MagicMock()
             result = await client._get_mindhome("/api/test")
@@ -1230,8 +1321,10 @@ class TestGetMindHomeRetryPaths:
         session.get = MagicMock(return_value=cm)
         client._get_session = AsyncMock(return_value=session)
 
-        with patch("assistant.ha_client.mindhome_breaker") as mb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.mindhome_breaker") as mb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             mb.is_available = True
             mb.record_failure = MagicMock()
             result = await client._get_mindhome("/api/test")
@@ -1248,8 +1341,10 @@ class TestGetMindHomeRetryPaths:
         session.get = MagicMock(return_value=cm)
         client._get_session = AsyncMock(return_value=session)
 
-        with patch("assistant.ha_client.mindhome_breaker") as mb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.mindhome_breaker") as mb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             mb.is_available = True
             mb.record_failure = MagicMock()
             result = await client._get_mindhome("/api/test")
@@ -1388,13 +1483,17 @@ class TestCallServiceEdgeCases:
         session.post = MagicMock(side_effect=side)
         client._get_session = AsyncMock(return_value=session)
 
-        with patch("assistant.ha_client.ha_breaker") as hb, \
-             patch("assistant.ha_client._dep_check_cache", {}):
+        with (
+            patch("assistant.ha_client.ha_breaker") as hb,
+            patch("assistant.ha_client._dep_check_cache", {}),
+        ):
             hb.is_available = True
             hb.record_success = MagicMock()
             # Patch dependency check to avoid importing state_change_log
             client._check_dependency_conflicts = AsyncMock()
-            result = await client.call_service("light", "turn_on", {"entity_id": "light.test"})
+            result = await client.call_service(
+                "light", "turn_on", {"entity_id": "light.test"}
+            )
         assert result is True
 
     @pytest.mark.asyncio
@@ -1413,11 +1512,15 @@ class TestCallServiceEdgeCases:
     async def test_call_service_failure_returns_false(self):
         client = _make_client()
         _mock_session_get(client, json_data=None, status=500)
-        with patch("assistant.ha_client.ha_breaker") as hb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.ha_breaker") as hb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             hb.is_available = True
             hb.record_failure = MagicMock()
-            result = await client.call_service("light", "turn_on", {"entity_id": "light.test"})
+            result = await client.call_service(
+                "light", "turn_on", {"entity_id": "light.test"}
+            )
         assert result is False
 
     @pytest.mark.asyncio
@@ -1447,7 +1550,9 @@ class TestCheckDependencyConflicts:
     @pytest.mark.asyncio
     async def test_rate_limited_skip(self):
         client = _make_client()
-        with patch("assistant.ha_client._dep_check_cache", {"light.test": time.monotonic()}):
+        with patch(
+            "assistant.ha_client._dep_check_cache", {"light.test": time.monotonic()}
+        ):
             await client._check_dependency_conflicts(
                 "light", "turn_on", {"entity_id": "light.test"}
             )
@@ -1469,10 +1574,14 @@ class TestCheckDependencyConflicts:
         """Services with 'off' should map to state_val='off'."""
         client = _make_client()
         client.get_states = AsyncMock(return_value=[])
-        with patch("assistant.ha_client._dep_check_cache", {}), \
-             patch("assistant.ha_client.StateChangeLog", create=True) as mock_scl:
+        with (
+            patch("assistant.ha_client._dep_check_cache", {}),
+            patch("assistant.ha_client.StateChangeLog", create=True) as mock_scl,
+        ):
             mock_scl_mod = MagicMock()
-            with patch.dict("sys.modules", {"assistant.state_change_log": mock_scl_mod}):
+            with patch.dict(
+                "sys.modules", {"assistant.state_change_log": mock_scl_mod}
+            ):
                 # The import inside the method will be handled
                 try:
                     await client._check_dependency_conflicts(
@@ -1522,8 +1631,10 @@ class TestMindHomeCached:
         client = _make_client()
         client._mindhome_cache["/api/persons"] = (time.monotonic() - 10, {"old": True})
         _mock_session_get(client, json_data=None, status=500)
-        with patch("assistant.ha_client.mindhome_breaker") as mb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.mindhome_breaker") as mb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             mb.is_available = True
             mb.record_failure = MagicMock()
             result = await client._get_mindhome_cached("/api/persons")
@@ -1587,26 +1698,32 @@ class TestConstructorApiKey:
     """Tests for API key header setup."""
 
     def test_no_api_key(self):
-        with patch("assistant.ha_client.settings") as s_mock, \
-             patch("assistant.ha_client.ha_breaker"), \
-             patch("assistant.ha_client.mindhome_breaker"):
+        with (
+            patch("assistant.ha_client.settings") as s_mock,
+            patch("assistant.ha_client.ha_breaker"),
+            patch("assistant.ha_client.mindhome_breaker"),
+        ):
             s_mock.ha_url = "http://ha.local:8123"
             s_mock.ha_token = "test-token"
             s_mock.mindhome_url = "http://mh.local:8099"
             s_mock.assistant_api_key = ""
             from assistant.ha_client import HomeAssistantClient
+
             client = HomeAssistantClient()
         assert "X-API-Key" not in client._mindhome_headers
 
     def test_with_api_key(self):
-        with patch("assistant.ha_client.settings") as s_mock, \
-             patch("assistant.ha_client.ha_breaker"), \
-             patch("assistant.ha_client.mindhome_breaker"):
+        with (
+            patch("assistant.ha_client.settings") as s_mock,
+            patch("assistant.ha_client.ha_breaker"),
+            patch("assistant.ha_client.mindhome_breaker"),
+        ):
             s_mock.ha_url = "http://ha.local:8123"
             s_mock.ha_token = "test-token"
             s_mock.mindhome_url = "http://mh.local:8099"
             s_mock.assistant_api_key = "secret-key-123"
             from assistant.ha_client import HomeAssistantClient
+
             client = HomeAssistantClient()
         assert client._mindhome_headers["X-API-Key"] == "secret-key-123"
 
@@ -1685,7 +1802,11 @@ class TestGetStateEntityNotFound:
     @pytest.mark.asyncio
     async def test_entity_found(self):
         client = _make_client()
-        state_data = {"entity_id": "sensor.temp", "state": "22.5", "attributes": {"unit_of_measurement": "°C"}}
+        state_data = {
+            "entity_id": "sensor.temp",
+            "state": "22.5",
+            "attributes": {"unit_of_measurement": "°C"},
+        }
         _mock_session_get(client, json_data=state_data)
         with patch("assistant.ha_client.ha_breaker") as hb:
             hb.is_available = True
@@ -1715,7 +1836,9 @@ class TestCallServiceWithResponseBreaker:
         client = _make_client()
         with patch("assistant.ha_client.ha_breaker") as hb:
             hb.is_available = False
-            result = await client.call_service_with_response("weather", "get_forecasts", {})
+            result = await client.call_service_with_response(
+                "weather", "get_forecasts", {}
+            )
         assert result is None
 
 
@@ -1726,8 +1849,10 @@ class TestFireEventFailure:
     async def test_fire_event_failure(self):
         client = _make_client()
         _mock_session_get(client, json_data=None, status=500)
-        with patch("assistant.ha_client.ha_breaker") as hb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.ha_breaker") as hb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             hb.is_available = True
             hb.record_failure = MagicMock()
             result = await client.fire_event("test_event", {"key": "val"})
@@ -1741,8 +1866,10 @@ class TestPutConfigDeleteConfigFailure:
     async def test_put_config_failure(self):
         client = _make_client()
         _mock_session_multi(client, [(500, None, "Error")] * 3)
-        with patch("assistant.ha_client.ha_breaker") as hb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.ha_breaker") as hb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             hb.is_available = True
             hb.record_failure = MagicMock()
             result = await client.put_config("automation", "test_id", {"alias": "test"})
@@ -1752,8 +1879,10 @@ class TestPutConfigDeleteConfigFailure:
     async def test_delete_config_failure(self):
         client = _make_client()
         _mock_session_multi(client, [(500, None, "Error")] * 3)
-        with patch("assistant.ha_client.ha_breaker") as hb, \
-             patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("assistant.ha_client.ha_breaker") as hb,
+            patch("assistant.ha_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             hb.is_available = True
             hb.record_failure = MagicMock()
             result = await client.delete_config("automation", "test_id")

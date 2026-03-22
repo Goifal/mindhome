@@ -31,15 +31,15 @@ REDIS_KEY_DEVICE_HEALTH_SCORE = "mha:maintenance:health_score"
 
 # Typische Lebensdauern in Tagen (Defaults)
 DEFAULT_LIFESPANS = {
-    "motion_sensor": 1825,      # 5 Jahre
+    "motion_sensor": 1825,  # 5 Jahre
     "temperature_sensor": 1825,
     "humidity_sensor": 1825,
     "door_sensor": 1825,
     "window_sensor": 1825,
-    "smoke_detector": 3650,     # 10 Jahre
+    "smoke_detector": 3650,  # 10 Jahre
     "water_leak_sensor": 1825,
-    "smart_plug": 2555,         # 7 Jahre
-    "light_bulb": 1095,         # 3 Jahre (LED)
+    "smart_plug": 2555,  # 7 Jahre
+    "light_bulb": 1095,  # 3 Jahre (LED)
     "thermostat": 2555,
     "lock": 1825,
     "camera": 1825,
@@ -96,7 +96,9 @@ class PredictiveMaintenance:
         cfg = yaml_config.get("predictive_maintenance", {})
         self.enabled = cfg.get("enabled", True)
         self.lookback_days = cfg.get("lookback_days", 90)
-        self.failure_probability_threshold = cfg.get("failure_probability_threshold", 0.7)
+        self.failure_probability_threshold = cfg.get(
+            "failure_probability_threshold", 0.7
+        )
         self.battery_drain_alert_pct = cfg.get("battery_drain_alert_pct_per_week", 5.0)
 
         # Typische Lebensdauern (konfigurierbar)
@@ -121,7 +123,9 @@ class PredictiveMaintenance:
             if raw:
                 data = json.loads(raw)
                 for entity_id, entry_data in data.items():
-                    self._devices[entity_id] = DeviceLifecycleEntry(entity_id, entry_data)
+                    self._devices[entity_id] = DeviceLifecycleEntry(
+                        entity_id, entry_data
+                    )
         except Exception as e:
             logger.debug("Lifecycle-Daten laden fehlgeschlagen: %s", e)
 
@@ -158,10 +162,12 @@ class PredictiveMaintenance:
         entry = self._get_or_create(entity_id)
         now = datetime.now(timezone.utc).isoformat()
 
-        entry.battery_history.append({
-            "level": battery_level,
-            "date": now,
-        })
+        entry.battery_history.append(
+            {
+                "level": battery_level,
+                "date": now,
+            }
+        )
         # Max 90 Eintraege behalten
         entry.battery_history = entry.battery_history[-90:]
 
@@ -170,7 +176,9 @@ class PredictiveMaintenance:
 
         await self._save_devices()
 
-    async def record_device_offline(self, entity_id: str, offline_duration_hours: float):
+    async def record_device_offline(
+        self, entity_id: str, offline_duration_hours: float
+    ):
         """Zeichnet eine Offline-Phase auf."""
         if not self.enabled:
             return
@@ -181,7 +189,9 @@ class PredictiveMaintenance:
         entry.last_failure_date = datetime.now(timezone.utc).isoformat()
 
         # Health-Score reduzieren
-        entry.health_score = max(0, entry.health_score - min(10, offline_duration_hours))
+        entry.health_score = max(
+            0, entry.health_score - min(10, offline_duration_hours)
+        )
 
         await self._save_devices()
 
@@ -289,7 +299,11 @@ class PredictiveMaintenance:
 
             level_drop = oldest_valid["level"] - newest["level"]
             if level_drop <= 0:
-                return {"pct_per_week": 0, "days_until_empty": None, "severity": "normal"}
+                return {
+                    "pct_per_week": 0,
+                    "days_until_empty": None,
+                    "severity": "normal",
+                }
 
             pct_per_day = level_drop / days_elapsed
 
@@ -338,7 +352,9 @@ class PredictiveMaintenance:
             try:
                 installed = datetime.fromisoformat(entry.installed_date)
                 age_days = (datetime.now(timezone.utc) - installed).days
-                lifespan = self._lifespans.get(entry.device_type, self._lifespans["default"])
+                lifespan = self._lifespans.get(
+                    entry.device_type, self._lifespans["default"]
+                )
                 age_ratio = age_days / lifespan
                 age_penalty = min(40, age_ratio * 40)  # Max 40 Punkte Abzug
                 score -= age_penalty
@@ -418,10 +434,12 @@ class PredictiveMaintenance:
                 predictions.append(prediction)
 
         # Sortieren: Kritisch zuerst, dann nach Score
-        predictions.sort(key=lambda p: (
-            0 if p["risk"] == "critical" else 1,
-            p["health_score"],
-        ))
+        predictions.sort(
+            key=lambda p: (
+                0 if p["risk"] == "critical" else 1,
+                p["health_score"],
+            )
+        )
 
         return predictions
 
@@ -435,32 +453,44 @@ class PredictiveMaintenance:
         for entity_id, entry in self._devices.items():
             # Batterie-Warnung
             drain = self.calculate_battery_drain_rate(entity_id)
-            if drain and drain.get("days_until_empty") and drain["days_until_empty"] <= 30:
-                suggestions.append({
-                    "type": "battery_replacement",
-                    "entity_id": entity_id,
-                    "urgency": "high" if drain["days_until_empty"] <= 7 else "medium",
-                    "description": f"Batterie von {entity_id} in ca. {drain['days_until_empty']} Tagen leer "
-                                   f"(aktuell: {drain['current_level']}%, Drain: {drain['pct_per_week']:.1f}%/Woche).",
-                    "days_remaining": drain["days_until_empty"],
-                })
+            if (
+                drain
+                and drain.get("days_until_empty")
+                and drain["days_until_empty"] <= 30
+            ):
+                suggestions.append(
+                    {
+                        "type": "battery_replacement",
+                        "entity_id": entity_id,
+                        "urgency": "high"
+                        if drain["days_until_empty"] <= 7
+                        else "medium",
+                        "description": f"Batterie von {entity_id} in ca. {drain['days_until_empty']} Tagen leer "
+                        f"(aktuell: {drain['current_level']}%, Drain: {drain['pct_per_week']:.1f}%/Woche).",
+                        "days_remaining": drain["days_until_empty"],
+                    }
+                )
 
             # Alter-Warnung
             if entry.installed_date:
                 try:
                     installed = datetime.fromisoformat(entry.installed_date)
                     age_days = (datetime.now(timezone.utc) - installed).days
-                    lifespan = self._lifespans.get(entry.device_type, self._lifespans["default"])
+                    lifespan = self._lifespans.get(
+                        entry.device_type, self._lifespans["default"]
+                    )
                     if age_days >= lifespan * 0.9:
-                        suggestions.append({
-                            "type": "end_of_life",
-                            "entity_id": entity_id,
-                            "urgency": "medium",
-                            "description": f"{entity_id} ist {age_days // 365} Jahre alt "
-                                           f"(typische Lebensdauer: {lifespan // 365} Jahre). Ersatz planen.",
-                            "age_days": age_days,
-                            "lifespan_days": lifespan,
-                        })
+                        suggestions.append(
+                            {
+                                "type": "end_of_life",
+                                "entity_id": entity_id,
+                                "urgency": "medium",
+                                "description": f"{entity_id} ist {age_days // 365} Jahre alt "
+                                f"(typische Lebensdauer: {lifespan // 365} Jahre). Ersatz planen.",
+                                "age_days": age_days,
+                                "lifespan_days": lifespan,
+                            }
+                        )
                 except (ValueError, TypeError):
                     pass
 
@@ -486,8 +516,11 @@ class PredictiveMaintenance:
     def get_overview(self) -> dict:
         """Gibt eine Uebersicht ueber alle getackten Geraete zurueck."""
         total = len(self._devices)
-        healthy = sum(1 for d in self._devices.values()
-                      if self.calculate_health_score(d.entity_id)["risk"] == "low")
+        healthy = sum(
+            1
+            for d in self._devices.values()
+            if self.calculate_health_score(d.entity_id)["risk"] == "low"
+        )
         at_risk = total - healthy
 
         return {

@@ -60,6 +60,7 @@ def load_yaml_config() -> dict:
 
     if not config_path.exists() and example_path.exists():
         import shutil
+
         shutil.copy2(example_path, config_path)
 
     if config_path.exists():
@@ -78,6 +79,7 @@ def load_yaml_config() -> dict:
 # Model Profile: LLM-agnostische Konfiguration pro Modell-Familie
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ModelProfile:
     """LLM-Modell-Profil — konfiguriert Verhalten pro Modell-Familie.
@@ -85,6 +87,7 @@ class ModelProfile:
     Wird aus settings.yaml (model_profiles Sektion) geladen.
     Unbekannte Modelle erhalten das 'default' Profil.
     """
+
     supports_think_tags: bool = False
     supports_think_with_tools: bool = False
     temperature: float = 0.7
@@ -140,6 +143,7 @@ yaml_config = load_yaml_config()
 
 # J6: Settings-Validierung beim Start
 from .settings_validator import validate_settings
+
 _settings_warnings = validate_settings(yaml_config)
 
 # settings.yaml ueberschreibt .env fuer bestimmte Werte
@@ -334,13 +338,17 @@ def get_room_profiles() -> dict:
         if _room_profiles_cache and (now - _room_profiles_ts) < _ROOM_PROFILES_TTL:
             return _room_profiles_cache
         # Double-check nach Lock-Erwerb (anderer Thread koennte Cache schon erneuert haben)
-        if _room_profiles_cache and (time.time() - _room_profiles_ts) < _ROOM_PROFILES_TTL:
+        if (
+            _room_profiles_cache
+            and (time.time() - _room_profiles_ts) < _ROOM_PROFILES_TTL
+        ):
             return _room_profiles_cache
         try:
             if not _ROOM_PROFILES_PATH.exists():
                 example = _ROOM_PROFILES_PATH.with_suffix(".yaml.example")
                 if example.exists():
                     import shutil
+
                     shutil.copy2(example, _ROOM_PROFILES_PATH)
             if _ROOM_PROFILES_PATH.exists():
                 with open(_ROOM_PROFILES_PATH) as f:
@@ -364,7 +372,7 @@ def get_room_bed_sensors(room_cfg: dict) -> list[str]:
     """
     result = []
     # Neues Format: Liste von Objekten
-    for entry in (room_cfg.get("bed_sensors") or []):
+    for entry in room_cfg.get("bed_sensors") or []:
         s = entry.get("sensor", "") if isinstance(entry, dict) else str(entry)
         if s and s not in result:
             result.append(s)
@@ -381,7 +389,7 @@ def get_bed_sensor_off_delay(room_cfg: dict, entity_id: str) -> int:
 
     Default: 0 (sofort).
     """
-    for entry in (room_cfg.get("bed_sensors") or []):
+    for entry in room_cfg.get("bed_sensors") or []:
         if isinstance(entry, dict) and entry.get("sensor") == entity_id:
             return int(entry.get("off_delay", 0))
     return 0
@@ -432,5 +440,9 @@ def resolve_model(yaml_value: str, fallback_tier: str = "smart") -> str:
     active_models = {settings.model_fast, settings.model_smart, settings.model_deep}
     if yaml_value and yaml_value in active_models:
         return yaml_value
-    tier_map = {"fast": settings.model_fast, "smart": settings.model_smart, "deep": settings.model_deep}
+    tier_map = {
+        "fast": settings.model_fast,
+        "smart": settings.model_smart,
+        "deep": settings.model_deep,
+    }
     return tier_map.get(fallback_tier, settings.model_smart)

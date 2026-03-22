@@ -15,7 +15,6 @@ from assistant.settings_validator import validate_settings
 
 
 class TestValidateSettingsBasic:
-
     def test_empty_config_warns(self):
         warnings = validate_settings({})
         # Leeres dict wird als "leer" behandelt — eine Warnung
@@ -40,7 +39,6 @@ class TestValidateSettingsBasic:
 
 
 class TestValidateSettingsTypes:
-
     def test_wrong_section_type(self):
         config = {"assistant": "not a dict"}
         warnings = validate_settings(config)
@@ -60,7 +58,6 @@ class TestValidateSettingsTypes:
 
 
 class TestValidateSettingsRanges:
-
     def test_value_below_min(self):
         config = {"ollama": {"num_ctx_fast": 100}}
         warnings = validate_settings(config)
@@ -83,7 +80,6 @@ class TestValidateSettingsRanges:
 
 
 class TestValidateSettingsMembers:
-
     def test_valid_member(self):
         config = {
             "household": {
@@ -264,7 +260,13 @@ class TestValidateSettingsOllamaSection:
     """Tests for ollama section — all three num_ctx fields."""
 
     def test_all_ctx_valid(self):
-        config = {"ollama": {"num_ctx_fast": 2048, "num_ctx_smart": 4096, "num_ctx_deep": 8192}}
+        config = {
+            "ollama": {
+                "num_ctx_fast": 2048,
+                "num_ctx_smart": 4096,
+                "num_ctx_deep": 8192,
+            }
+        }
         warnings = validate_settings(config)
         assert len(warnings) == 0
 

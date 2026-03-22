@@ -74,7 +74,9 @@ def redis_mock():
 def executor_mock():
     """FunctionExecutor Mock."""
     mock = AsyncMock()
-    mock.execute = AsyncMock(return_value={"success": True, "message": "Tuer haustuer: unlock"})
+    mock.execute = AsyncMock(
+        return_value={"success": True, "message": "Tuer haustuer: unlock"}
+    )
     return mock
 
 
@@ -114,14 +116,16 @@ class TestAddKnownVisitor:
     @pytest.mark.asyncio
     async def test_update_existing_visitor(self, vm, redis_mock):
         """Bestehender Besucher wird aktualisiert, visit_count bleibt."""
-        existing = json.dumps({
-            "name": "Mama",
-            "relationship": "Familie",
-            "notes": "",
-            "visit_count": 5,
-            "last_visit": "2026-02-20T10:00:00+00:00",
-            "created_at": "2026-01-01T00:00:00+00:00",
-        })
+        existing = json.dumps(
+            {
+                "name": "Mama",
+                "relationship": "Familie",
+                "notes": "",
+                "visit_count": 5,
+                "last_visit": "2026-02-20T10:00:00+00:00",
+                "created_at": "2026-01-01T00:00:00+00:00",
+            }
+        )
         redis_mock.hget = AsyncMock(return_value=existing)
 
         result = await vm.add_known_visitor("mama", "Mama", notes="Mag Kaffee")
@@ -135,10 +139,14 @@ class TestAddKnownVisitor:
     async def test_update_preserves_created_at(self, vm, redis_mock):
         """Update preserves original created_at timestamp."""
         original_created = "2025-06-01T00:00:00+00:00"
-        existing = json.dumps({
-            "name": "Mama", "visit_count": 2,
-            "last_visit": None, "created_at": original_created,
-        })
+        existing = json.dumps(
+            {
+                "name": "Mama",
+                "visit_count": 2,
+                "last_visit": None,
+                "created_at": original_created,
+            }
+        )
         redis_mock.hget = AsyncMock(return_value=existing)
         await vm.add_known_visitor("mama", "Mama")
         stored = json.loads(redis_mock.hset.call_args[0][2])
@@ -155,8 +163,10 @@ class TestAddKnownVisitor:
     async def test_add_with_all_fields(self, vm, redis_mock):
         """All optional fields are stored."""
         result = await vm.add_known_visitor(
-            "handwerker", "Herr Mueller",
-            relationship="Handwerker", notes="Kommt wegen Heizung"
+            "handwerker",
+            "Herr Mueller",
+            relationship="Handwerker",
+            notes="Kommt wegen Heizung",
         )
         assert result["success"] is True
         stored = json.loads(redis_mock.hset.call_args[0][2])
@@ -201,10 +211,16 @@ class TestListKnownVisitors:
 
     @pytest.mark.asyncio
     async def test_list_multiple(self, vm, redis_mock):
-        redis_mock.hgetall = AsyncMock(return_value={
-            "mama": json.dumps({"name": "Mama", "last_visit": "2026-02-20T10:00:00+00:00"}),
-            "papa": json.dumps({"name": "Papa", "last_visit": "2026-02-19T10:00:00+00:00"}),
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                "mama": json.dumps(
+                    {"name": "Mama", "last_visit": "2026-02-20T10:00:00+00:00"}
+                ),
+                "papa": json.dumps(
+                    {"name": "Papa", "last_visit": "2026-02-19T10:00:00+00:00"}
+                ),
+            }
+        )
         result = await vm.list_known_visitors()
         assert result["success"] is True
         assert result["count"] == 2
@@ -213,9 +229,11 @@ class TestListKnownVisitors:
 
     @pytest.mark.asyncio
     async def test_list_with_bytes_keys(self, vm, redis_mock):
-        redis_mock.hgetall = AsyncMock(return_value={
-            b"mama": json.dumps({"name": "Mama", "last_visit": None}).encode(),
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                b"mama": json.dumps({"name": "Mama", "last_visit": None}).encode(),
+            }
+        )
         result = await vm.list_known_visitors()
         assert result["success"] is True
         assert result["count"] == 1
@@ -224,10 +242,12 @@ class TestListKnownVisitors:
 
     @pytest.mark.asyncio
     async def test_list_skips_invalid_json(self, vm, redis_mock):
-        redis_mock.hgetall = AsyncMock(return_value={
-            "mama": json.dumps({"name": "Mama", "last_visit": None}),
-            "broken": "kein json{{{",
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                "mama": json.dumps({"name": "Mama", "last_visit": None}),
+                "broken": "kein json{{{",
+            }
+        )
         result = await vm.list_known_visitors()
         assert result["count"] == 1
 
@@ -296,9 +316,13 @@ class TestExpectVisitor:
 
     @pytest.mark.asyncio
     async def test_get_expected_visitors(self, vm, redis_mock):
-        redis_mock.hgetall = AsyncMock(return_value={
-            "mama": json.dumps({"name": "Mama", "expected_time": "15:00", "auto_unlock": False}),
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                "mama": json.dumps(
+                    {"name": "Mama", "expected_time": "15:00", "auto_unlock": False}
+                ),
+            }
+        )
         result = await vm.get_expected_visitors()
         assert len(result) == 1
         assert result[0]["name"] == "Mama"
@@ -307,13 +331,17 @@ class TestExpectVisitor:
     @pytest.mark.asyncio
     async def test_get_expected_removes_expired(self, vm, redis_mock):
         """Expired expected visitors are removed from Redis."""
-        expired = json.dumps({
-            "name": "Alter Besucher",
-            "expires_at": "2020-01-01T00:00:00+00:00",  # long expired
-        })
-        redis_mock.hgetall = AsyncMock(return_value={
-            "old": expired,
-        })
+        expired = json.dumps(
+            {
+                "name": "Alter Besucher",
+                "expires_at": "2020-01-01T00:00:00+00:00",  # long expired
+            }
+        )
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                "old": expired,
+            }
+        )
         result = await vm.get_expected_visitors()
         assert len(result) == 0
         redis_mock.hdel.assert_called_once_with(_KEY_EXPECTED, "old")
@@ -327,10 +355,12 @@ class TestExpectVisitor:
     @pytest.mark.asyncio
     async def test_get_expected_skips_invalid_json(self, vm, redis_mock):
         """Invalid JSON entries are skipped."""
-        redis_mock.hgetall = AsyncMock(return_value={
-            "good": json.dumps({"name": "Mama"}),
-            "bad": "broken{{{",
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                "good": json.dumps({"name": "Mama"}),
+                "bad": "broken{{{",
+            }
+        )
         result = await vm.get_expected_visitors()
         assert len(result) == 1
 
@@ -420,14 +450,18 @@ class TestHandleDoorbell:
 
     @pytest.mark.asyncio
     async def test_doorbell_with_expected_visitor(self, vm, redis_mock):
-        redis_mock.hgetall = AsyncMock(return_value={
-            "mama": json.dumps({
-                "name": "Mama",
-                "expected_time": "15:00",
-                "auto_unlock": False,
-                "notes": "",
-            }),
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                "mama": json.dumps(
+                    {
+                        "name": "Mama",
+                        "expected_time": "15:00",
+                        "auto_unlock": False,
+                        "notes": "",
+                    }
+                ),
+            }
+        )
         result = await vm.handle_doorbell("Aeltere Dame vor der Tuer")
         assert result["handled"] is True
         assert result["expected"] is True
@@ -435,15 +469,19 @@ class TestHandleDoorbell:
 
     @pytest.mark.asyncio
     async def test_doorbell_auto_unlock(self, vm, redis_mock, executor_mock):
-        redis_mock.hgetall = AsyncMock(return_value={
-            "mama": json.dumps({
-                "id": "mama",
-                "name": "Mama",
-                "expected_time": "15:00",
-                "auto_unlock": True,
-                "notes": "",
-            }),
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                "mama": json.dumps(
+                    {
+                        "id": "mama",
+                        "name": "Mama",
+                        "expected_time": "15:00",
+                        "auto_unlock": True,
+                        "notes": "",
+                    }
+                ),
+            }
+        )
         result = await vm.handle_doorbell("Aeltere Dame")
         assert result["handled"] is True
         assert result["auto_unlocked"] is True
@@ -453,14 +491,20 @@ class TestHandleDoorbell:
 
     @pytest.mark.asyncio
     async def test_doorbell_auto_unlock_failure(self, vm, redis_mock, executor_mock):
-        redis_mock.hgetall = AsyncMock(return_value={
-            "mama": json.dumps({
-                "id": "mama",
-                "name": "Mama",
-                "auto_unlock": True,
-            }),
-        })
-        executor_mock.execute = AsyncMock(return_value={"success": False, "message": "Schloss nicht gefunden"})
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                "mama": json.dumps(
+                    {
+                        "id": "mama",
+                        "name": "Mama",
+                        "auto_unlock": True,
+                    }
+                ),
+            }
+        )
+        executor_mock.execute = AsyncMock(
+            return_value={"success": False, "message": "Schloss nicht gefunden"}
+        )
         result = await vm.handle_doorbell("Person")
         assert result["handled"] is True
         assert result["auto_unlocked"] is False
@@ -472,13 +516,21 @@ class TestHandleDoorbell:
         assert result["camera_description"] == ""
 
     @pytest.mark.asyncio
-    async def test_doorbell_auto_unlock_does_not_store_ring(self, vm, redis_mock, executor_mock):
+    async def test_doorbell_auto_unlock_does_not_store_ring(
+        self, vm, redis_mock, executor_mock
+    ):
         """When auto-unlock succeeds, ring info is NOT stored (prevents double-unlock)."""
-        redis_mock.hgetall = AsyncMock(return_value={
-            "mama": json.dumps({
-                "id": "mama", "name": "Mama", "auto_unlock": True,
-            }),
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                "mama": json.dumps(
+                    {
+                        "id": "mama",
+                        "name": "Mama",
+                        "auto_unlock": True,
+                    }
+                ),
+            }
+        )
         result = await vm.handle_doorbell("Person")
         assert result["auto_unlocked"] is True
         # setex should NOT be called for _KEY_LAST_RING
@@ -486,13 +538,21 @@ class TestHandleDoorbell:
             assert call[0][0] != _KEY_LAST_RING
 
     @pytest.mark.asyncio
-    async def test_doorbell_auto_unlock_records_visit(self, vm, redis_mock, executor_mock):
+    async def test_doorbell_auto_unlock_records_visit(
+        self, vm, redis_mock, executor_mock
+    ):
         """Auto-unlock records a visit in the history."""
-        redis_mock.hgetall = AsyncMock(return_value={
-            "mama": json.dumps({
-                "id": "mama", "name": "Mama", "auto_unlock": True,
-            }),
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                "mama": json.dumps(
+                    {
+                        "id": "mama",
+                        "name": "Mama",
+                        "auto_unlock": True,
+                    }
+                ),
+            }
+        )
         await vm.handle_doorbell("Aeltere Dame")
         pipe = redis_mock._pipeline
         pipe.lpush.assert_called_once()
@@ -500,13 +560,21 @@ class TestHandleDoorbell:
         assert stored_visit["auto_unlocked"] is True
 
     @pytest.mark.asyncio
-    async def test_doorbell_auto_unlock_cancels_expected(self, vm, redis_mock, executor_mock):
+    async def test_doorbell_auto_unlock_cancels_expected(
+        self, vm, redis_mock, executor_mock
+    ):
         """After auto-unlock, the expected visitor is cancelled."""
-        redis_mock.hgetall = AsyncMock(return_value={
-            "mama": json.dumps({
-                "id": "mama", "name": "Mama", "auto_unlock": True,
-            }),
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                "mama": json.dumps(
+                    {
+                        "id": "mama",
+                        "name": "Mama",
+                        "auto_unlock": True,
+                    }
+                ),
+            }
+        )
         await vm.handle_doorbell("Person")
         redis_mock.hdel.assert_called_with(_KEY_EXPECTED, "mama")
 
@@ -530,13 +598,16 @@ class TestLlmRewriteDoorbell:
     async def test_rewrite_with_ollama_success(self, vm):
         """LLM rewrites the message."""
         ollama = AsyncMock()
-        ollama.generate = AsyncMock(return_value="Sir, es scheint Besuch an der Haustuer zu sein.")
+        ollama.generate = AsyncMock(
+            return_value="Sir, es scheint Besuch an der Haustuer zu sein."
+        )
         vm._ollama = ollama
-        with patch("assistant.visitor_manager.yaml_config",
-                   {"visitor_management": {"llm_rewrite": True}}):
+        with patch(
+            "assistant.visitor_manager.yaml_config",
+            {"visitor_management": {"llm_rewrite": True}},
+        ):
             result = await vm._llm_rewrite_doorbell(
-                "Erwarteter Besuch: Mama.",
-                camera_desc="Aeltere Dame mit Tasche"
+                "Erwarteter Besuch: Mama.", camera_desc="Aeltere Dame mit Tasche"
             )
         assert "Besuch" in result or "Sir" in result or "Haustuer" in result
 
@@ -546,8 +617,10 @@ class TestLlmRewriteDoorbell:
         ollama = AsyncMock()
         ollama.generate = AsyncMock(side_effect=Exception("model not loaded"))
         vm._ollama = ollama
-        with patch("assistant.visitor_manager.yaml_config",
-                   {"visitor_management": {"llm_rewrite": True}}):
+        with patch(
+            "assistant.visitor_manager.yaml_config",
+            {"visitor_management": {"llm_rewrite": True}},
+        ):
             result = await vm._llm_rewrite_doorbell("Original-Nachricht.")
         assert result == "Original-Nachricht."
 
@@ -555,8 +628,10 @@ class TestLlmRewriteDoorbell:
     async def test_rewrite_disabled_in_config(self, vm):
         """LLM rewrite disabled in config returns original."""
         vm._ollama = AsyncMock()
-        with patch("assistant.visitor_manager.yaml_config",
-                   {"visitor_management": {"llm_rewrite": False}}):
+        with patch(
+            "assistant.visitor_manager.yaml_config",
+            {"visitor_management": {"llm_rewrite": False}},
+        ):
             result = await vm._llm_rewrite_doorbell("Test.")
         assert result == "Test."
 
@@ -566,8 +641,10 @@ class TestLlmRewriteDoorbell:
         ollama = AsyncMock()
         ollama.generate = AsyncMock(return_value="Ok.")
         vm._ollama = ollama
-        with patch("assistant.visitor_manager.yaml_config",
-                   {"visitor_management": {"llm_rewrite": True}}):
+        with patch(
+            "assistant.visitor_manager.yaml_config",
+            {"visitor_management": {"llm_rewrite": True}},
+        ):
             result = await vm._llm_rewrite_doorbell("Die Originalnachricht hier.")
         assert result == "Die Originalnachricht hier."
 
@@ -582,11 +659,13 @@ class TestGrantEntry:
 
     @pytest.mark.asyncio
     async def test_grant_entry_success(self, vm, redis_mock, executor_mock):
-        ring_info = json.dumps({
-            "timestamp": "2026-02-25T10:00:00+00:00",
-            "camera_description": "Paketbote vor der Tuer",
-            "expected": False,
-        })
+        ring_info = json.dumps(
+            {
+                "timestamp": "2026-02-25T10:00:00+00:00",
+                "camera_description": "Paketbote vor der Tuer",
+                "expected": False,
+            }
+        )
         redis_mock.get = AsyncMock(return_value=ring_info)
         result = await vm.grant_entry()
         assert result["success"] is True
@@ -722,8 +801,20 @@ class TestVisitHistory:
     @pytest.mark.asyncio
     async def test_get_history_with_entries(self, vm, redis_mock):
         visits = [
-            json.dumps({"person_id": "mama", "name": "Mama", "timestamp": "2026-02-25T10:00:00+00:00"}),
-            json.dumps({"person_id": "papa", "name": "Papa", "timestamp": "2026-02-24T10:00:00+00:00"}),
+            json.dumps(
+                {
+                    "person_id": "mama",
+                    "name": "Mama",
+                    "timestamp": "2026-02-25T10:00:00+00:00",
+                }
+            ),
+            json.dumps(
+                {
+                    "person_id": "papa",
+                    "name": "Papa",
+                    "timestamp": "2026-02-24T10:00:00+00:00",
+                }
+            ),
         ]
         redis_mock.lrange = AsyncMock(return_value=visits)
         result = await vm.get_visit_history(limit=10)
@@ -754,10 +845,12 @@ class TestVisitHistory:
     @pytest.mark.asyncio
     async def test_get_history_skips_invalid_json(self, vm, redis_mock):
         """Invalid JSON entries in history are skipped."""
-        redis_mock.lrange = AsyncMock(return_value=[
-            json.dumps({"name": "Mama"}),
-            "broken{{{",
-        ])
+        redis_mock.lrange = AsyncMock(
+            return_value=[
+                json.dumps({"name": "Mama"}),
+                "broken{{{",
+            ]
+        )
         result = await vm.get_visit_history()
         assert result["count"] == 1
 
@@ -783,12 +876,16 @@ class TestGetStatus:
 
     @pytest.mark.asyncio
     async def test_status_with_last_ring(self, vm, redis_mock):
-        ring_info = json.dumps({"timestamp": "2026-02-25T10:00:00+00:00", "camera_description": "Person"})
-        redis_mock.hgetall = AsyncMock(side_effect=[
-            {},  # expected
-            {},  # known
-            {},  # stats
-        ])
+        ring_info = json.dumps(
+            {"timestamp": "2026-02-25T10:00:00+00:00", "camera_description": "Person"}
+        )
+        redis_mock.hgetall = AsyncMock(
+            side_effect=[
+                {},  # expected
+                {},  # known
+                {},  # stats
+            ]
+        )
         redis_mock.get = AsyncMock(return_value=ring_info)
         result = await vm.get_status()
         assert result["last_ring"] is not None
@@ -797,11 +894,13 @@ class TestGetStatus:
     @pytest.mark.asyncio
     async def test_status_with_stats(self, vm, redis_mock):
         """Stats from Redis are included in status."""
-        redis_mock.hgetall = AsyncMock(side_effect=[
-            {},  # expected
-            {},  # known
-            {b"total_visits": b"42"},  # stats
-        ])
+        redis_mock.hgetall = AsyncMock(
+            side_effect=[
+                {},  # expected
+                {},  # known
+                {b"total_visits": b"42"},  # stats
+            ]
+        )
         redis_mock.get = AsyncMock(return_value=None)
         result = await vm.get_status()
         assert result["total_visits"] == 42

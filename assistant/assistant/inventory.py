@@ -33,8 +33,13 @@ class InventoryManager:
         """Setzt Callback fuer Ablauf-Warnungen."""
         self._notify_callback = callback
 
-    async def add_item(self, name: str, quantity: int = 1,
-                       expiry_date: str = "", category: str = "sonstiges") -> dict:
+    async def add_item(
+        self,
+        name: str,
+        quantity: int = 1,
+        expiry_date: str = "",
+        category: str = "sonstiges",
+    ) -> dict:
         """
         Fuegt einen Vorratsartikel hinzu.
 
@@ -49,6 +54,7 @@ class InventoryManager:
 
         # F-042: UUID statt Timestamp-Suffix (verhindert Kollision bei gleicher Sekunde)
         import uuid
+
         item_id = f"inv_{name.lower().replace(' ', '_')}_{uuid.uuid4().hex[:8]}"
         item = {
             "id": item_id,
@@ -63,8 +69,16 @@ class InventoryManager:
             await self.redis.hset(f"mha:inventory:{item_id}", mapping=item)
             await self.redis.sadd("mha:inventory:all", item_id)
             await self.redis.sadd(f"mha:inventory:cat:{category}", item_id)
-            logger.info("Vorrat hinzugefuegt: %s (x%d, Ablauf: %s)", name, quantity, expiry_date or "keins")
-            return {"success": True, "message": f"'{name}' (x{quantity}) zum Vorrat hinzugefuegt."}
+            logger.info(
+                "Vorrat hinzugefuegt: %s (x%d, Ablauf: %s)",
+                name,
+                quantity,
+                expiry_date or "keins",
+            )
+            return {
+                "success": True,
+                "message": f"'{name}' (x{quantity}) zum Vorrat hinzugefuegt.",
+            }
         except Exception as e:
             logger.error("Vorrat-Fehler: %s", e)
             return {"success": False, "message": f"Da gab es ein Problem: {e}"}
@@ -77,8 +91,7 @@ class InventoryManager:
         try:
             item_ids = await self.redis.smembers("mha:inventory:all")
             decoded_ids = [
-                iid.decode() if isinstance(iid, bytes) else iid
-                for iid in item_ids
+                iid.decode() if isinstance(iid, bytes) else iid for iid in item_ids
             ]
             if decoded_ids:
                 pipe = self.redis.pipeline()
@@ -86,13 +99,25 @@ class InventoryManager:
                     pipe.hgetall(f"mha:inventory:{item_id}")
                 results = await pipe.execute()
                 for item_id, raw in zip(decoded_ids, results):
-                    data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()} if raw else {}
+                    data = (
+                        {
+                            (k.decode() if isinstance(k, bytes) else k): (
+                                v.decode() if isinstance(v, bytes) else v
+                            )
+                            for k, v in raw.items()
+                        }
+                        if raw
+                        else {}
+                    )
                     if data and data.get("name", "").lower() == name.lower():
                         category = data.get("category", "sonstiges")
                         await self.redis.delete(f"mha:inventory:{item_id}")
                         await self.redis.srem("mha:inventory:all", item_id)
                         await self.redis.srem(f"mha:inventory:cat:{category}", item_id)
-                        return {"success": True, "message": f"'{name}' aus dem Vorrat entfernt."}
+                        return {
+                            "success": True,
+                            "message": f"'{name}' aus dem Vorrat entfernt.",
+                        }
             return {"success": False, "message": f"'{name}' nicht im Vorrat gefunden."}
         except Exception as e:
             return {"success": False, "message": f"Da gab es ein Problem: {e}"}
@@ -105,8 +130,7 @@ class InventoryManager:
         try:
             item_ids = await self.redis.smembers("mha:inventory:all")
             decoded_ids = [
-                iid.decode() if isinstance(iid, bytes) else iid
-                for iid in item_ids
+                iid.decode() if isinstance(iid, bytes) else iid for iid in item_ids
             ]
             if decoded_ids:
                 pipe = self.redis.pipeline()
@@ -114,12 +138,26 @@ class InventoryManager:
                     pipe.hgetall(f"mha:inventory:{item_id}")
                 results = await pipe.execute()
                 for item_id, raw in zip(decoded_ids, results):
-                    data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()} if raw else {}
+                    data = (
+                        {
+                            (k.decode() if isinstance(k, bytes) else k): (
+                                v.decode() if isinstance(v, bytes) else v
+                            )
+                            for k, v in raw.items()
+                        }
+                        if raw
+                        else {}
+                    )
                     if data and data.get("name", "").lower() == name.lower():
                         if quantity <= 0:
                             return await self.remove_item(name)
-                        await self.redis.hset(f"mha:inventory:{item_id}", "quantity", str(quantity))
-                        return {"success": True, "message": f"'{name}' Menge auf {quantity} aktualisiert."}
+                        await self.redis.hset(
+                            f"mha:inventory:{item_id}", "quantity", str(quantity)
+                        )
+                        return {
+                            "success": True,
+                            "message": f"'{name}' Menge auf {quantity} aktualisiert.",
+                        }
             return {"success": False, "message": f"'{name}' nicht im Vorrat gefunden."}
         except Exception as e:
             return {"success": False, "message": f"Da gab es ein Problem: {e}"}
@@ -137,8 +175,7 @@ class InventoryManager:
 
             # Pipeline statt einzelner hgetall-Aufrufe
             decoded_ids = [
-                iid.decode() if isinstance(iid, bytes) else iid
-                for iid in item_ids
+                iid.decode() if isinstance(iid, bytes) else iid for iid in item_ids
             ]
             items = []
             if decoded_ids:
@@ -147,7 +184,16 @@ class InventoryManager:
                     pipe.hgetall(f"mha:inventory:{item_id}")
                 results = await pipe.execute()
                 for raw in results:
-                    data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()} if raw else {}
+                    data = (
+                        {
+                            (k.decode() if isinstance(k, bytes) else k): (
+                                v.decode() if isinstance(v, bytes) else v
+                            )
+                            for k, v in raw.items()
+                        }
+                        if raw
+                        else {}
+                    )
                     if data:
                         items.append(data)
 
@@ -193,8 +239,7 @@ class InventoryManager:
             expiring = []
 
             decoded_ids = [
-                iid.decode() if isinstance(iid, bytes) else iid
-                for iid in item_ids
+                iid.decode() if isinstance(iid, bytes) else iid for iid in item_ids
             ]
             if not decoded_ids:
                 return []
@@ -205,7 +250,16 @@ class InventoryManager:
             results = await pipe.execute()
 
             for raw in results:
-                data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()} if raw else {}
+                data = (
+                    {
+                        (k.decode() if isinstance(k, bytes) else k): (
+                            v.decode() if isinstance(v, bytes) else v
+                        )
+                        for k, v in raw.items()
+                    }
+                    if raw
+                    else {}
+                )
                 if not data:
                     continue
 
@@ -215,13 +269,15 @@ class InventoryManager:
 
                 days_left = self._days_until(expiry)
                 if days_left is not None and days_left <= days_ahead:
-                    expiring.append({
-                        "name": data.get("name", "?"),
-                        "quantity": int(data.get("quantity", 1)),
-                        "expiry_date": expiry,
-                        "days_left": days_left,
-                        "category": data.get("category", "sonstiges"),
-                    })
+                    expiring.append(
+                        {
+                            "name": data.get("name", "?"),
+                            "quantity": int(data.get("quantity", 1)),
+                            "expiry_date": expiry,
+                            "days_left": days_left,
+                            "category": data.get("category", "sonstiges"),
+                        }
+                    )
 
             expiring.sort(key=lambda x: x["days_left"])
             return expiring

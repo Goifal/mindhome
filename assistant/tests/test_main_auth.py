@@ -119,7 +119,9 @@ class TestTokenManagement:
 
         # Cleanup
         now = datetime.now(timezone.utc).timestamp()
-        expired = [t for t, ts in tokens.items() if now - ts > self._TOKEN_EXPIRY_SECONDS]
+        expired = [
+            t for t, ts in tokens.items() if now - ts > self._TOKEN_EXPIRY_SECONDS
+        ]
         for t in expired:
             tokens.pop(t, None)
 
@@ -145,14 +147,18 @@ class TestPinHashing:
     def _hash_value(self, value: str, salt: str = None) -> str:
         if salt is None:
             salt = secrets.token_hex(16)
-        h = hashlib.pbkdf2_hmac("sha256", value.encode(), salt.encode(), iterations=600_000)
+        h = hashlib.pbkdf2_hmac(
+            "sha256", value.encode(), salt.encode(), iterations=600_000
+        )
         return f"{salt}:{h.hex()}"
 
     def _verify_hash(self, value: str, stored: str) -> bool:
         if ":" in stored:
             salt, _ = stored.split(":", 1)
             return secrets.compare_digest(self._hash_value(value, salt), stored)
-        return secrets.compare_digest(hashlib.sha256(value.encode()).hexdigest(), stored)
+        return secrets.compare_digest(
+            hashlib.sha256(value.encode()).hexdigest(), stored
+        )
 
     def test_hash_verify_roundtrip(self):
         hashed = self._hash_value("secure_pin_123")
@@ -204,7 +210,11 @@ class TestCorsOrigins:
     def test_split_and_strip(self):
         raw = "http://localhost, http://example.com , http://ha.local:8123 "
         origins = [o.strip() for o in raw.split(",") if o.strip()]
-        assert origins == ["http://localhost", "http://example.com", "http://ha.local:8123"]
+        assert origins == [
+            "http://localhost",
+            "http://example.com",
+            "http://ha.local:8123",
+        ]
 
     def test_empty_string_results_in_empty_list(self):
         raw = ""

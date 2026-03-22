@@ -16,6 +16,7 @@ import pytest
 # Standalone copy of the CircuitBreaker implementation
 # ---------------------------------------------------------------------------
 
+
 class CircuitState(Enum):
     CLOSED = "closed"
     OPEN = "open"
@@ -23,7 +24,9 @@ class CircuitState(Enum):
 
 
 class CircuitBreaker:
-    def __init__(self, name, failure_threshold=5, recovery_timeout=30.0, half_open_max_calls=1):
+    def __init__(
+        self, name, failure_threshold=5, recovery_timeout=30.0, half_open_max_calls=1
+    ):
         self.name = name
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
@@ -100,6 +103,7 @@ class CircuitBreaker:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _force_open(cb: CircuitBreaker):
     """Drive the breaker to OPEN by recording enough failures."""
     for _ in range(cb.failure_threshold):
@@ -117,6 +121,7 @@ def _force_half_open(cb: CircuitBreaker, mock_monotonic):
 # ---------------------------------------------------------------------------
 # 1. Initial state is CLOSED
 # ---------------------------------------------------------------------------
+
 
 class TestInitialState:
     def test_initial_state_is_closed(self):
@@ -142,7 +147,9 @@ class TestInitialState:
         assert cb.half_open_max_calls == 1
 
     def test_custom_parameters(self):
-        cb = CircuitBreaker("svc", failure_threshold=3, recovery_timeout=10.0, half_open_max_calls=2)
+        cb = CircuitBreaker(
+            "svc", failure_threshold=3, recovery_timeout=10.0, half_open_max_calls=2
+        )
         assert cb.failure_threshold == 3
         assert cb.recovery_timeout == 10.0
         assert cb.half_open_max_calls == 2
@@ -151,6 +158,7 @@ class TestInitialState:
 # ---------------------------------------------------------------------------
 # 2. CLOSED -> OPEN after failure_threshold failures
 # ---------------------------------------------------------------------------
+
 
 class TestClosedToOpen:
     def test_stays_closed_below_threshold(self):
@@ -185,6 +193,7 @@ class TestClosedToOpen:
 # ---------------------------------------------------------------------------
 # 3. OPEN -> HALF_OPEN after recovery_timeout
 # ---------------------------------------------------------------------------
+
 
 class TestOpenToHalfOpen:
     @patch("time.monotonic")
@@ -227,10 +236,13 @@ class TestOpenToHalfOpen:
 # 4. HALF_OPEN -> CLOSED on success
 # ---------------------------------------------------------------------------
 
+
 class TestHalfOpenToClosed:
     @patch("time.monotonic")
     def test_single_success_closes_with_max_calls_1(self, mock_monotonic):
-        cb = CircuitBreaker("svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=1)
+        cb = CircuitBreaker(
+            "svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=1
+        )
         mock_monotonic.return_value = 100.0
         _force_half_open(cb, mock_monotonic)
         cb.record_success()
@@ -240,7 +252,9 @@ class TestHalfOpenToClosed:
 
     @patch("time.monotonic")
     def test_multiple_successes_needed_with_max_calls_3(self, mock_monotonic):
-        cb = CircuitBreaker("svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=3)
+        cb = CircuitBreaker(
+            "svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=3
+        )
         mock_monotonic.return_value = 100.0
         _force_half_open(cb, mock_monotonic)
 
@@ -256,6 +270,7 @@ class TestHalfOpenToClosed:
 # 5. HALF_OPEN -> OPEN on failure
 # ---------------------------------------------------------------------------
 
+
 class TestHalfOpenToOpen:
     @patch("time.monotonic")
     def test_single_failure_reopens(self, mock_monotonic):
@@ -268,7 +283,9 @@ class TestHalfOpenToOpen:
 
     @patch("time.monotonic")
     def test_failure_after_some_successes_reopens(self, mock_monotonic):
-        cb = CircuitBreaker("svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=3)
+        cb = CircuitBreaker(
+            "svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=3
+        )
         mock_monotonic.return_value = 100.0
         _force_half_open(cb, mock_monotonic)
         cb.record_success()
@@ -281,6 +298,7 @@ class TestHalfOpenToOpen:
 # ---------------------------------------------------------------------------
 # 6. try_acquire in each state
 # ---------------------------------------------------------------------------
+
 
 class TestTryAcquire:
     def test_acquire_closed_returns_true(self):
@@ -298,14 +316,18 @@ class TestTryAcquire:
 
     @patch("time.monotonic")
     def test_acquire_half_open_first_call_returns_true(self, mock_monotonic):
-        cb = CircuitBreaker("svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=1)
+        cb = CircuitBreaker(
+            "svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=1
+        )
         mock_monotonic.return_value = 100.0
         _force_half_open(cb, mock_monotonic)
         assert cb.try_acquire() is True
 
     @patch("time.monotonic")
     def test_acquire_half_open_exceeds_max_calls_returns_false(self, mock_monotonic):
-        cb = CircuitBreaker("svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=1)
+        cb = CircuitBreaker(
+            "svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=1
+        )
         mock_monotonic.return_value = 100.0
         _force_half_open(cb, mock_monotonic)
         cb.try_acquire()  # uses up the one allowed call
@@ -313,7 +335,9 @@ class TestTryAcquire:
 
     @patch("time.monotonic")
     def test_acquire_increments_half_open_calls(self, mock_monotonic):
-        cb = CircuitBreaker("svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=3)
+        cb = CircuitBreaker(
+            "svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=3
+        )
         mock_monotonic.return_value = 100.0
         _force_half_open(cb, mock_monotonic)
         assert cb._half_open_calls == 0
@@ -330,6 +354,7 @@ class TestTryAcquire:
 # 7. is_available in each state
 # ---------------------------------------------------------------------------
 
+
 class TestIsAvailable:
     def test_available_when_closed(self):
         cb = CircuitBreaker("svc")
@@ -343,14 +368,18 @@ class TestIsAvailable:
 
     @patch("time.monotonic")
     def test_available_when_half_open_under_limit(self, mock_monotonic):
-        cb = CircuitBreaker("svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=2)
+        cb = CircuitBreaker(
+            "svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=2
+        )
         mock_monotonic.return_value = 100.0
         _force_half_open(cb, mock_monotonic)
         assert cb.is_available is True
 
     @patch("time.monotonic")
     def test_not_available_when_half_open_at_limit(self, mock_monotonic):
-        cb = CircuitBreaker("svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=1)
+        cb = CircuitBreaker(
+            "svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=1
+        )
         mock_monotonic.return_value = 100.0
         _force_half_open(cb, mock_monotonic)
         cb._half_open_calls = 1
@@ -360,6 +389,7 @@ class TestIsAvailable:
 # ---------------------------------------------------------------------------
 # 8. record_success decrements failure_count in CLOSED state
 # ---------------------------------------------------------------------------
+
 
 class TestRecordSuccessInClosed:
     def test_decrements_failure_count(self):
@@ -389,6 +419,7 @@ class TestRecordSuccessInClosed:
 # ---------------------------------------------------------------------------
 # 9. reset works
 # ---------------------------------------------------------------------------
+
 
 class TestReset:
     def test_reset_from_open(self):
@@ -429,6 +460,7 @@ class TestReset:
 # 10. status() returns correct dict
 # ---------------------------------------------------------------------------
 
+
 class TestStatus:
     def test_status_closed(self):
         cb = CircuitBreaker("my-service", failure_threshold=5, recovery_timeout=30.0)
@@ -460,7 +492,13 @@ class TestStatus:
 
     def test_status_contains_all_keys(self):
         cb = CircuitBreaker("svc")
-        expected_keys = {"name", "state", "failure_count", "failure_threshold", "recovery_timeout"}
+        expected_keys = {
+            "name",
+            "state",
+            "failure_count",
+            "failure_threshold",
+            "recovery_timeout",
+        }
         assert set(cb.status().keys()) == expected_keys
 
 
@@ -468,10 +506,13 @@ class TestStatus:
 # 11. Half-open max calls limit
 # ---------------------------------------------------------------------------
 
+
 class TestHalfOpenMaxCalls:
     @patch("time.monotonic")
     def test_max_calls_2(self, mock_monotonic):
-        cb = CircuitBreaker("svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=2)
+        cb = CircuitBreaker(
+            "svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=2
+        )
         mock_monotonic.return_value = 100.0
         _force_half_open(cb, mock_monotonic)
 
@@ -481,7 +522,9 @@ class TestHalfOpenMaxCalls:
 
     @patch("time.monotonic")
     def test_max_calls_respected_by_is_available(self, mock_monotonic):
-        cb = CircuitBreaker("svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=2)
+        cb = CircuitBreaker(
+            "svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=2
+        )
         mock_monotonic.return_value = 100.0
         _force_half_open(cb, mock_monotonic)
 
@@ -493,7 +536,9 @@ class TestHalfOpenMaxCalls:
 
     @patch("time.monotonic")
     def test_needs_all_successes_to_close(self, mock_monotonic):
-        cb = CircuitBreaker("svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=3)
+        cb = CircuitBreaker(
+            "svc", failure_threshold=2, recovery_timeout=10.0, half_open_max_calls=3
+        )
         mock_monotonic.return_value = 100.0
         _force_half_open(cb, mock_monotonic)
 
@@ -507,7 +552,9 @@ class TestHalfOpenMaxCalls:
     @patch("time.monotonic")
     def test_half_open_calls_reset_on_reentry(self, mock_monotonic):
         """After going OPEN -> HALF_OPEN -> OPEN -> HALF_OPEN, the call counter resets."""
-        cb = CircuitBreaker("svc", failure_threshold=1, recovery_timeout=10.0, half_open_max_calls=1)
+        cb = CircuitBreaker(
+            "svc", failure_threshold=1, recovery_timeout=10.0, half_open_max_calls=1
+        )
         mock_monotonic.return_value = 100.0
         _force_half_open(cb, mock_monotonic)
         cb.try_acquire()
@@ -529,6 +576,7 @@ class TestHalfOpenMaxCalls:
 # 12. Edge cases
 # ---------------------------------------------------------------------------
 
+
 class TestEdgeCases:
     def test_threshold_of_one(self):
         cb = CircuitBreaker("svc", failure_threshold=1)
@@ -538,7 +586,9 @@ class TestEdgeCases:
 
     @patch("time.monotonic")
     def test_threshold_of_one_full_cycle(self, mock_monotonic):
-        cb = CircuitBreaker("svc", failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=1)
+        cb = CircuitBreaker(
+            "svc", failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=1
+        )
         mock_monotonic.return_value = 0.0
         cb.record_failure()
         assert cb._state == CircuitState.OPEN
@@ -571,7 +621,9 @@ class TestEdgeCases:
     @patch("time.monotonic")
     def test_rapid_open_half_open_cycles(self, mock_monotonic):
         """Cycle CLOSED -> OPEN -> HALF_OPEN -> OPEN -> HALF_OPEN -> CLOSED."""
-        cb = CircuitBreaker("svc", failure_threshold=1, recovery_timeout=10.0, half_open_max_calls=1)
+        cb = CircuitBreaker(
+            "svc", failure_threshold=1, recovery_timeout=10.0, half_open_max_calls=1
+        )
 
         # CLOSED -> OPEN
         mock_monotonic.return_value = 0.0
@@ -626,7 +678,9 @@ class TestEdgeCases:
     @patch("time.monotonic")
     def test_recovery_timeout_zero(self, mock_monotonic):
         """With a zero recovery timeout, OPEN immediately becomes HALF_OPEN."""
-        cb = CircuitBreaker("svc", failure_threshold=1, recovery_timeout=0.0, half_open_max_calls=1)
+        cb = CircuitBreaker(
+            "svc", failure_threshold=1, recovery_timeout=0.0, half_open_max_calls=1
+        )
         mock_monotonic.return_value = 100.0
         cb.record_failure()
         assert cb._state == CircuitState.OPEN
@@ -692,7 +746,9 @@ class TestRealCircuitBreakerCheckRecovery:
 
     @patch("assistant.circuit_breaker.time.monotonic")
     def test_is_available_half_open(self, mock_time):
-        cb = RealCircuitBreaker("test_svc", failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=2)
+        cb = RealCircuitBreaker(
+            "test_svc", failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=2
+        )
         mock_time.return_value = 50.0
         cb.record_failure()
         mock_time.return_value = 56.0
@@ -720,7 +776,9 @@ class TestRealCircuitBreakerTryAcquire:
 
     @patch("assistant.circuit_breaker.time.monotonic")
     def test_try_acquire_half_open_within_limit(self, mock_time):
-        cb = RealCircuitBreaker("test_svc", failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=2)
+        cb = RealCircuitBreaker(
+            "test_svc", failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=2
+        )
         mock_time.return_value = 50.0
         cb.record_failure()
         mock_time.return_value = 56.0
@@ -729,7 +787,9 @@ class TestRealCircuitBreakerTryAcquire:
 
     @patch("assistant.circuit_breaker.time.monotonic")
     def test_try_acquire_half_open_max_reached(self, mock_time):
-        cb = RealCircuitBreaker("test_svc", failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=1)
+        cb = RealCircuitBreaker(
+            "test_svc", failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=1
+        )
         mock_time.return_value = 50.0
         cb.record_failure()
         mock_time.return_value = 56.0
@@ -750,7 +810,9 @@ class TestRealCircuitBreakerRecordSuccessFailure:
 
     @patch("assistant.circuit_breaker.time.monotonic")
     def test_record_success_half_open_closes(self, mock_time):
-        cb = RealCircuitBreaker("test_svc", failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=1)
+        cb = RealCircuitBreaker(
+            "test_svc", failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=1
+        )
         mock_time.return_value = 50.0
         cb.record_failure()
         mock_time.return_value = 56.0
@@ -853,6 +915,7 @@ class TestGlobalBreakers:
 # 14. Graduated Degradation (Phase 8C)
 # ---------------------------------------------------------------------------
 
+
 class TestGraduatedState:
     """Tests for CircuitBreakerRegistry.get_graduated_state()."""
 
@@ -909,13 +972,21 @@ class TestGraduatedState:
 
     def test_graduated_states_alias(self):
         """_GRADUATED_STATES is an alias for _STATES."""
-        assert CircuitBreakerRegistry._GRADUATED_STATES is CircuitBreakerRegistry._STATES
-        assert CircuitBreakerRegistry._STATES == ["CLOSED", "WARNING", "REDUCED", "OPEN"]
+        assert (
+            CircuitBreakerRegistry._GRADUATED_STATES is CircuitBreakerRegistry._STATES
+        )
+        assert CircuitBreakerRegistry._STATES == [
+            "CLOSED",
+            "WARNING",
+            "REDUCED",
+            "OPEN",
+        ]
 
 
 # ---------------------------------------------------------------------------
 # 15. Error Categorization
 # ---------------------------------------------------------------------------
+
 
 class TestCategorizeError:
     """Tests for CircuitBreakerRegistry.categorize_error()."""
@@ -923,50 +994,106 @@ class TestCategorizeError:
     def test_timeout_by_class_name(self):
         class TimeoutError(Exception):
             pass
-        assert CircuitBreakerRegistry.categorize_error(TimeoutError("request failed")) == "timeout"
+
+        assert (
+            CircuitBreakerRegistry.categorize_error(TimeoutError("request failed"))
+            == "timeout"
+        )
 
     def test_timeout_by_message(self):
-        assert CircuitBreakerRegistry.categorize_error(Exception("connection timeout after 30s")) == "timeout"
+        assert (
+            CircuitBreakerRegistry.categorize_error(
+                Exception("connection timeout after 30s")
+            )
+            == "timeout"
+        )
 
     def test_connection_error_by_class_name(self):
-        assert CircuitBreakerRegistry.categorize_error(ConnectionError("refused")) == "connection_error"
+        assert (
+            CircuitBreakerRegistry.categorize_error(ConnectionError("refused"))
+            == "connection_error"
+        )
 
     def test_connection_error_by_message(self):
-        assert CircuitBreakerRegistry.categorize_error(Exception("could not connect to host")) == "connection_error"
+        assert (
+            CircuitBreakerRegistry.categorize_error(
+                Exception("could not connect to host")
+            )
+            == "connection_error"
+        )
 
     def test_server_error_500(self):
-        assert CircuitBreakerRegistry.categorize_error(Exception("HTTP 500 Internal Server Error")) == "server_error"
+        assert (
+            CircuitBreakerRegistry.categorize_error(
+                Exception("HTTP 500 Internal Server Error")
+            )
+            == "server_error"
+        )
 
     def test_server_error_502(self):
-        assert CircuitBreakerRegistry.categorize_error(Exception("502 Bad Gateway")) == "server_error"
+        assert (
+            CircuitBreakerRegistry.categorize_error(Exception("502 Bad Gateway"))
+            == "server_error"
+        )
 
     def test_server_error_503(self):
-        assert CircuitBreakerRegistry.categorize_error(Exception("503 Service Unavailable")) == "server_error"
+        assert (
+            CircuitBreakerRegistry.categorize_error(
+                Exception("503 Service Unavailable")
+            )
+            == "server_error"
+        )
 
     def test_server_error_504(self):
         # "504 Gateway Timeout" contains "timeout" which is matched first
-        assert CircuitBreakerRegistry.categorize_error(Exception("504 Gateway Timeout")) == "timeout"
+        assert (
+            CircuitBreakerRegistry.categorize_error(Exception("504 Gateway Timeout"))
+            == "timeout"
+        )
 
     def test_server_error_504_without_timeout_word(self):
-        assert CircuitBreakerRegistry.categorize_error(Exception("504 Bad Gateway")) == "server_error"
+        assert (
+            CircuitBreakerRegistry.categorize_error(Exception("504 Bad Gateway"))
+            == "server_error"
+        )
 
     def test_client_error_400(self):
-        assert CircuitBreakerRegistry.categorize_error(Exception("400 Bad Request")) == "client_error"
+        assert (
+            CircuitBreakerRegistry.categorize_error(Exception("400 Bad Request"))
+            == "client_error"
+        )
 
     def test_client_error_401(self):
-        assert CircuitBreakerRegistry.categorize_error(Exception("401 Unauthorized")) == "client_error"
+        assert (
+            CircuitBreakerRegistry.categorize_error(Exception("401 Unauthorized"))
+            == "client_error"
+        )
 
     def test_client_error_403(self):
-        assert CircuitBreakerRegistry.categorize_error(Exception("403 Forbidden")) == "client_error"
+        assert (
+            CircuitBreakerRegistry.categorize_error(Exception("403 Forbidden"))
+            == "client_error"
+        )
 
     def test_client_error_404(self):
-        assert CircuitBreakerRegistry.categorize_error(Exception("404 Not Found")) == "client_error"
+        assert (
+            CircuitBreakerRegistry.categorize_error(Exception("404 Not Found"))
+            == "client_error"
+        )
 
     def test_client_error_422(self):
-        assert CircuitBreakerRegistry.categorize_error(Exception("422 Unprocessable Entity")) == "client_error"
+        assert (
+            CircuitBreakerRegistry.categorize_error(
+                Exception("422 Unprocessable Entity")
+            )
+            == "client_error"
+        )
 
     def test_unknown_error_defaults_to_server_error(self):
-        assert CircuitBreakerRegistry.categorize_error(Exception("something weird")) == "server_error"
+        assert (
+            CircuitBreakerRegistry.categorize_error(Exception("something weird"))
+            == "server_error"
+        )
 
     def test_empty_message_defaults_to_server_error(self):
         assert CircuitBreakerRegistry.categorize_error(Exception("")) == "server_error"
@@ -975,6 +1102,7 @@ class TestCategorizeError:
 # ---------------------------------------------------------------------------
 # 16. Cascade Map
 # ---------------------------------------------------------------------------
+
 
 class TestCheckCascade:
     """Tests for CircuitBreakerRegistry.check_cascade()."""
@@ -1014,6 +1142,7 @@ class TestCheckCascade:
 # ---------------------------------------------------------------------------
 # 17. Independent service tracking
 # ---------------------------------------------------------------------------
+
 
 class TestIndependentServices:
     """Multiple circuit breakers track independently."""
@@ -1093,7 +1222,9 @@ class TestThreadSafety:
 
     def test_concurrent_record_failure(self):
         """Multiple threads recording failures should not corrupt state."""
-        cb = RealCircuitBreaker("concurrent", failure_threshold=100, recovery_timeout=999.0)
+        cb = RealCircuitBreaker(
+            "concurrent", failure_threshold=100, recovery_timeout=999.0
+        )
         errors = []
 
         def record_failures():
@@ -1115,7 +1246,12 @@ class TestThreadSafety:
 
     def test_concurrent_try_acquire_half_open(self):
         """In HALF_OPEN with max_calls=1, only one thread should acquire."""
-        cb = RealCircuitBreaker("concurrent_ho", failure_threshold=1, recovery_timeout=0.0, half_open_max_calls=1)
+        cb = RealCircuitBreaker(
+            "concurrent_ho",
+            failure_threshold=1,
+            recovery_timeout=0.0,
+            half_open_max_calls=1,
+        )
         cb.record_failure()
         # State is OPEN with recovery_timeout=0, so try_acquire triggers HALF_OPEN
 

@@ -1,6 +1,7 @@
 """
 Tests fuer Feature 10: Daten-basierter Widerspruch (function_validator pushback).
 """
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -20,16 +21,22 @@ class TestPushbackSetClimate:
     @pytest.mark.asyncio
     async def test_open_window_warning(self, validator, ha_mock):
         """Offenes Fenster bei Heizungssteuerung → Warnung."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {
-                "entity_id": "binary_sensor.fenster_wohnzimmer",
-                "state": "on",
-                "attributes": {"friendly_name": "Fenster Wohnzimmer"},
-            },
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "binary_sensor.fenster_wohnzimmer",
+                    "state": "on",
+                    "attributes": {"friendly_name": "Fenster Wohnzimmer"},
+                },
+            ]
+        )
         result = await validator.get_pushback_context(
             "set_climate",
-            {"entity_id": "climate.wohnzimmer", "temperature": 22, "room": "wohnzimmer"},
+            {
+                "entity_id": "climate.wohnzimmer",
+                "temperature": 22,
+                "room": "wohnzimmer",
+            },
         )
         assert result is not None
         assert len(result["warnings"]) >= 1
@@ -38,38 +45,54 @@ class TestPushbackSetClimate:
     @pytest.mark.asyncio
     async def test_no_warning_closed_windows(self, validator, ha_mock):
         """Geschlossene Fenster → keine Warnung."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {
-                "entity_id": "binary_sensor.fenster_wohnzimmer",
-                "state": "off",
-                "attributes": {"friendly_name": "Fenster Wohnzimmer"},
-            },
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "binary_sensor.fenster_wohnzimmer",
+                    "state": "off",
+                    "attributes": {"friendly_name": "Fenster Wohnzimmer"},
+                },
+            ]
+        )
         result = await validator.get_pushback_context(
             "set_climate",
-            {"entity_id": "climate.wohnzimmer", "temperature": 22, "room": "wohnzimmer"},
+            {
+                "entity_id": "climate.wohnzimmer",
+                "temperature": 22,
+                "room": "wohnzimmer",
+            },
         )
         # Keine Warnung oder leere warnings
         if result is not None:
-            open_window_warnings = [w for w in result["warnings"] if w["type"] == "open_window"]
+            open_window_warnings = [
+                w for w in result["warnings"] if w["type"] == "open_window"
+            ]
             assert len(open_window_warnings) == 0
 
     @pytest.mark.asyncio
     async def test_unnecessary_heating_warning(self, validator, ha_mock):
         """Hohe Temperatur bei warmem Wetter → Warnung."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {
-                "entity_id": "weather.home",
-                "state": "sunny",
-                "attributes": {"temperature": 25, "friendly_name": "Weather"},
-            },
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "weather.home",
+                    "state": "sunny",
+                    "attributes": {"temperature": 25, "friendly_name": "Weather"},
+                },
+            ]
+        )
         result = await validator.get_pushback_context(
             "set_climate",
-            {"entity_id": "climate.wohnzimmer", "temperature": 25, "room": "wohnzimmer"},
+            {
+                "entity_id": "climate.wohnzimmer",
+                "temperature": 25,
+                "room": "wohnzimmer",
+            },
         )
         if result is not None:
-            heating_warnings = [w for w in result["warnings"] if w["type"] == "unnecessary_heating"]
+            heating_warnings = [
+                w for w in result["warnings"] if w["type"] == "unnecessary_heating"
+            ]
             # Bei 25°C draussen und 25°C Ziel: Warnung erwartet
             assert len(heating_warnings) >= 1
 
@@ -86,13 +109,15 @@ class TestPushbackSetLight:
     @pytest.mark.asyncio
     async def test_daylight_warning(self, validator, ha_mock):
         """Sonne hoch (Elevation > 25°) bei Licht an → Warnung."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {
-                "entity_id": "sun.sun",
-                "state": "above_horizon",
-                "attributes": {"elevation": 35.0},
-            },
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "sun.sun",
+                    "state": "above_horizon",
+                    "attributes": {"elevation": 35.0},
+                },
+            ]
+        )
         result = await validator.get_pushback_context(
             "set_light",
             {"entity_id": "light.wohnzimmer", "state": "on", "brightness": 100},
@@ -103,31 +128,37 @@ class TestPushbackSetLight:
     @pytest.mark.asyncio
     async def test_no_warning_low_sun(self, validator, ha_mock):
         """Sonne niedrig → keine Warnung."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {
-                "entity_id": "sun.sun",
-                "state": "above_horizon",
-                "attributes": {"elevation": 10.0},
-            },
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "sun.sun",
+                    "state": "above_horizon",
+                    "attributes": {"elevation": 10.0},
+                },
+            ]
+        )
         result = await validator.get_pushback_context(
             "set_light",
             {"entity_id": "light.wohnzimmer", "state": "on", "brightness": 100},
         )
         if result is not None:
-            daylight_warnings = [w for w in result["warnings"] if w["type"] == "daylight"]
+            daylight_warnings = [
+                w for w in result["warnings"] if w["type"] == "daylight"
+            ]
             assert len(daylight_warnings) == 0
 
     @pytest.mark.asyncio
     async def test_no_warning_light_off(self, validator, ha_mock):
         """Licht ausschalten → keine Warnung."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {
-                "entity_id": "sun.sun",
-                "state": "above_horizon",
-                "attributes": {"elevation": 50.0},
-            },
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "sun.sun",
+                    "state": "above_horizon",
+                    "attributes": {"elevation": 50.0},
+                },
+            ]
+        )
         result = await validator.get_pushback_context(
             "set_light",
             {"entity_id": "light.wohnzimmer", "state": "off"},
@@ -149,13 +180,15 @@ class TestPushbackSetCover:
     @pytest.mark.asyncio
     async def test_storm_warning(self, validator, ha_mock):
         """Starker Wind (> 60 km/h) bei Rolladen oeffnen → Warnung."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {
-                "entity_id": "weather.home",
-                "state": "windy",
-                "attributes": {"wind_speed": 75, "friendly_name": "Weather"},
-            },
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "weather.home",
+                    "state": "windy",
+                    "attributes": {"wind_speed": 75, "friendly_name": "Weather"},
+                },
+            ]
+        )
         result = await validator.get_pushback_context(
             "set_cover",
             {"entity_id": "cover.wohnzimmer", "action": "open"},
@@ -166,31 +199,37 @@ class TestPushbackSetCover:
     @pytest.mark.asyncio
     async def test_no_warning_calm_wind(self, validator, ha_mock):
         """Leichter Wind → keine Warnung."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {
-                "entity_id": "weather.home",
-                "state": "sunny",
-                "attributes": {"wind_speed": 20, "friendly_name": "Weather"},
-            },
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "weather.home",
+                    "state": "sunny",
+                    "attributes": {"wind_speed": 20, "friendly_name": "Weather"},
+                },
+            ]
+        )
         result = await validator.get_pushback_context(
             "set_cover",
             {"entity_id": "cover.wohnzimmer", "action": "open"},
         )
         if result is not None:
-            storm_warnings = [w for w in result["warnings"] if w["type"] == "storm_warning"]
+            storm_warnings = [
+                w for w in result["warnings"] if w["type"] == "storm_warning"
+            ]
             assert len(storm_warnings) == 0
 
     @pytest.mark.asyncio
     async def test_no_warning_closing_cover(self, validator, ha_mock):
         """Rolladen schliessen → keine Warnung (auch bei Sturm)."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {
-                "entity_id": "weather.home",
-                "state": "windy",
-                "attributes": {"wind_speed": 75, "friendly_name": "Weather"},
-            },
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "weather.home",
+                    "state": "windy",
+                    "attributes": {"wind_speed": 75, "friendly_name": "Weather"},
+                },
+            ]
+        )
         result = await validator.get_pushback_context(
             "set_cover",
             {"entity_id": "cover.wohnzimmer", "action": "close"},
@@ -211,7 +250,11 @@ class TestFormatPushbackWarnings:
             ]
         }
         result = FunctionValidator.format_pushback_warnings(pushback)
-        assert "SITUATIONSBEWUSSTSEIN" in result or "WIDERSPRUCH" in result or "DATEN" in result
+        assert (
+            "SITUATIONSBEWUSSTSEIN" in result
+            or "WIDERSPRUCH" in result
+            or "DATEN" in result
+        )
         assert "Fenster Wohnzimmer ist offen" in result
         assert "Sonne" in result
 
@@ -241,13 +284,15 @@ class TestBrightnessValueError:
     @pytest.mark.asyncio
     async def test_invalid_brightness_no_crash(self, validator, ha_mock):
         """Ungueltiger Brightness-String crasht nicht."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {
-                "entity_id": "sun.sun",
-                "state": "above_horizon",
-                "attributes": {"elevation": 50.0},
-            },
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "sun.sun",
+                    "state": "above_horizon",
+                    "attributes": {"elevation": 50.0},
+                },
+            ]
+        )
         # brightness als ungueltiger String → kein Crash
         result = await validator.get_pushback_context(
             "set_light",
@@ -293,12 +338,20 @@ class TestPhase2BSolarPushback:
     @pytest.mark.asyncio
     async def test_solar_loss_warning(self, validator, ha_mock):
         """Warnung wenn Rollladen geschlossen wird waehrend Solar produziert."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.solar_power", "state": "500",
-             "attributes": {"friendly_name": "Solar Power"}},
-            {"entity_id": "weather.home", "state": "sunny",
-             "attributes": {"temperature": 20, "wind_speed": 10}},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "sensor.solar_power",
+                    "state": "500",
+                    "attributes": {"friendly_name": "Solar Power"},
+                },
+                {
+                    "entity_id": "weather.home",
+                    "state": "sunny",
+                    "attributes": {"temperature": 20, "wind_speed": 10},
+                },
+            ]
+        )
         result = await validator._pushback_set_cover(
             {"action": "close", "room": "wohnzimmer"},
             {"solar_loss": True, "storm_warning": True},
@@ -310,12 +363,20 @@ class TestPhase2BSolarPushback:
     @pytest.mark.asyncio
     async def test_no_solar_warning_low_production(self, validator, ha_mock):
         """Keine Warnung bei geringer Solar-Produktion (< 100W)."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.solar_power", "state": "50",
-             "attributes": {"friendly_name": "Solar Power"}},
-            {"entity_id": "weather.home", "state": "cloudy",
-             "attributes": {"temperature": 15, "wind_speed": 5}},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "sensor.solar_power",
+                    "state": "50",
+                    "attributes": {"friendly_name": "Solar Power"},
+                },
+                {
+                    "entity_id": "weather.home",
+                    "state": "cloudy",
+                    "attributes": {"temperature": 15, "wind_speed": 5},
+                },
+            ]
+        )
         result = await validator._pushback_set_cover(
             {"action": "close", "room": "wohnzimmer"},
             {"solar_loss": True, "storm_warning": True},
@@ -337,16 +398,28 @@ class TestPhase2BPeakTariff:
     @pytest.mark.asyncio
     async def test_peak_tariff_warning(self, validator, ha_mock):
         """Warnung bei hohem Strompreis und hoher Heiz-Temperatur."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.electricity_price", "state": "0.45",
-             "attributes": {"friendly_name": "Strompreis"}},
-            {"entity_id": "weather.home", "state": "cloudy",
-             "attributes": {"temperature": 5, "wind_speed": 10}},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "sensor.electricity_price",
+                    "state": "0.45",
+                    "attributes": {"friendly_name": "Strompreis"},
+                },
+                {
+                    "entity_id": "weather.home",
+                    "state": "cloudy",
+                    "attributes": {"temperature": 5, "wind_speed": 10},
+                },
+            ]
+        )
         result = await validator._pushback_set_climate(
             {"room": "wohnzimmer", "temperature": 24},
-            {"open_windows": False, "empty_room": False,
-             "unnecessary_heating": False, "peak_tariff": True},
+            {
+                "open_windows": False,
+                "empty_room": False,
+                "unnecessary_heating": False,
+                "peak_tariff": True,
+            },
         )
         if result:
             types = [w["type"] for w in result["warnings"]]
@@ -355,14 +428,23 @@ class TestPhase2BPeakTariff:
     @pytest.mark.asyncio
     async def test_no_peak_tariff_low_price(self, validator, ha_mock):
         """Keine Warnung bei niedrigem Strompreis."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.electricity_price", "state": "0.15",
-             "attributes": {"friendly_name": "Strompreis"}},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "sensor.electricity_price",
+                    "state": "0.15",
+                    "attributes": {"friendly_name": "Strompreis"},
+                },
+            ]
+        )
         result = await validator._pushback_set_climate(
             {"room": "wohnzimmer", "temperature": 24},
-            {"open_windows": False, "empty_room": False,
-             "unnecessary_heating": False, "peak_tariff": True},
+            {
+                "open_windows": False,
+                "empty_room": False,
+                "unnecessary_heating": False,
+                "peak_tariff": True,
+            },
         )
         if result:
             types = [w["type"] for w in result.get("warnings", [])]

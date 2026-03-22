@@ -21,6 +21,7 @@ from assistant.conditional_commands import (
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def redis_mock():
     r = AsyncMock()
@@ -53,8 +54,8 @@ def cc_with_redis(cc, redis_mock):
 
 # ── Initialize ────────────────────────────────────────────────────────
 
-class TestInitialize:
 
+class TestInitialize:
     @pytest.mark.asyncio
     async def test_initialize_with_redis(self, cc, redis_mock):
         redis_mock.scard = AsyncMock(return_value=5)
@@ -75,8 +76,8 @@ class TestInitialize:
 
 # ── Create Conditional ────────────────────────────────────────────────
 
-class TestCreateConditional:
 
+class TestCreateConditional:
     @pytest.mark.asyncio
     async def test_no_redis(self, cc):
         result = await cc.create_conditional(
@@ -88,7 +89,9 @@ class TestCreateConditional:
     @pytest.mark.asyncio
     async def test_successful_creation(self, cc_with_redis, redis_mock):
         result = await cc_with_redis.create_conditional(
-            "state_change", "sensor.regen:on", "set_cover",
+            "state_change",
+            "sensor.regen:on",
+            "set_cover",
             {"room": "all", "position": 0},
             label="Bei Regen Rolladen runter",
             ttl_hours=12,
@@ -103,8 +106,12 @@ class TestCreateConditional:
     @pytest.mark.asyncio
     async def test_creation_dauerhaft(self, cc_with_redis):
         result = await cc_with_redis.create_conditional(
-            "state_change", "light.test:on", "set_light", {},
-            one_shot=False, ttl_hours=48,
+            "state_change",
+            "light.test:on",
+            "set_light",
+            {},
+            one_shot=False,
+            ttl_hours=48,
         )
         assert result["success"] is True
         assert "dauerhaft" in result["message"]
@@ -113,7 +120,10 @@ class TestCreateConditional:
     @pytest.mark.asyncio
     async def test_creation_singular_hour(self, cc_with_redis):
         result = await cc_with_redis.create_conditional(
-            "state_change", "light.test:on", "set_light", {},
+            "state_change",
+            "light.test:on",
+            "set_light",
+            {},
             ttl_hours=1,
         )
         assert result["success"] is True
@@ -123,7 +133,10 @@ class TestCreateConditional:
     @pytest.mark.asyncio
     async def test_auto_label(self, cc_with_redis):
         result = await cc_with_redis.create_conditional(
-            "state_change", "sensor.x:on", "set_light", {},
+            "state_change",
+            "sensor.x:on",
+            "set_light",
+            {},
         )
         assert result["success"] is True
         assert "sensor.x:on" in result["message"]
@@ -131,7 +144,11 @@ class TestCreateConditional:
     @pytest.mark.asyncio
     async def test_ttl_clamped_min(self, cc_with_redis, redis_mock):
         result = await cc_with_redis.create_conditional(
-            "state_change", "s:on", "set_light", {}, ttl_hours=0,
+            "state_change",
+            "s:on",
+            "set_light",
+            {},
+            ttl_hours=0,
         )
         assert result["success"] is True
         # TTL should be clamped to 1h minimum
@@ -141,7 +158,11 @@ class TestCreateConditional:
     @pytest.mark.asyncio
     async def test_ttl_clamped_max(self, cc_with_redis, redis_mock):
         result = await cc_with_redis.create_conditional(
-            "state_change", "s:on", "set_light", {}, ttl_hours=999,
+            "state_change",
+            "s:on",
+            "set_light",
+            {},
+            ttl_hours=999,
         )
         assert result["success"] is True
         call_args = redis_mock.setex.call_args
@@ -150,7 +171,10 @@ class TestCreateConditional:
     @pytest.mark.asyncio
     async def test_owner_only_action_blocked_for_member(self, cc_with_redis):
         result = await cc_with_redis.create_conditional(
-            "state_change", "s:on", "lock_door", {},
+            "state_change",
+            "s:on",
+            "lock_door",
+            {},
             trust_level="member",
         )
         assert result["success"] is False
@@ -159,7 +183,10 @@ class TestCreateConditional:
     @pytest.mark.asyncio
     async def test_owner_only_action_allowed_for_owner(self, cc_with_redis):
         result = await cc_with_redis.create_conditional(
-            "state_change", "s:on", "unlock_door", {},
+            "state_change",
+            "s:on",
+            "unlock_door",
+            {},
             trust_level="owner",
         )
         assert result["success"] is True
@@ -167,7 +194,10 @@ class TestCreateConditional:
     @pytest.mark.asyncio
     async def test_owner_only_action_blocked_for_guest(self, cc_with_redis):
         result = await cc_with_redis.create_conditional(
-            "state_change", "s:on", "arm_alarm", {},
+            "state_change",
+            "s:on",
+            "arm_alarm",
+            {},
             trust_level="guest",
         )
         assert result["success"] is False
@@ -176,7 +206,10 @@ class TestCreateConditional:
     async def test_redis_error_during_save(self, cc_with_redis, redis_mock):
         redis_mock.setex = AsyncMock(side_effect=ConnectionError("down"))
         result = await cc_with_redis.create_conditional(
-            "state_change", "s:on", "set_light", {},
+            "state_change",
+            "s:on",
+            "set_light",
+            {},
         )
         assert result["success"] is False
         assert "nicht gespeichert" in result["message"]
@@ -184,8 +217,8 @@ class TestCreateConditional:
 
 # ── Check Event ───────────────────────────────────────────────────────
 
-class TestCheckEvent:
 
+class TestCheckEvent:
     @pytest.mark.asyncio
     async def test_no_redis_returns_empty(self, cc):
         result = await cc.check_event("light.kitchen", "on", "off")
@@ -411,8 +444,8 @@ class TestCheckEvent:
 
 # ── Trigger Match (via real class method) ──────────────────────────────
 
-class TestCheckTriggerMatchReal:
 
+class TestCheckTriggerMatchReal:
     def test_state_change_exact_match(self, cc):
         cond = {"trigger_type": "state_change", "trigger_value": "light.kitchen:on"}
         assert cc._check_trigger_match(cond, "light.kitchen", "on", "off", {}) is True
@@ -439,15 +472,22 @@ class TestCheckTriggerMatchReal:
 
     def test_person_arrives_not_person_entity(self, cc):
         cond = {"trigger_type": "person_arrives", "trigger_value": "alice"}
-        assert cc._check_trigger_match(cond, "device_tracker.alice", "home", "away", {}) is False
+        assert (
+            cc._check_trigger_match(cond, "device_tracker.alice", "home", "away", {})
+            is False
+        )
 
     def test_person_arrives_already_home(self, cc):
         cond = {"trigger_type": "person_arrives", "trigger_value": "alice"}
-        assert cc._check_trigger_match(cond, "person.alice", "home", "home", {}) is False
+        assert (
+            cc._check_trigger_match(cond, "person.alice", "home", "home", {}) is False
+        )
 
     def test_person_arrives_wrong_person(self, cc):
         cond = {"trigger_type": "person_arrives", "trigger_value": "bob"}
-        assert cc._check_trigger_match(cond, "person.alice", "home", "away", {}) is False
+        assert (
+            cc._check_trigger_match(cond, "person.alice", "home", "away", {}) is False
+        )
 
     def test_person_leaves(self, cc):
         cond = {"trigger_type": "person_leaves", "trigger_value": "alice"}
@@ -455,35 +495,57 @@ class TestCheckTriggerMatchReal:
 
     def test_person_leaves_not_home(self, cc):
         cond = {"trigger_type": "person_leaves", "trigger_value": "alice"}
-        assert cc._check_trigger_match(cond, "person.alice", "away", "away", {}) is False
+        assert (
+            cc._check_trigger_match(cond, "person.alice", "away", "away", {}) is False
+        )
 
     def test_state_attribute_gt_pipe_delim(self, cc):
         cond = {
             "trigger_type": "state_attribute",
             "trigger_value": "sensor.temp|temperature|>|25",
         }
-        assert cc._check_trigger_match(cond, "sensor.temp", "on", "off", {"temperature": "30"}) is True
+        assert (
+            cc._check_trigger_match(
+                cond, "sensor.temp", "on", "off", {"temperature": "30"}
+            )
+            is True
+        )
 
     def test_state_attribute_lt_colon_delim(self, cc):
         cond = {
             "trigger_type": "state_attribute",
             "trigger_value": "sensor.temp:temperature:<:25",
         }
-        assert cc._check_trigger_match(cond, "sensor.temp", "on", "off", {"temperature": "20"}) is True
+        assert (
+            cc._check_trigger_match(
+                cond, "sensor.temp", "on", "off", {"temperature": "20"}
+            )
+            is True
+        )
 
     def test_state_attribute_eq_numeric(self, cc):
         cond = {
             "trigger_type": "state_attribute",
             "trigger_value": "sensor.temp:temperature:=:25",
         }
-        assert cc._check_trigger_match(cond, "sensor.temp", "on", "off", {"temperature": "25"}) is True
+        assert (
+            cc._check_trigger_match(
+                cond, "sensor.temp", "on", "off", {"temperature": "25"}
+            )
+            is True
+        )
 
     def test_state_attribute_eq_string_fallback(self, cc):
         cond = {
             "trigger_type": "state_attribute",
             "trigger_value": "media_player.tv:source:=:HDMI 1",
         }
-        assert cc._check_trigger_match(cond, "media_player.tv", "on", "off", {"source": "HDMI 1"}) is True
+        assert (
+            cc._check_trigger_match(
+                cond, "media_player.tv", "on", "off", {"source": "HDMI 1"}
+            )
+            is True
+        )
 
     def test_state_attribute_missing_attr(self, cc):
         cond = {
@@ -494,14 +556,22 @@ class TestCheckTriggerMatchReal:
 
     def test_state_attribute_insufficient_parts(self, cc):
         cond = {"trigger_type": "state_attribute", "trigger_value": "sensor.temp:temp"}
-        assert cc._check_trigger_match(cond, "sensor.temp", "on", "off", {"temp": "30"}) is False
+        assert (
+            cc._check_trigger_match(cond, "sensor.temp", "on", "off", {"temp": "30"})
+            is False
+        )
 
     def test_state_attribute_wrong_entity(self, cc):
         cond = {
             "trigger_type": "state_attribute",
             "trigger_value": "sensor.other:temperature:>:25",
         }
-        assert cc._check_trigger_match(cond, "sensor.temp", "on", "off", {"temperature": "30"}) is False
+        assert (
+            cc._check_trigger_match(
+                cond, "sensor.temp", "on", "off", {"temperature": "30"}
+            )
+            is False
+        )
 
     def test_unknown_trigger_type(self, cc):
         cond = {"trigger_type": "unknown", "trigger_value": "anything"}
@@ -510,8 +580,8 @@ class TestCheckTriggerMatchReal:
 
 # ── List Conditionals ─────────────────────────────────────────────────
 
-class TestListConditionals:
 
+class TestListConditionals:
     @pytest.mark.asyncio
     async def test_no_redis(self, cc):
         result = await cc.list_conditionals()
@@ -572,8 +642,8 @@ class TestListConditionals:
 
 # ── Delete Conditional ────────────────────────────────────────────────
 
-class TestDeleteConditional:
 
+class TestDeleteConditional:
     @pytest.mark.asyncio
     async def test_no_redis(self, cc):
         result = await cc.delete_conditional("abc")

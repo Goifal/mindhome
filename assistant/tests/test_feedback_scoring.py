@@ -36,6 +36,7 @@ BASE_COOLDOWN = 300  # 5 Minuten
 # Cooldown-Berechnung (extrahiert)
 # ============================================================
 
+
 def calculate_cooldown(score: float, base: int = BASE_COOLDOWN) -> int:
     """Berechnet adaptiven Cooldown basierend auf Score."""
     if score >= SCORE_BOOST:
@@ -52,6 +53,7 @@ def calculate_cooldown(score: float, base: int = BASE_COOLDOWN) -> int:
 # Notification-Entscheidung (extrahiert, synchron fuer Tests)
 # ============================================================
 
+
 def should_notify(urgency: str, score: float) -> dict:
     """Entscheidet ob Notification gesendet werden soll."""
     if urgency == "critical":
@@ -59,17 +61,37 @@ def should_notify(urgency: str, score: float) -> dict:
 
     if urgency == "high":
         if score < SCORE_SUPPRESS:
-            return {"allow": False, "reason": f"score_too_low ({score:.2f})", "cooldown": 0}
-        return {"allow": True, "reason": "high_priority", "cooldown": calculate_cooldown(score)}
+            return {
+                "allow": False,
+                "reason": f"score_too_low ({score:.2f})",
+                "cooldown": 0,
+            }
+        return {
+            "allow": True,
+            "reason": "high_priority",
+            "cooldown": calculate_cooldown(score),
+        }
 
     if urgency == "medium":
         if score < SCORE_REDUCE:
-            return {"allow": False, "reason": f"score_too_low ({score:.2f})", "cooldown": 0}
-        return {"allow": True, "reason": "score_ok", "cooldown": calculate_cooldown(score)}
+            return {
+                "allow": False,
+                "reason": f"score_too_low ({score:.2f})",
+                "cooldown": 0,
+            }
+        return {
+            "allow": True,
+            "reason": "score_ok",
+            "cooldown": calculate_cooldown(score),
+        }
 
     # LOW
     if score < SCORE_NORMAL:
-        return {"allow": False, "reason": f"low_priority_score_insufficient ({score:.2f})", "cooldown": 0}
+        return {
+            "allow": False,
+            "reason": f"low_priority_score_insufficient ({score:.2f})",
+            "cooldown": 0,
+        }
     return {"allow": True, "reason": "score_ok", "cooldown": calculate_cooldown(score)}
 
 
@@ -82,6 +104,7 @@ def apply_feedback(current_score: float, feedback_type: str) -> float:
 # ============================================================
 # Cooldown Tests
 # ============================================================
+
 
 class TestCooldown:
     """Cooldown-Berechnung basierend auf Score."""
@@ -122,6 +145,7 @@ class TestCooldown:
 # ============================================================
 # Notification-Entscheidung Tests
 # ============================================================
+
 
 class TestShouldNotify:
     """Notification-Entscheidungslogik."""
@@ -179,6 +203,7 @@ class TestShouldNotify:
 # ============================================================
 # Feedback-Delta Tests
 # ============================================================
+
 
 class TestFeedbackDeltas:
     """Score-Aenderungen bei verschiedenem Feedback."""

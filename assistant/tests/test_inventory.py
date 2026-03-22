@@ -113,7 +113,9 @@ class TestAddItem:
 
     @pytest.mark.asyncio
     async def test_add_item_success(self, manager, redis_mock):
-        result = await manager.add_item("Milch", quantity=2, expiry_date="2026-04-01", category="kuehlschrank")
+        result = await manager.add_item(
+            "Milch", quantity=2, expiry_date="2026-04-01", category="kuehlschrank"
+        )
         assert result["success"] is True
         assert "Milch" in result["message"]
         redis_mock.hset.assert_called_once()
@@ -130,7 +132,11 @@ class TestAddItem:
         result = await manager.add_item("Brot")
         assert result["success"] is True
         call_kwargs = redis_mock.hset.call_args
-        mapping = call_kwargs[1]["mapping"] if "mapping" in call_kwargs[1] else call_kwargs[0][1]
+        mapping = (
+            call_kwargs[1]["mapping"]
+            if "mapping" in call_kwargs[1]
+            else call_kwargs[0][1]
+        )
         assert mapping["quantity"] == "1"
         assert mapping["category"] == "sonstiges"
 

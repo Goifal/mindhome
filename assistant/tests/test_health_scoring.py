@@ -18,6 +18,7 @@ import pytest
 # Scoring-Funktionen (pure static methods, aus health_monitor.py)
 # ============================================================
 
+
 def score_co2(ppm: float) -> int:
     if ppm < 600:
         return 100
@@ -56,6 +57,7 @@ def score_temperature(temp: float) -> int:
 # Threshold-Check-Funktionen (extrahiert)
 # ============================================================
 
+
 def check_co2(ppm: float, warn: int = 1000, critical: int = 1500) -> dict | None:
     if ppm >= critical:
         return {"type": "co2_critical", "urgency": "high", "value": ppm}
@@ -80,7 +82,9 @@ def check_temperature(temp: float, low: int = 16, high: int = 27) -> dict | None
     return None
 
 
-def check_humidor(percent: float, warn_below: int = 62, warn_above: int = 75, target: int = 69) -> dict | None:
+def check_humidor(
+    percent: float, warn_below: int = 62, warn_above: int = 75, target: int = 69
+) -> dict | None:
     if percent < warn_below:
         return {"type": "humidor_low", "urgency": "medium", "value": percent}
     elif percent > warn_above:
@@ -92,23 +96,27 @@ def check_humidor(percent: float, warn_below: int = 62, warn_above: int = 75, ta
 # CO2 Scoring Tests
 # ============================================================
 
+
 class TestCO2Scoring:
     """CO2-Score: ppm → 0-100."""
 
-    @pytest.mark.parametrize("ppm,expected", [
-        (400, 100),   # Frische Luft
-        (599, 100),
-        (600, 85),    # Grenzwert
-        (700, 85),
-        (800, 65),
-        (900, 65),
-        (1000, 45),
-        (1100, 45),
-        (1200, 25),
-        (1400, 25),
-        (1500, 10),   # Kritisch
-        (2000, 10),
-    ])
+    @pytest.mark.parametrize(
+        "ppm,expected",
+        [
+            (400, 100),  # Frische Luft
+            (599, 100),
+            (600, 85),  # Grenzwert
+            (700, 85),
+            (800, 65),
+            (900, 65),
+            (1000, 45),
+            (1100, 45),
+            (1200, 25),
+            (1400, 25),
+            (1500, 10),  # Kritisch
+            (2000, 10),
+        ],
+    )
     def test_co2_score(self, ppm, expected):
         assert score_co2(ppm) == expected
 
@@ -125,20 +133,24 @@ class TestCO2Scoring:
 # Humidity Scoring Tests
 # ============================================================
 
+
 class TestHumidityScoring:
     """Feuchtigkeits-Score: % → 0-100."""
 
-    @pytest.mark.parametrize("percent,expected", [
-        (50, 100),    # Optimal
-        (40, 100),
-        (60, 100),
-        (35, 70),     # Akzeptabel
-        (65, 70),
-        (25, 40),     # Marginal
-        (75, 40),
-        (15, 15),     # Schlecht
-        (85, 15),
-    ])
+    @pytest.mark.parametrize(
+        "percent,expected",
+        [
+            (50, 100),  # Optimal
+            (40, 100),
+            (60, 100),
+            (35, 70),  # Akzeptabel
+            (65, 70),
+            (25, 40),  # Marginal
+            (75, 40),
+            (15, 15),  # Schlecht
+            (85, 15),
+        ],
+    )
     def test_humidity_score(self, percent, expected):
         assert score_humidity(percent) == expected
 
@@ -152,20 +164,24 @@ class TestHumidityScoring:
 # Temperature Scoring Tests
 # ============================================================
 
+
 class TestTemperatureScoring:
     """Temperatur-Score: °C → 0-100."""
 
-    @pytest.mark.parametrize("temp,expected", [
-        (21, 100),    # Optimal
-        (20, 100),
-        (23, 100),
-        (19, 75),     # Akzeptabel
-        (24, 75),
-        (17, 50),     # Marginal
-        (26, 50),
-        (15, 25),     # Schlecht
-        (28, 25),
-    ])
+    @pytest.mark.parametrize(
+        "temp,expected",
+        [
+            (21, 100),  # Optimal
+            (20, 100),
+            (23, 100),
+            (19, 75),  # Akzeptabel
+            (24, 75),
+            (17, 50),  # Marginal
+            (26, 50),
+            (15, 25),  # Schlecht
+            (28, 25),
+        ],
+    )
     def test_temp_score(self, temp, expected):
         assert score_temperature(temp) == expected
 
@@ -173,6 +189,7 @@ class TestTemperatureScoring:
 # ============================================================
 # CO2 Threshold Tests
 # ============================================================
+
 
 class TestCO2Check:
     """CO2-Schwellwert-Pruefung."""
@@ -208,6 +225,7 @@ class TestCO2Check:
 # Humidity Threshold Tests
 # ============================================================
 
+
 class TestHumidityCheck:
     """Feuchtigkeits-Schwellwert-Pruefung."""
 
@@ -234,6 +252,7 @@ class TestHumidityCheck:
 # ============================================================
 # Temperature Threshold Tests
 # ============================================================
+
 
 class TestTemperatureCheck:
     """Temperatur-Schwellwert-Pruefung."""
@@ -262,6 +281,7 @@ class TestTemperatureCheck:
 # ============================================================
 # Humidor Tests
 # ============================================================
+
 
 class TestHumidorCheck:
     """Humidor-spezifische Feuchtigkeitspruefung."""

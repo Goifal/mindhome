@@ -1,6 +1,7 @@
 """
 Tests fuer Feature 5: Emotionales Gedaechtnis (memory_extractor reactions).
 """
+
 import json
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -162,7 +163,13 @@ class TestGetEmotionalContext:
     async def test_below_threshold_returns_none(self, extractor, redis_mock):
         """Unter Threshold (default 2) gibt None zurueck."""
         entries = [
-            json.dumps({"sentiment": "negative", "user_text": "Nein", "timestamp": "2026-01-01"}).encode(),
+            json.dumps(
+                {
+                    "sentiment": "negative",
+                    "user_text": "Nein",
+                    "timestamp": "2026-01-01",
+                }
+            ).encode(),
         ]
         redis_mock.lrange = AsyncMock(return_value=entries)
         result = await extractor.get_emotional_context(
@@ -176,8 +183,20 @@ class TestGetEmotionalContext:
     async def test_above_threshold_returns_warning(self, extractor, redis_mock):
         """Ueber Threshold gibt Warn-String zurueck."""
         entries = [
-            json.dumps({"sentiment": "negative", "user_text": "Nein", "timestamp": "2026-01-01"}).encode(),
-            json.dumps({"sentiment": "negative", "user_text": "Lass das", "timestamp": "2026-01-02"}).encode(),
+            json.dumps(
+                {
+                    "sentiment": "negative",
+                    "user_text": "Nein",
+                    "timestamp": "2026-01-01",
+                }
+            ).encode(),
+            json.dumps(
+                {
+                    "sentiment": "negative",
+                    "user_text": "Lass das",
+                    "timestamp": "2026-01-02",
+                }
+            ).encode(),
         ]
         redis_mock.lrange = AsyncMock(return_value=entries)
         result = await extractor.get_emotional_context(
@@ -193,9 +212,19 @@ class TestGetEmotionalContext:
     async def test_mixed_reactions_only_counts_negative(self, extractor, redis_mock):
         """Nur negative Reaktionen werden gezaehlt."""
         entries = [
-            json.dumps({"sentiment": "positive", "user_text": "Ja", "timestamp": "2026-01-01"}).encode(),
-            json.dumps({"sentiment": "negative", "user_text": "Nein", "timestamp": "2026-01-02"}).encode(),
-            json.dumps({"sentiment": "positive", "user_text": "OK", "timestamp": "2026-01-03"}).encode(),
+            json.dumps(
+                {"sentiment": "positive", "user_text": "Ja", "timestamp": "2026-01-01"}
+            ).encode(),
+            json.dumps(
+                {
+                    "sentiment": "negative",
+                    "user_text": "Nein",
+                    "timestamp": "2026-01-02",
+                }
+            ).encode(),
+            json.dumps(
+                {"sentiment": "positive", "user_text": "OK", "timestamp": "2026-01-03"}
+            ).encode(),
         ]
         redis_mock.lrange = AsyncMock(return_value=entries)
         result = await extractor.get_emotional_context(

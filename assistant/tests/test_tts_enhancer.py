@@ -31,9 +31,11 @@ def enhancer():
 @pytest.fixture
 def enhancer_with_config():
     """Factory fixture: create TTSEnhancer with custom config dict."""
+
     def _make(cfg):
         with patch.object(_tts_mod, "yaml_config", cfg):
             return TTSEnhancer()
+
     return _make
 
 
@@ -41,8 +43,8 @@ def enhancer_with_config():
 # classify_message
 # ------------------------------------------------------------------ #
 
-class TestClassifyMessage:
 
+class TestClassifyMessage:
     def test_warning_alarm(self, enhancer):
         assert enhancer.classify_message("Alarm im Keller!") == "warning"
 
@@ -65,7 +67,9 @@ class TestClassifyMessage:
         assert enhancer.classify_message("Erledigt, Licht ist aus.") == "confirmation"
 
     def test_question_keyword(self, enhancer):
-        assert enhancer.classify_message("Soll ich das Licht einschalten?") == "question"
+        assert (
+            enhancer.classify_message("Soll ich das Licht einschalten?") == "question"
+        )
 
     def test_question_mark_fallback(self, enhancer):
         assert enhancer.classify_message("Wie spät ist es?") == "question"
@@ -93,12 +97,19 @@ class TestClassifyMessage:
 # enhance
 # ------------------------------------------------------------------ #
 
-class TestEnhance:
 
+class TestEnhance:
     def test_returns_dict_keys(self, enhancer):
         with patch.object(_tts_mod, "yaml_config", _MOCK_CONFIG):
             result = enhancer.enhance("Hallo Welt")
-        assert set(result.keys()) == {"text", "ssml", "message_type", "speed", "pitch", "volume"}
+        assert set(result.keys()) == {
+            "text",
+            "ssml",
+            "message_type",
+            "speed",
+            "pitch",
+            "volume",
+        }
 
     def test_original_text_preserved(self, enhancer):
         with patch.object(_tts_mod, "yaml_config", _MOCK_CONFIG):
@@ -140,28 +151,36 @@ class TestEnhance:
 # get_volume  – priority: critical > whisper > activity > time
 # ------------------------------------------------------------------ #
 
-class TestGetVolume:
 
+class TestGetVolume:
     def test_critical_urgency_returns_emergency(self, enhancer):
         with patch.object(_tts_mod, "yaml_config", _MOCK_CONFIG):
-            vol = enhancer.get_volume(activity="sleeping", message_type="warning", urgency="critical")
+            vol = enhancer.get_volume(
+                activity="sleeping", message_type="warning", urgency="critical"
+            )
         assert vol == 1.0
 
     def test_whisper_mode_overrides_activity(self, enhancer):
         with patch.object(_tts_mod, "yaml_config", _MOCK_CONFIG):
             enhancer._whisper_mode = True
-            vol = enhancer.get_volume(activity="", message_type="casual", urgency="medium")
+            vol = enhancer.get_volume(
+                activity="", message_type="casual", urgency="medium"
+            )
         assert vol == 0.15
 
     def test_sleeping_activity(self, enhancer):
         with patch.object(_tts_mod, "yaml_config", _MOCK_CONFIG):
-            vol = enhancer.get_volume(activity="sleeping", message_type="casual", urgency="medium")
+            vol = enhancer.get_volume(
+                activity="sleeping", message_type="casual", urgency="medium"
+            )
         assert vol == 0.2
 
     def test_default_volume_in_range(self, enhancer):
         """Without special conditions volume should be a float in valid range."""
         with patch.object(_tts_mod, "yaml_config", _MOCK_CONFIG):
-            vol = enhancer.get_volume(activity="", message_type="casual", urgency="medium")
+            vol = enhancer.get_volume(
+                activity="", message_type="casual", urgency="medium"
+            )
         assert 0.0 < vol <= 1.0
 
     def test_critical_beats_whisper(self, enhancer):
@@ -176,8 +195,8 @@ class TestGetVolume:
 # check_whisper_command
 # ------------------------------------------------------------------ #
 
-class TestCheckWhisperCommand:
 
+class TestCheckWhisperCommand:
     def test_activate_psst(self, enhancer):
         assert enhancer.check_whisper_command("psst, sei leise") == "activate"
         assert enhancer._whisper_mode is True
@@ -188,7 +207,9 @@ class TestCheckWhisperCommand:
 
     def test_deactivate_normal(self, enhancer):
         enhancer._whisper_mode = True
-        assert enhancer.check_whisper_command("normale lautstärke bitte") == "deactivate"
+        assert (
+            enhancer.check_whisper_command("normale lautstärke bitte") == "deactivate"
+        )
         assert enhancer._whisper_mode is False
 
     def test_no_command(self, enhancer):
@@ -204,8 +225,8 @@ class TestCheckWhisperCommand:
 # _split_sentences
 # ------------------------------------------------------------------ #
 
-class TestSplitSentences:
 
+class TestSplitSentences:
     def test_single_sentence(self, enhancer):
         assert enhancer._split_sentences("Hallo Welt.") == ["Hallo Welt."]
 
@@ -224,8 +245,8 @@ class TestSplitSentences:
 # _add_warning_emphasis
 # ------------------------------------------------------------------ #
 
-class TestAddWarningEmphasis:
 
+class TestAddWarningEmphasis:
     def test_emphasis_tag_added(self, enhancer):
         result = enhancer._add_warning_emphasis("Es gibt einen Alarm")
         assert "<emphasis" in result
@@ -244,8 +265,8 @@ class TestAddWarningEmphasis:
 # enhance_narration
 # ------------------------------------------------------------------ #
 
-class TestEnhanceNarration:
 
+class TestEnhanceNarration:
     def test_basic_narration(self, enhancer):
         segments = [{"text": "Hallo Welt"}]
         result = enhancer.enhance_narration(segments)
@@ -291,6 +312,7 @@ class TestEnhanceNarration:
 # ------------------------------------------------------------------ #
 # Zusaetzliche Tests fuer 100% Coverage
 # ------------------------------------------------------------------ #
+
 
 class TestSafeFloatInt:
     """Tests fuer _safe_float und _safe_int im __init__ — Zeilen 156-157, 162-163."""
@@ -352,7 +374,11 @@ class TestGetVolumeTimeOfDay:
     def test_evening_volume(self):
         """Abend-Lautstaerke zwischen evening_start und night_start (Zeilen 325, 330)."""
         from datetime import datetime as _dt
-        cfg = {"tts": {}, "volume": {"evening_start": 20, "night_start": 23, "morning_start": 7}}
+
+        cfg = {
+            "tts": {},
+            "volume": {"evening_start": 20, "night_start": 23, "morning_start": 7},
+        }
         with patch.object(_tts_mod, "yaml_config", cfg):
             e = TTSEnhancer()
             with patch.object(_tts_mod, "datetime") as mock_dt:
@@ -363,7 +389,11 @@ class TestGetVolumeTimeOfDay:
     def test_night_volume_over_midnight(self):
         """Nacht-Lautstaerke ueber Mitternacht (Zeilen 335-336)."""
         from datetime import datetime as _dt
-        cfg = {"tts": {}, "volume": {"evening_start": 18, "night_start": 23, "morning_start": 7}}
+
+        cfg = {
+            "tts": {},
+            "volume": {"evening_start": 18, "night_start": 23, "morning_start": 7},
+        }
         with patch.object(_tts_mod, "yaml_config", cfg):
             e = TTSEnhancer()
             # Test at 1:00 AM (nach Mitternacht, sollte Night sein)
@@ -375,7 +405,11 @@ class TestGetVolumeTimeOfDay:
     def test_night_volume_non_wrapping(self):
         """Nacht-Lautstaerke ohne Mitternachts-Wrap (Zeile 338)."""
         from datetime import datetime as _dt
-        cfg = {"tts": {}, "volume": {"evening_start": 22, "night_start": 2, "morning_start": 7}}
+
+        cfg = {
+            "tts": {},
+            "volume": {"evening_start": 22, "night_start": 2, "morning_start": 7},
+        }
         with patch.object(_tts_mod, "yaml_config", cfg):
             e = TTSEnhancer()
             with patch.object(_tts_mod, "datetime") as mock_dt:
@@ -393,7 +427,11 @@ class TestGetVolumeException:
         with patch.object(_tts_mod, "yaml_config", cfg):
             e = TTSEnhancer()
         # yaml_config.get wirft Exception
-        with patch.object(_tts_mod, "yaml_config", MagicMock(get=MagicMock(side_effect=Exception("config broken")))):
+        with patch.object(
+            _tts_mod,
+            "yaml_config",
+            MagicMock(get=MagicMock(side_effect=Exception("config broken"))),
+        ):
             vol = e.get_volume()
         assert vol == 0.8
 
@@ -404,7 +442,11 @@ class TestAutoNightWhisper:
     def test_auto_night_whisper_active_over_midnight(self):
         """Auto-Night-Whisper aktiv bei Nachtzeit ueber Mitternacht (Zeilen 387-388)."""
         from datetime import datetime as _dt
-        cfg = {"tts": {"auto_night_whisper": True}, "volume": {"auto_whisper_start": 23, "auto_whisper_end": 6}}
+
+        cfg = {
+            "tts": {"auto_night_whisper": True},
+            "volume": {"auto_whisper_start": 23, "auto_whisper_end": 6},
+        }
         with patch.object(_tts_mod, "yaml_config", cfg):
             e = TTSEnhancer()
             with patch.object(_tts_mod, "datetime") as mock_dt:
@@ -414,7 +456,11 @@ class TestAutoNightWhisper:
     def test_auto_night_whisper_inactive_during_day(self):
         """Auto-Night-Whisper inaktiv tagsueber (Zeile 389 false branch)."""
         from datetime import datetime as _dt
-        cfg = {"tts": {"auto_night_whisper": True}, "volume": {"auto_whisper_start": 23, "auto_whisper_end": 6}}
+
+        cfg = {
+            "tts": {"auto_night_whisper": True},
+            "volume": {"auto_whisper_start": 23, "auto_whisper_end": 6},
+        }
         with patch.object(_tts_mod, "yaml_config", cfg):
             e = TTSEnhancer()
             with patch.object(_tts_mod, "datetime") as mock_dt:
@@ -433,13 +479,21 @@ class TestAutoNightWhisper:
         cfg = {"tts": {}, "volume": {}}
         with patch.object(_tts_mod, "yaml_config", cfg):
             e = TTSEnhancer()
-        with patch.object(_tts_mod, "yaml_config", MagicMock(get=MagicMock(side_effect=Exception("oops")))):
+        with patch.object(
+            _tts_mod,
+            "yaml_config",
+            MagicMock(get=MagicMock(side_effect=Exception("oops"))),
+        ):
             assert e._is_auto_night_whisper() is False
 
     def test_is_whisper_mode_auto_night(self):
         """is_whisper_mode gibt True zurueck bei Auto-Night-Whisper."""
         from datetime import datetime as _dt
-        cfg = {"tts": {"auto_night_whisper": True}, "volume": {"auto_whisper_start": 23, "auto_whisper_end": 6}}
+
+        cfg = {
+            "tts": {"auto_night_whisper": True},
+            "volume": {"auto_whisper_start": 23, "auto_whisper_end": 6},
+        }
         with patch.object(_tts_mod, "yaml_config", cfg):
             e = TTSEnhancer()
             with patch.object(_tts_mod, "datetime") as mock_dt:
@@ -449,7 +503,11 @@ class TestAutoNightWhisper:
     def test_auto_night_whisper_non_wrapping(self):
         """Auto-Night-Whisper mit start < end (kein Mitternachts-Wrap) (Zeile 389)."""
         from datetime import datetime as _dt
-        cfg = {"tts": {"auto_night_whisper": True}, "volume": {"auto_whisper_start": 1, "auto_whisper_end": 5}}
+
+        cfg = {
+            "tts": {"auto_night_whisper": True},
+            "volume": {"auto_whisper_start": 1, "auto_whisper_end": 5},
+        }
         with patch.object(_tts_mod, "yaml_config", cfg):
             e = TTSEnhancer()
             with patch.object(_tts_mod, "datetime") as mock_dt:
@@ -468,15 +526,17 @@ class TestGenerateSSMLCoverage:
             ssml = e._generate_ssml("Hallo Welt.", "warning", 85, "-10%")
         assert 'rate="85%"' in ssml
         assert 'pitch="-10%"' in ssml
-        assert '<prosody' in ssml
-        assert '</prosody></speak>' in ssml
+        assert "<prosody" in ssml
+        assert "</prosody></speak>" in ssml
 
     def test_ssml_greeting_first_sentence_pause(self):
         """Erster Satz bei Begruessung bekommt Pause danach (Zeilen 436-439)."""
         cfg = {"tts": {"ssml_enabled": True}, "volume": {}}
         with patch.object(_tts_mod, "yaml_config", cfg):
             e = TTSEnhancer()
-            ssml = e._generate_ssml("Guten Morgen. Hier dein Briefing.", "greeting", 100)
+            ssml = e._generate_ssml(
+                "Guten Morgen. Hier dein Briefing.", "greeting", 100
+            )
         assert f'break time="{e.pause_greeting}ms"' in ssml
 
     def test_ssml_warning_emphasis_and_pause(self):
@@ -536,6 +596,7 @@ class TestGenerateSSMLCoverage:
 # ============================================================
 # Phase 3C: Emotionale TTS-Tiefe
 # ============================================================
+
 
 class TestPhase3CEmotionSSML:
     """Tests fuer Emotion-basierte SSML-Anpassung."""

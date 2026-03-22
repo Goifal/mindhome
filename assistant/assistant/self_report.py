@@ -30,6 +30,7 @@ class SelfReport:
         self.enabled = False
         self._cfg = yaml_config.get("self_report", {})
         from .config import resolve_model
+
         self._model = resolve_model(self._cfg.get("model", ""), fallback_tier="deep")
         self._last_report_day: str = ""
 
@@ -40,11 +41,18 @@ class SelfReport:
         self.enabled = self._cfg.get("enabled", True) and self.redis is not None
         logger.info("SelfReport initialisiert (enabled=%s)", self.enabled)
 
-    async def generate_report(self, outcome_tracker=None, correction_memory=None,
-                              feedback_tracker=None, anticipation=None,
-                              insight_engine=None, learning_observer=None,
-                              response_quality=None, error_patterns=None,
-                              self_optimization=None) -> dict:
+    async def generate_report(
+        self,
+        outcome_tracker=None,
+        correction_memory=None,
+        feedback_tracker=None,
+        anticipation=None,
+        insight_engine=None,
+        learning_observer=None,
+        response_quality=None,
+        error_patterns=None,
+        self_optimization=None,
+    ) -> dict:
         """Sammelt Daten aus allen Subsystemen und generiert einen Bericht."""
         if not self.enabled or not self.redis:
             return {"error": "SelfReport nicht aktiv"}
@@ -56,9 +64,15 @@ class SelfReport:
             try:
                 _cached_day = await self.redis.get("mha:self_report:last_day")
                 if _cached_day:
-                    self._last_report_day = _cached_day.decode() if isinstance(_cached_day, bytes) else _cached_day
+                    self._last_report_day = (
+                        _cached_day.decode()
+                        if isinstance(_cached_day, bytes)
+                        else _cached_day
+                    )
             except Exception as e:
-                logger.debug("Self-Report Tagescache aus Redis laden fehlgeschlagen: %s", e)
+                logger.debug(
+                    "Self-Report Tagescache aus Redis laden fehlgeschlagen: %s", e
+                )
         if self._last_report_day == today:
             cached = await self.get_latest_report()
             if cached:
@@ -77,7 +91,9 @@ class SelfReport:
         if correction_memory:
             try:
                 data["corrections"] = await correction_memory.get_stats()
-                data["correction_patterns"] = await correction_memory.get_correction_patterns()
+                data[
+                    "correction_patterns"
+                ] = await correction_memory.get_correction_patterns()
             except Exception as e:
                 logger.debug("SelfReport: Korrektur-Daten Fehler: %s", e)
 
@@ -87,13 +103,13 @@ class SelfReport:
             except Exception as e:
                 logger.debug("SelfReport: Feedback-Daten Fehler: %s", e)
 
-        if learning_observer and hasattr(learning_observer, 'get_learning_report'):
+        if learning_observer and hasattr(learning_observer, "get_learning_report"):
             try:
                 data["learning"] = await learning_observer.get_learning_report()
             except Exception as e:
                 logger.debug("SelfReport: Learning-Daten Fehler: %s", e)
 
-        if anticipation and hasattr(anticipation, 'get_suggestions'):
+        if anticipation and hasattr(anticipation, "get_suggestions"):
             try:
                 suggestions = await anticipation.get_suggestions()
                 data["anticipation"] = {
@@ -103,7 +119,7 @@ class SelfReport:
             except Exception as e:
                 logger.debug("SelfReport: Anticipation-Daten Fehler: %s", e)
 
-        if insight_engine and hasattr(insight_engine, 'get_status'):
+        if insight_engine and hasattr(insight_engine, "get_status"):
             try:
                 data["insight_engine"] = await insight_engine.get_status()
             except Exception as e:
@@ -191,7 +207,9 @@ class SelfReport:
         if corrections:
             total_corr = corrections.get("total_corrections", 0)
             rules = corrections.get("active_rules", 0)
-            data_text.append(f"- Korrekturen: {total_corr} gesamt, {rules} aktive Regeln")
+            data_text.append(
+                f"- Korrekturen: {total_corr} gesamt, {rules} aktive Regeln"
+            )
 
         quality = data.get("response_quality", {})
         if quality:
@@ -206,12 +224,24 @@ class SelfReport:
 
         feedback = data.get("feedback", {})
         if feedback:
-            high_scores = {k: v for k, v in feedback.items() if isinstance(v, (int, float)) and v > 0.7}
-            low_scores = {k: v for k, v in feedback.items() if isinstance(v, (int, float)) and v < 0.3}
+            high_scores = {
+                k: v
+                for k, v in feedback.items()
+                if isinstance(v, (int, float)) and v > 0.7
+            }
+            low_scores = {
+                k: v
+                for k, v in feedback.items()
+                if isinstance(v, (int, float)) and v < 0.3
+            }
             if high_scores:
-                data_text.append(f"- Gut angenommene Meldungen: {', '.join(high_scores.keys())}")
+                data_text.append(
+                    f"- Gut angenommene Meldungen: {', '.join(high_scores.keys())}"
+                )
             if low_scores:
-                data_text.append(f"- Schlecht angenommene Meldungen: {', '.join(low_scores.keys())}")
+                data_text.append(
+                    f"- Schlecht angenommene Meldungen: {', '.join(low_scores.keys())}"
+                )
 
         if not data_text:
             return ""

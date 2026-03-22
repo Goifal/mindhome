@@ -61,10 +61,13 @@ class KnowledgeBase:
                 port=_parsed.port or 8000,
             )
             from .embeddings import get_embedding_function
+
             ef = get_embedding_function()
             col_kwargs = {
                 "name": "mha_knowledge_base",
-                "metadata": {"description": "MindHome Assistant - Wissensdatenbank (RAG)"},
+                "metadata": {
+                    "description": "MindHome Assistant - Wissensdatenbank (RAG)"
+                },
             }
             if ef:
                 col_kwargs["embedding_function"] = ef
@@ -102,15 +105,11 @@ class KnowledgeBase:
         watch_interval = kb_config.get("watch_interval_seconds", 120)
         if watch_interval > 0:
             self._watch_running = True
-            self._watch_task = asyncio.create_task(
-                self._watch_loop(watch_interval)
-            )
+            self._watch_task = asyncio.create_task(self._watch_loop(watch_interval))
             self._watch_task.add_done_callback(
                 lambda t: t.exception() if not t.cancelled() else None
             )
-            logger.info(
-                "Knowledge Base Auto-Watch aktiv (alle %ds)", watch_interval
-            )
+            logger.info("Knowledge Base Auto-Watch aktiv (alle %ds)", watch_interval)
 
     async def stop(self):
         """Stoppt den Auto-Watch Task."""
@@ -175,7 +174,8 @@ class KnowledgeBase:
                     if total > 0:
                         logger.info(
                             "Knowledge Base Auto-Watch: %d Datei(en) -> %d neue Chunks",
-                            len(new_or_changed), total,
+                            len(new_or_changed),
+                            total,
                         )
 
                 self._file_mtimes = current_files
@@ -246,7 +246,9 @@ class KnowledgeBase:
             content = await asyncio.to_thread(self._extract_pdf_text, filepath)
         else:
             try:
-                content = await asyncio.to_thread(filepath.read_text, encoding="utf-8", errors="ignore")
+                content = await asyncio.to_thread(
+                    filepath.read_text, encoding="utf-8", errors="ignore"
+                )
             except Exception as e:
                 logger.warning("Fehler beim Lesen von %s: %s", filepath.name, e)
                 return 0
@@ -292,7 +294,9 @@ class KnowledgeBase:
         if new_chunks > 0:
             logger.info(
                 "Knowledge Base: %s -> %d/%d Chunks gespeichert",
-                filepath.name, new_chunks, len(chunks),
+                filepath.name,
+                new_chunks,
+                len(chunks),
             )
         return new_chunks
 
@@ -375,7 +379,11 @@ class KnowledgeBase:
                     logger.debug("Query-Fehler: %s", results)
                     continue
 
-                if not results or not results.get("documents") or not results["documents"][0]:
+                if (
+                    not results
+                    or not results.get("documents")
+                    or not results["documents"][0]
+                ):
                     continue
 
                 for i, doc in enumerate(results["documents"][0]):
@@ -401,7 +409,10 @@ class KnowledgeBase:
                     relevance = round(1.0 - min(adjusted_distance, 1.0), 2)
 
                     # Bestes Ergebnis pro Chunk behalten
-                    if content_hash not in all_hits or all_hits[content_hash]["relevance"] < relevance:
+                    if (
+                        content_hash not in all_hits
+                        or all_hits[content_hash]["relevance"] < relevance
+                    ):
                         all_hits[content_hash] = {
                             "content": doc,
                             "source": meta.get("source_file", "unbekannt"),
@@ -410,7 +421,9 @@ class KnowledgeBase:
                         }
 
             # Nach Relevanz sortieren, Top-N zurueckgeben
-            ranked = sorted(all_hits.values(), key=lambda h: h["relevance"], reverse=True)
+            ranked = sorted(
+                all_hits.values(), key=lambda h: h["relevance"], reverse=True
+            )
             return ranked[:limit]
         except Exception as e:
             logger.error("Fehler bei Knowledge-Suche: %s", e)
@@ -427,15 +440,76 @@ class KnowledgeBase:
 
         # Stoppwoerter entfernen fuer Keyword-Query
         stopwords = {
-            "ich", "du", "er", "sie", "es", "wir", "ihr", "mein", "dein",
-            "das", "die", "der", "den", "dem", "des", "ein", "eine", "einen",
-            "ist", "sind", "war", "hat", "haben", "wird", "kann", "soll",
-            "und", "oder", "aber", "doch", "wenn", "weil", "dass", "ob",
-            "nicht", "kein", "keine", "mir", "mich", "dir", "dich",
-            "was", "wie", "wo", "wer", "wann", "warum",
-            "bitte", "mal", "noch", "auch", "schon", "ja", "nein",
-            "in", "im", "am", "an", "auf", "fuer", "von", "zu", "mit",
-            "ueber", "unter", "nach", "vor", "bei", "aus", "um",
+            "ich",
+            "du",
+            "er",
+            "sie",
+            "es",
+            "wir",
+            "ihr",
+            "mein",
+            "dein",
+            "das",
+            "die",
+            "der",
+            "den",
+            "dem",
+            "des",
+            "ein",
+            "eine",
+            "einen",
+            "ist",
+            "sind",
+            "war",
+            "hat",
+            "haben",
+            "wird",
+            "kann",
+            "soll",
+            "und",
+            "oder",
+            "aber",
+            "doch",
+            "wenn",
+            "weil",
+            "dass",
+            "ob",
+            "nicht",
+            "kein",
+            "keine",
+            "mir",
+            "mich",
+            "dir",
+            "dich",
+            "was",
+            "wie",
+            "wo",
+            "wer",
+            "wann",
+            "warum",
+            "bitte",
+            "mal",
+            "noch",
+            "auch",
+            "schon",
+            "ja",
+            "nein",
+            "in",
+            "im",
+            "am",
+            "an",
+            "auf",
+            "fuer",
+            "von",
+            "zu",
+            "mit",
+            "ueber",
+            "unter",
+            "nach",
+            "vor",
+            "bei",
+            "aus",
+            "um",
         }
         words = query.lower().split()
         keywords = [w for w in words if w not in stopwords and len(w) > 2]
@@ -471,7 +545,8 @@ class KnowledgeBase:
         try:
             total = await asyncio.to_thread(self.chroma_collection.count)
             existing = await asyncio.to_thread(
-                self.chroma_collection.get, include=["metadatas"],
+                self.chroma_collection.get,
+                include=["metadatas"],
             )
             sources = set()
             if existing and existing.get("metadatas"):
@@ -488,7 +563,9 @@ class KnowledgeBase:
             logger.error("Fehler bei Knowledge-Stats: %s", e)
             return {"enabled": True, "total_chunks": 0, "sources": []}
 
-    async def get_chunks(self, source: str = "", offset: int = 0, limit: int = 50) -> list[dict]:
+    async def get_chunks(
+        self, source: str = "", offset: int = 0, limit: int = 50
+    ) -> list[dict]:
         """Gibt alle Chunks zurueck (optional gefiltert nach Quelle)."""
         if not self.chroma_collection:
             return []
@@ -505,16 +582,18 @@ class KnowledgeBase:
                 for i, chunk_id in enumerate(results["ids"]):
                     doc = results["documents"][i] if results.get("documents") else ""
                     meta = results["metadatas"][i] if results.get("metadatas") else {}
-                    chunks.append({
-                        "id": chunk_id,
-                        "content": doc[:200] + ("..." if len(doc) > 200 else ""),
-                        "content_full": doc,
-                        "source": meta.get("source_file", "unbekannt"),
-                        "chunk_index": meta.get("chunk_index", 0),
-                    })
+                    chunks.append(
+                        {
+                            "id": chunk_id,
+                            "content": doc[:200] + ("..." if len(doc) > 200 else ""),
+                            "content_full": doc,
+                            "source": meta.get("source_file", "unbekannt"),
+                            "chunk_index": meta.get("chunk_index", 0),
+                        }
+                    )
             # Sortieren nach Quelle + Index
             chunks.sort(key=lambda c: (c["source"], int(c["chunk_index"])))
-            return chunks[offset:offset + limit]
+            return chunks[offset : offset + limit]
         except Exception as e:
             logger.error("Fehler beim Laden der Chunks: %s", e)
             return []
@@ -548,12 +627,16 @@ class KnowledgeBase:
 
             chunk_ids = results["ids"]
             # Hashes aus dem Cache entfernen
-            for meta in (results.get("metadatas") or []):
+            for meta in results.get("metadatas") or []:
                 h = meta.get("content_hash", "")
                 self._ingested_hashes.discard(h)
 
             await asyncio.to_thread(self.chroma_collection.delete, ids=chunk_ids)
-            logger.info("Knowledge Base: %d Chunks von '%s' geloescht", len(chunk_ids), source_file)
+            logger.info(
+                "Knowledge Base: %d Chunks von '%s' geloescht",
+                len(chunk_ids),
+                source_file,
+            )
             return len(chunk_ids)
         except Exception as e:
             logger.error("Fehler beim Loeschen von Quelle '%s': %s", source_file, e)
@@ -590,10 +673,13 @@ class KnowledgeBase:
                 self._chroma_client.delete_collection, "mha_knowledge_base"
             )
             from .embeddings import get_embedding_function
+
             ef = get_embedding_function()
             col_kwargs = {
                 "name": "mha_knowledge_base",
-                "metadata": {"description": "MindHome Assistant - Wissensdatenbank (RAG)"},
+                "metadata": {
+                    "description": "MindHome Assistant - Wissensdatenbank (RAG)"
+                },
             }
             if ef:
                 col_kwargs["embedding_function"] = ef
@@ -611,10 +697,14 @@ class KnowledgeBase:
         """Loescht die Collection und liest alle Dateien mit dem aktuellen Embedding-Modell neu ein."""
         cleared = await self.clear()
         if not cleared:
-            return {"success": False, "error": "Collection konnte nicht geloescht werden"}
+            return {
+                "success": False,
+                "error": "Collection konnte nicht geloescht werden",
+            }
 
         new_chunks = await self.ingest_all()
         from .embeddings import DEFAULT_MODEL
+
         kb_config = yaml_config.get("knowledge_base", {})
         model = kb_config.get("embedding_model", DEFAULT_MODEL)
         return {
@@ -635,6 +725,7 @@ class KnowledgeBase:
         # 1. PyMuPDF (fitz)
         try:
             import fitz  # PyMuPDF
+
             doc = fitz.open(str(filepath))
             pages = []
             for page in doc:
@@ -642,7 +733,9 @@ class KnowledgeBase:
             doc.close()
             text = "\n\n".join(pages)
             if text.strip():
-                logger.info("PDF gelesen via PyMuPDF: %s (%d Seiten)", filepath.name, len(pages))
+                logger.info(
+                    "PDF gelesen via PyMuPDF: %s (%d Seiten)", filepath.name, len(pages)
+                )
                 return text
         except ImportError:
             pass
@@ -652,6 +745,7 @@ class KnowledgeBase:
         # 2. pdfplumber
         try:
             import pdfplumber
+
             pages = []
             with pdfplumber.open(filepath) as pdf:
                 for page in pdf.pages:
@@ -660,7 +754,11 @@ class KnowledgeBase:
                         pages.append(page_text)
             text = "\n\n".join(pages)
             if text.strip():
-                logger.info("PDF gelesen via pdfplumber: %s (%d Seiten)", filepath.name, len(pages))
+                logger.info(
+                    "PDF gelesen via pdfplumber: %s (%d Seiten)",
+                    filepath.name,
+                    len(pages),
+                )
                 return text
         except ImportError:
             pass
@@ -670,6 +768,7 @@ class KnowledgeBase:
         # 3. PyPDF2
         try:
             from PyPDF2 import PdfReader
+
             reader = PdfReader(str(filepath))
             pages = []
             for page in reader.pages:
@@ -678,7 +777,9 @@ class KnowledgeBase:
                     pages.append(page_text)
             text = "\n\n".join(pages)
             if text.strip():
-                logger.info("PDF gelesen via PyPDF2: %s (%d Seiten)", filepath.name, len(pages))
+                logger.info(
+                    "PDF gelesen via PyPDF2: %s (%d Seiten)", filepath.name, len(pages)
+                )
                 return text
         except ImportError:
             pass
@@ -694,7 +795,9 @@ class KnowledgeBase:
 
     @staticmethod
     def _split_text(
-        text: str, chunk_size: int = DEFAULT_CHUNK_SIZE, overlap: int = DEFAULT_CHUNK_OVERLAP
+        text: str,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        overlap: int = DEFAULT_CHUNK_OVERLAP,
     ) -> list[str]:
         """Teilt Text in Chunks auf. Versucht an Absaetzen/Saetzen zu trennen."""
         if len(text) <= chunk_size:
@@ -727,7 +830,9 @@ class KnowledgeBase:
                         if not sent:
                             continue
                         if len(current_chunk) + len(sent) + 1 <= chunk_size:
-                            current_chunk = f"{current_chunk} {sent}" if current_chunk else sent
+                            current_chunk = (
+                                f"{current_chunk} {sent}" if current_chunk else sent
+                            )
                         else:
                             if current_chunk:
                                 chunks.append(current_chunk.strip())

@@ -18,6 +18,7 @@ from assistant.personality import PersonalityEngine
 # Feedback Tracker: Per-Person Scores (Feature 6)
 # ============================================================
 
+
 class TestFeedbackPerPerson:
     """Tests fuer per-person Feedback-Scores."""
 
@@ -63,6 +64,7 @@ class TestFeedbackPerPerson:
 # Self-Optimization: Erweiterte Parameter (Feature 9d)
 # ============================================================
 
+
 class TestSelfOptimizationExtended:
     """Tests fuer erweiterte Self-Optimization."""
 
@@ -79,19 +81,22 @@ class TestSelfOptimizationExtended:
 
     @pytest.fixture
     def self_opt(self, redis_mock, ollama_mock):
-        with patch("assistant.self_optimization.yaml_config", {
-            "self_optimization": {
-                "enabled": True,
-                "approval_mode": "manual",
-                "analysis_interval": "weekly",
-                "max_proposals_per_cycle": 3,
-                "model": "qwen3.5:9b",
-                "parameter_bounds": {
-                    "sarcasm_level": {"min": 1, "max": 5},
-                    "insight_cooldown_hours": {"min": 2, "max": 8},
+        with patch(
+            "assistant.self_optimization.yaml_config",
+            {
+                "self_optimization": {
+                    "enabled": True,
+                    "approval_mode": "manual",
+                    "analysis_interval": "weekly",
+                    "max_proposals_per_cycle": 3,
+                    "model": "qwen3.5:9b",
+                    "parameter_bounds": {
+                        "sarcasm_level": {"min": 1, "max": 5},
+                        "insight_cooldown_hours": {"min": 2, "max": 8},
+                    },
                 },
             },
-        }):
+        ):
             versioning = MagicMock()
             so = SelfOptimization(ollama_mock, versioning)
             so._redis = redis_mock
@@ -114,9 +119,9 @@ class TestSelfOptimizationExtended:
     @pytest.mark.asyncio
     async def test_get_correction_patterns(self, self_opt):
         memory = MagicMock()
-        memory.get_correction_patterns = AsyncMock(return_value=[
-            {"action": "set_light", "type": "room_confusion", "count": 5}
-        ])
+        memory.get_correction_patterns = AsyncMock(
+            return_value=[{"action": "set_light", "type": "room_confusion", "count": 5}]
+        )
         patterns = await self_opt._get_correction_patterns(memory)
         assert len(patterns) == 1
 
@@ -129,6 +134,7 @@ class TestSelfOptimizationExtended:
 # ============================================================
 # Personality: Learned Rules Section (Feature 7)
 # ============================================================
+
 
 class TestPersonalityLearnedRules:
     """Tests fuer build_learned_rules_section."""
@@ -155,10 +161,7 @@ class TestPersonalityLearnedRules:
         assert result == ""
 
     def test_max_5_rules(self):
-        rules = [
-            {"text": f"Regel {i}", "confidence": 0.9}
-            for i in range(10)
-        ]
+        rules = [{"text": f"Regel {i}", "confidence": 0.9} for i in range(10)]
         result = PersonalityEngine.build_learned_rules_section(rules)
         # Should have header + 5 rules max
         lines = result.strip().split("\n")

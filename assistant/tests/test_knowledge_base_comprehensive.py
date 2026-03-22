@@ -41,11 +41,13 @@ def chroma():
     m.add = MagicMock()
     m.count = MagicMock(return_value=0)
     m.get = MagicMock(return_value={"ids": [], "metadatas": [], "documents": []})
-    m.query = MagicMock(return_value={
-        "documents": [[]],
-        "metadatas": [[]],
-        "distances": [[]],
-    })
+    m.query = MagicMock(
+        return_value={
+            "documents": [[]],
+            "metadatas": [[]],
+            "distances": [[]],
+        }
+    )
     m.delete = MagicMock()
     m.upsert = MagicMock()
     return m
@@ -130,7 +132,11 @@ class TestIngestFile:
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_bytes(b"fake pdf content")
 
-        with patch.object(KnowledgeBase, "_extract_pdf_text", return_value="Extracted PDF text content."):
+        with patch.object(
+            KnowledgeBase,
+            "_extract_pdf_text",
+            return_value="Extracted PDF text content.",
+        ):
             result = await kb.ingest_file(pdf_file)
         assert result >= 1
 
@@ -313,7 +319,9 @@ class TestGetChunksFiltering:
         chroma.get.return_value = {
             "ids": [f"c{i}" for i in range(10)],
             "documents": [f"Doc {i}" for i in range(10)],
-            "metadatas": [{"source_file": "a.md", "chunk_index": str(i)} for i in range(10)],
+            "metadatas": [
+                {"source_file": "a.md", "chunk_index": str(i)} for i in range(10)
+            ],
         }
         result = await kb.get_chunks(offset=3, limit=4)
         assert len(result) == 4
@@ -444,10 +452,12 @@ class TestSearchEdgeCases:
         """Results should be sorted by relevance (highest first)."""
         chroma.query.return_value = {
             "documents": [["Low relevance doc", "High relevance doc"]],
-            "metadatas": [[
-                {"source_file": "low.md", "content_hash": "h_low"},
-                {"source_file": "high.md", "content_hash": "h_high"},
-            ]],
+            "metadatas": [
+                [
+                    {"source_file": "low.md", "content_hash": "h_low"},
+                    {"source_file": "high.md", "content_hash": "h_high"},
+                ]
+            ],
             "distances": [[0.9, 0.1]],
         }
         result = await kb.search("test", limit=10)
@@ -493,7 +503,9 @@ class TestExtractPdfText:
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 fake")
 
-        with patch.dict("sys.modules", {"fitz": None, "pdfplumber": None, "PyPDF2": None}):
+        with patch.dict(
+            "sys.modules", {"fitz": None, "pdfplumber": None, "PyPDF2": None}
+        ):
             with patch("builtins.__import__", side_effect=ImportError("No PDF lib")):
                 result = KnowledgeBase._extract_pdf_text(pdf_file)
         # With all imports failing, should return empty string

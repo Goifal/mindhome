@@ -19,14 +19,15 @@ from .ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
 from zoneinfo import ZoneInfo
+
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Injection-Schutz
 _INJECTION_PATTERN = re.compile(
-    r'\[(?:SYSTEM|INSTRUCTION|OVERRIDE|ADMIN|COMMAND|PROMPT|ROLE)\b'
-    r'|IGNORE\s+(?:ALL\s+)?(?:PREVIOUS\s+)?INSTRUCTIONS'
-    r'|SYSTEM\s*(?:MODE|OVERRIDE|INSTRUCTION)'
-    r'|<\/?(?:system|instruction|admin|role|prompt)\b',
+    r"\[(?:SYSTEM|INSTRUCTION|OVERRIDE|ADMIN|COMMAND|PROMPT|ROLE)\b"
+    r"|IGNORE\s+(?:ALL\s+)?(?:PREVIOUS\s+)?INSTRUCTIONS"
+    r"|SYSTEM\s*(?:MODE|OVERRIDE|INSTRUCTION)"
+    r"|<\/?(?:system|instruction|admin|role|prompt)\b",
     re.IGNORECASE,
 )
 
@@ -35,8 +36,8 @@ def _sanitize(text: str, max_len: int = 500) -> str:
     """Bereinigt Text gegen Prompt-Injection."""
     if not text or not isinstance(text, str):
         return ""
-    text = text.replace('\n', ' ').replace('\r', ' ')
-    text = re.sub(r'\s{2,}', ' ', text).strip()[:max_len]
+    text = text.replace("\n", " ").replace("\r", " ")
+    text = re.sub(r"\s{2,}", " ", text).strip()[:max_len]
     if _INJECTION_PATTERN.search(text):
         logger.warning("Prompt-Injection blockiert in LLM Enhancer: %.80s", text)
         return ""
@@ -88,6 +89,7 @@ class SmartIntentRecognizer:
     def _get_model(self) -> str:
         if self._model:
             from .config import resolve_model
+
             return resolve_model(self._model, fallback_tier="fast")
         return settings.model_fast
 
@@ -102,37 +104,87 @@ class SmartIntentRecognizer:
 
         # Direkte Befehle ausschliessen
         direct_verbs = (
-            "mach", "schalt", "stell", "setz", "dreh", "fahr",
-            "oeffne", "schliess", "spiel", "stopp", "pause",
+            "mach",
+            "schalt",
+            "stell",
+            "setz",
+            "dreh",
+            "fahr",
+            "oeffne",
+            "schliess",
+            "spiel",
+            "stopp",
+            "pause",
         )
         if any(text_lower.startswith(v) for v in direct_verbs):
             return False
 
         # Fragen sind keine impliziten Wuensche
         question_starts = (
-            "was ", "wer ", "wie ", "wo ", "warum ", "wann ", "welch",
-            "wie viel", "erklaer", "sag mir",
+            "was ",
+            "wer ",
+            "wie ",
+            "wo ",
+            "warum ",
+            "wann ",
+            "welch",
+            "wie viel",
+            "erklaer",
+            "sag mir",
         )
         if any(text_lower.startswith(q) for q in question_starts):
             return False
 
         # Implizite Marker erkennen (hohe Konfidenz)
         implicit_markers = [
-            "mir ist", "mir wird", "es ist so", "es ist zu",
-            "ich kann nicht", "ich friere", "ich schwitze",
-            "es zieht", "es stinkt", "es riecht",
-            "so dunkel", "so hell", "so kalt", "so warm",
-            "so laut", "so leise", "langweilig",
-            "muede", "müde", "wach", "schlecht",
-            "ich geh", "ich muss", "bin gleich",
+            "mir ist",
+            "mir wird",
+            "es ist so",
+            "es ist zu",
+            "ich kann nicht",
+            "ich friere",
+            "ich schwitze",
+            "es zieht",
+            "es stinkt",
+            "es riecht",
+            "so dunkel",
+            "so hell",
+            "so kalt",
+            "so warm",
+            "so laut",
+            "so leise",
+            "langweilig",
+            "muede",
+            "müde",
+            "wach",
+            "schlecht",
+            "ich geh",
+            "ich muss",
+            "bin gleich",
             # Erweiterte Marker: Zustandsbeschreibungen und Emotionen
-            "puh", "bah", "igitt", "boah", "uff",
-            "hier ist", "hier riecht", "hier stinkt",
-            "es nervt", "ich halt das nicht", "das haelt man nicht aus",
-            "es ist viel zu", "total", "echt zu", "viel zu",
-            "muffig", "stickig", "zugig",
-            "ich brauche", "ich brauch", "ich will",
-            "komme nicht zur ruhe", "kann mich nicht konzentrier",
+            "puh",
+            "bah",
+            "igitt",
+            "boah",
+            "uff",
+            "hier ist",
+            "hier riecht",
+            "hier stinkt",
+            "es nervt",
+            "ich halt das nicht",
+            "das haelt man nicht aus",
+            "es ist viel zu",
+            "total",
+            "echt zu",
+            "viel zu",
+            "muffig",
+            "stickig",
+            "zugig",
+            "ich brauche",
+            "ich brauch",
+            "ich will",
+            "komme nicht zur ruhe",
+            "kann mich nicht konzentrier",
         ]
         if any(m in text_lower for m in implicit_markers):
             return True
@@ -144,17 +196,23 @@ class SmartIntentRecognizer:
         if 3 <= word_count <= 8:
             # Kein Device-Verb, kein direkter Befehl → LLM entscheiden lassen
             device_verbs_in_text = (
-                "einschalten", "ausschalten", "anschalten", "abschalten",
-                "aktivier", "deaktivier", "hochfahren", "runterfahren",
+                "einschalten",
+                "ausschalten",
+                "anschalten",
+                "abschalten",
+                "aktivier",
+                "deaktivier",
+                "hochfahren",
+                "runterfahren",
             )
             if not any(v in text_lower for v in device_verbs_in_text):
                 return True
 
         return False
 
-    async def recognize(self, text: str, room: str = "",
-                        time_of_day: str = "",
-                        room_state: str = "") -> Optional[dict]:
+    async def recognize(
+        self, text: str, room: str = "", time_of_day: str = "", room_state: str = ""
+    ) -> Optional[dict]:
         """Erkennt implizite Absichten im Text.
 
         Returns:
@@ -209,7 +267,9 @@ class SmartIntentRecognizer:
                 if confidence >= self.min_confidence:
                     logger.info(
                         "Impliziter Intent erkannt: '%s' -> %s (%.0f%%)",
-                        text[:50], result.get("intent", ""), confidence * 100,
+                        text[:50],
+                        result.get("intent", ""),
+                        confidence * 100,
                     )
                     return result
 
@@ -228,14 +288,14 @@ class SmartIntentRecognizer:
         if "<think>" in text:
             think_end = text.find("</think>")
             if think_end != -1:
-                text = text[think_end + 8:].strip()
+                text = text[think_end + 8 :].strip()
 
         # JSON extrahieren
         start = text.find("{")
         end = text.rfind("}")
         if start != -1 and end != -1 and end > start:
             try:
-                return json.loads(text[start:end + 1])
+                return json.loads(text[start : end + 1])
             except json.JSONDecodeError:
                 pass
         return None
@@ -273,11 +333,11 @@ class ConversationSummarizer:
     def _get_model(self) -> str:
         if self._model:
             from .config import resolve_model
+
             return resolve_model(self._model, fallback_tier="fast")
         return settings.model_fast
 
-    async def summarize(self, messages: list[dict],
-                        person: str = "") -> Optional[str]:
+    async def summarize(self, messages: list[dict], person: str = "") -> Optional[str]:
         """Fasst eine Liste von Gespraechs-Nachrichten zusammen.
 
         Args:
@@ -319,11 +379,14 @@ class ConversationSummarizer:
             if "<think>" in content:
                 think_end = content.find("</think>")
                 if think_end != -1:
-                    content = content[think_end + 8:].strip()
+                    content = content[think_end + 8 :].strip()
 
             if content and len(content) > 10:
-                logger.info("Gespraech zusammengefasst (%d msgs -> %d chars)",
-                            len(messages), len(content))
+                logger.info(
+                    "Gespraech zusammengefasst (%d msgs -> %d chars)",
+                    len(messages),
+                    len(content),
+                )
                 return content
 
             return None
@@ -332,8 +395,9 @@ class ConversationSummarizer:
             logger.debug("Conversation Summary fehlgeschlagen: %s", e)
             return None
 
-    async def summarize_for_context(self, messages: list[dict],
-                                    person: str = "") -> Optional[str]:
+    async def summarize_for_context(
+        self, messages: list[dict], person: str = ""
+    ) -> Optional[str]:
         """Erstellt eine kompakte Zusammenfassung fuer den LLM-Kontext.
 
         Kuerzer als summarize() — nur Fakten und offene Themen.
@@ -371,7 +435,7 @@ class ConversationSummarizer:
             if "<think>" in content:
                 think_end = content.find("</think>")
                 if think_end != -1:
-                    content = content[think_end + 8:].strip()
+                    content = content[think_end + 8 :].strip()
 
             return content if content and len(content) > 5 else None
 
@@ -428,6 +492,7 @@ class ProactiveSuggester:
     def _get_model(self) -> str:
         if self._model:
             from .config import resolve_model
+
             return resolve_model(self._model, fallback_tier="smart")
         return settings.model_smart
 
@@ -467,8 +532,15 @@ class ProactiveSuggester:
             return None
 
         now = datetime.now(_LOCAL_TZ)
-        weekdays = ["Montag", "Dienstag", "Mittwoch", "Donnerstag",
-                     "Freitag", "Samstag", "Sonntag"]
+        weekdays = [
+            "Montag",
+            "Dienstag",
+            "Mittwoch",
+            "Donnerstag",
+            "Freitag",
+            "Samstag",
+            "Sonntag",
+        ]
 
         hour = now.hour
         if 5 <= hour < 12:
@@ -481,7 +553,9 @@ class ProactiveSuggester:
             time_of_day = f"Nacht ({hour}:00)"
 
         # Top-Patterns formatieren (max 5 relevanteste)
-        sorted_patterns = sorted(patterns, key=lambda p: p.get("confidence", 0), reverse=True)[:5]
+        sorted_patterns = sorted(
+            patterns, key=lambda p: p.get("confidence", 0), reverse=True
+        )[:5]
         patterns_text = "\n".join(
             f"- {p.get('description', p.get('action', '?'))} "
             f"(Confidence: {p.get('confidence', 0):.0%}, {p.get('occurrences', 0)}x)"
@@ -512,7 +586,7 @@ class ProactiveSuggester:
             if "<think>" in content:
                 think_end = content.find("</think>")
                 if think_end != -1:
-                    content = content[think_end + 8:].strip()
+                    content = content[think_end + 8 :].strip()
 
             if not content or "KEINE" in content.upper() or len(content) < 10:
                 return None
@@ -577,13 +651,19 @@ class ResponseRewriter:
         self.min_length = cfg.get("min_response_length", 15)
         self.max_length = cfg.get("max_response_length", 500)
         self._model = cfg.get("model", "")
-        self._skip_patterns = cfg.get("skip_patterns", [
-            "Erledigt", "Verstanden", "Wird gemacht",
-        ])
+        self._skip_patterns = cfg.get(
+            "skip_patterns",
+            [
+                "Erledigt",
+                "Verstanden",
+                "Wird gemacht",
+            ],
+        )
 
     def _get_model(self) -> str:
         if self._model:
             from .config import resolve_model
+
             return resolve_model(self._model, fallback_tier="fast")
         return settings.model_fast
 
@@ -673,7 +753,7 @@ class ResponseRewriter:
             if "<think>" in content:
                 think_end = content.find("</think>")
                 if think_end != -1:
-                    content = content[think_end + 8:].strip()
+                    content = content[think_end + 8 :].strip()
 
             # Validierung: Rewrite muss sinnvoll sein
             if not content or len(content) < 3:
@@ -681,13 +761,16 @@ class ResponseRewriter:
 
             # Zu lang? Original behalten
             if len(content) > len(response) * 2.5:
-                logger.debug("Rewrite zu lang (%d vs %d), behalte Original",
-                             len(content), len(response))
+                logger.debug(
+                    "Rewrite zu lang (%d vs %d), behalte Original",
+                    len(content),
+                    len(response),
+                )
                 return response
 
             # Fakten-Check: Zahlen aus Original muessen im Rewrite vorkommen
             # Normalisiert Dezimalzahlen (21.5 == 21,5) fuer robusten Vergleich
-            original_numbers = re.findall(r'\d+[.,]?\d*', response)
+            original_numbers = re.findall(r"\d+[.,]?\d*", response)
             if original_numbers:
                 # Normalisiere: Komma→Punkt, dann als Float-Set vergleichen
                 def _normalize_nums(nums: list[str]) -> set[str]:
@@ -701,15 +784,18 @@ class ResponseRewriter:
                     return result
 
                 orig_set = _normalize_nums(original_numbers)
-                rewrite_numbers = re.findall(r'\d+[.,]?\d*', content)
+                rewrite_numbers = re.findall(r"\d+[.,]?\d*", content)
                 rewrite_set = _normalize_nums(rewrite_numbers)
                 missing = orig_set - rewrite_set
                 if missing:
-                    logger.debug("Rewrite hat Zahlen verloren: %s, behalte Original", missing)
+                    logger.debug(
+                        "Rewrite hat Zahlen verloren: %s, behalte Original", missing
+                    )
                     return response
 
-            logger.debug("Response rewritten: '%s' -> '%s'",
-                         response[:50], content[:50])
+            logger.debug(
+                "Response rewritten: '%s' -> '%s'", response[:50], content[:50]
+            )
             return content
 
         except Exception as e:
@@ -720,6 +806,7 @@ class ResponseRewriter:
 # =====================================================================
 # Unified Interface
 # =====================================================================
+
 
 class LLMEnhancer:
     """Zentrale Klasse die alle LLM-Enhancements buendelt."""
@@ -736,6 +823,8 @@ class LLMEnhancer:
 
         logger.info(
             "LLM Enhancer initialisiert (intent=%s, summary=%s, proactive=%s, rewrite=%s)",
-            self.smart_intent.enabled, self.summarizer.enabled,
-            self.proactive.enabled, self.rewriter.enabled,
+            self.smart_intent.enabled,
+            self.summarizer.enabled,
+            self.proactive.enabled,
+            self.rewriter.enabled,
         )

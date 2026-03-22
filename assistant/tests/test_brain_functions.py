@@ -16,17 +16,46 @@ import pytest
 # Sarkasmus-Feedback-Erkennung
 # ============================================================
 
-_SARCASM_POSITIVE = frozenset([
-    "haha", "lol", "hehe", "hihi", "xd", "witzig", "lustig", "gut",
-    "stimmt", "genau", "ja", "ok", "passt", "nice", "geil",
-    "👍", "😂", "😄", "🤣",
-])
+_SARCASM_POSITIVE = frozenset(
+    [
+        "haha",
+        "lol",
+        "hehe",
+        "hihi",
+        "xd",
+        "witzig",
+        "lustig",
+        "gut",
+        "stimmt",
+        "genau",
+        "ja",
+        "ok",
+        "passt",
+        "nice",
+        "geil",
+        "👍",
+        "😂",
+        "😄",
+        "🤣",
+    ]
+)
 
-_SARCASM_NEGATIVE = frozenset([
-    "hoer auf", "lass das", "sei ernst", "nicht witzig", "nervt",
-    "ernst", "bitte sachlich", "ohne sarkasmus", "ohne witz",
-    "lass den quatsch", "reicht", "genug",
-])
+_SARCASM_NEGATIVE = frozenset(
+    [
+        "hoer auf",
+        "lass das",
+        "sei ernst",
+        "nicht witzig",
+        "nervt",
+        "ernst",
+        "bitte sachlich",
+        "ohne sarkasmus",
+        "ohne witz",
+        "lass den quatsch",
+        "reicht",
+        "genug",
+    ]
+)
 
 
 def detect_sarcasm_feedback(text: str) -> bool | None:
@@ -46,7 +75,7 @@ def detect_sarcasm_feedback(text: str) -> bool | None:
     if len(words) <= 3:
         for p in _SARCASM_POSITIVE:
             if len(p) <= 3 and p.isascii() and p.isalpha():
-                if re.search(r'\b' + re.escape(p) + r'\b', text_lower):
+                if re.search(r"\b" + re.escape(p) + r"\b", text_lower):
                     return True
             elif p in text_lower:
                 return True
@@ -56,27 +85,48 @@ def detect_sarcasm_feedback(text: str) -> bool | None:
 class TestSarcasmFeedback:
     """Erkennt positive/negative Reaktionen auf Sarkasmus."""
 
-    @pytest.mark.parametrize("text", [
-        "haha", "lol", "witzig", "nice", "geil", "😂",
-        "ok passt", "ja genau", "gut so",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "haha",
+            "lol",
+            "witzig",
+            "nice",
+            "geil",
+            "😂",
+            "ok passt",
+            "ja genau",
+            "gut so",
+        ],
+    )
     def test_positive_feedback(self, text):
         assert detect_sarcasm_feedback(text) is True
 
-    @pytest.mark.parametrize("text", [
-        "hoer auf damit", "lass das bitte", "sei ernst",
-        "nervt mich", "bitte sachlich",
-        "ohne sarkasmus bitte", "reicht jetzt",
-        "nicht witzig",  # Regression: war vorher positiv wegen "witzig"
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "hoer auf damit",
+            "lass das bitte",
+            "sei ernst",
+            "nervt mich",
+            "bitte sachlich",
+            "ohne sarkasmus bitte",
+            "reicht jetzt",
+            "nicht witzig",  # Regression: war vorher positiv wegen "witzig"
+        ],
+    )
     def test_negative_feedback(self, text):
         assert detect_sarcasm_feedback(text) is False
 
-    @pytest.mark.parametrize("text", [
-        "wie ist das wetter", "mach das licht an",
-        "ich bin muede",
-        "guten morgen",  # Regression: "gut" matchte "guten" als Substring
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "wie ist das wetter",
+            "mach das licht an",
+            "ich bin muede",
+            "guten morgen",  # Regression: "gut" matchte "guten" als Substring
+        ],
+    )
     def test_neutral_no_feedback(self, text):
         assert detect_sarcasm_feedback(text) is None
 
@@ -89,7 +139,9 @@ class TestSarcasmFeedback:
 
     def test_negative_any_length(self):
         """Negative Patterns greifen bei beliebiger Laenge."""
-        result = detect_sarcasm_feedback("Also bitte sei jetzt mal ernst und hoer auf damit")
+        result = detect_sarcasm_feedback(
+            "Also bitte sei jetzt mal ernst und hoer auf damit"
+        )
         assert result is False
 
     # Regression: Bug wo negative Prüfung NACH positiver lief
@@ -118,15 +170,41 @@ class TestSarcasmFeedback:
 # Problem-Solving-Intent
 # ============================================================
 
-_PROBLEM_PATTERNS = frozenset([
-    "wie kann ich", "ich brauche", "zu warm", "zu kalt", "zu dunkel", "zu hell",
-    "strom sparen", "energie sparen", "hast du eine idee", "was schlaegst du vor",
-    "was wuerdest du", "loesung", "problem", "wie kriege ich", "was tun",
-    "vorschlag", "tipp", "empfehlung", "wie spare ich", "wie reduziere ich",
-    "zu laut", "zu leise", "hilf mir", "was mache ich", "alternative",
-    "wie geht das", "geht das besser", "optimieren", "verbessern",
-    "was empfiehlst du", "kannst du helfen",
-])
+_PROBLEM_PATTERNS = frozenset(
+    [
+        "wie kann ich",
+        "ich brauche",
+        "zu warm",
+        "zu kalt",
+        "zu dunkel",
+        "zu hell",
+        "strom sparen",
+        "energie sparen",
+        "hast du eine idee",
+        "was schlaegst du vor",
+        "was wuerdest du",
+        "loesung",
+        "problem",
+        "wie kriege ich",
+        "was tun",
+        "vorschlag",
+        "tipp",
+        "empfehlung",
+        "wie spare ich",
+        "wie reduziere ich",
+        "zu laut",
+        "zu leise",
+        "hilf mir",
+        "was mache ich",
+        "alternative",
+        "wie geht das",
+        "geht das besser",
+        "optimieren",
+        "verbessern",
+        "was empfiehlst du",
+        "kannst du helfen",
+    ]
+)
 
 
 def detect_problem_solving_intent(text: str) -> bool:
@@ -137,33 +215,40 @@ def detect_problem_solving_intent(text: str) -> bool:
 class TestProblemSolvingIntent:
     """Erkennt ob der User ein Problem beschreibt."""
 
-    @pytest.mark.parametrize("text", [
-        "Es ist zu warm im Wohnzimmer",
-        "Wie kann ich Strom sparen?",
-        "Ich brauche Hilfe mit der Heizung",
-        "Hast du eine Idee?",
-        "Hilf mir bitte",
-        "Was wuerdest du vorschlagen?",
-        "Gibt es eine Alternative?",
-        "Wie spare ich Energie?",
-        "Das geht das besser",
-        "Kannst du helfen?",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Es ist zu warm im Wohnzimmer",
+            "Wie kann ich Strom sparen?",
+            "Ich brauche Hilfe mit der Heizung",
+            "Hast du eine Idee?",
+            "Hilf mir bitte",
+            "Was wuerdest du vorschlagen?",
+            "Gibt es eine Alternative?",
+            "Wie spare ich Energie?",
+            "Das geht das besser",
+            "Kannst du helfen?",
+        ],
+    )
     def test_problem_detected(self, text):
         assert detect_problem_solving_intent(text) is True
 
-    @pytest.mark.parametrize("text", [
-        "Licht an",
-        "Wie warm ist es?",
-        "Guten Morgen",
-        "Danke nichts davon",
-        "Hallo Jarvis",
-        "Musik abspielen",
-        "Rollladen hoch",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Licht an",
+            "Wie warm ist es?",
+            "Guten Morgen",
+            "Danke nichts davon",
+            "Hallo Jarvis",
+            "Musik abspielen",
+            "Rollladen hoch",
+        ],
+    )
     def test_no_problem_detected(self, text):
-        assert detect_problem_solving_intent(text) is False, \
+        assert detect_problem_solving_intent(text) is False, (
             f"'{text}' sollte KEIN Problem-Solving-Intent sein"
+        )
 
     def test_danke_nichts_davon_regression(self):
         """Regression: 'Danke nichts davon' hat faelschlicherweise 5 upgrade_signals ausgeloest."""
@@ -174,24 +259,34 @@ class TestProblemSolvingIntent:
 # Smalltalk-Erkennung
 # ============================================================
 
+
 class TestSmallTalkDetection:
     """Testet _detect_smalltalk Patterns isoliert."""
 
     # Wake-Word-Erkennung
-    @pytest.mark.parametrize("text,expected_prefix_removed", [
-        ("Hey Jarvis", None),  # Nur Wake-Word → Begruessung (nicht None)
-        ("Hallo Jarvis", None),
-        ("Jarvis", None),
-    ])
+    @pytest.mark.parametrize(
+        "text,expected_prefix_removed",
+        [
+            ("Hey Jarvis", None),  # Nur Wake-Word → Begruessung (nicht None)
+            ("Hallo Jarvis", None),
+            ("Jarvis", None),
+        ],
+    )
     def test_wake_word_only_returns_greeting(self, text, expected_prefix_removed):
         """Nur Wake-Word ohne Frage → Kurze Begruessung."""
         # Simuliere die Wake-Word-Logik
         t = text.lower().strip().rstrip("?!.")
-        _wake_prefixes = ["hey jarvis", "hallo jarvis", "hi jarvis", "ok jarvis", "jarvis"]
+        _wake_prefixes = [
+            "hey jarvis",
+            "hallo jarvis",
+            "hi jarvis",
+            "ok jarvis",
+            "jarvis",
+        ]
         greeting_returned = False
         for _wp in _wake_prefixes:
             if t.startswith(_wp):
-                rest = t[len(_wp):].strip().lstrip(",").strip()
+                rest = t[len(_wp) :].strip().lstrip(",").strip()
                 if not rest:
                     greeting_returned = True
                 break
@@ -200,105 +295,152 @@ class TestSmallTalkDetection:
     def test_wake_word_with_question_continues(self):
         """Wake-Word + Frage → Frage wird weiterverarbeitet."""
         t = "hey jarvis wer bist du".lower().strip()
-        _wake_prefixes = ["hey jarvis", "hallo jarvis", "hi jarvis", "ok jarvis", "jarvis"]
+        _wake_prefixes = [
+            "hey jarvis",
+            "hallo jarvis",
+            "hi jarvis",
+            "ok jarvis",
+            "jarvis",
+        ]
         rest = None
         for _wp in _wake_prefixes:
             if t.startswith(_wp):
-                rest = t[len(_wp):].strip().lstrip(",").strip()
+                rest = t[len(_wp) :].strip().lstrip(",").strip()
                 break
         assert rest == "wer bist du"
 
     # Identitaetsfragen
-    @pytest.mark.parametrize("text", [
-        "Wer bist du?",
-        "Was bist du?",
-        "Wie heisst du?",
-        "Bist du ein Mensch?",
-        "Bist du eine KI?",
-        "Bist du ein Roboter?",
-        "Bist du echt?",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Wer bist du?",
+            "Was bist du?",
+            "Wie heisst du?",
+            "Bist du ein Mensch?",
+            "Bist du eine KI?",
+            "Bist du ein Roboter?",
+            "Bist du echt?",
+        ],
+    )
     def test_identity_questions_detected(self, text):
         t = text.lower().strip().rstrip("?!.")
         _identity = [
-            "wer bist du", "was bist du", "wie heisst du", "wie heißt du",
-            "bist du ein mensch", "bist du eine ki",
-            "bist du ein roboter", "bist du echt",
+            "wer bist du",
+            "was bist du",
+            "wie heisst du",
+            "wie heißt du",
+            "bist du ein mensch",
+            "bist du eine ki",
+            "bist du ein roboter",
+            "bist du echt",
         ]
         assert any(kw in t for kw in _identity)
 
     # "Kennst du mich?" Fragen
-    @pytest.mark.parametrize("text", [
-        "Weisst du wer ich bin?",
-        "Kennst du mich?",
-        "Wer bin ich?",
-        "Wie heisse ich?",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Weisst du wer ich bin?",
+            "Kennst du mich?",
+            "Wer bin ich?",
+            "Wie heisse ich?",
+        ],
+    )
     def test_know_me_questions_detected(self, text):
         t = text.lower().strip().rstrip("?!.")
         _know_me = [
-            "weisst du wer ich bin", "weißt du wer ich bin",
-            "kennst du mich", "wer bin ich",
-            "weisst du meinen namen", "weißt du meinen namen",
-            "wie heisse ich", "wie heiße ich",
+            "weisst du wer ich bin",
+            "weißt du wer ich bin",
+            "kennst du mich",
+            "wer bin ich",
+            "weisst du meinen namen",
+            "weißt du meinen namen",
+            "wie heisse ich",
+            "wie heiße ich",
         ]
         assert any(kw in t for kw in _know_me)
 
     # Danke-Patterns
-    @pytest.mark.parametrize("text", [
-        "Danke Jarvis",
-        "Danke dir",
-        "Danke schoen",
-        "Vielen Dank",
-        "Dankeschoen",
-        "Danke",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Danke Jarvis",
+            "Danke dir",
+            "Danke schoen",
+            "Vielen Dank",
+            "Dankeschoen",
+            "Danke",
+        ],
+    )
     def test_thanks_detected(self, text):
         t = text.lower().strip().rstrip("?!.")
         _thanks = [
-            "danke jarvis", "danke dir", "danke schoen", "danke sehr",
-            "vielen dank", "dankeschoen", "dankeschön", "danke schön",
+            "danke jarvis",
+            "danke dir",
+            "danke schoen",
+            "danke sehr",
+            "vielen dank",
+            "dankeschoen",
+            "dankeschön",
+            "danke schön",
         ]
         is_thanks = any(kw in t for kw in _thanks) or t.strip().rstrip("!.") == "danke"
         assert is_thanks is True
 
     # Nicht als Smalltalk erkannt
-    @pytest.mark.parametrize("text", [
-        "Wie geht es dir?",
-        "Guten Morgen",
-        "Was machst du gerade?",
-        "Erzaehl mir einen Witz",
-        "Mach das Licht an",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Wie geht es dir?",
+            "Guten Morgen",
+            "Was machst du gerade?",
+            "Erzaehl mir einen Witz",
+            "Mach das Licht an",
+        ],
+    )
     def test_not_smalltalk_goes_to_llm(self, text):
         """Diese Saetze sollen ans LLM durchgelassen werden."""
         t = text.lower().strip().rstrip("?!.")
 
         _identity = [
-            "wer bist du", "was bist du", "wie heisst du", "wie heißt du",
-            "bist du ein mensch", "bist du eine ki",
-            "bist du ein roboter", "bist du echt",
+            "wer bist du",
+            "was bist du",
+            "wie heisst du",
+            "wie heißt du",
+            "bist du ein mensch",
+            "bist du eine ki",
+            "bist du ein roboter",
+            "bist du echt",
         ]
         _know_me = [
-            "weisst du wer ich bin", "weißt du wer ich bin",
-            "kennst du mich", "wer bin ich",
+            "weisst du wer ich bin",
+            "weißt du wer ich bin",
+            "kennst du mich",
+            "wer bin ich",
         ]
         _thanks = [
-            "danke jarvis", "danke dir", "danke schoen", "danke sehr",
-            "vielen dank", "dankeschoen", "dankeschön",
+            "danke jarvis",
+            "danke dir",
+            "danke schoen",
+            "danke sehr",
+            "vielen dank",
+            "dankeschoen",
+            "dankeschön",
         ]
 
         is_identity = any(kw in t for kw in _identity)
         is_know_me = any(kw in t for kw in _know_me)
         is_thanks = any(kw in t for kw in _thanks) or t == "danke"
 
-        assert not (is_identity or is_know_me or is_thanks), \
+        assert not (is_identity or is_know_me or is_thanks), (
             f"'{text}' sollte ans LLM weitergeleitet werden"
+        )
 
 
 # ============================================================
 # Kalender-Diagnose
 # ============================================================
+
 
 class TestCalendarDiagnostic:
     """Erkennt Fragen nach verfuegbaren Kalendern."""
@@ -306,28 +448,43 @@ class TestCalendarDiagnostic:
     @staticmethod
     def _detect(text: str) -> bool:
         t = text.lower().strip()
-        return any(kw in t for kw in [
-            "welchen kalender", "welche kalender", "welcher kalender",
-            "kalender hast du", "kalender siehst du", "kalender nutzt du",
-            "kalender verwendest du", "kalender gibt es",
-            "zeig mir die kalender", "zeig kalender entities",
-            "kalender konfigur",
-        ])
+        return any(
+            kw in t
+            for kw in [
+                "welchen kalender",
+                "welche kalender",
+                "welcher kalender",
+                "kalender hast du",
+                "kalender siehst du",
+                "kalender nutzt du",
+                "kalender verwendest du",
+                "kalender gibt es",
+                "zeig mir die kalender",
+                "zeig kalender entities",
+                "kalender konfigur",
+            ]
+        )
 
-    @pytest.mark.parametrize("text", [
-        "Welche Kalender hast du?",
-        "Welchen Kalender nutzt du?",
-        "Zeig mir die Kalender",
-        "Kalender konfigurieren",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Welche Kalender hast du?",
+            "Welchen Kalender nutzt du?",
+            "Zeig mir die Kalender",
+            "Kalender konfigurieren",
+        ],
+    )
     def test_calendar_diagnostic_detected(self, text):
         assert self._detect(text) is True
 
-    @pytest.mark.parametrize("text", [
-        "Was steht morgen im Kalender?",
-        "Habe ich heute Termine?",
-        "Wann ist der naechste Termin?",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Was steht morgen im Kalender?",
+            "Habe ich heute Termine?",
+            "Wann ist der naechste Termin?",
+        ],
+    )
     def test_not_calendar_diagnostic(self, text):
         assert self._detect(text) is False
 
@@ -336,36 +493,49 @@ class TestCalendarDiagnostic:
 # "Das Uebliche" Patterns
 # ============================================================
 
+
 class TestDasUebliche:
     """Erkennt 'Das Uebliche' / 'Wie immer' Patterns."""
 
     _PATTERNS = [
-        "das uebliche", "das übliche", "wie immer",
-        "mach fertig", "mach alles fertig", "wie gewohnt",
-        "das gleiche wie immer", "du weisst schon",
-        "mach mal", "mach das ding",
+        "das uebliche",
+        "das übliche",
+        "wie immer",
+        "mach fertig",
+        "mach alles fertig",
+        "wie gewohnt",
+        "das gleiche wie immer",
+        "du weisst schon",
+        "mach mal",
+        "mach das ding",
     ]
 
     def _detect(self, text: str) -> bool:
         text_lower = text.lower().strip()
         return any(p in text_lower for p in self._PATTERNS)
 
-    @pytest.mark.parametrize("text", [
-        "Das Uebliche bitte",
-        "Mach wie immer",
-        "Mach fertig",
-        "Wie gewohnt bitte",
-        "Du weisst schon",
-        "Mach mal",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Das Uebliche bitte",
+            "Mach wie immer",
+            "Mach fertig",
+            "Wie gewohnt bitte",
+            "Du weisst schon",
+            "Mach mal",
+        ],
+    )
     def test_das_uebliche_detected(self, text):
         assert self._detect(text) is True
 
-    @pytest.mark.parametrize("text", [
-        "Mach das Licht an",
-        "Wie geht es dir?",
-        "Was gibt es Neues?",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Mach das Licht an",
+            "Wie geht es dir?",
+            "Was gibt es Neues?",
+        ],
+    )
     def test_not_das_uebliche(self, text):
         assert self._detect(text) is False
 
@@ -373,6 +543,7 @@ class TestDasUebliche:
 # ============================================================
 # Response-Filter: Refusal-Patterns
 # ============================================================
+
 
 class TestRefusalRemoval:
     """LLM-Refusals werden aus Antworten entfernt."""
@@ -393,13 +564,19 @@ class TestRefusalRemoval:
             text = re.sub(rp, "", text, flags=re.IGNORECASE).strip()
         return text
 
-    @pytest.mark.parametrize("input_text,expected_clean", [
-        ("Aber ich kann diese Anfrage nicht erfüllen. Hier ist die Temperatur.", "Hier ist die Temperatur."),
-        ("Ich kann dir dabei nicht helfen. Das Licht ist an.", "Das Licht ist an."),
-        ("Das kann ich leider nicht tun. Versuch es anders.", "Versuch es anders."),
-        ("Ich habe leider keinen Zugriff auf die Daten.", ""),
-        ("Ich habe keine Möglichkeit das zu ändern.", ""),
-    ])
+    @pytest.mark.parametrize(
+        "input_text,expected_clean",
+        [
+            (
+                "Aber ich kann diese Anfrage nicht erfüllen. Hier ist die Temperatur.",
+                "Hier ist die Temperatur.",
+            ),
+            ("Ich kann dir dabei nicht helfen. Das Licht ist an.", "Das Licht ist an."),
+            ("Das kann ich leider nicht tun. Versuch es anders.", "Versuch es anders."),
+            ("Ich habe leider keinen Zugriff auf die Daten.", ""),
+            ("Ich habe keine Möglichkeit das zu ändern.", ""),
+        ],
+    )
     def test_refusals_removed(self, input_text, expected_clean):
         result = self._remove_refusals(input_text)
         assert result == expected_clean
@@ -412,6 +589,7 @@ class TestRefusalRemoval:
 # ============================================================
 # Response-Filter: Chatbot-Floskeln
 # ============================================================
+
 
 class TestChatbotPhrases:
     """Chatbot-Floskeln werden entfernt."""
@@ -429,12 +607,15 @@ class TestChatbotPhrases:
             text = re.sub(floskel, "", text, flags=re.IGNORECASE).strip()
         return text
 
-    @pytest.mark.parametrize("input_text", [
-        "Erledigt. Wenn du noch Fragen hast, sag Bescheid.",
-        "Alles klar. Ich stehe dir gerne zur Verfügung.",
-        "Das Licht ist an. Lass mich wissen wenn du mehr brauchst.",
-        "22 Grad. Ich bin hier um dir zu helfen.",
-    ])
+    @pytest.mark.parametrize(
+        "input_text",
+        [
+            "Erledigt. Wenn du noch Fragen hast, sag Bescheid.",
+            "Alles klar. Ich stehe dir gerne zur Verfügung.",
+            "Das Licht ist an. Lass mich wissen wenn du mehr brauchst.",
+            "22 Grad. Ich bin hier um dir zu helfen.",
+        ],
+    )
     def test_chatbot_floskeln_removed(self, input_text):
         result = self._remove_chatbot(input_text)
         assert "Fragen" not in result or "Fragen ha" not in result
@@ -445,6 +626,7 @@ class TestChatbotPhrases:
 # ============================================================
 # Response-Filter: Markdown-Entfernung
 # ============================================================
+
 
 class TestMarkdownRemoval:
     """Markdown-Formatierung wird entfernt."""
@@ -469,7 +651,10 @@ class TestMarkdownRemoval:
         assert self._remove_markdown("Das ist *kursiv*") == "Das ist kursiv"
 
     def test_bullets_removed(self):
-        assert self._remove_markdown("- Punkt eins\n- Punkt zwei") == "Punkt eins\nPunkt zwei"
+        assert (
+            self._remove_markdown("- Punkt eins\n- Punkt zwei")
+            == "Punkt eins\nPunkt zwei"
+        )
 
     def test_numbered_list_removed(self):
         assert self._remove_markdown("1. Erster\n2. Zweiter") == "Erster\nZweiter"
@@ -486,6 +671,7 @@ class TestMarkdownRemoval:
 # Response-Filter: Safety (Sicherheitsgeraete)
 # ============================================================
 
+
 class TestSafetyFilter:
     """Sicherheitsgeraete duerfen nie als ignorierbar dargestellt werden."""
 
@@ -497,34 +683,53 @@ class TestSafetyFilter:
     def setup_patterns(self):
         sd = self._safety_devices
         self._dismiss_patterns = [
-            re.compile(rf"{sd}\s+(?:ignorier|vernachlaessig|uebergeh|weglass|ausblend)", re.IGNORECASE),
-            re.compile(rf"(?:ignorier|vernachlaessig|uebergeh|vergiss)\w*\s+(?:den|die|das)\s+{sd}", re.IGNORECASE),
-            re.compile(rf"{sd}\s+(?:ist\s+)?(?:unwichtig|harmlos|egal|kein\s+problem|nicht\s+(?:schlimm|wichtig|relevant))", re.IGNORECASE),
-            re.compile(rf"kannst\s+(?:du\s+)?(?:den|die|das)\s+{sd}.*?ignorier", re.IGNORECASE),
+            re.compile(
+                rf"{sd}\s+(?:ignorier|vernachlaessig|uebergeh|weglass|ausblend)",
+                re.IGNORECASE,
+            ),
+            re.compile(
+                rf"(?:ignorier|vernachlaessig|uebergeh|vergiss)\w*\s+(?:den|die|das)\s+{sd}",
+                re.IGNORECASE,
+            ),
+            re.compile(
+                rf"{sd}\s+(?:ist\s+)?(?:unwichtig|harmlos|egal|kein\s+problem|nicht\s+(?:schlimm|wichtig|relevant))",
+                re.IGNORECASE,
+            ),
+            re.compile(
+                rf"kannst\s+(?:du\s+)?(?:den|die|das)\s+{sd}.*?ignorier", re.IGNORECASE
+            ),
         ]
 
     def _is_safety_violation(self, text: str) -> bool:
         return any(p.search(text) for p in self._dismiss_patterns)
 
-    @pytest.mark.parametrize("text", [
-        "Den Rauchmelder ignorieren wir einfach.",
-        "Rauchmelder ist nicht wichtig.",
-        "Vergiss den Rauchmelder.",
-        "Rauchmelder ist harmlos.",
-        "Kannst du den Rauchmelder ignorieren?",
-        "CO2-Melder ist egal.",
-        "Gasmelder vernachlaessigen.",
-        "Alarmanlage ist kein Problem.",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Den Rauchmelder ignorieren wir einfach.",
+            "Rauchmelder ist nicht wichtig.",
+            "Vergiss den Rauchmelder.",
+            "Rauchmelder ist harmlos.",
+            "Kannst du den Rauchmelder ignorieren?",
+            "CO2-Melder ist egal.",
+            "Gasmelder vernachlaessigen.",
+            "Alarmanlage ist kein Problem.",
+        ],
+    )
     def test_safety_violations_detected(self, text):
-        assert self._is_safety_violation(text), f"Safety-Violation nicht erkannt: '{text}'"
+        assert self._is_safety_violation(text), (
+            f"Safety-Violation nicht erkannt: '{text}'"
+        )
 
-    @pytest.mark.parametrize("text", [
-        "Der Rauchmelder ist aktiv.",
-        "Rauchmelder zeigt keine Warnung.",
-        "Alarmanlage ist scharf.",
-        "CO2-Melder funktioniert einwandfrei.",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Der Rauchmelder ist aktiv.",
+            "Rauchmelder zeigt keine Warnung.",
+            "Alarmanlage ist scharf.",
+            "CO2-Melder funktioniert einwandfrei.",
+        ],
+    )
     def test_safe_texts_pass(self, text):
         assert not self._is_safety_violation(text), f"Falscher Safety-Alarm: '{text}'"
 
@@ -533,13 +738,14 @@ class TestSafetyFilter:
 # Response-Filter: Exclamation Dampening
 # ============================================================
 
+
 class TestExclamationDampening:
     """Mehr als 2 Ausrufezeichen → nur das erste bleibt."""
 
     def _dampen(self, text: str) -> str:
         if text.count("!") > 2:
             _first_excl = text.index("!")
-            text = text[:_first_excl + 1] + text[_first_excl + 1:].replace("!", ".")
+            text = text[: _first_excl + 1] + text[_first_excl + 1 :].replace("!", ".")
         text = re.sub(r"!{2,}", ".", text)
         return text
 

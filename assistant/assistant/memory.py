@@ -35,9 +35,7 @@ class MemoryManager:
         """Initialisiert Redis, ChromaDB und Semantic Memory."""
         # Redis (Working Memory)
         try:
-            self.redis = redis.from_url(
-                settings.redis_url, decode_responses=True
-            )
+            self.redis = redis.from_url(settings.redis_url, decode_responses=True)
             await self.redis.ping()
             redis_breaker.record_success()
             logger.info("Redis verbunden")
@@ -58,14 +56,19 @@ class MemoryManager:
                 port=_parsed.port or 8000,
             )
             from .embeddings import get_embedding_function
+
             ef = get_embedding_function()
             col_kwargs = {
                 "name": "mha_conversations",
-                "metadata": {"description": "MindHome Assistant Gespraeche und Erinnerungen"},
+                "metadata": {
+                    "description": "MindHome Assistant Gespraeche und Erinnerungen"
+                },
             }
             if ef:
                 col_kwargs["embedding_function"] = ef
-            self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
+            self.chroma_collection = self._chroma_client.get_or_create_collection(
+                **col_kwargs
+            )
             chromadb_breaker.record_success()
             logger.info("ChromaDB verbunden, Collection: mha_conversations")
         except Exception as e:
@@ -105,7 +108,9 @@ class MemoryManager:
             pipe.expire(archive_key, 30 * 86400)
             await pipe.execute()
         except Exception as e:
-            logger.warning("add_conversation pipeline failed (lpush+ltrim+archive): %s", e)
+            logger.warning(
+                "add_conversation pipeline failed (lpush+ltrim+archive): %s", e
+            )
 
     async def get_recent_conversations(self, limit: int = 5) -> list[dict]:
         """Holt die letzten Gespraeche aus dem Working Memory."""
@@ -183,9 +188,12 @@ class MemoryManager:
                     query_texts=[preview],
                     n_results=1,
                 )
-                if (results and results.get("distances")
-                        and results["distances"][0]
-                        and results["distances"][0][0] < 0.1):
+                if (
+                    results
+                    and results.get("distances")
+                    and results["distances"][0]
+                    and results["distances"][0][0] < 0.1
+                ):
                     logger.debug("Episode-Duplikat erkannt, uebersprungen")
                     return
             except Exception as e:
@@ -221,16 +229,19 @@ class MemoryManager:
                         break
                     except asyncio.TimeoutError:
                         if _attempt == 0:
-                            logger.warning("ChromaDB Timeout bei Chunk %s, Retry...", doc_id)
+                            logger.warning(
+                                "ChromaDB Timeout bei Chunk %s, Retry...", doc_id
+                            )
                             await asyncio.sleep(0.5)
                         else:
-                            logger.error("ChromaDB Timeout beim Speichern von Chunk %s nach Retry", doc_id)
+                            logger.error(
+                                "ChromaDB Timeout beim Speichern von Chunk %s nach Retry",
+                                doc_id,
+                            )
                 if not stored:
                     continue
 
-            logger.debug(
-                "Episode gespeichert: %s (%d Chunk(s))", base_id, len(chunks)
-            )
+            logger.debug("Episode gespeichert: %s (%d Chunk(s))", base_id, len(chunks))
         except Exception as e:
             logger.error("Fehler beim Speichern der Episode: %s", e)
 
@@ -251,7 +262,8 @@ class MemoryManager:
 
         # An Sprecherwechseln splitten
         import re
-        segments = re.split(r'(?=(?:User|Assistant|Sir|Jarvis):)', text)
+
+        segments = re.split(r"(?=(?:User|Assistant|Sir|Jarvis):)", text)
         segments = [s.strip() for s in segments if s.strip()]
 
         # Segmente in Chunks zusammenfassen
@@ -266,7 +278,7 @@ class MemoryManager:
                     chunks.append(current)
                 # Segment selbst zu lang? An Saetzen splitten
                 if len(segment) > chunk_size:
-                    sentences = re.split(r'(?<=[.!?])\s+', segment)
+                    sentences = re.split(r"(?<=[.!?])\s+", segment)
                     current = ""
                     for sent in sentences:
                         if len(current) + len(sent) + 1 <= chunk_size:
@@ -309,22 +321,38 @@ class MemoryManager:
             memories = []
             if results and results.get("documents"):
                 docs = results["documents"][0] if results["documents"] else []
-                metas = results["metadatas"][0] if results.get("metadatas") and results["metadatas"] else []
-                dists = results["distances"][0] if results.get("distances") and results["distances"] else []
+                metas = (
+                    results["metadatas"][0]
+                    if results.get("metadatas") and results["metadatas"]
+                    else []
+                )
+                dists = (
+                    results["distances"][0]
+                    if results.get("distances") and results["distances"]
+                    else []
+                )
                 for i, doc in enumerate(docs):
                     meta = metas[i] if i < len(metas) else {}
-                    memories.append({
-                        "content": doc,
-                        "timestamp": meta.get("timestamp", "") if isinstance(meta, dict) else "",
-                        "relevance": dists[i] if i < len(dists) else 0,
-                    })
+                    memories.append(
+                        {
+                            "content": doc,
+                            "timestamp": meta.get("timestamp", "")
+                            if isinstance(meta, dict)
+                            else "",
+                            "relevance": dists[i] if i < len(dists) else 0,
+                        }
+                    )
             return memories
         except Exception as e:
             logger.error("Fehler bei Memory-Suche: %s", e)
             return []
 
     async def search_episodes_by_time(
-        self, query: str, start_date: str, end_date: str, limit: int = 5,
+        self,
+        query: str,
+        start_date: str,
+        end_date: str,
+        limit: int = 5,
     ) -> list[dict]:
         """Sucht Episoden in einem bestimmten Zeitraum.
 
@@ -353,16 +381,26 @@ class MemoryManager:
             episodes = []
             if results and results.get("documents"):
                 docs = results["documents"][0] if results["documents"] else []
-                metas = results["metadatas"][0] if results.get("metadatas") and results["metadatas"] else []
+                metas = (
+                    results["metadatas"][0]
+                    if results.get("metadatas") and results["metadatas"]
+                    else []
+                )
                 for i, doc in enumerate(docs):
                     if i >= limit:
                         break
                     meta = metas[i] if i < len(metas) else {}
-                    episodes.append({
-                        "content": doc,
-                        "timestamp": meta.get("timestamp", "") if isinstance(meta, dict) else "",
-                        "person": meta.get("person", "") if isinstance(meta, dict) else "",
-                    })
+                    episodes.append(
+                        {
+                            "content": doc,
+                            "timestamp": meta.get("timestamp", "")
+                            if isinstance(meta, dict)
+                            else "",
+                            "person": meta.get("person", "")
+                            if isinstance(meta, dict)
+                            else "",
+                        }
+                    )
             return episodes
         except Exception as e:
             logger.debug("Temporale Episoden-Suche fehlgeschlagen: %s", e)
@@ -379,12 +417,14 @@ class MemoryManager:
             return
 
         try:
-            entry = json.dumps({
-                "topic": topic,
-                "context": context,
-                "person": person,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
+            entry = json.dumps(
+                {
+                    "topic": topic,
+                    "context": context,
+                    "person": person,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
             await self.redis.hset("mha:pending_topics", topic, entry)
             # 24h TTL auf das gesamte Hash
             await self.redis.expire("mha:pending_topics", 86400)
@@ -509,7 +549,7 @@ class MemoryManager:
             indexed.sort(key=lambda x: x[0], reverse=True)
 
             # Nur die benoetigte Seite extrahieren
-            page = indexed[offset:offset + limit]
+            page = indexed[offset : offset + limit]
             if not page:
                 return []
 
@@ -529,14 +569,16 @@ class MemoryManager:
             for ts, doc_id, meta in page:
                 if not isinstance(meta, dict):
                     meta = {}
-                episodes.append({
-                    "id": doc_id,
-                    "content": doc_map.get(doc_id, ""),
-                    "timestamp": meta.get("timestamp", ""),
-                    "type": meta.get("type", ""),
-                    "chunk_index": meta.get("chunk_index", "0"),
-                    "total_chunks": meta.get("total_chunks", "1"),
-                })
+                episodes.append(
+                    {
+                        "id": doc_id,
+                        "content": doc_map.get(doc_id, ""),
+                        "timestamp": meta.get("timestamp", ""),
+                        "type": meta.get("type", ""),
+                        "chunk_index": meta.get("chunk_index", "0"),
+                        "total_chunks": meta.get("total_chunks", "1"),
+                    }
+                )
             return episodes
         except Exception as e:
             logger.error("Fehler beim Laden der Episoden: %s", e)
@@ -567,14 +609,19 @@ class MemoryManager:
             try:
                 self._chroma_client.delete_collection("mha_conversations")
                 from .embeddings import get_embedding_function
+
                 ef = get_embedding_function()
                 col_kwargs = {
                     "name": "mha_conversations",
-                    "metadata": {"description": "MindHome Assistant Gespraeche und Erinnerungen"},
+                    "metadata": {
+                        "description": "MindHome Assistant Gespraeche und Erinnerungen"
+                    },
                 }
                 if ef:
                     col_kwargs["embedding_function"] = ef
-                self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
+                self.chroma_collection = self._chroma_client.get_or_create_collection(
+                    **col_kwargs
+                )
                 result["episodes_deleted"] = -1  # -1 = alle
                 logger.info("Episodisches Gedaechtnis geloescht")
             except Exception as e:
@@ -640,6 +687,7 @@ class MemoryManager:
             try:
                 from .file_handler import UPLOAD_DIR
                 import shutil
+
                 if UPLOAD_DIR.exists():
                     count = sum(1 for _ in UPLOAD_DIR.iterdir())
                     shutil.rmtree(UPLOAD_DIR)

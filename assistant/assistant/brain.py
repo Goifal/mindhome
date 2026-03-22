@@ -1172,6 +1172,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         )
         self.routines.set_executor(self.executor)
         self.routines.set_personality(self.personality)
+        self.routines.set_explainability(self.explainability)
         self.routines._semantic_memory = self.memory.semantic
         if "RoutineEngine" not in _degraded_modules:
             await _safe_init(
@@ -1458,6 +1459,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.music_dj.set_ollama(self.ollama)
         self.visitor_manager.set_ollama(self.ollama)
         self.learning_observer.set_ollama(self.ollama)
+        self.correction_memory.set_ollama(self.ollama)
 
         if "WellnessAdvisor" not in _degraded_modules:
             await _safe_init("WellnessAdvisor.start", self.wellness_advisor.start())
@@ -2277,6 +2279,48 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             self._user_request_active = False
             self._last_interaction_ts = time.time()  # B4: auch nach Antwort
             self._process_lock.release()
+
+    # MCU Sprint 2: Konversationelle Unterbrechungs-Bestaetigung
+    INTERRUPTION_RESPONSES = [
+        "Verstanden, abgebrochen.",
+        "Alles klar, ich hoere auf.",
+        "In Ordnung, unterbrochen.",
+    ]
+    INTERRUPTION_LONG_TASK_RESPONSES = [
+        "Abgebrochen. Soll ich spaeter weitermachen?",
+        "Unterbrochen. Ich kann spaeter daran anknuepfen.",
+    ]
+
+    def get_interruption_response(
+        self, task_duration_s: float = 0.0, person: str = ""
+    ) -> str:
+        """Generiert eine kurze konversationelle Unterbrechungs-Bestaetigung.
+
+        Args:
+            task_duration_s: Wie lange der abgebrochene Task lief (in Sekunden).
+            person: Person die unterbrochen hat.
+
+        Returns:
+            Kurze Bestaetigung im Butler-Stil.
+        """
+        import random
+
+        title = ""
+        if person and hasattr(self, "personality"):
+            try:
+                title = self.personality._get_title(person)
+            except Exception:
+                pass
+
+        if task_duration_s > 5.0:
+            text = random.choice(self.INTERRUPTION_LONG_TASK_RESPONSES)
+        else:
+            text = random.choice(self.INTERRUPTION_RESPONSES)
+
+        if title:
+            text = text.replace(".", f", {title}.", 1)
+
+        return text
 
     async def _process_inner(
         self,
@@ -5893,6 +5937,22 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 "5) Pruefe nach der Ausfuehrung ob das Ergebnis stimmt."
             )
 
+        # 4c. MCU Sprint 2: Arbeitssession-Kontext einfuegen
+        try:
+            work_session = await self.conversation_memory.detect_work_session(
+                person or "", text
+            )
+            if work_session and work_session.get("message_count", 0) >= 3:
+                _ws_keywords = ", ".join(work_session.get("keywords", [])[:5])
+                _ws_count = work_session.get("message_count", 0)
+                system_prompt += (
+                    f"\n\n[ARBEITSSESSION]: Der Benutzer arbeitet seit {_ws_count} Nachrichten "
+                    f"an einem zusammenhaengenden Thema ({_ws_keywords}). "
+                    f"Behalte den Kontext bei und referenziere fruehere Punkte aus dieser Session."
+                )
+        except Exception as _ws_err:
+            logger.debug("Arbeitssession-Kontext Fehler: %s", _ws_err)
+
         # 5. Letzte Gespraeche laden (Working Memory)
         # Token-Budget für Conversations: Restliches Budget nach System-Prompt + Sektionen
         system_tokens = _estimate_tokens(system_prompt)
@@ -6105,6 +6165,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             response_text = planner_result.get("response", "")
             executed_actions = planner_result.get("actions", [])
             model = _deep_model
+            # Explainability: Komplexe Aktionen loggen
+            for _pa in executed_actions:
+                self._task_registry.create_task(
+                    self.explainability.log_decision(
+                        action=_pa.get("function", "action_plan"),
+                        reason=f"Komplexe Anfrage: {text[:100]}",
+                        trigger="user_command",
+                        person=person or "",
+                        domain=_pa.get("domain", ""),
+                    ),
+                    name="log_explainability_planner",
+                )
         elif intent_type == "knowledge":
             # Phase 8: Wissensfragen — Smart reicht fuer einfache Fakten,
             # Deep nur bei komplexen Erklaerungen (>15 Woerter oder Erklaer-Patterns).
@@ -6790,6 +6862,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     "args": final_args,
                                     "result": "pushback_confirmation_needed",
                                 }
+                            )
+                            # Explainability: Pushback-Entscheidung loggen
+                            self._task_registry.create_task(
+                                self.explainability.log_decision(
+                                    action=f"pushback:{func_name}",
+                                    reason=pushback["message"],
+                                    trigger="safety",
+                                    person=person or "",
+                                    domain=ACTION_DOMAIN_MAP.get(func_name, ""),
+                                    confidence=1.0,
+                                ),
+                                name="log_explainability_pushback",
                             )
                             continue
                         elif pushback["level"] == 1:
@@ -7833,6 +7917,66 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         response_text = await self._generate_contextual_error(
                             text, "general"
                         )
+
+        # MCU Sprint 2: Erweiterte Halluzinations-Erkennung — State-Behauptungen
+        # Prüfe ob die Antwort Geraetezustaende behauptet die nicht im Kontext stehen.
+        # NUR erweitern, bestehende Logik NICHT aendern (Schutzliste).
+        if response_text and not _hallucination_replaced:
+            try:
+                _state_assertion_patterns = [
+                    (
+                        r"(?:licht|lampe).*(?:ist|sind|wurde|war)\s+(?:an|aus|ein)",
+                        "light.",
+                    ),
+                    (
+                        r"(?:heizung|thermostat|temperatur).*(?:ist|steht)\s+(?:auf|bei)\s+\d+",
+                        "climate.",
+                    ),
+                    (
+                        r"(?:rolll?aden|rollo|jalousie).*(?:ist|sind|wurde|war)\s+(?:offen|geschlossen|auf|zu|unten|oben)",
+                        "cover.",
+                    ),
+                    (
+                        r"(?:tuer|t[uü]r|schloss).*(?:ist|wurde|war)\s+(?:offen|geschlossen|auf|zu|verriegelt|entriegelt)",
+                        "lock.",
+                    ),
+                    (
+                        r"(?:fenster).*(?:ist|sind|wurde|war)\s+(?:offen|geschlossen|auf|zu|gekippt)",
+                        "binary_sensor.",
+                    ),
+                ]
+                _text_low_2 = response_text.lower()
+                _context_str = (
+                    (context or "").lower()
+                    if isinstance(context, str)
+                    else str(context).lower()
+                )
+                for _pattern, _entity_prefix in _state_assertion_patterns:
+                    if re.search(_pattern, _text_low_2, re.IGNORECASE):
+                        # Prüfe ob Entity-Typ im Kontext war
+                        if _entity_prefix not in _context_str:
+                            logger.info(
+                                "Halluzinations-Erweiterung: State-Behauptung '%s' ohne %s im Kontext",
+                                _pattern,
+                                _entity_prefix,
+                            )
+                            # Satz mit Behauptung durch vorsichtige Formulierung ersetzen
+                            _sentences_2 = re.split(r"(?<=[.!?])\s+", response_text)
+                            _clean_2 = []
+                            _replaced_any = False
+                            for _s in _sentences_2:
+                                if re.search(_pattern, _s.lower(), re.IGNORECASE):
+                                    _clean_2.append(
+                                        "Ich bin mir ueber den aktuellen Zustand nicht sicher — lass mich nachsehen."
+                                    )
+                                    _replaced_any = True
+                                else:
+                                    _clean_2.append(_s)
+                            if _replaced_any:
+                                response_text = " ".join(_clean_2)
+                            break  # Nur eine Korrektur pro Antwort
+            except Exception as _hall_ext_err:
+                logger.debug("Halluzinations-Erweiterung Fehler: %s", _hall_ext_err)
 
         # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
         # Knowledge/Memory-Pfade filtern bereits inline, daher hier nur für
@@ -11695,6 +11839,19 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             result = await self.executor.execute(func_name, func_args)
             await self.memory.redis.delete(SECURITY_CONFIRM_KEY)
 
+            # Explainability: Sicherheitsbestaetigung loggen
+            self._task_registry.create_task(
+                self.explainability.log_decision(
+                    action=func_name,
+                    reason=f"Sicherheitsbestaetigung durch {person or 'Benutzer'}",
+                    trigger="user_command",
+                    person=person or "",
+                    domain=ACTION_DOMAIN_MAP.get(func_name, ""),
+                    confidence=1.0,
+                ),
+                name="log_explainability_security_confirm",
+            )
+
             # Pushback-Learning: Level 2 Pushback wurde ueberschrieben
             _pending_reason = pending.get("reason", "")
             if _pending_reason.startswith("pushback:"):
@@ -14666,6 +14823,17 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         )
                         executed_descs.append(_short_desc)
                         executed_actions.append({"function": action, "args": s_args})
+                        # Explainability: Antizipierte Aktionen loggen
+                        self._task_registry.create_task(
+                            self.explainability.log_decision(
+                                action=action,
+                                reason=f"Gelerntes Muster: {desc}",
+                                trigger="anticipation",
+                                person=person or "",
+                                confidence=s.get("confidence", 0.8),
+                            ),
+                            name="log_explainability_das_uebliche",
+                        )
                 except Exception as e:
                     logger.debug(
                         "Das Uebliche Aktion fehlgeschlagen: %s — %s", action, e
@@ -16649,6 +16817,19 @@ Regeln:
             )
             if _success:
                 text = f"{title}, {desc} — hab ich uebernommen. Wie jeden Tag um diese Zeit."
+                # Explainability: Butler-Instinkt-Aktionen loggen
+                self._task_registry.create_task(
+                    self.explainability.log_decision(
+                        action=action,
+                        reason=_reason,
+                        trigger="anticipation",
+                        person=suggestion.get("person", ""),
+                        domain=suggestion.get("domain", "")
+                        or ACTION_DOMAIN_MAP.get(action, ""),
+                        confidence=suggestion.get("confidence", 0.8),
+                    ),
+                    name="log_explainability_butler_instinct",
+                )
                 # Inner State: Stolz bei erfolgreicher Antizipation
                 if hasattr(self, "inner_state"):
                     self._task_registry.create_task(

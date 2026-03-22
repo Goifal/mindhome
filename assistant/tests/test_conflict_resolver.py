@@ -213,7 +213,10 @@ class TestCheckConflictWithResolution:
         """Hoehere Trust-Stufe gewinnt bei trust_priority Strategie."""
         resolver = resolver_with_trust
         # Override domain config to use trust_priority for light
-        resolver._domain_configs["light"] = {"threshold": 10, "strategy": "trust_priority"}
+        resolver._domain_configs["light"] = {
+            "threshold": 10,
+            "strategy": "trust_priority",
+        }
         resolver.record_command("Anna", "set_light", {"brightness": 10}, "wohnzimmer")
         mock_main = MagicMock()
         mock_main.brain = None
@@ -232,7 +235,9 @@ class TestCheckConflictWithResolution:
     async def test_same_trust_falls_to_average(self, resolver):
         """Gleicher Trust-Level bei numerischem Konflikt → average Strategie."""
         # Beide haben Trust 3 (Default im resolver Fixture)
-        resolver.record_command("Anna", "set_climate", {"temperature": 19}, "wohnzimmer")
+        resolver.record_command(
+            "Anna", "set_climate", {"temperature": 19}, "wohnzimmer"
+        )
         mock_main = MagicMock()
         mock_main.brain = None
         with patch.dict("sys.modules", {"assistant.main": mock_main}):
@@ -246,7 +251,9 @@ class TestCheckConflictWithResolution:
     @pytest.mark.asyncio
     async def test_conflict_different_rooms_no_conflict(self, resolver):
         """Befehle in verschiedenen Raeumen loesen keinen Konflikt aus."""
-        resolver.record_command("Anna", "set_climate", {"temperature": 19}, "schlafzimmer")
+        resolver.record_command(
+            "Anna", "set_climate", {"temperature": 19}, "schlafzimmer"
+        )
         mock_main = MagicMock()
         mock_main.brain = None
         with patch.dict("sys.modules", {"assistant.main": mock_main}):
@@ -258,7 +265,9 @@ class TestCheckConflictWithResolution:
     @pytest.mark.asyncio
     async def test_conflict_cooldown(self, resolver):
         """Konflikte im Cooldown werden uebersprungen."""
-        resolver.record_command("Anna", "set_climate", {"temperature": 19}, "wohnzimmer")
+        resolver.record_command(
+            "Anna", "set_climate", {"temperature": 19}, "wohnzimmer"
+        )
         # Cooldown fuer diesen Domain:Raum setzen
         resolver._last_resolutions["climate:wohnzimmer"] = time.time()
         mock_main = MagicMock()
@@ -272,7 +281,9 @@ class TestCheckConflictWithResolution:
     @pytest.mark.asyncio
     async def test_expired_command_no_conflict(self, resolver):
         """Befehle ausserhalb des Zeitfensters loesen keinen Konflikt aus."""
-        resolver.record_command("Anna", "set_climate", {"temperature": 19}, "wohnzimmer")
+        resolver.record_command(
+            "Anna", "set_climate", {"temperature": 19}, "wohnzimmer"
+        )
         # Timestamp auf weit in der Vergangenheit setzen
         resolver._recent_commands["anna"][0]["timestamp"] = time.time() - 600
         mock_main = MagicMock()
@@ -305,7 +316,9 @@ class TestCheckConflictWithResolution:
     @pytest.mark.asyncio
     async def test_conflict_history_appended(self, resolver):
         """Konflikt wird in History gespeichert."""
-        resolver.record_command("Anna", "set_climate", {"temperature": 19}, "wohnzimmer")
+        resolver.record_command(
+            "Anna", "set_climate", {"temperature": 19}, "wohnzimmer"
+        )
         assert len(resolver._conflict_history) == 0
         mock_main = MagicMock()
         mock_main.brain = None
@@ -473,7 +486,9 @@ class TestPredictConflict:
         ha_states = [
             {"entity_id": "binary_sensor.wohnzimmer_window", "state": "on"},
         ]
-        result = await resolver.predict_logical_conflict("unknown_action", {}, ha_states)
+        result = await resolver.predict_logical_conflict(
+            "unknown_action", {}, ha_states
+        )
         assert result is None
 
     @pytest.mark.asyncio
@@ -603,12 +618,22 @@ class TestCleanupOldCommands:
         """Abgelaufene Befehle werden entfernt."""
         resolver._conflict_window = 60
         resolver._recent_commands["max"] = [
-            {"timestamp": time.time() - 120, "person": "max",
-             "function": "set_light", "args": {}, "room": None,
-             "datetime": ""},
-            {"timestamp": time.time(), "person": "max",
-             "function": "set_light", "args": {}, "room": None,
-             "datetime": ""},
+            {
+                "timestamp": time.time() - 120,
+                "person": "max",
+                "function": "set_light",
+                "args": {},
+                "room": None,
+                "datetime": "",
+            },
+            {
+                "timestamp": time.time(),
+                "person": "max",
+                "function": "set_light",
+                "args": {},
+                "room": None,
+                "datetime": "",
+            },
         ]
         resolver._cleanup_old_commands()
         assert len(resolver._recent_commands["max"]) == 1
@@ -617,9 +642,14 @@ class TestCleanupOldCommands:
         """Personen ohne aktive Befehle werden entfernt."""
         resolver._conflict_window = 60
         resolver._recent_commands["max"] = [
-            {"timestamp": time.time() - 120, "person": "max",
-             "function": "set_light", "args": {}, "room": None,
-             "datetime": ""},
+            {
+                "timestamp": time.time() - 120,
+                "person": "max",
+                "function": "set_light",
+                "args": {},
+                "room": None,
+                "datetime": "",
+            },
         ]
         resolver._cleanup_old_commands()
         assert "max" not in resolver._recent_commands
@@ -630,9 +660,7 @@ class TestDetectConflictEdgeCases:
 
     def test_unknown_domain_returns_none(self, resolver):
         """Unbekannte Domain liefert keinen Konflikt."""
-        result = resolver._detect_conflict(
-            "unknown_domain", {"key": 1}, {"key": 2}, {}
-        )
+        result = resolver._detect_conflict("unknown_domain", {"key": 1}, {"key": 2}, {})
         assert result is None
 
     def test_numeric_missing_values_checks_also_check(self, resolver):
@@ -767,17 +795,25 @@ class TestMedation:
     @pytest.mark.asyncio
     async def test_mediate_returns_llm_response(self, resolver):
         """Erfolgreiche LLM-Mediation liefert Text."""
-        resolver.ollama.chat = AsyncMock(return_value={
-            "message": {"content": "Max bekommt 22 Grad, Anna eine Decke."}
-        })
+        resolver.ollama.chat = AsyncMock(
+            return_value={
+                "message": {"content": "Max bekommt 22 Grad, Anna eine Decke."}
+            }
+        )
         result = await resolver._mediate(
-            person_a="max", trust_a="Owner",
-            person_b="anna", trust_b="Resident",
+            person_a="max",
+            trust_a="Owner",
+            person_b="anna",
+            trust_b="Resident",
             conflict_detail={
-                "type": "numeric", "key": "temperature",
-                "value_existing": 19, "value_new": 25, "unit": "°C",
+                "type": "numeric",
+                "key": "temperature",
+                "value_existing": 19,
+                "value_new": 25,
+                "unit": "°C",
             },
-            domain="climate", room="wohnzimmer",
+            domain="climate",
+            room="wohnzimmer",
         )
         assert "Max" in result or "22" in result or "Decke" in result
 
@@ -786,13 +822,18 @@ class TestMedation:
         """LLM-Fehler liefert Fallback-Text."""
         resolver.ollama.chat = AsyncMock(side_effect=RuntimeError("LLM down"))
         result = await resolver._mediate(
-            person_a="max", trust_a="Owner",
-            person_b="anna", trust_b="Resident",
+            person_a="max",
+            trust_a="Owner",
+            person_b="anna",
+            trust_b="Resident",
             conflict_detail={
-                "type": "categorical", "key": "action",
-                "value_existing": "play", "value_new": "stop",
+                "type": "categorical",
+                "key": "action",
+                "value_existing": "play",
+                "value_new": "stop",
             },
-            domain="media", room="wohnzimmer",
+            domain="media",
+            room="wohnzimmer",
         )
         assert "Max" in result
         assert "Anna" in result
@@ -800,17 +841,21 @@ class TestMedation:
     @pytest.mark.asyncio
     async def test_mediate_empty_response_returns_fallback(self, resolver):
         """Leere LLM-Antwort liefert Fallback-Text."""
-        resolver.ollama.chat = AsyncMock(return_value={
-            "message": {"content": ""}
-        })
+        resolver.ollama.chat = AsyncMock(return_value={"message": {"content": ""}})
         result = await resolver._mediate(
-            person_a="max", trust_a="Owner",
-            person_b="anna", trust_b="Resident",
+            person_a="max",
+            trust_a="Owner",
+            person_b="anna",
+            trust_b="Resident",
             conflict_detail={
-                "type": "numeric", "key": "temperature",
-                "value_existing": 20, "value_new": 24, "unit": "°C",
+                "type": "numeric",
+                "key": "temperature",
+                "value_existing": 20,
+                "value_new": 24,
+                "unit": "°C",
             },
-            domain="climate", room=None,
+            domain="climate",
+            room=None,
         )
         assert isinstance(result, str)
         assert len(result) > 0

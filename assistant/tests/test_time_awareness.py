@@ -203,7 +203,9 @@ class TestCheckAppliance:
         assert result["device"] == "oven"
 
     @pytest.mark.asyncio
-    async def test_appliance_over_threshold_already_notified(self, ta_with_redis, redis_mock):
+    async def test_appliance_over_threshold_already_notified(
+        self, ta_with_redis, redis_mock
+    ):
         """Appliance over threshold but already notified -> no alert."""
         past_ts = str(datetime.now().timestamp() - 3700)
         redis_mock.get.return_value = past_ts
@@ -431,7 +433,6 @@ class TestRedisHelpers:
 
 
 class TestLifecycle:
-
     @pytest.mark.asyncio
     async def test_initialize_sets_redis(self, ta, redis_mock):
         redis_mock.get = AsyncMock(return_value=None)
@@ -466,7 +467,7 @@ class TestLifecycle:
         ta.enabled = True
         ta.redis = AsyncMock()
         # Mock _check_loop to avoid real loop
-        with patch.object(ta, '_check_loop', new_callable=AsyncMock):
+        with patch.object(ta, "_check_loop", new_callable=AsyncMock):
             await ta.start()
         assert ta._running is True
         assert ta._task is not None
@@ -498,7 +499,6 @@ class TestLifecycle:
 
 
 class TestResetDailyCounters:
-
     @pytest.mark.asyncio
     async def test_no_redis_returns_early(self, ta):
         await ta._reset_daily_counters_if_needed()
@@ -508,6 +508,7 @@ class TestResetDailyCounters:
     async def test_same_day_no_reset(self, ta_with_redis, redis_mock):
         """Same date stored — no counters deleted."""
         from assistant.time_awareness import _LOCAL_TZ
+
         today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
         redis_mock.get = AsyncMock(return_value=today)
         await ta_with_redis._reset_daily_counters_if_needed()
@@ -539,6 +540,7 @@ class TestResetDailyCounters:
     async def test_bytes_date_decoded(self, ta_with_redis, redis_mock):
         """Redis returns bytes for date — decoded correctly."""
         from assistant.time_awareness import _LOCAL_TZ
+
         today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
         redis_mock.get = AsyncMock(return_value=today.encode())
         await ta_with_redis._reset_daily_counters_if_needed()
@@ -551,13 +553,16 @@ class TestResetDailyCounters:
 
 
 class TestSendAlert:
-
     @pytest.mark.asyncio
     async def test_send_with_callback(self, ta_with_redis):
         callback = AsyncMock()
         ta_with_redis._notify_callback = callback
-        alert = {"type": "appliance_running", "device": "oven",
-                 "message": "Ofen laeuft seit 65 Minuten.", "urgency": "medium"}
+        alert = {
+            "type": "appliance_running",
+            "device": "oven",
+            "message": "Ofen laeuft seit 65 Minuten.",
+            "urgency": "medium",
+        }
         await ta_with_redis._send_alert(alert)
         callback.assert_called_once_with(alert)
 
@@ -582,11 +587,12 @@ class TestSendAlert:
 
 
 class TestLLMRewriteAlert:
-
     @pytest.mark.asyncio
     async def test_no_ollama_returns_original(self, ta_with_redis):
         ta_with_redis._ollama = None
-        result = await ta_with_redis._llm_rewrite_alert("Test alert", "appliance_running")
+        result = await ta_with_redis._llm_rewrite_alert(
+            "Test alert", "appliance_running"
+        )
         assert result == "Test alert"
 
     @pytest.mark.asyncio
@@ -594,17 +600,26 @@ class TestLLMRewriteAlert:
         ta_with_redis._ollama = AsyncMock()
         cfg = {"time_awareness": {"llm_rewrite": False}}
         with patch("assistant.time_awareness.yaml_config", cfg):
-            result = await ta_with_redis._llm_rewrite_alert("Test alert", "appliance_running")
+            result = await ta_with_redis._llm_rewrite_alert(
+                "Test alert", "appliance_running"
+            )
         assert result == "Test alert"
 
     @pytest.mark.asyncio
     async def test_llm_rewrite_success(self, ta_with_redis):
         ta_with_redis._ollama = AsyncMock()
-        ta_with_redis._ollama.generate = AsyncMock(return_value="Rewritten alert message here.")
+        ta_with_redis._ollama.generate = AsyncMock(
+            return_value="Rewritten alert message here."
+        )
         cfg = {"time_awareness": {"llm_rewrite": True}}
-        with patch("assistant.time_awareness.yaml_config", cfg), \
-             patch("assistant.config.settings", MagicMock(model_fast="test-model")), \
-             patch("assistant.ollama_client.strip_think_tags", return_value="Rewritten alert message here."):
+        with (
+            patch("assistant.time_awareness.yaml_config", cfg),
+            patch("assistant.config.settings", MagicMock(model_fast="test-model")),
+            patch(
+                "assistant.ollama_client.strip_think_tags",
+                return_value="Rewritten alert message here.",
+            ),
+        ):
             result = await ta_with_redis._llm_rewrite_alert(
                 "Der Ofen laeuft seit 65 Minuten.", "appliance_running"
             )
@@ -616,9 +631,13 @@ class TestLLMRewriteAlert:
         ta_with_redis._ollama.generate = AsyncMock(side_effect=RuntimeError("fail"))
         cfg = {"time_awareness": {"llm_rewrite": True}}
         original = "Der Ofen laeuft seit 65 Minuten."
-        with patch("assistant.time_awareness.yaml_config", cfg), \
-             patch("assistant.config.settings", MagicMock(model_fast="test-model")):
-            result = await ta_with_redis._llm_rewrite_alert(original, "appliance_running")
+        with (
+            patch("assistant.time_awareness.yaml_config", cfg),
+            patch("assistant.config.settings", MagicMock(model_fast="test-model")),
+        ):
+            result = await ta_with_redis._llm_rewrite_alert(
+                original, "appliance_running"
+            )
         assert result == original
 
     @pytest.mark.asyncio
@@ -627,10 +646,14 @@ class TestLLMRewriteAlert:
         ta_with_redis._ollama.generate = AsyncMock(return_value="")
         cfg = {"time_awareness": {"llm_rewrite": True}}
         original = "Der Ofen laeuft seit 65 Minuten."
-        with patch("assistant.time_awareness.yaml_config", cfg), \
-             patch("assistant.config.settings", MagicMock(model_fast="test-model")), \
-             patch("assistant.ollama_client.strip_think_tags", return_value=""):
-            result = await ta_with_redis._llm_rewrite_alert(original, "appliance_running")
+        with (
+            patch("assistant.time_awareness.yaml_config", cfg),
+            patch("assistant.config.settings", MagicMock(model_fast="test-model")),
+            patch("assistant.ollama_client.strip_think_tags", return_value=""),
+        ):
+            result = await ta_with_redis._llm_rewrite_alert(
+                original, "appliance_running"
+            )
         assert result == original
 
 
@@ -640,7 +663,6 @@ class TestLLMRewriteAlert:
 
 
 class TestCheckLightsEmptyRooms:
-
     @pytest.fixture
     def ta_lights(self, ha_mock, redis_mock):
         cfg = {
@@ -649,9 +671,11 @@ class TestCheckLightsEmptyRooms:
                 "thresholds": {"light_empty_room": 30},
             },
             "lighting": {"enabled": True},
-            "multi_room": {"room_motion_sensors": {
-                "wohnzimmer": "binary_sensor.motion_wohnzimmer",
-            }},
+            "multi_room": {
+                "room_motion_sensors": {
+                    "wohnzimmer": "binary_sensor.motion_wohnzimmer",
+                }
+            },
             "activity": {"entities": {"pc_sensors": []}},
         }
         with patch("assistant.time_awareness.yaml_config", cfg):
@@ -677,11 +701,18 @@ class TestCheckLightsEmptyRooms:
         """Light on in room with motion — no alert."""
         states = [
             {"entity_id": "binary_sensor.motion_wohnzimmer", "state": "on"},
-            {"entity_id": "light.wohnzimmer_decke", "state": "on",
-             "attributes": {"friendly_name": "Wohnzimmer Decke"}},
+            {
+                "entity_id": "light.wohnzimmer_decke",
+                "state": "on",
+                "attributes": {"friendly_name": "Wohnzimmer Decke"},
+            },
         ]
-        with patch("assistant.config.get_room_profiles",
-                    return_value={"rooms": {"wohnzimmer": {"light_entities": ["light.wohnzimmer_decke"]}}}):
+        with patch(
+            "assistant.config.get_room_profiles",
+            return_value={
+                "rooms": {"wohnzimmer": {"light_entities": ["light.wohnzimmer_decke"]}}
+            },
+        ):
             result = await ta_lights._check_lights_empty_rooms(states)
         assert result == []
 
@@ -699,12 +730,21 @@ class TestCheckLightsEmptyRooms:
             "activity": {"entities": {"pc_sensors": []}},
         }
         states = [
-            {"entity_id": "light.kueche_decke", "state": "on",
-             "attributes": {"friendly_name": "Kueche Decke"}},
+            {
+                "entity_id": "light.kueche_decke",
+                "state": "on",
+                "attributes": {"friendly_name": "Kueche Decke"},
+            },
         ]
-        with patch("assistant.time_awareness.yaml_config", cfg), \
-             patch("assistant.config.get_room_profiles",
-                   return_value={"rooms": {"kueche": {"light_entities": ["light.kueche_decke"]}}}):
+        with (
+            patch("assistant.time_awareness.yaml_config", cfg),
+            patch(
+                "assistant.config.get_room_profiles",
+                return_value={
+                    "rooms": {"kueche": {"light_entities": ["light.kueche_decke"]}}
+                },
+            ),
+        ):
             result = await ta_lights._check_lights_empty_rooms(states)
         assert len(result) == 1
         assert result[0]["type"] == "light_empty_room"
@@ -716,8 +756,7 @@ class TestCheckLightsEmptyRooms:
         states = [
             {"entity_id": "light.kueche", "state": "off"},
         ]
-        with patch("assistant.config.get_room_profiles",
-                    return_value={"rooms": {}}):
+        with patch("assistant.config.get_room_profiles", return_value={"rooms": {}}):
             result = await ta_lights._check_lights_empty_rooms(states)
         assert result == []
 
@@ -730,18 +769,31 @@ class TestCheckLightsEmptyRooms:
 
         cfg = {
             "time_awareness": {"enabled": True, "thresholds": {"light_empty_room": 30}},
-            "lighting": {"enabled": True, "auto_off_empty_room_minutes": 30, "default_transition": 2},
+            "lighting": {
+                "enabled": True,
+                "auto_off_empty_room_minutes": 30,
+                "default_transition": 2,
+            },
             "multi_room": {"room_motion_sensors": {}},
             "activity": {"entities": {"pc_sensors": []}},
         }
 
         states = [
-            {"entity_id": "light.bad_decke", "state": "on",
-             "attributes": {"friendly_name": "Bad Decke"}},
+            {
+                "entity_id": "light.bad_decke",
+                "state": "on",
+                "attributes": {"friendly_name": "Bad Decke"},
+            },
         ]
-        with patch("assistant.time_awareness.yaml_config", cfg), \
-             patch("assistant.config.get_room_profiles",
-                   return_value={"rooms": {"bad": {"light_entities": ["light.bad_decke"]}}}):
+        with (
+            patch("assistant.time_awareness.yaml_config", cfg),
+            patch(
+                "assistant.config.get_room_profiles",
+                return_value={
+                    "rooms": {"bad": {"light_entities": ["light.bad_decke"]}}
+                },
+            ),
+        ):
             result = await ta_lights._check_lights_empty_rooms(states)
 
         assert len(result) == 1
@@ -756,11 +808,18 @@ class TestCheckLightsEmptyRooms:
         redis_mock.exists.return_value = 1  # already notified
 
         states = [
-            {"entity_id": "light.kueche_decke", "state": "on",
-             "attributes": {"friendly_name": "Kueche Decke"}},
+            {
+                "entity_id": "light.kueche_decke",
+                "state": "on",
+                "attributes": {"friendly_name": "Kueche Decke"},
+            },
         ]
-        with patch("assistant.config.get_room_profiles",
-                    return_value={"rooms": {"kueche": {"light_entities": ["light.kueche_decke"]}}}):
+        with patch(
+            "assistant.config.get_room_profiles",
+            return_value={
+                "rooms": {"kueche": {"light_entities": ["light.kueche_decke"]}}
+            },
+        ):
             result = await ta_lights._check_lights_empty_rooms(states)
         assert result == []
 
@@ -771,7 +830,6 @@ class TestCheckLightsEmptyRooms:
 
 
 class TestCheckWindowsCold:
-
     @pytest.fixture
     def ta_windows(self, ha_mock, redis_mock):
         cfg = {
@@ -792,8 +850,13 @@ class TestCheckWindowsCold:
         states = [
             {"entity_id": "binary_sensor.window_kitchen", "state": "on"},
         ]
-        with patch("assistant.function_calling.is_heating_relevant_opening", return_value=True), \
-             patch("assistant.function_calling.get_opening_type", return_value="window"):
+        with (
+            patch(
+                "assistant.function_calling.is_heating_relevant_opening",
+                return_value=True,
+            ),
+            patch("assistant.function_calling.get_opening_type", return_value="window"),
+        ):
             result = await ta_windows._check_windows_cold(states)
         assert result == []
 
@@ -801,10 +864,16 @@ class TestCheckWindowsCold:
     async def test_warm_temperature_no_alert(self, ta_windows):
         """Outside temp >= 10 — no alerts."""
         states = [
-            {"entity_id": "weather.home", "state": "sunny",
-             "attributes": {"temperature": 15}},
-            {"entity_id": "binary_sensor.window_kitchen", "state": "on",
-             "attributes": {"friendly_name": "Kitchen Window"}},
+            {
+                "entity_id": "weather.home",
+                "state": "sunny",
+                "attributes": {"temperature": 15},
+            },
+            {
+                "entity_id": "binary_sensor.window_kitchen",
+                "state": "on",
+                "attributes": {"friendly_name": "Kitchen Window"},
+            },
         ]
         result = await ta_windows._check_windows_cold(states)
         assert result == []
@@ -817,13 +886,24 @@ class TestCheckWindowsCold:
         redis_mock.exists.return_value = 0
 
         states = [
-            {"entity_id": "weather.home", "state": "cloudy",
-             "attributes": {"temperature": 2}},
-            {"entity_id": "binary_sensor.window_kitchen", "state": "on",
-             "attributes": {"friendly_name": "Kueche Fenster"}},
+            {
+                "entity_id": "weather.home",
+                "state": "cloudy",
+                "attributes": {"temperature": 2},
+            },
+            {
+                "entity_id": "binary_sensor.window_kitchen",
+                "state": "on",
+                "attributes": {"friendly_name": "Kueche Fenster"},
+            },
         ]
-        with patch("assistant.function_calling.is_heating_relevant_opening", return_value=True), \
-             patch("assistant.function_calling.get_opening_type", return_value="window"):
+        with (
+            patch(
+                "assistant.function_calling.is_heating_relevant_opening",
+                return_value=True,
+            ),
+            patch("assistant.function_calling.get_opening_type", return_value="window"),
+        ):
             result = await ta_windows._check_windows_cold(states)
 
         assert len(result) == 1
@@ -835,13 +915,24 @@ class TestCheckWindowsCold:
     async def test_window_closed_no_alert(self, ta_windows):
         """Window closed — no alert."""
         states = [
-            {"entity_id": "weather.home", "state": "cloudy",
-             "attributes": {"temperature": 2}},
-            {"entity_id": "binary_sensor.window_kitchen", "state": "off",
-             "attributes": {"friendly_name": "Kueche Fenster"}},
+            {
+                "entity_id": "weather.home",
+                "state": "cloudy",
+                "attributes": {"temperature": 2},
+            },
+            {
+                "entity_id": "binary_sensor.window_kitchen",
+                "state": "off",
+                "attributes": {"friendly_name": "Kueche Fenster"},
+            },
         ]
-        with patch("assistant.function_calling.is_heating_relevant_opening", return_value=True), \
-             patch("assistant.function_calling.get_opening_type", return_value="window"):
+        with (
+            patch(
+                "assistant.function_calling.is_heating_relevant_opening",
+                return_value=True,
+            ),
+            patch("assistant.function_calling.get_opening_type", return_value="window"),
+        ):
             result = await ta_windows._check_windows_cold(states)
         assert result == []
 
@@ -853,13 +944,24 @@ class TestCheckWindowsCold:
         redis_mock.exists.return_value = 0
 
         states = [
-            {"entity_id": "weather.home", "state": "cloudy",
-             "attributes": {"temperature": -5}},
-            {"entity_id": "binary_sensor.door_front", "state": "on",
-             "attributes": {"friendly_name": "Haustuer"}},
+            {
+                "entity_id": "weather.home",
+                "state": "cloudy",
+                "attributes": {"temperature": -5},
+            },
+            {
+                "entity_id": "binary_sensor.door_front",
+                "state": "on",
+                "attributes": {"friendly_name": "Haustuer"},
+            },
         ]
-        with patch("assistant.function_calling.is_heating_relevant_opening", return_value=True), \
-             patch("assistant.function_calling.get_opening_type", return_value="door"):
+        with (
+            patch(
+                "assistant.function_calling.is_heating_relevant_opening",
+                return_value=True,
+            ),
+            patch("assistant.function_calling.get_opening_type", return_value="door"),
+        ):
             result = await ta_windows._check_windows_cold(states)
 
         assert len(result) == 1
@@ -873,13 +975,20 @@ class TestCheckWindowsCold:
         redis_mock.exists.return_value = 0
 
         states = [
-            {"entity_id": "sensor.outdoor_temperature", "state": "3",
-             "attributes": {}},
-            {"entity_id": "binary_sensor.window_bedroom", "state": "on",
-             "attributes": {"friendly_name": "Schlafzimmer Fenster"}},
+            {"entity_id": "sensor.outdoor_temperature", "state": "3", "attributes": {}},
+            {
+                "entity_id": "binary_sensor.window_bedroom",
+                "state": "on",
+                "attributes": {"friendly_name": "Schlafzimmer Fenster"},
+            },
         ]
-        with patch("assistant.function_calling.is_heating_relevant_opening", return_value=True), \
-             patch("assistant.function_calling.get_opening_type", return_value="window"):
+        with (
+            patch(
+                "assistant.function_calling.is_heating_relevant_opening",
+                return_value=True,
+            ),
+            patch("assistant.function_calling.get_opening_type", return_value="window"),
+        ):
             result = await ta_windows._check_windows_cold(states)
 
         assert len(result) == 1
@@ -892,7 +1001,6 @@ class TestCheckWindowsCold:
 
 
 class TestCheckHeatingWindowOpen:
-
     @pytest.fixture
     def ta_heat(self, ha_mock, redis_mock):
         cfg = {
@@ -908,8 +1016,11 @@ class TestCheckHeatingWindowOpen:
     async def test_no_heating_active(self, ta_heat):
         """No climate entity heating — no alerts."""
         states = [
-            {"entity_id": "climate.living_room", "state": "off",
-             "attributes": {"hvac_action": "idle"}},
+            {
+                "entity_id": "climate.living_room",
+                "state": "off",
+                "attributes": {"hvac_action": "idle"},
+            },
         ]
         result = await ta_heat._check_heating_window_open(states)
         assert result == []
@@ -920,13 +1031,24 @@ class TestCheckHeatingWindowOpen:
         redis_mock.exists.return_value = 0  # not notified
 
         states = [
-            {"entity_id": "climate.wohnzimmer", "state": "heat",
-             "attributes": {"hvac_action": "heating", "friendly_name": "Wohnzimmer"}},
-            {"entity_id": "binary_sensor.window_wohnzimmer", "state": "on",
-             "attributes": {"friendly_name": "Wohnzimmer Fenster"}},
+            {
+                "entity_id": "climate.wohnzimmer",
+                "state": "heat",
+                "attributes": {"hvac_action": "heating", "friendly_name": "Wohnzimmer"},
+            },
+            {
+                "entity_id": "binary_sensor.window_wohnzimmer",
+                "state": "on",
+                "attributes": {"friendly_name": "Wohnzimmer Fenster"},
+            },
         ]
-        with patch("assistant.function_calling.is_heating_relevant_opening", return_value=True), \
-             patch("assistant.function_calling.get_opening_type", return_value="window"):
+        with (
+            patch(
+                "assistant.function_calling.is_heating_relevant_opening",
+                return_value=True,
+            ),
+            patch("assistant.function_calling.get_opening_type", return_value="window"),
+        ):
             result = await ta_heat._check_heating_window_open(states)
 
         assert len(result) == 1
@@ -938,13 +1060,24 @@ class TestCheckHeatingWindowOpen:
     async def test_heating_active_window_closed(self, ta_heat):
         """Heating active + window closed — no alert."""
         states = [
-            {"entity_id": "climate.wohnzimmer", "state": "heat",
-             "attributes": {"hvac_action": "heating", "friendly_name": "Wohnzimmer"}},
-            {"entity_id": "binary_sensor.window_wohnzimmer", "state": "off",
-             "attributes": {"friendly_name": "Wohnzimmer Fenster"}},
+            {
+                "entity_id": "climate.wohnzimmer",
+                "state": "heat",
+                "attributes": {"hvac_action": "heating", "friendly_name": "Wohnzimmer"},
+            },
+            {
+                "entity_id": "binary_sensor.window_wohnzimmer",
+                "state": "off",
+                "attributes": {"friendly_name": "Wohnzimmer Fenster"},
+            },
         ]
-        with patch("assistant.function_calling.is_heating_relevant_opening", return_value=True), \
-             patch("assistant.function_calling.get_opening_type", return_value="window"):
+        with (
+            patch(
+                "assistant.function_calling.is_heating_relevant_opening",
+                return_value=True,
+            ),
+            patch("assistant.function_calling.get_opening_type", return_value="window"),
+        ):
             result = await ta_heat._check_heating_window_open(states)
         assert result == []
 
@@ -954,13 +1087,24 @@ class TestCheckHeatingWindowOpen:
         redis_mock.exists.return_value = 1  # already notified
 
         states = [
-            {"entity_id": "climate.wohnzimmer", "state": "heat",
-             "attributes": {"hvac_action": "heating", "friendly_name": "Wohnzimmer"}},
-            {"entity_id": "binary_sensor.window_wohnzimmer", "state": "on",
-             "attributes": {"friendly_name": "Wohnzimmer Fenster"}},
+            {
+                "entity_id": "climate.wohnzimmer",
+                "state": "heat",
+                "attributes": {"hvac_action": "heating", "friendly_name": "Wohnzimmer"},
+            },
+            {
+                "entity_id": "binary_sensor.window_wohnzimmer",
+                "state": "on",
+                "attributes": {"friendly_name": "Wohnzimmer Fenster"},
+            },
         ]
-        with patch("assistant.function_calling.is_heating_relevant_opening", return_value=True), \
-             patch("assistant.function_calling.get_opening_type", return_value="window"):
+        with (
+            patch(
+                "assistant.function_calling.is_heating_relevant_opening",
+                return_value=True,
+            ),
+            patch("assistant.function_calling.get_opening_type", return_value="window"),
+        ):
             result = await ta_heat._check_heating_window_open(states)
         assert result == []
 
@@ -970,12 +1114,20 @@ class TestCheckHeatingWindowOpen:
         redis_mock.exists.return_value = 0
 
         states = [
-            {"entity_id": "climate.wohnzimmer", "state": "heat",
-             "attributes": {"hvac_action": "heating", "friendly_name": "Wohnzimmer"}},
-            {"entity_id": "binary_sensor.gate", "state": "on",
-             "attributes": {"friendly_name": "Garage Gate"}},
+            {
+                "entity_id": "climate.wohnzimmer",
+                "state": "heat",
+                "attributes": {"hvac_action": "heating", "friendly_name": "Wohnzimmer"},
+            },
+            {
+                "entity_id": "binary_sensor.gate",
+                "state": "on",
+                "attributes": {"friendly_name": "Garage Gate"},
+            },
         ]
-        with patch("assistant.function_calling.is_heating_relevant_opening", return_value=False):
+        with patch(
+            "assistant.function_calling.is_heating_relevant_opening", return_value=False
+        ):
             result = await ta_heat._check_heating_window_open(states)
         assert result == []
 
@@ -985,13 +1137,24 @@ class TestCheckHeatingWindowOpen:
         redis_mock.exists.return_value = 0
 
         states = [
-            {"entity_id": "climate.flur", "state": "heat",
-             "attributes": {"hvac_action": "heating", "friendly_name": "Flur"}},
-            {"entity_id": "binary_sensor.door_front", "state": "on",
-             "attributes": {"friendly_name": "Haustuer"}},
+            {
+                "entity_id": "climate.flur",
+                "state": "heat",
+                "attributes": {"hvac_action": "heating", "friendly_name": "Flur"},
+            },
+            {
+                "entity_id": "binary_sensor.door_front",
+                "state": "on",
+                "attributes": {"friendly_name": "Haustuer"},
+            },
         ]
-        with patch("assistant.function_calling.is_heating_relevant_opening", return_value=True), \
-             patch("assistant.function_calling.get_opening_type", return_value="door"):
+        with (
+            patch(
+                "assistant.function_calling.is_heating_relevant_opening",
+                return_value=True,
+            ),
+            patch("assistant.function_calling.get_opening_type", return_value="door"),
+        ):
             result = await ta_heat._check_heating_window_open(states)
 
         assert len(result) == 1
@@ -1004,7 +1167,6 @@ class TestCheckHeatingWindowOpen:
 
 
 class TestRunChecks:
-
     @pytest.fixture
     def ta_full(self, ha_mock, redis_mock):
         cfg = {
@@ -1012,9 +1174,14 @@ class TestRunChecks:
                 "enabled": True,
                 "check_interval_minutes": 5,
                 "thresholds": {
-                    "oven": 60, "iron": 30, "light_empty_room": 30,
-                    "window_open_cold": 120, "pc_no_break": 360,
-                    "washer": 180, "dryer": 150, "dishwasher": 180,
+                    "oven": 60,
+                    "iron": 30,
+                    "light_empty_room": 30,
+                    "window_open_cold": 120,
+                    "pc_no_break": 360,
+                    "washer": 180,
+                    "dryer": 150,
+                    "dishwasher": 180,
                 },
                 "counters": {"coffee_machine": True},
             },
@@ -1040,8 +1207,7 @@ class TestRunChecks:
         """Empty states list — no alerts."""
         ha_mock.get_states = AsyncMock(return_value=[])
         redis_mock.get = AsyncMock(return_value=None)
-        with patch("assistant.config.get_room_profiles",
-                    return_value={"rooms": {}}):
+        with patch("assistant.config.get_room_profiles", return_value={"rooms": {}}):
             await ta_full._run_checks()
         ta_full._notify_callback.assert_not_called()
 
@@ -1052,11 +1218,12 @@ class TestRunChecks:
         redis_mock.get.return_value = past_ts
         redis_mock.exists.return_value = 0
 
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "switch.oven", "state": "on"},
-        ])
-        with patch("assistant.config.get_room_profiles",
-                    return_value={"rooms": {}}):
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "switch.oven", "state": "on"},
+            ]
+        )
+        with patch("assistant.config.get_room_profiles", return_value={"rooms": {}}):
             await ta_full._run_checks()
 
         ta_full._notify_callback.assert_called()
@@ -1071,7 +1238,6 @@ class TestRunChecks:
 
 
 class TestCheckPcSessionExtended:
-
     @pytest.mark.asyncio
     async def test_pc_with_active_state(self, ta_with_redis, redis_mock):
         """PC sensor with 'active' state is recognized."""
@@ -1116,7 +1282,6 @@ class TestCheckPcSessionExtended:
 
 
 class TestMultipleApplianceTypes:
-
     @pytest.mark.asyncio
     async def test_washer_alert(self, ta_with_redis, redis_mock):
         """Washer running 185 min produces alert."""
@@ -1125,8 +1290,11 @@ class TestMultipleApplianceTypes:
         redis_mock.exists.return_value = 0
         states = [{"entity_id": "switch.waschmaschine", "state": "on"}]
         result = await ta_with_redis._check_appliance(
-            states, ["switch.waschmaschine"], 180, "washer",
-            "Waschmaschine laeuft seit {minutes} Minuten."
+            states,
+            ["switch.waschmaschine"],
+            180,
+            "washer",
+            "Waschmaschine laeuft seit {minutes} Minuten.",
         )
         assert result is not None
         assert result["device"] == "washer"
@@ -1139,8 +1307,11 @@ class TestMultipleApplianceTypes:
         redis_mock.exists.return_value = 0
         states = [{"entity_id": "switch.trockner", "state": "active"}]
         result = await ta_with_redis._check_appliance(
-            states, ["switch.trockner"], 150, "dryer",
-            "Trockner laeuft seit {minutes} Minuten."
+            states,
+            ["switch.trockner"],
+            150,
+            "dryer",
+            "Trockner laeuft seit {minutes} Minuten.",
         )
         assert result is not None
         assert result["device"] == "dryer"
@@ -1153,8 +1324,11 @@ class TestMultipleApplianceTypes:
         redis_mock.exists.return_value = 0
         states = [{"entity_id": "switch.geschirrspueler", "state": "on"}]
         result = await ta_with_redis._check_appliance(
-            states, ["switch.geschirrspueler"], 180, "dishwasher",
-            "Geschirrspueler laeuft seit {minutes} Minuten."
+            states,
+            ["switch.geschirrspueler"],
+            180,
+            "dishwasher",
+            "Geschirrspueler laeuft seit {minutes} Minuten.",
         )
         assert result is not None
         assert result["device"] == "dishwasher"
@@ -1176,9 +1350,14 @@ class TestRunChecksIntegration:
                 "enabled": True,
                 "check_interval_minutes": 5,
                 "thresholds": {
-                    "oven": 60, "iron": 30, "light_empty_room": 30,
-                    "window_open_cold": 120, "pc_no_break": 360,
-                    "washer": 180, "dryer": 150, "dishwasher": 180,
+                    "oven": 60,
+                    "iron": 30,
+                    "light_empty_room": 30,
+                    "window_open_cold": 120,
+                    "pc_no_break": 360,
+                    "washer": 180,
+                    "dryer": 150,
+                    "dishwasher": 180,
                 },
                 "counters": {"coffee_machine": True},
             },
@@ -1198,9 +1377,11 @@ class TestRunChecksIntegration:
         past_ts = str(datetime.now().timestamp() - 35 * 60)
         redis_mock.get.return_value = past_ts
         redis_mock.exists.return_value = 0
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "switch.buegeleisen", "state": "on"},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "switch.buegeleisen", "state": "on"},
+            ]
+        )
         with patch("assistant.config.get_room_profiles", return_value={"rooms": {}}):
             await ta_int._run_checks()
         ta_int._notify_callback.assert_called()
@@ -1213,9 +1394,11 @@ class TestRunChecksIntegration:
         past_ts = str(datetime.now().timestamp() - 185 * 60)
         redis_mock.get.return_value = past_ts
         redis_mock.exists.return_value = 0
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "switch.waschmaschine", "state": "on"},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "switch.waschmaschine", "state": "on"},
+            ]
+        )
         with patch("assistant.config.get_room_profiles", return_value={"rooms": {}}):
             await ta_int._run_checks()
         ta_int._notify_callback.assert_called()
@@ -1228,9 +1411,11 @@ class TestRunChecksIntegration:
         past_ts = str(datetime.now().timestamp() - 155 * 60)
         redis_mock.get.return_value = past_ts
         redis_mock.exists.return_value = 0
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "switch.trockner", "state": "active"},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "switch.trockner", "state": "active"},
+            ]
+        )
         with patch("assistant.config.get_room_profiles", return_value={"rooms": {}}):
             await ta_int._run_checks()
         ta_int._notify_callback.assert_called()
@@ -1243,9 +1428,11 @@ class TestRunChecksIntegration:
         past_ts = str(datetime.now().timestamp() - 185 * 60)
         redis_mock.get.return_value = past_ts
         redis_mock.exists.return_value = 0
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "switch.geschirrspueler", "state": "on"},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "switch.geschirrspueler", "state": "on"},
+            ]
+        )
         with patch("assistant.config.get_room_profiles", return_value={"rooms": {}}):
             await ta_int._run_checks()
         ta_int._notify_callback.assert_called()
@@ -1256,15 +1443,18 @@ class TestRunChecksIntegration:
     async def test_run_checks_pc_session_alert(self, ta_int, ha_mock, redis_mock):
         """PC session over threshold via _run_checks sends alert."""
         from assistant.time_awareness import KEY_COUNTER_DATE, _LOCAL_TZ
+
         past_ts = str(datetime.now().timestamp() - 7 * 3600)
         today = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
         redis_mock.get.side_effect = lambda key: {
             KEY_COUNTER_DATE: today,
         }.get(key, past_ts)
         redis_mock.exists.return_value = 0
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.pc_active", "state": "on"},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.pc_active", "state": "on"},
+            ]
+        )
         # Must also patch yaml_config during _run_checks so _check_pc_session
         # reads the right pc_sensors list
         run_cfg = {
@@ -1273,9 +1463,14 @@ class TestRunChecksIntegration:
             "multi_room": {"room_motion_sensors": {}},
             "activity": {"entities": {"pc_sensors": ["sensor.pc_active"]}},
         }
-        with patch("assistant.config.get_room_profiles", return_value={"rooms": {}}), \
-             patch("assistant.function_calling.is_heating_relevant_opening", return_value=False), \
-             patch("assistant.time_awareness.yaml_config", run_cfg):
+        with (
+            patch("assistant.config.get_room_profiles", return_value={"rooms": {}}),
+            patch(
+                "assistant.function_calling.is_heating_relevant_opening",
+                return_value=False,
+            ),
+            patch("assistant.time_awareness.yaml_config", run_cfg),
+        ):
             await ta_int._run_checks()
         ta_int._notify_callback.assert_called()
         alert = ta_int._notify_callback.call_args[0][0]
@@ -1285,13 +1480,23 @@ class TestRunChecksIntegration:
     async def test_run_checks_light_alerts_extended(self, ta_int, ha_mock, redis_mock):
         """Light alerts from _check_lights_empty_rooms are added to alerts list."""
         redis_mock.get.return_value = None
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "switch.nothing", "state": "off"},
-        ])
-        light_alert = {"type": "light_empty_room", "device": "light_kitchen",
-                        "message": "Light on", "urgency": "low"}
-        with patch.object(ta_int, "_check_lights_empty_rooms",
-                          new_callable=AsyncMock, return_value=[light_alert]):
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "switch.nothing", "state": "off"},
+            ]
+        )
+        light_alert = {
+            "type": "light_empty_room",
+            "device": "light_kitchen",
+            "message": "Light on",
+            "urgency": "low",
+        }
+        with patch.object(
+            ta_int,
+            "_check_lights_empty_rooms",
+            new_callable=AsyncMock,
+            return_value=[light_alert],
+        ):
             await ta_int._run_checks()
         ta_int._notify_callback.assert_called()
         sent = ta_int._notify_callback.call_args[0][0]
@@ -1316,9 +1521,11 @@ class TestCheckLightsEmptyRoomsDeep:
                 "thresholds": {"light_empty_room": 30},
             },
             "lighting": {"enabled": True},
-            "multi_room": {"room_motion_sensors": {
-                "kitchen": "binary_sensor.motion_kitchen",
-            }},
+            "multi_room": {
+                "room_motion_sensors": {
+                    "kitchen": "binary_sensor.motion_kitchen",
+                }
+            },
             "activity": {"entities": {"pc_sensors": []}},
         }
         with patch("assistant.time_awareness.yaml_config", cfg):
@@ -1333,16 +1540,23 @@ class TestCheckLightsEmptyRoomsDeep:
         redis_mock.get.return_value = past_ts
         redis_mock.exists.return_value = 0
         states = [
-            {"entity_id": "light.bad_main", "state": "on",
-             "attributes": {"friendly_name": "Bad Licht"}},
+            {
+                "entity_id": "light.bad_main",
+                "state": "on",
+                "attributes": {"friendly_name": "Bad Licht"},
+            },
         ]
         cfg = {
-            "lighting": {"enabled": True, "auto_off_empty_room_minutes": "not_a_number"},
+            "lighting": {
+                "enabled": True,
+                "auto_off_empty_room_minutes": "not_a_number",
+            },
             "multi_room": {"room_motion_sensors": {}},
         }
-        with patch("assistant.time_awareness.yaml_config") as mock_cfg, \
-             patch("assistant.config.get_room_profiles",
-                   return_value={"rooms": {}}):
+        with (
+            patch("assistant.time_awareness.yaml_config") as mock_cfg,
+            patch("assistant.config.get_room_profiles", return_value={"rooms": {}}),
+        ):
             mock_cfg.get.side_effect = lambda k, default=None: cfg.get(k, default)
             alerts = await ta_ld._check_lights_empty_rooms(states)
         # Should still produce alert using fallback threshold
@@ -1354,18 +1568,29 @@ class TestCheckLightsEmptyRoomsDeep:
         """Configured motion sensor maps to room correctly — light not alerted."""
         states = [
             {"entity_id": "binary_sensor.motion_kitchen", "state": "on"},
-            {"entity_id": "light.kitchen_lamp", "state": "on",
-             "attributes": {"friendly_name": "Kitchen Lamp"}},
+            {
+                "entity_id": "light.kitchen_lamp",
+                "state": "on",
+                "attributes": {"friendly_name": "Kitchen Lamp"},
+            },
         ]
         cfg = {
             "lighting": {"enabled": True},
-            "multi_room": {"room_motion_sensors": {
-                "kitchen": "binary_sensor.motion_kitchen",
-            }},
+            "multi_room": {
+                "room_motion_sensors": {
+                    "kitchen": "binary_sensor.motion_kitchen",
+                }
+            },
         }
-        with patch("assistant.time_awareness.yaml_config") as mock_cfg, \
-             patch("assistant.config.get_room_profiles",
-                   return_value={"rooms": {"kitchen": {"light_entities": ["light.kitchen_lamp"]}}}):
+        with (
+            patch("assistant.time_awareness.yaml_config") as mock_cfg,
+            patch(
+                "assistant.config.get_room_profiles",
+                return_value={
+                    "rooms": {"kitchen": {"light_entities": ["light.kitchen_lamp"]}}
+                },
+            ),
+        ):
             mock_cfg.get.side_effect = lambda k, default=None: cfg.get(k, default)
             alerts = await ta_ld._check_lights_empty_rooms(states)
         assert alerts == []
@@ -1375,16 +1600,25 @@ class TestCheckLightsEmptyRoomsDeep:
         """binary_sensor.motion_* without config still detects active room."""
         states = [
             {"entity_id": "binary_sensor.motion_garage", "state": "on"},
-            {"entity_id": "light.garage_ceiling", "state": "on",
-             "attributes": {"friendly_name": "Garage Ceiling"}},
+            {
+                "entity_id": "light.garage_ceiling",
+                "state": "on",
+                "attributes": {"friendly_name": "Garage Ceiling"},
+            },
         ]
         cfg = {
             "lighting": {"enabled": True},
             "multi_room": {"room_motion_sensors": {}},
         }
-        with patch("assistant.time_awareness.yaml_config") as mock_cfg, \
-             patch("assistant.config.get_room_profiles",
-                   return_value={"rooms": {"garage": {"light_entities": ["light.garage_ceiling"]}}}):
+        with (
+            patch("assistant.time_awareness.yaml_config") as mock_cfg,
+            patch(
+                "assistant.config.get_room_profiles",
+                return_value={
+                    "rooms": {"garage": {"light_entities": ["light.garage_ceiling"]}}
+                },
+            ),
+        ):
             mock_cfg.get.side_effect = lambda k, default=None: cfg.get(k, default)
             alerts = await ta_ld._check_lights_empty_rooms(states)
         assert alerts == []
@@ -1393,18 +1627,30 @@ class TestCheckLightsEmptyRoomsDeep:
     async def test_person_zone_active_room(self, ta_ld, redis_mock):
         """Person zone attribute marks room as active."""
         states = [
-            {"entity_id": "person.user1", "state": "home",
-             "attributes": {"zone": "Office"}},
-            {"entity_id": "light.office_desk", "state": "on",
-             "attributes": {"friendly_name": "Office Desk Light"}},
+            {
+                "entity_id": "person.user1",
+                "state": "home",
+                "attributes": {"zone": "Office"},
+            },
+            {
+                "entity_id": "light.office_desk",
+                "state": "on",
+                "attributes": {"friendly_name": "Office Desk Light"},
+            },
         ]
         cfg = {
             "lighting": {"enabled": True},
             "multi_room": {"room_motion_sensors": {}},
         }
-        with patch("assistant.time_awareness.yaml_config") as mock_cfg, \
-             patch("assistant.config.get_room_profiles",
-                   return_value={"rooms": {"office": {"light_entities": ["light.office_desk"]}}}):
+        with (
+            patch("assistant.time_awareness.yaml_config") as mock_cfg,
+            patch(
+                "assistant.config.get_room_profiles",
+                return_value={
+                    "rooms": {"office": {"light_entities": ["light.office_desk"]}}
+                },
+            ),
+        ):
             mock_cfg.get.side_effect = lambda k, default=None: cfg.get(k, default)
             alerts = await ta_ld._check_lights_empty_rooms(states)
         assert alerts == []
@@ -1416,8 +1662,11 @@ class TestCheckLightsEmptyRoomsDeep:
         redis_mock.get.return_value = past_ts
         redis_mock.exists.return_value = 0
         states = [
-            {"entity_id": "light.living_manual", "state": "on",
-             "attributes": {"friendly_name": "Living Manual"}},
+            {
+                "entity_id": "light.living_manual",
+                "state": "on",
+                "attributes": {"friendly_name": "Living Manual"},
+            },
         ]
         cfg = {
             "lighting": {"enabled": True},
@@ -1427,9 +1676,10 @@ class TestCheckLightsEmptyRoomsDeep:
         mock_le = AsyncMock()
         mock_le.is_manual_override_active = AsyncMock(return_value=True)
         ta_ld._light_engine = mock_le
-        with patch("assistant.time_awareness.yaml_config") as mock_cfg, \
-             patch("assistant.config.get_room_profiles",
-                   return_value={"rooms": {}}):
+        with (
+            patch("assistant.time_awareness.yaml_config") as mock_cfg,
+            patch("assistant.config.get_room_profiles", return_value={"rooms": {}}),
+        ):
             mock_cfg.get.side_effect = lambda k, default=None: cfg.get(k, default)
             alerts = await ta_ld._check_lights_empty_rooms(states)
         assert alerts == []
@@ -1441,19 +1691,25 @@ class TestCheckLightsEmptyRoomsDeep:
         redis_mock.get.return_value = past_ts
         redis_mock.exists.return_value = 0
         states = [
-            {"entity_id": "light.study_lamp", "state": "on",
-             "attributes": {"friendly_name": "Study Lamp"}},
+            {
+                "entity_id": "light.study_lamp",
+                "state": "on",
+                "attributes": {"friendly_name": "Study Lamp"},
+            },
         ]
         cfg = {
             "lighting": {"enabled": True},
             "multi_room": {"room_motion_sensors": {}},
         }
         mock_le = AsyncMock()
-        mock_le.is_manual_override_active = AsyncMock(side_effect=RuntimeError("LE error"))
+        mock_le.is_manual_override_active = AsyncMock(
+            side_effect=RuntimeError("LE error")
+        )
         ta_ld._light_engine = mock_le
-        with patch("assistant.time_awareness.yaml_config") as mock_cfg, \
-             patch("assistant.config.get_room_profiles",
-                   return_value={"rooms": {}}):
+        with (
+            patch("assistant.time_awareness.yaml_config") as mock_cfg,
+            patch("assistant.config.get_room_profiles", return_value={"rooms": {}}),
+        ):
             mock_cfg.get.side_effect = lambda k, default=None: cfg.get(k, default)
             alerts = await ta_ld._check_lights_empty_rooms(states)
         # Light should still produce alert despite LE error
@@ -1467,16 +1723,24 @@ class TestCheckLightsEmptyRoomsDeep:
         redis_mock.exists.return_value = 0
         ha_mock.call_service = AsyncMock(side_effect=RuntimeError("HA down"))
         states = [
-            {"entity_id": "light.kitchen_spot", "state": "on",
-             "attributes": {"friendly_name": "Kitchen Spot"}},
+            {
+                "entity_id": "light.kitchen_spot",
+                "state": "on",
+                "attributes": {"friendly_name": "Kitchen Spot"},
+            },
         ]
         cfg = {
-            "lighting": {"enabled": True, "auto_off_empty_room_minutes": 20, "default_transition": 2},
+            "lighting": {
+                "enabled": True,
+                "auto_off_empty_room_minutes": 20,
+                "default_transition": 2,
+            },
             "multi_room": {"room_motion_sensors": {}},
         }
-        with patch("assistant.time_awareness.yaml_config") as mock_cfg, \
-             patch("assistant.config.get_room_profiles",
-                   return_value={"rooms": {}}):
+        with (
+            patch("assistant.time_awareness.yaml_config") as mock_cfg,
+            patch("assistant.config.get_room_profiles", return_value={"rooms": {}}),
+        ):
             mock_cfg.get.side_effect = lambda k, default=None: cfg.get(k, default)
             alerts = await ta_ld._check_lights_empty_rooms(states)
         assert len(alerts) == 1
@@ -1486,17 +1750,21 @@ class TestCheckLightsEmptyRoomsDeep:
     async def test_motion_sensor_null_skipped(self, ta_ld, redis_mock):
         """Motion sensor with None value in config is skipped."""
         states = [
-            {"entity_id": "light.hallway_light", "state": "on",
-             "attributes": {"friendly_name": "Hallway"}},
+            {
+                "entity_id": "light.hallway_light",
+                "state": "on",
+                "attributes": {"friendly_name": "Hallway"},
+            },
         ]
         cfg = {
             "lighting": {"enabled": True},
             "multi_room": {"room_motion_sensors": {"hallway": None}},
         }
         redis_mock.get.return_value = None  # first check
-        with patch("assistant.time_awareness.yaml_config") as mock_cfg, \
-             patch("assistant.config.get_room_profiles",
-                   return_value={"rooms": {}}):
+        with (
+            patch("assistant.time_awareness.yaml_config") as mock_cfg,
+            patch("assistant.config.get_room_profiles", return_value={"rooms": {}}),
+        ):
             mock_cfg.get.side_effect = lambda k, default=None: cfg.get(k, default)
             alerts = await ta_ld._check_lights_empty_rooms(states)
         # Under threshold (first check), no alert
@@ -1530,8 +1798,11 @@ class TestCheckWindowsColdDeep:
         """Invalid outdoor temperature value is handled gracefully."""
         states = [
             {"entity_id": "sensor.outdoor_temperature", "state": "unavailable"},
-            {"entity_id": "binary_sensor.window_kitchen", "state": "on",
-             "attributes": {"friendly_name": "Kuechenfenster"}},
+            {
+                "entity_id": "binary_sensor.window_kitchen",
+                "state": "on",
+                "attributes": {"friendly_name": "Kuechenfenster"},
+            },
         ]
         # No weather entity, outdoor temp is invalid -> outside_temp stays None -> no alert
         alerts = await ta_wd._check_windows_cold(states)
@@ -1545,11 +1816,19 @@ class TestCheckWindowsColdDeep:
         redis_mock.exists.return_value = 0
         states = [
             {"entity_id": "sensor.outdoor_temperature", "state": "5.0"},
-            {"entity_id": "binary_sensor.window_bath", "state": "on",
-             "attributes": {"friendly_name": "Badfenster"}},
+            {
+                "entity_id": "binary_sensor.window_bath",
+                "state": "on",
+                "attributes": {"friendly_name": "Badfenster"},
+            },
         ]
-        with patch("assistant.function_calling.is_heating_relevant_opening", return_value=True), \
-             patch("assistant.function_calling.get_opening_type", return_value="window"):
+        with (
+            patch(
+                "assistant.function_calling.is_heating_relevant_opening",
+                return_value=True,
+            ),
+            patch("assistant.function_calling.get_opening_type", return_value="window"),
+        ):
             alerts = await ta_wd._check_windows_cold(states)
         assert len(alerts) == 1
         assert "5.0°C" in alerts[0]["message"]

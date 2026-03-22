@@ -13,20 +13,43 @@ import pytest
 # ---------------------------------------------------------------------------
 
 ENTITY_REFERENCES_DE = {
-    "es", "das", "den", "die", "ihn", "ihm", "ihr", "dem",
-    "das gleiche", "den gleichen", "die gleiche", "dasselbe",
-    "das licht", "die lampe", "das ding",
+    "es",
+    "das",
+    "den",
+    "die",
+    "ihn",
+    "ihm",
+    "ihr",
+    "dem",
+    "das gleiche",
+    "den gleichen",
+    "die gleiche",
+    "dasselbe",
+    "das licht",
+    "die lampe",
+    "das ding",
 }
 
 ROOM_REFERENCES_DE = {
-    "dort", "da", "dahin", "drin", "dorthin",
-    "im gleichen raum", "im selben raum", "da drin",
+    "dort",
+    "da",
+    "dahin",
+    "drin",
+    "dorthin",
+    "im gleichen raum",
+    "im selben raum",
+    "da drin",
     "hier",
 }
 
 ACTION_REFERENCES_DE = {
-    "nochmal", "das gleiche", "genauso", "wieder",
-    "auch", "ebenfalls", "dasselbe",
+    "nochmal",
+    "das gleiche",
+    "genauso",
+    "wieder",
+    "auch",
+    "ebenfalls",
+    "dasselbe",
 }
 
 CLARIFICATION_ANSWER_PATTERNS = [
@@ -274,9 +297,7 @@ class TestRoomReferences:
         assert result["had_references"] is False
 
     def test_picks_first_room_from_history(self):
-        result = resolve_references(
-            "da auch", last_rooms=["Wohnzimmer", "Kueche"]
-        )
+        result = resolve_references("da auch", last_rooms=["Wohnzimmer", "Kueche"])
         assert result["resolved_rooms"] == ["Wohnzimmer"]
 
 

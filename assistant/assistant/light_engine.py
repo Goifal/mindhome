@@ -34,6 +34,7 @@ from .function_calling import FunctionExecutor
 
 logger = logging.getLogger(__name__)
 from zoneinfo import ZoneInfo
+
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
@@ -47,13 +48,13 @@ async def _safe_redis(redis_client, method: str, *args, **kwargs):
 
 
 # Redis-Key Prefixe
-_R_OVERRIDE = "mha:light:override:"      # {entity_id} → TTL
-_R_DUSK = "mha:light:dusk_triggered"      # Tages-Flag
+_R_OVERRIDE = "mha:light:override:"  # {entity_id} → TTL
+_R_DUSK = "mha:light:dusk_triggered"  # Tages-Flag
 _R_WEATHER_BOOST = "mha:light:weather_boost"  # Aktiver Wetter-Boost
-_R_AWAY_OFF = "mha:light:away_off"        # Schon-abgeschaltet Flag
-_R_NIGHT_DIM = "mha:light:night_dim:"     # {entity_id} → gesetzt wenn gedimmt
-_R_SLEEP = "mha:light:sleep_active"       # Schlafmodus aktiv
-_R_PATHLIGHT = "mha:light:pathlight:"     # {entity_id} → TTL fuer Auto-Off
+_R_AWAY_OFF = "mha:light:away_off"  # Schon-abgeschaltet Flag
+_R_NIGHT_DIM = "mha:light:night_dim:"  # {entity_id} → gesetzt wenn gedimmt
+_R_SLEEP = "mha:light:sleep_active"  # Schlafmodus aktiv
+_R_PATHLIGHT = "mha:light:pathlight:"  # {entity_id} → TTL fuer Auto-Off
 
 
 class LightEngine:
@@ -70,7 +71,9 @@ class LightEngine:
     async def initialize(self, redis_client=None):
         """Initialisiert Redis-Verbindung."""
         self.redis = redis_client
-        logger.info("LightEngine initialisiert (Redis: %s)", "ja" if redis_client else "nein")
+        logger.info(
+            "LightEngine initialisiert (Redis: %s)", "ja" if redis_client else "nein"
+        )
 
     async def start(self):
         """Startet den periodischen Check-Loop."""
@@ -208,7 +211,9 @@ class LightEngine:
                 except (ValueError, TypeError):
                     pass
             await self.ha.call_service("light", "turn_on", service_data)
-            logger.info("Praesenz-Licht: %s an (%d%%) in %s", light_id, brightness, room)
+            logger.info(
+                "Praesenz-Licht: %s an (%d%%) in %s", light_id, brightness, room
+            )
 
     async def on_motion_clear(self, entity_id: str, room: str):
         """Motion weg → Wird von time_awareness Auto-Off gehandelt."""
@@ -227,7 +232,9 @@ class LightEngine:
         now = datetime.now(_LOCAL_TZ)
         start_hour = bed_cfg.get("sleep_start_hour", 21)
         if now.hour < start_hour and now.hour >= 6:
-            logger.debug("Bett belegt, aber vor Schlafzeit (%d < %d)", now.hour, start_hour)
+            logger.debug(
+                "Bett belegt, aber vor Schlafzeit (%d < %d)", now.hour, start_hour
+            )
             return
 
         logger.info("Bettsensor: Bett belegt in %s → Sleep-Mode", room)
@@ -300,7 +307,9 @@ class LightEngine:
                         for s in states
                     )
                     if not any_on:
-                        logger.info("Daemmerung: Alle Lichter aus trotz Praesenz → Re-Trigger")
+                        logger.info(
+                            "Daemmerung: Alle Lichter aus trotz Praesenz → Re-Trigger"
+                        )
                         # Weiter zur normalen Logik (Flag nicht pruefen)
                     else:
                         return
@@ -320,12 +329,23 @@ class LightEngine:
         wb_cfg = cfg.get("weather_boost", {})
         if wb_cfg.get("enabled") and wb_cfg.get("dusk_earlier_on_cloudy", True):
             weather_condition = self._get_weather_condition(states, wb_cfg)
-            cloud_conditions = {"cloudy", "partlycloudy", "rainy", "pouring",
-                                "fog", "hail", "lightning-rainy"}
+            cloud_conditions = {
+                "cloudy",
+                "partlycloudy",
+                "rainy",
+                "pouring",
+                "fog",
+                "hail",
+                "lightning-rainy",
+            }
             if weather_condition in cloud_conditions:
                 offset = wb_cfg.get("dusk_cloud_elevation_offset", 3)
                 threshold += offset
-                logger.debug("Dusk-Schwelle wegen %s angehoben: %.1f°", weather_condition, threshold)
+                logger.debug(
+                    "Dusk-Schwelle wegen %s angehoben: %.1f°",
+                    weather_condition,
+                    threshold,
+                )
 
         if sun_elevation is None or sun_elevation > threshold:
             return
@@ -347,7 +367,9 @@ class LightEngine:
         # Aktive Raeume bestimmen (mit Motion in letzten 30 Min)
         active_rooms = set()
         if only_occupied:
-            motion_sensors = yaml_config.get("multi_room", {}).get("room_motion_sensors") or {}
+            motion_sensors = (
+                yaml_config.get("multi_room", {}).get("room_motion_sensors") or {}
+            )
             for s in states:
                 eid = s.get("entity_id", "")
                 if eid in motion_sensors.values() and s.get("state") == "on":
@@ -368,7 +390,9 @@ class LightEngine:
                 ha_state = await self.ha.get_state(light_id)
                 if ha_state and ha_state.get("state") == "on":
                     continue
-                brightness = FunctionExecutor.get_adaptive_brightness(room_name, light_id)
+                brightness = FunctionExecutor.get_adaptive_brightness(
+                    room_name, light_id
+                )
                 data = {"entity_id": light_id, "brightness_pct": brightness}
                 try:
                     data["transition"] = int(transition)
@@ -419,7 +443,9 @@ class LightEngine:
             if self.redis and now.hour == 12:
                 cursor = b"0"
                 while True:
-                    cursor, _keys = await self.redis.scan(cursor, match=f"{_R_NIGHT_DIM}*", count=100)
+                    cursor, _keys = await self.redis.scan(
+                        cursor, match=f"{_R_NIGHT_DIM}*", count=100
+                    )
                     for k in _keys:
                         await _safe_redis(self.redis, "delete", k)
                     if cursor == b"0" or cursor == 0:
@@ -472,12 +498,19 @@ class LightEngine:
             except (ValueError, TypeError):
                 pass
             await self.ha.call_service("light", "turn_on", data)
-            logger.info("Night-Dimming: %s %d%% → %d%% (Transition %ds)",
-                        eid, current_pct, night_bri, transition)
+            logger.info(
+                "Night-Dimming: %s %d%% → %d%% (Transition %ds)",
+                eid,
+                current_pct,
+                night_bri,
+                transition,
+            )
 
             # Flag setzen (12h TTL)
             if self.redis:
-                await _safe_redis(self.redis, "set", f"{_R_NIGHT_DIM}{eid}", "1", ex=43200)
+                await _safe_redis(
+                    self.redis, "set", f"{_R_NIGHT_DIM}{eid}", "1", ex=43200
+                )
 
     # ── Sleep Mode ─────────────────────────────────────────────────────
 
@@ -500,12 +533,13 @@ class LightEngine:
                 await self.ha.call_service("light", "turn_off", data)
                 count += 1
 
-        logger.info("Sleep-Mode: %d Lichter ausgeschaltet (Transition %ds)", count, transition)
+        logger.info(
+            "Sleep-Mode: %d Lichter ausgeschaltet (Transition %ds)", count, transition
+        )
 
     # ── Night Path Light ───────────────────────────────────────────────
 
-    async def _apply_night_path_light(self, room: str, lights: list[str],
-                                       pc: dict):
+    async def _apply_night_path_light(self, room: str, lights: list[str], pc: dict):
         """Sehr dimmes Orientierungslicht einschalten."""
         brightness = pc.get("night_path_brightness", 5)
         timeout_min = pc.get("night_path_timeout_minutes", 5)
@@ -517,11 +551,15 @@ class LightEngine:
                 "transition": 2,
             }
             await self.ha.call_service("light", "turn_on", data)
-            logger.info("Nacht-Pfadlicht: %s an (%d%%) in %s", light_id, brightness, room)
+            logger.info(
+                "Nacht-Pfadlicht: %s an (%d%%) in %s", light_id, brightness, room
+            )
 
             # TTL fuer Auto-Off setzen
             if self.redis:
-                await _safe_redis(self.redis, "set",
+                await _safe_redis(
+                    self.redis,
+                    "set",
                     f"{_R_PATHLIGHT}{light_id}",
                     room,
                     ex=timeout_min * 60,
@@ -536,7 +574,9 @@ class LightEngine:
         keys = []
         cursor = b"0"
         while True:
-            cursor, _batch = await self.redis.scan(cursor, match=f"{_R_PATHLIGHT}*", count=100)
+            cursor, _batch = await self.redis.scan(
+                cursor, match=f"{_R_PATHLIGHT}*", count=100
+            )
             keys.extend(_batch)
             if cursor == b"0" or cursor == 0:
                 break
@@ -544,7 +584,9 @@ class LightEngine:
             ttl = await _safe_redis(self.redis, "ttl", key)
             if ttl is None:
                 ttl = -2
-            if ttl < 1:  # -2 = key not found, -1 = no expiry (shouldn't happen), 0 = about to expire
+            if (
+                ttl < 1
+            ):  # -2 = key not found, -1 = no expiry (shouldn't happen), 0 = about to expire
                 # Key ist abgelaufen → Licht ausschalten
                 entity_id = key.decode() if isinstance(key, bytes) else key
                 entity_id = entity_id.replace(_R_PATHLIGHT, "")
@@ -578,7 +620,9 @@ class LightEngine:
                 "transition": transition,
             }
             await self.ha.call_service("light", "turn_on", data)
-            logger.info("Aufwach-Licht: %s → %d%% in %ds", light_id, brightness, transition)
+            logger.info(
+                "Aufwach-Licht: %s → %d%% in %ds", light_id, brightness, transition
+            )
 
     # ── Lux Adaptive ───────────────────────────────────────────────────
 
@@ -658,8 +702,14 @@ class LightEngine:
                     "transition": 5,
                 }
                 await self.ha.call_service("light", "turn_on", data)
-                logger.info("Lux-Adaptiv: %s %d%% → %d%% (Lux: %.0f/%d)",
-                            light_id, current_pct, target_bri, current_lux, target_lux)
+                logger.info(
+                    "Lux-Adaptiv: %s %d%% → %d%% (Lux: %.0f/%d)",
+                    light_id,
+                    current_pct,
+                    target_bri,
+                    current_lux,
+                    target_lux,
+                )
 
     # ── Weather Boost ─────────────────────────────────────────────────
 
@@ -702,7 +752,9 @@ class LightEngine:
                 prev = await _safe_redis(self.redis, "get", _R_WEATHER_BOOST)
                 if prev:
                     await _safe_redis(self.redis, "delete", _R_WEATHER_BOOST)
-                    logger.info("Wetter-Boost deaktiviert (Nachtmodus ab %d Uhr)", night_start)
+                    logger.info(
+                        "Wetter-Boost deaktiviert (Nachtmodus ab %d Uhr)", night_start
+                    )
             return
 
         condition = self._get_weather_condition(states, wb_cfg)
@@ -729,13 +781,18 @@ class LightEngine:
             if was_boosting and self.redis:
                 await _safe_redis(self.redis, "delete", _R_WEATHER_BOOST)
                 await self._restore_adaptive_brightness(cfg)
-                logger.info("Wetter-Boost aufgehoben + Helligkeit zurueckgesetzt (Wetter: %s)", condition)
+                logger.info(
+                    "Wetter-Boost aufgehoben + Helligkeit zurueckgesetzt (Wetter: %s)",
+                    condition,
+                )
             return
 
         if was_boosting:
             # Boost laeuft schon — TTL erneuern, aber Lichter nicht nochmal anpassen
             if self.redis:
-                await _safe_redis(self.redis, "set", _R_WEATHER_BOOST, condition, ex=900)
+                await _safe_redis(
+                    self.redis, "set", _R_WEATHER_BOOST, condition, ex=900
+                )
             return
 
         # Neuen Boost aktivieren
@@ -762,20 +819,30 @@ class LightEngine:
                 if new_pct <= current_pct:
                     continue
 
-                await self.ha.call_service("light", "turn_on", {
-                    "entity_id": light_id,
-                    "brightness_pct": new_pct,
-                    "transition": 5,
-                })
+                await self.ha.call_service(
+                    "light",
+                    "turn_on",
+                    {
+                        "entity_id": light_id,
+                        "brightness_pct": new_pct,
+                        "transition": 5,
+                    },
+                )
                 boosted += 1
 
         if boosted > 0:
-            logger.info("Wetter-Boost: %d Lichter +%d%% (Wetter: %s)",
-                        boosted, boost_pct, condition)
+            logger.info(
+                "Wetter-Boost: %d Lichter +%d%% (Wetter: %s)",
+                boosted,
+                boost_pct,
+                condition,
+            )
 
     # ── Cover-Licht Koordination ─────────────────────────────────────
 
-    async def on_cover_position_change(self, entity_id: str, position: int, reason: str = ""):
+    async def on_cover_position_change(
+        self, entity_id: str, position: int, reason: str = ""
+    ):
         """Reagiert auf Cover-Positionsaenderung → Licht anpassen.
 
         Wenn ein Cover schliesst (Sonnenschutz, Wetter), wird es im Raum
@@ -833,13 +900,22 @@ class LightEngine:
 
             # Cover schliesst → Licht muss heller (Tageslicht blockiert)
             if position < 30 and current_pct < target:
-                await self.ha.call_service("light", "turn_on", {
-                    "entity_id": light_id,
-                    "brightness_pct": target,
-                    "transition": 10,
-                })
-                logger.info("Cover-Licht: %s → %d%% (Cover %s auf %d%%)",
-                            light_id, target, entity_id, position)
+                await self.ha.call_service(
+                    "light",
+                    "turn_on",
+                    {
+                        "entity_id": light_id,
+                        "brightness_pct": target,
+                        "transition": 10,
+                    },
+                )
+                logger.info(
+                    "Cover-Licht: %s → %d%% (Cover %s auf %d%%)",
+                    light_id,
+                    target,
+                    entity_id,
+                    position,
+                )
 
     async def _restore_adaptive_brightness(self, cfg: dict):
         """Setzt alle eingeschalteten Lichter auf ihre adaptive Helligkeit zurueck.
@@ -862,14 +938,20 @@ class LightEngine:
                 current_pct = round(attrs.get("brightness", 128) / 255 * 100)
                 if abs(current_pct - target) < 5:
                     continue
-                await self.ha.call_service("light", "turn_on", {
-                    "entity_id": light_id,
-                    "brightness_pct": target,
-                    "transition": 10,
-                })
+                await self.ha.call_service(
+                    "light",
+                    "turn_on",
+                    {
+                        "entity_id": light_id,
+                        "brightness_pct": target,
+                        "transition": 10,
+                    },
+                )
                 restored += 1
         if restored > 0:
-            logger.info("Brightness Restore: %d Lichter auf adaptive Helligkeit", restored)
+            logger.info(
+                "Brightness Restore: %d Lichter auf adaptive Helligkeit", restored
+            )
 
     # ── Manual Override ────────────────────────────────────────────────
 
@@ -885,11 +967,15 @@ class LightEngine:
         ttl_min = cfg.get("manual_override_minutes", None)
         if ttl_min is None:
             # Fallback: Cover-Setting (in Stunden) umrechnen
-            cover_hours = yaml_config.get("seasonal_actions", {}).get(
-                "cover_automation", {}
-            ).get("manual_override_hours", 2)
+            cover_hours = (
+                yaml_config.get("seasonal_actions", {})
+                .get("cover_automation", {})
+                .get("manual_override_hours", 2)
+            )
             ttl_min = int(cover_hours * 60)
-        await _safe_redis(self.redis, "set", f"{_R_OVERRIDE}{entity_id}", "1", ex=ttl_min * 60)
+        await _safe_redis(
+            self.redis, "set", f"{_R_OVERRIDE}{entity_id}", "1", ex=ttl_min * 60
+        )
         logger.debug("Manual Override: %s fuer %d Min", entity_id, ttl_min)
 
     async def is_manual_override_active(self, entity_id: str) -> bool:

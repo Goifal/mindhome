@@ -45,13 +45,19 @@ class SpontaneousObserver:
 
     # Tageszeit-Slots: (Start, End) → max Beobachtungen in diesem Slot
     _TIME_SLOTS = {
-        "morning": (6, 10, 2),   # Morgens: max 2
+        "morning": (6, 10, 2),  # Morgens: max 2
         "daytime": (10, 18, 3),  # Tagsüber: max 3
         "evening": (18, 22, 1),  # Abends: max 1
     }
 
-    def __init__(self, ha_client: HomeAssistantClient, activity_engine=None, ollama_client=None,
-                 semantic_memory=None, insight_engine=None):
+    def __init__(
+        self,
+        ha_client: HomeAssistantClient,
+        activity_engine=None,
+        ollama_client=None,
+        semantic_memory=None,
+        insight_engine=None,
+    ):
         self.ha = ha_client
         self.activity = activity_engine
         self._ollama = ollama_client
@@ -63,6 +69,7 @@ class SpontaneousObserver:
         self._running = False
         # History der letzten Beobachtungen (fuer Dashboard-Widget)
         from collections import deque
+
         self._observation_history: deque = deque(maxlen=20)
 
         cfg = yaml_config.get("spontaneous", {})
@@ -80,7 +87,9 @@ class SpontaneousObserver:
         if self.enabled and self.redis:
             self._running = True
             self._task = asyncio.create_task(self._observe_loop())
-            self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+            self._task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
+            )
         logger.info("SpontaneousObserver initialisiert (enabled: %s)", self.enabled)
 
     def set_notify_callback(self, callback):
@@ -94,7 +103,10 @@ class SpontaneousObserver:
             if states:
                 persons = []
                 for s in states:
-                    if s.get("entity_id", "").startswith("person.") and s.get("state") == "home":
+                    if (
+                        s.get("entity_id", "").startswith("person.")
+                        and s.get("state") == "home"
+                    ):
                         pname = s.get("attributes", {}).get("friendly_name", "")
                         if pname:
                             persons.append(pname)
@@ -146,11 +158,13 @@ class SpontaneousObserver:
                 if observation and self._notify_callback:
                     await self._notify_callback(observation)
                     # Dashboard-History: Beobachtung fuer Widget speichern
-                    self._observation_history.append({
-                        "text": observation.get("message", ""),
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "type": observation.get("type", "observation"),
-                    })
+                    self._observation_history.append(
+                        {
+                            "text": observation.get("message", ""),
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "type": observation.get("type", "observation"),
+                        }
+                    )
                     await self._increment_daily_count()
                     await self._increment_slot_count()
                     logger.info(
@@ -267,7 +281,11 @@ class SpontaneousObserver:
                     entries = []
                     for raw in raw_list:
                         try:
-                            entry = json.loads(raw.decode(errors="replace") if isinstance(raw, bytes) else raw)
+                            entry = json.loads(
+                                raw.decode(errors="replace")
+                                if isinstance(raw, bytes)
+                                else raw
+                            )
                             entries.append(entry)
                         except (json.JSONDecodeError, AttributeError):
                             continue
@@ -300,12 +318,14 @@ class SpontaneousObserver:
                 avg_diff = sum(diffs) / len(diffs)
                 if abs(avg_diff) >= 0.3 and all(d * avg_diff > 0 for d in diffs[-2:]):
                     direction = "spaeter" if avg_diff > 0 else "frueher"
-                    trends.append({
-                        "action": action,
-                        "direction": direction,
-                        "avg_shift_min": abs(avg_diff * 60),
-                        "days": len(day_hours),
-                    })
+                    trends.append(
+                        {
+                            "action": action,
+                            "direction": direction,
+                            "avg_shift_min": abs(avg_diff * 60),
+                            "days": len(day_hours),
+                        }
+                    )
 
             # Cache setzen
             await self.redis.setex(cache_key, 48 * 3600, json.dumps(trends[:3]))
@@ -355,7 +375,7 @@ class SpontaneousObserver:
             # Korrelierte Insights finden: Gleicher Raum oder gleiche Domaene
             correlated = []
             for i, f1 in enumerate(findings):
-                for f2 in findings[i + 1:]:
+                for f2 in findings[i + 1 :]:
                     room1 = f1.get("room", "")
                     room2 = f2.get("room", "")
                     domain1 = f1.get("domain", "")
@@ -400,7 +420,9 @@ class SpontaneousObserver:
 
             # 2. Relevante vergangene Gespraeche suchen
             conversations = []
-            conv_method = getattr(self.semantic_memory, "get_relevant_conversations", None)
+            conv_method = getattr(
+                self.semantic_memory, "get_relevant_conversations", None
+            )
             if conv_method:
                 try:
                     conversations = await conv_method(observation_text, limit=2)
@@ -409,23 +431,29 @@ class SpontaneousObserver:
 
             # 3. Beste Insider-Referenz waehlen
             insider_ref = None
-            for fact in (facts or []):
+            for fact in facts or []:
                 content = fact.get("content", "")
                 relevance = fact.get("relevance", 0)
                 category = fact.get("category", "")
-                if relevance >= 0.7 and category in ("habit", "preference", "conversation_topic"):
+                if relevance >= 0.7 and category in (
+                    "habit",
+                    "preference",
+                    "conversation_topic",
+                ):
                     insider_ref = content
                     break
 
             if not insider_ref:
-                for conv in (conversations or []):
+                for conv in conversations or []:
                     content = conv.get("content", "")
                     if content and len(content) > 10:
                         insider_ref = content
                         break
 
             if insider_ref:
-                return f"{observation_text}\n[INSIDER-KONTEXT fuer Jarvis: {insider_ref}]"
+                return (
+                    f"{observation_text}\n[INSIDER-KONTEXT fuer Jarvis: {insider_ref}]"
+                )
 
         except Exception as e:
             logger.debug("Semantic memory enrichment failed: %s", e)
@@ -439,7 +467,9 @@ class SpontaneousObserver:
         # Check-Level Dedup: Domains die InsightEngine kuerzlich geprueft hat
         # ueberspringen, um Duplikate zu vermeiden.
         _ie_domains: set[str] = set()
-        if self.insight_engine and hasattr(self.insight_engine, "get_recently_checked_domains"):
+        if self.insight_engine and hasattr(
+            self.insight_engine, "get_recently_checked_domains"
+        ):
             try:
                 _ie_domains = await self.insight_engine.get_recently_checked_domains()
             except Exception:
@@ -499,7 +529,15 @@ class SpontaneousObserver:
     def _build_sensor_snapshot(self, states: list[dict]) -> str:
         """Baut kompakten Sensor-Snapshot fuer LLM-Prompt."""
         lines = []
-        _RELEVANT = {"temperature", "humidity", "energy", "power", "illuminance", "co2", "battery"}
+        _RELEVANT = {
+            "temperature",
+            "humidity",
+            "energy",
+            "power",
+            "illuminance",
+            "co2",
+            "battery",
+        }
         for s in states:
             eid = s.get("entity_id", "")
             state_val = s.get("state", "")
@@ -508,7 +546,9 @@ class SpontaneousObserver:
             attrs = s.get("attributes", {})
             device_class = attrs.get("device_class", "")
             unit = attrs.get("unit_of_measurement", "")
-            if device_class in _RELEVANT or any(k in eid for k in ("temp", "humid", "energy", "power", "weather")):
+            if device_class in _RELEVANT or any(
+                k in eid for k in ("temp", "humid", "energy", "power", "weather")
+            ):
                 name = attrs.get("friendly_name", eid)
                 lines.append(f"{name}: {state_val}{unit}")
                 if len(lines) >= 30:
@@ -531,8 +571,15 @@ class SpontaneousObserver:
 
             # Kontext anreichern: Zeit + Wochentag + Aktivitaet
             now = _local_now()
-            _DAY_NAMES = {0: "Montag", 1: "Dienstag", 2: "Mittwoch", 3: "Donnerstag",
-                          4: "Freitag", 5: "Samstag", 6: "Sonntag"}
+            _DAY_NAMES = {
+                0: "Montag",
+                1: "Dienstag",
+                2: "Mittwoch",
+                3: "Donnerstag",
+                4: "Freitag",
+                5: "Samstag",
+                6: "Sonntag",
+            }
             _hour = now.hour
             if 5 <= _hour < 10:
                 _tod = "Morgen"
@@ -550,10 +597,15 @@ class SpontaneousObserver:
                     act_result = await self.activity.detect_activity()
                     act = act_result.get("activity", "")
                     if act and act != "unknown":
-                        _ACT_DE = {"relaxing": "entspannt", "focused": "arbeitet",
-                                   "sleeping": "schlaeft", "away": "abwesend",
-                                   "cooking": "kocht", "watching": "schaut fern",
-                                   "guests": "hat Besuch"}
+                        _ACT_DE = {
+                            "relaxing": "entspannt",
+                            "focused": "arbeitet",
+                            "sleeping": "schlaeft",
+                            "away": "abwesend",
+                            "cooking": "kocht",
+                            "watching": "schaut fern",
+                            "guests": "hat Besuch",
+                        }
                         activity_hint = f"\nAktivitaet: {_ACT_DE.get(act, act)}"
                 except Exception as e:
                     logger.debug("Aktivitaetserkennung fehlgeschlagen: %s", e)
@@ -572,7 +624,9 @@ class SpontaneousObserver:
             )
             response = await self._ollama.generate(prompt, max_tokens=300)
             if response and len(response.strip()) > 20:
-                enriched_text = await self._enrich_with_semantic_memory(response.strip())
+                enriched_text = await self._enrich_with_semantic_memory(
+                    response.strip()
+                )
                 return {
                     "type": "llm_observation",
                     "message": enriched_text,
@@ -594,6 +648,7 @@ class SpontaneousObserver:
         try:
             # Heutige und letzte Wochen-Daten per mget aus Redis
             from datetime import timedelta
+
             now_ts = _local_now()
             today_key = f"mha:energy:daily:{now_ts.strftime('%Y-%m-%d')}"
             week_ago = now_ts - timedelta(days=7)
@@ -629,23 +684,29 @@ class SpontaneousObserver:
                 try:
                     from .state_change_log import StateChangeLog
                     import assistant.main as main_module
+
                     if hasattr(main_module, "brain"):
                         _states = await main_module.brain.ha.get_states() or []
                         _state_dict = {
                             s["entity_id"]: s.get("state", "")
-                            for s in _states if "entity_id" in s
+                            for s in _states
+                            if "entity_id" in s
                         }
                         _scl = StateChangeLog.__new__(StateChangeLog)
                         _conflicts = _scl.detect_conflicts(_state_dict)
                         _energy = [
-                            c for c in _conflicts
-                            if c.get("affected_active") and any(
+                            c
+                            for c in _conflicts
+                            if c.get("affected_active")
+                            and any(
                                 kw in c.get("effect", "").lower()
                                 for kw in ["heiz", "kuehl", "energie", "ineffizient"]
                             )
                         ]
                         if _energy and diff_pct > 0:
-                            _dep_context = f" Moeglicherweise weil: {_energy[0].get('hint', '')}."
+                            _dep_context = (
+                                f" Moeglicherweise weil: {_energy[0].get('hint', '')}."
+                            )
                 except Exception as e:
                     logger.debug("Energie-Abhaengigkeitskontext fehlgeschlagen: %s", e)
 
@@ -721,6 +782,7 @@ class SpontaneousObserver:
         try:
             # Anzahl manueller Aktionen heute
             from .learning_observer import KEY_MANUAL_ACTIONS
+
             actions_raw = await self.redis.lrange(KEY_MANUAL_ACTIONS, 0, 499)
             if not actions_raw:
                 return None
@@ -729,7 +791,9 @@ class SpontaneousObserver:
             today_count = 0
             for raw in actions_raw:
                 try:
-                    entry = json.loads(raw.decode(errors="replace") if isinstance(raw, bytes) else raw)
+                    entry = json.loads(
+                        raw.decode(errors="replace") if isinstance(raw, bytes) else raw
+                    )
                     if entry.get("timestamp", "").startswith(today):
                         today_count += 1
                 except (json.JSONDecodeError, AttributeError):
@@ -762,19 +826,23 @@ class SpontaneousObserver:
 
         try:
             from .learning_observer import KEY_MANUAL_ACTIONS
+
             actions_raw = await self.redis.lrange(KEY_MANUAL_ACTIONS, 0, 499)
             if not actions_raw:
                 return None
 
             # Zaehle Aktionen pro Entity diese Woche
             from datetime import timedelta
+
             week_start = _local_now() - timedelta(days=7)
             week_start_str = week_start.isoformat()
 
             entity_counts: dict[str, int] = {}
             for raw in actions_raw:
                 try:
-                    entry = json.loads(raw.decode(errors="replace") if isinstance(raw, bytes) else raw)
+                    entry = json.loads(
+                        raw.decode(errors="replace") if isinstance(raw, bytes) else raw
+                    )
                     ts = entry.get("timestamp", "")
                     if ts >= week_start_str:
                         eid = entry.get("entity_id", "")
@@ -904,7 +972,9 @@ class SpontaneousObserver:
                 tool_msg = result.get("message", "")
                 # Erste Zeile (Beschreibung) entfernen — Jarvis formuliert selbst
                 lines = tool_msg.split("\n")
-                data_lines = "\n".join(lines[1:]).strip() if len(lines) > 1 else tool_msg
+                data_lines = (
+                    "\n".join(lines[1:]).strip() if len(lines) > 1 else tool_msg
+                )
 
                 message = (
                     f"{title}, mir ist bei einer Routine-Analyse aufgefallen: "

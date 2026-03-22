@@ -37,19 +37,51 @@ _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 # ============================================================
 
 RESISTOR_E24 = [
-    1.0, 1.1, 1.2, 1.3, 1.5, 1.6, 1.8, 2.0,
-    2.2, 2.4, 2.7, 3.0, 3.3, 3.6, 3.9, 4.3,
-    4.7, 5.1, 5.6, 6.2, 6.8, 7.5, 8.2, 9.1,
+    1.0,
+    1.1,
+    1.2,
+    1.3,
+    1.5,
+    1.6,
+    1.8,
+    2.0,
+    2.2,
+    2.4,
+    2.7,
+    3.0,
+    3.3,
+    3.6,
+    3.9,
+    4.3,
+    4.7,
+    5.1,
+    5.6,
+    6.2,
+    6.8,
+    7.5,
+    8.2,
+    9.1,
 ]
 
 WIRE_GAUGE_MM2 = {
-    0.5: 3, 0.75: 5, 1.0: 7.5, 1.5: 10,
-    2.5: 16, 4.0: 25, 6.0: 32, 10.0: 50,
+    0.5: 3,
+    0.75: 5,
+    1.0: 7.5,
+    1.5: 10,
+    2.5: 16,
+    4.0: 25,
+    6.0: 32,
+    10.0: 50,
 }
 
 SCREW_TORQUES_NM = {
-    "M3": 1.2, "M4": 2.5, "M5": 5.0, "M6": 8.5,
-    "M8": 22, "M10": 44, "M12": 77,
+    "M3": 1.2,
+    "M4": 2.5,
+    "M5": 5.0,
+    "M6": 8.5,
+    "M8": 22,
+    "M10": 44,
+    "M12": 77,
 }
 
 MATERIAL_PROPERTIES = {
@@ -63,8 +95,11 @@ MATERIAL_PROPERTIES = {
 ESP32_PINOUT = {
     "adc": [32, 33, 34, 35, 36, 39],
     "dac": [25, 26],
-    "i2c_sda": 21, "i2c_scl": 22,
-    "spi_mosi": 23, "spi_miso": 19, "spi_clk": 18,
+    "i2c_sda": 21,
+    "i2c_scl": 22,
+    "spi_mosi": 23,
+    "spi_miso": 19,
+    "spi_clk": 18,
     "pwm": list(range(2, 34)),
     "touch": [4, 2, 15, 13, 12, 14, 27, 33, 32],
 }
@@ -131,6 +166,7 @@ REGELN: Alles in EINER Datei. Kein Framework noetig. Vanilla JS."""
 # Hauptklasse
 # ============================================================
 
+
 class WorkshopGenerator:
     """Code-/3D-/Schaltplan-Generator fuer die Werkstatt."""
 
@@ -153,61 +189,84 @@ class WorkshopGenerator:
 
     # ── Code-Generation ──────────────────────────────────────
 
-    async def generate_code(self, project_id, requirement,
-                            language="arduino", existing_code="",
-                            model=None) -> dict:
+    async def generate_code(
+        self, project_id, requirement, language="arduino", existing_code="", model=None
+    ) -> dict:
         """Generiert Code in der angegebenen Sprache."""
-        model = model or (self.model_router.model_deep
-                          if self.model_router else None)
+        model = model or (self.model_router.model_deep if self.model_router else None)
         if not model:
             return {"status": "error", "message": "Kein LLM-Modell verfuegbar"}
 
         project_title = ""
         if project_id and self.redis:
-            raw_proj = await self.redis.hgetall(
-                f"mha:repair:project:{project_id}")
-            proj = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_proj.items()} if raw_proj else {}
+            raw_proj = await self.redis.hgetall(f"mha:repair:project:{project_id}")
+            proj = (
+                {
+                    (k.decode() if isinstance(k, bytes) else k): (
+                        v.decode() if isinstance(v, bytes) else v
+                    )
+                    for k, v in raw_proj.items()
+                }
+                if raw_proj
+                else {}
+            )
             project_title = proj.get("title", "")
 
         prompt = CODE_GEN_PROMPT.format(
-            language=language, project_title=project_title or "Unbenannt",
-            existing_code=(existing_code[:3000]
-                           if existing_code else "Kein bestehender Code"),
+            language=language,
+            project_title=project_title or "Unbenannt",
+            existing_code=(
+                existing_code[:3000] if existing_code else "Kein bestehender Code"
+            ),
             requirement=requirement,
         )
         messages = [{"role": "system", "content": prompt}]
         code = await self.ollama.chat(
-            model=model, messages=messages,
-            temperature=0.2, max_tokens=4096)
+            model=model, messages=messages, temperature=0.2, max_tokens=4096
+        )
 
         # Datei speichern
         ext = {
-            "arduino": ".ino", "python": ".py", "cpp": ".cpp",
-            "html": ".html", "javascript": ".js", "yaml": ".yaml",
+            "arduino": ".ino",
+            "python": ".py",
+            "cpp": ".cpp",
+            "html": ".html",
+            "javascript": ".js",
+            "yaml": ".yaml",
             "micropython": ".py",
         }.get(language, ".txt")
         filename = f"code_{language}_{datetime.now(_LOCAL_TZ).strftime('%H%M%S')}{ext}"
         if project_id:
             await self._save_file(project_id, filename, code)
 
-        return {"status": "ok", "code": code,
-                "filename": filename, "language": language}
+        return {
+            "status": "ok",
+            "code": code,
+            "filename": filename,
+            "language": language,
+        }
 
     # ── 3D-Modell (OpenSCAD) ─────────────────────────────────
 
-    async def generate_3d_model(self, project_id, requirement,
-                                model=None) -> dict:
+    async def generate_3d_model(self, project_id, requirement, model=None) -> dict:
         """Generiert ein OpenSCAD 3D-Modell."""
-        model = model or (self.model_router.model_deep
-                          if self.model_router else None)
+        model = model or (self.model_router.model_deep if self.model_router else None)
         if not model:
             return {"status": "error", "message": "Kein LLM-Modell verfuegbar"}
 
         project_title = ""
         if project_id and self.redis:
-            raw_proj = await self.redis.hgetall(
-                f"mha:repair:project:{project_id}")
-            proj = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_proj.items()} if raw_proj else {}
+            raw_proj = await self.redis.hgetall(f"mha:repair:project:{project_id}")
+            proj = (
+                {
+                    (k.decode() if isinstance(k, bytes) else k): (
+                        v.decode() if isinstance(v, bytes) else v
+                    )
+                    for k, v in raw_proj.items()
+                }
+                if raw_proj
+                else {}
+            )
             project_title = proj.get("title", "")
 
         prompt = OPENSCAD_PROMPT.format(
@@ -216,8 +275,8 @@ class WorkshopGenerator:
         )
         messages = [{"role": "system", "content": prompt}]
         scad_code = await self.ollama.chat(
-            model=model, messages=messages,
-            temperature=0.2, max_tokens=4096)
+            model=model, messages=messages, temperature=0.2, max_tokens=4096
+        )
 
         filename = f"model_{datetime.now(_LOCAL_TZ).strftime('%H%M%S')}.scad"
         if project_id:
@@ -226,22 +285,20 @@ class WorkshopGenerator:
 
     # ── SVG-Schaltplan ───────────────────────────────────────
 
-    async def generate_schematic(self, project_id, requirement,
-                                 model=None) -> dict:
+    async def generate_schematic(self, project_id, requirement, model=None) -> dict:
         """Generiert einen SVG-Schaltplan."""
-        model = model or (self.model_router.model_deep
-                          if self.model_router else None)
+        model = model or (self.model_router.model_deep if self.model_router else None)
         if not model:
             return {"status": "error", "message": "Kein LLM-Modell verfuegbar"}
 
         prompt = SVG_PROMPT.format(requirement=requirement)
         messages = [{"role": "system", "content": prompt}]
         svg = await self.ollama.chat(
-            model=model, messages=messages,
-            temperature=0.2, max_tokens=4096)
+            model=model, messages=messages, temperature=0.2, max_tokens=4096
+        )
 
         # SVG extrahieren (falls in Markdown-Block)
-        svg_match = re.search(r'<svg[\s\S]*?</svg>', svg)
+        svg_match = re.search(r"<svg[\s\S]*?</svg>", svg)
         if svg_match:
             svg = svg_match.group(0)
 
@@ -252,20 +309,21 @@ class WorkshopGenerator:
 
     # ── Website-Generation ───────────────────────────────────
 
-    async def generate_website(self, project_id, requirement,
-                               context="", model=None) -> dict:
+    async def generate_website(
+        self, project_id, requirement, context="", model=None
+    ) -> dict:
         """Generiert eine Single-Page Website."""
-        model = model or (self.model_router.model_deep
-                          if self.model_router else None)
+        model = model or (self.model_router.model_deep if self.model_router else None)
         if not model:
             return {"status": "error", "message": "Kein LLM-Modell verfuegbar"}
 
         prompt = WEBSITE_PROMPT.format(
-            requirement=requirement, context=context or "Werkstatt-Projekt")
+            requirement=requirement, context=context or "Werkstatt-Projekt"
+        )
         messages = [{"role": "system", "content": prompt}]
         html = await self.ollama.chat(
-            model=model, messages=messages,
-            temperature=0.3, max_tokens=8192)
+            model=model, messages=messages, temperature=0.3, max_tokens=8192
+        )
 
         filename = f"site_{datetime.now(_LOCAL_TZ).strftime('%H%M%S')}.html"
         if project_id:
@@ -276,18 +334,21 @@ class WorkshopGenerator:
 
     async def generate_bom(self, project_id, model=None) -> dict:
         """Generiert eine Bill of Materials."""
-        model = model or (self.model_router.model_smart
-                          if self.model_router else None)
+        model = model or (self.model_router.model_smart if self.model_router else None)
         if not model:
             return {"status": "error", "message": "Kein LLM-Modell verfuegbar"}
         if not self.redis:
             return {"status": "error", "message": "Redis nicht verfuegbar"}
 
-        raw_project = await self.redis.hgetall(
-            f"mha:repair:project:{project_id}")
+        raw_project = await self.redis.hgetall(f"mha:repair:project:{project_id}")
         if not raw_project:
             return {"status": "error", "message": "Projekt nicht gefunden"}
-        project = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_project.items()}
+        project = {
+            (k.decode() if isinstance(k, bytes) else k): (
+                v.decode() if isinstance(v, bytes) else v
+            )
+            for k, v in raw_project.items()
+        }
 
         parts = json.loads(project.get("parts", "[]"))
         files = await self.list_files(project_id)
@@ -298,7 +359,7 @@ class WorkshopGenerator:
                 file_contents[f["name"]] = content[:1500]
 
         prompt = f"""Erstelle eine vollstaendige BOM (Bill of Materials) fuer dieses Projekt.
-Projekt: {project.get('title', '')}
+Projekt: {project.get("title", "")}
 Bekannte Teile: {json.dumps(parts, ensure_ascii=False)}
 Projekt-Dateien: {json.dumps(file_contents, ensure_ascii=False)}
 
@@ -307,46 +368,44 @@ Format als Markdown-Tabelle:
 Ergaenze fehlende Teile die aus dem Code/Schaltplan ersichtlich sind."""
         messages = [{"role": "system", "content": prompt}]
         bom = await self.ollama.chat(
-            model=model, messages=messages,
-            temperature=0.3, max_tokens=2048)
+            model=model, messages=messages, temperature=0.3, max_tokens=2048
+        )
         return {"status": "ok", "bom": bom}
 
     # ── Dokumentation ────────────────────────────────────────
 
-    async def generate_documentation(self, project_id,
-                                     model=None) -> dict:
+    async def generate_documentation(self, project_id, model=None) -> dict:
         """Generiert Projekt-Dokumentation."""
-        model = model or (self.model_router.model_smart
-                          if self.model_router else None)
+        model = model or (self.model_router.model_smart if self.model_router else None)
         if not model:
             return {"status": "error", "message": "Kein LLM-Modell verfuegbar"}
         if not self.redis:
             return {"status": "error", "message": "Redis nicht verfuegbar"}
 
-        raw_project = await self.redis.hgetall(
-            f"mha:repair:project:{project_id}")
+        raw_project = await self.redis.hgetall(f"mha:repair:project:{project_id}")
         if not raw_project:
             return {"status": "error", "message": "Projekt nicht gefunden"}
         project = {
-            (k.decode() if isinstance(k, bytes) else k):
-            (v.decode() if isinstance(v, bytes) else v)
+            (k.decode() if isinstance(k, bytes) else k): (
+                v.decode() if isinstance(v, bytes) else v
+            )
             for k, v in raw_project.items()
         }
 
         files = await self.list_files(project_id)
 
         prompt = f"""Erstelle eine Projekt-Dokumentation (Markdown).
-Projekt: {project.get('title', '')} ({project.get('category', '')})
-Beschreibung: {project.get('description', '')}
-Teile: {project.get('parts', '[]')}
-Dateien: {[f['name'] for f in files]}
-Status: {project.get('status', '')}
+Projekt: {project.get("title", "")} ({project.get("category", "")})
+Beschreibung: {project.get("description", "")}
+Teile: {project.get("parts", "[]")}
+Dateien: {[f["name"] for f in files]}
+Status: {project.get("status", "")}
 
 Struktur: Uebersicht, Materialien, Schaltung/Aufbau, Software, Montage, Tests, Fazit."""
         messages = [{"role": "system", "content": prompt}]
         doc = await self.ollama.chat(
-            model=model, messages=messages,
-            temperature=0.4, max_tokens=4096)
+            model=model, messages=messages, temperature=0.4, max_tokens=4096
+        )
 
         title_slug = project.get("title", "projekt").replace(" ", "_")
         filename = f"DOKU_{title_slug}.md"
@@ -355,11 +414,9 @@ Struktur: Uebersicht, Materialien, Schaltung/Aufbau, Software, Montage, Tests, F
 
     # ── Test-Generation ──────────────────────────────────────
 
-    async def generate_tests(self, project_id, filename,
-                             model=None) -> dict:
+    async def generate_tests(self, project_id, filename, model=None) -> dict:
         """Generiert Tests fuer eine Projekt-Datei."""
-        model = model or (self.model_router.model_deep
-                          if self.model_router else None)
+        model = model or (self.model_router.model_deep if self.model_router else None)
         if not model:
             return {"status": "error", "message": "Kein LLM-Modell verfuegbar"}
 
@@ -369,8 +426,10 @@ Struktur: Uebersicht, Materialien, Schaltung/Aufbau, Software, Montage, Tests, F
 
         ext = Path(filename).suffix
         test_frameworks = {
-            ".py": "pytest", ".ino": "Arduino Serial Test",
-            ".js": "Jest", ".cpp": "Google Test",
+            ".py": "pytest",
+            ".ino": "Arduino Serial Test",
+            ".js": "Jest",
+            ".cpp": "Google Test",
             ".html": "Browser Console Test",
         }
         framework = test_frameworks.get(ext, "generic")
@@ -382,8 +441,8 @@ Code:
 REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
         messages = [{"role": "system", "content": prompt}]
         tests = await self.ollama.chat(
-            model=model, messages=messages,
-            temperature=0.2, max_tokens=4096)
+            model=model, messages=messages, temperature=0.2, max_tokens=4096
+        )
 
         test_filename = f"test_{filename}"
         await self._save_file(project_id, test_filename, tests)
@@ -402,10 +461,10 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
                 r1_e24 = self._nearest_e24(r1)
                 v_out_real = v_in * r2 / (r1_e24 + r2)
                 return {
-                    "r1": r1_e24, "r2": r2,
+                    "r1": r1_e24,
+                    "r2": r2,
                     "v_out_real": round(v_out_real, 3),
-                    "error_pct": round(
-                        abs(v_out - v_out_real) / v_out * 100, 2),
+                    "error_pct": round(abs(v_out - v_out_real) / v_out * 100, 2),
                 }
 
             elif calc_type == "led_resistor":
@@ -415,15 +474,13 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
                 r = (v_supply - v_led) / (i_ma / 1000)
                 r_e24 = self._nearest_e24(r)
                 power_mw = (v_supply - v_led) ** 2 / r_e24 * 1000
-                return {"resistor_ohm": r_e24,
-                        "power_mw": round(power_mw, 1)}
+                return {"resistor_ohm": r_e24, "power_mw": round(power_mw, 1)}
 
             elif calc_type == "wire_gauge":
                 current_a = params["current_a"]
                 for mm2, max_a in sorted(WIRE_GAUGE_MM2.items()):
                     if max_a >= current_a:
-                        return {"recommended_mm2": mm2,
-                                "max_current_a": max_a}
+                        return {"recommended_mm2": mm2, "max_current_a": max_a}
                 return {"error": "Strom zu hoch fuer Standard-Kabelquerschnitte"}
 
             elif calc_type == "ohms_law":
@@ -433,28 +490,31 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
                 if v and i:
                     return {"r": round(v / i, 3), "p": round(v * i, 3)}
                 if v and r:
-                    return {"i": round(v / r, 6), "p": round(v ** 2 / r, 3)}
+                    return {"i": round(v / r, 6), "p": round(v**2 / r, 3)}
                 if i and r:
-                    return {"v": round(i * r, 3), "p": round(i ** 2 * r, 3)}
+                    return {"v": round(i * r, 3), "p": round(i**2 * r, 3)}
                 return {"error": "Mindestens 2 von 3 Werten (v, i, r) noetig"}
 
             elif calc_type == "3d_print_weight":
                 volume_cm3 = params["volume_cm3"]
                 material = params.get("material", "pla")
                 infill = params.get("infill_pct", 20) / 100
-                props = MATERIAL_PROPERTIES.get(
-                    material, MATERIAL_PROPERTIES["pla"])
+                props = MATERIAL_PROPERTIES.get(material, MATERIAL_PROPERTIES["pla"])
                 weight = volume_cm3 * props["density_g_cm3"] * infill
-                return {"weight_g": round(weight, 1),
-                        "material": material,
-                        "infill_pct": infill * 100}
+                return {
+                    "weight_g": round(weight, 1),
+                    "material": material,
+                    "infill_pct": infill * 100,
+                }
 
             elif calc_type == "screw_torque":
                 screw = params["screw_size"].upper()
                 torque = SCREW_TORQUES_NM.get(screw)
                 if torque is None:
-                    return {"error": f"Schraubengroesse '{screw}' nicht bekannt. "
-                            f"Verfuegbar: {', '.join(SCREW_TORQUES_NM.keys())}"}
+                    return {
+                        "error": f"Schraubengroesse '{screw}' nicht bekannt. "
+                        f"Verfuegbar: {', '.join(SCREW_TORQUES_NM.keys())}"
+                    }
                 return {"torque_nm": torque}
 
             elif calc_type == "convert":
@@ -463,24 +523,28 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
                 to_unit = params["to_unit"].lower()
                 converter = UNIT_CONVERSIONS.get((from_unit, to_unit))
                 if converter:
-                    return {"result": round(converter(value), 4),
-                            "from": from_unit, "to": to_unit}
-                return {"error": f"Konvertierung {from_unit} -> {to_unit} "
-                        "nicht unterstuetzt"}
+                    return {
+                        "result": round(converter(value), 4),
+                        "from": from_unit,
+                        "to": to_unit,
+                    }
+                return {
+                    "error": f"Konvertierung {from_unit} -> {to_unit} "
+                    "nicht unterstuetzt"
+                }
 
             elif calc_type == "power_supply":
                 components = params.get("components", [])
                 total_ma = sum(
-                    c.get("current_ma", 0) * c.get("quantity", 1)
-                    for c in components)
+                    c.get("current_ma", 0) * c.get("quantity", 1) for c in components
+                )
                 safety_factor = 1.25
                 recommended_ma = total_ma * safety_factor
                 voltage = params.get("voltage", 5)
                 return {
                     "total_ma": total_ma,
                     "recommended_ma": round(recommended_ma),
-                    "recommended_w": round(
-                        voltage * recommended_ma / 1000, 1),
+                    "recommended_w": round(voltage * recommended_ma / 1000, 1),
                 }
 
             return {"error": f"Unbekannter Berechnungstyp: {calc_type}"}
@@ -501,9 +565,9 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
     async def _save_file(self, project_id, filename, content) -> dict:
         """Speichert Datei auf Disk + Referenz in Redis."""
         # S1: Path-Traversal-Schutz
-        if not re.match(r'^[a-zA-Z0-9_-]+$', str(project_id)):
+        if not re.match(r"^[a-zA-Z0-9_-]+$", str(project_id)):
             return {"status": "error", "message": "Invalid project_id"}
-        if not re.match(r'^[a-zA-Z0-9._-]+$', str(filename)):
+        if not re.match(r"^[a-zA-Z0-9._-]+$", str(filename)):
             return {"status": "error", "message": "Invalid filename"}
         project_dir = self.FILES_DIR / project_id
         await asyncio.to_thread(project_dir.mkdir, parents=True, exist_ok=True)
@@ -515,21 +579,28 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
 
         # Redis: Datei-Liste und Versionierung
         if self.redis:
-            await self.redis.rpush(
-                f"mha:repair:files:{project_id}", filename)
+            await self.redis.rpush(f"mha:repair:files:{project_id}", filename)
             await self.redis.rpush(
                 f"mha:repair:versions:{project_id}:{filename}",
-                json.dumps({
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "size": len(content),
-                }))
+                json.dumps(
+                    {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "size": len(content),
+                    }
+                ),
+            )
 
         # WebSocket Event
         try:
             from .websocket import emit_workshop
-            await emit_workshop("file_created", {
-                "project_id": project_id, "filename": filename,
-            })
+
+            await emit_workshop(
+                "file_created",
+                {
+                    "project_id": project_id,
+                    "filename": filename,
+                },
+            )
         except Exception as e:
             logger.debug("Workshop file websocket emit failed: %s", e)
 
@@ -538,16 +609,16 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
     async def read_file(self, project_id, filename) -> str:
         """Liest eine Projekt-Datei."""
         # S2: Path-Traversal-Schutz
-        if not re.match(r'^[a-zA-Z0-9_-]+$', str(project_id)):
+        if not re.match(r"^[a-zA-Z0-9_-]+$", str(project_id)):
             return ""
-        if not re.match(r'^[a-zA-Z0-9._-]+$', str(filename)):
+        if not re.match(r"^[a-zA-Z0-9._-]+$", str(filename)):
             return ""
         filepath = self.FILES_DIR / project_id / filename
 
         def _read():
-            if (filepath.exists()
-                    and filepath.resolve().is_relative_to(
-                        self.FILES_DIR.resolve())):
+            if filepath.exists() and filepath.resolve().is_relative_to(
+                self.FILES_DIR.resolve()
+            ):
                 return filepath.read_text(encoding="utf-8")
             return ""
 
@@ -557,8 +628,7 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
         """Listet Dateien eines Projekts."""
         if not self.redis:
             return []
-        filenames = await self.redis.lrange(
-            f"mha:repair:files:{project_id}", 0, -1)
+        filenames = await self.redis.lrange(f"mha:repair:files:{project_id}", 0, -1)
 
         def _collect_file_info():
             result = []
@@ -567,12 +637,15 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
                 fn = Path(fn).name
                 filepath = self.FILES_DIR / project_id / fn
                 if filepath.exists():
-                    result.append({
-                        "name": fn,
-                        "size": filepath.stat().st_size,
-                        "modified": datetime.fromtimestamp(
-                            filepath.stat().st_mtime, tz=timezone.utc).isoformat(),
-                    })
+                    result.append(
+                        {
+                            "name": fn,
+                            "size": filepath.stat().st_size,
+                            "modified": datetime.fromtimestamp(
+                                filepath.stat().st_mtime, tz=timezone.utc
+                            ).isoformat(),
+                        }
+                    )
             return result
 
         return await asyncio.to_thread(_collect_file_info)
@@ -583,9 +656,9 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
         filepath = self.FILES_DIR / project_id / filename
 
         def _delete():
-            if (filepath.exists()
-                    and filepath.resolve().is_relative_to(
-                        self.FILES_DIR.resolve())):
+            if filepath.exists() and filepath.resolve().is_relative_to(
+                self.FILES_DIR.resolve()
+            ):
                 filepath.unlink()
                 return True
             return False
@@ -593,8 +666,7 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
         deleted = await asyncio.to_thread(_delete)
         if deleted:
             if self.redis:
-                await self.redis.lrem(
-                    f"mha:repair:files:{project_id}", 0, filename)
+                await self.redis.lrem(f"mha:repair:files:{project_id}", 0, filename)
             return {"status": "ok"}
         return {"status": "error", "message": "Datei nicht gefunden"}
 

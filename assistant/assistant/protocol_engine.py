@@ -75,7 +75,9 @@ class ProtocolEngine:
         """Setzt den FunctionExecutor fuer die Ausfuehrung."""
         self.executor = executor
 
-    async def create_protocol(self, name: str, description: str, person: str = "") -> dict:
+    async def create_protocol(
+        self, name: str, description: str, person: str = ""
+    ) -> dict:
         """Erstellt ein neues Protokoll aus natuerlicher Beschreibung.
 
         Args:
@@ -93,7 +95,10 @@ class ProtocolEngine:
 
         name_normalized = self._normalize_name(name)
         if not name_normalized:
-            return {"success": False, "message": "Bitte gib einen Namen fuer das Protokoll an."}
+            return {
+                "success": False,
+                "message": "Bitte gib einen Namen fuer das Protokoll an.",
+            }
 
         # Maximale Anzahl pruefen
         existing = await self.redis.scard(_LIST_KEY) or 0
@@ -112,7 +117,7 @@ class ProtocolEngine:
             }
 
         if len(steps) > self.max_steps:
-            steps = steps[:self.max_steps]
+            steps = steps[: self.max_steps]
 
         # Undo-Schritte generieren
         undo_steps = self._generate_undo_steps(steps)
@@ -160,9 +165,16 @@ class ProtocolEngine:
             return {"success": False, "message": f"Protokoll '{name}' nicht gefunden."}
 
         try:
-            protocol = json.loads(protocol_raw.decode() if isinstance(protocol_raw, bytes) else protocol_raw)
+            protocol = json.loads(
+                protocol_raw.decode()
+                if isinstance(protocol_raw, bytes)
+                else protocol_raw
+            )
         except (json.JSONDecodeError, AttributeError):
-            return {"success": False, "message": "Protokoll konnte nicht geladen werden."}
+            return {
+                "success": False,
+                "message": "Protokoll konnte nicht geladen werden.",
+            }
 
         steps = protocol.get("steps", [])
         if not steps:
@@ -173,12 +185,15 @@ class ProtocolEngine:
         try:
             from .state_change_log import StateChangeLog
             import assistant.main as main_module
+
             if hasattr(main_module, "brain"):
                 _states = await main_module.brain.ha.get_states() or []
                 for _step in steps:
                     _tool = _step.get("tool", "")
                     _args = _step.get("args", {})
-                    _hints = StateChangeLog.check_action_dependencies(_tool, _args, _states)
+                    _hints = StateChangeLog.check_action_dependencies(
+                        _tool, _args, _states
+                    )
                     dep_warnings.extend(_hints)
         except Exception as _dep_err:
             logger.debug("Protocol Dependency-Check: %s", _dep_err)
@@ -211,7 +226,9 @@ class ProtocolEngine:
         if live_undo_steps:
             protocol["undo_steps"] = live_undo_steps
             try:
-                await self.redis.set(f"{_PREFIX}:{name_normalized}", json.dumps(protocol))
+                await self.redis.set(
+                    f"{_PREFIX}:{name_normalized}", json.dumps(protocol)
+                )
             except Exception as e:
                 logger.debug("Undo-steps Redis update failed: %s", e)
 
@@ -266,7 +283,10 @@ class ProtocolEngine:
         # Pruefen ob kuerzlich ausgefuehrt
         last_exec = await self.redis.get(f"{_PREFIX}:last_executed:{name_normalized}")
         if not last_exec:
-            return {"success": False, "message": f"Kein kuerzlich ausgefuehrtes Protokoll '{name}' gefunden."}
+            return {
+                "success": False,
+                "message": f"Kein kuerzlich ausgefuehrtes Protokoll '{name}' gefunden.",
+            }
 
         # Protokoll laden
         protocol_raw = await self.redis.get(f"{_PREFIX}:{name_normalized}")
@@ -274,9 +294,16 @@ class ProtocolEngine:
             return {"success": False, "message": f"Protokoll '{name}' nicht gefunden."}
 
         try:
-            protocol = json.loads(protocol_raw.decode() if isinstance(protocol_raw, bytes) else protocol_raw)
+            protocol = json.loads(
+                protocol_raw.decode()
+                if isinstance(protocol_raw, bytes)
+                else protocol_raw
+            )
         except (json.JSONDecodeError, AttributeError):
-            return {"success": False, "message": "Protokoll konnte nicht geladen werden."}
+            return {
+                "success": False,
+                "message": "Protokoll konnte nicht geladen werden.",
+            }
 
         undo_steps = protocol.get("undo_steps", [])
         if not undo_steps:
@@ -301,8 +328,8 @@ class ProtocolEngine:
             "success": all_ok,
             "message": (
                 f"Protokoll '{protocol.get('name', name)}' rueckgaengig gemacht, {title}."
-                if all_ok else
-                f"Undo teilweise fehlgeschlagen ({executed}/{total} Schritte), {title}."
+                if all_ok
+                else f"Undo teilweise fehlgeschlagen ({executed}/{total} Schritte), {title}."
             ),
         }
 
@@ -328,12 +355,14 @@ class ProtocolEngine:
             if raw:
                 try:
                     p = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
-                    protocols.append({
-                        "name": p.get("name", name),
-                        "steps": len(p.get("steps", [])),
-                        "created_by": p.get("created_by", ""),
-                        "description": p.get("description", ""),
-                    })
+                    protocols.append(
+                        {
+                            "name": p.get("name", name),
+                            "steps": len(p.get("steps", [])),
+                            "created_by": p.get("created_by", ""),
+                            "description": p.get("description", ""),
+                        }
+                    )
                 except (json.JSONDecodeError, AttributeError):
                     continue
 
@@ -374,11 +403,11 @@ class ProtocolEngine:
         # Entferne "jarvis" Prefix und gaeengige Trigger-Woerter
         for prefix in ["jarvis ", "hey jarvis ", "protokoll ", "starte ", "mach "]:
             if text_lower.startswith(prefix):
-                text_lower = text_lower[len(prefix):].strip()
+                text_lower = text_lower[len(prefix) :].strip()
 
         for member in members:
             name = member.decode() if isinstance(member, bytes) else member
-            if re.search(rf'\b{re.escape(name)}\b', text_lower):
+            if re.search(rf"\b{re.escape(name)}\b", text_lower):
                 return name
 
         return None
@@ -405,9 +434,9 @@ class ProtocolEngine:
         Strips control characters, removes role markers, and limits length.
         """
         # Remove control characters (keep newlines and tabs)
-        sanitized = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+        sanitized = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
         # Remove potential role/injection markers
-        sanitized = re.sub(r'(?i)\b(system|user|assistant)\s*:', '', sanitized)
+        sanitized = re.sub(r"(?i)\b(system|user|assistant)\s*:", "", sanitized)
         # Limit length
         sanitized = sanitized[:max_length].strip()
         return sanitized
@@ -452,7 +481,7 @@ class ProtocolEngine:
         end = text.rfind("]")
         if start != -1 and end != -1 and end > start:
             try:
-                result = json.loads(text[start:end + 1])
+                result = json.loads(text[start : end + 1])
                 if isinstance(result, list):
                     return [s for s in result if isinstance(s, dict) and s.get("tool")]
             except json.JSONDecodeError:
@@ -462,7 +491,7 @@ class ProtocolEngine:
 
     async def _snapshot_undo_steps(self, steps: list[dict]) -> list[dict]:
         """Snapshotten den aktuellen Zustand VOR Ausfuehrung fuer praezises Undo."""
-        if not self.executor or not hasattr(self.executor, 'ha'):
+        if not self.executor or not hasattr(self.executor, "ha"):
             return []
 
         try:
@@ -481,12 +510,20 @@ class ProtocolEngine:
 
             # Entity aus Raum ableiten wenn noetig
             room = args.get("room", "")
-            domain_map = {"set_light": "light", "set_climate": "climate",
-                          "set_cover": "cover", "set_switch": "switch"}
+            domain_map = {
+                "set_light": "light",
+                "set_climate": "climate",
+                "set_cover": "cover",
+                "set_switch": "switch",
+            }
             if not entity_id and room and tool in domain_map:
                 prefix = domain_map[tool]
                 entity_id = next(
-                    (eid for eid in state_map if eid.startswith(f"{prefix}.") and room.lower() in eid.lower()),
+                    (
+                        eid
+                        for eid in state_map
+                        if eid.startswith(f"{prefix}.") and room.lower() in eid.lower()
+                    ),
                     "",
                 )
 

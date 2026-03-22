@@ -22,6 +22,7 @@ from assistant.request_context import (
 # ContextVar / get_request_id
 # ---------------------------------------------------------------------------
 
+
 class TestGetRequestId:
     def test_default_is_empty_string(self):
         token = _request_id_var.set("")
@@ -63,6 +64,7 @@ class TestGetRequestId:
 # ---------------------------------------------------------------------------
 # StructuredFormatter
 # ---------------------------------------------------------------------------
+
 
 class TestStructuredFormatter:
     def _make_record(self, msg="test message"):
@@ -156,6 +158,7 @@ class TestStructuredFormatter:
 # ---------------------------------------------------------------------------
 # RequestContextMiddleware
 # ---------------------------------------------------------------------------
+
 
 class TestRequestContextMiddleware:
     @pytest.mark.asyncio
@@ -267,6 +270,7 @@ class TestRequestContextMiddleware:
         """ContextVar should be restored after the middleware finishes."""
         token = _request_id_var.set("before")
         try:
+
             async def app(scope, receive, send):
                 pass
 
@@ -282,6 +286,7 @@ class TestRequestContextMiddleware:
         """ContextVar should be restored even if app raises."""
         token = _request_id_var.set("safe")
         try:
+
             async def app(scope, receive, send):
                 raise ValueError("app error")
 
@@ -347,6 +352,7 @@ class TestRequestContextMiddleware:
 # setup_structured_logging
 # ---------------------------------------------------------------------------
 
+
 class TestSetupStructuredLogging:
     def test_configures_root_logger(self):
         root = logging.getLogger()
@@ -407,6 +413,7 @@ class TestSetupStructuredLogging:
 # Additional ContextVar isolation tests
 # ---------------------------------------------------------------------------
 
+
 class TestContextVarIsolation:
     """Tests ensuring ContextVar properly isolates between requests."""
 
@@ -457,8 +464,8 @@ class TestContextVarIsolation:
 # Middleware header edge cases
 # ---------------------------------------------------------------------------
 
-class TestMiddlewareHeaderEdgeCases:
 
+class TestMiddlewareHeaderEdgeCases:
     @pytest.mark.asyncio
     async def test_multiple_headers_only_first_x_request_id_used(self):
         """If multiple x-request-id headers exist, the first should be used."""
@@ -526,14 +533,18 @@ class TestMiddlewareHeaderEdgeCases:
         sent_messages = []
 
         async def app(scope, receive, send):
-            await send({
-                "type": "http.response.start",
-                "headers": [(b"content-type", b"text/plain")],
-            })
-            await send({
-                "type": "http.response.body",
-                "body": b"hello world",
-            })
+            await send(
+                {
+                    "type": "http.response.start",
+                    "headers": [(b"content-type", b"text/plain")],
+                }
+            )
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": b"hello world",
+                }
+            )
 
         middleware = RequestContextMiddleware(app)
         scope = {"type": "http", "headers": []}
@@ -554,13 +565,15 @@ class TestMiddlewareHeaderEdgeCases:
         sent_messages = []
 
         async def app(scope, receive, send):
-            await send({
-                "type": "http.response.start",
-                "headers": [
-                    (b"content-type", b"application/json"),
-                    (b"x-custom", b"value"),
-                ],
-            })
+            await send(
+                {
+                    "type": "http.response.start",
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"x-custom", b"value"),
+                    ],
+                }
+            )
 
         middleware = RequestContextMiddleware(app)
         scope = {"type": "http", "headers": []}
@@ -580,12 +593,17 @@ class TestMiddlewareHeaderEdgeCases:
 # StructuredFormatter additional tests
 # ---------------------------------------------------------------------------
 
-class TestStructuredFormatterEdgeCases:
 
+class TestStructuredFormatterEdgeCases:
     def _make_record(self, msg="test"):
         return logging.LogRecord(
-            name="test", level=logging.INFO, pathname="test.py",
-            lineno=1, msg=msg, args=(), exc_info=None,
+            name="test",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=1,
+            msg=msg,
+            args=(),
+            exc_info=None,
         )
 
     def test_format_with_exception_info(self):
@@ -598,6 +616,7 @@ class TestStructuredFormatterEdgeCases:
                 raise ValueError("test error")
             except ValueError:
                 import sys
+
                 record = self._make_record("error occurred")
                 record.exc_info = sys.exc_info()
                 output = formatter.format(record)

@@ -28,22 +28,30 @@ def ha_mock():
 def ollama_mock():
     """Ollama Client Mock."""
     mock = AsyncMock()
-    mock.chat = AsyncMock(return_value={
-        "message": {"content": "Person mit Paket vor der Tuer."},
-    })
+    mock.chat = AsyncMock(
+        return_value={
+            "message": {"content": "Person mit Paket vor der Tuer."},
+        }
+    )
     return mock
 
 
 @pytest.fixture
 def cm(ha_mock, ollama_mock):
     """CameraManager Instanz."""
-    with patch("assistant.camera_manager.yaml_config", {
-        "cameras": {
-            "enabled": True,
-            "vision_model": "llava",
-            "camera_map": {"haustuer": "camera.haustuer", "garage": "camera.garage"},
-        }
-    }):
+    with patch(
+        "assistant.camera_manager.yaml_config",
+        {
+            "cameras": {
+                "enabled": True,
+                "vision_model": "llava",
+                "camera_map": {
+                    "haustuer": "camera.haustuer",
+                    "garage": "camera.garage",
+                },
+            }
+        },
+    ):
         return CameraManager(ha_mock, ollama_mock)
 
 
@@ -69,10 +77,15 @@ class TestFindCamera:
     @pytest.mark.asyncio
     async def test_find_by_ha_entity(self, cm, ha_mock):
         """Kamera wird per HA-Entity-Suche gefunden."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "camera.garten_cam", "state": "idle",
-             "attributes": {"friendly_name": "Garten Kamera"}},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "camera.garten_cam",
+                    "state": "idle",
+                    "attributes": {"friendly_name": "Garten Kamera"},
+                },
+            ]
+        )
         result = await cm._find_camera("garten")
         assert result == "camera.garten_cam"
 
@@ -89,9 +102,11 @@ class TestFindCamera:
 
     @pytest.mark.asyncio
     async def test_find_ignores_non_camera_entities(self, cm, ha_mock):
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "light.garten", "state": "on", "attributes": {}},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "light.garten", "state": "on", "attributes": {}},
+            ]
+        )
         result = await cm._find_camera("garten")
         assert result is None
 
@@ -283,13 +298,16 @@ class TestConfig:
     def test_custom_config(self):
         ha = AsyncMock()
         ollama = AsyncMock()
-        with patch("assistant.camera_manager.yaml_config", {
-            "cameras": {
-                "enabled": False,
-                "vision_model": "custom_vision",
-                "camera_map": {"vorne": "camera.front"},
-            }
-        }):
+        with patch(
+            "assistant.camera_manager.yaml_config",
+            {
+                "cameras": {
+                    "enabled": False,
+                    "vision_model": "custom_vision",
+                    "camera_map": {"vorne": "camera.front"},
+                }
+            },
+        ):
             cm = CameraManager(ha, ollama)
             assert cm.enabled is False
             assert cm.vision_model == "custom_vision"
@@ -341,14 +359,22 @@ class TestAnalyzeNightMotionCoverage:
     async def test_night_motion_fallback_outdoor_camera(self, cm, ha_mock, ollama_mock):
         """Fallback: Erste Outdoor-Kamera wird gesucht (Zeilen 199-205)."""
         cm.camera_map = {}
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "light.flur", "state": "on", "attributes": {}},
-            {"entity_id": "camera.outdoor_einfahrt", "state": "idle", "attributes": {}},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "light.flur", "state": "on", "attributes": {}},
+                {
+                    "entity_id": "camera.outdoor_einfahrt",
+                    "state": "idle",
+                    "attributes": {},
+                },
+            ]
+        )
         ha_mock.get_camera_snapshot = AsyncMock(return_value=b"image_data")
-        ollama_mock.chat = AsyncMock(return_value={
-            "message": {"content": "Person im Garten gesichtet."},
-        })
+        ollama_mock.chat = AsyncMock(
+            return_value={
+                "message": {"content": "Person im Garten gesichtet."},
+            }
+        )
         result = await cm.analyze_night_motion("binary_sensor.motion_unbekannt")
         assert result is not None
 

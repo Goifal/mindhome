@@ -42,6 +42,7 @@ def sm_with_redis(redis_mock):
 
 # --- helpers ----------------------------------------------------------------
 
+
 def _state(entity_id, state="on", attrs=None):
     """Shortcut to build a HA state dict."""
     a = {"friendly_name": entity_id.split(".", 1)[1].replace("_", " ").title()}
@@ -67,12 +68,14 @@ class TestInitialization:
             assert model.temp_threshold == 2
 
     def test_custom_config(self):
-        cfg = {"situation_model": {
-            "enabled": False,
-            "min_pause_minutes": 10,
-            "max_changes": 3,
-            "temp_threshold": 5,
-        }}
+        cfg = {
+            "situation_model": {
+                "enabled": False,
+                "min_pause_minutes": 10,
+                "max_changes": 3,
+                "temp_threshold": 5,
+            }
+        }
         with patch("assistant.situation_model.yaml_config", cfg):
             model = SituationModel()
             assert model.enabled is False
@@ -120,7 +123,9 @@ class TestTakeSnapshot:
         assert "lights_on" in stored
 
     @pytest.mark.asyncio
-    async def test_take_snapshot_stores_interaction_time(self, sm_with_redis, redis_mock):
+    async def test_take_snapshot_stores_interaction_time(
+        self, sm_with_redis, redis_mock
+    ):
         """Last interaction time is stored."""
         await sm_with_redis.take_snapshot([_state("light.wz", "on")])
         second_call = redis_mock.setex.call_args_list[1]
@@ -173,14 +178,24 @@ class TestGetSituationDelta:
             "lights_on": [],
             "locks_unlocked": [],
         }
-        redis_mock.get = AsyncMock(side_effect=[
-            json.dumps(old_snapshot),  # snapshot
-            (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),  # last interaction
-        ])
+        redis_mock.get = AsyncMock(
+            side_effect=[
+                json.dumps(old_snapshot),  # snapshot
+                (
+                    datetime.now(timezone.utc) - timedelta(minutes=30)
+                ).isoformat(),  # last interaction
+            ]
+        )
         current = [
-            _state("climate.living_room", "heat",
-                   {"current_temperature": 19.0, "temperature": 22.0,
-                    "friendly_name": "Wohnzimmer"}),
+            _state(
+                "climate.living_room",
+                "heat",
+                {
+                    "current_temperature": 19.0,
+                    "temperature": 22.0,
+                    "friendly_name": "Wohnzimmer",
+                },
+            ),
         ]
         result = await sm_with_redis.get_situation_delta(current)
         assert result is not None
@@ -198,10 +213,12 @@ class TestGetSituationDelta:
     async def test_delta_no_changes_returns_none(self, sm_with_redis, redis_mock):
         """When current state matches old snapshot, returns None."""
         old_snapshot = {"temperatures": {}, "open_windows": [], "lights_on": ["Wz"]}
-        redis_mock.get = AsyncMock(side_effect=[
-            json.dumps(old_snapshot),
-            (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),
-        ])
+        redis_mock.get = AsyncMock(
+            side_effect=[
+                json.dumps(old_snapshot),
+                (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),
+            ]
+        )
         # Current state has same light on
         result = await sm_with_redis.get_situation_delta(
             [_state("light.wz", "on", {"friendly_name": "Wz"})]
@@ -212,12 +229,19 @@ class TestGetSituationDelta:
     async def test_delta_no_changes(self, sm_with_redis, redis_mock):
         """Same state returns None."""
         old_snapshot = {"temperatures": {"Room": 20.0}, "open_windows": []}
-        redis_mock.get = AsyncMock(side_effect=[
-            json.dumps(old_snapshot),
-            (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),
-        ])
-        current = [_state("climate.room", "heat",
-                          {"current_temperature": 20.0, "friendly_name": "Room"})]
+        redis_mock.get = AsyncMock(
+            side_effect=[
+                json.dumps(old_snapshot),
+                (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),
+            ]
+        )
+        current = [
+            _state(
+                "climate.room",
+                "heat",
+                {"current_temperature": 20.0, "friendly_name": "Room"},
+            )
+        ]
         result = await sm_with_redis.get_situation_delta(current)
         assert result is None
 
@@ -244,10 +268,12 @@ class TestGetSituationDelta:
     @pytest.mark.asyncio
     async def test_delta_invalid_snapshot_json(self, sm_with_redis, redis_mock):
         """Invalid JSON in stored snapshot returns None."""
-        redis_mock.get = AsyncMock(side_effect=[
-            "not valid json{{{",
-            (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),
-        ])
+        redis_mock.get = AsyncMock(
+            side_effect=[
+                "not valid json{{{",
+                (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),
+            ]
+        )
         result = await sm_with_redis.get_situation_delta([_state("light.wz", "on")])
         assert result is None
 
@@ -262,10 +288,12 @@ class TestGetSituationDelta:
             "lights_on": [],
             "open_doors": [],
         }
-        redis_mock.get = AsyncMock(side_effect=[
-            json.dumps(old_snapshot),
-            (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),
-        ])
+        redis_mock.get = AsyncMock(
+            side_effect=[
+                json.dumps(old_snapshot),
+                (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),
+            ]
+        )
         # Many changes: 5 lights turned on individually
         current = [
             _state("lock.front", "unlocked"),
@@ -284,11 +312,17 @@ class TestGetSituationDelta:
     @pytest.mark.asyncio
     async def test_delta_header_without_time(self, sm_with_redis, redis_mock):
         """When time parsing fails, header still present without time info."""
-        old_snapshot = {"temperatures": {}, "open_windows": [], "locks_unlocked": ["Front"]}
-        redis_mock.get = AsyncMock(side_effect=[
-            json.dumps(old_snapshot),
-            (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat(),
-        ])
+        old_snapshot = {
+            "temperatures": {},
+            "open_windows": [],
+            "locks_unlocked": ["Front"],
+        }
+        redis_mock.get = AsyncMock(
+            side_effect=[
+                json.dumps(old_snapshot),
+                (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat(),
+            ]
+        )
         current = [_state("lock.front", "locked")]
         result = await sm_with_redis.get_situation_delta(current)
         assert result is not None
@@ -298,11 +332,17 @@ class TestGetSituationDelta:
     @pytest.mark.asyncio
     async def test_delta_with_no_interaction_time(self, sm_with_redis, redis_mock):
         """When no interaction time stored, header has no time prefix."""
-        old_snapshot = {"temperatures": {}, "open_windows": [], "locks_unlocked": ["Front"]}
-        redis_mock.get = AsyncMock(side_effect=[
-            json.dumps(old_snapshot),
-            None,  # no last interaction time
-        ])
+        old_snapshot = {
+            "temperatures": {},
+            "open_windows": [],
+            "locks_unlocked": ["Front"],
+        }
+        redis_mock.get = AsyncMock(
+            side_effect=[
+                json.dumps(old_snapshot),
+                None,  # no last interaction time
+            ]
+        )
         current = [_state("lock.front", "locked")]
         result = await sm_with_redis.get_situation_delta(current)
         assert result is not None
@@ -311,11 +351,17 @@ class TestGetSituationDelta:
     @pytest.mark.asyncio
     async def test_delta_with_invalid_time_string(self, sm_with_redis, redis_mock):
         """Invalid time string does not crash, header has no time."""
-        old_snapshot = {"temperatures": {}, "open_windows": [], "locks_unlocked": ["Front"]}
-        redis_mock.get = AsyncMock(side_effect=[
-            json.dumps(old_snapshot),
-            "not a valid timestamp",
-        ])
+        old_snapshot = {
+            "temperatures": {},
+            "open_windows": [],
+            "locks_unlocked": ["Front"],
+        }
+        redis_mock.get = AsyncMock(
+            side_effect=[
+                json.dumps(old_snapshot),
+                "not a valid timestamp",
+            ]
+        )
         current = [_state("lock.front", "locked")]
         result = await sm_with_redis.get_situation_delta(current)
         assert result is not None
@@ -324,11 +370,19 @@ class TestGetSituationDelta:
     @pytest.mark.asyncio
     async def test_delta_bytes_snapshot(self, sm_with_redis, redis_mock):
         """Redis returning bytes is handled correctly."""
-        old_snapshot = {"temperatures": {}, "open_windows": [], "locks_unlocked": ["Front"]}
-        redis_mock.get = AsyncMock(side_effect=[
-            json.dumps(old_snapshot).encode(),
-            (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat().encode(),
-        ])
+        old_snapshot = {
+            "temperatures": {},
+            "open_windows": [],
+            "locks_unlocked": ["Front"],
+        }
+        redis_mock.get = AsyncMock(
+            side_effect=[
+                json.dumps(old_snapshot).encode(),
+                (datetime.now(timezone.utc) - timedelta(minutes=30))
+                .isoformat()
+                .encode(),
+            ]
+        )
         current = [_state("lock.front", "locked")]
         result = await sm_with_redis.get_situation_delta(current)
         assert result is not None
@@ -338,10 +392,16 @@ class TestGetSituationDelta:
 # _build_snapshot tests
 # ============================================================================
 
+
 class TestBuildSnapshot:
     def test_climate_temperature(self, sm):
-        states = [_state("climate.living_room", "heat",
-                         {"current_temperature": 21.6, "temperature": 22.0})]
+        states = [
+            _state(
+                "climate.living_room",
+                "heat",
+                {"current_temperature": 21.6, "temperature": 22.0},
+            )
+        ]
         snap = sm._build_snapshot(states)
         assert snap["temperatures"]["Living Room"] == 21.6
         assert snap["climate_targets"]["Living Room"] == 22.0
@@ -478,8 +538,11 @@ class TestBuildSnapshot:
 
     def test_multiple_entities_combined(self, sm):
         states = [
-            _state("climate.living_room", "heat",
-                   {"current_temperature": 21.0, "temperature": 22.0}),
+            _state(
+                "climate.living_room",
+                "heat",
+                {"current_temperature": 21.0, "temperature": 22.0},
+            ),
             _state("binary_sensor.kitchen_window", "on"),
             _state("light.bedroom", "on"),
             _state("person.bob", "not_home"),
@@ -508,6 +571,7 @@ class TestBuildSnapshot:
 # ============================================================================
 # _compare_snapshots tests
 # ============================================================================
+
 
 class TestCompareSnapshots:
     # --- Temperature ---
@@ -805,8 +869,10 @@ class TestCompareSnapshots:
     # --- Config ---
 
     def test_custom_temp_threshold(self):
-        with patch("assistant.situation_model.yaml_config",
-                   {"situation_model": {"temp_threshold": 5}}):
+        with patch(
+            "assistant.situation_model.yaml_config",
+            {"situation_model": {"temp_threshold": 5}},
+        ):
             model = SituationModel()
         old = {"temperatures": {"Room": 22.0}}
         new = {"temperatures": {"Room": 19.0}}

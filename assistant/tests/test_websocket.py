@@ -181,7 +181,12 @@ class TestEmitSpeaking:
     async def test_emit_speaking_with_tts(self):
         with patch("assistant.websocket.ws_manager") as mock_ws:
             mock_ws.broadcast = AsyncMock()
-            tts = {"ssml": "<speak>Hi</speak>", "message_type": "greeting", "speed": 95, "volume": 0.6}
+            tts = {
+                "ssml": "<speak>Hi</speak>",
+                "message_type": "greeting",
+                "speed": 95,
+                "volume": 0.6,
+            }
             await emit_speaking("Hi", tts_data=tts)
             call_data = mock_ws.broadcast.call_args[0][1]
             assert call_data["ssml"] == "<speak>Hi</speak>"
@@ -193,6 +198,7 @@ class TestEmitSpeaking:
 # ============================================================
 # Coverage: lines 28-29 (MAX_CONNECTIONS reached)
 # ============================================================
+
 
 class TestConnectMaxConnections:
     @pytest.mark.asyncio
@@ -215,6 +221,7 @@ class TestConnectMaxConnections:
 # Coverage: lines 68-69 (broadcast cleanup ValueError)
 # ============================================================
 
+
 class TestBroadcastCleanupValueError:
     @pytest.mark.asyncio
     async def test_broadcast_cleanup_already_removed(self):
@@ -231,6 +238,7 @@ class TestBroadcastCleanupValueError:
                 original_remove(conn)
             except ValueError:
                 pass
+
         # First broadcast removes it, second cleanup should handle ValueError
         await cm.broadcast("test", {})
         # Connection should be gone
@@ -240,6 +248,7 @@ class TestBroadcastCleanupValueError:
 # ============================================================
 # Coverage: lines 80-81 (send_personal error)
 # ============================================================
+
 
 class TestSendPersonalError:
     @pytest.mark.asyncio
@@ -285,11 +294,12 @@ class TestEmitAction:
             mock_ws.broadcast = AsyncMock()
             await emit_action("turn_on", {"entity": "light.x"}, {"success": True})
             mock_ws.broadcast.assert_called_once_with(
-                "assistant.action", {
+                "assistant.action",
+                {
                     "function": "turn_on",
                     "args": {"entity": "light.x"},
                     "result": {"success": True},
-                }
+                },
             )
 
 
@@ -331,14 +341,17 @@ class TestEmitProactive:
     async def test_emit_proactive(self):
         with patch("assistant.websocket.ws_manager") as mock_ws:
             mock_ws.broadcast = AsyncMock()
-            await emit_proactive("Tuer offen", "door_open", urgency="high", notification_id="n1")
+            await emit_proactive(
+                "Tuer offen", "door_open", urgency="high", notification_id="n1"
+            )
             mock_ws.broadcast.assert_called_once_with(
-                "assistant.proactive", {
+                "assistant.proactive",
+                {
                     "text": "Tuer offen",
                     "event_type": "door_open",
                     "urgency": "high",
                     "notification_id": "n1",
-                }
+                },
             )
 
 
@@ -373,11 +386,18 @@ class TestEmitInterrupt:
         """Interrupt enabled: sends interrupt signal, then proactive with critical."""
         with patch("assistant.websocket.ws_manager") as mock_ws:
             mock_ws.broadcast = AsyncMock()
-            with patch("assistant.config.yaml_config", {
-                "interrupt_queue": {"enabled": True, "pause_ms": 0},
-            }):
-                with patch("assistant.websocket.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-                    await emit_interrupt("Feuer!", "fire_alarm", protocol="evac", actions_taken=["alarm"])
+            with patch(
+                "assistant.config.yaml_config",
+                {
+                    "interrupt_queue": {"enabled": True, "pause_ms": 0},
+                },
+            ):
+                with patch(
+                    "assistant.websocket.asyncio.sleep", new_callable=AsyncMock
+                ) as mock_sleep:
+                    await emit_interrupt(
+                        "Feuer!", "fire_alarm", protocol="evac", actions_taken=["alarm"]
+                    )
                     # Should have 2 broadcast calls: interrupt + proactive
                     assert mock_ws.broadcast.call_count == 2
                     first_call = mock_ws.broadcast.call_args_list[0]
@@ -396,17 +416,21 @@ class TestEmitInterrupt:
         """Interrupt disabled: falls back to normal proactive broadcast."""
         with patch("assistant.websocket.ws_manager") as mock_ws:
             mock_ws.broadcast = AsyncMock()
-            with patch("assistant.config.yaml_config", {
-                "interrupt_queue": {"enabled": False},
-            }):
+            with patch(
+                "assistant.config.yaml_config",
+                {
+                    "interrupt_queue": {"enabled": False},
+                },
+            ):
                 await emit_interrupt("Warnung", "warning_event")
                 mock_ws.broadcast.assert_called_once_with(
-                    "assistant.proactive", {
+                    "assistant.proactive",
+                    {
                         "text": "Warnung",
                         "event_type": "warning_event",
                         "urgency": "critical",
                         "notification_id": "",
-                    }
+                    },
                 )
 
     @pytest.mark.asyncio
@@ -425,10 +449,15 @@ class TestEmitInterrupt:
         """Interrupt uses configured pause_ms for sleep."""
         with patch("assistant.websocket.ws_manager") as mock_ws:
             mock_ws.broadcast = AsyncMock()
-            with patch("assistant.config.yaml_config", {
-                "interrupt_queue": {"enabled": True, "pause_ms": 500},
-            }):
-                with patch("assistant.websocket.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            with patch(
+                "assistant.config.yaml_config",
+                {
+                    "interrupt_queue": {"enabled": True, "pause_ms": 500},
+                },
+            ):
+                with patch(
+                    "assistant.websocket.asyncio.sleep", new_callable=AsyncMock
+                ) as mock_sleep:
                     await emit_interrupt("Alert", "alert_event")
                     mock_sleep.assert_called_once_with(0.5)
 
@@ -437,9 +466,12 @@ class TestEmitInterrupt:
         """Interrupt without actions_taken defaults to empty list."""
         with patch("assistant.websocket.ws_manager") as mock_ws:
             mock_ws.broadcast = AsyncMock()
-            with patch("assistant.config.yaml_config", {
-                "interrupt_queue": {"enabled": True, "pause_ms": 0},
-            }):
+            with patch(
+                "assistant.config.yaml_config",
+                {
+                    "interrupt_queue": {"enabled": True, "pause_ms": 0},
+                },
+            ):
                 with patch("assistant.websocket.asyncio.sleep", new_callable=AsyncMock):
                     await emit_interrupt("Test", "event")
                     second_call = mock_ws.broadcast.call_args_list[1]

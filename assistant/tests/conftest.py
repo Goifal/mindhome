@@ -22,6 +22,7 @@ import pytest
 # Redis Mock
 # ============================================================
 
+
 @pytest.fixture
 def redis_mock():
     """AsyncMock Redis Client mit allen gaengigen Methoden."""
@@ -82,16 +83,19 @@ def redis_mock():
 # ChromaDB Mock
 # ============================================================
 
+
 @pytest.fixture
 def chroma_mock():
     """MagicMock ChromaDB Collection."""
     mock = MagicMock()
     mock.add = MagicMock()
-    mock.query = MagicMock(return_value={
-        "documents": [[]],
-        "metadatas": [[]],
-        "distances": [[]],
-    })
+    mock.query = MagicMock(
+        return_value={
+            "documents": [[]],
+            "metadatas": [[]],
+            "distances": [[]],
+        }
+    )
     mock.update = MagicMock()
     mock.delete = MagicMock()
     mock.count = MagicMock(return_value=0)
@@ -101,6 +105,7 @@ def chroma_mock():
 # ============================================================
 # Home Assistant Client Mock
 # ============================================================
+
 
 @pytest.fixture
 def ha_mock():
@@ -119,13 +124,16 @@ def ha_mock():
 # Ollama Client Mock
 # ============================================================
 
+
 @pytest.fixture
 def ollama_mock():
     """AsyncMock Ollama Client."""
     mock = AsyncMock()
-    mock.chat = AsyncMock(return_value={
-        "message": {"role": "assistant", "content": "Test-Antwort"},
-    })
+    mock.chat = AsyncMock(
+        return_value={
+            "message": {"role": "assistant", "content": "Test-Antwort"},
+        }
+    )
     mock.generate = AsyncMock(return_value="Test-Antwort")
     mock.stream_chat = AsyncMock()
     mock.list_models = AsyncMock(return_value=["qwen3.5:4b", "qwen3.5:9b"])
@@ -136,6 +144,7 @@ def ollama_mock():
 # ============================================================
 # Brain Mock (fuer Integration-Tests)
 # ============================================================
+
 
 @pytest.fixture
 def brain_mock(redis_mock, ha_mock, ollama_mock, chroma_mock):
@@ -163,18 +172,27 @@ def brain_mock(redis_mock, ha_mock, ollama_mock, chroma_mock):
 
     # Mood
     brain.mood = MagicMock()
-    brain.mood.get_current_mood = MagicMock(return_value={
-        "mood": "neutral", "confidence": 0.5,
-    })
+    brain.mood.get_current_mood = MagicMock(
+        return_value={
+            "mood": "neutral",
+            "confidence": 0.5,
+        }
+    )
 
     # Activity
     brain.activity = MagicMock()
-    brain.activity.detect_activity = AsyncMock(return_value={
-        "activity": "idle", "confidence": 0.8,
-    })
-    brain.activity.should_deliver = AsyncMock(return_value={
-        "deliver": True, "delay": 0,
-    })
+    brain.activity.detect_activity = AsyncMock(
+        return_value={
+            "activity": "idle",
+            "confidence": 0.8,
+        }
+    )
+    brain.activity.should_deliver = AsyncMock(
+        return_value={
+            "deliver": True,
+            "delay": 0,
+        }
+    )
 
     # Device Health
     brain.device_health = MagicMock()
@@ -199,17 +217,27 @@ def brain_mock(redis_mock, ha_mock, ollama_mock, chroma_mock):
     # Autonomy
     brain.autonomy = MagicMock()
     brain.autonomy.level = 2
-    brain.autonomy.get_level_info = MagicMock(return_value={"level": 2, "name": "Aktiv"})
+    brain.autonomy.get_level_info = MagicMock(
+        return_value={"level": 2, "name": "Aktiv"}
+    )
 
     # Health Check
-    brain.health_check = AsyncMock(return_value={
-        "status": "ok",
-        "components": {"redis": "connected", "chromadb": "connected", "ollama": "connected"},
-        "autonomy": {"level": 2, "name": "Aktiv"},
-    })
+    brain.health_check = AsyncMock(
+        return_value={
+            "status": "ok",
+            "components": {
+                "redis": "connected",
+                "chromadb": "connected",
+                "ollama": "connected",
+            },
+            "autonomy": {"level": 2, "name": "Aktiv"},
+        }
+    )
 
     # Proactive
     brain.proactive = MagicMock()
-    brain.proactive.generate_status_report = AsyncMock(return_value="Alles in Ordnung, Sir.")
+    brain.proactive.generate_status_report = AsyncMock(
+        return_value="Alles in Ordnung, Sir."
+    )
 
     return brain

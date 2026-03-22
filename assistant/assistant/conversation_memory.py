@@ -26,13 +26,13 @@ logger = logging.getLogger(__name__)
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Redis Keys
-_KEY_PROJECTS = "mha:memory:projects"               # Hash: project_id -> JSON
-_KEY_OPEN_QUESTIONS = "mha:memory:open_questions"    # Hash: question_id -> JSON
-_KEY_DAILY_SUMMARY = "mha:memory:summary:"           # + YYYY-MM-DD -> JSON
-_KEY_FOLLOWUPS = "mha:memory:followups"              # Hash: followup_id -> JSON
+_KEY_PROJECTS = "mha:memory:projects"  # Hash: project_id -> JSON
+_KEY_OPEN_QUESTIONS = "mha:memory:open_questions"  # Hash: question_id -> JSON
+_KEY_DAILY_SUMMARY = "mha:memory:summary:"  # + YYYY-MM-DD -> JSON
+_KEY_FOLLOWUPS = "mha:memory:followups"  # Hash: followup_id -> JSON
 # Phase 3B: Gesprächs-Threads
-_KEY_THREADS = "mha:memory:threads"                  # Hash: thread_id -> JSON
-_KEY_THREAD_INDEX = "mha:memory:thread_index"        # Hash: keyword -> thread_id
+_KEY_THREADS = "mha:memory:threads"  # Hash: thread_id -> JSON
+_KEY_THREAD_INDEX = "mha:memory:thread_index"  # Hash: keyword -> thread_id
 # Phase 3C: Emotionales Context-Tagging
 _KEY_EMOTIONAL_CONTEXT = "mha:memory:emotional_context"  # Hash: msg_id -> JSON
 
@@ -52,8 +52,12 @@ class ConversationMemory:
         self.enabled = cfg.get("enabled", True)
         self.max_projects = cfg.get("max_projects", _DEFAULT_MAX_PROJECTS)
         self.max_questions = cfg.get("max_questions", _DEFAULT_MAX_QUESTIONS)
-        self.summary_retention_days = cfg.get("summary_retention_days", _DEFAULT_SUMMARY_RETENTION_DAYS)
-        self.question_ttl_days = cfg.get("question_ttl_days", _DEFAULT_QUESTION_TTL_DAYS)
+        self.summary_retention_days = cfg.get(
+            "summary_retention_days", _DEFAULT_SUMMARY_RETENTION_DAYS
+        )
+        self.question_ttl_days = cfg.get(
+            "question_ttl_days", _DEFAULT_QUESTION_TTL_DAYS
+        )
         self._project_lock = asyncio.Lock()
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
@@ -91,7 +95,9 @@ class ConversationMemory:
                         await self.redis.hdel(_KEY_PROJECTS, key_str)
                         removed += 1
             if removed:
-                logger.info("Projekt-Cleanup: %d abgeschlossene Projekte entfernt", removed)
+                logger.info(
+                    "Projekt-Cleanup: %d abgeschlossene Projekte entfernt", removed
+                )
         except Exception as e:
             logger.debug("Projekt-Cleanup fehlgeschlagen: %s", e)
 
@@ -101,7 +107,9 @@ class ConversationMemory:
             return
         try:
             raw = await self.redis.hgetall(_KEY_FOLLOWUPS)
-            cutoff = (datetime.now(timezone.utc) - timedelta(days=self.question_ttl_days)).isoformat()
+            cutoff = (
+                datetime.now(timezone.utc) - timedelta(days=self.question_ttl_days)
+            ).isoformat()
             removed = 0
             for key, val in raw.items():
                 key_str = key.decode() if isinstance(key, bytes) else key
@@ -116,7 +124,9 @@ class ConversationMemory:
                     await self.redis.hdel(_KEY_FOLLOWUPS, key_str)
                     removed += 1
             if removed:
-                logger.info("Followup-Cleanup: %d abgelaufene Followups entfernt", removed)
+                logger.info(
+                    "Followup-Cleanup: %d abgelaufene Followups entfernt", removed
+                )
         except Exception as e:
             logger.debug("Followup-Cleanup fehlgeschlagen: %s", e)
 
@@ -124,8 +134,9 @@ class ConversationMemory:
     # Projekt-Tracking
     # ------------------------------------------------------------------
 
-    async def create_project(self, name: str, description: str = "",
-                             person: str = "") -> dict:
+    async def create_project(
+        self, name: str, description: str = "", person: str = ""
+    ) -> dict:
         """Erstellt ein neues Projekt zum Nachverfolgen.
 
         Args:
@@ -134,7 +145,10 @@ class ConversationMemory:
             person: Zugeordnete Person
         """
         if not self.redis or not self.enabled:
-            return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
+            return {
+                "success": False,
+                "message": "Konversationsgedaechtnis nicht verfuegbar.",
+            }
 
         if not name or not name.strip():
             return {"success": False, "message": "Projektname darf nicht leer sein."}
@@ -144,9 +158,13 @@ class ConversationMemory:
         # Duplikat-Check
         existing = await self._find_project(name)
         if existing and existing.get("name", "").lower() == name.lower():
-            return {"success": False, "message": f"Projekt '{name}' existiert bereits (Status: {existing.get('status', '?')}). Nutze update_project um es zu aendern."}
+            return {
+                "success": False,
+                "message": f"Projekt '{name}' existiert bereits (Status: {existing.get('status', '?')}). Nutze update_project um es zu aendern.",
+            }
 
         import secrets
+
         project_id = f"proj_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(3)}_{name.lower().replace(' ', '_')[:20]}"
         project = {
             "id": project_id,
@@ -164,17 +182,25 @@ class ConversationMemory:
             # Limit pruefen
             count = await self.redis.hlen(_KEY_PROJECTS)
             if count >= self.max_projects:
-                return {"success": False, "message": f"Maximale Projektanzahl ({self.max_projects}) erreicht. Schliesse zuerst ein altes Projekt ab."}
+                return {
+                    "success": False,
+                    "message": f"Maximale Projektanzahl ({self.max_projects}) erreicht. Schliesse zuerst ein altes Projekt ab.",
+                }
 
             await self.redis.hset(_KEY_PROJECTS, project_id, json.dumps(project))
             logger.info("Projekt erstellt: %s", name)
-            return {"success": True, "message": f"Projekt '{name}' angelegt.", "project_id": project_id}
+            return {
+                "success": True,
+                "message": f"Projekt '{name}' angelegt.",
+                "project_id": project_id,
+            }
         except Exception as e:
             logger.error("Projekt erstellen fehlgeschlagen: %s", e)
             return {"success": False, "message": str(e)}
 
-    async def update_project(self, name: str, status: str = "",
-                             note: str = "", milestone: str = "") -> dict:
+    async def update_project(
+        self, name: str, status: str = "", note: str = "", milestone: str = ""
+    ) -> dict:
         """Aktualisiert ein Projekt (Status, Notiz oder Meilenstein).
 
         Lock schuetzt den Read-Modify-Write-Zyklus gegen Race Conditions
@@ -187,42 +213,58 @@ class ConversationMemory:
             milestone: Neuen Meilenstein hinzufuegen
         """
         if not self.redis or not self.enabled:
-            return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
+            return {
+                "success": False,
+                "message": "Konversationsgedaechtnis nicht verfuegbar.",
+            }
 
         async with self._project_lock:
             project = await self._find_project(name)
             if not project:
-                return {"success": False, "message": f"Projekt '{name}' nicht gefunden."}
+                return {
+                    "success": False,
+                    "message": f"Projekt '{name}' nicht gefunden.",
+                }
 
             changes = []
             if status and status in ("active", "paused", "done"):
                 project["status"] = status
                 changes.append(f"Status → {status}")
             if note:
-                project["notes"].append({
-                    "text": note,
-                    "date": datetime.now(timezone.utc).isoformat(),
-                })
+                project["notes"].append(
+                    {
+                        "text": note,
+                        "date": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
                 # Max 20 Notizen
                 if len(project["notes"]) > 20:
                     project["notes"] = project["notes"][-20:]
                 changes.append("Notiz hinzugefuegt")
             if milestone:
-                project["milestones"].append({
-                    "text": milestone,
-                    "date": datetime.now(timezone.utc).isoformat(),
-                    "done": True,
-                })
+                project["milestones"].append(
+                    {
+                        "text": milestone,
+                        "date": datetime.now(timezone.utc).isoformat(),
+                        "done": True,
+                    }
+                )
                 changes.append(f"Meilenstein: {milestone}")
 
             if not changes:
-                return {"success": False, "message": "Keine Aenderung angegeben (status, note oder milestone)."}
+                return {
+                    "success": False,
+                    "message": "Keine Aenderung angegeben (status, note oder milestone).",
+                }
 
             project["updated_at"] = datetime.now(timezone.utc).isoformat()
 
             try:
                 await self.redis.hset(_KEY_PROJECTS, project["id"], json.dumps(project))
-                return {"success": True, "message": f"Projekt '{project['name']}' aktualisiert: {', '.join(changes)}"}
+                return {
+                    "success": True,
+                    "message": f"Projekt '{project['name']}' aktualisiert: {', '.join(changes)}",
+                }
             except Exception as e:
                 return {"success": False, "message": str(e)}
 
@@ -255,16 +297,25 @@ class ConversationMemory:
         Lock schuetzt gegen gleichzeitige Updates auf dasselbe Projekt.
         """
         if not self.redis or not self.enabled:
-            return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
+            return {
+                "success": False,
+                "message": "Konversationsgedaechtnis nicht verfuegbar.",
+            }
 
         async with self._project_lock:
             project = await self._find_project(name)
             if not project:
-                return {"success": False, "message": f"Projekt '{name}' nicht gefunden."}
+                return {
+                    "success": False,
+                    "message": f"Projekt '{name}' nicht gefunden.",
+                }
 
             try:
                 await self.redis.hdel(_KEY_PROJECTS, project["id"])
-                return {"success": True, "message": f"Projekt '{project['name']}' geloescht."}
+                return {
+                    "success": True,
+                    "message": f"Projekt '{project['name']}' geloescht.",
+                }
             except Exception as e:
                 return {"success": False, "message": str(e)}
 
@@ -295,8 +346,9 @@ class ConversationMemory:
     # Offene Fragen
     # ------------------------------------------------------------------
 
-    async def add_question(self, question: str, context: str = "",
-                           person: str = "") -> dict:
+    async def add_question(
+        self, question: str, context: str = "", person: str = ""
+    ) -> dict:
         """Speichert eine offene Frage zur spaeteren Nachverfolgung.
 
         Args:
@@ -305,7 +357,10 @@ class ConversationMemory:
             person: Wer hat gefragt
         """
         if not self.redis or not self.enabled:
-            return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
+            return {
+                "success": False,
+                "message": "Konversationsgedaechtnis nicht verfuegbar.",
+            }
 
         if not question or not question.strip():
             return {"success": False, "message": "Frage darf nicht leer sein."}
@@ -343,11 +398,17 @@ class ConversationMemory:
             answer: Die Antwort
         """
         if not self.redis or not self.enabled:
-            return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
+            return {
+                "success": False,
+                "message": "Konversationsgedaechtnis nicht verfuegbar.",
+            }
 
         q = await self._find_question(question_search)
         if not q:
-            return {"success": False, "message": f"Frage zu '{question_search}' nicht gefunden."}
+            return {
+                "success": False,
+                "message": f"Frage zu '{question_search}' nicht gefunden.",
+            }
 
         q["status"] = "answered"
         q["answer"] = answer
@@ -355,7 +416,9 @@ class ConversationMemory:
 
         try:
             await self.redis.hset(_KEY_OPEN_QUESTIONS, q["id"], json.dumps(q))
-            q_display = q['question'][:50] + "..." if len(q['question']) > 50 else q['question']
+            q_display = (
+                q["question"][:50] + "..." if len(q["question"]) > 50 else q["question"]
+            )
             return {"success": True, "message": f"Frage beantwortet: '{q_display}'"}
         except Exception as e:
             return {"success": False, "message": str(e)}
@@ -406,7 +469,9 @@ class ConversationMemory:
             return
         try:
             raw = await self.redis.hgetall(_KEY_OPEN_QUESTIONS)
-            cutoff = (datetime.now(timezone.utc) - timedelta(days=self.question_ttl_days)).isoformat()
+            cutoff = (
+                datetime.now(timezone.utc) - timedelta(days=self.question_ttl_days)
+            ).isoformat()
             for key, val in raw.items():
                 key_str = key.decode() if isinstance(key, bytes) else key
                 val_str = val.decode() if isinstance(val, bytes) else val
@@ -426,8 +491,9 @@ class ConversationMemory:
     # Tages-Zusammenfassungen
     # ------------------------------------------------------------------
 
-    async def save_daily_summary(self, summary: str, topics: list[str],
-                                 date: str = "") -> dict:
+    async def save_daily_summary(
+        self, summary: str, topics: list[str], date: str = ""
+    ) -> dict:
         """Speichert eine Tages-Zusammenfassung.
 
         Args:
@@ -436,7 +502,10 @@ class ConversationMemory:
             date: Datum (YYYY-MM-DD), default: heute
         """
         if not self.redis or not self.enabled:
-            return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
+            return {
+                "success": False,
+                "message": "Konversationsgedaechtnis nicht verfuegbar.",
+            }
 
         if not date:
             date = datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
@@ -454,7 +523,10 @@ class ConversationMemory:
             # TTL nur setzen wenn Retention konfiguriert (0 = unbegrenzt)
             if self.summary_retention_days > 0:
                 await self.redis.expire(key, self.summary_retention_days * 86400)
-            return {"success": True, "message": f"Zusammenfassung fuer {date} gespeichert."}
+            return {
+                "success": True,
+                "message": f"Zusammenfassung fuer {date} gespeichert.",
+            }
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -497,30 +569,57 @@ class ConversationMemory:
     # Trigger-Muster: Deutsche Phrasen die auf zukuenftige Ereignisse hindeuten
     _FOLLOWUP_PATTERNS = [
         # (regex_pattern, vorgeschlagenes_topic, ask_after_default)
-        (r"(?i)\b(arzt|zahnarzt|facharzt)termin\b.*?\b(morgen|uebermorgen|naechste woche)\b",
-         "Arzttermin", "tomorrow"),
-        (r"(?i)\b(paket|lieferung|sendung)\b.*?\b(kommt|erwartet|unterwegs)\b",
-         "Paket-Lieferung", "tomorrow"),
-        (r"(?i)\b(bewerbungs?gespraech|vorstellungsgespraech|interview)\b",
-         "Bewerbungsgespraech", "tomorrow"),
-        (r"(?i)\b(pruefung|klausur|examen|test)\b.*?\b(morgen|naechste woche|bald)\b",
-         "Pruefung", "tomorrow"),
-        (r"(?i)\b(reparatur|handwerker|techniker)\b.*?\b(kommt|morgen|naechste woche)\b",
-         "Reparatur/Handwerker", "tomorrow"),
-        (r"(?i)\b(reise|urlaub|flug)\b.*?\b(morgen|naechste woche|bald)\b",
-         "Reise/Urlaub", "tomorrow"),
-        (r"(?i)\b(meeting|besprechung|termin)\b.*?\b(morgen|naechste woche)\b",
-         "Termin/Meeting", "tomorrow"),
-        (r"(?i)\b(geburtstag|jubilaeum|feier)\b.*?\b(morgen|naechste woche|bald)\b",
-         "Geburtstag/Feier", "tomorrow"),
-        (r"(?i)\bwarte\s+(auf|noch)\b",
-         "Wartet auf etwas", "next_conversation"),
-        (r"(?i)\b(muss|sollte|will)\b.*?\b(morgen|spaeter|nachher)\b.*?\b(erledigen|machen|kaufen|anrufen)\b",
-         "Aufgabe geplant", "next_conversation"),
+        (
+            r"(?i)\b(arzt|zahnarzt|facharzt)termin\b.*?\b(morgen|uebermorgen|naechste woche)\b",
+            "Arzttermin",
+            "tomorrow",
+        ),
+        (
+            r"(?i)\b(paket|lieferung|sendung)\b.*?\b(kommt|erwartet|unterwegs)\b",
+            "Paket-Lieferung",
+            "tomorrow",
+        ),
+        (
+            r"(?i)\b(bewerbungs?gespraech|vorstellungsgespraech|interview)\b",
+            "Bewerbungsgespraech",
+            "tomorrow",
+        ),
+        (
+            r"(?i)\b(pruefung|klausur|examen|test)\b.*?\b(morgen|naechste woche|bald)\b",
+            "Pruefung",
+            "tomorrow",
+        ),
+        (
+            r"(?i)\b(reparatur|handwerker|techniker)\b.*?\b(kommt|morgen|naechste woche)\b",
+            "Reparatur/Handwerker",
+            "tomorrow",
+        ),
+        (
+            r"(?i)\b(reise|urlaub|flug)\b.*?\b(morgen|naechste woche|bald)\b",
+            "Reise/Urlaub",
+            "tomorrow",
+        ),
+        (
+            r"(?i)\b(meeting|besprechung|termin)\b.*?\b(morgen|naechste woche)\b",
+            "Termin/Meeting",
+            "tomorrow",
+        ),
+        (
+            r"(?i)\b(geburtstag|jubilaeum|feier)\b.*?\b(morgen|naechste woche|bald)\b",
+            "Geburtstag/Feier",
+            "tomorrow",
+        ),
+        (r"(?i)\bwarte\s+(auf|noch)\b", "Wartet auf etwas", "next_conversation"),
+        (
+            r"(?i)\b(muss|sollte|will)\b.*?\b(morgen|spaeter|nachher)\b.*?\b(erledigen|machen|kaufen|anrufen)\b",
+            "Aufgabe geplant",
+            "next_conversation",
+        ),
     ]
 
-    async def add_followup(self, topic: str, context: str,
-                           ask_after: str = "next_conversation") -> dict:
+    async def add_followup(
+        self, topic: str, context: str, ask_after: str = "next_conversation"
+    ) -> dict:
         """Speichert eine Follow-Up-Frage fuer spaetere Nachverfolgung.
 
         Args:
@@ -530,10 +629,16 @@ class ConversationMemory:
                        oder ISO-Datetime (z.B. "2025-01-15T10:00:00")
         """
         if not self.redis or not self.enabled:
-            return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
+            return {
+                "success": False,
+                "message": "Konversationsgedaechtnis nicht verfuegbar.",
+            }
 
         if not topic or not topic.strip():
-            return {"success": False, "message": "Follow-Up Thema darf nicht leer sein."}
+            return {
+                "success": False,
+                "message": "Follow-Up Thema darf nicht leer sein.",
+            }
 
         topic = topic.strip()
 
@@ -541,6 +646,7 @@ class ConversationMemory:
         due_at = self._resolve_ask_after(ask_after)
 
         import secrets
+
         followup_id = f"fu_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(3)}"
         entry = {
             "id": followup_id,
@@ -555,7 +661,10 @@ class ConversationMemory:
         try:
             await self.redis.hset(_KEY_FOLLOWUPS, followup_id, json.dumps(entry))
             logger.info("Follow-Up gespeichert: %s (faellig: %s)", topic, due_at)
-            return {"success": True, "message": f"Follow-Up gemerkt: '{topic}' (nachfragen: {ask_after})"}
+            return {
+                "success": True,
+                "message": f"Follow-Up gemerkt: '{topic}' (nachfragen: {ask_after})",
+            }
         except Exception as e:
             logger.error("Follow-Up speichern fehlgeschlagen: %s", e)
             return {"success": False, "message": str(e)}
@@ -611,18 +720,27 @@ class ConversationMemory:
             topic: Thema (Suche per Teilstring, wie bei Projekten)
         """
         if not self.redis or not self.enabled:
-            return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
+            return {
+                "success": False,
+                "message": "Konversationsgedaechtnis nicht verfuegbar.",
+            }
 
         entry = await self._find_followup(topic)
         if not entry:
-            return {"success": False, "message": f"Follow-Up zu '{topic}' nicht gefunden."}
+            return {
+                "success": False,
+                "message": f"Follow-Up zu '{topic}' nicht gefunden.",
+            }
 
         entry["status"] = "done"
         entry["completed_at"] = datetime.now(timezone.utc).isoformat()
 
         try:
             await self.redis.hset(_KEY_FOLLOWUPS, entry["id"], json.dumps(entry))
-            return {"success": True, "message": f"Follow-Up '{entry['topic']}' als erledigt markiert."}
+            return {
+                "success": True,
+                "message": f"Follow-Up '{entry['topic']}' als erledigt markiert.",
+            }
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -658,12 +776,14 @@ class ConversationMemory:
                 if end < len(text):
                     context_snippet = context_snippet + "..."
 
-                suggestions.append({
-                    "topic": topic,
-                    "context": context_snippet,
-                    "ask_after": ask_after,
-                    "matched_text": match.group(0),
-                })
+                suggestions.append(
+                    {
+                        "topic": topic,
+                        "context": context_snippet,
+                        "ask_after": ask_after,
+                        "matched_text": match.group(0),
+                    }
+                )
 
         return suggestions
 
@@ -687,7 +807,9 @@ class ConversationMemory:
             return dt.isoformat()
         except (ValueError, TypeError):
             # Fallback: sofort faellig
-            logger.warning("Ungueltiges ask_after Format: %s, verwende 'jetzt'", ask_after)
+            logger.warning(
+                "Ungueltiges ask_after Format: %s, verwende 'jetzt'", ask_after
+            )
             return now.isoformat()
 
     async def _find_followup(self, topic: str) -> Optional[dict]:
@@ -742,7 +864,9 @@ class ConversationMemory:
             parts.append(f"Offene Fragen ({len(questions)}): {'; '.join(q_strs)}")
 
         # Gestrige Zusammenfassung
-        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime(
+            "%Y-%m-%d"
+        )
         summary = await self.get_daily_summary(yesterday)
         if summary and summary.get("topics"):
             parts.append(f"Gestern: {', '.join(summary['topics'][:5])}")
@@ -831,7 +955,9 @@ class ConversationMemory:
                     thread_raw = await self.redis.hget(_KEY_THREADS, tid)
                     if thread_raw:
                         thread = json.loads(thread_raw)
-                        thread_keywords = self._extract_topic_keywords(thread.get("topic", ""))
+                        thread_keywords = self._extract_topic_keywords(
+                            thread.get("topic", "")
+                        )
                         overlap = len(set(keywords) & set(thread_keywords))
                         if overlap > best_overlap:
                             best_overlap = overlap
@@ -846,7 +972,9 @@ class ConversationMemory:
                         thread.setdefault("session_ids", []).append(session_id)
                         thread["last_active"] = datetime.now(timezone.utc).isoformat()
                         thread["messages_count"] = thread.get("messages_count", 0) + 1
-                        await self.redis.hset(_KEY_THREADS, best_thread_id, json.dumps(thread))
+                        await self.redis.hset(
+                            _KEY_THREADS, best_thread_id, json.dumps(thread)
+                        )
                 return best_thread_id
 
         except Exception as e:
@@ -939,19 +1067,80 @@ class ConversationMemory:
         if not text:
             return []
         _STOP_WORDS = {
-            "der", "die", "das", "ein", "eine", "und", "oder", "aber", "ich",
-            "du", "er", "sie", "es", "wir", "ihr", "mein", "dein", "sein",
-            "ihr", "ist", "sind", "hat", "haben", "wird", "werden", "kann",
-            "soll", "muss", "wie", "was", "wer", "wo", "wann", "warum",
-            "mit", "von", "fuer", "bei", "nach", "vor", "ueber", "unter",
-            "in", "an", "auf", "aus", "zu", "um", "nicht", "kein", "keine",
-            "auch", "noch", "schon", "mal", "so", "ja", "nein", "bitte",
-            "the", "is", "are", "was", "has", "have", "will", "can",
+            "der",
+            "die",
+            "das",
+            "ein",
+            "eine",
+            "und",
+            "oder",
+            "aber",
+            "ich",
+            "du",
+            "er",
+            "sie",
+            "es",
+            "wir",
+            "ihr",
+            "mein",
+            "dein",
+            "sein",
+            "ihr",
+            "ist",
+            "sind",
+            "hat",
+            "haben",
+            "wird",
+            "werden",
+            "kann",
+            "soll",
+            "muss",
+            "wie",
+            "was",
+            "wer",
+            "wo",
+            "wann",
+            "warum",
+            "mit",
+            "von",
+            "fuer",
+            "bei",
+            "nach",
+            "vor",
+            "ueber",
+            "unter",
+            "in",
+            "an",
+            "auf",
+            "aus",
+            "zu",
+            "um",
+            "nicht",
+            "kein",
+            "keine",
+            "auch",
+            "noch",
+            "schon",
+            "mal",
+            "so",
+            "ja",
+            "nein",
+            "bitte",
+            "the",
+            "is",
+            "are",
+            "was",
+            "has",
+            "have",
+            "will",
+            "can",
         }
         words = text.lower().split()
         return [w for w in words if len(w) >= 3 and w not in _STOP_WORDS][:10]
 
-    async def get_recent_topics(self, person: str = "", days: int = 7, limit: int = 10) -> list[dict]:
+    async def get_recent_topics(
+        self, person: str = "", days: int = 7, limit: int = 10
+    ) -> list[dict]:
         """Gibt die haeufigsten Gespraechsthemen der letzten Tage zurueck.
 
         Aggregiert aus Tageszusammenfassungen und Thread-Index.
@@ -977,11 +1166,17 @@ class ConversationMemory:
                 summary_raw = await self.redis.get(f"{_KEY_DAILY_SUMMARY}{date_key}")
                 if not summary_raw:
                     continue
-                summary_str = summary_raw.decode() if isinstance(summary_raw, bytes) else summary_raw
+                summary_str = (
+                    summary_raw.decode()
+                    if isinstance(summary_raw, bytes)
+                    else summary_raw
+                )
                 summary = json.loads(summary_str)
 
                 for topic in summary.get("topics", []):
-                    topic_name = topic if isinstance(topic, str) else topic.get("name", "")
+                    topic_name = (
+                        topic if isinstance(topic, str) else topic.get("name", "")
+                    )
                     if not topic_name:
                         continue
                     topic_lower = topic_name.lower()
@@ -1031,7 +1226,11 @@ class ConversationMemory:
                 tid = thread_id.decode() if isinstance(thread_id, bytes) else thread_id
                 thread_raw = await self.redis.hget(_KEY_THREADS, tid)
                 if thread_raw:
-                    t_str = thread_raw.decode() if isinstance(thread_raw, bytes) else thread_raw
+                    t_str = (
+                        thread_raw.decode()
+                        if isinstance(thread_raw, bytes)
+                        else thread_raw
+                    )
                     thread = json.loads(t_str)
                     messages = thread.get("messages", [])[-3:]
                     if messages:
@@ -1048,10 +1247,45 @@ class ConversationMemory:
     # ------------------------------------------------------------------
 
     _EMOTION_KEYWORDS: dict[str, list[str]] = {
-        "good": ["super", "toll", "klasse", "prima", "freue", "geil", "perfekt", "danke", "liebe"],
-        "stressed": ["stress", "eile", "schnell", "dringend", "sofort", "hektisch", "muss"],
-        "frustrated": ["nerv", "aerger", "mist", "scheisse", "klappt nicht", "geht nicht", "funktioniert nicht", "schon wieder"],
-        "tired": ["muede", "schlaf", "erschoepft", "kaputt", "fertig", "gaehn", "pennen"],
+        "good": [
+            "super",
+            "toll",
+            "klasse",
+            "prima",
+            "freue",
+            "geil",
+            "perfekt",
+            "danke",
+            "liebe",
+        ],
+        "stressed": [
+            "stress",
+            "eile",
+            "schnell",
+            "dringend",
+            "sofort",
+            "hektisch",
+            "muss",
+        ],
+        "frustrated": [
+            "nerv",
+            "aerger",
+            "mist",
+            "scheisse",
+            "klappt nicht",
+            "geht nicht",
+            "funktioniert nicht",
+            "schon wieder",
+        ],
+        "tired": [
+            "muede",
+            "schlaf",
+            "erschoepft",
+            "kaputt",
+            "fertig",
+            "gaehn",
+            "pennen",
+        ],
     }
 
     def _detect_emotion(self, text: str) -> dict:
@@ -1108,7 +1342,9 @@ class ConversationMemory:
             if mood_data and mood_data.get("mood"):
                 emotion = {
                     "mood": mood_data["mood"],
-                    "intensity": mood_data.get("stress_level", mood_data.get("intensity", 0.5)),
+                    "intensity": mood_data.get(
+                        "stress_level", mood_data.get("intensity", 0.5)
+                    ),
                     "signals": mood_data.get("signals", []),
                     "source": "mood_detector",
                 }
@@ -1137,3 +1373,164 @@ class ConversationMemory:
 
         except Exception as e:
             logger.debug("Emotional context tagging Fehler: %s", e)
+
+    # ------------------------------------------------------------------
+    # MCU Sprint 2: Arbeitssession-Tracking
+    # ------------------------------------------------------------------
+
+    _WORK_SESSION_KEY = "mha:work_session:{person}"
+    _WORK_SESSION_IDLE_TIMEOUT = 4 * 3600  # 4h Idle -> Session endet
+    _WORK_SESSION_MIN_MESSAGES = 3  # >=3 Nachrichten zum selben Thema
+    _WORK_SESSION_WINDOW = 30 * 60  # 30min Fenster
+
+    async def detect_work_session(self, person: str, text: str) -> Optional[dict]:
+        """Erkennt und verwaltet zusammenhaengende Arbeitssessions.
+
+        Eine Arbeitssession wird erstellt wenn >3 Nachrichten in <30min
+        zum selben Thema kommen. Die Session bleibt aktiv solange
+        Nachrichten kommen (max 4h Idle-Timeout).
+
+        Args:
+            person: Name der Person.
+            text: Aktueller Nachrichtentext.
+
+        Returns:
+            Session-Dict wenn aktiv, None wenn keine Session.
+        """
+        if not self.redis or not person:
+            return None
+
+        key = self._WORK_SESSION_KEY.format(person=person)
+
+        try:
+            raw = await self.redis.get(key)
+            now = datetime.now(timezone.utc)
+
+            # Keywords aus Text extrahieren (einfache Heuristik)
+            keywords = self._extract_topic_keywords(text)
+
+            if raw:
+                session = json.loads(raw)
+                last_msg = datetime.fromisoformat(session["last_message"])
+                idle_seconds = (now - last_msg).total_seconds()
+
+                # Session abgelaufen?
+                if idle_seconds > self._WORK_SESSION_IDLE_TIMEOUT:
+                    await self.redis.delete(key)
+                    # Neue Session starten wenn genug Keywords
+                    return await self._start_work_session(key, person, keywords, now)
+
+                # Thema-Uebereinstimmung pruefen
+                session_keywords = set(session.get("keywords", []))
+                overlap = session_keywords & set(keywords)
+                if overlap or not session_keywords:
+                    # Gleiche Session fortsetzen
+                    session["message_count"] = session.get("message_count", 0) + 1
+                    session["last_message"] = now.isoformat()
+                    # Keywords erweitern
+                    all_kw = list(session_keywords | set(keywords))[:20]
+                    session["keywords"] = all_kw
+                    await self.redis.setex(
+                        key,
+                        self._WORK_SESSION_IDLE_TIMEOUT,
+                        json.dumps(session),
+                    )
+                    if session["message_count"] >= self._WORK_SESSION_MIN_MESSAGES:
+                        return session
+                    return None
+                else:
+                    # Themenwechsel — alte Session beenden, neue starten
+                    await self.redis.delete(key)
+                    return await self._start_work_session(key, person, keywords, now)
+            else:
+                # Keine aktive Session — neue beginnen
+                return await self._start_work_session(key, person, keywords, now)
+
+        except Exception as e:
+            logger.debug("Work-Session-Detection Fehler: %s", e)
+            return None
+
+    async def _start_work_session(
+        self, key: str, person: str, keywords: list[str], now: datetime
+    ) -> None:
+        """Startet eine neue Arbeitssession (gibt None zurueck da noch <3 Nachrichten)."""
+        session = {
+            "person": person,
+            "start_time": now.isoformat(),
+            "last_message": now.isoformat(),
+            "message_count": 1,
+            "keywords": keywords[:20],
+        }
+        try:
+            await self.redis.setex(
+                key,
+                self._WORK_SESSION_IDLE_TIMEOUT,
+                json.dumps(session),
+            )
+        except Exception as e:
+            logger.debug("Work-Session start Fehler: %s", e)
+        return None
+
+    async def get_active_work_session(self, person: str) -> Optional[dict]:
+        """Gibt die aktive Arbeitssession fuer eine Person zurueck."""
+        if not self.redis or not person:
+            return None
+        key = self._WORK_SESSION_KEY.format(person=person)
+        try:
+            raw = await self.redis.get(key)
+            if raw:
+                session = json.loads(raw)
+                if session.get("message_count", 0) >= self._WORK_SESSION_MIN_MESSAGES:
+                    return session
+        except Exception as e:
+            logger.debug("Work-Session get Fehler: %s", e)
+        return None
+
+    @staticmethod
+    def _extract_topic_keywords(text: str) -> list[str]:
+        """Extrahiert einfache Topic-Keywords aus einem Text.
+
+        Nutzt eine einfache Heuristik: Woerter > 4 Zeichen, keine Stoppwoerter.
+        """
+        _stopwords = {
+            "nicht",
+            "haben",
+            "einen",
+            "einer",
+            "eines",
+            "diese",
+            "dieser",
+            "dieses",
+            "werden",
+            "wurde",
+            "worden",
+            "machen",
+            "gerade",
+            "kannst",
+            "koenntest",
+            "bitte",
+            "danke",
+            "warum",
+            "weil",
+            "ueber",
+            "unter",
+            "neben",
+            "zwischen",
+            "durch",
+            "fuer",
+            "the",
+            "and",
+            "this",
+            "that",
+            "with",
+            "from",
+            "have",
+            "been",
+        }
+        words = text.lower().split()
+        keywords = [
+            w.strip(".,!?;:()\"'")
+            for w in words
+            if len(w) > 4 and w.strip(".,!?;:()\"'") not in _stopwords
+        ]
+        return keywords[:10]

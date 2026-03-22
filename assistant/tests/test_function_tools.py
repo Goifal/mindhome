@@ -13,6 +13,7 @@ from assistant.function_calling import FunctionExecutor, get_assistant_tools
 
 try:
     import assistant.main  # noqa: F401
+
     _HAS_MAIN = True
 except Exception:
     _HAS_MAIN = False
@@ -54,7 +55,9 @@ class TestToolDefinitions:
 
     def test_no_duplicate_tool_names(self):
         names = self._tool_names()
-        assert len(names) == len(set(names)), f"Duplikate: {[n for n in names if names.count(n) > 1]}"
+        assert len(names) == len(set(names)), (
+            f"Duplikate: {[n for n in names if names.count(n) > 1]}"
+        )
 
 
 # ---------------------------------------------------------------
@@ -73,7 +76,8 @@ def _mock_brain():
     brain = MagicMock()
     # Mood
     brain.mood.get_current_mood.return_value = {
-        "mood": "gut", "stress_level": 0.2,
+        "mood": "gut",
+        "stress_level": 0.2,
     }
     # Memory + Redis
     brain.memory.redis = AsyncMock()
@@ -86,7 +90,9 @@ def _mock_brain():
     # Learning Observer
     brain.learning_observer.get_learned_patterns = AsyncMock(return_value=[])
     # Camera
-    brain.camera_manager.describe_doorbell = AsyncMock(return_value="Eine Person mit Paket vor der Tuer")
+    brain.camera_manager.describe_doorbell = AsyncMock(
+        return_value="Eine Person mit Paket vor der Tuer"
+    )
     return brain
 
 
@@ -127,8 +133,11 @@ class TestExecWellnessStatus:
         executor = _make_executor()
         mock_brain = _mock_brain()
         from datetime import datetime, timedelta, timezone
+
         start = (datetime.now(timezone.utc) - timedelta(minutes=45)).isoformat()
-        mock_brain.memory.redis.get = AsyncMock(side_effect=lambda k: start if "pc_start" in k else None)
+        mock_brain.memory.redis.get = AsyncMock(
+            side_effect=lambda k: start if "pc_start" in k else None
+        )
         with patch("assistant.main.brain", mock_brain):
             result = await executor._exec_get_wellness_status({})
         assert result["success"] is True
@@ -164,10 +173,12 @@ class TestExecDeviceHealth:
     async def test_with_alerts(self):
         executor = _make_executor()
         mock_brain = _mock_brain()
-        mock_brain.device_health.check_all = AsyncMock(return_value=[
-            {"message": "Sensor Kueche inaktiv seit 2h"},
-            {"message": "Heizung Buero ineffizient"},
-        ])
+        mock_brain.device_health.check_all = AsyncMock(
+            return_value=[
+                {"message": "Sensor Kueche inaktiv seit 2h"},
+                {"message": "Heizung Buero ineffizient"},
+            ]
+        )
         with patch("assistant.main.brain", mock_brain):
             result = await executor._exec_get_device_health({})
         assert result["success"] is True
@@ -186,7 +197,9 @@ class TestExecDeviceHealth:
     async def test_error_returns_false(self):
         executor = _make_executor()
         mock_brain = _mock_brain()
-        mock_brain.device_health.get_status = AsyncMock(side_effect=ConnectionError("Redis down"))
+        mock_brain.device_health.get_status = AsyncMock(
+            side_effect=ConnectionError("Redis down")
+        )
         with patch("assistant.main.brain", mock_brain):
             result = await executor._exec_get_device_health({})
         assert result["success"] is False
@@ -209,10 +222,22 @@ class TestExecLearnedPatterns:
     async def test_with_patterns(self):
         executor = _make_executor()
         mock_brain = _mock_brain()
-        mock_brain.learning_observer.get_learned_patterns = AsyncMock(return_value=[
-            {"action": "light.wohnzimmer:off", "time_slot": "22:00-23:00", "count": 12, "weekday": -1},
-            {"action": "cover.buero:100", "time_slot": "07:00-08:00", "count": 8, "weekday": 0},
-        ])
+        mock_brain.learning_observer.get_learned_patterns = AsyncMock(
+            return_value=[
+                {
+                    "action": "light.wohnzimmer:off",
+                    "time_slot": "22:00-23:00",
+                    "count": 12,
+                    "weekday": -1,
+                },
+                {
+                    "action": "cover.buero:100",
+                    "time_slot": "07:00-08:00",
+                    "count": 8,
+                    "weekday": 0,
+                },
+            ]
+        )
         with patch("assistant.main.brain", mock_brain):
             result = await executor._exec_get_learned_patterns({})
         assert result["success"] is True
@@ -224,7 +249,9 @@ class TestExecLearnedPatterns:
     async def test_error_returns_false(self):
         executor = _make_executor()
         mock_brain = _mock_brain()
-        mock_brain.learning_observer.get_learned_patterns = AsyncMock(side_effect=Exception("fail"))
+        mock_brain.learning_observer.get_learned_patterns = AsyncMock(
+            side_effect=Exception("fail")
+        )
         with patch("assistant.main.brain", mock_brain):
             result = await executor._exec_get_learned_patterns({})
         assert result["success"] is False
@@ -266,11 +293,14 @@ class TestExecDescribeDoorbell:
     async def test_camera_error_returns_false(self):
         executor = _make_executor()
         mock_brain = _mock_brain()
-        mock_brain.camera_manager.describe_doorbell = AsyncMock(side_effect=TimeoutError("Camera timeout"))
+        mock_brain.camera_manager.describe_doorbell = AsyncMock(
+            side_effect=TimeoutError("Camera timeout")
+        )
         with patch("assistant.main.brain", mock_brain):
             result = await executor._exec_describe_doorbell({})
         assert result["success"] is False
         assert "fehlgeschlagen" in result["message"]
+
 
 @_needs_main
 class TestExecRetrieveMemory:
@@ -281,10 +311,22 @@ class TestExecRetrieveMemory:
         executor = _make_executor()
         mock_brain = _mock_brain()
         mock_brain.semantic_memory = MagicMock()
-        mock_brain.semantic_memory.search_facts = AsyncMock(return_value=[
-            {"content": "Lieblingsfarbe ist Blau", "confidence": 0.9, "category": "preferences", "person": "Max"},
-            {"content": "Allergisch gegen Erdnuesse", "confidence": 0.85, "category": "health", "person": ""},
-        ])
+        mock_brain.semantic_memory.search_facts = AsyncMock(
+            return_value=[
+                {
+                    "content": "Lieblingsfarbe ist Blau",
+                    "confidence": 0.9,
+                    "category": "preferences",
+                    "person": "Max",
+                },
+                {
+                    "content": "Allergisch gegen Erdnuesse",
+                    "confidence": 0.85,
+                    "category": "health",
+                    "person": "",
+                },
+            ]
+        )
         with patch("assistant.main.brain", mock_brain):
             result = await executor._exec_retrieve_memory({"query": "Vorlieben"})
         assert result["success"] is True
@@ -323,14 +365,25 @@ class TestExecRetrieveMemory:
         executor = _make_executor()
         mock_brain = _mock_brain()
         mock_brain.semantic_memory = MagicMock()
-        mock_brain.semantic_memory.search_facts = AsyncMock(return_value=[
-            {"content": "Trinkt gerne Kaffee", "confidence": 0.95, "category": "preferences", "person": "Lisa"},
-        ])
+        mock_brain.semantic_memory.search_facts = AsyncMock(
+            return_value=[
+                {
+                    "content": "Trinkt gerne Kaffee",
+                    "confidence": 0.95,
+                    "category": "preferences",
+                    "person": "Lisa",
+                },
+            ]
+        )
         with patch("assistant.main.brain", mock_brain):
-            result = await executor._exec_retrieve_memory({"query": "Kaffee", "person": "Lisa"})
+            result = await executor._exec_retrieve_memory(
+                {"query": "Kaffee", "person": "Lisa"}
+            )
         assert result["success"] is True
         mock_brain.semantic_memory.search_facts.assert_awaited_once_with(
-            "Kaffee", limit=5, person="Lisa",
+            "Kaffee",
+            limit=5,
+            person="Lisa",
         )
 
     @pytest.mark.asyncio
@@ -338,7 +391,9 @@ class TestExecRetrieveMemory:
         executor = _make_executor()
         mock_brain = _mock_brain()
         mock_brain.semantic_memory = MagicMock()
-        mock_brain.semantic_memory.search_facts = AsyncMock(side_effect=RuntimeError("ChromaDB down"))
+        mock_brain.semantic_memory.search_facts = AsyncMock(
+            side_effect=RuntimeError("ChromaDB down")
+        )
         with patch("assistant.main.brain", mock_brain):
             result = await executor._exec_retrieve_memory({"query": "test"})
         assert result["success"] is False
@@ -364,10 +419,20 @@ class TestExecRetrieveHistory:
     async def test_returns_conversations(self):
         executor = _make_executor()
         mock_brain = _mock_brain()
-        mock_brain.memory.get_recent_conversations = AsyncMock(return_value=[
-            {"role": "user", "content": "Mach das Licht an", "timestamp": "2026-03-20T14:30:00"},
-            {"role": "assistant", "content": "Licht ist an.", "timestamp": "2026-03-20T14:30:05"},
-        ])
+        mock_brain.memory.get_recent_conversations = AsyncMock(
+            return_value=[
+                {
+                    "role": "user",
+                    "content": "Mach das Licht an",
+                    "timestamp": "2026-03-20T14:30:00",
+                },
+                {
+                    "role": "assistant",
+                    "content": "Licht ist an.",
+                    "timestamp": "2026-03-20T14:30:05",
+                },
+            ]
+        )
         with patch("assistant.main.brain", mock_brain):
             result = await executor._exec_retrieve_history({})
         assert result["success"] is True
@@ -407,7 +472,9 @@ class TestExecRetrieveHistory:
     async def test_error_returns_false(self):
         executor = _make_executor()
         mock_brain = _mock_brain()
-        mock_brain.memory.get_recent_conversations = AsyncMock(side_effect=Exception("Redis down"))
+        mock_brain.memory.get_recent_conversations = AsyncMock(
+            side_effect=Exception("Redis down")
+        )
         with patch("assistant.main.brain", mock_brain):
             result = await executor._exec_retrieve_history({})
         assert result["success"] is False
@@ -418,9 +485,15 @@ class TestExecRetrieveHistory:
         executor = _make_executor()
         mock_brain = _mock_brain()
         long_content = "A" * 300
-        mock_brain.memory.get_recent_conversations = AsyncMock(return_value=[
-            {"role": "user", "content": long_content, "timestamp": "2026-03-20T10:00:00"},
-        ])
+        mock_brain.memory.get_recent_conversations = AsyncMock(
+            return_value=[
+                {
+                    "role": "user",
+                    "content": long_content,
+                    "timestamp": "2026-03-20T10:00:00",
+                },
+            ]
+        )
         with patch("assistant.main.brain", mock_brain):
             result = await executor._exec_retrieve_history({})
         assert result["success"] is True
@@ -435,11 +508,15 @@ class TestExecVerifyDeviceState:
     @pytest.mark.asyncio
     async def test_light_with_brightness(self):
         executor = _make_executor()
-        executor.ha.get_state = AsyncMock(return_value={
-            "state": "on",
-            "attributes": {"brightness": 128},
-        })
-        result = await executor._exec_verify_device_state({"entity_id": "light.wohnzimmer"})
+        executor.ha.get_state = AsyncMock(
+            return_value={
+                "state": "on",
+                "attributes": {"brightness": 128},
+            }
+        )
+        result = await executor._exec_verify_device_state(
+            {"entity_id": "light.wohnzimmer"}
+        )
         assert result["success"] is True
         assert result["state"] == "on"
         assert "Helligkeit: 50%" in result["message"]
@@ -447,11 +524,15 @@ class TestExecVerifyDeviceState:
     @pytest.mark.asyncio
     async def test_climate_with_temperatures(self):
         executor = _make_executor()
-        executor.ha.get_state = AsyncMock(return_value={
-            "state": "heat",
-            "attributes": {"temperature": 22, "current_temperature": 20.5},
-        })
-        result = await executor._exec_verify_device_state({"entity_id": "climate.buero"})
+        executor.ha.get_state = AsyncMock(
+            return_value={
+                "state": "heat",
+                "attributes": {"temperature": 22, "current_temperature": 20.5},
+            }
+        )
+        result = await executor._exec_verify_device_state(
+            {"entity_id": "climate.buero"}
+        )
         assert result["success"] is True
         assert "Zieltemperatur: 22°C" in result["message"]
         assert "Aktuelle Temperatur: 20.5°C" in result["message"]
@@ -459,11 +540,15 @@ class TestExecVerifyDeviceState:
     @pytest.mark.asyncio
     async def test_cover_with_position(self):
         executor = _make_executor()
-        executor.ha.get_state = AsyncMock(return_value={
-            "state": "open",
-            "attributes": {"current_position": 75},
-        })
-        result = await executor._exec_verify_device_state({"entity_id": "cover.rolladen"})
+        executor.ha.get_state = AsyncMock(
+            return_value={
+                "state": "open",
+                "attributes": {"current_position": 75},
+            }
+        )
+        result = await executor._exec_verify_device_state(
+            {"entity_id": "cover.rolladen"}
+        )
         assert result["success"] is True
         assert "Position: 75%" in result["message"]
 
@@ -478,33 +563,45 @@ class TestExecVerifyDeviceState:
     async def test_entity_not_found(self):
         executor = _make_executor()
         executor.ha.get_state = AsyncMock(return_value=None)
-        result = await executor._exec_verify_device_state({"entity_id": "light.gibts_nicht"})
+        result = await executor._exec_verify_device_state(
+            {"entity_id": "light.gibts_nicht"}
+        )
         assert result["success"] is False
         assert "nicht gefunden" in result["message"]
 
     @pytest.mark.asyncio
     async def test_expected_state_verified(self):
         executor = _make_executor()
-        executor.ha.get_state = AsyncMock(return_value={
-            "state": "on",
-            "attributes": {},
-        })
-        result = await executor._exec_verify_device_state({
-            "entity_id": "light.flur", "expected_state": "on",
-        })
+        executor.ha.get_state = AsyncMock(
+            return_value={
+                "state": "on",
+                "attributes": {},
+            }
+        )
+        result = await executor._exec_verify_device_state(
+            {
+                "entity_id": "light.flur",
+                "expected_state": "on",
+            }
+        )
         assert result["success"] is True
         assert result["verified"] is True
 
     @pytest.mark.asyncio
     async def test_expected_state_mismatch(self):
         executor = _make_executor()
-        executor.ha.get_state = AsyncMock(return_value={
-            "state": "off",
-            "attributes": {},
-        })
-        result = await executor._exec_verify_device_state({
-            "entity_id": "light.flur", "expected_state": "on",
-        })
+        executor.ha.get_state = AsyncMock(
+            return_value={
+                "state": "off",
+                "attributes": {},
+            }
+        )
+        result = await executor._exec_verify_device_state(
+            {
+                "entity_id": "light.flur",
+                "expected_state": "on",
+            }
+        )
         assert result["success"] is True
         assert result["verified"] is False
         assert "tatsaechlich: off" in result["message"]
@@ -530,6 +627,7 @@ class TestStreamChat:
     def _make_stream_client(chunks, status=200):
         """Erstellt OllamaClient mit gemockter Session fuer Stream-Tests."""
         from assistant.ollama_client import OllamaClient
+
         client = OllamaClient()
 
         async def fake_content_iter():
@@ -558,8 +656,10 @@ class TestStreamChat:
         import json as _json
 
         chunks = [
-            _json.dumps({"message": {"content": "Hallo"}, "done": False}).encode() + b"\n",
-            _json.dumps({"message": {"content": " Welt"}, "done": False}).encode() + b"\n",
+            _json.dumps({"message": {"content": "Hallo"}, "done": False}).encode()
+            + b"\n",
+            _json.dumps({"message": {"content": " Welt"}, "done": False}).encode()
+            + b"\n",
             _json.dumps({"message": {"content": ""}, "done": True}).encode() + b"\n",
         ]
 
@@ -578,10 +678,14 @@ class TestStreamChat:
         import json as _json
 
         chunks = [
-            _json.dumps({"message": {"content": "<think>"}, "done": False}).encode() + b"\n",
-            _json.dumps({"message": {"content": "reasoning"}, "done": False}).encode() + b"\n",
-            _json.dumps({"message": {"content": "</think>"}, "done": False}).encode() + b"\n",
-            _json.dumps({"message": {"content": "Antwort"}, "done": False}).encode() + b"\n",
+            _json.dumps({"message": {"content": "<think>"}, "done": False}).encode()
+            + b"\n",
+            _json.dumps({"message": {"content": "reasoning"}, "done": False}).encode()
+            + b"\n",
+            _json.dumps({"message": {"content": "</think>"}, "done": False}).encode()
+            + b"\n",
+            _json.dumps({"message": {"content": "Antwort"}, "done": False}).encode()
+            + b"\n",
             _json.dumps({"message": {"content": ""}, "done": True}).encode() + b"\n",
         ]
 

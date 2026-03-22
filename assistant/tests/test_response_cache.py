@@ -74,11 +74,13 @@ class TestResponseCache:
 
     @pytest.mark.asyncio
     async def test_get_hit(self, cache):
-        stored = json.dumps({
-            "response": "Es sind 22 Grad.",
-            "model": "qwen3.5:9b",
-            "_ts": time.time(),
-        })
+        stored = json.dumps(
+            {
+                "response": "Es sind 22 Grad.",
+                "model": "qwen3.5:9b",
+                "_ts": time.time(),
+            }
+        )
         cache._redis.get.return_value = stored
 
         result = await cache.get("Wie warm ist es?", "device_query")
@@ -137,8 +139,14 @@ class TestResponseCache:
     @pytest.mark.asyncio
     async def test_put_with_tts(self, cache):
         tts = {"text": "22 Grad", "ssml": "<speak>22 Grad</speak>"}
-        await cache.put("Wie warm?", "device_query", "22 Grad", "qwen3.5:9b",
-                        room="wohnzimmer", tts=tts)
+        await cache.put(
+            "Wie warm?",
+            "device_query",
+            "22 Grad",
+            "qwen3.5:9b",
+            room="wohnzimmer",
+            tts=tts,
+        )
         call_args = cache._redis.set.call_args
         data = json.loads(call_args[0][1])
         assert data["tts"] == tts
@@ -172,9 +180,13 @@ class TestResponseCache:
         await cache.get("A", "device_query")  # miss
         await cache.get("B", "device_query")  # miss
 
-        cache._redis.get.return_value = json.dumps({
-            "response": "cached", "model": "m", "_ts": time.time(),
-        })
+        cache._redis.get.return_value = json.dumps(
+            {
+                "response": "cached",
+                "model": "m",
+                "_ts": time.time(),
+            }
+        )
         await cache.get("C", "device_query")  # hit
 
         stats = cache.get_hit_rate()
@@ -264,9 +276,13 @@ class TestResponseCache:
     @pytest.mark.asyncio
     async def test_category_hits_tracked(self, cache):
         """Cache-Hits werden pro Kategorie getrackt."""
-        cache._redis.get.return_value = json.dumps({
-            "response": "cached", "model": "m", "_ts": time.time(),
-        })
+        cache._redis.get.return_value = json.dumps(
+            {
+                "response": "cached",
+                "model": "m",
+                "_ts": time.time(),
+            }
+        )
         await cache.get("Test", "device_query")
         assert cache._category_hits.get("device_query") == 1
 
@@ -552,11 +568,13 @@ class TestResponseCacheGetEdgeCases:
         """knowledge is a cacheable category."""
         c = ResponseCache()
         c._redis = AsyncMock()
-        stored = json.dumps({
-            "response": "Die Erde ist rund.",
-            "model": "qwen3.5:14b",
-            "_ts": time.time(),
-        })
+        stored = json.dumps(
+            {
+                "response": "Die Erde ist rund.",
+                "model": "qwen3.5:14b",
+                "_ts": time.time(),
+            }
+        )
         c._redis.get.return_value = stored
         result = await c.get("Ist die Erde rund?", "knowledge")
         assert result is not None

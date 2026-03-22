@@ -350,9 +350,7 @@ class LearningTransfer:
             logger.warning("Proaktive Transfer-Notification fehlgeschlagen: %s", e)
 
         if not notified:
-            logger.info(
-                "Transfer-Notification (kein proaktives System): %s", message
-            )
+            logger.info("Transfer-Notification (kein proaktives System): %s", message)
 
         await self._increment_notify_count()
 

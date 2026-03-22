@@ -48,15 +48,13 @@ def shop_disabled(ha_mock, redis_mock):
 
 def _make_purchase_entries(dates):
     """Create Redis-style purchase entries from a list of datetime objects."""
-    return [
-        json.dumps({"date": d.isoformat(), "quantity": 1}).encode()
-        for d in dates
-    ]
+    return [json.dumps({"date": d.isoformat(), "quantity": 1}).encode() for d in dates]
 
 
 # ============================================================
 # record_purchase Tests
 # ============================================================
+
 
 class TestRecordPurchase:
     @pytest.mark.asyncio
@@ -101,12 +99,15 @@ class TestRecordPurchase:
 # _calculate_prediction Tests
 # ============================================================
 
+
 class TestCalculatePrediction:
     @pytest.mark.asyncio
     async def test_not_enough_purchases_returns_none(self, shop, redis_mock):
-        redis_mock.lrange = AsyncMock(return_value=[
-            json.dumps({"date": "2025-01-01T10:00:00", "quantity": 1}).encode()
-        ])
+        redis_mock.lrange = AsyncMock(
+            return_value=[
+                json.dumps({"date": "2025-01-01T10:00:00", "quantity": 1}).encode()
+            ]
+        )
         result = await shop._calculate_prediction("Milch")
         assert result is None
 
@@ -123,7 +124,7 @@ class TestCalculatePrediction:
     async def test_correct_avg_days(self, shop, redis_mock):
         dates = [
             datetime(2025, 1, 1),
-            datetime(2025, 1, 8),   # 7 days
+            datetime(2025, 1, 8),  # 7 days
             datetime(2025, 1, 15),  # 7 days
         ]
         entries = _make_purchase_entries(dates)
@@ -173,15 +174,18 @@ class TestCalculatePrediction:
 # get_predictions Tests
 # ============================================================
 
+
 class TestGetPredictions:
     @pytest.mark.asyncio
     async def test_returns_sorted_predictions(self, shop, redis_mock):
         pred_a = json.dumps({"item": "Milch", "next_expected": "2025-04-01"})
         pred_b = json.dumps({"item": "Brot", "next_expected": "2025-03-15"})
-        redis_mock.hgetall = AsyncMock(return_value={
-            b"milch": pred_a.encode(),
-            b"brot": pred_b.encode(),
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                b"milch": pred_a.encode(),
+                b"brot": pred_b.encode(),
+            }
+        )
 
         result = await shop.get_predictions()
         assert len(result) == 2
@@ -206,15 +210,18 @@ class TestGetPredictions:
 # get_items_running_low Tests
 # ============================================================
 
+
 class TestGetItemsRunningLow:
     @pytest.mark.asyncio
     async def test_item_within_threshold(self, shop, redis_mock):
         tomorrow = (datetime.now(timezone.utc) + timedelta(hours=12)).isoformat()
-        pred = json.dumps({
-            "item": "Milch",
-            "next_expected": tomorrow,
-            "confidence": 0.5,
-        })
+        pred = json.dumps(
+            {
+                "item": "Milch",
+                "next_expected": tomorrow,
+                "confidence": 0.5,
+            }
+        )
         redis_mock.hgetall = AsyncMock(return_value={b"milch": pred.encode()})
 
         result = await shop.get_items_running_low()
@@ -224,11 +231,13 @@ class TestGetItemsRunningLow:
     @pytest.mark.asyncio
     async def test_item_past_due_is_high_urgency(self, shop, redis_mock):
         yesterday = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
-        pred = json.dumps({
-            "item": "Eier",
-            "next_expected": yesterday,
-            "confidence": 0.8,
-        })
+        pred = json.dumps(
+            {
+                "item": "Eier",
+                "next_expected": yesterday,
+                "confidence": 0.8,
+            }
+        )
         redis_mock.hgetall = AsyncMock(return_value={b"eier": pred.encode()})
 
         result = await shop.get_items_running_low()
@@ -238,11 +247,13 @@ class TestGetItemsRunningLow:
     @pytest.mark.asyncio
     async def test_low_confidence_excluded(self, shop, redis_mock):
         tomorrow = (datetime.now(timezone.utc) + timedelta(hours=12)).isoformat()
-        pred = json.dumps({
-            "item": "Milch",
-            "next_expected": tomorrow,
-            "confidence": 0.1,  # below 0.3 threshold
-        })
+        pred = json.dumps(
+            {
+                "item": "Milch",
+                "next_expected": tomorrow,
+                "confidence": 0.1,  # below 0.3 threshold
+            }
+        )
         redis_mock.hgetall = AsyncMock(return_value={b"milch": pred.encode()})
 
         result = await shop.get_items_running_low()
@@ -251,11 +262,13 @@ class TestGetItemsRunningLow:
     @pytest.mark.asyncio
     async def test_far_future_item_excluded(self, shop, redis_mock):
         far_future = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
-        pred = json.dumps({
-            "item": "Salz",
-            "next_expected": far_future,
-            "confidence": 0.9,
-        })
+        pred = json.dumps(
+            {
+                "item": "Salz",
+                "next_expected": far_future,
+                "confidence": 0.9,
+            }
+        )
         redis_mock.hgetall = AsyncMock(return_value={b"salz": pred.encode()})
 
         result = await shop.get_items_running_low()
@@ -266,12 +279,15 @@ class TestGetItemsRunningLow:
 # add_missing_ingredients Tests
 # ============================================================
 
+
 class TestAddMissingIngredients:
     @pytest.mark.asyncio
     async def test_adds_missing_items(self, shop, ha_mock):
-        ha_mock.api_get = AsyncMock(return_value=[
-            {"name": "Butter", "complete": False},
-        ])
+        ha_mock.api_get = AsyncMock(
+            return_value=[
+                {"name": "Butter", "complete": False},
+            ]
+        )
 
         result = await shop.add_missing_ingredients(["Butter", "Mehl", "Eier"])
         assert "Butter" in result["already_on_list"]
@@ -286,9 +302,11 @@ class TestAddMissingIngredients:
 
     @pytest.mark.asyncio
     async def test_completed_items_not_on_list(self, shop, ha_mock):
-        ha_mock.api_get = AsyncMock(return_value=[
-            {"name": "Butter", "complete": True},
-        ])
+        ha_mock.api_get = AsyncMock(
+            return_value=[
+                {"name": "Butter", "complete": True},
+            ]
+        )
         result = await shop.add_missing_ingredients(["Butter"])
         assert "Butter" in result["added"]
 
@@ -309,14 +327,17 @@ class TestAddMissingIngredients:
 # get_shopping_day_pattern Tests
 # ============================================================
 
+
 class TestGetShoppingDayPattern:
     @pytest.mark.asyncio
     async def test_returns_preferred_day(self, shop, redis_mock):
-        redis_mock.hgetall = AsyncMock(return_value={
-            b"0": b"2",    # Monday
-            b"5": b"10",   # Saturday
-            b"6": b"3",    # Sunday
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                b"0": b"2",  # Monday
+                b"5": b"10",  # Saturday
+                b"6": b"3",  # Sunday
+            }
+        )
 
         result = await shop.get_shopping_day_pattern()
         assert result is not None
@@ -342,14 +363,17 @@ class TestGetShoppingDayPattern:
 # get_shopping_context Tests
 # ============================================================
 
+
 class TestGetShoppingContext:
     @pytest.mark.asyncio
     async def test_includes_open_items(self, shop, ha_mock, redis_mock):
-        ha_mock.api_get = AsyncMock(return_value=[
-            {"name": "Milch", "complete": False},
-            {"name": "Brot", "complete": False},
-            {"name": "Done", "complete": True},
-        ])
+        ha_mock.api_get = AsyncMock(
+            return_value=[
+                {"name": "Milch", "complete": False},
+                {"name": "Brot", "complete": False},
+                {"name": "Done", "complete": True},
+            ]
+        )
         redis_mock.hgetall = AsyncMock(return_value={})
 
         context = await shop.get_shopping_context()
@@ -370,10 +394,12 @@ class TestGetShoppingContext:
 
         # First hgetall call is for get_predictions (via get_items_running_low)
         # Second hgetall call is for get_shopping_day_pattern
-        redis_mock.hgetall = AsyncMock(side_effect=[
-            {},  # predictions
-            {b"5": b"8"},  # shopping days (Saturday)
-        ])
+        redis_mock.hgetall = AsyncMock(
+            side_effect=[
+                {},  # predictions
+                {b"5": b"8"},  # shopping days (Saturday)
+            ]
+        )
 
         context = await shop.get_shopping_context()
         assert "Samstag" in context
@@ -382,6 +408,7 @@ class TestGetShoppingContext:
 # ============================================================
 # set_notify_callback Tests
 # ============================================================
+
 
 class TestSetNotifyCallback:
     def test_sets_callback(self, shop):
@@ -393,6 +420,7 @@ class TestSetNotifyCallback:
 # ============================================================
 # initialize Tests
 # ============================================================
+
 
 class TestInitialize:
     @pytest.mark.asyncio
@@ -411,6 +439,7 @@ class TestInitialize:
 # check_and_notify Tests
 # ============================================================
 
+
 class TestCheckAndNotify:
     @pytest.mark.asyncio
     async def test_disabled_returns_empty(self, shop_disabled):
@@ -426,12 +455,15 @@ class TestCheckAndNotify:
     @pytest.mark.asyncio
     async def test_notifies_running_low_items(self, shop, redis_mock):
         from datetime import datetime, timedelta, timezone
+
         yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-        pred = json.dumps({
-            "item": "Milch",
-            "next_expected": yesterday,
-            "confidence": 0.8,
-        })
+        pred = json.dumps(
+            {
+                "item": "Milch",
+                "next_expected": yesterday,
+                "confidence": 0.8,
+            }
+        )
         redis_mock.hgetall = AsyncMock(return_value={b"milch": pred.encode()})
         redis_mock.exists = AsyncMock(return_value=0)  # no cooldown
 
@@ -445,12 +477,15 @@ class TestCheckAndNotify:
     @pytest.mark.asyncio
     async def test_cooldown_prevents_notification(self, shop, redis_mock):
         from datetime import datetime, timedelta, timezone
+
         yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-        pred = json.dumps({
-            "item": "Milch",
-            "next_expected": yesterday,
-            "confidence": 0.8,
-        })
+        pred = json.dumps(
+            {
+                "item": "Milch",
+                "next_expected": yesterday,
+                "confidence": 0.8,
+            }
+        )
         redis_mock.hgetall = AsyncMock(return_value={b"milch": pred.encode()})
         redis_mock.exists = AsyncMock(return_value=1)  # cooldown active
 
@@ -464,12 +499,15 @@ class TestCheckAndNotify:
     @pytest.mark.asyncio
     async def test_notify_callback_exception_handled(self, shop, redis_mock):
         from datetime import datetime, timedelta, timezone
+
         yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-        pred = json.dumps({
-            "item": "Butter",
-            "next_expected": yesterday,
-            "confidence": 0.8,
-        })
+        pred = json.dumps(
+            {
+                "item": "Butter",
+                "next_expected": yesterday,
+                "confidence": 0.8,
+            }
+        )
         redis_mock.hgetall = AsyncMock(return_value={b"butter": pred.encode()})
         redis_mock.exists = AsyncMock(return_value=0)
 
@@ -482,12 +520,15 @@ class TestCheckAndNotify:
     @pytest.mark.asyncio
     async def test_notifies_item_soon_to_expire(self, shop, redis_mock):
         from datetime import datetime, timedelta, timezone
+
         tomorrow = (datetime.now(timezone.utc) + timedelta(hours=12)).isoformat()
-        pred = json.dumps({
-            "item": "Eier",
-            "next_expected": tomorrow,
-            "confidence": 0.5,
-        })
+        pred = json.dumps(
+            {
+                "item": "Eier",
+                "next_expected": tomorrow,
+                "confidence": 0.5,
+            }
+        )
         redis_mock.hgetall = AsyncMock(return_value={b"eier": pred.encode()})
         redis_mock.exists = AsyncMock(return_value=0)
 
@@ -501,6 +542,7 @@ class TestCheckAndNotify:
 # ============================================================
 # _check_reminder_cooldown Tests
 # ============================================================
+
 
 class TestCheckReminderCooldown:
     @pytest.mark.asyncio
@@ -528,6 +570,7 @@ class TestCheckReminderCooldown:
 # _set_reminder_cooldown Tests
 # ============================================================
 
+
 class TestSetReminderCooldown:
     @pytest.mark.asyncio
     async def test_no_redis_returns_early(self, ha_mock):
@@ -554,6 +597,7 @@ class TestSetReminderCooldown:
 # ============================================================
 # record_purchase prediction path Tests
 # ============================================================
+
 
 class TestRecordPurchasePrediction:
     @pytest.mark.asyncio
@@ -583,6 +627,7 @@ class TestRecordPurchasePrediction:
 # get_predictions exception Tests
 # ============================================================
 
+
 class TestGetPredictionsException:
     @pytest.mark.asyncio
     async def test_exception_returns_empty(self, shop, redis_mock):
@@ -595,14 +640,17 @@ class TestGetPredictionsException:
 # get_items_running_low edge cases
 # ============================================================
 
+
 class TestGetItemsRunningLowEdgeCases:
     @pytest.mark.asyncio
     async def test_invalid_date_skipped(self, shop, redis_mock):
-        pred = json.dumps({
-            "item": "Bad",
-            "next_expected": "not-a-date",
-            "confidence": 0.8,
-        })
+        pred = json.dumps(
+            {
+                "item": "Bad",
+                "next_expected": "not-a-date",
+                "confidence": 0.8,
+            }
+        )
         redis_mock.hgetall = AsyncMock(return_value={b"bad": pred.encode()})
         result = await shop.get_items_running_low()
         assert len(result) == 0
@@ -611,6 +659,7 @@ class TestGetItemsRunningLowEdgeCases:
 # ============================================================
 # get_shopping_context edge cases
 # ============================================================
+
 
 class TestGetShoppingContextEdgeCases:
     @pytest.mark.asyncio
@@ -625,17 +674,22 @@ class TestGetShoppingContextEdgeCases:
     async def test_includes_running_low_items(self, shop, ha_mock, redis_mock):
         ha_mock.api_get = AsyncMock(return_value=[])
         from datetime import datetime, timedelta, timezone
+
         yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-        pred = json.dumps({
-            "item": "Milch",
-            "next_expected": yesterday,
-            "confidence": 0.8,
-            "days_until": -1,
-        })
-        redis_mock.hgetall = AsyncMock(side_effect=[
-            {b"milch": pred.encode()},  # predictions
-            {},  # shopping day pattern
-        ])
+        pred = json.dumps(
+            {
+                "item": "Milch",
+                "next_expected": yesterday,
+                "confidence": 0.8,
+                "days_until": -1,
+            }
+        )
+        redis_mock.hgetall = AsyncMock(
+            side_effect=[
+                {b"milch": pred.encode()},  # predictions
+                {},  # shopping day pattern
+            ]
+        )
         context = await shop.get_shopping_context()
         assert "Milch" in context
 
@@ -649,6 +703,7 @@ class TestGetShoppingContextEdgeCases:
 # ============================================================
 # add_missing_ingredients edge cases
 # ============================================================
+
 
 class TestAddMissingIngredientsEdgeCases:
     @pytest.mark.asyncio

@@ -1,6 +1,7 @@
 """
 Tests fuer Feature 1: Progressive Antworten (get_progress_message).
 """
+
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +13,7 @@ class TestGetProgressMessage:
     def personality_formal(self):
         """Personality-Instanz mit formalem Stil (formality >= 50)."""
         from assistant.personality import PersonalityEngine
+
         p = PersonalityEngine.__new__(PersonalityEngine)
         p._current_formality = 70
         p.formality_start = 70
@@ -21,6 +23,7 @@ class TestGetProgressMessage:
     def personality_casual(self):
         """Personality-Instanz mit lockerem Stil (formality < 50)."""
         from assistant.personality import PersonalityEngine
+
         p = PersonalityEngine.__new__(PersonalityEngine)
         p._current_formality = 30
         p.formality_start = 30
@@ -73,7 +76,9 @@ class TestGetProgressMessage:
             msg = personality_formal.get_progress_message(step)
             assert len(msg) > 0, f"Step '{step}' returned empty string"
 
-    def test_formal_vs_casual_different_pools(self, personality_formal, personality_casual):
+    def test_formal_vs_casual_different_pools(
+        self, personality_formal, personality_casual
+    ):
         """Formale und lockere Nachrichten kommen aus verschiedenen Pools."""
         # Sammle jeweils viele Nachrichten um die Pools zu vergleichen
         formal_msgs = set()

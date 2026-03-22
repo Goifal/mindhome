@@ -42,12 +42,14 @@ def chroma_mock():
     """Erstellt einen ChromaDB Collection Mock."""
     collection = MagicMock()
     collection.add = MagicMock()
-    collection.query = MagicMock(return_value={
-        "documents": [["Test Erinnerung"]],
-        "metadatas": [[{"timestamp": "2026-02-20T10:00:00"}]],
-        "distances": [[0.3]],
-        "ids": [["conv_20260220_100000"]],
-    })
+    collection.query = MagicMock(
+        return_value={
+            "documents": [["Test Erinnerung"]],
+            "metadatas": [[{"timestamp": "2026-02-20T10:00:00"}]],
+            "distances": [[0.3]],
+            "ids": [["conv_20260220_100000"]],
+        }
+    )
     collection.update = MagicMock()
     collection.delete = MagicMock()
     return collection
@@ -130,8 +132,16 @@ class TestWorkingMemory:
     @pytest.mark.asyncio
     async def test_get_recent_conversations_returns_ordered(self, memory, redis_mock):
         entries = [
-            json.dumps({"role": "assistant", "content": "Antwort", "timestamp": "2026-02-20T10:01:00"}),
-            json.dumps({"role": "user", "content": "Frage", "timestamp": "2026-02-20T10:00:00"}),
+            json.dumps(
+                {
+                    "role": "assistant",
+                    "content": "Antwort",
+                    "timestamp": "2026-02-20T10:01:00",
+                }
+            ),
+            json.dumps(
+                {"role": "user", "content": "Frage", "timestamp": "2026-02-20T10:00:00"}
+            ),
         ]
         redis_mock.lrange = AsyncMock(return_value=entries)
 
@@ -144,12 +154,16 @@ class TestWorkingMemory:
         assert result[1]["content"] == "Antwort"
 
     @pytest.mark.asyncio
-    async def test_get_recent_conversations_handles_invalid_json(self, memory, redis_mock):
-        redis_mock.lrange = AsyncMock(return_value=[
-            json.dumps({"role": "user", "content": "ok", "timestamp": "t"}),
-            "<<<INVALID JSON>>>",
-            json.dumps({"role": "assistant", "content": "ja", "timestamp": "t"}),
-        ])
+    async def test_get_recent_conversations_handles_invalid_json(
+        self, memory, redis_mock
+    ):
+        redis_mock.lrange = AsyncMock(
+            return_value=[
+                json.dumps({"role": "user", "content": "ok", "timestamp": "t"}),
+                "<<<INVALID JSON>>>",
+                json.dumps({"role": "assistant", "content": "ja", "timestamp": "t"}),
+            ]
+        )
 
         result = await memory.get_recent_conversations(limit=5)
         # Invalider Eintrag wird uebersprungen
@@ -192,8 +206,20 @@ class TestWorkingMemory:
     @pytest.mark.asyncio
     async def test_get_conversations_for_date(self, memory, redis_mock):
         entries = [
-            json.dumps({"role": "user", "content": "Morgen", "timestamp": "2026-02-20T08:00:00"}),
-            json.dumps({"role": "assistant", "content": "Guten Morgen", "timestamp": "2026-02-20T08:00:01"}),
+            json.dumps(
+                {
+                    "role": "user",
+                    "content": "Morgen",
+                    "timestamp": "2026-02-20T08:00:00",
+                }
+            ),
+            json.dumps(
+                {
+                    "role": "assistant",
+                    "content": "Guten Morgen",
+                    "timestamp": "2026-02-20T08:00:01",
+                }
+            ),
         ]
         redis_mock.lrange = AsyncMock(return_value=entries)
 
@@ -228,7 +254,9 @@ class TestEpisodicMemory:
 
     @pytest.mark.asyncio
     async def test_store_episode_long_text_creates_chunks(self, memory, chroma_mock):
-        long_text = "User: " + "Dies ist ein langer Satz. " * 30 + " Assistant: Antwort hier."
+        long_text = (
+            "User: " + "Dies ist ein langer Satz. " * 30 + " Assistant: Antwort hier."
+        )
         await memory.store_episode(long_text)
 
         # Sollte mehrere Chunks speichern
@@ -270,11 +298,13 @@ class TestEpisodicMemory:
 
     @pytest.mark.asyncio
     async def test_search_memories_no_results(self, memory, chroma_mock):
-        chroma_mock.query = MagicMock(return_value={
-            "documents": [[]],
-            "metadatas": [[]],
-            "distances": [[]],
-        })
+        chroma_mock.query = MagicMock(
+            return_value={
+                "documents": [[]],
+                "metadatas": [[]],
+                "distances": [[]],
+            }
+        )
         result = await memory.search_memories("Gibt es nicht")
         assert result == []
 
@@ -392,34 +422,42 @@ class TestConversationContinuity:
         now = datetime.now(timezone.utc)
 
         # Thema: 30 Min alt -> sollte zurueckgegeben werden
-        valid_entry = json.dumps({
-            "topic": "Energieanalyse",
-            "context": "",
-            "person": "Max",
-            "timestamp": (now - timedelta(minutes=30)).isoformat(),
-        })
+        valid_entry = json.dumps(
+            {
+                "topic": "Energieanalyse",
+                "context": "",
+                "person": "Max",
+                "timestamp": (now - timedelta(minutes=30)).isoformat(),
+            }
+        )
 
         # Thema: 2 Min alt -> zu frisch, wird gefiltert
-        too_fresh = json.dumps({
-            "topic": "Gerade gesagt",
-            "context": "",
-            "person": "Max",
-            "timestamp": (now - timedelta(minutes=2)).isoformat(),
-        })
+        too_fresh = json.dumps(
+            {
+                "topic": "Gerade gesagt",
+                "context": "",
+                "person": "Max",
+                "timestamp": (now - timedelta(minutes=2)).isoformat(),
+            }
+        )
 
         # Thema: 25 Stunden alt -> zu alt, wird gefiltert
-        too_old = json.dumps({
-            "topic": "Gestern",
-            "context": "",
-            "person": "Max",
-            "timestamp": (now - timedelta(hours=25)).isoformat(),
-        })
+        too_old = json.dumps(
+            {
+                "topic": "Gestern",
+                "context": "",
+                "person": "Max",
+                "timestamp": (now - timedelta(hours=25)).isoformat(),
+            }
+        )
 
-        redis_mock.hgetall = AsyncMock(return_value={
-            "Energieanalyse": valid_entry,
-            "Gerade gesagt": too_fresh,
-            "Gestern": too_old,
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                "Energieanalyse": valid_entry,
+                "Gerade gesagt": too_fresh,
+                "Gestern": too_old,
+            }
+        )
 
         result = await memory.get_pending_conversations()
         assert len(result) == 1
@@ -625,14 +663,18 @@ class TestSearchEpisodesByTime:
 
     @pytest.mark.asyncio
     async def test_returns_episodes_in_range(self, memory, chroma_mock):
-        chroma_mock.query = MagicMock(return_value={
-            "documents": [["Montag Dialog", "Dienstag Dialog"]],
-            "metadatas": [[
-                {"timestamp": "2026-03-01T10:00:00", "person": "Max"},
-                {"timestamp": "2026-03-02T10:00:00", "person": "Anna"},
-            ]],
-            "distances": [[0.2, 0.4]],
-        })
+        chroma_mock.query = MagicMock(
+            return_value={
+                "documents": [["Montag Dialog", "Dienstag Dialog"]],
+                "metadatas": [
+                    [
+                        {"timestamp": "2026-03-01T10:00:00", "person": "Max"},
+                        {"timestamp": "2026-03-02T10:00:00", "person": "Anna"},
+                    ]
+                ],
+                "distances": [[0.2, 0.4]],
+            }
+        )
 
         result = await memory.search_episodes_by_time(
             query="Heizung",
@@ -649,16 +691,25 @@ class TestSearchEpisodesByTime:
     @pytest.mark.asyncio
     async def test_respects_limit(self, memory, chroma_mock):
         """Limit begrenzt die Ergebnisse."""
-        chroma_mock.query = MagicMock(return_value={
-            "documents": [["A", "B", "C"]],
-            "metadatas": [[
-                {"timestamp": "t1"}, {"timestamp": "t2"}, {"timestamp": "t3"},
-            ]],
-            "distances": [[0.1, 0.2, 0.3]],
-        })
+        chroma_mock.query = MagicMock(
+            return_value={
+                "documents": [["A", "B", "C"]],
+                "metadatas": [
+                    [
+                        {"timestamp": "t1"},
+                        {"timestamp": "t2"},
+                        {"timestamp": "t3"},
+                    ]
+                ],
+                "distances": [[0.1, 0.2, 0.3]],
+            }
+        )
 
         result = await memory.search_episodes_by_time(
-            query="test", start_date="2026-01-01", end_date="2026-12-31", limit=2,
+            query="test",
+            start_date="2026-01-01",
+            end_date="2026-12-31",
+            limit=2,
         )
 
         assert len(result) == 2
@@ -666,12 +717,16 @@ class TestSearchEpisodesByTime:
     @pytest.mark.asyncio
     async def test_no_chroma_returns_empty(self, memory_no_redis):
         result = await memory_no_redis.search_episodes_by_time(
-            "test", "2026-01-01", "2026-12-31",
+            "test",
+            "2026-01-01",
+            "2026-12-31",
         )
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_chroma_error_falls_back_to_search_memories(self, memory, chroma_mock):
+    async def test_chroma_error_falls_back_to_search_memories(
+        self, memory, chroma_mock
+    ):
         """Bei Fehler wird auf search_memories zurueckgegriffen."""
         # Erster Aufruf (search_episodes_by_time) wirft Fehler
         call_count = 0
@@ -691,7 +746,10 @@ class TestSearchEpisodesByTime:
         chroma_mock.query = MagicMock(side_effect=side_effect)
 
         result = await memory.search_episodes_by_time(
-            "test", "2026-01-01", "2026-12-31", limit=3,
+            "test",
+            "2026-01-01",
+            "2026-12-31",
+            limit=3,
         )
 
         # Sollte Fallback-Ergebnis liefern
@@ -699,28 +757,36 @@ class TestSearchEpisodesByTime:
 
     @pytest.mark.asyncio
     async def test_empty_results(self, memory, chroma_mock):
-        chroma_mock.query = MagicMock(return_value={
-            "documents": [[]],
-            "metadatas": [[]],
-            "distances": [[]],
-        })
+        chroma_mock.query = MagicMock(
+            return_value={
+                "documents": [[]],
+                "metadatas": [[]],
+                "distances": [[]],
+            }
+        )
 
         result = await memory.search_episodes_by_time(
-            "nothing", "2026-01-01", "2026-12-31",
+            "nothing",
+            "2026-01-01",
+            "2026-12-31",
         )
         assert result == []
 
     @pytest.mark.asyncio
     async def test_missing_metadata_handled_gracefully(self, memory, chroma_mock):
         """Fehlende Metadaten fuehren nicht zum Absturz."""
-        chroma_mock.query = MagicMock(return_value={
-            "documents": [["Some text"]],
-            "metadatas": [[]],  # No metadata
-            "distances": [[0.3]],
-        })
+        chroma_mock.query = MagicMock(
+            return_value={
+                "documents": [["Some text"]],
+                "metadatas": [[]],  # No metadata
+                "distances": [[0.3]],
+            }
+        )
 
         result = await memory.search_episodes_by_time(
-            "test", "2026-01-01", "2026-12-31",
+            "test",
+            "2026-01-01",
+            "2026-12-31",
         )
         assert len(result) == 1
         assert result[0]["content"] == "Some text"
@@ -738,22 +804,24 @@ class TestGetAllEpisodes:
     @pytest.mark.asyncio
     async def test_returns_paginated_episodes(self, memory, chroma_mock):
         chroma_mock.count = MagicMock(return_value=3)
-        chroma_mock.get = MagicMock(side_effect=[
-            # Erster Aufruf: Metadaten
-            {
-                "ids": ["ep1", "ep2", "ep3"],
-                "metadatas": [
-                    {"timestamp": "2026-03-01T10:00:00", "type": "conversation"},
-                    {"timestamp": "2026-03-02T10:00:00", "type": "conversation"},
-                    {"timestamp": "2026-03-03T10:00:00", "type": "conversation"},
-                ],
-            },
-            # Zweiter Aufruf: Documents fuer die Seite
-            {
-                "ids": ["ep3", "ep2"],
-                "documents": ["Dialog 3", "Dialog 2"],
-            },
-        ])
+        chroma_mock.get = MagicMock(
+            side_effect=[
+                # Erster Aufruf: Metadaten
+                {
+                    "ids": ["ep1", "ep2", "ep3"],
+                    "metadatas": [
+                        {"timestamp": "2026-03-01T10:00:00", "type": "conversation"},
+                        {"timestamp": "2026-03-02T10:00:00", "type": "conversation"},
+                        {"timestamp": "2026-03-03T10:00:00", "type": "conversation"},
+                    ],
+                },
+                # Zweiter Aufruf: Documents fuer die Seite
+                {
+                    "ids": ["ep3", "ep2"],
+                    "documents": ["Dialog 3", "Dialog 2"],
+                },
+            ]
+        )
 
         result = await memory.get_all_episodes(offset=0, limit=2)
 
@@ -776,13 +844,15 @@ class TestGetAllEpisodes:
     @pytest.mark.asyncio
     async def test_offset_beyond_range(self, memory, chroma_mock):
         chroma_mock.count = MagicMock(return_value=2)
-        chroma_mock.get = MagicMock(return_value={
-            "ids": ["ep1", "ep2"],
-            "metadatas": [
-                {"timestamp": "2026-03-01T10:00:00", "type": "conversation"},
-                {"timestamp": "2026-03-02T10:00:00", "type": "conversation"},
-            ],
-        })
+        chroma_mock.get = MagicMock(
+            return_value={
+                "ids": ["ep1", "ep2"],
+                "metadatas": [
+                    {"timestamp": "2026-03-01T10:00:00", "type": "conversation"},
+                    {"timestamp": "2026-03-02T10:00:00", "type": "conversation"},
+                ],
+            }
+        )
 
         result = await memory.get_all_episodes(offset=10, limit=5)
         assert result == []
@@ -797,16 +867,18 @@ class TestGetAllEpisodes:
     async def test_non_dict_metadata_handled(self, memory, chroma_mock):
         """Nicht-Dict Metadaten fuehren nicht zum Absturz."""
         chroma_mock.count = MagicMock(return_value=1)
-        chroma_mock.get = MagicMock(side_effect=[
-            {
-                "ids": ["ep1"],
-                "metadatas": [None],  # Kein Dict
-            },
-            {
-                "ids": ["ep1"],
-                "documents": ["Dialog text"],
-            },
-        ])
+        chroma_mock.get = MagicMock(
+            side_effect=[
+                {
+                    "ids": ["ep1"],
+                    "metadatas": [None],  # Kein Dict
+                },
+                {
+                    "ids": ["ep1"],
+                    "documents": ["Dialog text"],
+                },
+            ]
+        )
 
         result = await memory.get_all_episodes(offset=0, limit=1)
         assert len(result) == 1
@@ -888,7 +960,9 @@ class TestClearAllMemory:
     async def test_handles_chroma_error(self, memory, redis_mock, chroma_mock):
         """ChromaDB-Fehler wird gefangen."""
         chroma_client = MagicMock()
-        chroma_client.delete_collection = MagicMock(side_effect=Exception("ChromaDB error"))
+        chroma_client.delete_collection = MagicMock(
+            side_effect=Exception("ChromaDB error")
+        )
         memory._chroma_client = chroma_client
         memory.semantic = AsyncMock()
         memory.semantic.clear_all = AsyncMock(return_value=0)
@@ -991,9 +1065,14 @@ class TestFactoryReset:
         mock_upload_dir.exists.return_value = True
         mock_upload_dir.iterdir.return_value = [MagicMock(), MagicMock()]  # 2 Dateien
 
-        with patch("assistant.embeddings.get_embedding_function", return_value=None), \
-             patch.dict("sys.modules", {"assistant.file_handler": MagicMock(UPLOAD_DIR=mock_upload_dir)}), \
-             patch("shutil.rmtree"):
+        with (
+            patch("assistant.embeddings.get_embedding_function", return_value=None),
+            patch.dict(
+                "sys.modules",
+                {"assistant.file_handler": MagicMock(UPLOAD_DIR=mock_upload_dir)},
+            ),
+            patch("shutil.rmtree"),
+        ):
             result = await memory.factory_reset(include_uploads=True)
 
         assert result.get("uploads_deleted") == 2
@@ -1034,11 +1113,13 @@ class TestStoreEpisodeAdvanced:
     @pytest.mark.asyncio
     async def test_dedup_skips_near_duplicate(self, memory, chroma_mock):
         """Sehr aehnliche Episode wird uebersprungen (distance < 0.1)."""
-        chroma_mock.query = MagicMock(return_value={
-            "documents": [["Fast identischer Dialog"]],
-            "metadatas": [[{"timestamp": "2026-03-20T10:00:00"}]],
-            "distances": [[0.05]],  # Sehr nah = Duplikat
-        })
+        chroma_mock.query = MagicMock(
+            return_value={
+                "documents": [["Fast identischer Dialog"]],
+                "metadatas": [[{"timestamp": "2026-03-20T10:00:00"}]],
+                "distances": [[0.05]],  # Sehr nah = Duplikat
+            }
+        )
 
         await memory.store_episode("Fast identischer Dialog")
         # add sollte NICHT aufgerufen werden wegen Duplikat
@@ -1057,11 +1138,13 @@ class TestStoreEpisodeAdvanced:
     @pytest.mark.asyncio
     async def test_dedup_passes_for_different_content(self, memory, chroma_mock):
         """Unterschiedliche Episode (distance >= 0.1) wird gespeichert."""
-        chroma_mock.query = MagicMock(return_value={
-            "documents": [["Anderer Dialog"]],
-            "metadatas": [[{"timestamp": "t"}]],
-            "distances": [[0.8]],  # Weit entfernt = kein Duplikat
-        })
+        chroma_mock.query = MagicMock(
+            return_value={
+                "documents": [["Anderer Dialog"]],
+                "metadatas": [[{"timestamp": "t"}]],
+                "distances": [[0.8]],  # Weit entfernt = kein Duplikat
+            }
+        )
 
         await memory.store_episode("Komplett neuer Dialog")
         chroma_mock.add.assert_called()
@@ -1069,11 +1152,13 @@ class TestStoreEpisodeAdvanced:
     @pytest.mark.asyncio
     async def test_store_with_no_dedup_results(self, memory, chroma_mock):
         """Leere Dedup-Ergebnisse verhindern nicht das Speichern."""
-        chroma_mock.query = MagicMock(return_value={
-            "documents": [[]],
-            "metadatas": [[]],
-            "distances": [[]],
-        })
+        chroma_mock.query = MagicMock(
+            return_value={
+                "documents": [[]],
+                "metadatas": [[]],
+                "distances": [[]],
+            }
+        )
 
         await memory.store_episode("Dialog ohne Duplikat")
         chroma_mock.add.assert_called()
@@ -1081,11 +1166,13 @@ class TestStoreEpisodeAdvanced:
     @pytest.mark.asyncio
     async def test_custom_metadata_preserved(self, memory, chroma_mock):
         """Benutzerdefinierte Metadaten bleiben in gespeicherten Chunks erhalten."""
-        chroma_mock.query = MagicMock(return_value={
-            "documents": [[]],
-            "distances": [[]],
-            "metadatas": [[]],
-        })
+        chroma_mock.query = MagicMock(
+            return_value={
+                "documents": [[]],
+                "distances": [[]],
+                "metadatas": [[]],
+            }
+        )
 
         await memory.store_episode("Kurzer Dialog", {"person": "Max", "room": "Buero"})
 
@@ -1122,13 +1209,19 @@ class TestConversationContinuityErrors:
     @pytest.mark.asyncio
     async def test_get_pending_invalid_json_skipped(self, memory, redis_mock):
         """Ungueltige JSON-Eintraege in pending topics werden uebersprungen."""
-        redis_mock.hgetall = AsyncMock(return_value={
-            "valid": json.dumps({
-                "topic": "Valid",
-                "timestamp": (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),
-            }),
-            "invalid": "<<<NOT JSON>>>",
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                "valid": json.dumps(
+                    {
+                        "topic": "Valid",
+                        "timestamp": (
+                            datetime.now(timezone.utc) - timedelta(minutes=30)
+                        ).isoformat(),
+                    }
+                ),
+                "invalid": "<<<NOT JSON>>>",
+            }
+        )
 
         result = await memory.get_pending_conversations()
         assert len(result) == 1
@@ -1137,9 +1230,11 @@ class TestConversationContinuityErrors:
     @pytest.mark.asyncio
     async def test_get_pending_no_timestamp_skipped(self, memory, redis_mock):
         """Eintraege ohne Timestamp werden uebersprungen."""
-        redis_mock.hgetall = AsyncMock(return_value={
-            "no_ts": json.dumps({"topic": "NoTimestamp"}),
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                "no_ts": json.dumps({"topic": "NoTimestamp"}),
+            }
+        )
 
         result = await memory.get_pending_conversations()
         assert result == []
@@ -1162,8 +1257,10 @@ class TestStoreEpisodeRetry:
 
     @pytest.fixture
     def memory(self, redis_mock, chroma_mock):
-        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
-             patch("assistant.memory.settings"):
+        with (
+            patch("assistant.memory.yaml_config", {"timezone": "UTC"}),
+            patch("assistant.memory.settings"),
+        ):
             m = MemoryManager()
             m.redis = redis_mock
             m.chroma_collection = chroma_mock
@@ -1200,7 +1297,9 @@ class TestStoreEpisodeRetry:
     async def test_stores_with_metadata(self, memory, chroma_mock):
         """Stores episode with custom metadata."""
         chroma_mock.query.return_value = {
-            "documents": [[]], "distances": [[]], "metadatas": [[]],
+            "documents": [[]],
+            "distances": [[]],
+            "metadatas": [[]],
         }
 
         await memory.store_episode("Content", {"person": "Max", "room": "Office"})
@@ -1258,8 +1357,10 @@ class TestClose:
 
     @pytest.mark.asyncio
     async def test_no_redis_no_error(self):
-        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
-             patch("assistant.memory.settings"):
+        with (
+            patch("assistant.memory.yaml_config", {"timezone": "UTC"}),
+            patch("assistant.memory.settings"),
+        ):
             m = MemoryManager()
         await m.close()  # No exception
 
@@ -1274,8 +1375,10 @@ class TestClearAllMemory:
 
     @pytest.fixture
     def memory(self, redis_mock, chroma_mock):
-        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
-             patch("assistant.memory.settings"):
+        with (
+            patch("assistant.memory.yaml_config", {"timezone": "UTC"}),
+            patch("assistant.memory.settings"),
+        ):
             m = MemoryManager()
             m.redis = redis_mock
             m.chroma_collection = chroma_mock
@@ -1287,8 +1390,10 @@ class TestClearAllMemory:
     @pytest.mark.asyncio
     async def test_no_redis(self):
         """Works when no Redis."""
-        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
-             patch("assistant.memory.settings"):
+        with (
+            patch("assistant.memory.yaml_config", {"timezone": "UTC"}),
+            patch("assistant.memory.settings"),
+        ):
             m = MemoryManager()
         m.semantic = MagicMock()
         m.semantic.clear_all = AsyncMock(return_value=0)
@@ -1308,14 +1413,19 @@ class TestFactoryReset:
     @pytest.mark.asyncio
     async def test_no_redis_handles_gracefully(self):
         """Factory reset works without Redis."""
-        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
-             patch("assistant.memory.settings"):
+        with (
+            patch("assistant.memory.yaml_config", {"timezone": "UTC"}),
+            patch("assistant.memory.settings"),
+        ):
             m = MemoryManager()
         m.semantic = MagicMock()
         m.semantic.clear_all = AsyncMock(return_value=0)
 
         result = await m.factory_reset()
-        assert "redis_keys_deleted" not in result or result.get("redis_keys_deleted", 0) == 0
+        assert (
+            "redis_keys_deleted" not in result
+            or result.get("redis_keys_deleted", 0) == 0
+        )
 
 
 # =====================================================================
@@ -1328,8 +1438,10 @@ class TestDeleteEpisodes:
 
     @pytest.fixture
     def memory(self, redis_mock, chroma_mock):
-        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
-             patch("assistant.memory.settings"):
+        with (
+            patch("assistant.memory.yaml_config", {"timezone": "UTC"}),
+            patch("assistant.memory.settings"),
+        ):
             m = MemoryManager()
             m.redis = redis_mock
             m.chroma_collection = chroma_mock
@@ -1370,8 +1482,10 @@ class TestGetConversationsForDate:
 
     @pytest.fixture
     def memory(self, redis_mock):
-        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
-             patch("assistant.memory.settings"):
+        with (
+            patch("assistant.memory.yaml_config", {"timezone": "UTC"}),
+            patch("assistant.memory.settings"),
+        ):
             m = MemoryManager()
             m.redis = redis_mock
             return m
@@ -1379,8 +1493,16 @@ class TestGetConversationsForDate:
     @pytest.mark.asyncio
     async def test_returns_archived_conversations(self, memory, redis_mock):
         entries = [
-            json.dumps({"role": "user", "content": "Hello", "timestamp": "2025-06-15T10:00:00"}),
-            json.dumps({"role": "assistant", "content": "Hi!", "timestamp": "2025-06-15T10:01:00"}),
+            json.dumps(
+                {"role": "user", "content": "Hello", "timestamp": "2025-06-15T10:00:00"}
+            ),
+            json.dumps(
+                {
+                    "role": "assistant",
+                    "content": "Hi!",
+                    "timestamp": "2025-06-15T10:01:00",
+                }
+            ),
         ]
         redis_mock.lrange = AsyncMock(return_value=entries)
 
@@ -1390,8 +1512,10 @@ class TestGetConversationsForDate:
 
     @pytest.mark.asyncio
     async def test_no_redis_returns_empty(self):
-        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
-             patch("assistant.memory.settings"):
+        with (
+            patch("assistant.memory.yaml_config", {"timezone": "UTC"}),
+            patch("assistant.memory.settings"),
+        ):
             m = MemoryManager()
         result = await m.get_conversations_for_date("2025-06-15")
         assert result == []
@@ -1429,8 +1553,10 @@ class TestSearchEpisodesByTime:
 
     @pytest.fixture
     def memory(self, redis_mock, chroma_mock):
-        with patch("assistant.memory.yaml_config", {"timezone": "UTC"}), \
-             patch("assistant.memory.settings"):
+        with (
+            patch("assistant.memory.yaml_config", {"timezone": "UTC"}),
+            patch("assistant.memory.settings"),
+        ):
             m = MemoryManager()
             m.redis = redis_mock
             m.chroma_collection = chroma_mock
@@ -1439,5 +1565,7 @@ class TestSearchEpisodesByTime:
     @pytest.mark.asyncio
     async def test_no_chroma_returns_empty(self, memory):
         memory.chroma_collection = None
-        result = await memory.search_episodes_by_time("test", "2025-01-01", "2025-01-31")
+        result = await memory.search_episodes_by_time(
+            "test", "2025-01-01", "2025-01-31"
+        )
         assert result == []

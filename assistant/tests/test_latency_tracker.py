@@ -31,7 +31,7 @@ class TestRequestTrace:
         trace.marks["pre_classify"] = trace.start + 0.05  # 50ms
         trace.marks["context_gather"] = trace.start + 0.25  # 200ms nach pre_classify
         trace.marks["llm_first_token"] = trace.start + 0.75  # 500ms nach context
-        trace.marks["llm_complete"] = trace.start + 2.0     # 1250ms nach first_token
+        trace.marks["llm_complete"] = trace.start + 2.0  # 1250ms nach first_token
 
         durations = trace.finish()
         assert "pre_classify" in durations
@@ -273,6 +273,7 @@ class TestPhase2CModelRouterFeedback:
 # Percentile edge cases
 # ------------------------------------------------------------------
 
+
 class TestPercentileEdgeCases:
     """Edge case tests for percentile calculations."""
 
@@ -337,6 +338,7 @@ class TestPercentileEdgeCases:
 # RequestTrace edge cases
 # ------------------------------------------------------------------
 
+
 class TestRequestTraceEdgeCases:
     """Additional edge cases for RequestTrace."""
 
@@ -374,8 +376,8 @@ class TestRequestTraceEdgeCases:
 # get_stats edge cases
 # ------------------------------------------------------------------
 
-class TestGetStatsEdgeCases:
 
+class TestGetStatsEdgeCases:
     def test_get_stats_empty(self):
         """Empty tracker should return empty dict."""
         tracker = LatencyTracker()

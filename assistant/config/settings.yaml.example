@@ -220,11 +220,11 @@ calendar_intelligence:
 explainability:
   enabled: true
   detail_level: normal     # minimal, normal, verbose
-  auto_explain: false
+  auto_explain: true
   max_history: 50
   counterfactual_enabled: true
   reasoning_chains: false
-  confidence_display: false
+  confidence_display: true
   explanation_style: auto  # template, llm, auto
 
 # Lern-Transfer: Praeferenzen zwischen Raeumen uebertragen

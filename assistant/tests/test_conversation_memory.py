@@ -24,7 +24,18 @@ def mock_redis():
 
 @pytest.fixture
 def memory():
-    with patch("assistant.conversation_memory.yaml_config", {"conversation_memory": {"enabled": True, "max_projects": 5, "max_questions": 3, "question_ttl_days": 14, "summary_retention_days": 30}}):
+    with patch(
+        "assistant.conversation_memory.yaml_config",
+        {
+            "conversation_memory": {
+                "enabled": True,
+                "max_projects": 5,
+                "max_questions": 3,
+                "question_ttl_days": 14,
+                "summary_retention_days": 30,
+            }
+        },
+    ):
         return ConversationMemory()
 
 
@@ -87,7 +98,13 @@ async def test_create_project_max_limit(memory, mock_redis):
 
 @pytest.mark.asyncio
 async def test_update_project_status(memory, mock_redis):
-    proj = {"id": "proj_1", "name": "Test", "status": "active", "notes": [], "milestones": []}
+    proj = {
+        "id": "proj_1",
+        "name": "Test",
+        "status": "active",
+        "notes": [],
+        "milestones": [],
+    }
     mock_redis.hgetall.return_value = {"proj_1": json.dumps(proj)}
     await memory.initialize(mock_redis)
     result = await memory.update_project("Test", status="done")
@@ -97,7 +114,13 @@ async def test_update_project_status(memory, mock_redis):
 
 @pytest.mark.asyncio
 async def test_update_project_note_and_milestone(memory, mock_redis):
-    proj = {"id": "proj_1", "name": "Test", "status": "active", "notes": [], "milestones": []}
+    proj = {
+        "id": "proj_1",
+        "name": "Test",
+        "status": "active",
+        "notes": [],
+        "milestones": [],
+    }
     mock_redis.hgetall.return_value = {"proj_1": json.dumps(proj)}
     await memory.initialize(mock_redis)
     result = await memory.update_project("Test", note="Progress", milestone="Phase 1")
@@ -116,7 +139,13 @@ async def test_update_project_not_found(memory, mock_redis):
 
 @pytest.mark.asyncio
 async def test_update_project_no_changes(memory, mock_redis):
-    proj = {"id": "proj_1", "name": "Test", "status": "active", "notes": [], "milestones": []}
+    proj = {
+        "id": "proj_1",
+        "name": "Test",
+        "status": "active",
+        "notes": [],
+        "milestones": [],
+    }
     mock_redis.hgetall.return_value = {"proj_1": json.dumps(proj)}
     await memory.initialize(mock_redis)
     result = await memory.update_project("Test")
@@ -127,8 +156,24 @@ async def test_update_project_no_changes(memory, mock_redis):
 @pytest.mark.asyncio
 async def test_get_projects_filters(memory, mock_redis):
     projects = {
-        "p1": json.dumps({"id": "p1", "name": "A", "status": "active", "person": "Max", "updated_at": "2025-01-02"}),
-        "p2": json.dumps({"id": "p2", "name": "B", "status": "done", "person": "Anna", "updated_at": "2025-01-01"}),
+        "p1": json.dumps(
+            {
+                "id": "p1",
+                "name": "A",
+                "status": "active",
+                "person": "Max",
+                "updated_at": "2025-01-02",
+            }
+        ),
+        "p2": json.dumps(
+            {
+                "id": "p2",
+                "name": "B",
+                "status": "done",
+                "person": "Anna",
+                "updated_at": "2025-01-01",
+            }
+        ),
     }
     mock_redis.hgetall.return_value = projects
     await memory.initialize(mock_redis)
@@ -230,8 +275,24 @@ async def test_answer_question_not_found(memory, mock_redis):
 @pytest.mark.asyncio
 async def test_get_open_questions(memory, mock_redis):
     questions = {
-        "q1": json.dumps({"id": "q1", "question": "A?", "status": "open", "person": "Max", "created_at": "2025-01-01"}),
-        "q2": json.dumps({"id": "q2", "question": "B?", "status": "answered", "person": "Max", "created_at": "2025-01-02"}),
+        "q1": json.dumps(
+            {
+                "id": "q1",
+                "question": "A?",
+                "status": "open",
+                "person": "Max",
+                "created_at": "2025-01-01",
+            }
+        ),
+        "q2": json.dumps(
+            {
+                "id": "q2",
+                "question": "B?",
+                "status": "answered",
+                "person": "Max",
+                "created_at": "2025-01-02",
+            }
+        ),
     }
     mock_redis.hgetall.return_value = questions
     await memory.initialize(mock_redis)
@@ -244,7 +305,14 @@ async def test_get_open_questions(memory, mock_redis):
 async def test_cleanup_old_questions(memory, mock_redis):
     old_date = (datetime.now() - timedelta(days=30)).isoformat()
     questions = {
-        b"q1": json.dumps({"id": "q1", "status": "answered", "answered_at": old_date, "created_at": old_date}),
+        b"q1": json.dumps(
+            {
+                "id": "q1",
+                "status": "answered",
+                "answered_at": old_date,
+                "created_at": old_date,
+            }
+        ),
         b"q2": json.dumps({"id": "q2", "status": "open", "created_at": old_date}),
     }
     mock_redis.hgetall.return_value = questions
@@ -262,7 +330,9 @@ async def test_cleanup_old_questions(memory, mock_redis):
 @pytest.mark.asyncio
 async def test_save_daily_summary(memory, mock_redis):
     await memory.initialize(mock_redis)
-    result = await memory.save_daily_summary("Guter Tag", ["Garten", "Kochen"], date="2025-03-01")
+    result = await memory.save_daily_summary(
+        "Guter Tag", ["Garten", "Kochen"], date="2025-03-01"
+    )
     assert result["success"] is True
     mock_redis.set.assert_called_once()
     mock_redis.expire.assert_called_once()
@@ -312,19 +382,38 @@ async def test_get_memory_context_empty(memory, mock_redis):
 
 @pytest.mark.asyncio
 async def test_get_memory_context_with_data(memory, mock_redis):
-    projects = {"p1": json.dumps({"id": "p1", "name": "Garten", "status": "active", "milestones": [1, 2], "updated_at": "2025-01-01"})}
-    questions = {"q1": json.dumps({"id": "q1", "question": "Was ist mit dem Rasen?", "status": "open", "created_at": "2025-01-01"})}
+    projects = {
+        "p1": json.dumps(
+            {
+                "id": "p1",
+                "name": "Garten",
+                "status": "active",
+                "milestones": [1, 2],
+                "updated_at": "2025-01-01",
+            }
+        )
+    }
+    questions = {
+        "q1": json.dumps(
+            {
+                "id": "q1",
+                "question": "Was ist mit dem Rasen?",
+                "status": "open",
+                "created_at": "2025-01-01",
+            }
+        )
+    }
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     summary = json.dumps({"date": yesterday, "summary": "Test", "topics": ["Garten"]})
 
     # hgetall is called by startup cleanup (questions, projects, followups)
     # and then by get_memory_context (projects, questions)
     mock_redis.hgetall.side_effect = [
-        questions,   # _cleanup_old_questions
-        projects,    # _cleanup_old_projects
-        {},          # _cleanup_old_followups
-        projects,    # get_memory_context → get_projects
-        questions,   # get_memory_context → get_open_questions
+        questions,  # _cleanup_old_questions
+        projects,  # _cleanup_old_projects
+        {},  # _cleanup_old_followups
+        projects,  # get_memory_context → get_projects
+        questions,  # get_memory_context → get_open_questions
     ]
     mock_redis.get.return_value = summary
     await memory.initialize(mock_redis)
@@ -366,7 +455,9 @@ class TestUpdateProjectEdgeCases:
     async def test_update_project_many_notes_trimmed(self, memory, mock_redis):
         """Cover line 133: notes trimmed to 20."""
         proj = {
-            "id": "proj_1", "name": "Test", "status": "active",
+            "id": "proj_1",
+            "name": "Test",
+            "status": "active",
             "notes": [{"text": f"note{i}", "date": "2025-01-01"} for i in range(20)],
             "milestones": [],
         }
@@ -381,7 +472,13 @@ class TestUpdateProjectEdgeCases:
     @pytest.mark.asyncio
     async def test_update_project_hset_error(self, memory, mock_redis):
         """Cover lines 151-152: exception in hset."""
-        proj = {"id": "proj_1", "name": "Test", "status": "active", "notes": [], "milestones": []}
+        proj = {
+            "id": "proj_1",
+            "name": "Test",
+            "status": "active",
+            "notes": [],
+            "milestones": [],
+        }
         mock_redis.hgetall.return_value = {"proj_1": json.dumps(proj)}
         mock_redis.hset.side_effect = Exception("Write fail")
         await memory.initialize(mock_redis)
@@ -509,8 +606,24 @@ class TestGetOpenQuestionsEdgeCases:
     @pytest.mark.asyncio
     async def test_filter_by_person(self, memory, mock_redis):
         questions = {
-            "q1": json.dumps({"id": "q1", "question": "A?", "status": "open", "person": "Max", "created_at": "2025-01-01"}),
-            "q2": json.dumps({"id": "q2", "question": "B?", "status": "open", "person": "Anna", "created_at": "2025-01-02"}),
+            "q1": json.dumps(
+                {
+                    "id": "q1",
+                    "question": "A?",
+                    "status": "open",
+                    "person": "Max",
+                    "created_at": "2025-01-01",
+                }
+            ),
+            "q2": json.dumps(
+                {
+                    "id": "q2",
+                    "question": "B?",
+                    "status": "open",
+                    "person": "Anna",
+                    "created_at": "2025-01-02",
+                }
+            ),
         }
         mock_redis.hgetall.return_value = questions
         await memory.initialize(mock_redis)
@@ -648,7 +761,13 @@ class TestGetProjectsBytesHandling:
 
     @pytest.mark.asyncio
     async def test_bytes_values(self, memory, mock_redis):
-        proj = {"id": "p1", "name": "Test", "status": "active", "person": "", "updated_at": "2025-01-01"}
+        proj = {
+            "id": "p1",
+            "name": "Test",
+            "status": "active",
+            "person": "",
+            "updated_at": "2025-01-01",
+        }
         mock_redis.hgetall.return_value = {"p1": json.dumps(proj).encode("utf-8")}
         await memory.initialize(mock_redis)
         result = await memory.get_projects()
@@ -670,6 +789,7 @@ class TestFindProjectBytesHandling:
 # ============================================================
 # Phase 3B: Gesprächs-Threads
 # ============================================================
+
 
 class TestPhase3BThreads:
     """Tests fuer Gespraechs-Thread-System."""
@@ -700,7 +820,9 @@ class TestPhase3BThreads:
         assert result == {}
 
     def test_extract_keywords(self):
-        kw = ConversationMemory._extract_topic_keywords("Die Heizung im Schlafzimmer ist ineffizient")
+        kw = ConversationMemory._extract_topic_keywords(
+            "Die Heizung im Schlafzimmer ist ineffizient"
+        )
         assert "heizung" in kw
         assert "schlafzimmer" in kw
         assert "die" not in kw
@@ -743,18 +865,30 @@ class TestCleanupOldProjects:
     async def test_removes_old_completed_projects(self, memory, mock_redis):
         old_date = (datetime.now() - timedelta(days=60)).isoformat()
         projects = {
-            "p1": json.dumps({
-                "id": "p1", "name": "Old Done", "status": "completed",
-                "updated_at": old_date,
-            }),
-            "p2": json.dumps({
-                "id": "p2", "name": "Active", "status": "active",
-                "updated_at": old_date,
-            }),
-            "p3": json.dumps({
-                "id": "p3", "name": "Recent Done", "status": "completed",
-                "updated_at": datetime.now().isoformat(),
-            }),
+            "p1": json.dumps(
+                {
+                    "id": "p1",
+                    "name": "Old Done",
+                    "status": "completed",
+                    "updated_at": old_date,
+                }
+            ),
+            "p2": json.dumps(
+                {
+                    "id": "p2",
+                    "name": "Active",
+                    "status": "active",
+                    "updated_at": old_date,
+                }
+            ),
+            "p3": json.dumps(
+                {
+                    "id": "p3",
+                    "name": "Recent Done",
+                    "status": "completed",
+                    "updated_at": datetime.now().isoformat(),
+                }
+            ),
         }
         mock_redis.hgetall.return_value = projects
         await memory.initialize(mock_redis)
@@ -767,14 +901,22 @@ class TestCleanupOldProjects:
     async def test_removes_cancelled_and_archived(self, memory, mock_redis):
         old_date = (datetime.now() - timedelta(days=60)).isoformat()
         projects = {
-            "p1": json.dumps({
-                "id": "p1", "name": "Cancelled", "status": "cancelled",
-                "updated_at": old_date,
-            }),
-            "p2": json.dumps({
-                "id": "p2", "name": "Archived", "status": "archived",
-                "created_at": old_date,
-            }),
+            "p1": json.dumps(
+                {
+                    "id": "p1",
+                    "name": "Cancelled",
+                    "status": "cancelled",
+                    "updated_at": old_date,
+                }
+            ),
+            "p2": json.dumps(
+                {
+                    "id": "p2",
+                    "name": "Archived",
+                    "status": "archived",
+                    "created_at": old_date,
+                }
+            ),
         }
         mock_redis.hgetall.return_value = projects
         await memory.initialize(mock_redis)
@@ -797,10 +939,14 @@ class TestCleanupOldProjects:
     async def test_bytes_keys_decoded(self, memory, mock_redis):
         old_date = (datetime.now() - timedelta(days=60)).isoformat()
         projects = {
-            b"p1": json.dumps({
-                "id": "p1", "name": "Done", "status": "completed",
-                "updated_at": old_date,
-            }).encode(),
+            b"p1": json.dumps(
+                {
+                    "id": "p1",
+                    "name": "Done",
+                    "status": "completed",
+                    "updated_at": old_date,
+                }
+            ).encode(),
         }
         mock_redis.hgetall.return_value = projects
         await memory.initialize(mock_redis)
@@ -821,14 +967,21 @@ class TestCleanupOldFollowups:
     async def test_removes_old_completed_followups(self, memory, mock_redis):
         old_date = (datetime.now() - timedelta(days=30)).isoformat()
         followups = {
-            "fu1": json.dumps({
-                "id": "fu1", "status": "completed",
-                "completed_at": old_date, "created_at": old_date,
-            }),
-            "fu2": json.dumps({
-                "id": "fu2", "status": "pending",
-                "created_at": datetime.now().isoformat(),
-            }),
+            "fu1": json.dumps(
+                {
+                    "id": "fu1",
+                    "status": "completed",
+                    "completed_at": old_date,
+                    "created_at": old_date,
+                }
+            ),
+            "fu2": json.dumps(
+                {
+                    "id": "fu2",
+                    "status": "pending",
+                    "created_at": datetime.now().isoformat(),
+                }
+            ),
         }
         mock_redis.hgetall.return_value = followups
         await memory.initialize(mock_redis)
@@ -841,10 +994,13 @@ class TestCleanupOldFollowups:
     async def test_removes_expired_pending_followups(self, memory, mock_redis):
         old_date = (datetime.now() - timedelta(days=30)).isoformat()
         followups = {
-            "fu1": json.dumps({
-                "id": "fu1", "status": "pending",
-                "created_at": old_date,
-            }),
+            "fu1": json.dumps(
+                {
+                    "id": "fu1",
+                    "status": "pending",
+                    "created_at": old_date,
+                }
+            ),
         }
         mock_redis.hgetall.return_value = followups
         await memory.initialize(mock_redis)
@@ -856,10 +1012,14 @@ class TestCleanupOldFollowups:
     async def test_removes_cancelled_followups(self, memory, mock_redis):
         old_date = (datetime.now() - timedelta(days=30)).isoformat()
         followups = {
-            "fu1": json.dumps({
-                "id": "fu1", "status": "cancelled",
-                "completed_at": old_date, "created_at": old_date,
-            }),
+            "fu1": json.dumps(
+                {
+                    "id": "fu1",
+                    "status": "cancelled",
+                    "completed_at": old_date,
+                    "created_at": old_date,
+                }
+            ),
         }
         mock_redis.hgetall.return_value = followups
         await memory.initialize(mock_redis)
@@ -916,7 +1076,9 @@ class TestAddFollowup:
         await memory.initialize(mock_redis)
         mock_redis.hset.reset_mock()
         result = await memory.add_followup(
-            "Arzttermin", context="Morgen um 10", ask_after="tomorrow",
+            "Arzttermin",
+            context="Morgen um 10",
+            ask_after="tomorrow",
         )
         assert result["success"] is True
         assert "Arzttermin" in result["message"]
@@ -961,14 +1123,24 @@ class TestGetPendingFollowups:
         now = datetime.now()
         past = (now - timedelta(hours=2)).isoformat()
         followups = {
-            "fu1": json.dumps({
-                "id": "fu1", "topic": "Arzttermin", "status": "pending",
-                "due_at": past, "created_at": past,
-            }),
-            "fu2": json.dumps({
-                "id": "fu2", "topic": "Fertig", "status": "done",
-                "due_at": past, "created_at": past,
-            }),
+            "fu1": json.dumps(
+                {
+                    "id": "fu1",
+                    "topic": "Arzttermin",
+                    "status": "pending",
+                    "due_at": past,
+                    "created_at": past,
+                }
+            ),
+            "fu2": json.dumps(
+                {
+                    "id": "fu2",
+                    "topic": "Fertig",
+                    "status": "done",
+                    "due_at": past,
+                    "created_at": past,
+                }
+            ),
         }
         mock_redis.hgetall.return_value = followups
         await memory.initialize(mock_redis)
@@ -980,10 +1152,15 @@ class TestGetPendingFollowups:
     async def test_future_followups_not_returned(self, memory, mock_redis):
         future = (datetime.now(timezone.utc) + timedelta(days=5)).isoformat()
         followups = {
-            "fu1": json.dumps({
-                "id": "fu1", "topic": "Spaeter", "status": "pending",
-                "due_at": future, "created_at": datetime.now(timezone.utc).isoformat(),
-            }),
+            "fu1": json.dumps(
+                {
+                    "id": "fu1",
+                    "topic": "Spaeter",
+                    "status": "pending",
+                    "due_at": future,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+            ),
         }
         mock_redis.hgetall.return_value = followups
         await memory.initialize(mock_redis)
@@ -993,10 +1170,15 @@ class TestGetPendingFollowups:
     @pytest.mark.asyncio
     async def test_no_due_at_is_immediately_due(self, memory, mock_redis):
         followups = {
-            "fu1": json.dumps({
-                "id": "fu1", "topic": "Sofort", "status": "pending",
-                "due_at": "", "created_at": datetime.now().isoformat(),
-            }),
+            "fu1": json.dumps(
+                {
+                    "id": "fu1",
+                    "topic": "Sofort",
+                    "status": "pending",
+                    "due_at": "",
+                    "created_at": datetime.now().isoformat(),
+                }
+            ),
         }
         mock_redis.hgetall.return_value = followups
         await memory.initialize(mock_redis)
@@ -1006,10 +1188,15 @@ class TestGetPendingFollowups:
     @pytest.mark.asyncio
     async def test_invalid_due_at_is_due(self, memory, mock_redis):
         followups = {
-            "fu1": json.dumps({
-                "id": "fu1", "topic": "Kaputt", "status": "pending",
-                "due_at": "not-a-date", "created_at": datetime.now().isoformat(),
-            }),
+            "fu1": json.dumps(
+                {
+                    "id": "fu1",
+                    "topic": "Kaputt",
+                    "status": "pending",
+                    "due_at": "not-a-date",
+                    "created_at": datetime.now().isoformat(),
+                }
+            ),
         }
         mock_redis.hgetall.return_value = followups
         await memory.initialize(mock_redis)
@@ -1021,14 +1208,24 @@ class TestGetPendingFollowups:
         old = (datetime.now() - timedelta(hours=5)).isoformat()
         recent = (datetime.now() - timedelta(hours=1)).isoformat()
         followups = {
-            "fu1": json.dumps({
-                "id": "fu1", "topic": "Neuerer", "status": "pending",
-                "due_at": recent, "created_at": recent,
-            }),
-            "fu2": json.dumps({
-                "id": "fu2", "topic": "Aelterer", "status": "pending",
-                "due_at": old, "created_at": old,
-            }),
+            "fu1": json.dumps(
+                {
+                    "id": "fu1",
+                    "topic": "Neuerer",
+                    "status": "pending",
+                    "due_at": recent,
+                    "created_at": recent,
+                }
+            ),
+            "fu2": json.dumps(
+                {
+                    "id": "fu2",
+                    "topic": "Aelterer",
+                    "status": "pending",
+                    "due_at": old,
+                    "created_at": old,
+                }
+            ),
         }
         mock_redis.hgetall.return_value = followups
         await memory.initialize(mock_redis)
@@ -1054,10 +1251,15 @@ class TestGetPendingFollowups:
     async def test_bytes_values_decoded(self, memory, mock_redis):
         past = (datetime.now() - timedelta(hours=1)).isoformat()
         followups = {
-            b"fu1": json.dumps({
-                "id": "fu1", "topic": "BytesTopic", "status": "pending",
-                "due_at": past, "created_at": past,
-            }).encode(),
+            b"fu1": json.dumps(
+                {
+                    "id": "fu1",
+                    "topic": "BytesTopic",
+                    "status": "pending",
+                    "due_at": past,
+                    "created_at": past,
+                }
+            ).encode(),
         }
         mock_redis.hgetall.return_value = followups
         await memory.initialize(mock_redis)
@@ -1072,10 +1274,14 @@ class TestCompleteFollowup:
     @pytest.mark.asyncio
     async def test_complete_success(self, memory, mock_redis):
         followups = {
-            "fu1": json.dumps({
-                "id": "fu1", "topic": "Arzttermin", "status": "pending",
-                "created_at": datetime.now().isoformat(),
-            }),
+            "fu1": json.dumps(
+                {
+                    "id": "fu1",
+                    "topic": "Arzttermin",
+                    "status": "pending",
+                    "created_at": datetime.now().isoformat(),
+                }
+            ),
         }
         mock_redis.hgetall.return_value = followups
         await memory.initialize(mock_redis)
@@ -1106,10 +1312,14 @@ class TestCompleteFollowup:
     @pytest.mark.asyncio
     async def test_complete_hset_error(self, memory, mock_redis):
         followups = {
-            "fu1": json.dumps({
-                "id": "fu1", "topic": "Test", "status": "pending",
-                "created_at": datetime.now().isoformat(),
-            }),
+            "fu1": json.dumps(
+                {
+                    "id": "fu1",
+                    "topic": "Test",
+                    "status": "pending",
+                    "created_at": datetime.now().isoformat(),
+                }
+            ),
         }
         mock_redis.hgetall.return_value = followups
         mock_redis.hset.side_effect = Exception("Write fail")
@@ -1124,9 +1334,13 @@ class TestFindFollowup:
     @pytest.mark.asyncio
     async def test_exact_match(self, memory, mock_redis):
         followups = {
-            "fu1": json.dumps({
-                "id": "fu1", "topic": "Arzttermin", "status": "pending",
-            }),
+            "fu1": json.dumps(
+                {
+                    "id": "fu1",
+                    "topic": "Arzttermin",
+                    "status": "pending",
+                }
+            ),
         }
         mock_redis.hgetall.return_value = followups
         await memory.initialize(mock_redis)
@@ -1137,9 +1351,13 @@ class TestFindFollowup:
     @pytest.mark.asyncio
     async def test_partial_match(self, memory, mock_redis):
         followups = {
-            "fu1": json.dumps({
-                "id": "fu1", "topic": "Arzttermin morgen", "status": "pending",
-            }),
+            "fu1": json.dumps(
+                {
+                    "id": "fu1",
+                    "topic": "Arzttermin morgen",
+                    "status": "pending",
+                }
+            ),
         }
         mock_redis.hgetall.return_value = followups
         await memory.initialize(mock_redis)
@@ -1149,9 +1367,13 @@ class TestFindFollowup:
     @pytest.mark.asyncio
     async def test_skips_non_pending(self, memory, mock_redis):
         followups = {
-            "fu1": json.dumps({
-                "id": "fu1", "topic": "Fertig", "status": "done",
-            }),
+            "fu1": json.dumps(
+                {
+                    "id": "fu1",
+                    "topic": "Fertig",
+                    "status": "done",
+                }
+            ),
         }
         mock_redis.hgetall.return_value = followups
         await memory.initialize(mock_redis)
@@ -1222,9 +1444,7 @@ class TestExtractFollowupTriggers:
     @pytest.mark.asyncio
     async def test_no_triggers_found(self, memory, mock_redis):
         await memory.initialize(mock_redis)
-        result = await memory.extract_followup_triggers(
-            "Das Wetter ist heute schoen"
-        )
+        result = await memory.extract_followup_triggers("Das Wetter ist heute schoen")
         assert result == []
 
     @pytest.mark.asyncio
@@ -1294,7 +1514,18 @@ class TestThreadSystemAdvanced:
 
     @pytest.fixture
     def memory(self, mock_redis):
-        with patch("assistant.conversation_memory.yaml_config", {"conversation_memory": {"enabled": True, "max_projects": 5, "max_questions": 3, "question_ttl_days": 14, "summary_retention_days": 30}}):
+        with patch(
+            "assistant.conversation_memory.yaml_config",
+            {
+                "conversation_memory": {
+                    "enabled": True,
+                    "max_projects": 5,
+                    "max_questions": 3,
+                    "question_ttl_days": 14,
+                    "summary_retention_days": 30,
+                }
+            },
+        ):
             m = ConversationMemory()
         m.redis = mock_redis
         m.enabled = True
@@ -1317,8 +1548,10 @@ class TestThreadSystemAdvanced:
     async def test_link_session_with_overlap(self, memory, mock_redis):
         """Verknuepfung bei genuegend Keyword-Overlap."""
         thread = {
-            "id": "thread_1", "topic": "Heizung Schlafzimmer optimieren",
-            "session_ids": ["s0"], "messages_count": 1,
+            "id": "thread_1",
+            "topic": "Heizung Schlafzimmer optimieren",
+            "session_ids": ["s0"],
+            "messages_count": 1,
             "last_active": "2026-03-19T10:00:00",
         }
 
@@ -1337,7 +1570,8 @@ class TestThreadSystemAdvanced:
         mock_redis.hset = AsyncMock()
 
         result = await memory.link_session_to_thread(
-            "s2", "Die Heizung im Schlafzimmer ist kalt",
+            "s2",
+            "Die Heizung im Schlafzimmer ist kalt",
         )
 
         assert result == "thread_1"
@@ -1353,12 +1587,16 @@ class TestThreadSystemAdvanced:
     @pytest.mark.asyncio
     async def test_get_thread_context_with_data(self, memory, mock_redis):
         thread = {
-            "id": "thread_1", "topic": "Heizung", "session_ids": ["s1"],
+            "id": "thread_1",
+            "topic": "Heizung",
+            "session_ids": ["s1"],
             "last_active": "2026-03-20T10:00:00",
         }
-        mock_redis.hget = AsyncMock(side_effect=lambda k, f: (
-            "thread_1" if k.endswith("thread_index") else json.dumps(thread)
-        ))
+        mock_redis.hget = AsyncMock(
+            side_effect=lambda k, f: (
+                "thread_1" if k.endswith("thread_index") else json.dumps(thread)
+            )
+        )
         result = await memory.get_thread_context("Heizung optimieren")
         assert len(result) >= 1
         assert result[0]["topic"] == "Heizung"
@@ -1377,12 +1615,20 @@ class TestThreadSystemAdvanced:
     @pytest.mark.asyncio
     async def test_get_recent_threads_with_data(self, memory, mock_redis):
         threads = {
-            "t1": json.dumps({
-                "id": "t1", "topic": "A", "last_active": "2026-03-20T10:00:00",
-            }),
-            "t2": json.dumps({
-                "id": "t2", "topic": "B", "last_active": "2026-03-19T10:00:00",
-            }),
+            "t1": json.dumps(
+                {
+                    "id": "t1",
+                    "topic": "A",
+                    "last_active": "2026-03-20T10:00:00",
+                }
+            ),
+            "t2": json.dumps(
+                {
+                    "id": "t2",
+                    "topic": "B",
+                    "last_active": "2026-03-19T10:00:00",
+                }
+            ),
         }
         mock_redis.hgetall = AsyncMock(return_value=threads)
         result = await memory.get_recent_threads(limit=2)
@@ -1428,8 +1674,10 @@ class TestThreadSystemAdvanced:
     async def test_auto_detect_links_existing_thread(self, memory, mock_redis):
         """auto_detect_thread verknuepft mit bestehendem Thread."""
         thread = {
-            "id": "thread_1", "topic": "Heizung Schlafzimmer optimieren",
-            "session_ids": ["s0"], "messages_count": 1,
+            "id": "thread_1",
+            "topic": "Heizung Schlafzimmer optimieren",
+            "session_ids": ["s0"],
+            "messages_count": 1,
             "last_active": "2026-03-19T10:00:00",
         }
 
@@ -1450,7 +1698,8 @@ class TestThreadSystemAdvanced:
     async def test_auto_detect_exception(self, memory, mock_redis):
         mock_redis.hget = AsyncMock(side_effect=Exception("Fail"))
         await memory.auto_detect_thread(
-            "Long enough text to trigger auto detect thread creation", "s1",
+            "Long enough text to trigger auto detect thread creation",
+            "s1",
         )
 
 
@@ -1467,10 +1716,13 @@ class TestGetMemoryContextAdvanced:
         projects = {}
         questions = {}
         threads = {
-            "t1": json.dumps({
-                "id": "t1", "topic": "Heizungsoptimierung",
-                "last_active": "2026-03-20T10:00:00",
-            }),
+            "t1": json.dumps(
+                {
+                    "id": "t1",
+                    "topic": "Heizungsoptimierung",
+                    "last_active": "2026-03-20T10:00:00",
+                }
+            ),
         }
 
         call_count = [0]
@@ -1497,10 +1749,15 @@ class TestGetMemoryContextAdvanced:
     async def test_limits_projects_to_five(self, memory, mock_redis):
         projects = {}
         for i in range(8):
-            projects[f"p{i}"] = json.dumps({
-                "id": f"p{i}", "name": f"Projekt {i}", "status": "active",
-                "milestones": [], "updated_at": f"2026-03-{20-i:02d}",
-            })
+            projects[f"p{i}"] = json.dumps(
+                {
+                    "id": f"p{i}",
+                    "name": f"Projekt {i}",
+                    "status": "active",
+                    "milestones": [],
+                    "updated_at": f"2026-03-{20 - i:02d}",
+                }
+            )
 
         async def hgetall_side_effect(key):
             if "project" in key:

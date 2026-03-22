@@ -74,8 +74,10 @@ def curve_validator():
     }
     # Muss sowohl am Import-Ort als auch am Quell-Ort gepatcht werden,
     # da _get_climate_config() yaml_config erneut aus assistant.config importiert.
-    with patch("assistant.function_validator.yaml_config", yaml_mock), \
-         patch("assistant.config.yaml_config", yaml_mock):
+    with (
+        patch("assistant.function_validator.yaml_config", yaml_mock),
+        patch("assistant.config.yaml_config", yaml_mock),
+    ):
         yield FunctionValidator()
 
 
@@ -462,13 +464,21 @@ class TestCheckStateAge:
     def test_old_state(self, validator):
         """State aelter als max_age_minutes wird erkannt."""
         old = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
-        assert validator.check_state_age("sensor.test", old, max_age_minutes=10) is False
+        assert (
+            validator.check_state_age("sensor.test", old, max_age_minutes=10) is False
+        )
 
     def test_custom_max_age(self, validator):
         """Benutzerdefiniertes max_age_minutes."""
         five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
-        assert validator.check_state_age("sensor.test", five_min_ago, max_age_minutes=3) is False
-        assert validator.check_state_age("sensor.test", five_min_ago, max_age_minutes=10) is True
+        assert (
+            validator.check_state_age("sensor.test", five_min_ago, max_age_minutes=3)
+            is False
+        )
+        assert (
+            validator.check_state_age("sensor.test", five_min_ago, max_age_minutes=10)
+            is True
+        )
 
     def test_invalid_timestamp_allows_pushback(self, validator):
         """Ungueltiger Timestamp → im Zweifel Pushback erlauben (True)."""
@@ -500,7 +510,9 @@ class TestValidationResult:
         assert result.reason == "Zu heiss"
 
     def test_confirmation_needed(self):
-        result = ValidationResult(ok=False, needs_confirmation=True, reason="Tuer oeffnen")
+        result = ValidationResult(
+            ok=False, needs_confirmation=True, reason="Tuer oeffnen"
+        )
         assert result.ok is False
         assert result.needs_confirmation is True
 

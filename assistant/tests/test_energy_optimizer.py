@@ -58,11 +58,13 @@ class TestAnomalyDetection:
     @pytest.mark.asyncio
     async def test_detects_anomaly(self, optimizer, redis_mock):
         """30%+ ueber Durchschnitt = Anomalie."""
+
         # 7 Tage mit 300W Durchschnitt simulieren — mget gibt Liste zurueck
         async def fake_mget(keys):
             return [
                 json.dumps({"consumption_wh": 300, "avg_price_cent": 25})
-                if "mha:energy:daily:" in k else None
+                if "mha:energy:daily:" in k
+                else None
                 for k in keys
             ]
 
@@ -76,10 +78,12 @@ class TestAnomalyDetection:
     @pytest.mark.asyncio
     async def test_no_anomaly_within_threshold(self, optimizer, redis_mock):
         """Unter 30% = keine Anomalie."""
+
         async def fake_mget(keys):
             return [
                 json.dumps({"consumption_wh": 400, "avg_price_cent": 25})
-                if "mha:energy:daily:" in k else None
+                if "mha:energy:daily:" in k
+                else None
                 for k in keys
             ]
 
@@ -128,10 +132,12 @@ class TestWeeklyComparison:
 class TestDailyCostTracking:
     @pytest.mark.asyncio
     async def test_tracks_daily_cost(self, optimizer, ha_client, redis_mock):
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.verbrauch", "state": "450"},
-            {"entity_id": "sensor.strompreis", "state": "28.5"},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.verbrauch", "state": "450"},
+                {"entity_id": "sensor.strompreis", "state": "28.5"},
+            ]
+        )
         await optimizer.track_daily_cost()
         redis_mock.setex.assert_called_once()
         call_args = redis_mock.setex.call_args
@@ -141,9 +147,11 @@ class TestDailyCostTracking:
 
     @pytest.mark.asyncio
     async def test_skips_without_consumption(self, optimizer, ha_client, redis_mock):
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.strompreis", "state": "28.5"},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.strompreis", "state": "28.5"},
+            ]
+        )
         await optimizer.track_daily_cost()
         redis_mock.setex.assert_not_called()
 
@@ -151,11 +159,13 @@ class TestDailyCostTracking:
 class TestEnergyReport:
     @pytest.mark.asyncio
     async def test_report_with_sensors(self, optimizer, ha_client):
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.strompreis", "state": "12.5"},
-            {"entity_id": "sensor.verbrauch", "state": "350"},
-            {"entity_id": "sensor.solar", "state": "2500"},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.strompreis", "state": "12.5"},
+                {"entity_id": "sensor.verbrauch", "state": "350"},
+                {"entity_id": "sensor.solar", "state": "2500"},
+            ]
+        )
         result = await optimizer.get_energy_report()
         assert result["success"] is True
         assert "12.5" in result["message"]
@@ -178,9 +188,11 @@ class TestEnergyReport:
     @pytest.mark.asyncio
     async def test_report_no_sensors_found(self, optimizer, ha_client):
         """Wenn keine passenden Sensoren gefunden werden."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "light.test", "state": "on", "attributes": {}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "light.test", "state": "on", "attributes": {}},
+            ]
+        )
         result = await optimizer.get_energy_report()
         assert result["success"] is True
         assert "Keine Energie-Sensoren" in result["message"]
@@ -188,10 +200,15 @@ class TestEnergyReport:
     @pytest.mark.asyncio
     async def test_report_price_high(self, optimizer, ha_client):
         """Hoher Strompreis wird als 'teuer' markiert."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.strompreis", "state": "40",
-             "attributes": {"unit_of_measurement": "ct/kWh"}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "sensor.strompreis",
+                    "state": "40",
+                    "attributes": {"unit_of_measurement": "ct/kWh"},
+                },
+            ]
+        )
         result = await optimizer.get_energy_report()
         assert result["success"] is True
         assert "teuer" in result["message"]
@@ -199,10 +216,15 @@ class TestEnergyReport:
     @pytest.mark.asyncio
     async def test_report_price_normal(self, optimizer, ha_client):
         """Normaler Strompreis wird als 'normal' markiert."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.strompreis", "state": "25",
-             "attributes": {"unit_of_measurement": "ct/kWh"}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "sensor.strompreis",
+                    "state": "25",
+                    "attributes": {"unit_of_measurement": "ct/kWh"},
+                },
+            ]
+        )
         result = await optimizer.get_energy_report()
         assert result["success"] is True
         assert "normal" in result["message"]
@@ -210,10 +232,15 @@ class TestEnergyReport:
     @pytest.mark.asyncio
     async def test_report_solar_included(self, optimizer, ha_client):
         """Solar-Ertrag wird im Bericht angezeigt."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.solar", "state": "3500",
-             "attributes": {"unit_of_measurement": "W"}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "sensor.solar",
+                    "state": "3500",
+                    "attributes": {"unit_of_measurement": "W"},
+                },
+            ]
+        )
         result = await optimizer.get_energy_report()
         assert "3500" in result["message"]
         assert "Solar" in result["message"]
@@ -221,12 +248,12 @@ class TestEnergyReport:
     @pytest.mark.asyncio
     async def test_report_export_only_positive(self, optimizer, ha_client):
         """Netz-Einspeisung wird nur angezeigt wenn > 0."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.einspeisung", "state": "0",
-             "attributes": {}},
-            {"entity_id": "sensor.strompreis", "state": "25",
-             "attributes": {}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.einspeisung", "state": "0", "attributes": {}},
+                {"entity_id": "sensor.strompreis", "state": "25", "attributes": {}},
+            ]
+        )
         result = await optimizer.get_energy_report()
         assert "Einspeisung" not in result["message"]
 
@@ -242,40 +269,52 @@ class TestPriceUnitNormalization:
     @pytest.mark.asyncio
     async def test_eur_per_mwh_normalized(self, optimizer, ha_client):
         """EUR/MWh wird korrekt nach ct/kWh umgerechnet (/ 10)."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.strompreis", "state": "250",
-             "attributes": {"unit_of_measurement": "EUR/MWh"}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "sensor.strompreis",
+                    "state": "250",
+                    "attributes": {"unit_of_measurement": "EUR/MWh"},
+                },
+            ]
+        )
         result = await optimizer.get_energy_report()
         assert "25.0" in result["message"]  # 250 / 10 = 25
 
     @pytest.mark.asyncio
     async def test_eur_per_kwh_normalized(self, optimizer, ha_client):
         """EUR/kWh wird korrekt nach ct/kWh umgerechnet (* 100)."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.strompreis", "state": "0.28",
-             "attributes": {"unit_of_measurement": "EUR/kWh"}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "sensor.strompreis",
+                    "state": "0.28",
+                    "attributes": {"unit_of_measurement": "EUR/kWh"},
+                },
+            ]
+        )
         result = await optimizer.get_energy_report()
         assert "28.0" in result["message"]  # 0.28 * 100 = 28
 
     @pytest.mark.asyncio
     async def test_heuristic_high_value_as_eur_mwh(self, optimizer, ha_client):
         """Wert > 100 ohne Einheit wird als EUR/MWh interpretiert."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.strompreis", "state": "200",
-             "attributes": {}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.strompreis", "state": "200", "attributes": {}},
+            ]
+        )
         result = await optimizer.get_energy_report()
         assert "20.0" in result["message"]  # 200 / 10 = 20
 
     @pytest.mark.asyncio
     async def test_heuristic_low_value_as_eur_kwh(self, optimizer, ha_client):
         """Wert < 1 ohne Einheit wird als EUR/kWh interpretiert."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.strompreis", "state": "0.30",
-             "attributes": {}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.strompreis", "state": "0.30", "attributes": {}},
+            ]
+        )
         result = await optimizer.get_energy_report()
         assert "30.0" in result["message"]  # 0.30 * 100 = 30
 
@@ -297,7 +336,11 @@ class TestFindSensorValue:
 
     def test_configured_entity_unavailable(self, optimizer):
         states = [
-            {"entity_id": "sensor.strompreis", "state": "unavailable", "attributes": {}},
+            {
+                "entity_id": "sensor.strompreis",
+                "state": "unavailable",
+                "attributes": {},
+            },
         ]
         result = optimizer._find_sensor_value(states, "sensor.strompreis", [])
         assert result is None
@@ -326,7 +369,11 @@ class TestFindSensorValue:
     def test_keyword_fallback(self, optimizer):
         """Wenn kein Entity konfiguriert, wird per Keyword gesucht."""
         states = [
-            {"entity_id": "sensor.electricity_price_today", "state": "22.5", "attributes": {}},
+            {
+                "entity_id": "sensor.electricity_price_today",
+                "state": "22.5",
+                "attributes": {},
+            },
         ]
         result = optimizer._find_sensor_value(states, "", ["price", "electricity"])
         assert result == 22.5
@@ -367,16 +414,22 @@ class TestFindSensorUnit:
 
     def test_configured_entity_unit(self, optimizer):
         states = [
-            {"entity_id": "sensor.strompreis", "state": "28",
-             "attributes": {"unit_of_measurement": "ct/kWh"}},
+            {
+                "entity_id": "sensor.strompreis",
+                "state": "28",
+                "attributes": {"unit_of_measurement": "ct/kWh"},
+            },
         ]
         result = optimizer._find_sensor_unit(states, "sensor.strompreis", [])
         assert result == "ct/kWh"
 
     def test_keyword_search_unit(self, optimizer):
         states = [
-            {"entity_id": "sensor.solar_output", "state": "2000",
-             "attributes": {"unit_of_measurement": "W"}},
+            {
+                "entity_id": "sensor.solar_output",
+                "state": "2000",
+                "attributes": {"unit_of_measurement": "W"},
+            },
         ]
         result = optimizer._find_sensor_unit(states, "", ["solar"])
         assert result == "W"
@@ -429,30 +482,45 @@ class TestCheckCloudForecast:
 
     def test_cloudy_forecast_detected(self):
         states = [
-            {"entity_id": "weather.home", "state": "sunny",
-             "attributes": {"forecast": [
-                 {"condition": "cloudy", "datetime": "2026-03-20T15:00"},
-             ]}},
+            {
+                "entity_id": "weather.home",
+                "state": "sunny",
+                "attributes": {
+                    "forecast": [
+                        {"condition": "cloudy", "datetime": "2026-03-20T15:00"},
+                    ]
+                },
+            },
         ]
         assert EnergyOptimizer._check_cloud_forecast(states) is True
 
     def test_rainy_forecast_detected(self):
         states = [
-            {"entity_id": "weather.home", "state": "sunny",
-             "attributes": {"forecast": [
-                 {"condition": "sunny", "datetime": "2026-03-20T12:00"},
-                 {"condition": "rainy", "datetime": "2026-03-20T15:00"},
-             ]}},
+            {
+                "entity_id": "weather.home",
+                "state": "sunny",
+                "attributes": {
+                    "forecast": [
+                        {"condition": "sunny", "datetime": "2026-03-20T12:00"},
+                        {"condition": "rainy", "datetime": "2026-03-20T15:00"},
+                    ]
+                },
+            },
         ]
         assert EnergyOptimizer._check_cloud_forecast(states) is True
 
     def test_clear_forecast_no_clouds(self):
         states = [
-            {"entity_id": "weather.home", "state": "sunny",
-             "attributes": {"forecast": [
-                 {"condition": "sunny", "datetime": "2026-03-20T12:00"},
-                 {"condition": "partlycloudy", "datetime": "2026-03-20T15:00"},
-             ]}},
+            {
+                "entity_id": "weather.home",
+                "state": "sunny",
+                "attributes": {
+                    "forecast": [
+                        {"condition": "sunny", "datetime": "2026-03-20T12:00"},
+                        {"condition": "partlycloudy", "datetime": "2026-03-20T15:00"},
+                    ]
+                },
+            },
         ]
         assert EnergyOptimizer._check_cloud_forecast(states) is False
 
@@ -464,18 +532,22 @@ class TestCheckCloudForecast:
 
     def test_no_forecast_data(self):
         states = [
-            {"entity_id": "weather.home", "state": "sunny",
-             "attributes": {}},
+            {"entity_id": "weather.home", "state": "sunny", "attributes": {}},
         ]
         assert EnergyOptimizer._check_cloud_forecast(states) is False
 
     def test_non_weather_entities_ignored(self):
         """Nur weather.* Entities werden geprueft."""
         states = [
-            {"entity_id": "sensor.weather_condition", "state": "sunny",
-             "attributes": {"forecast": [
-                 {"condition": "cloudy"},
-             ]}},
+            {
+                "entity_id": "sensor.weather_condition",
+                "state": "sunny",
+                "attributes": {
+                    "forecast": [
+                        {"condition": "cloudy"},
+                    ]
+                },
+            },
         ]
         assert EnergyOptimizer._check_cloud_forecast(states) is False
 
@@ -649,10 +721,12 @@ class TestGetSolarSurplusActions:
     @pytest.mark.asyncio
     async def test_surplus_recommends_devices(self, optimizer, ha_client):
         """Solarueberschuss empfiehlt passende Geraete."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.solar", "state": "5000", "attributes": {}},
-            {"entity_id": "sensor.verbrauch", "state": "1000", "attributes": {}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.solar", "state": "5000", "attributes": {}},
+                {"entity_id": "sensor.verbrauch", "state": "1000", "attributes": {}},
+            ]
+        )
         result = await optimizer.get_solar_surplus_actions(ha_client)
         assert len(result) > 0
         assert all("device" in a and "message" in a and "power_kw" in a for a in result)
@@ -660,10 +734,12 @@ class TestGetSolarSurplusActions:
     @pytest.mark.asyncio
     async def test_no_surplus_no_actions(self, optimizer, ha_client):
         """Ohne Ueberschuss keine Empfehlungen."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.solar", "state": "500", "attributes": {}},
-            {"entity_id": "sensor.verbrauch", "state": "2000", "attributes": {}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.solar", "state": "500", "attributes": {}},
+                {"entity_id": "sensor.verbrauch", "state": "2000", "attributes": {}},
+            ]
+        )
         result = await optimizer.get_solar_surplus_actions(ha_client)
         assert result == []
 
@@ -682,9 +758,11 @@ class TestGetSolarSurplusActions:
     @pytest.mark.asyncio
     async def test_missing_solar_sensor_returns_empty(self, optimizer, ha_client):
         """Ohne Solar-Sensor keine Empfehlungen."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.verbrauch", "state": "1000", "attributes": {}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.verbrauch", "state": "1000", "attributes": {}},
+            ]
+        )
         result = await optimizer.get_solar_surplus_actions(ha_client)
         assert result == []
 
@@ -700,10 +778,15 @@ class TestGetOptimalSchedule:
     @pytest.mark.asyncio
     async def test_cheap_price_recommends_now(self, optimizer, ha_client, redis_mock):
         """Guenstiger Preis empfiehlt sofortiges Starten."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.strompreis", "state": "10",
-             "attributes": {"unit_of_measurement": "ct/kWh"}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "sensor.strompreis",
+                    "state": "10",
+                    "attributes": {"unit_of_measurement": "ct/kWh"},
+                },
+            ]
+        )
         redis_mock.get = AsyncMock(return_value=None)  # No price history
         result = await optimizer.get_optimal_schedule(ha_client)
         assert len(result) > 0
@@ -713,12 +796,19 @@ class TestGetOptimalSchedule:
             assert item["savings_estimate_ct"] >= 0
 
     @pytest.mark.asyncio
-    async def test_expensive_price_recommends_later(self, optimizer, ha_client, redis_mock):
+    async def test_expensive_price_recommends_later(
+        self, optimizer, ha_client, redis_mock
+    ):
         """Teurer Preis empfiehlt spaeteres Starten."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.strompreis", "state": "50",
-             "attributes": {"unit_of_measurement": "ct/kWh"}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "sensor.strompreis",
+                    "state": "50",
+                    "attributes": {"unit_of_measurement": "ct/kWh"},
+                },
+            ]
+        )
         redis_mock.get = AsyncMock(return_value=None)
         result = await optimizer.get_optimal_schedule(ha_client)
         assert len(result) > 0
@@ -734,9 +824,11 @@ class TestGetOptimalSchedule:
     @pytest.mark.asyncio
     async def test_no_price_sensor_returns_empty(self, optimizer, ha_client):
         """Ohne Preis-Sensor keine Empfehlungen."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.verbrauch", "state": "500", "attributes": {}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.verbrauch", "state": "500", "attributes": {}},
+            ]
+        )
         optimizer.price_sensor = ""  # Kein konfigurierter Preis-Sensor
         result = await optimizer.get_optimal_schedule(ha_client)
         assert result == []
@@ -744,10 +836,15 @@ class TestGetOptimalSchedule:
     @pytest.mark.asyncio
     async def test_e_auto_display_name(self, optimizer, ha_client, redis_mock):
         """E-Auto bekommt speziellen Display-Namen."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.strompreis", "state": "10",
-             "attributes": {"unit_of_measurement": "ct/kWh"}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "sensor.strompreis",
+                    "state": "10",
+                    "attributes": {"unit_of_measurement": "ct/kWh"},
+                },
+            ]
+        )
         redis_mock.get = AsyncMock(return_value=None)
         result = await optimizer.get_optimal_schedule(ha_client)
         e_auto_items = [r for r in result if r["device"] == "E-Auto"]
@@ -781,10 +878,11 @@ class TestCheckEnergyEvents:
     @pytest.mark.asyncio
     async def test_high_price_alert(self, optimizer, ha_client, redis_mock):
         """Hoher Strompreis erzeugt Alert."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.strompreis", "state": "45",
-             "attributes": {}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.strompreis", "state": "45", "attributes": {}},
+            ]
+        )
         redis_mock.get = AsyncMock(return_value=None)  # Kein kuerzlicher Alert
         redis_mock.mget = AsyncMock(return_value=[None] * 7)  # Keine Anomalie-Daten
         result = await optimizer.check_energy_events()
@@ -795,10 +893,11 @@ class TestCheckEnergyEvents:
     @pytest.mark.asyncio
     async def test_high_price_alert_cooldown(self, optimizer, ha_client, redis_mock):
         """Hoher Preis-Alert wird nicht wiederholt waehrend Cooldown."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.strompreis", "state": "45",
-             "attributes": {}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.strompreis", "state": "45", "attributes": {}},
+            ]
+        )
         # Simuliere kuerzlich gesendeten Alert
         redis_mock.get = AsyncMock(return_value="1")
         redis_mock.mget = AsyncMock(return_value=[None] * 7)
@@ -809,12 +908,12 @@ class TestCheckEnergyEvents:
     @pytest.mark.asyncio
     async def test_solar_surplus_alert(self, optimizer, ha_client, redis_mock):
         """Solar-Ueberschuss erzeugt Alert."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.solar", "state": "3000",
-             "attributes": {}},
-            {"entity_id": "sensor.einspeisung", "state": "1500",
-             "attributes": {}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.solar", "state": "3000", "attributes": {}},
+                {"entity_id": "sensor.einspeisung", "state": "1500", "attributes": {}},
+            ]
+        )
         redis_mock.get = AsyncMock(return_value=None)
         redis_mock.mget = AsyncMock(return_value=[None] * 7)
         result = await optimizer.check_energy_events()
@@ -891,7 +990,7 @@ class TestWeeklyComparisonExtended:
                 results.append(json.dumps({"consumption_wh": 200}))
                 # Last week (odd indices): higher consumption
                 results.append(json.dumps({"consumption_wh": 400}))
-            return results[:len(keys)]
+            return results[: len(keys)]
 
         redis_mock.mget = AsyncMock(side_effect=lambda keys: build_raw_results(keys))
         result = await optimizer._get_weekly_comparison()
@@ -901,12 +1000,13 @@ class TestWeeklyComparisonExtended:
     @pytest.mark.asyncio
     async def test_small_diff_returns_none(self, optimizer, redis_mock):
         """Unter 5% Unterschied wird nicht gemeldet."""
+
         def build_raw_results(keys):
             results = []
             for idx in range(7):
                 results.append(json.dumps({"consumption_wh": 300}))  # this week
                 results.append(json.dumps({"consumption_wh": 305}))  # last week
-            return results[:len(keys)]
+            return results[: len(keys)]
 
         redis_mock.mget = AsyncMock(side_effect=lambda keys: build_raw_results(keys))
         result = await optimizer._get_weekly_comparison()
@@ -969,11 +1069,15 @@ class TestDailyCostTrackingExtended:
         redis_mock.setex.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_tracks_with_price_zero_when_no_price(self, optimizer, ha_client, redis_mock):
+    async def test_tracks_with_price_zero_when_no_price(
+        self, optimizer, ha_client, redis_mock
+    ):
         """Ohne Preis-Sensor wird avg_price_cent als 0 gespeichert."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.verbrauch", "state": "300"},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.verbrauch", "state": "300"},
+            ]
+        )
         await optimizer.track_daily_cost()
         redis_mock.setex.assert_called_once()
         call_args = redis_mock.setex.call_args
@@ -984,10 +1088,12 @@ class TestDailyCostTrackingExtended:
     @pytest.mark.asyncio
     async def test_redis_error_handled(self, optimizer, ha_client, redis_mock):
         """Redis-Fehler beim Speichern wird abgefangen."""
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "sensor.verbrauch", "state": "450"},
-            {"entity_id": "sensor.strompreis", "state": "28.5"},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.verbrauch", "state": "450"},
+                {"entity_id": "sensor.strompreis", "state": "28.5"},
+            ]
+        )
         redis_mock.setex = AsyncMock(side_effect=Exception("redis connection lost"))
         # Should not raise
         await optimizer.track_daily_cost()

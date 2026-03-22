@@ -22,8 +22,8 @@ class WorkshopLibrary:
     """Workshop-RAG: Eigene ChromaDB-Collection fuer technische Fachbuecher."""
 
     COLLECTION_NAME = "workshop_library"
-    CHUNK_SIZE = 1500      # Zeichen pro Chunk
-    CHUNK_OVERLAP = 200    # Ueberlappung
+    CHUNK_SIZE = 1500  # Zeichen pro Chunk
+    CHUNK_OVERLAP = 200  # Ueberlappung
 
     def __init__(self):
         self.chroma_client = None
@@ -78,7 +78,9 @@ class WorkshopLibrary:
         if path.suffix.lower() == ".pdf":
             text = await self._extract_pdf(path)
         else:
-            text = await asyncio.to_thread(path.read_text, encoding="utf-8", errors="replace")
+            text = await asyncio.to_thread(
+                path.read_text, encoding="utf-8", errors="replace"
+            )
 
         if not text.strip():
             return {"status": "error", "message": "Dokument ist leer"}
@@ -99,12 +101,17 @@ class WorkshopLibrary:
             )
             await asyncio.to_thread(
                 self.collection.upsert,
-                ids=ids, documents=chunks, metadatas=metadatas, embeddings=list(embeddings),
+                ids=ids,
+                documents=chunks,
+                metadatas=metadatas,
+                embeddings=list(embeddings),
             )
         else:
             await asyncio.to_thread(
                 self.collection.upsert,
-                ids=ids, documents=chunks, metadatas=metadatas,
+                ids=ids,
+                documents=chunks,
+                metadatas=metadatas,
             )
 
         _total = await asyncio.to_thread(self.collection.count)
@@ -144,33 +151,40 @@ class WorkshopLibrary:
         for i, doc in enumerate(docs):
             meta = metas[i] if i < len(metas) else {}
             dist = dists[i] if i < len(dists) else 0
-            formatted.append({
-                "content": doc,
-                "source": meta.get("source", ""),
-                "chunk": meta.get("chunk", 0),
-                "relevance": round(1 - dist, 3),
-            })
+            formatted.append(
+                {
+                    "content": doc,
+                    "source": meta.get("source", ""),
+                    "chunk": meta.get("chunk", 0),
+                    "relevance": round(1 - dist, 3),
+                }
+            )
         return formatted
 
     async def list_documents(self) -> list:
         """Listet alle Dokumente in der Library."""
+
         def _list_sync():
             files = []
             if not WORKSHOP_DOCS_DIR.exists():
                 return files
             for f in WORKSHOP_DOCS_DIR.iterdir():
                 if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS:
-                    files.append({
-                        "name": f.name,
-                        "size_mb": round(f.stat().st_size / 1024 / 1024, 2),
-                    })
+                    files.append(
+                        {
+                            "name": f.name,
+                            "size_mb": round(f.stat().st_size / 1024 / 1024, 2),
+                        }
+                    )
             return files
 
         return await asyncio.to_thread(_list_sync)
 
     async def get_stats(self) -> dict:
         """Gibt Statistiken der Workshop-Library zurueck."""
-        count = (await asyncio.to_thread(self.collection.count)) if self.collection else 0
+        count = (
+            (await asyncio.to_thread(self.collection.count)) if self.collection else 0
+        )
         docs = await self.list_documents()
         return {
             "total_chunks": count,
@@ -192,10 +206,12 @@ class WorkshopLibrary:
 
     async def _extract_pdf(self, path: Path) -> str:
         """Extrahiert Text aus PDF (Pattern: knowledge_base.py)."""
+
         def _extract_sync():
             # 1. PyMuPDF (fitz)
             try:
                 import fitz  # PyMuPDF
+
                 doc = fitz.open(str(path))
                 pages = []
                 for page in doc:
@@ -203,7 +219,9 @@ class WorkshopLibrary:
                 doc.close()
                 text = "\n\n".join(pages)
                 if text.strip():
-                    logger.info("PDF gelesen via PyMuPDF: %s (%d Seiten)", path.name, len(pages))
+                    logger.info(
+                        "PDF gelesen via PyMuPDF: %s (%d Seiten)", path.name, len(pages)
+                    )
                     return text
             except ImportError:
                 pass
@@ -213,6 +231,7 @@ class WorkshopLibrary:
             # 2. pdfplumber
             try:
                 import pdfplumber
+
                 pages = []
                 with pdfplumber.open(path) as pdf:
                     for page in pdf.pages:
@@ -221,7 +240,11 @@ class WorkshopLibrary:
                             pages.append(page_text)
                 text = "\n\n".join(pages)
                 if text.strip():
-                    logger.info("PDF gelesen via pdfplumber: %s (%d Seiten)", path.name, len(pages))
+                    logger.info(
+                        "PDF gelesen via pdfplumber: %s (%d Seiten)",
+                        path.name,
+                        len(pages),
+                    )
                     return text
             except ImportError:
                 pass
@@ -231,6 +254,7 @@ class WorkshopLibrary:
             # 3. PyPDF2
             try:
                 from PyPDF2 import PdfReader
+
                 reader = PdfReader(str(path))
                 pages = []
                 for page in reader.pages:
@@ -239,7 +263,9 @@ class WorkshopLibrary:
                         pages.append(page_text)
                 text = "\n\n".join(pages)
                 if text.strip():
-                    logger.info("PDF gelesen via PyPDF2: %s (%d Seiten)", path.name, len(pages))
+                    logger.info(
+                        "PDF gelesen via PyPDF2: %s (%d Seiten)", path.name, len(pages)
+                    )
                     return text
             except ImportError:
                 pass

@@ -35,28 +35,38 @@ def humanizer():
 
 class TestHumanizeQueryResultDispatch:
     def test_dispatches_to_weather(self, humanizer):
-        with patch.object(humanizer, "_humanize_weather", return_value="Wetter OK") as mock:
+        with patch.object(
+            humanizer, "_humanize_weather", return_value="Wetter OK"
+        ) as mock:
             result = humanizer._humanize_query_result("get_weather", "raw")
             mock.assert_called_once_with("raw")
             assert result == "Wetter OK"
 
     def test_dispatches_to_calendar(self, humanizer):
-        with patch.object(humanizer, "_humanize_calendar", return_value="Termine OK") as mock:
+        with patch.object(
+            humanizer, "_humanize_calendar", return_value="Termine OK"
+        ) as mock:
             result = humanizer._humanize_query_result("get_calendar_events", "raw")
             mock.assert_called_once()
 
     def test_dispatches_to_entity_state(self, humanizer):
-        with patch.object(humanizer, "_humanize_entity_state", return_value="OK") as mock:
+        with patch.object(
+            humanizer, "_humanize_entity_state", return_value="OK"
+        ) as mock:
             result = humanizer._humanize_query_result("get_entity_state", "raw")
             mock.assert_called_once()
 
     def test_dispatches_to_room_climate(self, humanizer):
-        with patch.object(humanizer, "_humanize_room_climate", return_value="OK") as mock:
+        with patch.object(
+            humanizer, "_humanize_room_climate", return_value="OK"
+        ) as mock:
             result = humanizer._humanize_query_result("get_room_climate", "raw")
             mock.assert_called_once()
 
     def test_dispatches_to_house_status(self, humanizer):
-        with patch.object(humanizer, "_humanize_house_status", return_value="OK") as mock:
+        with patch.object(
+            humanizer, "_humanize_house_status", return_value="OK"
+        ) as mock:
             result = humanizer._humanize_query_result("get_house_status", "raw")
             mock.assert_called_once()
 
@@ -87,7 +97,9 @@ class TestHumanizeQueryResultDispatch:
             mock.assert_called_once()
 
     def test_dispatches_to_climate_list(self, humanizer):
-        with patch.object(humanizer, "_humanize_climate_list", return_value="OK") as mock:
+        with patch.object(
+            humanizer, "_humanize_climate_list", return_value="OK"
+        ) as mock:
             humanizer._humanize_query_result("get_climate", "raw")
             mock.assert_called_once()
 
@@ -96,7 +108,9 @@ class TestHumanizeQueryResultDispatch:
         assert result == "raw data"
 
     def test_exception_returns_raw(self, humanizer):
-        with patch.object(humanizer, "_humanize_weather", side_effect=ValueError("fail")):
+        with patch.object(
+            humanizer, "_humanize_weather", side_effect=ValueError("fail")
+        ):
             result = humanizer._humanize_query_result("get_weather", "raw data")
             assert result == "raw data"
 
@@ -288,24 +302,30 @@ class TestHumanizeHouseStatus:
             assert "ruhig" in result
 
     def test_presence_normal(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Zuhause: Max"
             result = humanizer._humanize_house_status(raw)
             assert "Max ist zuhause" in result
 
     def test_presence_kompakt(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "kompakt"}}
             raw = "Zuhause: Max, Anna"
             result = humanizer._humanize_house_status(raw)
             assert "2 Personen" in result
 
     def test_temperatures_normal(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Temperaturen: Wohnzimmer 21°C (Soll 22°C)"
             result = humanizer._humanize_house_status(raw)
@@ -313,104 +333,130 @@ class TestHumanizeHouseStatus:
             assert "Soll" not in result
 
     def test_temperatures_kompakt(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "kompakt"}}
             raw = "Temperaturen: Wohnzimmer 21°C"
             result = humanizer._humanize_house_status(raw)
             assert "21°C" in result
 
     def test_lights_normal(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Lichter an: Wohnzimmer, Kueche"
             result = humanizer._humanize_house_status(raw)
             assert "Lichter an" in result
 
     def test_lights_kompakt(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "kompakt"}}
             raw = "Lichter an: Wohnzimmer, Kueche"
             result = humanizer._humanize_house_status(raw)
             assert "2 Lichter" in result
 
     def test_lights_many_normal(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Lichter an: L1, L2, L3, L4, L5"
             result = humanizer._humanize_house_status(raw)
             assert "5 Lichter" in result
 
     def test_all_lights_off(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Alle Lichter aus"
             result = humanizer._humanize_house_status(raw)
             assert "Alle Lichter aus" in result
 
     def test_security(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Sicherheit: armed_home"
             result = humanizer._humanize_house_status(raw)
             assert "Alarmanlage aktiv" in result
 
     def test_weather(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Wetter: 20°C, sonnig"
             result = humanizer._humanize_house_status(raw)
             assert "Draussen" in result
 
     def test_weather_kompakt(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "kompakt"}}
             raw = "Wetter: 20°C, sonnig"
             result = humanizer._humanize_house_status(raw)
             assert "20°C" in result
 
     def test_media(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Medien aktiv: Spotify im Wohnzimmer"
             result = humanizer._humanize_house_status(raw)
             assert "Medien" in result
 
     def test_open_items(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Offen: Fenster Kueche"
             result = humanizer._humanize_house_status(raw)
             assert "Offen" in result
 
     def test_offline_kompakt(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "kompakt"}}
             raw = "Offline (3)"
             result = humanizer._humanize_house_status(raw)
             assert "3 Geraete offline" in result
 
     def test_unterwegs_not_in_kompakt(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "kompakt"}}
             raw = "Unterwegs: Anna"
             result = humanizer._humanize_house_status(raw)
             assert "Anna" not in result
 
     def test_ausfuehrlich(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "ausfuehrlich"}}
             raw = "Lichter an: Wohnzimmer: 80%, Kueche: 100%"
             result = humanizer._humanize_house_status(raw)
@@ -674,7 +720,9 @@ class TestFormatDeltaContext:
         assert "off → on" in result
 
     def test_change_with_room(self, humanizer):
-        changes = [{"entity": "Licht", "old_state": "off", "new_state": "on", "room": "Kueche"}]
+        changes = [
+            {"entity": "Licht", "old_state": "off", "new_state": "on", "room": "Kueche"}
+        ]
         result = humanizer.format_delta_context(changes)
         assert "(Kueche)" in result
 
@@ -717,7 +765,12 @@ class TestHumanizeDeviceCommand:
 
     def test_single_light_on(self, humanizer):
         with patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
-            executed = [{"function": "set_light", "args": {"room": "wohnzimmer", "action": "on"}}]
+            executed = [
+                {
+                    "function": "set_light",
+                    "args": {"room": "wohnzimmer", "action": "on"},
+                }
+            ]
             result = humanizer._humanize_device_command("Licht an", executed)
         assert "licht" in result.lower()
         assert "eingeschaltet" in result.lower()
@@ -726,8 +779,14 @@ class TestHumanizeDeviceCommand:
     def test_multiple_actions(self, humanizer):
         with patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
             executed = [
-                {"function": "set_light", "args": {"room": "wohnzimmer", "action": "off"}},
-                {"function": "set_cover", "args": {"room": "schlafzimmer", "action": "close"}},
+                {
+                    "function": "set_light",
+                    "args": {"room": "wohnzimmer", "action": "off"},
+                },
+                {
+                    "function": "set_cover",
+                    "args": {"room": "schlafzimmer", "action": "close"},
+                },
             ]
             result = humanizer._humanize_device_command("Gute Nacht", executed)
         assert "ausgeschaltet" in result
@@ -736,7 +795,10 @@ class TestHumanizeDeviceCommand:
     def test_three_actions_uses_comma(self, humanizer):
         with patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
             executed = [
-                {"function": "set_light", "args": {"room": "wohnzimmer", "action": "off"}},
+                {
+                    "function": "set_light",
+                    "args": {"room": "wohnzimmer", "action": "off"},
+                },
                 {"function": "set_cover", "args": {"room": "all", "action": "close"}},
                 {"function": "set_switch", "args": {"room": "kueche", "action": "off"}},
             ]
@@ -745,7 +807,9 @@ class TestHumanizeDeviceCommand:
 
     def test_unknown_function_skipped(self, humanizer):
         with patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
-            executed = [{"function": "unknown_func", "args": {"room": "", "action": ""}}]
+            executed = [
+                {"function": "unknown_func", "args": {"room": "", "action": ""}}
+            ]
             result = humanizer._humanize_device_command("Test", executed)
         assert "Erledigt" in result
 
@@ -762,7 +826,9 @@ class TestHumanizeDeviceCommand:
 
 class TestDescribeAction:
     def test_cover_close(self):
-        result = BrainHumanizersMixin._describe_action("set_cover", "close", "wohnzimmer")
+        result = BrainHumanizersMixin._describe_action(
+            "set_cover", "close", "wohnzimmer"
+        )
         assert "heruntergefahren" in result
         assert "Wohnzimmer" in result
 
@@ -797,7 +863,9 @@ class TestDescribeAction:
         assert "überall" in result
 
     def test_climate_special_case(self):
-        result = BrainHumanizersMixin._describe_action("set_climate", "heat", "wohnzimmer")
+        result = BrainHumanizersMixin._describe_action(
+            "set_climate", "heat", "wohnzimmer"
+        )
         assert "Heizung" in result
         assert "angepasst" in result
 
@@ -815,24 +883,30 @@ class TestDescribeAction:
 
 class TestHumanizeHouseStatusExtended:
     def test_security_triggered(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Sicherheit: triggered"
             result = humanizer._humanize_house_status(raw)
             assert "ALARM AUSGELOEST" in result
 
     def test_security_disarmed(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Sicherheit: disarmed"
             result = humanizer._humanize_house_status(raw)
             assert "Alarmanlage aus" in result
 
     def test_security_unknown_is_empty(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Sicherheit: unknown"
             result = humanizer._humanize_house_status(raw)
@@ -840,32 +914,40 @@ class TestHumanizeHouseStatusExtended:
             assert "ruhig" in result
 
     def test_multiple_persons_zuhause(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Zuhause: Max, Anna, Tom"
             result = humanizer._humanize_house_status(raw)
             assert "sind zuhause" in result
 
     def test_unterwegs_normal_shown(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Unterwegs: Anna"
             result = humanizer._humanize_house_status(raw)
             assert "Anna unterwegs" in result
 
     def test_open_items_kompakt(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "kompakt"}}
             raw = "Offen: Fenster Kueche, Tuer Flur"
             result = humanizer._humanize_house_status(raw)
             assert "2 offen" in result
 
     def test_media_kompakt(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "kompakt"}}
             raw = "Medien aktiv: Spotify im Wohnzimmer"
             result = humanizer._humanize_house_status(raw)
@@ -874,16 +956,20 @@ class TestHumanizeHouseStatusExtended:
             assert "Spotify" not in result
 
     def test_offline_normal(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Offline (3)"
             result = humanizer._humanize_house_status(raw)
             assert "Offline (3)" in result
 
     def test_combined_status(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Zuhause: Max\nLichter an: Wohnzimmer\nWetter: 18°C, sonnig"
             result = humanizer._humanize_house_status(raw)
@@ -892,8 +978,10 @@ class TestHumanizeHouseStatusExtended:
             assert "Draussen" in result
 
     def test_temperatures_ausfuehrlich(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "ausfuehrlich"}}
             raw = "Temperaturen: Wohnzimmer 21°C (Soll 22°C)"
             result = humanizer._humanize_house_status(raw)
@@ -901,16 +989,20 @@ class TestHumanizeHouseStatusExtended:
             assert "Soll 22°C" in result
 
     def test_weather_normal_format(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "normal"}}
             raw = "Wetter: 15°C, bewoelkt"
             result = humanizer._humanize_house_status(raw)
             assert "Draussen: 15°C, bewoelkt" in result
 
     def test_weather_kompakt_no_temp_match(self, humanizer):
-        with patch("assistant.brain_humanizers.cfg") as mock_cfg, \
-             patch("assistant.brain_humanizers.get_person_title", return_value="Sir"):
+        with (
+            patch("assistant.brain_humanizers.cfg") as mock_cfg,
+            patch("assistant.brain_humanizers.get_person_title", return_value="Sir"),
+        ):
             mock_cfg.yaml_config = {"house_status": {"detail_level": "kompakt"}}
             raw = "Wetter: bewoelkt"
             result = humanizer._humanize_house_status(raw)

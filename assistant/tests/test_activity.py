@@ -220,31 +220,59 @@ class TestClassify:
         assert activity == SLEEPING
 
     def test_in_call_over_watching(self, engine):
-        signals = {"away": False, "sleeping": False, "in_call": True, "media_playing": "media_player.wohnzimmer"}
+        signals = {
+            "away": False,
+            "sleeping": False,
+            "in_call": True,
+            "media_playing": "media_player.wohnzimmer",
+        }
         activity, _ = engine._classify(signals)
         assert activity == IN_CALL
 
     def test_watching_over_guests(self, engine):
-        signals = {"away": False, "sleeping": False, "in_call": False,
-                   "media_playing": "media_player.wohnzimmer", "guests": True}
+        signals = {
+            "away": False,
+            "sleeping": False,
+            "in_call": False,
+            "media_playing": "media_player.wohnzimmer",
+            "guests": True,
+        }
         activity, _ = engine._classify(signals)
         assert activity == WATCHING
 
     def test_guests_over_focused(self, engine):
-        signals = {"away": False, "sleeping": False, "in_call": False,
-                   "media_playing": "", "guests": True, "pc_active": True}
+        signals = {
+            "away": False,
+            "sleeping": False,
+            "in_call": False,
+            "media_playing": "",
+            "guests": True,
+            "pc_active": True,
+        }
         activity, _ = engine._classify(signals)
         assert activity == GUESTS
 
     def test_focused_from_pc(self, engine):
-        signals = {"away": False, "sleeping": False, "in_call": False,
-                   "media_playing": "", "guests": False, "pc_active": True}
+        signals = {
+            "away": False,
+            "sleeping": False,
+            "in_call": False,
+            "media_playing": "",
+            "guests": False,
+            "pc_active": True,
+        }
         activity, _ = engine._classify(signals)
         assert activity == FOCUSED
 
     def test_relaxing_default(self, engine):
-        signals = {"away": False, "sleeping": False, "in_call": False,
-                   "media_playing": "", "guests": False, "pc_active": False}
+        signals = {
+            "away": False,
+            "sleeping": False,
+            "in_call": False,
+            "media_playing": "",
+            "guests": False,
+            "pc_active": False,
+        }
         activity, _ = engine._classify(signals)
         assert activity == RELAXING
 
@@ -270,37 +298,45 @@ class TestDetectActivity:
     @pytest.mark.asyncio
     async def test_detect_relaxing(self, engine, ha_mock):
         """Standard: Relaxing wenn keine besonderen Signale."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "person.max", "state": "home"},
-            {"entity_id": "light.wohnzimmer", "state": "on"},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "person.max", "state": "home"},
+                {"entity_id": "light.wohnzimmer", "state": "on"},
+            ]
+        )
         result = await engine.detect_activity()
         assert result["activity"] == RELAXING
 
     @pytest.mark.asyncio
     async def test_detect_away(self, engine, ha_mock):
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "person.max", "state": "not_home"},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "person.max", "state": "not_home"},
+            ]
+        )
         result = await engine.detect_activity()
         assert result["activity"] == AWAY
 
     @pytest.mark.asyncio
     async def test_detect_in_call(self, engine, ha_mock):
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "person.max", "state": "home"},
-            {"entity_id": "binary_sensor.mic_active", "state": "on"},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "person.max", "state": "home"},
+                {"entity_id": "binary_sensor.mic_active", "state": "on"},
+            ]
+        )
         result = await engine.detect_activity()
         assert result["activity"] == IN_CALL
 
     @pytest.mark.asyncio
     async def test_detect_watching_has_trigger(self, engine, ha_mock):
         """Bei watching muss der ausloesende Media Player im trigger stehen."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "person.max", "state": "home"},
-            {"entity_id": "media_player.wohnzimmer", "state": "playing"},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "person.max", "state": "home"},
+                {"entity_id": "media_player.wohnzimmer", "state": "playing"},
+            ]
+        )
         result = await engine.detect_activity()
         assert result["activity"] == WATCHING
         assert result["trigger"] == "media_player.wohnzimmer"
@@ -308,9 +344,11 @@ class TestDetectActivity:
     @pytest.mark.asyncio
     async def test_detect_relaxing_has_no_trigger(self, engine, ha_mock):
         """Bei relaxing ist trigger leer."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "person.max", "state": "home"},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "person.max", "state": "home"},
+            ]
+        )
         result = await engine.detect_activity()
         assert result["activity"] == RELAXING
         assert result["trigger"] == ""
@@ -343,10 +381,14 @@ class TestManualOverride:
     @pytest.mark.asyncio
     async def test_override_expires(self, engine, ha_mock):
         engine.set_manual_override(WATCHING, duration_minutes=1)
-        engine._override_until = datetime.now(timezone.utc) - timedelta(minutes=5)  # Abgelaufen
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "person.max", "state": "home"},
-        ])
+        engine._override_until = datetime.now(timezone.utc) - timedelta(
+            minutes=5
+        )  # Abgelaufen
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "person.max", "state": "home"},
+            ]
+        )
         result = await engine.detect_activity()
         assert result["activity"] != WATCHING  # Override abgelaufen
 
@@ -489,9 +531,11 @@ class TestShouldDeliver:
 
     @pytest.mark.asyncio
     async def test_deliver_has_all_fields(self, engine, ha_mock):
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "person.max", "state": "home"},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "person.max", "state": "home"},
+            ]
+        )
         result = await engine.should_deliver("medium")
         assert "activity" in result
         assert "delivery" in result
@@ -502,9 +546,11 @@ class TestShouldDeliver:
     @pytest.mark.asyncio
     async def test_deliver_suppress_flag(self, engine, ha_mock):
         """Suppress-Flag ist True wenn delivery == suppress."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "person.max", "state": "home"},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "person.max", "state": "home"},
+            ]
+        )
         result = await engine.should_deliver("low")
         # Relaxing + low = suppress
         assert result["suppress"] is True
@@ -520,31 +566,55 @@ class TestBuildMatrixFromConfig:
 
     def test_unknown_urgency_ignored(self):
         """Unbekannte Urgency wird ignoriert (lines 178-180)."""
-        from assistant.activity import _build_matrix_from_config, _DEFAULT_SILENCE_MATRIX, _VALID_DELIVERY_METHODS
+        from assistant.activity import (
+            _build_matrix_from_config,
+            _DEFAULT_SILENCE_MATRIX,
+            _VALID_DELIVERY_METHODS,
+        )
+
         config = {"relaxing": {"unknown_urgency": "tts_loud"}}
-        result = _build_matrix_from_config(config, _DEFAULT_SILENCE_MATRIX, validate_values=_VALID_DELIVERY_METHODS)
+        result = _build_matrix_from_config(
+            config, _DEFAULT_SILENCE_MATRIX, validate_values=_VALID_DELIVERY_METHODS
+        )
         assert "unknown_urgency" not in result.get("relaxing", {})
 
     def test_invalid_value_ignored(self):
         """Ungueltiger Wert wird ignoriert (lines 182-184)."""
-        from assistant.activity import _build_matrix_from_config, _DEFAULT_SILENCE_MATRIX, _VALID_DELIVERY_METHODS
+        from assistant.activity import (
+            _build_matrix_from_config,
+            _DEFAULT_SILENCE_MATRIX,
+            _VALID_DELIVERY_METHODS,
+        )
+
         config = {"relaxing": {"high": "invalid_method"}}
-        result = _build_matrix_from_config(config, _DEFAULT_SILENCE_MATRIX, validate_values=_VALID_DELIVERY_METHODS)
+        result = _build_matrix_from_config(
+            config, _DEFAULT_SILENCE_MATRIX, validate_values=_VALID_DELIVERY_METHODS
+        )
         # Should keep default value, not the invalid one
         assert result["relaxing"]["high"] != "invalid_method"
 
     def test_valid_override_applied(self):
         """Gueltige Werte werden uebernommen."""
-        from assistant.activity import _build_matrix_from_config, _DEFAULT_SILENCE_MATRIX, _VALID_DELIVERY_METHODS
+        from assistant.activity import (
+            _build_matrix_from_config,
+            _DEFAULT_SILENCE_MATRIX,
+            _VALID_DELIVERY_METHODS,
+        )
+
         config = {"relaxing": {"high": "tts_quiet"}}
-        result = _build_matrix_from_config(config, _DEFAULT_SILENCE_MATRIX, validate_values=_VALID_DELIVERY_METHODS)
+        result = _build_matrix_from_config(
+            config, _DEFAULT_SILENCE_MATRIX, validate_values=_VALID_DELIVERY_METHODS
+        )
         assert result["relaxing"]["high"] == "tts_quiet"
 
     def test_no_validate_values_accepts_anything(self):
         """Ohne validate_values werden alle Werte akzeptiert (Volume-Matrix)."""
         from assistant.activity import _build_matrix_from_config, _DEFAULT_VOLUME_MATRIX
+
         config = {"relaxing": {"high": 0.42}}
-        result = _build_matrix_from_config(config, _DEFAULT_VOLUME_MATRIX, validate_values=None)
+        result = _build_matrix_from_config(
+            config, _DEFAULT_VOLUME_MATRIX, validate_values=None
+        )
         assert result["relaxing"]["high"] == 0.42
 
 
@@ -649,12 +719,15 @@ class TestTTLCache:
     @pytest.mark.asyncio
     async def test_ttl_cache_returns_cached_result(self, engine, ha_mock):
         """Wiederholter Aufruf innerhalb TTL gibt Cache zurueck (line 380)."""
-        ha_mock.get_states = AsyncMock(return_value=[
-            {"entity_id": "person.max", "state": "home"},
-        ])
+        ha_mock.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "person.max", "state": "home"},
+            ]
+        )
         result1 = await engine.detect_activity()
         # Set cache as fresh
         import time
+
         engine._cache_ts = time.monotonic()
         engine._cache_ttl = 100  # long TTL
         result2 = await engine.detect_activity()
@@ -688,7 +761,9 @@ class TestVolumeNightEvening:
     def test_volume_evening_non_critical_non_high_capped(self, engine):
         """Abend (1h vor Nacht) + medium wird auf 0.5 gekappt (lines 468-469)."""
         with patch("assistant.activity.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2026, 2, 25, 21, 0)  # 21 Uhr = 1h vor 22
+            mock_dt.now.return_value = datetime(
+                2026, 2, 25, 21, 0
+            )  # 21 Uhr = 1h vor 22
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             vol = engine.get_volume_level(RELAXING, "medium")
             assert vol <= 0.5
@@ -703,9 +778,14 @@ class TestVolumeNightEvening:
 
     def test_volume_night_start_equals_end_path(self, ha_mock):
         """Wenn night_start <= night_end (ungewoehnlich): Else-Branch (line 462)."""
-        with patch("assistant.activity.yaml_config", {"activity": {
-            "thresholds": {"night_start": 2, "night_end": 7},
-        }}):
+        with patch(
+            "assistant.activity.yaml_config",
+            {
+                "activity": {
+                    "thresholds": {"night_start": 2, "night_end": 7},
+                }
+            },
+        ):
             eng = ActivityEngine(ha_mock)
         with patch("assistant.activity.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2026, 2, 25, 3, 0)  # 3 Uhr, within 2-7
@@ -725,11 +805,18 @@ class TestAutoDiscovery:
     def test_auto_discover_active_states_filter(self, engine):
         """active_states Filter: Entity mit unpassendem State wird uebersprungen (line 566)."""
         states = [
-            {"entity_id": "binary_sensor.zoom_call", "state": "off",
-             "attributes": {"friendly_name": "Zoom Call"}},
+            {
+                "entity_id": "binary_sensor.zoom_call",
+                "state": "off",
+                "attributes": {"friendly_name": "Zoom Call"},
+            },
         ]
         result = ActivityEngine._auto_discover(
-            states, ("binary_sensor.",), [], engine._MIC_RE, "Mic",
+            states,
+            ("binary_sensor.",),
+            [],
+            engine._MIC_RE,
+            "Mic",
             active_states={"on"},
         )
         assert result == ""
@@ -737,11 +824,18 @@ class TestAutoDiscovery:
     def test_auto_discover_inactive_states_filter(self, engine):
         """inactive_states Filter: Entity im inaktiven State wird uebersprungen (line 568)."""
         states = [
-            {"entity_id": "media_player.fire_tv", "state": "off",
-             "attributes": {"friendly_name": "Fire TV"}},
+            {
+                "entity_id": "media_player.fire_tv",
+                "state": "off",
+                "attributes": {"friendly_name": "Fire TV"},
+            },
         ]
         result = ActivityEngine._auto_discover(
-            states, ("media_player.",), [], engine._TV_RE, "TV",
+            states,
+            ("media_player.",),
+            [],
+            engine._TV_RE,
+            "TV",
             inactive_states={"off", "standby"},
         )
         assert result == ""
@@ -749,11 +843,18 @@ class TestAutoDiscovery:
     def test_auto_discover_finds_match(self, engine):
         """Auto-Discovery findet Entity per Pattern-Match (lines 575-579)."""
         states = [
-            {"entity_id": "media_player.fire_tv", "state": "playing",
-             "attributes": {"friendly_name": "Fire TV Stick"}},
+            {
+                "entity_id": "media_player.fire_tv",
+                "state": "playing",
+                "attributes": {"friendly_name": "Fire TV Stick"},
+            },
         ]
         result = ActivityEngine._auto_discover(
-            states, ("media_player.",), [], engine._TV_RE, "TV",
+            states,
+            ("media_player.",),
+            [],
+            engine._TV_RE,
+            "TV",
             inactive_states={"off", "standby"},
         )
         assert result == "media_player.fire_tv"
@@ -761,11 +862,18 @@ class TestAutoDiscovery:
     def test_auto_discover_match_by_friendly_name(self, engine):
         """Auto-Discovery matched auf friendly_name (line 574)."""
         states = [
-            {"entity_id": "media_player.xyz123", "state": "playing",
-             "attributes": {"friendly_name": "Samsung TV"}},
+            {
+                "entity_id": "media_player.xyz123",
+                "state": "playing",
+                "attributes": {"friendly_name": "Samsung TV"},
+            },
         ]
         result = ActivityEngine._auto_discover(
-            states, ("media_player.",), [], engine._TV_RE, "TV",
+            states,
+            ("media_player.",),
+            [],
+            engine._TV_RE,
+            "TV",
             inactive_states={"off", "standby"},
         )
         assert result == "media_player.xyz123"
@@ -773,11 +881,18 @@ class TestAutoDiscovery:
     def test_auto_discover_skips_configured(self, engine):
         """Auto-Discovery ueberspringt bereits konfigurierte Entities."""
         states = [
-            {"entity_id": "media_player.fire_tv", "state": "playing",
-             "attributes": {"friendly_name": "Fire TV"}},
+            {
+                "entity_id": "media_player.fire_tv",
+                "state": "playing",
+                "attributes": {"friendly_name": "Fire TV"},
+            },
         ]
         result = ActivityEngine._auto_discover(
-            states, ("media_player.",), ["media_player.fire_tv"], engine._TV_RE, "TV",
+            states,
+            ("media_player.",),
+            ["media_player.fire_tv"],
+            engine._TV_RE,
+            "TV",
             inactive_states={"off", "standby"},
         )
         assert result == ""
@@ -836,8 +951,11 @@ class TestPcActiveConfigured:
             eng = ActivityEngine(ha_mock)
         states = [
             {"entity_id": "binary_sensor.my_pc", "state": "off"},
-            {"entity_id": "binary_sensor.computer_xyz", "state": "on",
-             "attributes": {"friendly_name": "Computer"}},
+            {
+                "entity_id": "binary_sensor.computer_xyz",
+                "state": "on",
+                "attributes": {"friendly_name": "Computer"},
+            },
         ]
         # Configured sensor is off, auto-discovery should NOT trigger
         assert eng._check_pc_active(states) is False

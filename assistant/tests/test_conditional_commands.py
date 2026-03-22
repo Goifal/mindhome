@@ -25,6 +25,7 @@ from assistant.conditional_commands import (
 # Fixtures
 # ============================================================
 
+
 @pytest.fixture
 def cond():
     cc = ConditionalCommands()
@@ -45,8 +46,8 @@ def cond():
 # OWNER_ONLY_ACTIONS
 # ============================================================
 
-class TestOwnerOnlyActions:
 
+class TestOwnerOnlyActions:
     def test_lock_door_requires_owner(self):
         assert "lock_door" in OWNER_ONLY_ACTIONS
 
@@ -64,8 +65,8 @@ class TestOwnerOnlyActions:
 # create_conditional
 # ============================================================
 
-class TestCreateConditional:
 
+class TestCreateConditional:
     @pytest.mark.asyncio
     async def test_create_basic(self, cond):
         result = await cond.create_conditional(
@@ -173,7 +174,10 @@ class TestCreateConditional:
     async def test_compound_trigger_stored(self, cond):
         sub_triggers = [
             {"trigger_type": "state_change", "trigger_value": "sensor.regen:on"},
-            {"trigger_type": "state_change", "trigger_value": "binary_sensor.fenster:on"},
+            {
+                "trigger_type": "state_change",
+                "trigger_value": "binary_sensor.fenster:on",
+            },
         ]
         result = await cond.create_conditional(
             trigger_type="compound",
@@ -193,34 +197,55 @@ class TestCreateConditional:
 # _check_trigger_match
 # ============================================================
 
-class TestCheckTriggerMatch:
 
+class TestCheckTriggerMatch:
     def test_state_change_match(self, cond):
         conditional = {
             "trigger_type": "state_change",
             "trigger_value": "sensor.regen:on",
         }
-        assert cond._check_trigger_match(
-            conditional, "sensor.regen", "on", "off", {},
-        ) is True
+        assert (
+            cond._check_trigger_match(
+                conditional,
+                "sensor.regen",
+                "on",
+                "off",
+                {},
+            )
+            is True
+        )
 
     def test_state_change_no_match_wrong_state(self, cond):
         conditional = {
             "trigger_type": "state_change",
             "trigger_value": "sensor.regen:on",
         }
-        assert cond._check_trigger_match(
-            conditional, "sensor.regen", "off", "on", {},
-        ) is False
+        assert (
+            cond._check_trigger_match(
+                conditional,
+                "sensor.regen",
+                "off",
+                "on",
+                {},
+            )
+            is False
+        )
 
     def test_state_change_no_match_wrong_entity(self, cond):
         conditional = {
             "trigger_type": "state_change",
             "trigger_value": "sensor.regen:on",
         }
-        assert cond._check_trigger_match(
-            conditional, "sensor.wind", "on", "off", {},
-        ) is False
+        assert (
+            cond._check_trigger_match(
+                conditional,
+                "sensor.wind",
+                "on",
+                "off",
+                {},
+            )
+            is False
+        )
 
     def test_state_change_any_state(self, cond):
         """Ohne target_state matcht jeder Wechsel."""
@@ -228,9 +253,16 @@ class TestCheckTriggerMatch:
             "trigger_type": "state_change",
             "trigger_value": "sensor.regen",
         }
-        assert cond._check_trigger_match(
-            conditional, "sensor.regen", "on", "off", {},
-        ) is True
+        assert (
+            cond._check_trigger_match(
+                conditional,
+                "sensor.regen",
+                "on",
+                "off",
+                {},
+            )
+            is True
+        )
 
     def test_state_change_same_state_no_match(self, cond):
         """Kein Wechsel = kein Match bei target_state=None."""
@@ -238,45 +270,80 @@ class TestCheckTriggerMatch:
             "trigger_type": "state_change",
             "trigger_value": "sensor.regen",
         }
-        assert cond._check_trigger_match(
-            conditional, "sensor.regen", "on", "on", {},
-        ) is False
+        assert (
+            cond._check_trigger_match(
+                conditional,
+                "sensor.regen",
+                "on",
+                "on",
+                {},
+            )
+            is False
+        )
 
     def test_person_arrives_match(self, cond):
         conditional = {
             "trigger_type": "person_arrives",
             "trigger_value": "max",
         }
-        assert cond._check_trigger_match(
-            conditional, "person.max", "home", "not_home", {},
-        ) is True
+        assert (
+            cond._check_trigger_match(
+                conditional,
+                "person.max",
+                "home",
+                "not_home",
+                {},
+            )
+            is True
+        )
 
     def test_person_arrives_already_home(self, cond):
         conditional = {
             "trigger_type": "person_arrives",
             "trigger_value": "max",
         }
-        assert cond._check_trigger_match(
-            conditional, "person.max", "home", "home", {},
-        ) is False
+        assert (
+            cond._check_trigger_match(
+                conditional,
+                "person.max",
+                "home",
+                "home",
+                {},
+            )
+            is False
+        )
 
     def test_person_leaves_match(self, cond):
         conditional = {
             "trigger_type": "person_leaves",
             "trigger_value": "max",
         }
-        assert cond._check_trigger_match(
-            conditional, "person.max", "not_home", "home", {},
-        ) is True
+        assert (
+            cond._check_trigger_match(
+                conditional,
+                "person.max",
+                "not_home",
+                "home",
+                {},
+            )
+            is True
+        )
 
     def test_person_leaves_wrong_entity(self, cond):
         conditional = {
             "trigger_type": "person_leaves",
             "trigger_value": "max",
         }
-        assert cond._check_trigger_match(
-            conditional, "light.wohnzimmer", "off", "on", {},
-        ) is False
+        assert (
+            cond._check_trigger_match(
+                conditional,
+                "light.wohnzimmer",
+                "off",
+                "on",
+                {},
+            )
+            is False
+        )
 
     def test_compound_or_one_match(self, cond):
         conditional = {
@@ -287,9 +354,16 @@ class TestCheckTriggerMatch:
                 {"trigger_type": "state_change", "trigger_value": "sensor.b:on"},
             ],
         }
-        assert cond._check_trigger_match(
-            conditional, "sensor.a", "on", "off", {},
-        ) is True
+        assert (
+            cond._check_trigger_match(
+                conditional,
+                "sensor.a",
+                "on",
+                "off",
+                {},
+            )
+            is True
+        )
 
     def test_compound_or_no_match(self, cond):
         conditional = {
@@ -300,9 +374,16 @@ class TestCheckTriggerMatch:
                 {"trigger_type": "state_change", "trigger_value": "sensor.b:on"},
             ],
         }
-        assert cond._check_trigger_match(
-            conditional, "sensor.c", "on", "off", {},
-        ) is False
+        assert (
+            cond._check_trigger_match(
+                conditional,
+                "sensor.c",
+                "on",
+                "off",
+                {},
+            )
+            is False
+        )
 
     def test_compound_empty_sub_triggers(self, cond):
         conditional = {
@@ -310,17 +391,24 @@ class TestCheckTriggerMatch:
             "logic_operator": "and",
             "sub_triggers": [],
         }
-        assert cond._check_trigger_match(
-            conditional, "sensor.a", "on", "off", {},
-        ) is False
+        assert (
+            cond._check_trigger_match(
+                conditional,
+                "sensor.a",
+                "on",
+                "off",
+                {},
+            )
+            is False
+        )
 
 
 # ============================================================
 # check_event
 # ============================================================
 
-class TestCheckEvent:
 
+class TestCheckEvent:
     @pytest.mark.asyncio
     async def test_no_redis(self):
         cc = ConditionalCommands()

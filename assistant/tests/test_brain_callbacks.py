@@ -22,13 +22,15 @@ class TestBrainCallbacksMixin:
     def test_has_no_methods(self):
         """BrainCallbacksMixin has no user-defined methods (intentionally empty)."""
         own_methods = [
-            m for m in dir(BrainCallbacksMixin)
+            m
+            for m in dir(BrainCallbacksMixin)
             if not m.startswith("_") and callable(getattr(BrainCallbacksMixin, m))
         ]
         assert own_methods == []
 
     def test_can_be_used_as_mixin(self):
         """BrainCallbacksMixin works in a multi-inheritance chain."""
+
         class FakeBase:
             def some_method(self):
                 return "base"
@@ -41,6 +43,7 @@ class TestBrainCallbacksMixin:
 
     def test_mixin_in_mro(self):
         """BrainCallbacksMixin appears in MRO when used as base class."""
+
         class Child(BrainCallbacksMixin):
             pass
 
@@ -48,6 +51,7 @@ class TestBrainCallbacksMixin:
 
     def test_subclass_can_override(self):
         """Subclasses can add callback methods that get called."""
+
         class Extended(BrainCallbacksMixin):
             def on_event(self, event):
                 return f"handled: {event}"

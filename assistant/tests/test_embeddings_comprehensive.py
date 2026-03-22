@@ -131,6 +131,7 @@ class TestCosineSimilarity:
     def test_large_vectors(self):
         """Cosine similarity works with 384-dim vectors (typical embedding size)."""
         import math
+
         a = [math.sin(i) for i in range(384)]
         b = [math.cos(i) for i in range(384)]
         result = emb_mod.compute_cosine_similarity(a, b)
@@ -171,7 +172,11 @@ class TestGetEmbeddingFunction:
     def test_import_error_returns_none(self):
         """Returns None when chromadb is not installed."""
         emb_mod._embedding_fn = None
-        original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
+        original_import = (
+            __builtins__.__import__
+            if hasattr(__builtins__, "__import__")
+            else __import__
+        )
 
         def fail_chromadb(name, *args, **kwargs):
             if "chromadb" in name or "sentence_transformers" in name:
@@ -182,7 +187,10 @@ class TestGetEmbeddingFunction:
             result = emb_mod.get_embedding_function()
             assert result is None
 
-    @patch("assistant.embeddings.yaml_config", {"knowledge_base": {"embedding_model": "custom"}})
+    @patch(
+        "assistant.embeddings.yaml_config",
+        {"knowledge_base": {"embedding_model": "custom"}},
+    )
     def test_uses_configured_model_name(self):
         """Model name from config is passed to SentenceTransformerEmbeddingFunction."""
         emb_mod._embedding_fn = None
@@ -193,11 +201,14 @@ class TestGetEmbeddingFunction:
         mock_ef_module = MagicMock()
         mock_ef_module.SentenceTransformerEmbeddingFunction = mock_ef_class
 
-        with patch.dict("sys.modules", {
-            "chromadb": MagicMock(),
-            "chromadb.utils": MagicMock(),
-            "chromadb.utils.embedding_functions": mock_ef_module,
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "chromadb": MagicMock(),
+                "chromadb.utils": MagicMock(),
+                "chromadb.utils.embedding_functions": mock_ef_module,
+            },
+        ):
             result = emb_mod.get_embedding_function()
             # The function tries the import and creates the instance
             if result is not None:
@@ -238,12 +249,17 @@ class TestLoadModel:
         mock_encoder = MagicMock()
         mock_encoder.from_hparams.return_value = mock_classifier
 
-        with patch.dict("sys.modules", {
-            "torch": MagicMock(),
-            "speechbrain": MagicMock(),
-            "speechbrain.inference": MagicMock(),
-            "speechbrain.inference.speaker": MagicMock(EncoderClassifier=mock_encoder),
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "torch": MagicMock(),
+                "speechbrain": MagicMock(),
+                "speechbrain.inference": MagicMock(),
+                "speechbrain.inference.speaker": MagicMock(
+                    EncoderClassifier=mock_encoder
+                ),
+            },
+        ):
             result = ext_mod._load_model()
             assert result is mock_classifier
 
@@ -251,7 +267,11 @@ class TestLoadModel:
         ext_mod._classifier = None
         ext_mod._model_loading = False
 
-        original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
+        original_import = (
+            __builtins__.__import__
+            if hasattr(__builtins__, "__import__")
+            else __import__
+        )
 
         def fail_sb(name, *args, **kwargs):
             if "speechbrain" in name or name == "torch":
@@ -269,12 +289,17 @@ class TestLoadModel:
         mock_encoder = MagicMock()
         mock_encoder.from_hparams.side_effect = RuntimeError("corrupt model")
 
-        with patch.dict("sys.modules", {
-            "torch": MagicMock(),
-            "speechbrain": MagicMock(),
-            "speechbrain.inference": MagicMock(),
-            "speechbrain.inference.speaker": MagicMock(EncoderClassifier=mock_encoder),
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "torch": MagicMock(),
+                "speechbrain": MagicMock(),
+                "speechbrain.inference": MagicMock(),
+                "speechbrain.inference.speaker": MagicMock(
+                    EncoderClassifier=mock_encoder
+                ),
+            },
+        ):
             result = ext_mod._load_model()
             assert result is None
 
@@ -283,7 +308,11 @@ class TestLoadModel:
         ext_mod._classifier = None
         ext_mod._model_loading = False
 
-        original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
+        original_import = (
+            __builtins__.__import__
+            if hasattr(__builtins__, "__import__")
+            else __import__
+        )
 
         def fail_all(name, *args, **kwargs):
             if "speechbrain" in name or name == "torch":
@@ -339,11 +368,14 @@ class TestExtractEmbedding:
         mock_classifier.encode_batch.return_value = mock_embedding
 
         with patch.object(ext_mod, "_load_model", return_value=mock_classifier):
-            with patch.dict("sys.modules", {
-                "torch": mock_torch,
-                "torchaudio": mock_torchaudio,
-                "torchaudio.functional": mock_torchaudio.functional,
-            }):
+            with patch.dict(
+                "sys.modules",
+                {
+                    "torch": mock_torch,
+                    "torchaudio": mock_torchaudio,
+                    "torchaudio.functional": mock_torchaudio.functional,
+                },
+            ):
                 result = ext_mod.extract_embedding(_make_pcm_b64(3200))
                 assert result is not None
                 assert len(result) == 192
@@ -365,11 +397,14 @@ class TestExtractEmbedding:
         mock_classifier.encode_batch.return_value = mock_embedding
 
         with patch.object(ext_mod, "_load_model", return_value=mock_classifier):
-            with patch.dict("sys.modules", {
-                "torch": mock_torch,
-                "torchaudio": mock_torchaudio,
-                "torchaudio.functional": mock_torchaudio.functional,
-            }):
+            with patch.dict(
+                "sys.modules",
+                {
+                    "torch": mock_torch,
+                    "torchaudio": mock_torchaudio,
+                    "torchaudio.functional": mock_torchaudio.functional,
+                },
+            ):
                 result = ext_mod.extract_embedding(_make_pcm_b64(8000))
                 assert result == expected
 
@@ -391,11 +426,14 @@ class TestExtractEmbedding:
         mock_classifier.encode_batch.return_value = mock_embedding
 
         with patch.object(ext_mod, "_load_model", return_value=mock_classifier):
-            with patch.dict("sys.modules", {
-                "torch": mock_torch,
-                "torchaudio": mock_torchaudio,
-                "torchaudio.functional": mock_torchaudio.functional,
-            }):
+            with patch.dict(
+                "sys.modules",
+                {
+                    "torch": mock_torch,
+                    "torchaudio": mock_torchaudio,
+                    "torchaudio.functional": mock_torchaudio.functional,
+                },
+            ):
                 ext_mod.extract_embedding(_make_pcm_b64(8000), sample_rate=48000)
                 mock_torchaudio.functional.resample.assert_called_once_with(
                     mock_tensor, 48000, 16000
@@ -418,11 +456,14 @@ class TestExtractEmbedding:
         mock_classifier.encode_batch.return_value = mock_embedding
 
         with patch.object(ext_mod, "_load_model", return_value=mock_classifier):
-            with patch.dict("sys.modules", {
-                "torch": mock_torch,
-                "torchaudio": mock_torchaudio,
-                "torchaudio.functional": mock_torchaudio.functional,
-            }):
+            with patch.dict(
+                "sys.modules",
+                {
+                    "torch": mock_torch,
+                    "torchaudio": mock_torchaudio,
+                    "torchaudio.functional": mock_torchaudio.functional,
+                },
+            ):
                 ext_mod.extract_embedding(_make_pcm_b64(8000), sample_rate=16000)
                 mock_torchaudio.functional.resample.assert_not_called()
 
@@ -443,11 +484,14 @@ class TestExtractEmbedding:
         mock_classifier.encode_batch.return_value = mock_embedding
 
         with patch.object(ext_mod, "_load_model", return_value=mock_classifier):
-            with patch.dict("sys.modules", {
-                "torch": mock_torch,
-                "torchaudio": mock_torchaudio,
-                "torchaudio.functional": mock_torchaudio.functional,
-            }):
+            with patch.dict(
+                "sys.modules",
+                {
+                    "torch": mock_torch,
+                    "torchaudio": mock_torchaudio,
+                    "torchaudio.functional": mock_torchaudio.functional,
+                },
+            ):
                 result = ext_mod.extract_embedding(_make_pcm_b64(8000))
                 assert result == [0.99]
 
@@ -481,11 +525,14 @@ class TestExtractEmbedding:
         audio_b64 = base64.b64encode(pcm_bytes).decode()
 
         with patch.object(ext_mod, "_load_model", return_value=mock_classifier):
-            with patch.dict("sys.modules", {
-                "torch": mock_torch,
-                "torchaudio": mock_torchaudio,
-                "torchaudio.functional": mock_torchaudio.functional,
-            }):
+            with patch.dict(
+                "sys.modules",
+                {
+                    "torch": mock_torch,
+                    "torchaudio": mock_torchaudio,
+                    "torchaudio.functional": mock_torchaudio.functional,
+                },
+            ):
                 result = ext_mod.extract_embedding(audio_b64)
                 assert result is not None
 
@@ -503,15 +550,22 @@ class TestIsAvailable:
         assert isinstance(result, bool)
 
     def test_available_when_imports_succeed(self):
-        with patch.dict("sys.modules", {
-            "speechbrain": MagicMock(),
-            "torchaudio": MagicMock(),
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "speechbrain": MagicMock(),
+                "torchaudio": MagicMock(),
+            },
+        ):
             assert ext_mod.is_available() is True
 
     def test_unavailable_when_speechbrain_missing(self):
         """When speechbrain import fails, returns False."""
-        original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
+        original_import = (
+            __builtins__.__import__
+            if hasattr(__builtins__, "__import__")
+            else __import__
+        )
 
         def fail_sb(name, *args, **kwargs):
             if name == "speechbrain":

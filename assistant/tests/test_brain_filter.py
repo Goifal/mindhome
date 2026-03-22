@@ -27,7 +27,10 @@ def _safe_create_task(coro, *, name: str = ""):
         exc = t.exception()
         if exc:
             logging.getLogger("test").error(
-                "Fire-and-forget Task %r fehlgeschlagen: %s", t.get_name(), exc, exc_info=exc
+                "Fire-and-forget Task %r fehlgeschlagen: %s",
+                t.get_name(),
+                exc,
+                exc_info=exc,
             )
 
     task.add_done_callback(_on_done)
@@ -55,7 +58,10 @@ class TestSafeCreateTask:
             task = _safe_create_task(fail_coro(), name="test_fail")
             await asyncio.sleep(0.05)
 
-        assert any("test_fail" in r.message and "test error" in r.message for r in caplog.records)
+        assert any(
+            "test_fail" in r.message and "test error" in r.message
+            for r in caplog.records
+        )
 
     @pytest.mark.asyncio
     async def test_task_name_is_set(self):
@@ -119,16 +125,19 @@ class TestBannedPhrases:
     """Banned Phrases werden case-insensitive entfernt."""
 
     _BANNED = [
-        "Natürlich!", "Gerne!", "Selbstverständlich!",
+        "Natürlich!",
+        "Gerne!",
+        "Selbstverständlich!",
         "Kann ich sonst noch etwas für dich tun?",
-        "Als KI", "Ich bin ein Sprachmodell",
+        "Als KI",
+        "Ich bin ein Sprachmodell",
     ]
 
     def _remove_banned(self, text: str) -> str:
         for phrase in self._BANNED:
             idx = text.lower().find(phrase.lower())
             while idx != -1:
-                text = text[:idx] + text[idx + len(phrase):]
+                text = text[:idx] + text[idx + len(phrase) :]
                 idx = text.lower().find(phrase.lower())
         return text.strip()
 
@@ -141,7 +150,9 @@ class TestBannedPhrases:
         assert result == "Erledigt."
 
     def test_removes_tail_question(self):
-        result = self._remove_banned("Erledigt. Kann ich sonst noch etwas für dich tun?")
+        result = self._remove_banned(
+            "Erledigt. Kann ich sonst noch etwas für dich tun?"
+        )
         assert result == "Erledigt."
 
     def test_removes_als_ki(self):
@@ -166,7 +177,7 @@ class TestBannedStarters:
     def _remove_starters(self, text: str) -> str:
         for starter in self._STARTERS:
             if text.lstrip().lower().startswith(starter.lower()):
-                text = text.lstrip()[len(starter):].lstrip()
+                text = text.lstrip()[len(starter) :].lstrip()
                 if text:
                     text = text[0].upper() + text[1:]
         return text
@@ -193,12 +204,28 @@ class TestLanguageCheck:
     """Sprach-Check: Englische Antworten werden erkannt."""
 
     _EN_MARKERS = [
-        " the ", " you ", " your ", " which ", " would ",
-        " could ", " should ", " have ", " this ", " that ",
+        " the ",
+        " you ",
+        " your ",
+        " which ",
+        " would ",
+        " could ",
+        " should ",
+        " have ",
+        " this ",
+        " that ",
     ]
     _DE_MARKERS = [
-        " der ", " die ", " das ", " ist ", " und ",
-        " nicht ", " ich ", " hab ", " dir ", " ein ",
+        " der ",
+        " die ",
+        " das ",
+        " ist ",
+        " und ",
+        " nicht ",
+        " ich ",
+        " hab ",
+        " dir ",
+        " ein ",
     ]
 
     def _is_english(self, text: str) -> bool:
@@ -214,10 +241,14 @@ class TestLanguageCheck:
         assert not self._is_english("Das Licht im Wohnzimmer ist jetzt eingeschaltet.")
 
     def test_english_text_detected(self):
-        assert self._is_english("The user would like to have the light turned on, which should be possible.")
+        assert self._is_english(
+            "The user would like to have the light turned on, which should be possible."
+        )
 
     def test_mixed_with_german_majority_passes(self):
-        assert not self._is_english("Die Temperatur ist auf 22 Grad eingestellt, das ist gut.")
+        assert not self._is_english(
+            "Die Temperatur ist auf 22 Grad eingestellt, das ist gut."
+        )
 
     def test_short_text_skipped(self):
         assert not self._is_english("Hello there")  # zu kurz
@@ -227,7 +258,9 @@ class TestLanguageCheck:
         assert not self._is_english("Natürlich, die Tür ist jetzt offen für dich.")
 
     def test_pure_english_reasoning(self):
-        assert self._is_english("The user wants to turn on the light which would require calling the service.")
+        assert self._is_english(
+            "The user wants to turn on the light which would require calling the service."
+        )
 
 
 class TestSentenceLimit:
@@ -263,15 +296,18 @@ class TestSorryRemoval:
     """'Es tut mir leid' Varianten werden entfernt."""
 
     _PATTERNS = [
-        "es tut mir leid,", "es tut mir leid.", "leider ",
-        "entschuldigung,", "tut mir leid,",
+        "es tut mir leid,",
+        "es tut mir leid.",
+        "leider ",
+        "entschuldigung,",
+        "tut mir leid,",
     ]
 
     def _remove_sorry(self, text: str) -> str:
         for pattern in self._PATTERNS:
             idx = text.lower().find(pattern)
             if idx != -1:
-                text = text[:idx] + text[idx + len(pattern):].lstrip()
+                text = text[:idx] + text[idx + len(pattern) :].lstrip()
                 if text:
                     text = text[0].upper() + text[1:]
         return text
@@ -297,8 +333,13 @@ class TestImplicitReasoning:
     """Implizites englisches Reasoning wird erkannt und deutsche Antwort extrahiert."""
 
     _REASONING_STARTERS = [
-        "Okay, the user", "The user", "Let me ", "I need to",
-        "First, I", "Hmm,", "Alright,",
+        "Okay, the user",
+        "The user",
+        "Let me ",
+        "I need to",
+        "First, I",
+        "Hmm,",
+        "Alright,",
     ]
 
     def _starts_with_reasoning(self, text: str) -> bool:

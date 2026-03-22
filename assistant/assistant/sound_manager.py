@@ -33,6 +33,7 @@ from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
 from zoneinfo import ZoneInfo
+
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # ---------------------------------------------------------------------------
@@ -43,27 +44,29 @@ _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 # Diese Normalisierung konvertiert kontextsensitiv zurueck.
 
 # "ue" → "ü": NICHT vor "ll" (aktuell, manuell, virtuell, duell etc.)
-_RE_UE_LOWER = re.compile(r'ue(?!ll)', re.IGNORECASE)
+_RE_UE_LOWER = re.compile(r"ue(?!ll)", re.IGNORECASE)
 # "ae" → "ä"
-_RE_AE_LOWER = re.compile(r'ae', re.IGNORECASE)
+_RE_AE_LOWER = re.compile(r"ae", re.IGNORECASE)
 # "oe" → "ö"
-_RE_OE_LOWER = re.compile(r'oe', re.IGNORECASE)
+_RE_OE_LOWER = re.compile(r"oe", re.IGNORECASE)
 # Geschuetzte Woerter: Enthalten ae/oe/ue die NICHT konvertiert werden duerfen
 _PROTECTED_WORDS = re.compile(
-    r'\b(?:Israel|Michael|Rafael|Raphael|Queue|Sequel|Fondue|Rescue'
-    r'|Revue|Avenue|Continue|Venue|Residue|Blue|True|Clue)\b',
+    r"\b(?:Israel|Michael|Rafael|Raphael|Queue|Sequel|Fondue|Rescue"
+    r"|Revue|Avenue|Continue|Venue|Residue|Blue|True|Clue)\b",
     re.IGNORECASE,
 )
 
 
-def _replace_preserving_case(match: re.Match, umlaut_lower: str, umlaut_upper: str) -> str:
+def _replace_preserving_case(
+    match: re.Match, umlaut_lower: str, umlaut_upper: str
+) -> str:
     """Ersetzt ae/oe/ue und erhält die Gross-/Kleinschreibung."""
     text = match.group(0)
     if text[0].isupper() and text[1].isupper():
         return umlaut_upper  # AE → Ä (Wort komplett gross)
     if text[0].isupper():
         return umlaut_upper  # Ae → Ä (Wortanfang)
-    return umlaut_lower      # ae → ä
+    return umlaut_lower  # ae → ä
 
 
 def _normalize_tts_umlauts(text: str) -> str:
@@ -98,9 +101,15 @@ def _normalize_tts_umlauts(text: str) -> str:
 # Piper spricht "Sir" mit deutscher Phonetik → "Sör" klingt korrekt englisch.
 _PHONETIC_REPLACEMENTS = re.compile(r"\b(Sir|Ma'am|Madam)\b", re.IGNORECASE)
 _PHONETIC_MAP = {
-    "sir": "Sör", "Sir": "Sör", "SIR": "SÖR",
-    "ma'am": "Mähm", "Ma'am": "Mähm", "MA'AM": "MÄHM",
-    "madam": "Mäddem", "Madam": "Mäddem", "MADAM": "MÄDDEM",
+    "sir": "Sör",
+    "Sir": "Sör",
+    "SIR": "SÖR",
+    "ma'am": "Mähm",
+    "Ma'am": "Mähm",
+    "MA'AM": "MÄHM",
+    "madam": "Mäddem",
+    "Madam": "Mäddem",
+    "MADAM": "MÄDDEM",
 }
 
 
@@ -111,9 +120,11 @@ def normalize_tts_text(text: str) -> str:
     """
     text = _normalize_tts_umlauts(text)
     text = _PHONETIC_REPLACEMENTS.sub(
-        lambda m: _PHONETIC_MAP.get(m.group(0), m.group(0)), text,
+        lambda m: _PHONETIC_MAP.get(m.group(0), m.group(0)),
+        text,
     )
     return text
+
 
 # TTS-Chime-Texte als Fallback wenn keine Soundfiles vorhanden
 # Kurze, praegnante Texte die als akustisches Signal dienen
@@ -147,11 +158,35 @@ class SoundManager:
     # Hinweis: Alexa/Echo nicht mehr ausgeschlossen — wird ueber alexa_speakers
     # Config behandelt (nutzen notify.alexa_media statt Audio-Dateien)
     _EXCLUDED_SPEAKER_PATTERNS = (
-        "tv", "fernseher", "television", "fire_tv", "firetv", "apple_tv",
-        "appletv", "chromecast", "roku", "shield", "receiver", "avr",
-        "denon", "marantz", "yamaha_receiver", "onkyo", "pioneer",
-        "soundbar", "xbox", "playstation", "ps5", "ps4", "nintendo",
-        "kodi", "plex", "emby", "jellyfin", "vlc", "mpd",
+        "tv",
+        "fernseher",
+        "television",
+        "fire_tv",
+        "firetv",
+        "apple_tv",
+        "appletv",
+        "chromecast",
+        "roku",
+        "shield",
+        "receiver",
+        "avr",
+        "denon",
+        "marantz",
+        "yamaha_receiver",
+        "onkyo",
+        "pioneer",
+        "soundbar",
+        "xbox",
+        "playstation",
+        "ps5",
+        "ps4",
+        "nintendo",
+        "kodi",
+        "plex",
+        "emby",
+        "jellyfin",
+        "vlc",
+        "mpd",
     )
 
     def __init__(self, ha_client: HomeAssistantClient):
@@ -198,7 +233,8 @@ class SoundManager:
 
         logger.info(
             "SoundManager initialisiert (enabled: %s, events: %d)",
-            self.enabled, len(self.event_sounds),
+            self.enabled,
+            len(self.event_sounds),
         )
 
     def _is_alexa_speaker(self, entity_id: str) -> bool:
@@ -222,7 +258,8 @@ class SoundManager:
         service_name = self._alexa_notify_service(speaker_entity)
         try:
             success = await self.ha.call_service(
-                "notify", service_name,
+                "notify",
+                service_name,
                 {
                     "message": text,
                     "data": {"type": "tts"},
@@ -230,7 +267,9 @@ class SoundManager:
             )
             if success:
                 logger.info(
-                    "Alexa-TTS via notify.%s: '%s'", service_name, text[:500],
+                    "Alexa-TTS via notify.%s: '%s'",
+                    service_name,
+                    text[:500],
                 )
                 return True
         except Exception as e:
@@ -287,8 +326,7 @@ class SoundManager:
         # Dict-Wachstum begrenzen: Alte Eintraege (>60s) aufraeumen
         if len(self._last_sound_time) > 50:
             self._last_sound_time = {
-                k: v for k, v in self._last_sound_time.items()
-                if now - v < 60
+                k: v for k, v in self._last_sound_time.items() if now - v < 60
             }
 
         # Volume bestimmen
@@ -305,7 +343,8 @@ class SoundManager:
         # Volume setzen
         try:
             await self.ha.call_service(
-                "media_player", "volume_set",
+                "media_player",
+                "volume_set",
                 {"entity_id": speaker_entity, "volume_level": volume},
             )
         except Exception as e:
@@ -314,17 +353,23 @@ class SoundManager:
         # 1. Versuch: Soundfile abspielen (media_player.play_media)
         sound_played = await self._play_sound_file(event, speaker_entity)
         if sound_played:
-            logger.debug("Sound '%s' als Datei abgespielt (Speaker: %s)", event, speaker_entity)
+            logger.debug(
+                "Sound '%s' als Datei abgespielt (Speaker: %s)", event, speaker_entity
+            )
             return True
 
         # 2. Fallback: TTS-Chime (nur fuer nicht-stille Events)
         if event not in self._silent_events:
             tts_played = await self._play_tts_chime(event, speaker_entity)
             if tts_played:
-                logger.debug("Sound '%s' als TTS abgespielt (Speaker: %s)", event, speaker_entity)
+                logger.debug(
+                    "Sound '%s' als TTS abgespielt (Speaker: %s)", event, speaker_entity
+                )
                 return True
 
-        logger.debug("Sound '%s' nur als Volume-Ping (Speaker: %s)", event, speaker_entity)
+        logger.debug(
+            "Sound '%s' nur als Volume-Ping (Speaker: %s)", event, speaker_entity
+        )
         return True
 
     async def _play_sound_file(self, event: str, speaker_entity: str) -> bool:
@@ -340,7 +385,8 @@ class SoundManager:
             custom_url = self.event_sounds[event]
             try:
                 success = await self.ha.call_service(
-                    "media_player", "play_media",
+                    "media_player",
+                    "play_media",
                     {
                         "entity_id": speaker_entity,
                         "media_content_id": custom_url,
@@ -357,7 +403,8 @@ class SoundManager:
             sound_url = f"{self.sound_base_url}/{event}{ext}"
             try:
                 success = await self.ha.call_service(
-                    "media_player", "play_media",
+                    "media_player",
+                    "play_media",
                     {
                         "entity_id": speaker_entity,
                         "media_content_id": sound_url,
@@ -387,7 +434,8 @@ class SoundManager:
         if tts_entity:
             try:
                 return await self.ha.call_service(
-                    "tts", "speak",
+                    "tts",
+                    "speak",
                     {
                         "entity_id": tts_entity,
                         "media_player_entity_id": speaker_entity,
@@ -399,7 +447,9 @@ class SoundManager:
 
         return False
 
-    def _get_auto_volume(self, event: str, activity: str = "", weather_condition: str = "") -> float:
+    def _get_auto_volume(
+        self, event: str, activity: str = "", weather_condition: str = ""
+    ) -> float:
         """Bestimmt die automatische Lautstaerke basierend auf Tageszeit, Event, Aktivitaet und Wetter.
 
         F-060: Beruecksichtigt Activity-State (sleeping, in_call, focused).
@@ -438,7 +488,9 @@ class SoundManager:
         if weather_condition and event not in ("alarm", "goodnight"):
             loud_weather = {"rainy", "pouring", "hail", "lightning-rainy", "windy"}
             if weather_condition.lower() in loud_weather:
-                weather_boost = yaml_config.get("sounds", {}).get("weather_volume_boost", 0.15)
+                weather_boost = yaml_config.get("sounds", {}).get(
+                    "weather_volume_boost", 0.15
+                )
                 base += weather_boost
 
         return round(min(1.0, base), 2)
@@ -450,7 +502,10 @@ class SoundManager:
         Speaker-Entities und TTS-Entities werden nicht im Sekundentakt umbenannt.
         """
         now = time.monotonic()
-        if self._states_cache and (now - self._states_cache_time) < self._states_cache_ttl:
+        if (
+            self._states_cache
+            and (now - self._states_cache_time) < self._states_cache_ttl
+        ):
             return self._states_cache
 
         states = await self.ha.get_states()
@@ -463,7 +518,7 @@ class SoundManager:
         """Holt aktuelle Wetter-Condition aus gecachten States."""
         try:
             states = await self._get_states_cached()
-            for s in (states or []):
+            for s in states or []:
                 if s.get("entity_id", "").startswith("weather."):
                     return s.get("state", "")
         except Exception as e:
@@ -502,10 +557,7 @@ class SoundManager:
         for state in states:
             entity_id = state.get("entity_id", "")
             attributes = state.get("attributes", {})
-            if (
-                room_lower in entity_id
-                and self._is_tts_speaker(entity_id, attributes)
-            ):
+            if room_lower in entity_id and self._is_tts_speaker(entity_id, attributes):
                 return entity_id
         return None
 
@@ -534,8 +586,10 @@ class SoundManager:
             if self._is_tts_speaker(entity_id, attributes):
                 logger.info("Default-Speaker automatisch erkannt: %s", entity_id)
                 return entity_id
-        logger.warning("Kein TTS-faehiger Speaker gefunden. "
-                       "Konfiguriere 'sounds.default_speaker' in settings.yaml")
+        logger.warning(
+            "Kein TTS-faehiger Speaker gefunden. "
+            "Konfiguriere 'sounds.default_speaker' in settings.yaml"
+        )
         return None
 
     async def _find_tts_entity(self) -> Optional[str]:
@@ -571,8 +625,10 @@ class SoundManager:
                 logger.info("TTS-Entity (Fallback) erkannt: %s", entity_id)
                 self._cached_tts_entity = entity_id
                 return entity_id
-        logger.warning("Keine TTS-Entity gefunden (kein tts.* Entity in HA). "
-                       "Konfiguriere 'sounds.tts_entity' in settings.yaml")
+        logger.warning(
+            "Keine TTS-Entity gefunden (kein tts.* Entity in HA). "
+            "Konfiguriere 'sounds.tts_entity' in settings.yaml"
+        )
         return None
 
     async def speak_response(
@@ -610,12 +666,14 @@ class SoundManager:
         if weather_cond:
             loud_weather = {"rainy", "pouring", "hail", "lightning-rainy", "windy"}
             if weather_cond.lower() in loud_weather:
-                weather_boost = yaml_config.get("sounds", {}).get("weather_volume_boost", 0.15)
+                weather_boost = yaml_config.get("sounds", {}).get(
+                    "weather_volume_boost", 0.15
+                )
                 volume = min(1.0, volume + weather_boost)
         old_volume = None
         try:
             states = await self._get_states_cached()
-            for s in (states or []):
+            for s in states or []:
                 if s.get("entity_id") == speaker_entity:
                     old_volume = s.get("attributes", {}).get("volume_level")
                     break
@@ -625,18 +683,19 @@ class SoundManager:
         # P06f: Pre-TTS-Filter — Meta-Begriffe entfernen bevor Text gesprochen wird
         # Sicherheitsnetz falls _filter_response etwas durchlaesst
         import re as _re
+
         _meta_leak_re = _re.compile(
-            r'\b(?:speak|tts|emit|tool_call|function_call|call_service'
-            r'|speak_response|emit_speaking|emit_action'
-            r'|set_light|set_cover|set_climate|set_switch|set_vacuum'
-            r'|play_media|activate_scene|arm_security_system'
-            r'|get_lights|get_covers|get_climate|get_switches'
-            r'|get_house_status|get_weather|get_entity_state'
-            r'|run_scene|run_script|run_automation|call_ha_service)\b',
+            r"\b(?:speak|tts|emit|tool_call|function_call|call_service"
+            r"|speak_response|emit_speaking|emit_action"
+            r"|set_light|set_cover|set_climate|set_switch|set_vacuum"
+            r"|play_media|activate_scene|arm_security_system"
+            r"|get_lights|get_covers|get_climate|get_switches"
+            r"|get_house_status|get_weather|get_entity_state"
+            r"|run_scene|run_script|run_automation|call_ha_service)\b",
             _re.IGNORECASE,
         )
-        text = _meta_leak_re.sub('', text).strip()
-        text = _re.sub(r'\s{2,}', ' ', text).strip()
+        text = _meta_leak_re.sub("", text).strip()
+        text = _re.sub(r"\s{2,}", " ", text).strip()
         if not text:
             logger.warning("Pre-TTS-Filter hat gesamten Text entfernt — Fallback")
             text = "Erledigt."
@@ -646,8 +705,8 @@ class SoundManager:
         speak_text = text
         # Sicherheitsnetz: Falls noch SSML-Tags im Text sind (z.B. aus LLM-Output),
         # komplett entfernen damit Piper sie nicht vorliest.
-        speak_text = _re.sub(r'<[^>]+>', '', speak_text).strip()
-        speak_text = _re.sub(r'\s{2,}', ' ', speak_text).strip()
+        speak_text = _re.sub(r"<[^>]+>", "", speak_text).strip()
+        speak_text = _re.sub(r"\s{2,}", " ", speak_text).strip()
         if not speak_text:
             speak_text = text
 
@@ -661,16 +720,21 @@ class SoundManager:
             alexa_text = text  # Immer den gefilterten Plaintext verwenden
             # Volume trotzdem setzen (fire-and-forget)
             if old_volume is None or abs(old_volume - volume) > 0.01:
-                task = asyncio.create_task(self.ha.call_service(
-                    "media_player", "volume_set",
-                    {"entity_id": speaker_entity, "volume_level": volume},
-                ))
+                task = asyncio.create_task(
+                    self.ha.call_service(
+                        "media_player",
+                        "volume_set",
+                        {"entity_id": speaker_entity, "volume_level": volume},
+                    )
+                )
+
                 def _log_volume_error(t):
                     if t.cancelled():
                         return
                     exc = t.exception()
                     if exc:
                         logger.debug("Alexa Volume-Set fehlgeschlagen: %s", exc)
+
                 task.add_done_callback(_log_volume_error)
             return await self._speak_via_alexa(alexa_text, speaker_entity)
 
@@ -681,18 +745,22 @@ class SoundManager:
                 # T-2: Volume-Set und TTS-Call parallel ausfuehren statt seriell.
                 # Das spart ~50-100ms (Volume-Set blockiert nicht mehr den TTS-Start).
                 tts_coro = self.ha.call_service(
-                    "tts", "speak",
+                    "tts",
+                    "speak",
                     {
                         "entity_id": tts_entity,
                         "media_player_entity_id": speaker_entity,
                         "message": speak_text,
                     },
                 )
-                needs_volume_change = old_volume is None or abs(old_volume - volume) > 0.01
+                needs_volume_change = (
+                    old_volume is None or abs(old_volume - volume) > 0.01
+                )
                 if needs_volume_change:
                     success = False
                     vol_coro = self.ha.call_service(
-                        "media_player", "volume_set",
+                        "media_player",
+                        "volume_set",
                         {"entity_id": speaker_entity, "volume_level": volume},
                     )
                     try:
@@ -701,7 +769,9 @@ class SoundManager:
                             timeout=TTS_PLAYBACK_TIMEOUT,
                         )
                     except asyncio.TimeoutError:
-                        logger.warning("TTS+Volume Timeout nach 15s fuer %s", speaker_entity)
+                        logger.warning(
+                            "TTS+Volume Timeout nach 15s fuer %s", speaker_entity
+                        )
                         success = False
                         results = None
                     if results is not None and len(results) >= 2:
@@ -718,23 +788,34 @@ class SoundManager:
                 if success:
                     logger.info(
                         "Jarvis spricht via %s auf %s (vol: %.1f)",
-                        tts_entity, speaker_entity, volume,
+                        tts_entity,
+                        speaker_entity,
+                        volume,
                     )
                     # Volume wiederherstellen nach TTS-Dauer
                     if needs_volume_change and old_volume is not None:
+
                         async def _restore_volume(eid=speaker_entity, vol=old_volume):
                             await asyncio.sleep(8)
                             try:
                                 await self.ha.call_service(
-                                    "media_player", "volume_set",
+                                    "media_player",
+                                    "volume_set",
                                     {"entity_id": eid, "volume_level": vol},
                                 )
-                                logger.debug("Volume wiederhergestellt: %s -> %.2f", eid, vol)
+                                logger.debug(
+                                    "Volume wiederhergestellt: %s -> %.2f", eid, vol
+                                )
                             except Exception as ex:
                                 logger.debug("Volume-Restore fehlgeschlagen: %s", ex)
+
                         task = asyncio.create_task(_restore_volume())
-                        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
-                        self._restore_tasks = [t for t in self._restore_tasks if not t.done()]
+                        task.add_done_callback(
+                            lambda t: t.exception() if not t.cancelled() else None
+                        )
+                        self._restore_tasks = [
+                            t for t in self._restore_tasks if not t.done()
+                        ]
                         self._restore_tasks.append(task)
                     return True
             except Exception as e:
@@ -753,8 +834,11 @@ class SoundManager:
             done, not_done = await asyncio.wait(pending, timeout=12)
             for t in not_done:
                 t.cancel()
-            logger.info("Volume-Restore Cleanup abgeschlossen (%d fertig, %d abgebrochen)",
-                        len(done), len(not_done))
+            logger.info(
+                "Volume-Restore Cleanup abgeschlossen (%d fertig, %d abgebrochen)",
+                len(done),
+                len(not_done),
+            )
         self._restore_tasks.clear()
 
     def get_sound_info(self) -> dict:

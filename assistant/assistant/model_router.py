@@ -44,12 +44,12 @@ class ModelRouter:
 
         # D1: Task-aware Temperature — Temperatur je nach Aufgabentyp
         self._task_temperatures = {
-            "command": 0.3,       # Geraetesteuerung: deterministisch
-            "factual": 0.4,       # Fakten-Fragen: wenig Kreativitaet
+            "command": 0.3,  # Geraetesteuerung: deterministisch
+            "factual": 0.4,  # Fakten-Fragen: wenig Kreativitaet
             "conversation": 0.7,  # Gespraech: natuerlich, variabel
-            "creative": 0.8,      # Kreative Aufgaben: mehr Freiheit
-            "analysis": 0.5,      # Analyse/Diagnose: balanciert
-            "default": 0.6,       # Standard
+            "creative": 0.8,  # Kreative Aufgaben: mehr Freiheit
+            "analysis": 0.5,  # Analyse/Diagnose: balanciert
+            "default": 0.6,  # Standard
         }
 
         # Phase 2C: Latenz-Feedback
@@ -60,18 +60,26 @@ class ModelRouter:
         }
         self._deep_degraded = False
         self._smart_degraded = False
-        self._smart_degraded_since: float = 0.0  # Timestamp wann Smart zuletzt degradiert wurde
-        self._smart_probe_interval: float = 300.0  # Alle 5 Min eine Probe-Anfrage durchlassen
+        self._smart_degraded_since: float = (
+            0.0  # Timestamp wann Smart zuletzt degradiert wurde
+        )
+        self._smart_probe_interval: float = (
+            300.0  # Alle 5 Min eine Probe-Anfrage durchlassen
+        )
         _router_cfg = yaml_config.get("model_router", {})
         self._latency_feedback_enabled = _router_cfg.get("latency_feedback", True)
-        self._deep_degradation_threshold = _router_cfg.get("deep_degradation_threshold_s", 8.0)
+        self._deep_degradation_threshold = _router_cfg.get(
+            "deep_degradation_threshold_s", 8.0
+        )
         # Per-Tier Timing-Targets (Sekunden) — Warn-Level bei Ueberschreitung
         self._tier_targets = {
             "fast": _router_cfg.get("target_fast_s", 0.5),
             "smart": _router_cfg.get("target_smart_s", 2.0),
             "deep": _router_cfg.get("target_deep_s", 5.0),
         }
-        self._smart_degradation_threshold = _router_cfg.get("smart_degradation_threshold_s", 4.0)
+        self._smart_degradation_threshold = _router_cfg.get(
+            "smart_degradation_threshold_s", 4.0
+        )
 
         # Keywords und Config laden
         self._load_config()
@@ -79,6 +87,7 @@ class ModelRouter:
     def _load_config(self):
         """Laedt Keywords und Enabled-Status aus yaml_config."""
         from .config import yaml_config as cfg
+
         models_config = cfg.get("models", {})
 
         # Enabled-Status
@@ -88,36 +97,90 @@ class ModelRouter:
         self._deep_enabled = enabled.get("deep", True)
 
         # Keywords
-        self.fast_keywords = models_config.get("fast_keywords", [
-            "licht", "lampe", "temperatur", "heizung", "rollladen",
-            "jalousie", "szene", "alarm", "tuer",
-            "musik", "pause", "stopp", "stop",
-            "leiser", "lauter", "an", "aus", "schalte", "mach",
-        ])
+        self.fast_keywords = models_config.get(
+            "fast_keywords",
+            [
+                "licht",
+                "lampe",
+                "temperatur",
+                "heizung",
+                "rollladen",
+                "jalousie",
+                "szene",
+                "alarm",
+                "tuer",
+                "musik",
+                "pause",
+                "stopp",
+                "stop",
+                "leiser",
+                "lauter",
+                "an",
+                "aus",
+                "schalte",
+                "mach",
+            ],
+        )
         # Greetings/Smalltalk gehoeren NICHT ins Fast-Routing — sie brauchen
         # das Smart-Modell fuer JARVIS-Persoenlichkeit.
         # "guten morgen", "gute nacht" entfernt (jetzt ans LLM statt Shortcut).
 
-        self.deep_keywords = models_config.get("deep_keywords", [
-            "erklaer", "erklaere", "warum genau", "im detail",
-            "analysiere", "analyse", "vergleich", "vergleiche",
-            "unterschied zwischen", "vor- und nachteile",
-            "strategie", "plan", "plane", "planung",
-            "optimier", "optimiere", "optimierung",
-            "was waere wenn", "was wäre wenn", "hypothetisch",
-            "stell dir vor", "angenommen",
-            "zusammenfassung", "zusammenfassen", "fasse zusammen",
-            "berechne", "berechnung", "kalkulation",
-            "wie funktioniert", "wie genau",
-            "schreib mir", "schreibe mir", "formuliere",
-            "rezept", "anleitung", "tutorial",
-            "pro und contra", "bewerte", "bewertung",
-        ])
+        self.deep_keywords = models_config.get(
+            "deep_keywords",
+            [
+                "erklaer",
+                "erklaere",
+                "warum genau",
+                "im detail",
+                "analysiere",
+                "analyse",
+                "vergleich",
+                "vergleiche",
+                "unterschied zwischen",
+                "vor- und nachteile",
+                "strategie",
+                "plan",
+                "plane",
+                "planung",
+                "optimier",
+                "optimiere",
+                "optimierung",
+                "was waere wenn",
+                "was wäre wenn",
+                "hypothetisch",
+                "stell dir vor",
+                "angenommen",
+                "zusammenfassung",
+                "zusammenfassen",
+                "fasse zusammen",
+                "berechne",
+                "berechnung",
+                "kalkulation",
+                "wie funktioniert",
+                "wie genau",
+                "schreib mir",
+                "schreibe mir",
+                "formuliere",
+                "rezept",
+                "anleitung",
+                "tutorial",
+                "pro und contra",
+                "bewerte",
+                "bewertung",
+            ],
+        )
 
-        self.cooking_keywords = models_config.get("cooking_keywords", [
-            "kochen", "backen", "rezept", "zubereiten",
-            "braten", "grillen",
-        ])
+        self.cooking_keywords = models_config.get(
+            "cooking_keywords",
+            [
+                "kochen",
+                "backen",
+                "rezept",
+                "zubereiten",
+                "braten",
+                "grillen",
+            ],
+        )
 
         self.deep_min_words = models_config.get("deep_min_words", 15)
 
@@ -135,6 +198,7 @@ class ModelRouter:
 
         # Modellnamen aus settings neu laden (config.py aktualisiert settings)
         from .config import settings as cfg
+
         self.model_fast = cfg.model_fast
         self.model_smart = cfg.model_smart
         self.model_deep = cfg.model_deep
@@ -189,8 +253,7 @@ class ModelRouter:
             if not self._deep_enabled:
                 reason.append("deaktiviert")
             logger.info(
-                "Deep-Modell '%s' nicht verfuegbar (%s). "
-                "Deep-Anfragen → '%s'.",
+                "Deep-Modell '%s' nicht verfuegbar (%s). Deep-Anfragen → '%s'.",
                 self.model_deep,
                 ", ".join(reason),
                 self.model_smart if self._smart_available else self.model_fast,
@@ -203,9 +266,10 @@ class ModelRouter:
             if not self._smart_enabled:
                 reason.append("deaktiviert")
             logger.info(
-                "Smart-Modell '%s' nicht verfuegbar (%s). "
-                "Alle Anfragen → '%s'.",
-                self.model_smart, ", ".join(reason), self.model_fast,
+                "Smart-Modell '%s' nicht verfuegbar (%s). Alle Anfragen → '%s'.",
+                self.model_smart,
+                ", ".join(reason),
+                self.model_fast,
             )
 
         logger.info(
@@ -258,7 +322,7 @@ class ModelRouter:
         """
         if len(keyword) <= 3:
             # Word-Boundary-Match fuer kurze Keywords
-            return bool(re.search(r'\b' + re.escape(keyword) + r'\b', text))
+            return bool(re.search(r"\b" + re.escape(keyword) + r"\b", text))
         return keyword in text
 
     def get_tier_for_model(self, model: str) -> str:
@@ -305,34 +369,62 @@ class ModelRouter:
             if self._word_match(keyword, text_lower):
                 if self._deep_degraded:
                     model = self._cap_model(self.model_smart)
-                    logger.debug("DEEP→SMART (degradiert) fuer: '%s' (keyword: %s)", text, keyword)
+                    logger.debug(
+                        "DEEP→SMART (degradiert) fuer: '%s' (keyword: %s)",
+                        text,
+                        keyword,
+                    )
                     return model, "smart", False
                 model = self._cap_model(self.model_deep)
-                logger.debug("DEEP model fuer: '%s' (keyword: %s, actual: %s)",
-                             text, keyword, model)
+                logger.debug(
+                    "DEEP model fuer: '%s' (keyword: %s, actual: %s)",
+                    text,
+                    keyword,
+                    model,
+                )
                 return model, "deep", True
 
         # 3. Sehr lange Anfragen (>15 Woerter) -> Deep (oder Smart wenn degradiert)
         if word_count >= self.deep_min_words:
             if self._deep_degraded:
                 model = self._cap_model(self.model_smart)
-                logger.debug("DEEP→SMART (degradiert) fuer lange Anfrage: '%s'", text[:80])
+                logger.debug(
+                    "DEEP→SMART (degradiert) fuer lange Anfrage: '%s'", text[:80]
+                )
                 return model, "smart", False
             model = self._cap_model(self.model_deep)
-            logger.debug("DEEP model fuer lange Anfrage (%d Woerter): '%s' (actual: %s)",
-                         word_count, text[:80], model)
+            logger.debug(
+                "DEEP model fuer lange Anfrage (%d Woerter): '%s' (actual: %s)",
+                word_count,
+                text[:80],
+                model,
+            )
             return model, "deep", True
 
         # 4. Fragen -> schlaues Modell (oder Fast wenn Smart degradiert UND Frage kurz)
-        if any(text_lower.startswith(w) for w in [
-            "was ", "wie ", "warum ", "wann ", "wo ", "wer ",
-        ]):
+        if any(
+            text_lower.startswith(w)
+            for w in [
+                "was ",
+                "wie ",
+                "warum ",
+                "wann ",
+                "wo ",
+                "wer ",
+            ]
+        ):
             if self._smart_degraded and word_count <= 10 and self._fast_enabled:
                 # Recovery-Probe: alle 5 Min eine Anfrage auf Smart durchlassen
                 import time as _time
-                if _time.time() - self._smart_degraded_since > self._smart_probe_interval:
+
+                if (
+                    _time.time() - self._smart_degraded_since
+                    > self._smart_probe_interval
+                ):
                     self._smart_degraded_since = _time.time()
-                    logger.info("Smart-Degradation Recovery-Probe: lasse Anfrage auf Smart durch")
+                    logger.info(
+                        "Smart-Degradation Recovery-Probe: lasse Anfrage auf Smart durch"
+                    )
                 else:
                     model = self._cap_model(self.model_fast)
                     logger.debug("SMART→FAST (degradiert) fuer kurze Frage: '%s'", text)
@@ -360,19 +452,45 @@ class ModelRouter:
                 return "command"
 
         # Creative: Schreibaufgaben, Ideen
-        _creative_kw = ("schreib", "formulier", "erfinde", "stell dir vor", "was waere wenn",
-                        "was wäre wenn", "hypothetisch", "kreativ", "idee")
+        _creative_kw = (
+            "schreib",
+            "formulier",
+            "erfinde",
+            "stell dir vor",
+            "was waere wenn",
+            "was wäre wenn",
+            "hypothetisch",
+            "kreativ",
+            "idee",
+        )
         if any(kw in text_lower for kw in _creative_kw):
             return "creative"
 
         # Analysis: Diagnose, Vergleich, Erklaerung
-        _analysis_kw = ("analysier", "vergleich", "unterschied", "vor- und nachteil",
-                        "optimier", "berechne", "erklaer", "warum genau", "diagnos")
+        _analysis_kw = (
+            "analysier",
+            "vergleich",
+            "unterschied",
+            "vor- und nachteil",
+            "optimier",
+            "berechne",
+            "erklaer",
+            "warum genau",
+            "diagnos",
+        )
         if any(kw in text_lower for kw in _analysis_kw):
             return "analysis"
 
         # Factual: Kurze Fakten-Fragen
-        _factual_starts = ("was ist", "wann ", "wo ", "wer ", "wie viel", "wie hoch", "wie warm")
+        _factual_starts = (
+            "was ist",
+            "wann ",
+            "wo ",
+            "wer ",
+            "wie viel",
+            "wie hoch",
+            "wie warm",
+        )
         if any(text_lower.startswith(w) for w in _factual_starts):
             return "factual"
 
@@ -385,7 +503,9 @@ class ModelRouter:
     def get_task_temperature(self, text: str) -> float:
         """D1: Gibt die optimale Temperature fuer den Task-Typ zurueck."""
         task_type = self.classify_task(text)
-        return self._task_temperatures.get(task_type, self._task_temperatures["default"])
+        return self._task_temperatures.get(
+            task_type, self._task_temperatures["default"]
+        )
 
     def select_model(self, text: str) -> str:
         """Waehlt das passende Modell (Rueckwaertskompatibel, ohne Tier)."""
@@ -443,7 +563,9 @@ class ModelRouter:
         if target and duration_seconds > target * 2:
             logger.warning(
                 "%s-Tier Latenz %.1fs ueberschreitet 2x Target (%.1fs)",
-                tier.upper(), duration_seconds, target,
+                tier.upper(),
+                duration_seconds,
+                target,
             )
 
         # Deep-Degradation pruefen: Durchschnitt der letzten 10 Calls
@@ -457,10 +579,13 @@ class ModelRouter:
                 logger.warning(
                     "Deep-Modell degradiert: Durchschnitt %.1fs > %.1fs Schwelle. "
                     "Nicht-kritische Anfragen werden auf Smart heruntergestuft.",
-                    avg, self._deep_degradation_threshold,
+                    avg,
+                    self._deep_degradation_threshold,
                 )
             elif not self._deep_degraded and was_degraded:
-                logger.info("Deep-Modell erholt: Durchschnitt %.1fs unter Schwelle.", avg)
+                logger.info(
+                    "Deep-Modell erholt: Durchschnitt %.1fs unter Schwelle.", avg
+                )
 
         # Smart-Degradation pruefen: Fallback auf Fast
         if tier == "smart" and len(self._latency_history["smart"]) >= 10:
@@ -471,14 +596,18 @@ class ModelRouter:
 
             if self._smart_degraded and not was_degraded:
                 import time as _time
+
                 self._smart_degraded_since = _time.time()
                 logger.warning(
                     "Smart-Modell degradiert: Durchschnitt %.1fs > %.1fs Schwelle. "
                     "Einfache Anfragen werden auf Fast heruntergestuft.",
-                    avg, self._smart_degradation_threshold,
+                    avg,
+                    self._smart_degradation_threshold,
                 )
             elif not self._smart_degraded and was_degraded:
-                logger.info("Smart-Modell erholt: Durchschnitt %.1fs unter Schwelle.", avg)
+                logger.info(
+                    "Smart-Modell erholt: Durchschnitt %.1fs unter Schwelle.", avg
+                )
 
     def urgency_override(self, mood: str = "", stress_level: float = 0.0) -> str | None:
         """Gibt einen Tier-Override basierend auf Dringlichkeit zurueck.
@@ -493,7 +622,9 @@ class ModelRouter:
             Tier-Name ('fast') oder None wenn kein Override noetig.
         """
         if mood in ("frustrated", "stressed") and stress_level > 0.7:
-            logger.debug("Urgency override: %s + stress=%.2f → Fast-Modell", mood, stress_level)
+            logger.debug(
+                "Urgency override: %s + stress=%.2f → Fast-Modell", mood, stress_level
+            )
             return "fast"
         return None
 
@@ -547,7 +678,7 @@ class ModelRouter:
             try:
                 await asyncio.sleep(30)
                 # Einfacher Health-Check: Pruefe ob Ollama erreichbar
-                if hasattr(self, '_ollama') and self._ollama:
+                if hasattr(self, "_ollama") and self._ollama:
                     await asyncio.wait_for(self._ollama.list_models(), timeout=5)
                     self._ollama_available = True
                 else:
