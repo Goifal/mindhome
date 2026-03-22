@@ -2635,8 +2635,15 @@ class PersonalityEngine:
         """Gibt Persoenlichkeits-Anpassungen fuer die aktive Szene zurueck."""
         return self._SCENE_PERSONALITY.get(active_scene, {})
 
+    _SARCASM_STREAK_REDIS_PREFIX = "mha:personality:sarcasm_streak:"
+    _SARCASM_STREAK_TTL = 14400  # 4 hours
+
     def track_sarcasm_streak(self, was_snarky: bool, person_id: str = "_default"):
-        """Trackt aufeinanderfolgende sarkastische Antworten per User. 0ms — rein in-memory."""
+        """Trackt aufeinanderfolgende sarkastische Antworten per User.
+
+        MCU Sprint 6: Cross-Session-Persistenz via Redis mit 4h TTL.
+        Nach 4h Inaktivitaet wird der Streak zurueckgesetzt.
+        """
         key = person_id.lower().strip() if person_id else "_default"
         with self._tracking_lock:
             if was_snarky:
@@ -2655,6 +2662,62 @@ class PersonalityEngine:
                     self._last_interaction_times, key=self._last_interaction_times.get
                 )
                 del self._last_interaction_times[oldest_key]
+            # MCU Sprint 6: Persist to Redis with 4h TTL
+            streak_val = self._sarcasm_streak.get(key, 0)
+        self._save_sarcasm_streak_to_redis(key, streak_val)
+
+    def _save_sarcasm_streak_to_redis(self, person_key: str, streak: int) -> None:
+        """Sichert Sarcasm-Streak in Redis mit 4h TTL (fire-and-forget)."""
+        if not self._redis:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            redis_key = f"{self._SARCASM_STREAK_REDIS_PREFIX}{person_key}"
+            task = loop.create_task(
+                self._redis.set(redis_key, str(streak), ex=self._SARCASM_STREAK_TTL)
+            )
+            task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
+            )
+        except RuntimeError:
+            pass  # No running event loop
+
+    async def load_sarcasm_streaks_from_redis(self) -> None:
+        """Laedt Sarcasm-Streaks aus Redis beim Start.
+
+        MCU Sprint 6: Cross-Session Sarcasm-State — Streaks ueberleben
+        Session-Grenzen (4h TTL).
+        """
+        if not self._redis:
+            return
+        try:
+            cursor = b"0"
+            prefix = self._SARCASM_STREAK_REDIS_PREFIX
+            while True:
+                cursor, keys = await self._redis.scan(
+                    cursor, match=f"{prefix}*", count=50
+                )
+                for rkey in keys:
+                    raw_key = rkey.decode() if isinstance(rkey, bytes) else rkey
+                    person_key = raw_key[len(prefix) :]
+                    val = await self._redis.get(rkey)
+                    if val is not None:
+                        try:
+                            streak = int(
+                                val.decode() if isinstance(val, bytes) else val
+                            )
+                            self._sarcasm_streak[person_key] = streak
+                        except (ValueError, AttributeError):
+                            pass
+                if cursor == b"0" or cursor == 0:
+                    break
+            if self._sarcasm_streak:
+                logger.info(
+                    "Sarcasm-Streaks aus Redis geladen: %d Eintraege",
+                    len(self._sarcasm_streak),
+                )
+        except Exception as e:
+            logger.debug("Sarcasm-Streak Redis-Load fehlgeschlagen: %s", e)
 
     # ------------------------------------------------------------------
     # Adaptive Komplexitaet (Phase 6.8)
@@ -5372,43 +5435,71 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
 
     _RUNNING_GAG_REDIS_KEY = "mha:personality:running_gags"
 
-    def track_running_gag(self, gag_id: str, context: str) -> None:
+    def track_running_gag(
+        self, gag_id: str, context: str, *, user_reaction: str = ""
+    ) -> None:
         """Verfolgt einen Running-Gag und inkrementiert den Zaehler.
 
+        MCU Sprint 6: Weighted Humor-Score — Gags werden nach Erfolg gewichtet,
+        nicht nur nach Haeufigkeit. Score = count * 0.3 + success_rate * 0.7.
+
         Maximal 3 aktive Gags gleichzeitig. Bei Ueberlauf wird der
-        aelteste (niedrigster Count) entfernt. Persists to Redis.
+        mit dem niedrigsten Score entfernt. Persists to Redis.
 
         Args:
             gag_id: Eindeutige ID des Gags.
             context: Kontextbeschreibung des Gags.
+            user_reaction: User-Reaktion: "positive", "negative", oder "" (neutral).
         """
         now = datetime.now(timezone.utc).isoformat()
         if gag_id in self._running_gags:
-            self._running_gags[gag_id]["count"] += 1
-            self._running_gags[gag_id]["context"] = context
-            self._running_gags[gag_id]["last_used"] = now
+            gag = self._running_gags[gag_id]
+            gag["count"] += 1
+            gag["context"] = context
+            gag["last_used"] = now
+            # MCU Sprint 6: Track user reactions for humor-score
+            if user_reaction == "positive":
+                gag["positive_reactions"] = gag.get("positive_reactions", 0) + 1
+            elif user_reaction == "negative":
+                gag["negative_reactions"] = gag.get("negative_reactions", 0) + 1
             # Evolution: escalate at count > 3
-            count = self._running_gags[gag_id]["count"]
-            if count > 3:
-                self._running_gags[gag_id]["evolution_stage"] = min(
-                    3, self._running_gags[gag_id].get("evolution_stage", 0) + 1
-                )
+            if gag["count"] > 3:
+                gag["evolution_stage"] = min(3, gag.get("evolution_stage", 0) + 1)
         else:
-            # Max 3 aktive Gags — aeltesten entfernen wenn noetig
+            # Max 3 aktive Gags — niedrigsten Score entfernen wenn noetig
             if len(self._running_gags) >= 3:
-                oldest = min(
-                    self._running_gags, key=lambda k: self._running_gags[k]["count"]
+                lowest = min(
+                    self._running_gags,
+                    key=lambda k: self._get_gag_score(self._running_gags[k]),
                 )
-                del self._running_gags[oldest]
+                del self._running_gags[lowest]
             self._running_gags[gag_id] = {
                 "count": 1,
                 "context": context,
                 "last_used": now,
                 "evolution_stage": 0,
+                "positive_reactions": 1 if user_reaction == "positive" else 0,
+                "negative_reactions": 1 if user_reaction == "negative" else 0,
             }
 
         # Persist to Redis (fire-and-forget)
         self._save_running_gags_to_redis()
+
+    @staticmethod
+    def _get_gag_score(gag: dict) -> float:
+        """Berechnet den gewichteten Humor-Score eines Gags.
+
+        MCU Sprint 6: Score = count_norm * 0.3 + success_rate * 0.7.
+        Erfolgreichste Gags werden bevorzugt, nicht die haeufigsten.
+        """
+        count = gag.get("count", 1)
+        positive = gag.get("positive_reactions", 0)
+        negative = gag.get("negative_reactions", 0)
+        total_reactions = positive + negative
+        success_rate = positive / total_reactions if total_reactions > 0 else 0.5
+        # Normalize count to 0-1 range (cap at 10)
+        count_norm = min(count / 10.0, 1.0)
+        return count_norm * 0.3 + success_rate * 0.7
 
     def _save_running_gags_to_redis(self) -> None:
         """Saves running gags to Redis (non-blocking)."""
@@ -5449,14 +5540,19 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
             logger.debug("Running Gags Redis-Load fehlgeschlagen: %s", e)
 
     def get_active_running_gag(self) -> Optional[str]:
-        """Gibt den reifsten Running-Gag zurueck (hoechster Count).
+        """Gibt den erfolgreichsten Running-Gag zurueck (hoechster Humor-Score).
+
+        MCU Sprint 6: Selektion nach gewichtetem Score statt nur Count.
 
         Returns:
-            Kontext des meistverwendeten Gags oder None wenn keine aktiv.
+            Kontext des erfolgreichsten Gags oder None wenn keine aktiv.
         """
         if not self._running_gags:
             return None
-        best = max(self._running_gags, key=lambda k: self._running_gags[k]["count"])
+        best = max(
+            self._running_gags,
+            key=lambda k: self._get_gag_score(self._running_gags[k]),
+        )
         gag = self._running_gags[best]
 
         # MCU Sprint 2: Evolution — escalate formulation based on stage

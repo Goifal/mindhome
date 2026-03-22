@@ -1135,6 +1135,76 @@ class SemanticMemory:
 
         return gaps[:5]  # Max 5 gaps at a time
 
+    # ------------------------------------------------------------------
+    # MCU Sprint 6: Contradiction Confirmation User-Flow
+    # ------------------------------------------------------------------
+
+    _PENDING_CONTRADICTIONS_KEY = "mha:facts:pending_contradictions"
+
+    async def get_pending_contradictions(self, limit: int = 5) -> list[dict]:
+        """Liefert ausstehende Widersprueche die auf User-Bestaetigung warten.
+
+        Returns:
+            Liste von Contradiction-Dicts mit old_value, new_value, category,
+            person, fact_id, timestamp.
+        """
+        if not self.redis:
+            return []
+        try:
+            raw_items = await self.redis.lrange(
+                self._PENDING_CONTRADICTIONS_KEY, 0, limit - 1
+            )
+            results = []
+            for item in raw_items:
+                decoded = item.decode() if isinstance(item, bytes) else item
+                try:
+                    results.append(json.loads(decoded))
+                except (json.JSONDecodeError, TypeError):
+                    logger.debug("Ungueltige Contradiction in Redis: %s", decoded[:80])
+            return results
+        except Exception as e:
+            logger.debug("get_pending_contradictions fehlgeschlagen: %s", e)
+            return []
+
+    async def resolve_contradiction(self, fact_id: str, chosen_value: str) -> bool:
+        """Loest einen Widerspruch auf indem der gewaehlte Wert bestaetigt wird.
+
+        Entfernt den Widerspruch aus der Pending-Liste und aktualisiert
+        die Konfidenz des gewaehlten Fakts.
+
+        Args:
+            fact_id: ID des betroffenen Fakts.
+            chosen_value: Der vom User bestaetigte Wert.
+
+        Returns:
+            True wenn erfolgreich aufgeloest.
+        """
+        if not self.redis:
+            return False
+        try:
+            # Alle pending items lesen, das passende entfernen
+            raw_items = await self.redis.lrange(self._PENDING_CONTRADICTIONS_KEY, 0, -1)
+            found = False
+            for item in raw_items:
+                decoded = item.decode() if isinstance(item, bytes) else item
+                try:
+                    data = json.loads(decoded)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if data.get("fact_id") == fact_id:
+                    await self.redis.lrem(self._PENDING_CONTRADICTIONS_KEY, 1, item)
+                    found = True
+                    logger.info(
+                        "Contradiction resolved for fact %s: chosen=%s",
+                        fact_id,
+                        chosen_value[:60],
+                    )
+                    break
+            return found
+        except Exception as e:
+            logger.warning("resolve_contradiction fehlgeschlagen: %s", e)
+            return False
+
     async def generate_learning_report(self, days: int = 90) -> str:
         """MCU Sprint 4: Generates a summary of learned facts over N days.
 

@@ -1101,6 +1101,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # MCU Sprint 2: Running Gags + Learned Opinions aus Redis laden
         await self.personality.load_running_gags_from_redis()
         await self.personality.load_learned_opinions()
+        # MCU Sprint 6: Cross-Session Sarcasm-Streaks aus Redis laden
+        await self.personality.load_sarcasm_streaks_from_redis()
 
         # F-069: Nicht-kritische Module in try/except wrappen für Degraded Startup.
         # Wenn ein Modul fehlschlaegt, laeuft der Assistent trotzdem —
@@ -1533,6 +1535,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             logger.warning(
                 "GLOBAL: Alle Lern-Features deaktiviert (learning.enabled=false)"
             )
+
+        # MCU Sprint 6: Auto-Opinion-Learning — PersonalityEngine mit OutcomeTracker verbinden
+        if self.outcome_tracker.enabled and hasattr(
+            self.outcome_tracker, "set_personality"
+        ):
+            self.outcome_tracker.set_personality(self.personality)
 
         await _safe_init("Proactive.start", self.proactive.start())
 
@@ -3358,6 +3366,26 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 _la_args,
             )
             device_cmd = {"function": _la, "args": _la_args}
+        # MCU Sprint 6: Deterministic Action-Replay — "nochmal", "das gleiche",
+        # "noch mal", "nochmal bitte" → letzte Aktion 1:1 wiederholen ohne LLM
+        if not device_cmd and _la_person and _la_person.startswith("set_"):
+            _replay_match = re.match(
+                r"^(?:bitte\s+)?(?:nochmal|noch\s*mal|das\s+gleiche|"
+                r"das\s+selbe|dasselbe|das\s+nochmal|bitte\s+nochmal|"
+                r"wiederhol(?:e|en)?(?:\s+das)?)\s*[.!]?$",
+                text.lower().strip(),
+            )
+            if _replay_match:
+                _la = _la_person
+                _la_args = dict(_la_args_person or {})
+                logger.info(
+                    "Action-Replay: '%s' -> %s(%s) (exakte Wiederholung)",
+                    text,
+                    _la,
+                    _la_args,
+                )
+                device_cmd = {"function": _la, "args": _la_args}
+
         _pronoun_match = re.match(
             r"^(?:bitte\s+)?(?:mach|schalt|dreh|fahr)\w*\s+"
             r"(?:es|das|die|den|ihn|sie)\s+"
@@ -3606,6 +3634,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
                         # Letzte Aktion merken (für Pronomen-Shortcut im nächsten Turn)
                         await self._set_last_action(func_name, func_args, person)
+                        # MCU Sprint 7: Context-Tracking für kontextuelle Routinen
+                        if hasattr(self, "anticipation") and self.anticipation:
+                            self._task_registry.create_task(
+                                self.anticipation.track_context_for_action(
+                                    func_name, person=person or ""
+                                ),
+                                name="ctx_track",
+                            )
                         return self._result(
                             response_text,
                             actions=all_actions,
@@ -3677,6 +3713,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
                     # Letzte Aktion merken (für Pronomen-Shortcut im nächsten Turn)
                     await self._set_last_action(func_name, func_args, person)
+                    # MCU Sprint 7: Context-Tracking für kontextuelle Routinen
+                    if hasattr(self, "anticipation") and self.anticipation:
+                        self._task_registry.create_task(
+                            self.anticipation.track_context_for_action(
+                                func_name, person=person or ""
+                            ),
+                            name="ctx_track",
+                        )
                     return self._result(
                         response_text,
                         actions=[

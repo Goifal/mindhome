@@ -114,6 +114,11 @@ class ProactiveManager:
             asyncio.Lock()
         )  # Lock für concurrent _batch_flushing access
 
+        # MCU Sprint 6: Guest-Mode Notification-Filter
+        # LOW/MEDIUM werden bei Gaesten gesammelt und nach Gaeste-Ende gebatcht
+        self._guest_batched_events: list[dict] = []
+        self._guest_mode_was_active: bool = False
+
         # F-033: Lock für shared state (batch_queue, mb_triggered etc.)
         self._state_lock = asyncio.Lock()
 
@@ -570,6 +575,74 @@ class ProactiveManager:
         return self._check_quiet(self._quiet_start, self._quiet_end)
 
     # ------------------------------------------------------------------
+    # MCU Sprint 6: Guest-Mode Helpers
+    # ------------------------------------------------------------------
+
+    async def _is_guest_mode_active(self) -> bool:
+        """Prueft ob Guest-Mode aktiv ist (via Redis)."""
+        try:
+            redis = getattr(self.brain, "memory", None)
+            redis = redis.redis if redis else None
+            if not redis:
+                return False
+            val = await redis.get("mha:routine:guest_mode")
+            if val:
+                decoded = val.decode() if isinstance(val, bytes) else val
+                return decoded == "active"
+        except Exception as e:
+            logger.debug("Guest-Mode Check Fehler: %s", e)
+        return False
+
+    async def _flush_guest_batched_events(self) -> None:
+        """Stellt gesammelte Guest-Mode-Events als Batch-Zusammenfassung zu.
+
+        Wird aufgerufen wenn Guest-Mode endet. Fasst die Events zusammen
+        statt sie einzeln nachzuliefern.
+        """
+        if not self._guest_batched_events:
+            return
+
+        events = list(self._guest_batched_events)
+        self._guest_batched_events.clear()
+        self._guest_mode_was_active = False
+
+        count = len(events)
+        if count == 0:
+            return
+
+        # Zusammenfassung der verpassten Events
+        if count == 1:
+            summary = (
+                f"Waehrend die Gaeste da waren, gab es eine Meldung: "
+                f"{events[0]['text']}"
+            )
+        else:
+            event_lines = [f"- {e['text']}" for e in events[:10]]
+            summary = (
+                f"Waehrend die Gaeste da waren, gab es {count} Meldungen:\n"
+                + "\n".join(event_lines)
+            )
+            if count > 10:
+                summary += f"\n... und {count - 10} weitere."
+
+        logger.info("Guest-Mode Batch Flush: %d Events zusammengefasst", count)
+        await self._deliver(
+            summary,
+            "guest_batch_flush",
+            MEDIUM,
+        )
+
+    async def _check_guest_mode_transition(self) -> None:
+        """Prueft ob Guest-Mode beendet wurde und flusht gebatchte Events."""
+        if not self._guest_mode_was_active:
+            return
+        try:
+            if not await self._is_guest_mode_active():
+                await self._flush_guest_batched_events()
+        except Exception as e:
+            logger.debug("Guest-Mode Transition Check Fehler: %s", e)
+
+    # ------------------------------------------------------------------
     # Unified Delivery: WebSocket + TTS in einer Pipeline
     # ------------------------------------------------------------------
 
@@ -613,6 +686,35 @@ class ProactiveManager:
                     return
             except Exception:
                 pass  # Graceful degradation
+
+        # MCU Sprint 6: Guest-Mode Notification-Filter
+        # Bei Gaesten: LOW/MEDIUM sammeln, nach Gaeste-Ende gebatcht zustellen
+        if urgency in (LOW, MEDIUM):
+            try:
+                _guest_active = await self._is_guest_mode_active()
+                if _guest_active:
+                    self._guest_batched_events.append(
+                        {
+                            "text": text,
+                            "event_type": event_type,
+                            "urgency": urgency,
+                            "notification_id": notification_id,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                    )
+                    # Cap at 50 to prevent unbounded growth
+                    if len(self._guest_batched_events) > 50:
+                        self._guest_batched_events = self._guest_batched_events[-50:]
+                    logger.info(
+                        "Guest-Mode: %s gebatcht (%s, %d Events gespeichert)",
+                        event_type,
+                        urgency,
+                        len(self._guest_batched_events),
+                    )
+                    self._guest_mode_was_active = True
+                    return
+            except Exception as e:
+                logger.debug("Guest-Mode Check fehlgeschlagen: %s", e)
 
         # Personality filter: restyle raw message in Jarvis style
         # Graceful degradation: skip if personality or LLM not available
@@ -2211,6 +2313,24 @@ class ProactiveManager:
             except Exception as e:
                 logger.debug("Knowledge gap check Fehler: %s", e)
 
+            # MCU Sprint 6: Guest-Mode Transition — flush batched events when guests leave
+            try:
+                await self._check_guest_mode_transition()
+            except Exception as e:
+                logger.debug("Guest-Mode Transition Check Fehler: %s", e)
+
+            # MCU Sprint 6: Contradiction Confirmation — check pending contradictions
+            try:
+                await self._check_pending_contradictions_flow()
+            except Exception as e:
+                logger.debug("Contradiction Check Fehler: %s", e)
+
+            # MCU Sprint 6: Monthly Learning Report
+            try:
+                await self._check_learning_report_schedule()
+            except Exception as e:
+                logger.debug("Learning Report Check Fehler: %s", e)
+
             await asyncio.sleep(600)  # Alle 10 Minuten
 
     async def _check_pending_followups(self):
@@ -2356,6 +2476,114 @@ class ProactiveManager:
                 break  # Max 1 per check
         except Exception as e:
             logger.debug("Knowledge gap check fehlgeschlagen: %s", e)
+
+    # ------------------------------------------------------------------
+    # MCU Sprint 6: Learning Report Scheduling (monatlich)
+    # ------------------------------------------------------------------
+
+    _LEARNING_REPORT_KEY = "mha:proactive:last_learning_report"
+
+    async def _check_learning_report_schedule(self) -> None:
+        """MCU Sprint 6: Monatlicher Learning Report.
+
+        Generiert einmal pro Monat eine Zusammenfassung der gelernten Fakten
+        und stellt sie als LOW-Priority Event zu.
+        """
+        if not hasattr(self.brain, "semantic_memory") or not self.brain.semantic_memory:
+            return
+        if self._is_quiet_hours():
+            return
+
+        redis = getattr(self.brain.memory, "redis", None)
+        if not redis:
+            return
+
+        # Cooldown: Max 1 pro 30 Tage
+        already = await redis.get(self._LEARNING_REPORT_KEY)
+        if already:
+            return
+
+        try:
+            report = await self.brain.semantic_memory.generate_learning_report(days=30)
+            if not report or len(report.strip()) < 20:
+                return
+
+            title = get_person_title()
+            msg = f"{title}, hier ist mein monatlicher Lernbericht: {report}"
+
+            # 30-Tage Cooldown setzen
+            await redis.set(self._LEARNING_REPORT_KEY, "1", ex=2592000)  # 30 days
+
+            await self._deliver(
+                msg,
+                event_type="learning_report",
+                urgency=LOW,
+                delivery_method="tts_quiet",
+                volume=0.5,
+            )
+            logger.info("Monthly learning report delivered (%d chars)", len(report))
+        except Exception as e:
+            logger.debug("Learning report scheduling fehlgeschlagen: %s", e)
+
+    _CONTRADICTION_COOLDOWN_KEY = "mha:proactive:contradiction_cooldown"
+
+    async def _check_pending_contradictions_flow(self) -> None:
+        """MCU Sprint 6: Prueft auf ausstehende Widersprueche und fragt den User.
+
+        Max 1 Contradiction-Frage pro Tag. Nicht waehrend Quiet Hours.
+        """
+        if not hasattr(self.brain, "semantic_memory") or not self.brain.semantic_memory:
+            return
+        if self._is_quiet_hours():
+            return
+
+        redis = getattr(self.brain.memory, "redis", None)
+        if not redis:
+            return
+
+        # Cooldown: Max 1 pro Tag
+        already = await redis.get(self._CONTRADICTION_COOLDOWN_KEY)
+        if already:
+            return
+
+        try:
+            contradictions = (
+                await self.brain.semantic_memory.get_pending_contradictions(limit=1)
+            )
+            if not contradictions:
+                return
+
+            c = contradictions[0]
+            old_val = c.get("old_value", "")
+            new_val = c.get("new_value", "")
+            person = c.get("person", "")
+            category = c.get("category", "")
+
+            title = get_person_title(person) if person else get_person_title()
+
+            msg = (
+                f"{title}, mir ist ein Widerspruch aufgefallen: "
+                f"Zuvor hiess es '{old_val}', aber zuletzt '{new_val}' "
+                f"(Kategorie: {category}). Was stimmt?"
+            )
+
+            await redis.set(
+                self._CONTRADICTION_COOLDOWN_KEY,
+                "1",
+                ex=86400,  # 24h cooldown
+            )
+            await self._deliver(
+                msg,
+                event_type="contradiction_confirmation",
+                urgency=MEDIUM,
+                delivery_method="tts_quiet",
+                volume=0.5,
+            )
+            logger.info(
+                "Contradiction question sent: %s vs %s", old_val[:40], new_val[:40]
+            )
+        except Exception as e:
+            logger.debug("Contradiction check fehlgeschlagen: %s", e)
 
     async def _generate_followup_message(
         self,
@@ -9611,10 +9839,22 @@ class ProactiveManager:
                     await self.brain.memory.redis.set(_dedup_key, "1", ex=86400)
 
                 title = get_person_title()
-                msg = (
-                    f"{title}, {event['summary']} in {event['minutes']} Minuten. "
-                    f"Soll ich etwas vorbereiten?"
-                )
+
+                # MCU Sprint 6: Domain-spezifische Kalender-Vorbereitung
+                # Keyword-Matching → konkrete Aktionsvorschlaege statt generisch
+                prep_suggestion = self._get_calendar_preparation(event["summary"])
+
+                if prep_suggestion:
+                    msg = (
+                        f"{title}, {event['summary']} in {event['minutes']} Minuten. "
+                        f"{prep_suggestion}"
+                    )
+                else:
+                    msg = (
+                        f"{title}, {event['summary']} in {event['minutes']} Minuten. "
+                        f"Soll ich etwas vorbereiten?"
+                    )
+
                 await self._deliver(
                     msg,
                     event_type="calendar_preparation",
@@ -9623,13 +9863,60 @@ class ProactiveManager:
                     volume=0.6,
                 )
                 logger.info(
-                    "Calendar-Trigger: %s in %d min",
+                    "Calendar-Trigger: %s in %d min (prep=%s)",
                     event["summary"][:50],
                     event["minutes"],
+                    "domain-specific" if prep_suggestion else "generic",
                 )
 
         except Exception as e:
             logger.debug("Calendar-Trigger Fehler: %s", e)
+
+    # MCU Sprint 6: Domain-spezifische Kalender-Vorbereitung
+    # Keyword → Aktionsvorschlag (konfigurierbar in settings.yaml)
+    _DEFAULT_CALENDAR_PREPARATIONS = {
+        "meeting": "Soll ich das Buero-Licht einschalten und auf Arbeiten umstellen?",
+        "besprechung": "Soll ich das Buero-Licht einschalten und auf Arbeiten umstellen?",
+        "videokonferenz": "Soll ich das Buero-Licht einschalten und auf Arbeiten umstellen?",
+        "video call": "Soll ich das Buero-Licht einschalten und auf Arbeiten umstellen?",
+        "sport": "Soll ich einen Wecker stellen?",
+        "training": "Soll ich einen Wecker stellen?",
+        "fitness": "Soll ich einen Wecker stellen?",
+        "gaeste": "Soll ich den Gaeste-Modus aktivieren?",
+        "gäste": "Soll ich den Gaeste-Modus aktivieren?",
+        "besuch": "Soll ich den Gaeste-Modus aktivieren?",
+        "party": "Soll ich den Gaeste-Modus aktivieren und die Party-Szene vorbereiten?",
+        "arzt": "Soll ich rechtzeitig an die Abfahrt erinnern?",
+        "termin": "Soll ich rechtzeitig an die Abfahrt erinnern?",
+        "kino": "Soll ich die Kino-Szene vorbereiten?",
+        "film": "Soll ich die Filmabend-Szene vorbereiten?",
+        "kochen": "Soll ich das Kuechenlicht einschalten?",
+        "abendessen": "Soll ich das Kuechenlicht einschalten?",
+        "schlafen": "Soll ich die Gute-Nacht-Routine vorbereiten?",
+    }
+
+    def _get_calendar_preparation(self, event_summary: str) -> str:
+        """Mappt Kalender-Event-Titel auf domain-spezifische Vorbereitung.
+
+        Prueft zuerst settings.yaml, dann Default-Mappings.
+
+        Returns:
+            Konkreter Vorschlag oder leerer String.
+        """
+        summary_lower = event_summary.lower().strip()
+
+        # User-konfigurierte Mappings aus settings.yaml
+        user_preps = yaml_config.get("calendar_preparations", {})
+        for keyword, suggestion in user_preps.items():
+            if keyword.lower() in summary_lower:
+                return suggestion
+
+        # Default-Mappings
+        for keyword, suggestion in self._DEFAULT_CALENDAR_PREPARATIONS.items():
+            if keyword in summary_lower:
+                return suggestion
+
+        return ""
 
     async def _run_scene_schedule_loop(self):
         """Prueft jede Minute ob geplante Szenen aktiviert werden muessen."""
