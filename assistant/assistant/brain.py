@@ -1202,6 +1202,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Phase 11: Koch-Assistent mit Semantic Memory verbinden
         self.cooking.semantic_memory = self.memory.semantic
         self.cooking.set_notify_callback(self._handle_cooking_timer)
+        # MCU Sprint 3: Post-crisis debrief callback
+        self.threat_assessment.set_notify_callback(self._handle_threat_debrief)
 
         # Phase 11.1: Knowledge Base initialisieren
         await _safe_init("KnowledgeBase", self.knowledge_base.initialize())
@@ -5082,6 +5084,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         try:
             _activity_result = await self.activity.detect_activity()
             self.personality._current_activity = _activity_result.get("activity", "")
+            # MCU Sprint 3: Guest-Discretion-Mode
+            self.personality._guest_mode_active = (
+                _activity_result.get("activity", "") == "guests"
+            )
         except Exception as e:
             logger.debug("Aktivitaetserkennung fehlgeschlagen: %s", e)
             self.personality._current_activity = ""
@@ -11179,6 +11185,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         await self._speak_and_emit(formatted, room=room)
         logger.info("Koch-Timer -> Meldung: %s", formatted)
 
+    async def _handle_threat_debrief(self, debrief: dict):
+        """MCU Sprint 3: Post-crisis debrief notification."""
+        message = debrief.get("message", "")
+        if not message:
+            return
+        formatted = await self._safe_format(message, "medium")
+        await self._speak_and_emit(formatted)
+        self._remember_exchange("[proaktiv: Entwarnung]", formatted)
+        logger.info("Post-Crisis Debrief: %s", debrief.get("scenario", "unknown"))
+
     async def _handle_workshop_timer(self, message: str):
         """Callback für Workshop-Timer-Benachrichtigungen."""
         if not message:
@@ -14576,39 +14592,76 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 response_text, model="das_uebliche_empty", room=room, emitted=True
             )
 
-        # Beste Suggestion ausfuehren oder vorschlagen
-        best = max(suggestions, key=lambda s: s.get("confidence", 0))
-        conf = best.get("confidence", 0)
-        action = best.get("action", "")
-        args = best.get("args", {})
-        desc = best.get("description", action)
+        # MCU Sprint 3: Multi-Action — alle Suggestions mit Confidence >= threshold
+        auto_suggestions = [
+            s for s in suggestions if s.get("confidence", 0) >= _auto_conf
+        ]
+        suggest_suggestions = [
+            s
+            for s in suggestions
+            if _suggest_conf <= s.get("confidence", 0) < _auto_conf
+        ]
 
-        if conf >= _auto_conf and action:
-            # Hohe Confidence → ausfuehren und beilaeufig erwaehnen
-            try:
-                result = await self.executor.execute(action, args)
-                success = isinstance(result, dict) and result.get("success", False)
-                if success:
-                    response_text = f"Wie gewohnt, {title}. {desc.split('→')[-1].strip() if '→' in desc else desc}."
-                else:
-                    response_text = (
-                        f"{desc} — hat nicht funktioniert. Versuch es nochmal, {title}?"
+        if auto_suggestions:
+            # Hohe Confidence → als narrated Sequenz ausfuehren
+            executed_descs = []
+            executed_actions = []
+            for s in auto_suggestions[:3]:
+                action = s.get("action", "")
+                s_args = s.get("args", {})
+                desc = s.get("description", action)
+                try:
+                    result = await self.executor.execute(action, s_args)
+                    success = isinstance(result, dict) and result.get("success", False)
+                    if success:
+                        _short_desc = (
+                            desc.split("→")[-1].strip() if "→" in desc else desc
+                        )
+                        executed_descs.append(_short_desc)
+                        executed_actions.append({"function": action, "args": s_args})
+                except Exception as e:
+                    logger.debug(
+                        "Das Uebliche Aktion fehlgeschlagen: %s — %s", action, e
                     )
-            except Exception as e:
-                logger.debug("Das Uebliche Ausfuehrung fehlgeschlagen: %s", e)
+
+            if executed_descs:
+                if len(executed_descs) >= 2:
+                    _parts = (
+                        ", ".join(executed_descs[:-1]) + f" und {executed_descs[-1]}"
+                    )
+                else:
+                    _parts = executed_descs[0]
+                response_text = f"Wie gewohnt, {title}: {_parts}."
+            else:
                 response_text = f"Das Uebliche wollte nicht so recht, {title}. Was genau brauchst du?"
 
             self._remember_exchange(text, response_text)
             await self._speak_and_emit(response_text, room=room)
             return self._result(
                 response_text,
-                actions=[{"function": action, "args": args}],
+                actions=executed_actions,
                 model="das_uebliche_auto",
                 room=room,
                 emitted=True,
             )
-        else:
+
+        elif suggest_suggestions:
             # Mittlere Confidence → nachfragen
+            best = max(suggest_suggestions, key=lambda s: s.get("confidence", 0))
+            desc = best.get("description", best.get("action", ""))
+            response_text = (
+                f"Um diese Zeit machst du normalerweise: {desc}. Soll ich, {title}?"
+            )
+            self._remember_exchange(text, response_text)
+            await self._speak_and_emit(response_text, room=room)
+            return self._result(
+                response_text, model="das_uebliche_suggest", room=room, emitted=True
+            )
+
+        else:
+            # Zu niedrige Confidence für alle
+            best = max(suggestions, key=lambda s: s.get("confidence", 0))
+            desc = best.get("description", best.get("action", ""))
             response_text = (
                 f"Um diese Zeit machst du normalerweise: {desc}. Soll ich, {title}?"
             )

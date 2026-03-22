@@ -490,6 +490,7 @@ class PersonalityEngine:
         self._ollama = None
         self._semantic_memory = None  # MCU Sprint 2: Opinion Fact-Base
         self._learned_opinions: dict[str, str] = {}  # MCU Sprint 2: Cached opinions
+        self._guest_mode_active: bool = False  # MCU Sprint 3: Guest discretion mode
         # F-021: Per-User Confirmation-Tracking (statt shared Instanzvariable)
         self._last_confirmations: dict[str, list[str]] = {}
         # F-022: Per-User Interaction-Time (statt shared float)
@@ -4020,6 +4021,14 @@ class PersonalityEngine:
 
         # Person Anrede (nutzt self._current_formality für Titel-Häufigkeit)
         person_addressing = self._build_person_addressing(current_person)
+
+        # MCU Sprint 3: Guest-Discretion-Mode
+        if self._guest_mode_active:
+            person_addressing += (
+                "\nGÄSTE-MODUS AKTIV: Keine persönlichen Fakten, Gewohnheiten "
+                "oder privaten Details erwähnen. Generische, höfliche Anrede. "
+                "Keine Erinnerungen an persönliche Termine oder Vorlieben.\n"
+            )
 
         # Phase 6: Humor-Section — F-023: Alerts unterdrücken Sarkasmus
         # S8#1: Krisen-Modus — bei kritischen Alerts (Rauch, CO, Wasser, Einbruch)

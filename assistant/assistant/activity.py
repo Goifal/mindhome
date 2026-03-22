@@ -32,6 +32,7 @@ from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
 from zoneinfo import ZoneInfo
+
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 
@@ -60,7 +61,7 @@ _DEFAULT_SILENCE_MATRIX = {
         "low": SUPPRESS,
     },
     IN_CALL: {
-        "critical": TTS_LOUD,   # F-005: Leben > Telefonat — Critical MUSS hoerbar sein
+        "critical": TTS_LOUD,  # F-005: Leben > Telefonat — Critical MUSS hoerbar sein
         "high": TTS_QUIET,
         "medium": SUPPRESS,
         "low": SUPPRESS,
@@ -155,8 +156,9 @@ _VALID_DELIVERY_METHODS = {TTS_LOUD, TTS_QUIET, LED_BLINK, SUPPRESS}
 _VALID_ACTIVITIES = {SLEEPING, IN_CALL, WATCHING, FOCUSED, GUESTS, RELAXING, AWAY}
 
 
-def _build_matrix_from_config(config_matrix: dict, default_matrix: dict,
-                               validate_values: set | None = None) -> dict:
+def _build_matrix_from_config(
+    config_matrix: dict, default_matrix: dict, validate_values: set | None = None
+) -> dict:
     """Baut eine Matrix aus Config + Defaults.
 
     Config-Werte ueberschreiben einzelne Eintraege, fehlende werden
@@ -177,12 +179,21 @@ def _build_matrix_from_config(config_matrix: dict, default_matrix: dict,
         merged = dict(default_row)
         for urgency, value in config_row.items():
             if urgency not in ("critical", "high", "medium", "low"):
-                logger.warning("Unbekannte Urgency '%s' in silence_matrix.%s ignoriert",
-                               urgency, activity)
+                logger.warning(
+                    "Unbekannte Urgency '%s' in silence_matrix.%s ignoriert",
+                    urgency,
+                    activity,
+                )
                 continue
             if validate_values and value not in validate_values:
-                logger.warning("Ungueltiger Wert '%s' in silence_matrix.%s.%s ignoriert "
-                               "(erlaubt: %s)", value, activity, urgency, validate_values)
+                logger.warning(
+                    "Ungueltiger Wert '%s' in silence_matrix.%s.%s ignoriert "
+                    "(erlaubt: %s)",
+                    value,
+                    activity,
+                    urgency,
+                    validate_values,
+                )
                 continue
             merged[urgency] = value
         result[activity] = merged
@@ -198,11 +209,33 @@ class ActivityEngine:
 
     # Keywords die einen manuellen Silence-Modus triggern
     SILENCE_KEYWORDS = {
-        WATCHING: ["filmabend", "film", "kino", "netflix", "serie schauen", "fernsehen"],
-        FOCUSED: ["meditation", "meditieren", "fokus", "nicht stören", "nicht stoeren",
-                   "ruhe", "konzentration", "arbeiten", "homeoffice",
-                   "sei still", "sei leise", "halt die klappe", "sei ruhig",
-                   "klappe zu", "psst", "still jetzt", "nerv nicht"],
+        WATCHING: [
+            "filmabend",
+            "film",
+            "kino",
+            "netflix",
+            "serie schauen",
+            "fernsehen",
+        ],
+        FOCUSED: [
+            "meditation",
+            "meditieren",
+            "fokus",
+            "nicht stören",
+            "nicht stoeren",
+            "ruhe",
+            "konzentration",
+            "arbeiten",
+            "homeoffice",
+            "sei still",
+            "sei leise",
+            "halt die klappe",
+            "sei ruhig",
+            "klappe zu",
+            "psst",
+            "still jetzt",
+            "nerv nicht",
+        ],
         SLEEPING: ["gute nacht", "schlaf gut", "ich geh schlafen", "ich geh ins bett"],
     }
 
@@ -220,9 +253,9 @@ class ActivityEngine:
         sk_cfg = activity_cfg.get("silence_keywords")
         if sk_cfg and isinstance(sk_cfg, dict):
             from . import activity as _act_mod
+
             self._silence_keywords = {
-                getattr(_act_mod, k.upper(), k): v
-                for k, v in sk_cfg.items()
+                getattr(_act_mod, k.upper(), k): v for k, v in sk_cfg.items()
             }
         else:
             self._silence_keywords = dict(self.SILENCE_KEYWORDS)
@@ -247,7 +280,7 @@ class ActivityEngine:
         primary_entity = (household.get("primary_user_entity") or "").strip().lower()
         if primary_entity:
             self._household_entities.add(primary_entity)
-        for m in (household.get("members") or []):
+        for m in household.get("members") or []:
             ha_entity = (m.get("ha_entity") or "").strip().lower()
             if ha_entity:
                 self._household_entities.add(ha_entity)
@@ -257,6 +290,9 @@ class ActivityEngine:
         self._last_detection = None
         self._cache_ts: float = 0.0  # monotonic timestamp
         self._cache_ttl: float = 5.0  # Sekunden — verhindert Burst-Abfragen
+
+        # MCU Sprint 3: Flow-State-Detection
+        self._focused_since: Optional[datetime] = None
 
     # Standard-Entity-Defaults (fuer Installationen ohne explizite Config)
     _DEFAULT_MEDIA_PLAYERS = [
@@ -285,7 +321,11 @@ class ActivityEngine:
         self.mic_sensors = entities.get("mic_sensors", self._DEFAULT_MIC_SENSORS)
         # Bettsensoren: Zentral aus room_profiles.yaml, Fallback auf settings.yaml
         central_bed = get_all_bed_sensors()
-        self.bed_sensors = central_bed if central_bed else entities.get("bed_sensors", self._DEFAULT_BED_SENSORS)
+        self.bed_sensors = (
+            central_bed
+            if central_bed
+            else entities.get("bed_sensors", self._DEFAULT_BED_SENSORS)
+        )
         self.pc_sensors = entities.get("pc_sensors", self._DEFAULT_PC_SENSORS)
         # Merke ob PC-Sensoren explizit konfiguriert (auch leere Liste = bewusst deaktiviert)
         self._pc_sensors_configured = "pc_sensors" in entities
@@ -304,9 +344,9 @@ class ActivityEngine:
         sk_cfg = activity_cfg.get("silence_keywords")
         if sk_cfg and isinstance(sk_cfg, dict):
             from . import activity as _act_mod
+
             self._silence_keywords = {
-                getattr(_act_mod, k.upper(), k): v
-                for k, v in sk_cfg.items()
+                getattr(_act_mod, k.upper(), k): v for k, v in sk_cfg.items()
             }
         else:
             self._silence_keywords = dict(self.SILENCE_KEYWORDS)
@@ -321,8 +361,13 @@ class ActivityEngine:
             activity_cfg.get("volume_matrix", {}),
             _DEFAULT_VOLUME_MATRIX,
         )
-        logger.info("ActivityDetector Config neu geladen (media_players=%d, bed_sensors=%d, night=%d-%d)",
-                     len(self.media_players), len(self.bed_sensors), self.night_start, self.night_end)
+        logger.info(
+            "ActivityDetector Config neu geladen (media_players=%d, bed_sensors=%d, night=%d-%d)",
+            len(self.media_players),
+            len(self.bed_sensors),
+            self.night_start,
+            self.night_end,
+        )
 
     def set_manual_override(self, activity: str, duration_minutes: int = 120):
         """Setzt einen manuellen Aktivitaets-Override.
@@ -331,8 +376,11 @@ class ActivityEngine:
         z.B. "Filmabend" → WATCHING fuer 2 Stunden.
         """
         from datetime import timedelta
+
         self._manual_override = activity
-        self._override_until = datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)
+        self._override_until = datetime.now(timezone.utc) + timedelta(
+            minutes=duration_minutes
+        )
         logger.info("Manueller Override: %s für %d Minuten", activity, duration_minutes)
 
     def clear_manual_override(self):
@@ -410,12 +458,21 @@ class ActivityEngine:
         signals["in_call"] = self._check_in_call(states)
         signals["bed_occupied"] = self._check_bed_occupied(states)
         signals["pc_active"] = self._check_pc_active(states)
-        signals["sleeping"] = self._check_sleeping(states, _pc_active=signals["pc_active"])
+        signals["sleeping"] = self._check_sleeping(
+            states, _pc_active=signals["pc_active"]
+        )
         signals["guests"] = self._check_guests(states)
         signals["lights_off"] = self._check_lights_off(states)
 
         # Aktivitaet klassifizieren (Prioritaet: hoehere ueberschreiben niedrigere)
         activity, confidence = self._classify(signals)
+
+        # MCU Sprint 3: Track focused_since for flow-state detection
+        if activity == FOCUSED:
+            if self._focused_since is None:
+                self._focused_since = datetime.now(timezone.utc)
+        else:
+            self._focused_since = None
 
         self._last_activity = activity
 
@@ -435,10 +492,32 @@ class ActivityEngine:
 
         logger.debug(
             "Aktivitaet erkannt: %s (confidence: %.2f, trigger: %s, signals: %s)",
-            activity, confidence, trigger, signals,
+            activity,
+            confidence,
+            trigger,
+            signals,
         )
 
         return result
+
+    def is_in_flow_state(self, min_minutes: int = 30) -> bool:
+        """MCU Sprint 3: Checks if user is in focused flow state.
+
+        Returns True if FOCUSED for >= min_minutes, indicating that
+        MEDIUM/LOW notifications should be deferred.
+        """
+        if self._focused_since is None:
+            return False
+        elapsed = (datetime.now(timezone.utc) - self._focused_since).total_seconds()
+        return elapsed >= min_minutes * 60
+
+    def get_focused_duration_minutes(self) -> int:
+        """Returns how long the user has been focused, in minutes."""
+        if self._focused_since is None:
+            return 0
+        return int(
+            (datetime.now(timezone.utc) - self._focused_since).total_seconds() / 60
+        )
 
     def get_delivery_method(self, activity: str, urgency: str) -> str:
         """
@@ -451,7 +530,9 @@ class ActivityEngine:
         Returns:
             Zustellmethode (tts_loud, tts_quiet, led_blink, suppress)
         """
-        activity_row = self._silence_matrix.get(activity, self._silence_matrix[RELAXING])
+        activity_row = self._silence_matrix.get(
+            activity, self._silence_matrix[RELAXING]
+        )
         return activity_row.get(urgency, TTS_LOUD)
 
     def get_volume_level(self, activity: str, urgency: str) -> float:
@@ -547,11 +628,16 @@ class ActivityEngine:
     )
 
     @staticmethod
-    def _auto_discover(states: list[dict], prefixes: tuple[str, ...],
-                       configured: list[str], pattern: re.Pattern,
-                       label: str, *,
-                       active_states: set[str] | None = None,
-                       inactive_states: set[str] | None = None) -> str:
+    def _auto_discover(
+        states: list[dict],
+        prefixes: tuple[str, ...],
+        configured: list[str],
+        pattern: re.Pattern,
+        label: str,
+        *,
+        active_states: set[str] | None = None,
+        inactive_states: set[str] | None = None,
+    ) -> str:
         """Generische Auto-Discovery fuer HA-Entities.
 
         Durchsucht alle States mit passenden Entity-Prefixes nach aktiven
@@ -581,7 +667,7 @@ class ActivityEngine:
                 continue
             if inactive_states is not None and s in inactive_states:
                 continue
-            friendly = (state.get("attributes", {}).get("friendly_name") or "")
+            friendly = state.get("attributes", {}).get("friendly_name") or ""
             # Entity-Name normalisieren: _ durch Leerzeichen ersetzen,
             # damit \b Word-Boundaries korrekt matchen (da _ ein Word-Char ist).
             name_part = entity_id.split(".", 1)[1] if "." in entity_id else entity_id
@@ -589,7 +675,10 @@ class ActivityEngine:
             if pattern.search(normalized_name) or pattern.search(friendly):
                 logger.info(
                     "%s auto-discovered: %s (state=%s, friendly=%s)",
-                    label, entity_id, s, friendly,
+                    label,
+                    entity_id,
+                    s,
+                    friendly,
                 )
                 return entity_id
         return ""
@@ -619,8 +708,11 @@ class ActivityEngine:
 
         # 2. Fallback: Auto-Discovery
         return self._auto_discover(
-            states, ("media_player.",), self.media_players,
-            pattern=self._TV_RE, label="TV",
+            states,
+            ("media_player.",),
+            self.media_players,
+            pattern=self._TV_RE,
+            label="TV",
             inactive_states=inactive_states,
         )
 
@@ -634,10 +726,16 @@ class ActivityEngine:
             if state.get("entity_id", "") in self.mic_sensors:
                 if state.get("state") == "on":
                     return True
-        return bool(self._auto_discover(
-            states, ("binary_sensor.",), self.mic_sensors,
-            pattern=self._MIC_RE, label="Mic", active_states={"on"},
-        ))
+        return bool(
+            self._auto_discover(
+                states,
+                ("binary_sensor.",),
+                self.mic_sensors,
+                pattern=self._MIC_RE,
+                label="Mic",
+                active_states={"on"},
+            )
+        )
 
     def _check_bed_occupied(self, states: list[dict]) -> bool:
         """Prueft ob der Bettsensor belegt ist (reines Sensor-Signal).
@@ -649,19 +747,29 @@ class ActivityEngine:
             if state.get("entity_id", "") in self.bed_sensors:
                 if state.get("state") == "on":
                     return True
-        return bool(self._auto_discover(
-            states, ("binary_sensor.",), self.bed_sensors,
-            pattern=self._BED_RE, label="Bed", active_states={"on"},
-        ))
+        return bool(
+            self._auto_discover(
+                states,
+                ("binary_sensor.",),
+                self.bed_sensors,
+                pattern=self._BED_RE,
+                label="Bed",
+                active_states={"on"},
+            )
+        )
 
-    def _check_sleeping(self, states: list[dict], *, _pc_active: bool | None = None) -> bool:
+    def _check_sleeping(
+        self, states: list[dict], *, _pc_active: bool | None = None
+    ) -> bool:
         """Prueft ob der Benutzer schlaeft.
 
         Bett belegt + kein TV/PC = schlaeft (auch Mittagsschlaf).
         Bett belegt + TV an = NICHT sleeping (fernsehen im Bett) → wird WATCHING.
         Nacht + alle Lichter aus = wahrscheinlich schlaeft (Fallback ohne Bettsensor).
         """
-        pc_active = _pc_active if _pc_active is not None else self._check_pc_active(states)
+        pc_active = (
+            _pc_active if _pc_active is not None else self._check_pc_active(states)
+        )
         if pc_active or self._check_media_playing(states):
             return False
         if self._check_bed_occupied(states):
@@ -689,10 +797,16 @@ class ActivityEngine:
         # Auto-Discovery nur wenn NICHT explizit konfiguriert
         if self._pc_sensors_configured:
             return False
-        return bool(self._auto_discover(
-            states, ("binary_sensor.", "switch."), self.pc_sensors,
-            pattern=self._PC_RE, label="PC", active_states={"on", "active"},
-        ))
+        return bool(
+            self._auto_discover(
+                states,
+                ("binary_sensor.", "switch."),
+                self.pc_sensors,
+                pattern=self._PC_RE,
+                label="PC",
+                active_states={"on", "active"},
+            )
+        )
 
     def _check_guests(self, states: list[dict]) -> bool:
         """Prueft ob echte Gaeste anwesend sind (nicht nur Haushaltsmitglieder)."""
@@ -703,7 +817,10 @@ class ActivityEngine:
             if entity_id.startswith("person."):
                 if state.get("state") == "home":
                     persons_home += 1
-                    if self._household_entities and entity_id.lower() not in self._household_entities:
+                    if (
+                        self._household_entities
+                        and entity_id.lower() not in self._household_entities
+                    ):
                         unknown_home += 1
         # Wenn Haushaltsmitglieder konfiguriert: nur unbekannte Personen = Gaeste
         if self._household_entities:

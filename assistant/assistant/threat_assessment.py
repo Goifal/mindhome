@@ -33,6 +33,21 @@ KEY_THREAT_NOTIFIED = "mha:security:notified:"
 class ThreatAssessment:
     """Proaktive Sicherheitsanalyse für das Smart Home."""
 
+    # MCU Sprint 3: Threat-Prioritaet — Lebensbedrohung zuerst
+    _THREAT_PRIORITY = {
+        "smoke_fire": 0,
+        "carbon_monoxide": 0,
+        "gas_leak": 0,
+        "medical_emergency": 1,
+        "break_in": 2,
+        "water_leak": 3,
+        "power_outage": 4,
+        "storm_windows": 5,
+        "doors_open_nobody_home": 5,
+        "night_motion": 6,
+        "unknown_device": 7,
+    }
+
     # Strukturierte Notfall-Playbooks für verschiedene Szenarien.
     # Jeder Schritt hat eine action (Callable-Name), Beschreibung und Priorität.
     EMERGENCY_PLAYBOOKS: dict[str, dict] = {
@@ -50,19 +65,37 @@ class ThreatAssessment:
                     "step": 2,
                     "action": "notify_all_persons",
                     "description": "Alle Personen per Telefon benachrichtigen (Push-Notification)",
-                    "ha_actions": [{"service": "notify", "action": "notify", "data_template": "power_outage"}],
+                    "ha_actions": [
+                        {
+                            "service": "notify",
+                            "action": "notify",
+                            "data_template": "power_outage",
+                        }
+                    ],
                 },
                 {
                     "step": 3,
                     "action": "activate_emergency_lighting",
                     "description": "Notbeleuchtung aktivieren falls verfügbar",
-                    "ha_actions": [{"service": "light", "action": "turn_on", "entity_filter": "notlicht|emergency"}],
+                    "ha_actions": [
+                        {
+                            "service": "light",
+                            "action": "turn_on",
+                            "entity_filter": "notlicht|emergency",
+                        }
+                    ],
                 },
                 {
                     "step": 4,
                     "action": "secure_garage_doors",
                     "description": "Offene Garagentore/Einfahrtstore sichern falls möglich",
-                    "ha_actions": [{"service": "cover", "action": "close_cover", "entity_filter": "garage|tor|gate"}],
+                    "ha_actions": [
+                        {
+                            "service": "cover",
+                            "action": "close_cover",
+                            "entity_filter": "garage|tor|gate",
+                        }
+                    ],
                 },
                 {
                     "step": 5,
@@ -86,25 +119,49 @@ class ThreatAssessment:
                     "step": 2,
                     "action": "critical_alert_all",
                     "description": "Kritischer Alarm an alle Personen",
-                    "ha_actions": [{"service": "notify", "action": "notify", "data_template": "water_damage"}],
+                    "ha_actions": [
+                        {
+                            "service": "notify",
+                            "action": "notify",
+                            "data_template": "water_damage",
+                        }
+                    ],
                 },
                 {
                     "step": 3,
                     "action": "close_water_valve",
                     "description": "Wasserventil schließen falls Smart-Ventil vorhanden",
-                    "ha_actions": [{"service": "valve", "action": "close_valve", "entity_filter": "water|wasser"}],
+                    "ha_actions": [
+                        {
+                            "service": "valve",
+                            "action": "close_valve",
+                            "entity_filter": "water|wasser",
+                        }
+                    ],
                 },
                 {
                     "step": 4,
                     "action": "disable_electrical_circuits",
                     "description": "Betroffene Stromkreise abschalten falls Smart-Breaker vorhanden",
-                    "ha_actions": [{"service": "switch", "action": "turn_off", "entity_filter": "breaker|sicherung"}],
+                    "ha_actions": [
+                        {
+                            "service": "switch",
+                            "action": "turn_off",
+                            "entity_filter": "breaker|sicherung",
+                        }
+                    ],
                 },
                 {
                     "step": 5,
                     "action": "camera_snapshot",
                     "description": "Kamera-Snapshot zur Dokumentation falls verfügbar",
-                    "ha_actions": [{"service": "camera", "action": "snapshot", "entity_filter": "camera."}],
+                    "ha_actions": [
+                        {
+                            "service": "camera",
+                            "action": "snapshot",
+                            "entity_filter": "camera.",
+                        }
+                    ],
                 },
                 {
                     "step": 6,
@@ -123,26 +180,46 @@ class ThreatAssessment:
                     "step": 1,
                     "action": "activate_all_lights",
                     "description": "Alle Lichter einschalten (Abschreckung)",
-                    "ha_actions": [{"service": "light", "action": "turn_on", "entity_filter": "light."}],
+                    "ha_actions": [
+                        {
+                            "service": "light",
+                            "action": "turn_on",
+                            "entity_filter": "light.",
+                        }
+                    ],
                 },
                 {
                     "step": 2,
                     "action": "silent_alarm_owner",
                     "description": "Stiller Alarm an Eigentümer (NICHT über Lautsprecher!)",
-                    "ha_actions": [{"service": "notify", "action": "notify", "data_template": "break_in_silent"}],
+                    "ha_actions": [
+                        {
+                            "service": "notify",
+                            "action": "notify",
+                            "data_template": "break_in_silent",
+                        }
+                    ],
                     "silent": True,  # Keine Sprachausgabe über Lautsprecher
                 },
                 {
                     "step": 3,
                     "action": "camera_snapshots_entries",
                     "description": "Kamera-Snapshots aller Eingangsbereiche",
-                    "ha_actions": [{"service": "camera", "action": "snapshot", "entity_filter": "camera."}],
+                    "ha_actions": [
+                        {
+                            "service": "camera",
+                            "action": "snapshot",
+                            "entity_filter": "camera.",
+                        }
+                    ],
                 },
                 {
                     "step": 4,
                     "action": "lock_all_smart_locks",
                     "description": "Alle Smart-Locks verriegeln",
-                    "ha_actions": [{"service": "lock", "action": "lock", "entity_filter": "lock."}],
+                    "ha_actions": [
+                        {"service": "lock", "action": "lock", "entity_filter": "lock."}
+                    ],
                 },
                 {
                     "step": 5,
@@ -160,25 +237,49 @@ class ThreatAssessment:
                     "step": 1,
                     "action": "all_lights_on",
                     "description": "Alle Lichter an (Fluchtweg beleuchten)",
-                    "ha_actions": [{"service": "light", "action": "turn_on", "entity_filter": "light."}],
+                    "ha_actions": [
+                        {
+                            "service": "light",
+                            "action": "turn_on",
+                            "entity_filter": "light.",
+                        }
+                    ],
                 },
                 {
                     "step": 2,
                     "action": "open_all_covers",
                     "description": "Alle Rollläden/Abdeckungen öffnen (Fluchtweg freihalten)",
-                    "ha_actions": [{"service": "cover", "action": "open_cover", "entity_filter": "cover."}],
+                    "ha_actions": [
+                        {
+                            "service": "cover",
+                            "action": "open_cover",
+                            "entity_filter": "cover.",
+                        }
+                    ],
                 },
                 {
                     "step": 3,
                     "action": "critical_alert_location",
                     "description": "Kritischer Alarm mit Raumangabe",
-                    "ha_actions": [{"service": "notify", "action": "notify", "data_template": "fire_smoke"}],
+                    "ha_actions": [
+                        {
+                            "service": "notify",
+                            "action": "notify",
+                            "data_template": "fire_smoke",
+                        }
+                    ],
                 },
                 {
                     "step": 4,
                     "action": "ventilation_off",
                     "description": "Lüftung ausschalten (Rauchausbreitung verhindern)",
-                    "ha_actions": [{"service": "fan", "action": "turn_off", "entity_filter": "fan.|climate."}],
+                    "ha_actions": [
+                        {
+                            "service": "fan",
+                            "action": "turn_off",
+                            "entity_filter": "fan.|climate.",
+                        }
+                    ],
                 },
                 {
                     "step": 5,
@@ -205,25 +306,49 @@ class ThreatAssessment:
                     "step": 2,
                     "action": "call_emergency_contact",
                     "description": "Notfallkontakt anrufen",
-                    "ha_actions": [{"service": "notify", "action": "notify", "data_template": "medical_emergency"}],
+                    "ha_actions": [
+                        {
+                            "service": "notify",
+                            "action": "notify",
+                            "data_template": "medical_emergency",
+                        }
+                    ],
                 },
                 {
                     "step": 3,
                     "action": "unlock_front_door",
                     "description": "Haustür für Rettungsdienst entriegeln",
-                    "ha_actions": [{"service": "lock", "action": "unlock", "entity_filter": "haustuer|front_door|eingang"}],
+                    "ha_actions": [
+                        {
+                            "service": "lock",
+                            "action": "unlock",
+                            "entity_filter": "haustuer|front_door|eingang",
+                        }
+                    ],
                 },
                 {
                     "step": 4,
                     "action": "pathway_lights_on",
                     "description": "Alle Weg-Beleuchtungen einschalten",
-                    "ha_actions": [{"service": "light", "action": "turn_on", "entity_filter": "light."}],
+                    "ha_actions": [
+                        {
+                            "service": "light",
+                            "action": "turn_on",
+                            "entity_filter": "light.",
+                        }
+                    ],
                 },
                 {
                     "step": 5,
                     "action": "provide_address_info",
                     "description": "Adresse + Situationsbeschreibung an Notfallkontakt übermitteln",
-                    "ha_actions": [{"service": "notify", "action": "notify", "data_template": "medical_address"}],
+                    "ha_actions": [
+                        {
+                            "service": "notify",
+                            "action": "notify",
+                            "data_template": "medical_address",
+                        }
+                    ],
                 },
             ],
         },
@@ -236,11 +361,20 @@ class ThreatAssessment:
 
         security_cfg = yaml_config.get("security", {})
         _raw_enabled = security_cfg.get("threat_assessment", True)
-        self.enabled = bool(_raw_enabled) and str(_raw_enabled).lower() not in ("false", "0", "no", "off")
+        self.enabled = bool(_raw_enabled) and str(_raw_enabled).lower() not in (
+            "false",
+            "0",
+            "no",
+            "off",
+        )
 
         ta_cfg = yaml_config.get("threat_assessment", {})
-        self.night_start = ta_cfg.get("night_start_hour", security_cfg.get("night_start_hour", 23))
-        self.night_end = ta_cfg.get("night_end_hour", security_cfg.get("night_end_hour", 6))
+        self.night_start = ta_cfg.get(
+            "night_start_hour", security_cfg.get("night_start_hour", 23)
+        )
+        self.night_end = ta_cfg.get(
+            "night_end_hour", security_cfg.get("night_end_hour", 6)
+        )
         self.motion_cooldown_minutes = ta_cfg.get("motion_cooldown_minutes", 30)
         self.state_max_age_minutes = ta_cfg.get("state_max_age_minutes", 10)
         self.auto_execute_playbooks = ta_cfg.get("auto_execute_playbooks", False)
@@ -248,6 +382,66 @@ class ThreatAssessment:
         self._known_device_patterns = [
             p.lower() for p in security_cfg.get("known_device_patterns", [])
         ]
+        self._notify_callback = None  # MCU Sprint 3: Post-crisis debrief callback
+
+        # MCU Sprint 3: External escalation chain
+        self._emergency_contacts: list[dict] = ta_cfg.get("emergency_contacts", [])
+
+    def set_notify_callback(self, callback):
+        """MCU Sprint 3: Sets callback for post-crisis debrief notifications."""
+        self._notify_callback = callback
+
+    async def escalate_to_contacts(self, scenario: str, description: str) -> None:
+        """MCU Sprint 3: Escalates to emergency contacts with increasing delay.
+
+        Config format: emergency_contacts:
+          - name: "Partner"
+            ha_notify_target: "notify.mobile_app_partner"
+            delay_minutes: 0
+          - name: "Nachbar"
+            ha_notify_target: "notify.mobile_app_nachbar"
+            delay_minutes: 2
+        """
+        if not self._emergency_contacts or not self.ha:
+            return
+
+        address = yaml_config.get("home", {}).get("address", "")
+        for contact in self._emergency_contacts:
+            delay = contact.get("delay_minutes", 0)
+            if delay > 0:
+                await asyncio.sleep(delay * 60)
+
+                # Check if still critical (ACK might have been received)
+                if scenario not in self._running_playbooks:
+                    logger.info(
+                        "Eskalation abgebrochen — Playbook %s nicht mehr aktiv",
+                        scenario,
+                    )
+                    return
+
+            target = contact.get("ha_notify_target", "")
+            name = contact.get("name", "Unbekannt")
+            if not target:
+                continue
+
+            msg = (
+                f"NOTFALL bei {address}: {description}"
+                if address
+                else f"NOTFALL: {description}"
+            )
+            try:
+                await self.ha.call_service(
+                    "notify",
+                    target.split(".")[-1] if "." in target else target,
+                    {"message": msg, "title": f"MindHome Notfall: {scenario}"},
+                )
+                logger.warning(
+                    "Notfall-Eskalation an %s gesendet: %s",
+                    name,
+                    scenario,
+                )
+            except Exception as e:
+                logger.error("Notfall-Eskalation an %s fehlgeschlagen: %s", name, e)
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis."""
@@ -321,6 +515,9 @@ class ThreatAssessment:
         water_threats = self._check_water_leak(states)
         threats.extend(water_threats)
 
+        # MCU Sprint 3: Multi-Krisen-Priorisierung — Lebensbedrohung zuerst
+        threats.sort(key=lambda t: self._THREAT_PRIORITY.get(t.get("type", ""), 99))
+
         if self.auto_execute_playbooks and self.ha:
             for threat in threats:
                 if threat.get("urgency") != "critical":
@@ -329,7 +526,10 @@ class ThreatAssessment:
                 if not playbook_name:
                     continue
                 if playbook_name in self._running_playbooks:
-                    logger.warning("Playbook '%s' läuft bereits — überspringe doppelten Start", playbook_name)
+                    logger.warning(
+                        "Playbook '%s' läuft bereits — überspringe doppelten Start",
+                        playbook_name,
+                    )
                     continue
 
                 def _playbook_done(t):
@@ -354,7 +554,9 @@ class ThreatAssessment:
         }
         return mapping.get(threat_type)
 
-    async def _check_night_motion(self, states: list[dict], weather_ctx: dict = None) -> list[dict]:
+    async def _check_night_motion(
+        self, states: list[dict], weather_ctx: dict = None
+    ) -> list[dict]:
         """Prueft ob nachts Bewegung erkannt wird obwohl alle schlafen.
 
         Wetter-Filter: Outdoor-Sensoren (garten, terrasse, einfahrt) werden bei
@@ -392,24 +594,34 @@ class ThreatAssessment:
                 if is_outdoor and weather_ctx.get("is_stormy"):
                     logger.debug(
                         "Nacht-Bewegung unterdrueckt (Wetter-Filter): %s (Wind: %.0f, %s)",
-                        eid, weather_ctx.get("wind_speed", 0), weather_ctx.get("condition", ""),
+                        eid,
+                        weather_ctx.get("wind_speed", 0),
+                        weather_ctx.get("condition", ""),
                     )
                     continue
 
                 key = f"night_motion_{eid}"
-                if not await self._was_notified(key, cooldown_minutes=self.motion_cooldown_minutes):
-                    await self._mark_notified(key, cooldown_minutes=self.motion_cooldown_minutes)
+                if not await self._was_notified(
+                    key, cooldown_minutes=self.motion_cooldown_minutes
+                ):
+                    await self._mark_notified(
+                        key, cooldown_minutes=self.motion_cooldown_minutes
+                    )
                     friendly = s.get("attributes", {}).get("friendly_name", eid)
-                    threats.append({
-                        "type": "night_motion",
-                        "message": f"Nächtliche Bewegung erkannt: {friendly}. Alle Bewohner sollten schlafen.",
-                        "urgency": "high",
-                        "entity": eid,
-                    })
+                    threats.append(
+                        {
+                            "type": "night_motion",
+                            "message": f"Nächtliche Bewegung erkannt: {friendly}. Alle Bewohner sollten schlafen.",
+                            "urgency": "high",
+                            "entity": eid,
+                        }
+                    )
 
         return threats
 
-    def _check_storm_windows(self, states: list[dict], weather_ctx: dict = None) -> list[dict]:
+    def _check_storm_windows(
+        self, states: list[dict], weather_ctx: dict = None
+    ) -> list[dict]:
         """Prueft ob Fenster bei Sturmwarnung offen sind."""
         threats = []
 
@@ -429,12 +641,15 @@ class ThreatAssessment:
             except (ValueError, TypeError):
                 return []
 
-        wind_threshold = float(yaml_config.get("weather_warnings", {}).get("wind_speed_high", 60))
+        wind_threshold = float(
+            yaml_config.get("weather_warnings", {}).get("wind_speed_high", 60)
+        )
         if wind_speed_val < wind_threshold:  # kein Sturm
             return []
 
         # Offene Fenster/Türen bei Sturm — kategorisiert (Tore separat)
         from .function_calling import is_window_or_door, get_opening_type
+
         open_windows = []
         open_gates = []
         for s in states:
@@ -450,17 +665,21 @@ class ThreatAssessment:
                 open_windows.append(friendly)
 
         if open_windows:
-            threats.append({
-                "type": "storm_windows",
-                "message": f"Sturmwarnung ({wind_speed_val:.0f} km/h)! {len(open_windows)} Fenster/Türen noch offen: {', '.join(open_windows)}.",
-                "urgency": "high",
-            })
+            threats.append(
+                {
+                    "type": "storm_windows",
+                    "message": f"Sturmwarnung ({wind_speed_val:.0f} km/h)! {len(open_windows)} Fenster/Türen noch offen: {', '.join(open_windows)}.",
+                    "urgency": "high",
+                }
+            )
         if open_gates:
-            threats.append({
-                "type": "storm_gates",
-                "message": f"Sturmwarnung ({wind_speed_val:.0f} km/h)! {len(open_gates)} Tore offen: {', '.join(open_gates)}.",
-                "urgency": "high",
-            })
+            threats.append(
+                {
+                    "type": "storm_gates",
+                    "message": f"Sturmwarnung ({wind_speed_val:.0f} km/h)! {len(open_gates)} Tore offen: {', '.join(open_gates)}.",
+                    "urgency": "high",
+                }
+            )
 
         return threats
 
@@ -481,6 +700,7 @@ class ThreatAssessment:
 
         # Offene Türen/Fenster/Tore — konsistent mit is_window_or_door()
         from .function_calling import is_window_or_door, get_opening_type
+
         for s in states:
             eid = s.get("entity_id", "")
             if not is_window_or_door(eid, s):
@@ -489,23 +709,29 @@ class ThreatAssessment:
                 continue
             friendly = s.get("attributes", {}).get("friendly_name", eid)
             opening_type = get_opening_type(eid, s)
-            type_label = {"door": "Tür", "gate": "Tor", "window": "Fenster"}.get(opening_type, "Fenster")
-            threats.append({
-                "type": f"{opening_type}_open_empty",
-                "message": f"{friendly} ({type_label}) ist offen und niemand ist zuhause!",
-                "urgency": "critical",
-            })
+            type_label = {"door": "Tür", "gate": "Tor", "window": "Fenster"}.get(
+                opening_type, "Fenster"
+            )
+            threats.append(
+                {
+                    "type": f"{opening_type}_open_empty",
+                    "message": f"{friendly} ({type_label}) ist offen und niemand ist zuhause!",
+                    "urgency": "critical",
+                }
+            )
 
         # Entriegelte Schlösser
         for s in states:
             eid = s.get("entity_id", "")
             if eid.startswith("lock.") and s.get("state") == "unlocked":
                 friendly = s.get("attributes", {}).get("friendly_name", eid)
-                threats.append({
-                    "type": "lock_open_empty",
-                    "message": f"{friendly} ist entriegelt und niemand ist zuhause!",
-                    "urgency": "critical",
-                })
+                threats.append(
+                    {
+                        "type": "lock_open_empty",
+                        "message": f"{friendly} ist entriegelt und niemand ist zuhause!",
+                        "urgency": "critical",
+                    }
+                )
 
         return threats
 
@@ -523,7 +749,9 @@ class ThreatAssessment:
         try:
             guest_val = await self.redis.get("mha:routine:guest_mode")
             if guest_val is not None:
-                if (guest_val.decode() if isinstance(guest_val, bytes) else guest_val) == "active":
+                if (
+                    guest_val.decode() if isinstance(guest_val, bytes) else guest_val
+                ) == "active":
                     return []
         except Exception as e:
             logger.debug("Unhandled: %s", e)
@@ -539,7 +767,11 @@ class ThreatAssessment:
 
         # Bekannte Geräte aus Redis holen
         known_raw = await self.redis.smembers(KEY_KNOWN_DEVICES)
-        known = {d.decode() if isinstance(d, bytes) else d for d in known_raw} if known_raw else set()
+        known = (
+            {d.decode() if isinstance(d, bytes) else d for d in known_raw}
+            if known_raw
+            else set()
+        )
 
         # Beim ersten Mal: Alle aktuellen Geräte als "bekannt" speichern
         if not known:
@@ -567,12 +799,14 @@ class ThreatAssessment:
                             friendly = s.get("attributes", {}).get("friendly_name")
                             break
                     name = friendly or device
-                    threats.append({
-                        "type": "unknown_device",
-                        "message": f"Unbekanntes Gerät im Netzwerk: {name}.",
-                        "urgency": "medium",
-                        "entity": device,
-                    })
+                    threats.append(
+                        {
+                            "type": "unknown_device",
+                            "message": f"Unbekanntes Gerät im Netzwerk: {name}.",
+                            "urgency": "medium",
+                            "entity": device,
+                        }
+                    )
 
         return threats
 
@@ -587,7 +821,14 @@ class ThreatAssessment:
         # device_class Werte die HA für echte Alarm-Sensoren verwendet
         alarm_device_classes = {"smoke", "carbon_monoxide", "gas"}
         # Keywords nur als Fallback wenn kein device_class gesetzt
-        smoke_keywords = ["smoke", "rauch", "fire", "feuer", "kohlenmonoxid", "carbon_monoxide"]
+        smoke_keywords = [
+            "smoke",
+            "rauch",
+            "fire",
+            "feuer",
+            "kohlenmonoxid",
+            "carbon_monoxide",
+        ]
         # Explizit KEINE CO2-Sensoren — das sind Luftqualitaets-Sensoren, kein Notfall
         co2_exclude = ["co2", "kohlendioxid", "air_quality", "luftqualitaet", "iaq"]
 
@@ -614,21 +855,35 @@ class ThreatAssessment:
                         is_alarm = True
 
             if is_alarm:
-                logger.warning("Rauchmelder/Gas-Alarm: %s (%s, device_class=%s)",
-                               friendly, eid, device_class or "none")
-                threats.append({
-                    "type": "smoke_fire",
-                    "message": f"ALARM: {friendly} hat ausgelöst! Sofortige Pruefung erforderlich!",
-                    "urgency": "critical",
-                    "entity": eid,
-                })
+                logger.warning(
+                    "Rauchmelder/Gas-Alarm: %s (%s, device_class=%s)",
+                    friendly,
+                    eid,
+                    device_class or "none",
+                )
+                threats.append(
+                    {
+                        "type": "smoke_fire",
+                        "message": f"ALARM: {friendly} hat ausgelöst! Sofortige Pruefung erforderlich!",
+                        "urgency": "critical",
+                        "entity": eid,
+                    }
+                )
 
         return threats
 
     def _check_water_leak(self, states: list[dict]) -> list[dict]:
         """Prueft Wasserleck-Sensoren (Waschmaschine, Bad, Keller)."""
         threats = []
-        water_keywords = ["water", "wasser", "leak", "leck", "moisture", "feucht", "flood"]
+        water_keywords = [
+            "water",
+            "wasser",
+            "leak",
+            "leck",
+            "moisture",
+            "feucht",
+            "flood",
+        ]
 
         for s in states:
             eid = s.get("entity_id", "")
@@ -640,12 +895,14 @@ class ThreatAssessment:
             eid_lower = eid.lower()
             if any(kw in eid_lower for kw in water_keywords):
                 friendly = s.get("attributes", {}).get("friendly_name", eid)
-                threats.append({
-                    "type": "water_leak",
-                    "message": f"Wasserleck erkannt: {friendly}! Bitte umgehend prüfen.",
-                    "urgency": "critical",
-                    "entity": eid,
-                })
+                threats.append(
+                    {
+                        "type": "water_leak",
+                        "message": f"Wasserleck erkannt: {friendly}! Bitte umgehend prüfen.",
+                        "urgency": "critical",
+                        "entity": eid,
+                    }
+                )
 
         return threats
 
@@ -663,13 +920,18 @@ class ThreatAssessment:
         except asyncio.TimeoutError:
             return {"score": -1, "level": "unknown", "details": ["HA-Timeout (10s)"]}
         if not states:
-            return {"score": -1, "level": "unknown", "details": ["Keine HA-Daten verfügbar"]}
+            return {
+                "score": -1,
+                "level": "unknown",
+                "details": ["Keine HA-Daten verfügbar"],
+            }
 
         score = 100
         details = []
 
         # Türen/Fenster/Tore prüfen — konsistent mit is_window_or_door()
         from .function_calling import is_window_or_door, get_opening_type
+
         open_doors = 0
         open_windows = 0
         open_gates = 0
@@ -700,7 +962,10 @@ class ThreatAssessment:
         # Schlösser prüfen
         unlocked = 0
         for s in states:
-            if s.get("entity_id", "").startswith("lock.") and s.get("state") == "unlocked":
+            if (
+                s.get("entity_id", "").startswith("lock.")
+                and s.get("state") == "unlocked"
+            ):
                 unlocked += 1
         if unlocked > 0:
             score -= unlocked * 20
@@ -710,7 +975,10 @@ class ThreatAssessment:
         smoke_active = any(
             s.get("state") == "on"
             and s.get("entity_id", "").startswith("binary_sensor.")
-            and any(kw in s.get("entity_id", "").lower() for kw in ["smoke", "rauch", "fire", "feuer"])
+            and any(
+                kw in s.get("entity_id", "").lower()
+                for kw in ["smoke", "rauch", "fire", "feuer"]
+            )
             for s in states
         )
         if smoke_active:
@@ -721,7 +989,10 @@ class ThreatAssessment:
         water_active = any(
             s.get("state") == "on"
             and s.get("entity_id", "").startswith("binary_sensor.")
-            and any(kw in s.get("entity_id", "").lower() for kw in ["water", "wasser", "leak", "leck"])
+            and any(
+                kw in s.get("entity_id", "").lower()
+                for kw in ["water", "wasser", "leak", "leck"]
+            )
             for s in states
         )
         if water_active:
@@ -742,9 +1013,9 @@ class ThreatAssessment:
         # Device-Dependency-Konflikte: Compound-Severity
         try:
             from .state_change_log import StateChangeLog
+
             _state_dict = {
-                s["entity_id"]: s.get("state", "")
-                for s in states if "entity_id" in s
+                s["entity_id"]: s.get("state", "") for s in states if "entity_id" in s
             }
             _scl = StateChangeLog.__new__(StateChangeLog)
             _conflicts = _scl.detect_conflicts(_state_dict)
@@ -799,10 +1070,12 @@ class ThreatAssessment:
         if threat_type == "smoke_fire":
             try:
                 lights = await self.ha.get_states()
-                for s in (lights or []):
+                for s in lights or []:
                     eid = s.get("entity_id", "")
                     if eid.startswith("light.") and s.get("state") == "off":
-                        await self.ha.call_service("light", "turn_on", {"entity_id": eid})
+                        await self.ha.call_service(
+                            "light", "turn_on", {"entity_id": eid}
+                        )
                 actions_taken.append("Alle Lichter eingeschaltet")
             except Exception as e:
                 logger.warning("Eskalation Lichter fehlgeschlagen: %s", e)
@@ -810,16 +1083,21 @@ class ThreatAssessment:
         # Stufe 2: Rollladen/Covers schliessen bei Einbruch-Verdacht
         _dyn_cfg = yaml_config.get("dynamic_emergency", {})
         if _dyn_cfg.get("enabled", True) and threat_type in (
-            "door_open_empty", "lock_open_empty", "glass_break", "intrusion",
+            "door_open_empty",
+            "lock_open_empty",
+            "glass_break",
+            "intrusion",
         ):
             try:
                 states = await self.ha.get_states()
                 covers_closed = 0
-                for s in (states or []):
+                for s in states or []:
                     eid = s.get("entity_id", "")
                     # Rollaeden schliessen (sicher, reversibel)
                     if eid.startswith("cover.") and s.get("state") == "open":
-                        await self.ha.call_service("cover", "close_cover", {"entity_id": eid})
+                        await self.ha.call_service(
+                            "cover", "close_cover", {"entity_id": eid}
+                        )
                         covers_closed += 1
                 if covers_closed > 0:
                     actions_taken.append(f"{covers_closed} Rollaeden geschlossen")
@@ -827,13 +1105,17 @@ class ThreatAssessment:
                 logger.warning("Eskalation Covers fehlgeschlagen: %s", e)
 
             # Stufe 3: Sirene — NUR mit Bestaetigung (F-009 respektiert)
-            _confirm_actions = _dyn_cfg.get("require_confirmation_for", ["lock", "siren"])
+            _confirm_actions = _dyn_cfg.get(
+                "require_confirmation_for", ["lock", "siren"]
+            )
             if "siren" not in _confirm_actions:
                 try:
-                    for s in (states or []):
+                    for s in states or []:
                         eid = s.get("entity_id", "")
                         if eid.startswith("siren.") and s.get("state") != "on":
-                            await self.ha.call_service("siren", "turn_on", {"entity_id": eid})
+                            await self.ha.call_service(
+                                "siren", "turn_on", {"entity_id": eid}
+                            )
                     actions_taken.append("Sirene aktiviert")
                 except Exception as e:
                     logger.warning("Eskalation Sirene fehlgeschlagen: %s", e)
@@ -850,7 +1132,8 @@ class ThreatAssessment:
                 logger.warning(
                     "Bedrohung erkannt: %s offen bei leerem Haus. "
                     "Automatische Verriegelung deaktiviert (F-009). "
-                    "Benachrichtigung wird gesendet.", entity,
+                    "Benachrichtigung wird gesendet.",
+                    entity,
                 )
                 actions_taken.append(
                     f"WARNUNG: {entity} ist offen bei leerem Haus — "
@@ -880,13 +1163,22 @@ class ThreatAssessment:
 
         playbook = self.EMERGENCY_PLAYBOOKS.get(playbook_name)
         if not playbook:
-            logger.warning("execute_playbook_by_name: Unbekanntes Playbook '%s'", playbook_name)
-            summary["results"].append({"step": 0, "error": f"Unbekanntes Playbook: {playbook_name}"})
+            logger.warning(
+                "execute_playbook_by_name: Unbekanntes Playbook '%s'", playbook_name
+            )
+            summary["results"].append(
+                {"step": 0, "error": f"Unbekanntes Playbook: {playbook_name}"}
+            )
             return summary
 
         if playbook_name in self._running_playbooks:
-            logger.warning("Playbook '%s' läuft bereits — parallele Ausführung verhindert", playbook_name)
-            summary["results"].append({"step": 0, "error": f"Playbook {playbook_name} läuft bereits"})
+            logger.warning(
+                "Playbook '%s' läuft bereits — parallele Ausführung verhindert",
+                playbook_name,
+            )
+            summary["results"].append(
+                {"step": 0, "error": f"Playbook {playbook_name} läuft bereits"}
+            )
             return summary
 
         if not self.ha:
@@ -901,13 +1193,17 @@ class ThreatAssessment:
 
             logger.info(
                 "=== PLAYBOOK START: %s (%s, %d Schritte) ===",
-                playbook.get("name", playbook_name), playbook_name, len(steps),
+                playbook.get("name", playbook_name),
+                playbook_name,
+                len(steps),
             )
 
             try:
                 states = await asyncio.wait_for(self.ha.get_states(), timeout=15)
             except (asyncio.TimeoutError, Exception) as exc:
-                logger.warning("execute_playbook_by_name: HA-States nicht ladbar: %s", exc)
+                logger.warning(
+                    "execute_playbook_by_name: HA-States nicht ladbar: %s", exc
+                )
                 states = []
 
             for step_def in steps:
@@ -922,12 +1218,23 @@ class ThreatAssessment:
 
                 ha_actions = step_def.get("ha_actions", [])
                 if not ha_actions:
-                    logger.info("Playbook %s Schritt %d: %s (keine HA-Aktionen)", playbook_name, step_num, action_name)
+                    logger.info(
+                        "Playbook %s Schritt %d: %s (keine HA-Aktionen)",
+                        playbook_name,
+                        step_num,
+                        action_name,
+                    )
                     summary["steps_executed"] += 1
                     summary["results"].append(step_result)
                     continue
 
-                logger.info("Playbook %s Schritt %d: %s (%d HA-Aktionen)", playbook_name, step_num, action_name, len(ha_actions))
+                logger.info(
+                    "Playbook %s Schritt %d: %s (%d HA-Aktionen)",
+                    playbook_name,
+                    step_num,
+                    action_name,
+                    len(ha_actions),
+                )
                 step_had_failure = False
 
                 for ha_action in ha_actions:
@@ -959,15 +1266,40 @@ class ThreatAssessment:
                                 ),
                                 timeout=15,
                             )
-                            step_result["details"].append(f"{service_domain}.{service_action} → {entity_id}: OK")
-                            logger.info("Playbook %s: %s.%s → %s OK", playbook_name, service_domain, service_action, entity_id)
+                            step_result["details"].append(
+                                f"{service_domain}.{service_action} → {entity_id}: OK"
+                            )
+                            logger.info(
+                                "Playbook %s: %s.%s → %s OK",
+                                playbook_name,
+                                service_domain,
+                                service_action,
+                                entity_id,
+                            )
                         except asyncio.TimeoutError:
-                            step_result["details"].append(f"{service_domain}.{service_action} → {entity_id}: TIMEOUT")
-                            logger.warning("Playbook %s: %s.%s → %s Timeout (15s)", playbook_name, service_domain, service_action, entity_id)
+                            step_result["details"].append(
+                                f"{service_domain}.{service_action} → {entity_id}: TIMEOUT"
+                            )
+                            logger.warning(
+                                "Playbook %s: %s.%s → %s Timeout (15s)",
+                                playbook_name,
+                                service_domain,
+                                service_action,
+                                entity_id,
+                            )
                             step_had_failure = True
                         except Exception as svc_err:
-                            step_result["details"].append(f"{service_domain}.{service_action} → {entity_id}: FEHLER ({svc_err})")
-                            logger.warning("Playbook %s: %s.%s → %s Fehler: %s", playbook_name, service_domain, service_action, entity_id, svc_err)
+                            step_result["details"].append(
+                                f"{service_domain}.{service_action} → {entity_id}: FEHLER ({svc_err})"
+                            )
+                            logger.warning(
+                                "Playbook %s: %s.%s → %s Fehler: %s",
+                                playbook_name,
+                                service_domain,
+                                service_action,
+                                entity_id,
+                                svc_err,
+                            )
                             step_had_failure = True
 
                 if step_had_failure:
@@ -978,8 +1310,10 @@ class ThreatAssessment:
 
             logger.info(
                 "=== PLAYBOOK ENDE: %s — %d/%d erfolgreich, %d fehlgeschlagen ===",
-                playbook_name, summary["steps_executed"] - summary["steps_failed"],
-                summary["steps_total"], summary["steps_failed"],
+                playbook_name,
+                summary["steps_executed"] - summary["steps_failed"],
+                summary["steps_total"],
+                summary["steps_failed"],
             )
             return summary
         finally:
@@ -1010,17 +1344,30 @@ class ThreatAssessment:
         playbook = self.EMERGENCY_PLAYBOOKS.get(scenario)
         if not playbook:
             logger.warning("Unbekanntes Notfall-Szenario: %s", scenario)
-            return [{"step": 0, "action": "lookup", "success": False,
-                      "error": f"Unbekanntes Szenario: {scenario}"}]
+            return [
+                {
+                    "step": 0,
+                    "action": "lookup",
+                    "success": False,
+                    "error": f"Unbekanntes Szenario: {scenario}",
+                }
+            ]
 
         # Schutz gegen parallele Ausführung desselben Playbooks
         if scenario in self._running_playbooks:
             logger.warning(
                 "Playbook '%s' (%s) läuft bereits — doppelte Ausführung verhindert",
-                playbook["name"], scenario,
+                playbook["name"],
+                scenario,
             )
-            return [{"step": 0, "action": "guard", "success": False,
-                      "error": f"Playbook {scenario} läuft bereits"}]
+            return [
+                {
+                    "step": 0,
+                    "action": "guard",
+                    "success": False,
+                    "error": f"Playbook {scenario} läuft bereits",
+                }
+            ]
 
         self._running_playbooks.add(scenario)
         executed_steps: list[dict] = []
@@ -1028,7 +1375,9 @@ class ThreatAssessment:
 
         logger.warning(
             "=== NOTFALL-PLAYBOOK GESTARTET: %s (%s) === Auslöser: %s",
-            playbook["name"], scenario, trigger_context,
+            playbook["name"],
+            scenario,
+            trigger_context,
         )
 
         try:
@@ -1051,7 +1400,10 @@ class ThreatAssessment:
             }
 
             logger.info(
-                "Playbook %s — Schritt %d: %s", playbook["name"], step_num, description,
+                "Playbook %s — Schritt %d: %s",
+                playbook["name"],
+                step_num,
+                description,
             )
 
             try:
@@ -1128,8 +1480,12 @@ class ThreatAssessment:
                             )
                             logger.error(
                                 "Playbook %s Schritt %d — Service-Fehler: %s.%s → %s: %s",
-                                scenario, step_num, service_domain, service_action,
-                                entity_id, svc_err,
+                                scenario,
+                                step_num,
+                                service_domain,
+                                service_action,
+                                entity_id,
+                                svc_err,
                             )
 
                     step_result["success"] = True
@@ -1139,7 +1495,9 @@ class ThreatAssessment:
                 step_result["error"] = str(step_err)
                 logger.error(
                     "Playbook %s Schritt %d fehlgeschlagen: %s",
-                    scenario, step_num, step_err,
+                    scenario,
+                    step_num,
+                    step_err,
                 )
 
             executed_steps.append(step_result)
@@ -1153,8 +1511,36 @@ class ThreatAssessment:
         logger.warning(
             "=== NOTFALL-PLAYBOOK ABGESCHLOSSEN: %s (%s) === "
             "%d/%d Schritte erfolgreich, Dauer: %.1fs",
-            playbook["name"], scenario, succeeded, total, duration,
+            playbook["name"],
+            scenario,
+            succeeded,
+            total,
+            duration,
         )
+
+        # MCU Sprint 3: Post-Crisis Debrief
+        try:
+            duration_min = int(duration / 60) if duration >= 60 else 1
+            debrief = (
+                f"Entwarnung: {playbook['name']} nach {duration_min} Minuten abgeschlossen. "
+                f"{succeeded}/{total} Maßnahmen erfolgreich. Alle Systeme normal. "
+                f"Vorfall dokumentiert."
+            )
+            if self._notify_callback:
+                await self._notify_callback(
+                    {
+                        "type": "post_crisis_debrief",
+                        "message": debrief,
+                        "urgency": "medium",
+                        "scenario": scenario,
+                        "duration_seconds": duration,
+                        "steps_succeeded": succeeded,
+                        "steps_total": total,
+                    }
+                )
+                logger.info("Post-Crisis Debrief gesendet: %s", scenario)
+        except Exception as e:
+            logger.debug("Post-Crisis Debrief fehlgeschlagen: %s", e)
 
         return executed_steps
 
@@ -1167,4 +1553,6 @@ class ThreatAssessment:
     async def _mark_notified(self, key: str, cooldown_minutes: int = 30):
         if not self.redis:
             return
-        await self.redis.setex(f"{KEY_THREAT_NOTIFIED}{key}", cooldown_minutes * 60, "1")
+        await self.redis.setex(
+            f"{KEY_THREAT_NOTIFIED}{key}", cooldown_minutes * 60, "1"
+        )

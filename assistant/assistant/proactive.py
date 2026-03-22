@@ -599,6 +599,21 @@ class ProactiveManager:
             volume: Lautstärke 0.0-1.0 (aus ActivityEngine)
             room: Zielraum (auto-detect wenn leer)
         """
+        # MCU Sprint 3: Flow-State deferral — suppress MEDIUM/LOW during focus
+        if urgency in (LOW, MEDIUM) and hasattr(self.brain, "activity"):
+            try:
+                if self.brain.activity.is_in_flow_state(min_minutes=30):
+                    _focus_min = self.brain.activity.get_focused_duration_minutes()
+                    logger.info(
+                        "Flow-State: %s unterdrückt (%s, focused seit %d min)",
+                        event_type,
+                        urgency,
+                        _focus_min,
+                    )
+                    return
+            except Exception:
+                pass  # Graceful degradation
+
         # Personality filter: restyle raw message in Jarvis style
         # Graceful degradation: skip if personality or LLM not available
         if self._personality_filter and urgency != "critical":
@@ -677,6 +692,48 @@ class ProactiveManager:
                 logger.warning(
                     "Critical TTS (Versuch %d) fehlgeschlagen: %s", attempt, e
                 )
+
+            # MCU Sprint 3: Escalation — after 2nd retry, all rooms
+            if attempt >= 2:
+                try:
+                    # Speak in ALL rooms (multi-room escalation)
+                    if hasattr(self.brain, "multi_room_audio"):
+                        room_speakers = yaml_config.get("multi_room_audio", {}).get(
+                            "room_speakers", {}
+                        )
+                        for r_name, r_entity in room_speakers.items():
+                            self.brain._task_registry.create_task(
+                                self.brain.sound_manager.speak_response(
+                                    text,
+                                    room=r_name,
+                                    tts_data={"volume": 1.0},
+                                ),
+                                name=f"critical_allrooms_{r_name}",
+                            )
+                        logger.info(
+                            "Critical escalation: all rooms notified (attempt %d)",
+                            attempt,
+                        )
+                except Exception as e:
+                    logger.debug("Multi-room escalation fehlgeschlagen: %s", e)
+
+            # MCU Sprint 3: After 3rd retry, flash lights in all rooms
+            if attempt >= 3:
+                try:
+                    states = await self.brain.ha.get_states()
+                    for s in states or []:
+                        eid = s.get("entity_id", "")
+                        if eid.startswith("light.") and s.get("state") == "on":
+                            await self.brain.ha.call_service(
+                                "light",
+                                "turn_on",
+                                {"entity_id": eid, "flash": "long"},
+                            )
+                    logger.info(
+                        "Critical escalation: LED flash activated (attempt %d)", attempt
+                    )
+                except Exception as e:
+                    logger.debug("LED flash escalation fehlgeschlagen: %s", e)
 
             if attempt < max_retries:
                 await asyncio.sleep(30)
@@ -848,8 +905,16 @@ class ProactiveManager:
                 self._run_scene_schedule_loop(), name="proactive_scene_schedule"
             )
 
+        # MCU Sprint 3: Kalender-Trigger Loop
+        self._calendar_task: Optional[asyncio.Task] = None
+        cal_trigger_cfg = yaml_config.get("calendar_triggers", {})
+        if cal_trigger_cfg.get("enabled", True):
+            self._calendar_task = self._create_loop_task(
+                self._run_calendar_trigger_loop(), name="proactive_calendar"
+            )
+
         logger.info(
-            "Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal + Notfall + Threat + Ambient + Follow-up + Routine + Szenen-Schedule)"
+            "Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal + Notfall + Threat + Ambient + Follow-up + Routine + Szenen-Schedule + Kalender)"
         )
 
     async def stop(self):
@@ -1198,6 +1263,69 @@ class ProactiveManager:
                     )
                 except Exception as e:
                     logger.debug("Aktivitaetslog Ankunft fehlgeschlagen: %s", e)
+
+                # MCU Sprint 3: Orchestrierte Ankunfts-Begrüßung nach >4h Abwesenheit
+                _arrival_cfg = yaml_config.get("arrival_greeting", {})
+                if _arrival_cfg.get("enabled", True) and hasattr(
+                    self.brain, "anticipation"
+                ):
+                    try:
+                        _away_hours = status.get("away_hours", 0)
+                        if _away_hours >= 4:
+                            _suggestions = (
+                                await self.brain.anticipation.get_suggestions(
+                                    person=name
+                                )
+                            )
+                            _auto_actions = [
+                                s for s in _suggestions if s.get("confidence", 0) >= 0.7
+                            ][:3]
+
+                            _executed = []
+                            for s in _auto_actions:
+                                try:
+                                    if hasattr(self.brain, "executor"):
+                                        await self.brain.executor.execute(
+                                            s["action"], s.get("args", {})
+                                        )
+                                        _executed.append(
+                                            s.get("description", s["action"])
+                                        )
+                                except Exception as _ex_err:
+                                    logger.debug("Arrival action failed: %s", _ex_err)
+
+                            if _executed:
+                                _title = get_person_title(name)
+                                _actions_text = ", ".join(_executed[:-1])
+                                if len(_executed) > 1:
+                                    _actions_text += f" und {_executed[-1]}"
+                                else:
+                                    _actions_text = _executed[0]
+
+                                _absence = status.get("absence_summary", "")
+                                _absence_part = (
+                                    f" Während du weg warst: {_absence}"
+                                    if _absence
+                                    else ""
+                                )
+
+                                _greeting = (
+                                    f"Willkommen zurück, {_title}. "
+                                    f"Ich habe mir erlaubt: {_actions_text}.{_absence_part}"
+                                )
+                                await self._deliver(
+                                    _greeting,
+                                    event_type="arrival_greeting",
+                                    urgency=MEDIUM,
+                                    volume=0.7,
+                                )
+                                logger.info(
+                                    "Arrival greeting: %d actions for %s",
+                                    len(_executed),
+                                    name,
+                                )
+                    except Exception as _ag_err:
+                        logger.debug("Arrival greeting fehlgeschlagen: %s", _ag_err)
 
                 # Phase 18: Proactive Planner — Multi-Step-Plan bei Ankunft
                 if (
@@ -8876,7 +9004,66 @@ class ProactiveManager:
             except Exception as e:
                 logger.debug("Ambient Presence Fehler: %s", e)
 
+            # MCU Sprint 3: Vacation Auto-Detection
+            try:
+                await self._check_vacation_auto_detect()
+            except Exception as e:
+                logger.debug("Vacation Auto-Detection Fehler: %s", e)
+
             await asyncio.sleep(interval)
+
+    async def _check_vacation_auto_detect(self):
+        """MCU Sprint 3: Suggests vacation mode after >48h of nobody home."""
+        if not self.brain.memory.redis:
+            return
+
+        anyone_home = await self._is_anyone_home()
+        _vac_key = "mha:proactive:nobody_home_since"
+        _vac_notified_key = "mha:proactive:vacation_suggested"
+
+        if anyone_home:
+            # Someone's home — reset tracker
+            await self.brain.memory.redis.delete(_vac_key)
+            return
+
+        # Nobody home — check/set timestamp
+        stored = await self.brain.memory.redis.get(_vac_key)
+        if not stored:
+            await self.brain.memory.redis.set(
+                _vac_key,
+                datetime.now(timezone.utc).isoformat(),
+                ex=604800,  # 7 days
+            )
+            return
+
+        try:
+            stored_str = stored.decode() if isinstance(stored, bytes) else stored
+            since = datetime.fromisoformat(stored_str)
+            hours_away = (datetime.now(timezone.utc) - since).total_seconds() / 3600
+
+            if hours_away >= 48:
+                # Check if already suggested in last 7 days
+                already = await self.brain.memory.redis.get(_vac_notified_key)
+                if already:
+                    return
+
+                await self.brain.memory.redis.set(_vac_notified_key, "1", ex=604800)
+                title = get_person_title()
+                msg = (
+                    f"{title}, niemand ist seit {int(hours_away)} Stunden zuhause. "
+                    f"Soll ich den Urlaubsmodus aktivieren?"
+                )
+                await self._deliver(
+                    msg,
+                    event_type="vacation_suggestion",
+                    urgency=LOW,
+                    volume=0.6,
+                )
+                logger.info(
+                    "Vacation Auto-Detection: Vorschlag nach %dh", int(hours_away)
+                )
+        except (ValueError, TypeError):
+            pass
 
     # ------------------------------------------------------------------
     # Event-basierte Wetter-Sensoren (WebSocket-Subscription)
@@ -9305,6 +9492,100 @@ class ProactiveManager:
             )
         except (ValueError, TypeError):
             return False
+
+    async def _run_calendar_trigger_loop(self):
+        """MCU Sprint 3: Prueft alle 15min auf anstehende Kalender-Events.
+
+        Sendet Vorbereitungsvorschlaege 10-30min vor Events als MEDIUM-Priority.
+        """
+        await asyncio.sleep(180)  # 3 Min Startup-Delay
+        logger.info("Calendar-Trigger-Loop gestartet")
+
+        while self._running:
+            try:
+                if not self._is_quiet_hours():
+                    await self._check_calendar_triggers()
+            except Exception as e:
+                logger.debug("Calendar-Trigger Check Fehler: %s", e)
+
+            await asyncio.sleep(900)  # Alle 15 Minuten
+
+    async def _check_calendar_triggers(self):
+        """Prueft Kalender auf Events in 10-30 Minuten und schlaegt Vorbereitungen vor."""
+        if not hasattr(self.brain, "calendar_intelligence"):
+            return
+
+        cal = self.brain.calendar_intelligence
+        if not cal:
+            return
+
+        try:
+            # Get upcoming events from HA calendar
+            states = await self.brain.ha.get_states()
+            if not states:
+                return
+
+            now = datetime.now(timezone.utc)
+            upcoming = []
+
+            for s in states:
+                eid = s.get("entity_id", "")
+                if not eid.startswith("calendar."):
+                    continue
+                attrs = s.get("attributes", {})
+                start_time = attrs.get("start_time", "")
+                summary = attrs.get("message", "") or attrs.get("friendly_name", "")
+                if not start_time or not summary:
+                    continue
+
+                try:
+                    event_start = datetime.fromisoformat(
+                        start_time.replace("Z", "+00:00")
+                    )
+                    delta = (event_start - now).total_seconds() / 60
+                    if 10 <= delta <= 30:
+                        upcoming.append(
+                            {
+                                "summary": summary,
+                                "minutes": int(delta),
+                                "entity_id": eid,
+                            }
+                        )
+                except (ValueError, TypeError):
+                    continue
+
+            if not upcoming:
+                return
+
+            # Deduplicate: Max 1 notification per event per day
+            for event in upcoming[:2]:
+                _dedup_key = f"mha:cal_trigger:{event['summary'][:30]}"
+                if self.brain.memory.redis:
+                    already = await self.brain.memory.redis.get(_dedup_key)
+                    if already:
+                        continue
+                    await self.brain.memory.redis.set(_dedup_key, "1", ex=86400)
+
+                title = get_person_title()
+                msg = (
+                    f"{title}, {event['summary']} in {event['minutes']} Minuten. "
+                    f"Soll ich etwas vorbereiten?"
+                )
+                await self._deliver(
+                    msg,
+                    event_type="calendar_preparation",
+                    urgency=MEDIUM,
+                    delivery_method="tts_quiet",
+                    volume=0.6,
+                )
+                logger.info(
+                    "Calendar-Trigger: %s in %d min",
+                    event["summary"][:50],
+                    event["minutes"],
+                )
+
+        except Exception as e:
+            logger.debug("Calendar-Trigger Fehler: %s", e)
 
     async def _run_scene_schedule_loop(self):
         """Prueft jede Minute ob geplante Szenen aktiviert werden muessen."""
