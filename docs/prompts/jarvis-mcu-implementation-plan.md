@@ -1,6 +1,6 @@
 # J.A.R.V.I.S. MCU-Level Implementation Plan
-> Erstellt am 2026-03-22 | Letzter Durchlauf: Session 2 am 2026-03-22
-> Aktueller Stand: 80.9% (Teilergebnis — 9 von 12 Kategorien analysiert)
+> Erstellt am 2026-03-22 | Letzter Durchlauf: Session 3 am 2026-03-22
+> Aktueller Stand: 81.1% (Endergebnis — 12 von 12 Kategorien analysiert)
 > Dieses Dokument ist die Single Source of Truth für alle MCU-Level Verbesserungen.
 
 ## Status-Legende
@@ -15,6 +15,7 @@
 |---------|-------|------------|----------|
 | 1       | 2026-03-22 | 1-4 (×3/×2.5) | 18 |
 | 2       | 2026-03-22 | 5-9 (×2/×1.5) | 16 |
+| 3       | 2026-03-22 | 10-12 (×1)     | 9  |
 
 ## Schutzliste — Besser als MCU (NICHT beschädigen!)
 
@@ -69,6 +70,18 @@
 ### Kategorie 9: Sicherheit
 - **Autonomy Evolution** (autonomy.py Zeile 684-866) — Dynamische Progression basierend auf Tagen/Interaktionen/Acceptance-Rate
 - **Function Validator** (function_validator.py, 766 Zeilen) — Data-Based Pushback mit 4-stufiger Severity
+
+### Kategorie 10: Multi-Room-Awareness
+- **Musik-Crossfade** (follow_me.py Zeile 205-281) — 10-Schritte Volumen-Ramping über 2s, sanfter als MCU-Cut
+- **7-Stufen Speaker Recognition** (speaker_recognition.py Zeile 214-397) — Device→DoA→Room→Präsenz→Voice→Embedding→Cache Hierarchie
+
+### Kategorie 11: Energiemanagement
+- **Essential Entity Protection** (energy_optimizer.py Zeile 814-862) — Konfigurierbare Whitelist, kritische Geräte werden nie abgeschaltet
+- **Year-over-Year Energievergleich** (seasonal_insight.py Zeile 180-248) — Jahresvergleich mit saisonaler Baseline
+
+### Kategorie 12: Erklärbarkeit
+- **"Warum nicht?" Erklärungen** (explainability.py Zeile 810-837) — Erklärt Inaktivität, MCU-Jarvis erklärt nur Aktionen
+- **Datenbasierter Pushback** (function_validator.py Zeile ~500-560) — Nutzt echte Sensor-Daten in Begründungen ("CO2 bei 1200ppm")
 
 ## 1. Natürliche Konversation & Sprachverständnis (×3)
 
@@ -1097,6 +1110,312 @@ Bei Angriffen auf Tonys Haus (Iron Man 3) koordiniert Jarvis die Verteidigung, p
 
 ---
 
+## 10. Multi-Room-Awareness & Follow-Me (×1)
+
+### MCU-Jarvis Benchmark
+MCU-Jarvis ist überall im Haus gleichzeitig präsent, folgt Tony nahtlos von Raum zu Raum, passt Lautstärke und Kontext automatisch an. Audio-Übergänge sind unmerklich, Konversationen werden beim Raumwechsel fortgesetzt. "Good morning, Jarvis" liefert ein raum-kontextuelles Tagesbriefing.
+
+**Schlüsselszenen:**
+- Iron Man 1: "Good morning, Jarvis" — Raum-kontextuelles Briefing
+- Alle Filme: Jarvis folgt Tony durch das gesamte Haus, Audio wechselt nahtlos mit
+
+### MindHome-Jarvis Status: 81%
+
+### Code-Verifizierung
+**[V1] Analyse:**
+
+1. **FollowMeEngine** — `assistant/assistant/follow_me.py` (531 Zeilen)
+   - `handle_motion()` (Zeile 59-203): Kernlogik — Motion-Detection → Audio/Licht/Klima-Transfer `[OK]`
+   - `_transfer_music()` (Zeile 205-281): **Crossfade-Implementierung** — 10 Schritte über 2s mit Volumen-Ramping `[OK]` `[BESSER ALS MCU]`
+   - `_transfer_lights()` (Zeile 283-352): Raum-Profile mit Tag/Nacht-Helligkeit `[OK]`
+   - `_transfer_climate()` (Zeile 354-394): Nur 2 Zustände (Komfort/Eco) `[VERBESSERBAR]`
+   - `detect_return_intent()` (Zeile 485-507): Kurzbeschaffung-Detection (<10s) `[OK]`
+   - `detect_lingering()` (Zeile 509-531): Verweildauer-Erkennung (≥180s) `[OK]`
+   - Topic-Resumption (Zeile 136-152): MCU Sprint 5 — merkt sich letzte Konversations-Topic für Fortsetzung nach Raumwechsel `[OK]`
+   - Parallel-Transfers (Zeile 165-199): Music + Lights + Climate via `asyncio.gather()` `[OK]`
+
+2. **MultiRoomAudio** — `assistant/assistant/multi_room_audio.py` (663 Zeilen)
+   - `create_group()` (Zeile 56-102): Benannte Speaker-Gruppen, Redis-persistent `[OK]`
+   - `_play_native_group()` (Zeile 216-249): HA media_player.join für Sonos/Cast `[OK]`
+   - `_play_parallel()` (Zeile 251-278): Fallback bei Join-Fehler → paralleles play_media `[OK]`
+   - `get_best_speaker_for_person()` (Zeile 554-592): Person-basiertes Speaker-Routing via Präsenz `[OK]`
+   - `smart_announce()` (Zeile 594-663): Dringlichkeits-Routing (critical=alle, normal=person_room, low=suppress) `[OK]`
+   - `discover_speakers()` (Zeile 510-539): Auto-Discovery, schließt TVs/Receiver aus `[OK]`
+
+3. **SpeakerRecognition** — `assistant/assistant/speaker_recognition.py` (1.159 Zeilen)
+   - `identify()` (Zeile 214-397): 7-stufige Hierarchie (Device→DoA→Room→Präsenz→Voice→Embedding→Cache) `[OK]` `[BESSER ALS MCU]`
+   - `identify_by_embedding()` (Zeile 791-850): ECAPA-TDNN Cosinus-Ähnlichkeit `[OK]`
+   - `store_embedding()` (Zeile 852-897): EMA-Verschmelzung (α=0.3) `[OK]`
+   - `start_fallback_ask()` (Zeile 934-977): "Wer sprichst du?" Fallback-Dialog `[OK]`
+   - Spoofing-Protection (Zeile 1094-1123): 3 Fehlversuche → 1h Sperre `[OK]`
+   - Confidence-Decay (Zeile 1082-1092): 5% Verfall pro Woche `[OK]`
+
+4. **ActivityEngine** — `assistant/assistant/activity.py` (876 Zeilen)
+   - `detect_activity()` (Zeile 416-501): 7 Aktivitäten (SLEEPING, IN_CALL, WATCHING, FOCUSED, GUESTS, RELAXING, AWAY) `[OK]`
+   - `get_delivery_method()` (Zeile 522-536): Silence-Matrix 7×4 (Activity × Urgency) `[OK]`
+   - `get_volume_level()` (Zeile 538-567): Phase 9 — Tageszeit + Activity kombiniert `[OK]`
+   - `is_in_flow_state()` (Zeile 503-512): MCU Sprint 3 — Focus >30min erkennt `[OK]`
+   - `check_silence_trigger()` (Zeile 393-414): Keyword-Erkennung ("Filmabend", "Meditation") `[OK]`
+
+5. **SoundManager** — `assistant/assistant/sound_manager.py` (768 Zeilen)
+   - `speak_response()` (Zeile 578-746): TTS-Kern mit Raum-Routing `[OK]`
+   - `_get_auto_volume()` (Zeile 402-444): Phase 9 — Auto-Lautstärke mit Wetter-Adaptivität (Regen +0.15) `[OK]`
+   - `normalize_tts_text()` (Zeile 107-116): Deutsch-TTS (ä/ö/ü + "Sir"→"Sör" Phonetik) `[OK]`
+   - Parallel Volume+TTS (Zeile 681-738): T-2 Optimierung, spart ~50-100ms `[OK]`
+   - Alexa-Support (Zeile 216-238): Separate notify.alexa_media Code-Pfade `[OK]`
+
+6. **AmbientAudioClassifier** — `assistant/assistant/ambient_audio.py` (644 Zeilen)
+   - `process_event()` (Zeile 225-338): 9 Geräusche (glass_break, smoke_alarm, co_alarm, dog_bark, baby_cry, doorbell, gunshot, water_alarm, scream) `[OK]`
+   - `correlate_events()` (Zeile 554-585): Gruppiert Events in zeitliche Incidents (30s Fenster) `[OK]`
+   - `learn_false_positive()` (Zeile 602-627): 5+ False Positives → Sensitivität reduzieren `[OK]`
+   - `get_temporal_urgency()` (Zeile 629-644): Nacht → "critical", Tag → "normal" `[OK]`
+   - Raum-Extraktion (Zeile 471-496): Regex-basiert aus Entity-IDs `[OK]`
+
+**[V2 entfällt — Gewicht ×1]**
+
+### Was fehlt zum MCU-Level
+
+1. **Prädiktives Raum-Routing** — MCU-Jarvis antizipiert wohin Tony geht (Richtung Küche → Audio vorab routen). MindHome reagiert erst nach erkanntem Raumwechsel. `[FEHLT KOMPLETT]`
+2. **Mid-Sentence Room Handoff** — MCU-Jarvis setzt mitten im Satz nahtlos fort wenn Tony den Raum wechselt. MindHome hat Topic-Resumption, aber keinen Audio-Handoff während der Sprachausgabe. `[FEHLT KOMPLETT]`
+3. **Raum-kontextuelle Persönlichkeitsanpassung** — MCU-Jarvis spricht im Workshop anders (locker) als bei einem Gala-Event (formal). MindHome hat Activity-Detection, aber keine raumbasierte Stilanpassung. `[VERBESSERBAR]`
+4. **Klima-Transfer mit Gewohnheitslernen** — FollowMe transferiert nur Komfort/Eco. Sollte aus Correction Memory und Person Preferences pro Raum + Tageszeit lernen. `[VERBESSERBAR]`
+5. **Ambient-Audio ohne KI-Klassifikation** — Nur HA-Sensoren, kein eigenes Audio-Modell (YAMNet o.ä.). Polling-basiert statt Event-Subscription. `[VERBESSERBAR]`
+
+### Konkrete Verbesserungsvorschläge
+
+1. **[ ] Prädiktives Raum-Routing** — In `follow_me.py` Bewegungsmuster aus `anticipation.py` nutzen um Audio vorab zu routen (z.B. Morgens: Schlafzimmer → Bad → Küche)
+   - Aufwand: Mittel
+   - Impact: +5%
+   - Alltag: `[TÄGLICH]`
+
+2. **[ ] Raum-kontextuelle Stilanpassung** — In `personality.py` einen Room-Context-Modifier einbauen (Workshop=locker, Gästezimmer=höflich, Schlafzimmer=leise/ruhig)
+   - Aufwand: Klein
+   - Impact: +4%
+   - Alltag: `[TÄGLICH]`
+
+3. **[ ] FollowMe Klima-Integration mit Learning** — In `follow_me.py` `_transfer_climate()` die Person Preferences und Correction Memory für raum+zeitspezifische Temperaturen nutzen
+   - Aufwand: Klein
+   - Impact: +3%
+   - Alltag: `[WÖCHENTLICH]`
+
+### Akzeptanzkriterien — Wann ist dieses Feature "MCU-Level"?
+- [ ] Audio folgt Person zwischen Räumen mit <3s Latenz (Follow-Me)
+- [ ] Musik-Crossfade ist unhörbar (sanfter Übergang, kein Cut)
+- [ ] Aktivitätserkennung unterdrückt korrekt bei Schlaf/Focus/Gäste
+- [ ] Ambient-Sounds lösen korrekte Reaktion aus (Glasbruch → Alarm, Hundebellen → Info)
+- [ ] Raumwechsel bewahrt Gesprächskontext (Topic-Resumption funktioniert)
+
+---
+
+## 11. Energiemanagement & Haussteuerung (×1)
+
+### MCU-Jarvis Benchmark
+MCU-Jarvis steuert das gesamte Stark-Anwesen effizient — Licht, Klima, Sicherheit — alles integriert und optimiert. Er scannt den Energiestatus des Hauses (Arc-Reaktor), erkennt Konflikte, und steuert natürlich ("Reduce heat in the workshop"). Jarvis optimiert proaktiv und berichtet verbal über den Energiestatus.
+
+**Schlüsselszenen:**
+- Iron Man 1: "Reduce heat in the workshop" — Natürliche Klimasteuerung
+- Avengers 1: Jarvis scannt Stark Tower Energiesystem — Ganzheitliche Energieanalyse
+
+### MindHome-Jarvis Status: 82%
+
+### Code-Verifizierung
+**[V1] Analyse:**
+
+1. **EnergyOptimizer** — `assistant/assistant/energy_optimizer.py` (1.318 Zeilen)
+   - `get_current_price()` (Zeile 150-198): Strompreis-Monitoring, 15-Min-Updates, Price-Tiers (cheap/normal/expensive) `[OK]`
+   - `get_price_forecast()` (Zeile 200-264): 24h Preisvorhersage mit stündlicher Aufschlüsselung `[OK]`
+   - `get_solar_production()` (Zeile 266-318): Solar-Produktion aus HA-Sensoren `[OK]`
+   - `get_solar_forecast()` (Zeile 320-382): Wetterbasierte Solar-Vorhersage `[OK]`
+   - `suggest_load_shifting()` (Zeile 384-468): **Kernfeature** — Verschiebt flexible Lasten auf günstige/Solar-Stunden `[OK]`
+   - `shift_load()` (Zeile 620-688): Ausführung der Lastverschiebung `[OK]`
+   - `get_essential_entities()` (Zeile 814-842): Schutz kritischer Geräte `[OK]` `[BESSER ALS MCU]`
+   - `detect_anomalies()` (Zeile 974-1042): Erkennung ungewöhnlicher Verbrauchsmuster `[OK]`
+   - `get_carbon_intensity()` (Zeile 1210-1252): CO2-Intensität des Strommix `[OK]`
+   - `schedule_charging()` (Zeile 1254-1318): EV/Batterie-Ladung bei optimalem Preis `[OK]`
+   - Background-Loops: Preis-Update (15 Min) + Optimierungs-Check (30 Min) `[OK]`
+
+2. **ConflictResolver** — `assistant/assistant/conflict_resolver.py` (741 Zeilen)
+   - `_check_window_heating()` (Zeile 158-210): Fenster offen + Heizung an `[OK]`
+   - `_check_window_cooling()` (Zeile 212-258): Fenster offen + Klima an `[OK]`
+   - `_check_light_daylight()` (Zeile 260-308): Licht an bei hellem Tageslicht (Lux-Sensor) `[OK]`
+   - `_check_empty_room_devices()` (Zeile 310-362): Geräte an in leeren Räumen `[OK]`
+   - `_check_door_security()` (Zeile 364-410): Tür offen + Alarm scharf `[OK]`
+   - `_check_simultaneous_heating_cooling()` (Zeile 412-458): Heizen UND Kühlen gleichzeitig `[OK]`
+   - `_check_rain_windows()` (Zeile 460-508): Regen + Fenster offen `[OK]`
+   - `_check_storm_covers()` (Zeile 510-554): Sturm + Markisen ausgefahren `[OK]`
+   - 8+ Konflikttypen mit Severity-Klassifikation (info/warning/critical) `[OK]`
+   - Konflikt-History mit Outcomes in Redis `[OK]`
+
+3. **PredictiveMaintenanceEngine** — `assistant/assistant/predictive_maintenance.py` (832 Zeilen)
+   - `check_all_devices()` (Zeile 174-238): Täglicher Health-Check aller Geräte `[OK]`
+   - `get_device_health()` (Zeile 240-308): Health-Score 0-100 pro Gerät `[OK]`
+   - `predict_failure()` (Zeile 310-378): Ausfallvorhersage basierend auf Nutzungsmustern `[OK]`
+   - `track_battery_drain()` (Zeile 440-502): Battery-Drain-Monitoring `[OK]`
+   - `detect_degradation()` (Zeile 504-568): Performance-Degradation vs. Baseline `[OK]`
+   - `_check_hvac_efficiency()` (Zeile 750-800): HVAC-Effizienz-Monitoring `[OK]`
+   - `estimate_lifecycle()` (Zeile 630-692): Lebensdauer-Schätzung `[OK]`
+
+4. **DeviceHealthMonitor** — `assistant/assistant/device_health.py` (687 Zeilen)
+   - `build_baselines()` (Zeile 170-238): 30-Tage-Baselines pro Gerät `[OK]`
+   - `detect_anomalies()` (Zeile 240-312): Anomalie-Erkennung vs. Baseline `[OK]`
+   - `_seasonal_adjustment()` (Zeile 580-618): Saisonale Baseline-Anpassung `[OK]`
+   - `get_device_trends()` (Zeile 620-658): 7/30/90-Tage-Trends `[OK]`
+   - `get_offline_devices()` (Zeile 314-358): Erkennt offline Geräte `[OK]`
+   - `track_state_frequency()` (Zeile 530-578): Stuck-Detection `[OK]`
+
+5. **SeasonalInsightEngine** — `assistant/assistant/seasonal_insight.py` (589 Zeilen)
+   - `get_seasonal_recommendations()` (Zeile 100-178): Saison-spezifische Empfehlungen `[OK]`
+   - `compare_year_over_year()` (Zeile 180-248): Jahresvergleich Energieverbrauch `[OK]` `[BESSER ALS MCU]`
+   - `get_heating_strategy()` (Zeile 320-382): Optimale Heizstrategie pro Saison `[OK]`
+   - `get_lighting_strategy()` (Zeile 384-438): Tageslicht-adaptive Lichtempfehlungen `[OK]`
+   - `get_ventilation_strategy()` (Zeile 440-498): Fenster öffnen vs. HVAC `[OK]`
+
+6. **Function Calling — Gerätesteuerung** — `assistant/assistant/function_calling.py` (13.891 Zeilen)
+   - 13+ Gerätetypen: Light, Climate/HVAC, Cover, Media Player, Lock, Alarm, Switch, Fan, Vacuum, Scene, Timer, Camera, Script `[OK]`
+   - 74 Function-Call Tools insgesamt `[OK]`
+
+7. **Weitere Module:**
+   - `health_monitor.py` (571 Zeilen): CO2 >1000ppm Warnung, Luftfeuchtigkeit, Temperatur-Alerts `[OK]`
+   - `insight_engine.py` (2.687 Zeilen): Wetter↔Fenster, Frost↔Heizung Kreuzreferenzen `[OK]`
+
+**[V2 entfällt — Gewicht ×1]**
+
+### Was fehlt zum MCU-Level
+
+1. **Ganzheitliche Haus-Optimierung** — MCU-Jarvis optimiert alle Systeme holistisch (nicht nur paarweise Konflikte). MindHome erkennt 8 Konflikte, aber keine übergreifende "ganzes Haus"-Optimierungsstrategie. `[VERBESSERBAR]`
+2. **Prädiktives Comfort-Preconditioning** — MCU-Jarvis konditioniert Räume vor bevor Tony ankommt. MindHome hat die Daten (Anticipation + Energy), aber die Integration zwischen `energy_optimizer.py` und `anticipation.py` ist unvollständig. `[UNTERVERBUNDEN]`
+3. **Verbaler Energie-Status-Bericht** — MCU-Jarvis berichtet proaktiv ("The arc reactor is at 37%"). MindHome hat die Daten, narrt sie aber nicht proaktiv verbal. `[VERBESSERBAR]`
+4. **Notfall-Energiemanagement** — MCU-Jarvis leitet bei Notfällen Energie auf essentielle Systeme um. MindHome hat Essential-Entity-Schutz, aber keine aktive Umverteilung bei Stromausfall/Notfall. `[FEHLT KOMPLETT]`
+
+### Konkrete Verbesserungsvorschläge
+
+1. **[ ] Energy-Anticipation-Integration** — `energy_optimizer.py` mit `anticipation.py` verbinden: Wenn Person in 15 Min nach Hause kommt → Raum vorheizen/kühlen zum optimalen Preis
+   - Aufwand: Mittel
+   - Impact: +5%
+   - Alltag: `[TÄGLICH]`
+
+2. **[ ] Proaktiver Energie-Bericht** — In `proactive.py` einen periodischen Energie-Status-Bericht einbauen ("Heute 15% weniger verbraucht als letzte Woche, Sir.")
+   - Aufwand: Klein
+   - Impact: +3%
+   - Alltag: `[WÖCHENTLICH]`
+
+3. **[ ] Ganzheitliche Optimierungsstrategie** — In `energy_optimizer.py` einen House-Wide-Optimizer der alle Räume/Geräte zusammen betrachtet statt nur paarweise Konflikte
+   - Aufwand: Groß
+   - Impact: +5%
+   - Alltag: `[WÖCHENTLICH]`
+
+### Akzeptanzkriterien — Wann ist dieses Feature "MCU-Level"?
+- [ ] Strompreis-basierte Lastverschiebung funktioniert zuverlässig (>90% Ausführungsrate)
+- [ ] Alle 8+ Konflikte werden erkannt und korrekt aufgelöst
+- [ ] Solar-Eigenverbrauch wird maximiert (Load Shifting zu Produktionszeiten)
+- [ ] Essential Entities werden unter keinen Umständen abgeschaltet
+- [ ] Predictive Maintenance meldet Geräteprobleme bevor sie ausfallen
+
+---
+
+## 12. Erklärbarkeit & Transparenz (×1)
+
+### MCU-Jarvis Benchmark
+MCU-Jarvis erklärt seine Empfehlungen, nennt Gründe für Entscheidungen und handelt transparent. "Sir, may I remind you that you've been awake for 72 hours?" — immer mit Begründung. Bei Multi-Step-Aktionen narrt er jeden Schritt. Bei Ablehnung erklärt er warum.
+
+**Schlüsselszenen:**
+- Avengers 2: "Sir, may I remind you..." — Begründete Empfehlungen
+- Iron Man 1-3: Jarvis erklärt jeden Schritt bei komplexen Aktionen ("Initializing House Party Protocol...")
+
+### MindHome-Jarvis Status: 85%
+
+### Code-Verifizierung
+**[V1] Analyse:**
+
+1. **ExplainabilityEngine** — `assistant/assistant/explainability.py` (837 Zeilen)
+   - `explain_action()` (Zeile 80-152): Multi-Part-Erklärung: Trigger + Reasoning + Alternativen `[OK]`
+   - `explain_proactive()` (Zeile 154-226): Warum ein proaktiver Vorschlag gemacht wurde (Muster + Konfidenz) `[OK]`
+   - `explain_automation()` (Zeile 228-298): Warum eine Automatisierung ausgelöst wurde `[OK]`
+   - `explain_pattern()` (Zeile 300-362): Menschenlesbare Musterbeschreibungen `[OK]`
+   - `get_decision_log()` (Zeile 364-428): Entscheidungs-Log mit Reasoning `[OK]`
+   - `format_for_user()` (Zeile 600-652): 3 Detailstufen (brief/normal/detailed) `[OK]`
+   - `explain_why_not()` (Zeile 810-837): **"Warum hast du das NICHT gemacht?"** — Erklärt Inaktivität `[OK]` `[BESSER ALS MCU]`
+   - `_get_context_factors()` (Zeile 500-558): Listet alle Einflussfaktoren einer Entscheidung `[OK]`
+   - `_get_confidence_explanation()` (Zeile 560-598): Übersetzt 0.0-1.0 in menschliche Begriffe `[OK]`
+   - `log_decision()` (Zeile 654-718): Protokolliert Entscheidungen mit Begründung für spätere Abfrage `[OK]`
+
+2. **ActionPlanner** — `assistant/assistant/action_planner.py` (826 Zeilen)
+   - `plan_action()` (Zeile 70-148): Multi-Step-Planung mit Narration `[OK]`
+   - `_decompose_intent()` (Zeile 150-218): Komplexe Absichten → atomare Schritte `[OK]`
+   - `_generate_narration()` (Zeile 220-288): Menschenlesbare Narration pro Schritt `[OK]`
+   - `execute_plan()` (Zeile 290-368): Ausführung mit Fortschritts-Narration `[OK]`
+   - `_narrate_step()` (Zeile 370-412): "Jetzt schalte ich das Licht ein..." `[OK]`
+   - `_narrate_completion()` (Zeile 414-452): "Alles fertig, Sir." `[OK]`
+   - `_narrate_failure()` (Zeile 454-492): "Das hat leider nicht geklappt..." `[OK]`
+   - `preview_plan()` (Zeile 580-632): Plan-Vorschau vor Ausführung `[OK]`
+   - `_handle_partial_failure()` (Zeile 634-688): Teilerfolg-Handling `[OK]`
+   - `_generate_alternative_plan()` (Zeile 740-798): Fallback bei Fehler `[OK]`
+
+3. **Personality Pushback** — `assistant/assistant/personality.py` (5.566 Zeilen)
+   - Pushback mit Begründung (Zeile ~1800-1870): "Das Fenster ist offen, daher..." `[OK]`
+   - 5-stufige Eskalation (Zeile ~1737-1767): Progressive Dringlichkeit mit Erklärung `[OK]`
+   - Meta-Kognition (Zeile ~2359-2400): Self-aware Erklärung des eigenen Verhaltens `[OK]`
+   - Krisenmodus-Kommunikation (Zeile ~2500-2550): Klar, begründet, effizient `[OK]`
+   - Error-Recovery-Templates (Zeile ~204-218): 8 in-character Fehlererklärungen `[OK]`
+
+4. **Function Validator Pushback** — `assistant/assistant/function_validator.py` (766 Zeilen)
+   - `validate_with_reason()` (Zeile ~200-280): Jede Ablehnung mit Begründung `[OK]`
+   - `_check_safety_with_explanation()` (Zeile ~350-420): Sicherheitsprüfung mit Klartext `[OK]`
+   - `get_pushback_message()` (Zeile ~500-560): Datenbasierter Pushback ("CO2 bei 1200ppm") `[OK]` `[BESSER ALS MCU]`
+   - 4-Severity-Pushback: info/warning/critical/block `[OK]`
+
+5. **State Change Log Attribution** — `assistant/assistant/state_change_log.py` (9.706 Zeilen)
+   - 4 Attribution-Kategorien: jarvis / automation / user_physical / unknown `[OK]`
+   - 80+ Dependency Rules mit Entity-Role-Matching `[OK]`
+   - `get_change_explanation()` (Zeile ~3200-3280): "Wer hat X geändert und warum?" `[OK]`
+   - Timeline-Ansicht (Zeile ~3800-3880): Chronologische State-Changes `[OK]`
+
+6. **Autonomy Transparency** — `assistant/assistant/autonomy.py` (1.160 Zeilen)
+   - `explain_autonomy_decision()` (Zeile ~920-980): Warum auto-ausgeführt oder gefragt `[OK]`
+   - `explain_level_change()` (Zeile ~1042-1098): Warum Autonomie-Level sich änderte `[OK]`
+   - Trust-Level-Erklärungen (Zeile ~700-750): Person-spezifische Begründungen `[OK]`
+
+7. **Self-Optimization Transparency** — `assistant/assistant/self_optimization.py` (911 Zeilen)
+   - Alle Vorschläge mit Begründung (approval_mode: manual) `[OK]`
+   - Before/After-Tracking mit Snapshots `[OK]`
+   - Weekly Learning Report `[OK]`
+
+8. **Proactive Notification Reasoning** — `assistant/assistant/proactive.py` (9.236 Zeilen)
+   - Jede Benachrichtigung enthält Trigger + Begründung + Vorschlag `[OK]`
+   - Dringlichkeits-Erklärung (Zeile ~680-720) `[OK]`
+   - Cooldown-Erklärung (Zeile ~750-800) `[OK]`
+
+**[V2 entfällt — Gewicht ×1]**
+
+### Was fehlt zum MCU-Level
+
+1. **Natürlich-konversationelle Erklärungen** — MCU-Jarvis erklärt wie ein Butler im Gespräch ("Sir, I took the liberty of..."). MindHome hat strukturierte Erklärungen, die aber konversationeller/natürlicher sein könnten. `[VERBESSERBAR]`
+2. **Proaktive Status-Briefings** — MCU-Jarvis gibt ungefragt Status-Updates ("Systems at 90%, Sir"). MindHome erklärt wenn gefragt, narrt aber nicht proaktiv den Systemstatus. `[VERBESSERBAR]`
+
+### Konkrete Verbesserungsvorschläge
+
+1. **[ ] Konversationelle Erklärungs-Templates** — In `explainability.py` die `format_for_user()` Methode mit natürlicheren Formulierungen erweitern ("Ich habe mir erlaubt..." statt strukturierter Aufzählung)
+   - Aufwand: Klein
+   - Impact: +4%
+   - Alltag: `[TÄGLICH]`
+
+2. **[ ] Proaktive System-Status-Narration** — In `proactive.py` einen periodischen Mini-Bericht einbauen der spontan den Systemstatus narrt ("Alle Systeme laufen einwandfrei" / "Der Energieverbrauch liegt 10% über normal")
+   - Aufwand: Klein
+   - Impact: +3%
+   - Alltag: `[WÖCHENTLICH]`
+
+3. **[ ] Entscheidungs-Zusammenfassung im Morgen-Briefing** — Im Routine-Engine Morgen-Briefing eine Zusammenfassung der nächtlichen Entscheidungen integrieren ("Letzte Nacht habe ich 3 Entscheidungen getroffen: ...")
+   - Aufwand: Klein
+   - Impact: +3%
+   - Alltag: `[TÄGLICH]`
+
+### Akzeptanzkriterien — Wann ist dieses Feature "MCU-Level"?
+- [ ] Jede proaktive Aktion wird mit Begründung geliefert (100%)
+- [ ] User kann "Warum?" fragen und bekommt verständliche Antwort
+- [ ] Multi-Step-Aktionen werden Schritt für Schritt narrt
+- [ ] Pushback enthält immer konkrete Sensor-Daten als Begründung
+- [ ] Entscheidungs-Log ist per Zeitraum abfragbar und verständlich
+
 ---
 
 ## Changelog
@@ -1116,3 +1435,13 @@ Bei Angriffen auf Tonys Haus (Iron Man 3) koordiniert Jarvis die Verteidigung, p
 - Gewichteter Teildurchschnitt (9/12 Kategorien): **80.9%** (vorher 79.5% mit nur 4 Kategorien)
 - V1-Verifizierung für alle 5 Kategorien durchgeführt, V2 übersprungen (V1 unauffällig)
 - 33.000+ Zeilen Security-Tests verifiziert (test_security.py + test_security_http_endpoints.py + test_autonomy.py)
+
+### Durchlauf #1 — Session 3 — 2026-03-22
+- 9 neue Verbesserungsaufgaben erstellt (3× Kat.10, 3× Kat.11, 3× Kat.12)
+- 6 neue "Besser als MCU" Features identifiziert und in Schutzliste aufgenommen
+- Kategorien 10-12 Score: Kat.10=81%, Kat.11=82%, Kat.12=85%
+- Gewichteter Gesamtdurchschnitt (12/12 Kategorien): **81.1%** (vorher 80.9% mit 9 Kategorien)
+- V1-Verifizierung für alle 3 Kategorien durchgeführt, V2 entfällt (Gewicht ×1)
+- 4.641+ Zeilen Multi-Room-Code analysiert (follow_me + multi_room_audio + speaker_recognition + activity + sound_manager + ambient_audio)
+- 0 TODOs/FIXMEs in den analysierten Modulen gefunden, 3 bare `pass` in Exception-Handlern (legitim)
+- **Alle 12 Kategorien sind jetzt analysiert — bereit für Session 4 (Roadmap & Sprints)**
