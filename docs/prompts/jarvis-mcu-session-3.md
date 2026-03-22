@@ -67,6 +67,25 @@ Ignoriere alles aus dem MCU, was physisch unmöglich oder irrelevant für ein Sm
 - Kategorien sequentiell abarbeiten
 - Notizen sofort aufschreiben
 
+### Regel 9: Inkrementelles Schreiben — NIEMALS alles auf einmal
+> **KRITISCH:** Claude Code friert ein oder trunkiert bei großen Write-Aufrufen (>400 Zeilen).
+> Die Plan-Datei MUSS in kleinen Abschnitten geschrieben werden.
+
+**Schreibstrategie:**
+1. **Pro Kategorie (Edit-Tool):** Nach jeder fertig analysierten Kategorie sofort per Edit den Platzhalter `<!-- NEXT_CATEGORY -->` ersetzen durch:
+   - Die komplette Kategorie-Analyse im **exakten Ausgabeformat** (MCU-Benchmark, Status, V1/V2, Verbesserungsvorschläge, Akzeptanzkriterien)
+   - Gefolgt von einem neuen `<!-- NEXT_CATEGORY -->` Platzhalter
+2. **Changelog (Edit-Tool):** Am Ende den letzten `<!-- NEXT_CATEGORY -->` durch den Changelog-Eintrag ersetzen
+3. **Niemals die gesamte Datei neu schreiben** — immer nur den neuen Abschnitt per Edit einfügen
+
+**Das Ausgabeformat bleibt exakt gleich** — nur die Schreibmethode ändert sich. Inhaltlich und strukturell muss jede Kategorie genauso detailliert und vollständig sein.
+
+**Beispiel:**
+```
+old_string: "<!-- NEXT_CATEGORY -->"
+new_string: "## 10. Multi-Room-Awareness (×1)\n\n### MCU-Jarvis Benchmark\n...[vollständige Analyse]...\n\n<!-- NEXT_CATEGORY -->"
+```
+
 ---
 
 ## MCU-Szenen-Katalog (für Session 3 relevant)
