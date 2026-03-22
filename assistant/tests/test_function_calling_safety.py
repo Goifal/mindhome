@@ -100,7 +100,9 @@ class TestIsSafeCover:
         ex = self._make_executor()
         state = {"attributes": {}}
         mock_configs = {"cover.test_cover": {"enabled": False}}
-        with patch("assistant.cover_config.load_cover_configs", return_value=mock_configs):
+        with patch(
+            "assistant.cover_config.load_cover_configs", return_value=mock_configs
+        ):
             assert await ex._is_safe_cover("cover.test_cover", state) is False
 
     @pytest.mark.asyncio
@@ -108,8 +110,12 @@ class TestIsSafeCover:
         """CoverConfig mit cover_type=garage_door wird blockiert."""
         ex = self._make_executor()
         state = {"attributes": {}}
-        mock_configs = {"cover.harmless_name": {"cover_type": "garage_door", "enabled": True}}
-        with patch("assistant.cover_config.load_cover_configs", return_value=mock_configs):
+        mock_configs = {
+            "cover.harmless_name": {"cover_type": "garage_door", "enabled": True}
+        }
+        with patch(
+            "assistant.cover_config.load_cover_configs", return_value=mock_configs
+        ):
             assert await ex._is_safe_cover("cover.harmless_name", state) is False
 
 
@@ -123,9 +129,16 @@ class TestAllowedFunctions:
 
     def test_core_functions_present(self):
         expected = {
-            "set_light", "set_climate", "set_cover", "play_media",
-            "call_service", "activate_scene", "send_notification",
-            "lock_door", "set_wakeup_alarm", "broadcast",
+            "set_light",
+            "set_climate",
+            "set_cover",
+            "play_media",
+            "call_service",
+            "activate_scene",
+            "send_notification",
+            "lock_door",
+            "set_wakeup_alarm",
+            "broadcast",
         }
         for fn in expected:
             assert fn in FunctionExecutor._ALLOWED_FUNCTIONS, f"{fn} fehlt in Whitelist"
@@ -138,12 +151,19 @@ class TestAllowedFunctions:
     def test_internal_methods_excluded(self):
         """Private/interne Methoden duerfen nicht in der Whitelist sein."""
         forbidden = [
-            "_is_safe_cover", "_find_entity", "_find_speaker_in_room",
-            "execute", "set_config_versioning", "__init__",
-            "close", "_exec_set_light",  # Kein _exec_ Prefix!
+            "_is_safe_cover",
+            "_find_entity",
+            "_find_speaker_in_room",
+            "execute",
+            "set_config_versioning",
+            "__init__",
+            "close",
+            "_exec_set_light",  # Kein _exec_ Prefix!
         ]
         for fn in forbidden:
-            assert fn not in FunctionExecutor._ALLOWED_FUNCTIONS, f"{fn} sollte nicht in Whitelist sein"
+            assert fn not in FunctionExecutor._ALLOWED_FUNCTIONS, (
+                f"{fn} sollte nicht in Whitelist sein"
+            )
 
     @pytest.mark.asyncio
     async def test_execute_rejects_unknown_function(self):
@@ -171,8 +191,12 @@ class TestCallServiceWhitelist:
 
     def test_standard_keys_allowed(self):
         expected = {
-            "brightness", "brightness_pct", "temperature",
-            "position", "volume_level", "rgb_color",
+            "brightness",
+            "brightness_pct",
+            "temperature",
+            "position",
+            "volume_level",
+            "rgb_color",
         }
         for key in expected:
             assert key in FunctionExecutor._CALL_SERVICE_ALLOWED_KEYS, f"{key} fehlt"
@@ -180,12 +204,20 @@ class TestCallServiceWhitelist:
     def test_dangerous_keys_not_in_whitelist(self):
         """Gefaehrliche Keys die nie an HA gehen duerfen."""
         forbidden = [
-            "domain", "service", "entity_id",  # Meta-Keys, werden separat behandelt
-            "password", "token", "api_key",
-            "script", "command", "shell",
+            "domain",
+            "service",
+            "entity_id",  # Meta-Keys, werden separat behandelt
+            "password",
+            "token",
+            "api_key",
+            "script",
+            "command",
+            "shell",
         ]
         for key in forbidden:
-            assert key not in FunctionExecutor._CALL_SERVICE_ALLOWED_KEYS, f"{key} sollte nicht erlaubt sein"
+            assert key not in FunctionExecutor._CALL_SERVICE_ALLOWED_KEYS, (
+                f"{key} sollte nicht erlaubt sein"
+            )
 
 
 # ---------------------------------------------------------------
@@ -213,7 +245,9 @@ class TestToolDefinitions:
     def test_set_climate_has_adjust(self):
         """Relative Steuerung: adjust='warmer'/'cooler' muss vorhanden sein."""
         tools = self._get_tools()
-        climate_tool = next((t for t in tools if t["function"]["name"] == "set_climate"), None)
+        climate_tool = next(
+            (t for t in tools if t["function"]["name"] == "set_climate"), None
+        )
         if climate_tool:
             params = climate_tool["function"]["parameters"]
             # Im room_thermostat Modus gibt es adjust
@@ -226,7 +260,9 @@ class TestToolDefinitions:
         """Relative Lautstaerke: volume_up/volume_down muss vorhanden sein."""
         tools = self._get_tools()
         media_tool = next(t for t in tools if t["function"]["name"] == "play_media")
-        action_enum = media_tool["function"]["parameters"]["properties"]["action"]["enum"]
+        action_enum = media_tool["function"]["parameters"]["properties"]["action"][
+            "enum"
+        ]
         assert "volume_up" in action_enum
         assert "volume_down" in action_enum
 
@@ -254,4 +290,6 @@ class TestToolDefinitions:
         ex = FunctionExecutor(ha)
         for fn_name in FunctionExecutor._ALLOWED_FUNCTIONS:
             handler = getattr(ex, f"_exec_{fn_name}", None)
-            assert handler is not None, f"_exec_{fn_name} fehlt fuer erlaubte Funktion '{fn_name}'"
+            assert handler is not None, (
+                f"_exec_{fn_name} fehlt fuer erlaubte Funktion '{fn_name}'"
+            )

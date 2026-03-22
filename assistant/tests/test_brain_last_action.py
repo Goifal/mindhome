@@ -16,26 +16,79 @@ import pytest
 def brain():
     """Creates a Brain instance with all dependencies mocked."""
     _BRAIN_PATCHES = [
-        "HomeAssistantClient", "OllamaClient", "ContextBuilder", "ModelRouter",
-        "PreClassifier", "PersonalityEngine", "FunctionExecutor", "FunctionValidator",
-        "MemoryManager", "AutonomyManager", "FeedbackTracker", "ActivityEngine",
-        "FollowMeEngine", "LightEngine", "ProactiveManager", "DailySummarizer",
-        "MoodDetector", "ActionPlanner", "TimeAwareness", "RoutineEngine",
-        "AnticipationEngine", "IntentTracker", "TTSEnhancer", "SoundManager",
-        "SpeakerRecognition", "DiagnosticsEngine", "OCREngine",
-        "AmbientAudioClassifier", "ConflictResolver", "HealthMonitor",
-        "InventoryManager", "SmartShopping", "ConversationMemory", "MultiRoomAudio",
-        "DeviceHealthMonitor", "InsightEngine", "SelfAutomation", "ConfigVersioning",
-        "SelfOptimization", "CookingAssistant", "RepairPlanner", "WorkshopGenerator",
-        "WorkshopLibrary", "KnowledgeBase", "RecipeStore", "TimerManager",
-        "CameraManager", "ConditionalCommands", "EnergyOptimizer", "WebSearch",
-        "ThreatAssessment", "LearningObserver", "WellnessAdvisor",
-        "ProactiveSequencePlanner", "SeasonalInsightEngine", "CalendarIntelligence",
-        "ExplainabilityEngine", "LearningTransfer", "DialogueStateManager",
-        "ClimateModel", "PredictiveMaintenance", "SituationModel", "ProtocolEngine",
-        "SpontaneousObserver", "MusicDJ", "VisitorManager", "OutcomeTracker",
-        "CorrectionMemory", "ResponseQualityTracker", "ErrorPatternTracker",
-        "SelfReport", "AdaptiveThresholds", "TaskRegistry",
+        "HomeAssistantClient",
+        "OllamaClient",
+        "ContextBuilder",
+        "ModelRouter",
+        "PreClassifier",
+        "PersonalityEngine",
+        "FunctionExecutor",
+        "FunctionValidator",
+        "MemoryManager",
+        "AutonomyManager",
+        "FeedbackTracker",
+        "ActivityEngine",
+        "FollowMeEngine",
+        "LightEngine",
+        "ProactiveManager",
+        "DailySummarizer",
+        "MoodDetector",
+        "ActionPlanner",
+        "TimeAwareness",
+        "RoutineEngine",
+        "AnticipationEngine",
+        "IntentTracker",
+        "TTSEnhancer",
+        "SoundManager",
+        "SpeakerRecognition",
+        "DiagnosticsEngine",
+        "OCREngine",
+        "AmbientAudioClassifier",
+        "ConflictResolver",
+        "HealthMonitor",
+        "InventoryManager",
+        "SmartShopping",
+        "ConversationMemory",
+        "MultiRoomAudio",
+        "DeviceHealthMonitor",
+        "InsightEngine",
+        "SelfAutomation",
+        "ConfigVersioning",
+        "SelfOptimization",
+        "CookingAssistant",
+        "RepairPlanner",
+        "WorkshopGenerator",
+        "WorkshopLibrary",
+        "KnowledgeBase",
+        "RecipeStore",
+        "TimerManager",
+        "CameraManager",
+        "ConditionalCommands",
+        "EnergyOptimizer",
+        "WebSearch",
+        "ThreatAssessment",
+        "LearningObserver",
+        "WellnessAdvisor",
+        "ProactiveSequencePlanner",
+        "SeasonalInsightEngine",
+        "CalendarIntelligence",
+        "ExplainabilityEngine",
+        "LearningTransfer",
+        "DialogueStateManager",
+        "ClimateModel",
+        "PredictiveMaintenance",
+        "SituationModel",
+        "ProtocolEngine",
+        "SpontaneousObserver",
+        "MusicDJ",
+        "VisitorManager",
+        "OutcomeTracker",
+        "CorrectionMemory",
+        "ResponseQualityTracker",
+        "ErrorPatternTracker",
+        "SelfReport",
+        "AdaptiveThresholds",
+        "TaskRegistry",
     ]
     with ExitStack() as stack:
         for name in _BRAIN_PATCHES:
@@ -43,6 +96,7 @@ def brain():
         mock_cfg = stack.enter_context(patch("assistant.brain.cfg"))
         mock_cfg.yaml_config = {}
         from assistant.brain import AssistantBrain
+
         b = AssistantBrain()
         b._stt_word_corrections = {}
         b._stt_phrase_corrections = []
@@ -65,7 +119,9 @@ class TestPerPersonActionTracking:
     @pytest.mark.asyncio
     async def test_set_and_get_action(self, brain):
         """Basic set/get for a single person."""
-        await brain._set_last_action("set_light", {"room": "wohnzimmer", "state": "on"}, "julia")
+        await brain._set_last_action(
+            "set_light", {"room": "wohnzimmer", "state": "on"}, "julia"
+        )
         action, args = await brain._get_last_action("julia")
         assert action == "set_light"
         assert args["room"] == "wohnzimmer"

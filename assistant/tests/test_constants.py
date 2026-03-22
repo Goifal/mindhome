@@ -6,27 +6,37 @@ Stellt sicher dass Timeouts, Limits und Schwellwerte plausibel sind.
 
 from assistant.constants import (
     # Timeouts
-    LLM_TIMEOUT_FAST, LLM_TIMEOUT_SMART, LLM_TIMEOUT_DEEP,
-    HA_SESSION_TIMEOUT, HA_RETRY_MAX,
+    LLM_TIMEOUT_FAST,
+    LLM_TIMEOUT_SMART,
+    LLM_TIMEOUT_DEEP,
+    HA_SESSION_TIMEOUT,
+    HA_RETRY_MAX,
     BRAIN_PROCESS_TIMEOUT,
     # Redis TTLs
-    REDIS_WORKING_MEMORY_MAX_ITEMS, REDIS_CONVERSATION_ARCHIVE_TTL,
+    REDIS_WORKING_MEMORY_MAX_ITEMS,
+    REDIS_CONVERSATION_ARCHIVE_TTL,
     REDIS_SECURITY_CONFIRM_TTL,
     # Limits
-    ERROR_BUFFER_MAX_SIZE, MAX_NOTIFICATION_LENGTH,
+    ERROR_BUFFER_MAX_SIZE,
+    MAX_NOTIFICATION_LENGTH,
     # Health
-    CO2_WARN_PPM, CO2_CRITICAL_PPM,
-    HUMIDITY_LOW_PERCENT, HUMIDITY_HIGH_PERCENT,
-    TEMP_LOW_CELSIUS, TEMP_HIGH_CELSIUS,
+    CO2_WARN_PPM,
+    CO2_CRITICAL_PPM,
+    HUMIDITY_LOW_PERCENT,
+    HUMIDITY_HIGH_PERCENT,
+    TEMP_LOW_CELSIUS,
+    TEMP_HIGH_CELSIUS,
     # Trust
-    TRUST_OWNER, TRUST_MEMBER, TRUST_GUEST,
+    TRUST_OWNER,
+    TRUST_MEMBER,
+    TRUST_GUEST,
     # Climate
-    CLIMATE_TEMP_MIN, CLIMATE_TEMP_MAX,
+    CLIMATE_TEMP_MIN,
+    CLIMATE_TEMP_MAX,
 )
 
 
 class TestTimeoutSanity:
-
     def test_llm_timeout_ordering(self):
         """Fast < Smart < Deep Timeouts."""
         assert LLM_TIMEOUT_FAST < LLM_TIMEOUT_SMART <= LLM_TIMEOUT_DEEP
@@ -46,7 +56,6 @@ class TestTimeoutSanity:
 
 
 class TestRedisLimits:
-
     def test_working_memory_items(self):
         assert 10 <= REDIS_WORKING_MEMORY_MAX_ITEMS <= 200
 
@@ -60,7 +69,6 @@ class TestRedisLimits:
 
 
 class TestHealthThresholds:
-
     def test_co2_warn_below_critical(self):
         assert CO2_WARN_PPM < CO2_CRITICAL_PPM
 
@@ -80,7 +88,6 @@ class TestHealthThresholds:
 
 
 class TestTrustLevels:
-
     def test_guest_lowest(self):
         assert TRUST_GUEST < TRUST_MEMBER < TRUST_OWNER
 
@@ -89,7 +96,6 @@ class TestTrustLevels:
 
 
 class TestClimateConstants:
-
     def test_temp_range(self):
         assert CLIMATE_TEMP_MIN < CLIMATE_TEMP_MAX
         assert CLIMATE_TEMP_MIN >= 0
@@ -97,7 +103,6 @@ class TestClimateConstants:
 
 
 class TestBufferSizes:
-
     def test_error_buffer_positive(self):
         assert ERROR_BUFFER_MAX_SIZE > 0
 

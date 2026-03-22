@@ -30,11 +30,13 @@ from .ha_client import HomeAssistantClient
 logger = logging.getLogger(__name__)
 
 # Redis-Key-Prefixes
-KEY_DEVICE_START = "mha:time:device_start:"    # Wann ein Geraet zuletzt gestartet wurde
-KEY_DEVICE_NOTIFIED = "mha:time:notified:"     # Ob schon eine Meldung gesendet wurde
-KEY_COUNTER = "mha:time:counter:"              # Tages-Zaehler (z.B. Kaffee)
-KEY_COUNTER_DATE = "mha:time:counter_date"     # Datum des aktuellen Zaehlers
-KEY_PC_SESSION = "mha:time:pc_session_start"   # Wann die aktuelle PC-Session begonnen hat
+KEY_DEVICE_START = "mha:time:device_start:"  # Wann ein Geraet zuletzt gestartet wurde
+KEY_DEVICE_NOTIFIED = "mha:time:notified:"  # Ob schon eine Meldung gesendet wurde
+KEY_COUNTER = "mha:time:counter:"  # Tages-Zaehler (z.B. Kaffee)
+KEY_COUNTER_DATE = "mha:time:counter_date"  # Datum des aktuellen Zaehlers
+KEY_PC_SESSION = (
+    "mha:time:pc_session_start"  # Wann die aktuelle PC-Session begonnen hat
+)
 
 
 class TimeAwareness:
@@ -94,7 +96,9 @@ class TimeAwareness:
             return
         self._running = True
         self._task = asyncio.create_task(self._check_loop())
-        self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        self._task.add_done_callback(
+            lambda t: t.exception() if not t.cancelled() else None
+        )
         logger.info("TimeAwareness gestartet (Intervall: %ds)", self.check_interval)
 
     async def stop(self):
@@ -133,18 +137,22 @@ class TimeAwareness:
 
         # 1. Ofen / Herd
         alert = await self._check_appliance(
-            states, ["switch.oven", "switch.ofen", "switch.herd", "switch.backofen"],
-            self.threshold_oven, "oven",
-            "Der Ofen laeuft seit {minutes} Minuten. Absichtlich?"
+            states,
+            ["switch.oven", "switch.ofen", "switch.herd", "switch.backofen"],
+            self.threshold_oven,
+            "oven",
+            "Der Ofen laeuft seit {minutes} Minuten. Absichtlich?",
         )
         if alert:
             alerts.append(alert)
 
         # 2. Buegeleisen
         alert = await self._check_appliance(
-            states, ["switch.iron", "switch.buegeleisen"],
-            self.threshold_iron, "iron",
-            "Das Buegeleisen laeuft seit {minutes} Minuten. Noch in Benutzung?"
+            states,
+            ["switch.iron", "switch.buegeleisen"],
+            self.threshold_iron,
+            "iron",
+            "Das Buegeleisen laeuft seit {minutes} Minuten. Noch in Benutzung?",
         )
         if alert:
             alerts.append(alert)
@@ -153,8 +161,9 @@ class TimeAwareness:
         alert = await self._check_appliance(
             states,
             ["switch.washer", "switch.waschmaschine", "sensor.waschmaschine_status"],
-            self.threshold_washer, "washer",
-            "Die Waschmaschine laeuft seit {minutes} Minuten. Waesche duerfte fertig sein."
+            self.threshold_washer,
+            "washer",
+            "Die Waschmaschine laeuft seit {minutes} Minuten. Waesche duerfte fertig sein.",
         )
         if alert:
             alerts.append(alert)
@@ -163,8 +172,9 @@ class TimeAwareness:
         alert = await self._check_appliance(
             states,
             ["switch.dryer", "switch.trockner", "sensor.trockner_status"],
-            self.threshold_dryer, "dryer",
-            "Der Trockner laeuft seit {minutes} Minuten. Zeitnah ausraeumen spart Buegeln."
+            self.threshold_dryer,
+            "dryer",
+            "Der Trockner laeuft seit {minutes} Minuten. Zeitnah ausraeumen spart Buegeln.",
         )
         if alert:
             alerts.append(alert)
@@ -172,9 +182,14 @@ class TimeAwareness:
         # 2d. Geschirrspueler
         alert = await self._check_appliance(
             states,
-            ["switch.dishwasher", "switch.geschirrspueler", "sensor.geschirrspueler_status"],
-            self.threshold_dishwasher, "dishwasher",
-            "Der Geschirrspueler laeuft seit {minutes} Minuten. Duerfte durchgelaufen sein."
+            [
+                "switch.dishwasher",
+                "switch.geschirrspueler",
+                "sensor.geschirrspueler_status",
+            ],
+            self.threshold_dishwasher,
+            "dishwasher",
+            "Der Geschirrspueler laeuft seit {minutes} Minuten. Duerfte durchgelaufen sein.",
         )
         if alert:
             alerts.append(alert)
@@ -205,8 +220,12 @@ class TimeAwareness:
     # ------------------------------------------------------------------
 
     async def _check_appliance(
-        self, states: list[dict], entity_ids: list[str],
-        threshold_minutes: int, device_key: str, message_template: str,
+        self,
+        states: list[dict],
+        entity_ids: list[str],
+        threshold_minutes: int,
+        device_key: str,
+        message_template: str,
     ) -> Optional[dict]:
         """Prueft ob ein Geraet zu lange laeuft."""
         for state in states:
@@ -260,7 +279,9 @@ class TimeAwareness:
         # Welche Raeume haben Bewegung?
         active_rooms = set()
         # Konfigurierte Motion-Sensoren aus multi_room nutzen
-        room_motion = yaml_config.get("multi_room", {}).get("room_motion_sensors", {}) or {}
+        room_motion = (
+            yaml_config.get("multi_room", {}).get("room_motion_sensors", {}) or {}
+        )
         motion_to_room = {}
         for room_name, sensor_id in room_motion.items():
             if sensor_id:
@@ -269,8 +290,13 @@ class TimeAwareness:
             entity_id = state.get("entity_id", "")
             if entity_id in motion_to_room and state.get("state") == "on":
                 active_rooms.add(motion_to_room[entity_id])
-            elif entity_id.startswith("binary_sensor.motion") and state.get("state") == "on":
-                room = entity_id.replace("binary_sensor.motion_", "").replace("binary_sensor.bewegung_", "")
+            elif (
+                entity_id.startswith("binary_sensor.motion")
+                and state.get("state") == "on"
+            ):
+                room = entity_id.replace("binary_sensor.motion_", "").replace(
+                    "binary_sensor.bewegung_", ""
+                )
                 active_rooms.add(room)
 
         # Personen-Standorte
@@ -284,6 +310,7 @@ class TimeAwareness:
 
         # Raum-zu-Licht Zuordnung aus room_profiles
         from .config import get_room_profiles
+
         room_profiles = get_room_profiles().get("rooms", {})
         entity_to_room = {}
         for room_name, room_cfg in room_profiles.items():
@@ -305,7 +332,7 @@ class TimeAwareness:
                 continue
 
             # Manual Override pruefen (LightEngine)
-            _le = getattr(self, '_light_engine', None)
+            _le = getattr(self, "_light_engine", None)
             if _le:
                 try:
                     if await _le.is_manual_override_active(entity_id):
@@ -317,40 +344,56 @@ class TimeAwareness:
             if minutes and minutes >= threshold:
                 if not await self._was_notified(device_key):
                     await self._mark_notified(device_key)
-                    friendly = state.get("attributes", {}).get("friendly_name", entity_id)
+                    friendly = state.get("attributes", {}).get(
+                        "friendly_name", entity_id
+                    )
 
                     # Auto-Off: Licht tatsaechlich ausschalten
                     if auto_off_minutes:
                         try:
                             transition = int(lighting_cfg.get("default_transition", 2))
                             await self.ha.call_service(
-                                "light", "turn_off",
+                                "light",
+                                "turn_off",
                                 {"entity_id": entity_id, "transition": transition},
                             )
-                            alerts.append({
-                                "type": "light_auto_off",
-                                "device": device_key,
-                                "entity_id": entity_id,
-                                "message": f"{friendly} war {int(minutes)} Minuten an ohne Bewegung — ausgeschaltet.",
-                                "urgency": "low",
-                            })
-                            logger.info("Auto-Off: %s nach %d Min (leerer Raum %s)", entity_id, int(minutes), light_room)
+                            alerts.append(
+                                {
+                                    "type": "light_auto_off",
+                                    "device": device_key,
+                                    "entity_id": entity_id,
+                                    "message": f"{friendly} war {int(minutes)} Minuten an ohne Bewegung — ausgeschaltet.",
+                                    "urgency": "low",
+                                }
+                            )
+                            logger.info(
+                                "Auto-Off: %s nach %d Min (leerer Raum %s)",
+                                entity_id,
+                                int(minutes),
+                                light_room,
+                            )
                         except Exception as e:
-                            logger.debug("Auto-Off fehlgeschlagen fuer %s: %s", entity_id, e)
-                            alerts.append({
+                            logger.debug(
+                                "Auto-Off fehlgeschlagen fuer %s: %s", entity_id, e
+                            )
+                            alerts.append(
+                                {
+                                    "type": "light_empty_room",
+                                    "device": device_key,
+                                    "message": f"{friendly} ist seit {int(minutes)} Minuten an, aber niemand scheint dort zu sein.",
+                                    "urgency": "low",
+                                }
+                            )
+                    else:
+                        # Nur Hinweis (kein Auto-Off konfiguriert)
+                        alerts.append(
+                            {
                                 "type": "light_empty_room",
                                 "device": device_key,
                                 "message": f"{friendly} ist seit {int(minutes)} Minuten an, aber niemand scheint dort zu sein.",
                                 "urgency": "low",
-                            })
-                    else:
-                        # Nur Hinweis (kein Auto-Off konfiguriert)
-                        alerts.append({
-                            "type": "light_empty_room",
-                            "device": device_key,
-                            "message": f"{friendly} ist seit {int(minutes)} Minuten an, aber niemand scheint dort zu sein.",
-                            "urgency": "low",
-                        })
+                            }
+                        )
         return alerts
 
     async def _check_windows_cold(self, states: list[dict]) -> list[dict]:
@@ -379,6 +422,7 @@ class TimeAwareness:
 
         # Offene Fenster finden — nur heizungsrelevante (keine Tore/Gates)
         from .function_calling import is_heating_relevant_opening, get_opening_type
+
         for state in states:
             entity_id = state.get("entity_id", "")
             if not is_heating_relevant_opening(entity_id, state):
@@ -391,15 +435,21 @@ class TimeAwareness:
             if minutes and minutes >= self.threshold_window_cold:
                 if not await self._was_notified(device_key):
                     await self._mark_notified(device_key)
-                    friendly = state.get("attributes", {}).get("friendly_name", entity_id)
+                    friendly = state.get("attributes", {}).get(
+                        "friendly_name", entity_id
+                    )
                     opening_type = get_opening_type(entity_id, state)
-                    type_label = "Ein Fenster" if opening_type == "window" else "Eine Tuer"
-                    alerts.append({
-                        "type": "window_open_cold",
-                        "device": device_key,
-                        "message": f"{type_label} ist seit {int(minutes)} Minuten offen ({friendly}). Draussen sind es {outside_temp}°C.",
-                        "urgency": "medium",
-                    })
+                    type_label = (
+                        "Ein Fenster" if opening_type == "window" else "Eine Tuer"
+                    )
+                    alerts.append(
+                        {
+                            "type": "window_open_cold",
+                            "device": device_key,
+                            "message": f"{type_label} ist seit {int(minutes)} Minuten offen ({friendly}). Draussen sind es {outside_temp}°C.",
+                            "urgency": "medium",
+                        }
+                    )
         return alerts
 
     async def _check_heating_window_open(self, states: list[dict]) -> list[dict]:
@@ -429,6 +479,7 @@ class TimeAwareness:
 
         # Offene Fenster/Tueren finden — nur heizungsrelevante
         from .function_calling import is_heating_relevant_opening, get_opening_type
+
         for state in states:
             entity_id = state.get("entity_id", "")
             if not is_heating_relevant_opening(entity_id, state):
@@ -442,18 +493,22 @@ class TimeAwareness:
                 friendly = state.get("attributes", {}).get("friendly_name", entity_id)
                 opening_type = get_opening_type(entity_id, state)
                 type_label = "Ein Fenster" if opening_type == "window" else "Eine Tuer"
-                alerts.append({
-                    "type": "heating_window_open",
-                    "device": device_key,
-                    "message": f"{type_label} ist offen ({friendly}) waehrend die Heizung laeuft.",
-                    "urgency": "medium",
-                })
+                alerts.append(
+                    {
+                        "type": "heating_window_open",
+                        "device": device_key,
+                        "message": f"{type_label} ist offen ({friendly}) waehrend die Heizung laeuft.",
+                        "urgency": "medium",
+                    }
+                )
 
         return alerts
 
     async def _check_pc_session(self, states: list[dict]) -> Optional[dict]:
         """Prueft ob der PC zu lange ohne Pause laeuft."""
-        pc_sensors = yaml_config.get("activity", {}).get("entities", {}).get("pc_sensors", [])
+        pc_sensors = (
+            yaml_config.get("activity", {}).get("entities", {}).get("pc_sensors", [])
+        )
         pc_active = False
         for state in states:
             if state.get("entity_id", "") in pc_sensors:
@@ -543,7 +598,9 @@ class TimeAwareness:
     # Redis-Hilfsfunktionen
     # ------------------------------------------------------------------
 
-    async def _get_running_minutes(self, entity_id: str, device_key: str) -> Optional[float]:
+    async def _get_running_minutes(
+        self, entity_id: str, device_key: str
+    ) -> Optional[float]:
         """Gibt zurueck wie viele Minuten ein Geraet laeuft."""
         if not self.redis:
             return None
@@ -600,9 +657,17 @@ class TimeAwareness:
             from .ollama_client import strip_think_tags
             from datetime import datetime as _dt
             from zoneinfo import ZoneInfo as _ZI
+
             _now = _dt.now(tz=_ZI("Europe/Berlin"))
-            _DAY_NAMES = {0: "Montag", 1: "Dienstag", 2: "Mittwoch", 3: "Donnerstag",
-                          4: "Freitag", 5: "Samstag", 6: "Sonntag"}
+            _DAY_NAMES = {
+                0: "Montag",
+                1: "Dienstag",
+                2: "Mittwoch",
+                3: "Donnerstag",
+                4: "Freitag",
+                5: "Samstag",
+                6: "Sonntag",
+            }
             _is_weekend = _now.weekday() >= 5
             _time_ctx = f"{_DAY_NAMES.get(_now.weekday(), '')} {_now.strftime('%H:%M')}"
             prompt = (
@@ -638,7 +703,8 @@ class TimeAwareness:
         # LLM-Rewrite fuer natuerlichere Warnungen
         original_msg = alert.get("message", "")
         alert["message"] = await self._llm_rewrite_alert(
-            original_msg, alert.get("type", ""),
+            original_msg,
+            alert.get("type", ""),
         )
         if self._notify_callback:
             try:
@@ -647,7 +713,8 @@ class TimeAwareness:
                 logger.error("TimeAwareness Alert-Fehler: %s", e)
         logger.info(
             "TimeAwareness Alert [%s]: %s",
-            alert.get("type", "?"), alert.get("message", ""),
+            alert.get("type", "?"),
+            alert.get("message", ""),
         )
 
     # ------------------------------------------------------------------

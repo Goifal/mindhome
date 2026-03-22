@@ -27,12 +27,18 @@ KEY_PREFIX = "mha:conditional:"
 KEY_INDEX = "mha:conditional:index"
 
 # F-002: Aktionen die Owner-Trust erfordern
-OWNER_ONLY_ACTIONS = frozenset({
-    "lock_door", "unlock_door",
-    "arm_security_system", "arm_alarm", "disarm_alarm",
-    "open_garage", "close_garage",
-    "open_cover",  # Sicherheitsrelevant (Rolladen/Tore)
-})
+OWNER_ONLY_ACTIONS = frozenset(
+    {
+        "lock_door",
+        "unlock_door",
+        "arm_security_system",
+        "arm_alarm",
+        "disarm_alarm",
+        "open_garage",
+        "close_garage",
+        "open_cover",  # Sicherheitsrelevant (Rolladen/Tore)
+    }
+)
 
 
 class ConditionalCommands:
@@ -47,7 +53,9 @@ class ConditionalCommands:
         self.redis = redis_client
         if self.redis:
             count = await self.redis.scard(KEY_INDEX)
-            logger.info("ConditionalCommands initialisiert (%s aktive Conditionals)", count or 0)
+            logger.info(
+                "ConditionalCommands initialisiert (%s aktive Conditionals)", count or 0
+            )
 
     def set_action_callback(self, callback):
         """Setzt den Callback für Aktions-Ausfuehrung."""
@@ -93,10 +101,14 @@ class ConditionalCommands:
             return {"success": False, "message": "Redis nicht verfügbar."}
 
         # F-002: Trust-Check bei Erstellung — Gaeste duerfen keine Sicherheitsaktionen anlegen
-        if action_function in OWNER_ONLY_ACTIONS and trust_level.lower() not in ("owner",):
+        if action_function in OWNER_ONLY_ACTIONS and trust_level.lower() not in (
+            "owner",
+        ):
             logger.warning(
                 "Conditional blockiert: %s erfordert Owner-Trust (person=%s, trust=%s)",
-                action_function, person, trust_level,
+                action_function,
+                person,
+                trust_level,
             )
             return {
                 "success": False,
@@ -109,6 +121,7 @@ class ConditionalCommands:
         dep_note = ""
         try:
             from .state_change_log import DEVICE_DEPENDENCIES, StateChangeLog
+
             # Trigger-Entity extrahieren (Format: "entity_id:state")
             _trigger_eid = ""
             _trigger_state = ""
@@ -119,10 +132,19 @@ class ConditionalCommands:
 
             if _trigger_eid:
                 _trigger_role = StateChangeLog._get_entity_role(_trigger_eid)
-                _action_domain = action_function.replace("set_", "").replace("_room", "").replace("_all", "")
+                _action_domain = (
+                    action_function.replace("set_", "")
+                    .replace("_room", "")
+                    .replace("_all", "")
+                )
                 for dep in DEVICE_DEPENDENCIES:
-                    if dep["role"] == _trigger_role and dep.get("state") == _trigger_state:
-                        if _action_domain == dep.get("affects") or action_function == dep.get("affects"):
+                    if (
+                        dep["role"] == _trigger_role
+                        and dep.get("state") == _trigger_state
+                    ):
+                        if _action_domain == dep.get(
+                            "affects"
+                        ) or action_function == dep.get("affects"):
                             dep_note = dep.get("hint", dep.get("effect", ""))
                             break
         except Exception as _dep_err:
@@ -162,14 +184,19 @@ class ConditionalCommands:
             await self.redis.sadd(KEY_INDEX, cond_id)
         except Exception as e:
             logger.error("Conditional speichern fehlgeschlagen: %s", e)
-            return {"success": False, "message": "Bedingung konnte nicht gespeichert werden."}
+            return {
+                "success": False,
+                "message": "Bedingung konnte nicht gespeichert werden.",
+            }
 
         time_str = f"{ttl_hours} Stunde{'n' if ttl_hours > 1 else ''}"
         shot_str = "einmalig" if one_shot else "dauerhaft"
 
         msg = f"Bedingung '{label}' erstellt ({shot_str}, gültig für {time_str})."
         if dep_note:
-            logger.warning("Conditional '%s' hat Dependency-Warnung: %s", label, dep_note)
+            logger.warning(
+                "Conditional '%s' hat Dependency-Warnung: %s", label, dep_note
+            )
             msg += f" Hinweis: {dep_note}"
 
         result = {
@@ -181,8 +208,13 @@ class ConditionalCommands:
             result["dependency_warning"] = dep_note
         return result
 
-    async def check_event(self, entity_id: str, new_state: str, old_state: str = "",
-                          attributes: Optional[dict] = None) -> list[dict]:
+    async def check_event(
+        self,
+        entity_id: str,
+        new_state: str,
+        old_state: str = "",
+        attributes: Optional[dict] = None,
+    ) -> list[dict]:
         """Prueft ob ein Event eine Bedingung ausloest.
 
         Wird von proactive.py bei jedem state_changed aufgerufen.
@@ -230,11 +262,16 @@ class ConditionalCommands:
 
                 # F-002: Trust-Check bei Ausfuehrung
                 creator_trust = cond.get("trust_level", "guest")
-                if cond["action_function"] in OWNER_ONLY_ACTIONS and creator_trust != "owner":
+                if (
+                    cond["action_function"] in OWNER_ONLY_ACTIONS
+                    and creator_trust != "owner"
+                ):
                     logger.warning(
                         "Conditional Ausfuehrung blockiert: %s erfordert Owner-Trust "
-                        "(creator=%s, trust=%s)", cond["action_function"],
-                        cond.get("person", "?"), creator_trust,
+                        "(creator=%s, trust=%s)",
+                        cond["action_function"],
+                        cond.get("person", "?"),
+                        creator_trust,
                     )
                     continue
 
@@ -244,12 +281,14 @@ class ConditionalCommands:
                         result = await self._action_callback(
                             cond["action_function"], cond["action_args"]
                         )
-                        executed.append({
-                            "conditional_id": cond_id,
-                            "label": cond["label"],
-                            "action": cond["action_function"],
-                            "result": result,
-                        })
+                        executed.append(
+                            {
+                                "conditional_id": cond_id,
+                                "label": cond["label"],
+                                "action": cond["action_function"],
+                                "result": result,
+                            }
+                        )
                     except Exception as e:
                         logger.error("Conditional Action fehlgeschlagen: %s", e)
                         # Bei Fehler: one_shot NICHT loeschen, Aktion soll erneut versucht werden
@@ -271,8 +310,14 @@ class ConditionalCommands:
 
         return executed
 
-    def _check_trigger_match(self, cond: dict, entity_id: str, new_state: str,
-                             old_state: str, attributes: dict) -> bool:
+    def _check_trigger_match(
+        self,
+        cond: dict,
+        entity_id: str,
+        new_state: str,
+        old_state: str,
+        attributes: dict,
+    ) -> bool:
         """Prueft ob ein Trigger matcht."""
         trigger_type = cond.get("trigger_type", "")
         trigger_value = cond.get("trigger_value", "")
@@ -286,7 +331,9 @@ class ConditionalCommands:
             if not sub_triggers:
                 return False
             results = [
-                self._check_trigger_match(sub, entity_id, new_state, old_state, attributes)
+                self._check_trigger_match(
+                    sub, entity_id, new_state, old_state, attributes
+                )
                 for sub in sub_triggers
             ]
             if operator == "or":
@@ -357,7 +404,9 @@ class ConditionalCommands:
                     return True
                 if operator == "<" and attr_num < target_num:
                     return True
-                if operator == "=" and math.isclose(attr_num, target_num, rel_tol=1e-9, abs_tol=1e-9):
+                if operator == "=" and math.isclose(
+                    attr_num, target_num, rel_tol=1e-9, abs_tol=1e-9
+                ):
                     return True
             except (ValueError, TypeError):
                 if operator == "=" and str(attr_val) == target_val:

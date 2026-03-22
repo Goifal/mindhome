@@ -38,8 +38,12 @@ def patch_deps():
     """Patch yaml_config, function_calling, and state_change_log for every test."""
     with (
         patch("assistant.device_health.yaml_config") as mock_yaml,
-        patch("assistant.device_health.is_entity_hidden", return_value=False) as mock_hidden,
-        patch("assistant.device_health.get_entity_annotation", return_value=None) as mock_ann,
+        patch(
+            "assistant.device_health.is_entity_hidden", return_value=False
+        ) as mock_hidden,
+        patch(
+            "assistant.device_health.get_entity_annotation", return_value=None
+        ) as mock_ann,
     ):
         mock_yaml.get = MagicMock(side_effect=_get_yaml)
         yield {
@@ -52,6 +56,7 @@ def patch_deps():
 def _make_monitor(ha_mock, deps):
     """Create a DeviceHealthMonitor with patched dependencies."""
     from assistant.device_health import DeviceHealthMonitor
+
     return DeviceHealthMonitor(ha_mock)
 
 
@@ -59,8 +64,8 @@ def _make_monitor(ha_mock, deps):
 # Test: Initialization
 # ---------------------------------------------------------------------------
 
-class TestInit:
 
+class TestInit:
     def test_defaults_applied(self, ha_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
         assert mon.enabled is True
@@ -109,8 +114,8 @@ class TestInit:
 # Test: start / stop
 # ---------------------------------------------------------------------------
 
-class TestStartStop:
 
+class TestStartStop:
     @pytest.mark.asyncio
     async def test_start_creates_task_when_enabled(self, ha_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
@@ -153,20 +158,26 @@ class TestStartStop:
 # Test: _should_exclude
 # ---------------------------------------------------------------------------
 
-class TestShouldExclude:
 
+class TestShouldExclude:
     def test_hidden_entity_excluded(self, ha_mock, patch_deps):
         patch_deps["is_entity_hidden"].return_value = True
         mon = _make_monitor(ha_mock, patch_deps)
         assert mon._should_exclude("sensor.temp") is True
 
     def test_annotated_entity_with_diagnostics_true(self, ha_mock, patch_deps):
-        patch_deps["get_entity_annotation"].return_value = {"role": "thermostat", "diagnostics": True}
+        patch_deps["get_entity_annotation"].return_value = {
+            "role": "thermostat",
+            "diagnostics": True,
+        }
         mon = _make_monitor(ha_mock, patch_deps)
         assert mon._should_exclude("climate.living") is False
 
     def test_annotated_entity_with_diagnostics_false(self, ha_mock, patch_deps):
-        patch_deps["get_entity_annotation"].return_value = {"role": "thermostat", "diagnostics": False}
+        patch_deps["get_entity_annotation"].return_value = {
+            "role": "thermostat",
+            "diagnostics": False,
+        }
         mon = _make_monitor(ha_mock, patch_deps)
         assert mon._should_exclude("climate.living") is True
 
@@ -212,8 +223,8 @@ class TestShouldExclude:
 # Test: check_all
 # ---------------------------------------------------------------------------
 
-class TestCheckAll:
 
+class TestCheckAll:
     @pytest.mark.asyncio
     async def test_empty_states(self, ha_mock, patch_deps):
         ha_mock.get_states.return_value = []
@@ -249,10 +260,19 @@ class TestCheckAll:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_climate_dispatched_to_hvac_check(self, ha_mock, redis_mock, patch_deps):
+    async def test_climate_dispatched_to_hvac_check(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         ha_mock.get_states.return_value = [
-            {"entity_id": "climate.living", "state": "heating",
-             "attributes": {"current_temperature": 18, "temperature": 22, "friendly_name": "Living"}},
+            {
+                "entity_id": "climate.living",
+                "state": "heating",
+                "attributes": {
+                    "current_temperature": 18,
+                    "temperature": 22,
+                    "friendly_name": "Living",
+                },
+            },
         ]
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
@@ -262,9 +282,15 @@ class TestCheckAll:
         assert len(result) == 1
 
     @pytest.mark.asyncio
-    async def test_binary_sensor_dispatched_to_stale_check(self, ha_mock, redis_mock, patch_deps):
+    async def test_binary_sensor_dispatched_to_stale_check(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         ha_mock.get_states.return_value = [
-            {"entity_id": "binary_sensor.motion", "state": "off", "last_changed": "2020-01-01T00:00:00Z"},
+            {
+                "entity_id": "binary_sensor.motion",
+                "state": "off",
+                "last_changed": "2020-01-01T00:00:00Z",
+            },
         ]
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
@@ -274,11 +300,24 @@ class TestCheckAll:
         assert len(result) == 1
 
     @pytest.mark.asyncio
-    async def test_check_all_collects_multiple_alerts(self, ha_mock, redis_mock, patch_deps):
+    async def test_check_all_collects_multiple_alerts(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         ha_mock.get_states.return_value = [
-            {"entity_id": "climate.a", "state": "heating",
-             "attributes": {"current_temperature": 15, "temperature": 22, "friendly_name": "A"}},
-            {"entity_id": "binary_sensor.b", "state": "off", "last_changed": "2020-01-01T00:00:00Z"},
+            {
+                "entity_id": "climate.a",
+                "state": "heating",
+                "attributes": {
+                    "current_temperature": 15,
+                    "temperature": 22,
+                    "friendly_name": "A",
+                },
+            },
+            {
+                "entity_id": "binary_sensor.b",
+                "state": "off",
+                "last_changed": "2020-01-01T00:00:00Z",
+            },
             {"entity_id": "sensor.c", "state": "99.0"},
         ]
         mon = _make_monitor(ha_mock, patch_deps)
@@ -294,8 +333,8 @@ class TestCheckAll:
 # Test: _check_value_anomaly
 # ---------------------------------------------------------------------------
 
-class TestCheckValueAnomaly:
 
+class TestCheckValueAnomaly:
     @pytest.mark.asyncio
     async def test_no_redis_returns_none(self, ha_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
@@ -314,21 +353,29 @@ class TestCheckValueAnomaly:
         mon._add_sample.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_insufficient_samples_returns_none(self, ha_mock, redis_mock, patch_deps):
+    async def test_insufficient_samples_returns_none(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         """With < 3 samples, returns None. With 3-9 samples, uses relaxed thresholds."""
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         # < 3 samples: always None
-        mon._get_baseline = AsyncMock(return_value={"mean": 20.0, "stddev": 2.0, "samples": 2})
+        mon._get_baseline = AsyncMock(
+            return_value={"mean": 20.0, "stddev": 2.0, "samples": 2}
+        )
         mon._add_sample = AsyncMock()
         result = await mon._check_value_anomaly("sensor.t", 50.0, {})
         assert result is None
         # 5 samples with extreme deviation: detected with relaxed threshold (3.0σ)
-        mon._get_baseline = AsyncMock(return_value={"mean": 20.0, "stddev": 2.0, "samples": 5})
+        mon._get_baseline = AsyncMock(
+            return_value={"mean": 20.0, "stddev": 2.0, "samples": 5}
+        )
         result2 = await mon._check_value_anomaly("sensor.t", 50.0, {})
         assert result2 is not None  # deviation=15σ > relaxed 3.0σ
         # 5 samples with mild deviation: NOT detected (within relaxed threshold)
-        mon._get_baseline = AsyncMock(return_value={"mean": 20.0, "stddev": 2.0, "samples": 5})
+        mon._get_baseline = AsyncMock(
+            return_value={"mean": 20.0, "stddev": 2.0, "samples": 5}
+        )
         result3 = await mon._check_value_anomaly("sensor.t", 24.0, {})
         assert result3 is None  # deviation=2σ < relaxed 3.0σ
 
@@ -336,7 +383,9 @@ class TestCheckValueAnomaly:
     async def test_low_stddev_returns_none(self, ha_mock, redis_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        mon._get_baseline = AsyncMock(return_value={"mean": 20.0, "stddev": 0.0001, "samples": 100})
+        mon._get_baseline = AsyncMock(
+            return_value={"mean": 20.0, "stddev": 0.0001, "samples": 100}
+        )
         mon._add_sample = AsyncMock()
         result = await mon._check_value_anomaly("sensor.t", 50.0, {})
         assert result is None
@@ -345,22 +394,30 @@ class TestCheckValueAnomaly:
     async def test_within_threshold_returns_none(self, ha_mock, redis_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        mon._get_baseline = AsyncMock(return_value={"mean": 20.0, "stddev": 5.0, "samples": 50})
+        mon._get_baseline = AsyncMock(
+            return_value={"mean": 20.0, "stddev": 5.0, "samples": 50}
+        )
         mon._add_sample = AsyncMock()
         # deviation = |21 - 20| / 5 = 0.2, well within 2.0
         result = await mon._check_value_anomaly("sensor.t", 21.0, {"state": "21.0"})
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_anomaly_detected_returns_alert(self, ha_mock, redis_mock, patch_deps):
+    async def test_anomaly_detected_returns_alert(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        mon._get_baseline = AsyncMock(return_value={"mean": 20.0, "stddev": 2.0, "samples": 50})
+        mon._get_baseline = AsyncMock(
+            return_value={"mean": 20.0, "stddev": 2.0, "samples": 50}
+        )
         mon._add_sample = AsyncMock()
         mon._check_cooldown = AsyncMock(return_value=True)
         mon._mark_notified = AsyncMock()
 
-        state = {"attributes": {"friendly_name": "Temp Sensor", "unit_of_measurement": "°C"}}
+        state = {
+            "attributes": {"friendly_name": "Temp Sensor", "unit_of_measurement": "°C"}
+        }
         # deviation = |30 - 20| / 2 = 5.0, above threshold 2.0
         result = await mon._check_value_anomaly("sensor.temp", 30.0, state)
 
@@ -377,7 +434,9 @@ class TestCheckValueAnomaly:
     async def test_anomaly_below_mean(self, ha_mock, redis_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        mon._get_baseline = AsyncMock(return_value={"mean": 20.0, "stddev": 2.0, "samples": 50})
+        mon._get_baseline = AsyncMock(
+            return_value={"mean": 20.0, "stddev": 2.0, "samples": 50}
+        )
         mon._add_sample = AsyncMock()
         mon._check_cooldown = AsyncMock(return_value=True)
         mon._mark_notified = AsyncMock()
@@ -391,7 +450,9 @@ class TestCheckValueAnomaly:
     async def test_energy_anomaly_message(self, ha_mock, redis_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        mon._get_baseline = AsyncMock(return_value={"mean": 100.0, "stddev": 10.0, "samples": 50})
+        mon._get_baseline = AsyncMock(
+            return_value={"mean": 100.0, "stddev": 10.0, "samples": 50}
+        )
         mon._add_sample = AsyncMock()
         mon._check_cooldown = AsyncMock(return_value=True)
         mon._mark_notified = AsyncMock()
@@ -404,10 +465,14 @@ class TestCheckValueAnomaly:
         assert "über Durchschnitt" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_energy_sensor_below_mean_uses_general_message(self, ha_mock, redis_mock, patch_deps):
+    async def test_energy_sensor_below_mean_uses_general_message(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        mon._get_baseline = AsyncMock(return_value={"mean": 100.0, "stddev": 10.0, "samples": 50})
+        mon._get_baseline = AsyncMock(
+            return_value={"mean": 100.0, "stddev": 10.0, "samples": 50}
+        )
         mon._add_sample = AsyncMock()
         mon._check_cooldown = AsyncMock(return_value=True)
         mon._mark_notified = AsyncMock()
@@ -422,7 +487,9 @@ class TestCheckValueAnomaly:
     async def test_cooldown_active_returns_none(self, ha_mock, redis_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        mon._get_baseline = AsyncMock(return_value={"mean": 20.0, "stddev": 2.0, "samples": 50})
+        mon._get_baseline = AsyncMock(
+            return_value={"mean": 20.0, "stddev": 2.0, "samples": 50}
+        )
         mon._add_sample = AsyncMock()
         mon._check_cooldown = AsyncMock(return_value=False)
 
@@ -434,8 +501,8 @@ class TestCheckValueAnomaly:
 # Test: _check_stale_sensor
 # ---------------------------------------------------------------------------
 
-class TestCheckStaleSensor:
 
+class TestCheckStaleSensor:
     @pytest.mark.asyncio
     async def test_no_last_changed_returns_none(self, ha_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
@@ -445,7 +512,9 @@ class TestCheckStaleSensor:
     @pytest.mark.asyncio
     async def test_invalid_date_returns_none(self, ha_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
-        result = await mon._check_stale_sensor("binary_sensor.x", {"last_changed": "not-a-date"})
+        result = await mon._check_stale_sensor(
+            "binary_sensor.x", {"last_changed": "not-a-date"}
+        )
         assert result is None
 
     @pytest.mark.asyncio
@@ -453,7 +522,9 @@ class TestCheckStaleSensor:
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         recent = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-        result = await mon._check_stale_sensor("binary_sensor.x", {"last_changed": recent})
+        result = await mon._check_stale_sensor(
+            "binary_sensor.x", {"last_changed": recent}
+        )
         assert result is None
 
     @pytest.mark.asyncio
@@ -529,20 +600,30 @@ class TestCheckStaleSensor:
         mon._check_cooldown = AsyncMock(return_value=False)
 
         old = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
-        state = {"last_changed": old, "attributes": {"friendly_name": "X", "device_class": "motion"}}
+        state = {
+            "last_changed": old,
+            "attributes": {"friendly_name": "X", "device_class": "motion"},
+        }
         result = await mon._check_stale_sensor("binary_sensor.x", state)
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_stale_sensor_z_suffix_timezone(self, ha_mock, redis_mock, patch_deps):
+    async def test_stale_sensor_z_suffix_timezone(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         """Z suffix in ISO dates should be handled correctly."""
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         mon._check_cooldown = AsyncMock(return_value=True)
         mon._mark_notified = AsyncMock()
 
-        old = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        state = {"last_changed": old, "attributes": {"friendly_name": "X", "device_class": "motion"}}
+        old = (datetime.now(timezone.utc) - timedelta(days=5)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        state = {
+            "last_changed": old,
+            "attributes": {"friendly_name": "X", "device_class": "motion"},
+        }
         result = await mon._check_stale_sensor("binary_sensor.x", state)
         assert result is not None
 
@@ -551,9 +632,11 @@ class TestCheckStaleSensor:
 # Test: _check_hvac_efficiency
 # ---------------------------------------------------------------------------
 
-class TestCheckHvacEfficiency:
 
-    def _climate_state(self, current_temp, target_temp, action="heating", name="Thermostat"):
+class TestCheckHvacEfficiency:
+    def _climate_state(
+        self, current_temp, target_temp, action="heating", name="Thermostat"
+    ):
         return {
             "state": action,
             "attributes": {
@@ -567,14 +650,19 @@ class TestCheckHvacEfficiency:
     async def test_missing_temps_returns_none(self, ha_mock, redis_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        result = await mon._check_hvac_efficiency("climate.x", {"state": "heating", "attributes": {}})
+        result = await mon._check_hvac_efficiency(
+            "climate.x", {"state": "heating", "attributes": {}}
+        )
         assert result is None
 
     @pytest.mark.asyncio
     async def test_invalid_temp_returns_none(self, ha_mock, redis_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        state = {"state": "heating", "attributes": {"current_temperature": "abc", "temperature": 22}}
+        state = {
+            "state": "heating",
+            "attributes": {"current_temperature": "abc", "temperature": 22},
+        }
         result = await mon._check_hvac_efficiency("climate.x", state)
         assert result is None
 
@@ -614,7 +702,9 @@ class TestCheckHvacEfficiency:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_first_check_records_start_time(self, ha_mock, redis_mock, patch_deps):
+    async def test_first_check_records_start_time(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         redis_mock.get.return_value = None  # no start time recorded yet
@@ -637,7 +727,9 @@ class TestCheckHvacEfficiency:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_timeout_exceeded_returns_alert(self, ha_mock, redis_mock, patch_deps):
+    async def test_timeout_exceeded_returns_alert(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         mon._check_cooldown = AsyncMock(return_value=True)
@@ -701,7 +793,9 @@ class TestCheckHvacEfficiency:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_invalid_start_time_deletes_key(self, ha_mock, redis_mock, patch_deps):
+    async def test_invalid_start_time_deletes_key(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         redis_mock.get.return_value = b"not-a-date"
@@ -716,8 +810,8 @@ class TestCheckHvacEfficiency:
 # Test: Baseline management
 # ---------------------------------------------------------------------------
 
-class TestBaseline:
 
+class TestBaseline:
     @pytest.mark.asyncio
     async def test_get_baseline_no_redis(self, ha_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
@@ -750,13 +844,17 @@ class TestBaseline:
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         redis_mock.hgetall.return_value = {
-            "mean": "22.5", "stddev": "1.5", "samples": "100",
+            "mean": "22.5",
+            "stddev": "1.5",
+            "samples": "100",
         }
         result = await mon._get_baseline("sensor.t")
         assert result == {"mean": 22.5, "stddev": 1.5, "samples": 100}
 
     @pytest.mark.asyncio
-    async def test_get_baseline_error_returns_none(self, ha_mock, redis_mock, patch_deps):
+    async def test_get_baseline_error_returns_none(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         redis_mock.hgetall.side_effect = Exception("redis down")
@@ -790,7 +888,9 @@ class TestBaseline:
         # Should not raise
 
     @pytest.mark.asyncio
-    async def test_recalculate_baseline_insufficient_data(self, ha_mock, redis_mock, patch_deps):
+    async def test_recalculate_baseline_insufficient_data(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         # pipeline returns only 1 value total (< 2 required)
@@ -802,7 +902,9 @@ class TestBaseline:
         redis_mock.hset.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_recalculate_baseline_computes_correctly(self, ha_mock, redis_mock, patch_deps):
+    async def test_recalculate_baseline_computes_correctly(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         values = [b"10.0", b"20.0", b"30.0"]
@@ -819,7 +921,9 @@ class TestBaseline:
         samples_val = int(mapping["samples"])
 
         assert abs(mean_val - 20.0) < 0.01
-        expected_stddev = math.sqrt(((10 - 20) ** 2 + (20 - 20) ** 2 + (30 - 20) ** 2) / 2)
+        expected_stddev = math.sqrt(
+            ((10 - 20) ** 2 + (20 - 20) ** 2 + (30 - 20) ** 2) / 2
+        )
         assert abs(stddev_val - expected_stddev) < 0.01
         assert samples_val == 3
 
@@ -828,8 +932,8 @@ class TestBaseline:
 # Test: Cooldown & notification
 # ---------------------------------------------------------------------------
 
-class TestCooldown:
 
+class TestCooldown:
     @pytest.mark.asyncio
     async def test_check_cooldown_no_redis(self, ha_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
@@ -845,7 +949,9 @@ class TestCooldown:
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_check_cooldown_already_notified(self, ha_mock, redis_mock, patch_deps):
+    async def test_check_cooldown_already_notified(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         redis_mock.exists.return_value = 1
@@ -881,7 +987,9 @@ class TestCooldown:
         assert call_args.kwargs.get("ex") == 1440 * 60 * 1
 
     @pytest.mark.asyncio
-    async def test_mark_notified_escalation_second_alert(self, ha_mock, redis_mock, patch_deps):
+    async def test_mark_notified_escalation_second_alert(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         redis_mock.incr.return_value = 2  # second alert
@@ -893,7 +1001,9 @@ class TestCooldown:
         assert call_args.kwargs.get("ex") == 1440 * 60 * 2
 
     @pytest.mark.asyncio
-    async def test_mark_notified_escalation_third_alert(self, ha_mock, redis_mock, patch_deps):
+    async def test_mark_notified_escalation_third_alert(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         redis_mock.incr.return_value = 3  # third alert
@@ -905,7 +1015,9 @@ class TestCooldown:
         assert call_args.kwargs.get("ex") == 1440 * 60 * 4
 
     @pytest.mark.asyncio
-    async def test_mark_notified_escalation_caps_at_7(self, ha_mock, redis_mock, patch_deps):
+    async def test_mark_notified_escalation_caps_at_7(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         redis_mock.incr.return_value = 10  # many alerts
@@ -918,7 +1030,9 @@ class TestCooldown:
         assert call_args.kwargs.get("ex") == expected
 
     @pytest.mark.asyncio
-    async def test_mark_notified_redis_error_handled(self, ha_mock, redis_mock, patch_deps):
+    async def test_mark_notified_redis_error_handled(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         redis_mock.incr.side_effect = Exception("redis down")
@@ -930,8 +1044,8 @@ class TestCooldown:
 # Test: _send_alert
 # ---------------------------------------------------------------------------
 
-class TestSendAlert:
 
+class TestSendAlert:
     @pytest.mark.asyncio
     async def test_send_alert_with_callback(self, ha_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
@@ -960,8 +1074,8 @@ class TestSendAlert:
 # Test: get_status / get_baseline_info
 # ---------------------------------------------------------------------------
 
-class TestStatusAndInfo:
 
+class TestStatusAndInfo:
     @pytest.mark.asyncio
     async def test_get_status_no_redis(self, ha_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
@@ -975,7 +1089,10 @@ class TestStatusAndInfo:
 
         # Mock scan_iter as an async generator
         async def baseline_iter(**kwargs):
-            for key in [b"mha:device:baseline:sensor.a", b"mha:device:baseline:sensor.b"]:
+            for key in [
+                b"mha:device:baseline:sensor.a",
+                b"mha:device:baseline:sensor.b",
+            ]:
                 yield key
 
         async def notified_iter(**kwargs):
@@ -1009,7 +1126,11 @@ class TestStatusAndInfo:
     async def test_get_baseline_info_delegates(self, ha_mock, redis_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        redis_mock.hgetall.return_value = {b"mean": b"20.0", b"stddev": b"2.0", b"samples": b"50"}
+        redis_mock.hgetall.return_value = {
+            b"mean": b"20.0",
+            b"stddev": b"2.0",
+            b"samples": b"50",
+        }
         result = await mon.get_baseline_info("sensor.t")
         assert result == {"mean": 20.0, "stddev": 2.0, "samples": 50}
 
@@ -1018,8 +1139,8 @@ class TestStatusAndInfo:
 # Test: get_anomaly_summary
 # ---------------------------------------------------------------------------
 
-class TestGetAnomalySummary:
 
+class TestGetAnomalySummary:
     @pytest.mark.asyncio
     async def test_disabled_returns_empty(self, ha_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
@@ -1047,11 +1168,13 @@ class TestGetAnomalySummary:
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         # Mock check_all to return some alerts
-        mon.check_all = AsyncMock(return_value=[
-            {"type": "value_anomaly", "message": "Sensor anomaly"},
-            {"type": "value_anomaly", "message": "Another anomaly"},
-            {"type": "stale", "message": "Stale sensor"},
-        ])
+        mon.check_all = AsyncMock(
+            return_value=[
+                {"type": "value_anomaly", "message": "Sensor anomaly"},
+                {"type": "value_anomaly", "message": "Another anomaly"},
+                {"type": "stale", "message": "Stale sensor"},
+            ]
+        )
         result = await mon.get_anomaly_summary()
         assert "Geraete-Gesundheit" in result
         assert "2 Wert-Anomalien" in result
@@ -1061,9 +1184,11 @@ class TestGetAnomalySummary:
     async def test_hvac_type_in_summary(self, ha_mock, redis_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        mon.check_all = AsyncMock(return_value=[
-            {"type": "hvac_inefficiency", "message": "HVAC problem"},
-        ])
+        mon.check_all = AsyncMock(
+            return_value=[
+                {"type": "hvac_inefficiency", "message": "HVAC problem"},
+            ]
+        )
         result = await mon.get_anomaly_summary()
         assert "HVAC-Probleme" in result
 
@@ -1071,9 +1196,11 @@ class TestGetAnomalySummary:
     async def test_unknown_type_uses_raw(self, ha_mock, redis_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        mon.check_all = AsyncMock(return_value=[
-            {"type": "custom_alert", "message": "Custom"},
-        ])
+        mon.check_all = AsyncMock(
+            return_value=[
+                {"type": "custom_alert", "message": "Custom"},
+            ]
+        )
         result = await mon.get_anomaly_summary()
         assert "custom_alert" in result
 
@@ -1090,8 +1217,8 @@ class TestGetAnomalySummary:
 # Test: get_efficiency_report
 # ---------------------------------------------------------------------------
 
-class TestGetEfficiencyReport:
 
+class TestGetEfficiencyReport:
     @pytest.mark.asyncio
     async def test_disabled_returns_empty(self, ha_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
@@ -1130,9 +1257,15 @@ class TestGetEfficiencyReport:
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         ha_mock.get_states.return_value = [
-            {"entity_id": "climate.living", "state": "heating",
-             "attributes": {"current_temperature": 21.5, "temperature": 22,
-                            "friendly_name": "Living"}},
+            {
+                "entity_id": "climate.living",
+                "state": "heating",
+                "attributes": {
+                    "current_temperature": 21.5,
+                    "temperature": 22,
+                    "friendly_name": "Living",
+                },
+            },
         ]
         result = await mon.get_efficiency_report()
         assert len(result["efficiency_data"]) == 1
@@ -1145,21 +1278,35 @@ class TestGetEfficiencyReport:
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         ha_mock.get_states.return_value = [
-            {"entity_id": "climate.living", "state": "off",
-             "attributes": {"current_temperature": 18, "temperature": 22,
-                            "friendly_name": "Living"}},
+            {
+                "entity_id": "climate.living",
+                "state": "off",
+                "attributes": {
+                    "current_temperature": 18,
+                    "temperature": 22,
+                    "friendly_name": "Living",
+                },
+            },
         ]
         result = await mon.get_efficiency_report()
         assert result["efficiency_data"] == []
 
     @pytest.mark.asyncio
-    async def test_climate_inefficient_generates_suggestion(self, ha_mock, redis_mock, patch_deps):
+    async def test_climate_inefficient_generates_suggestion(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
         ha_mock.get_states.return_value = [
-            {"entity_id": "climate.living", "state": "heating",
-             "attributes": {"current_temperature": 18, "temperature": 22,
-                            "friendly_name": "Living"}},
+            {
+                "entity_id": "climate.living",
+                "state": "heating",
+                "attributes": {
+                    "current_temperature": 18,
+                    "temperature": 22,
+                    "friendly_name": "Living",
+                },
+            },
         ]
         result = await mon.get_efficiency_report()
         assert len(result["efficiency_data"]) == 1
@@ -1181,8 +1328,8 @@ class TestGetEfficiencyReport:
 # Test: _get_seasonal_baseline
 # ---------------------------------------------------------------------------
 
-class TestGetSeasonalBaseline:
 
+class TestGetSeasonalBaseline:
     def test_winter_months(self, ha_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
         for month in (12, 1, 2):
@@ -1226,8 +1373,8 @@ class TestGetSeasonalBaseline:
 # Test: detect_degradation_trajectory
 # ---------------------------------------------------------------------------
 
-class TestDetectDegradationTrajectory:
 
+class TestDetectDegradationTrajectory:
     @pytest.mark.asyncio
     async def test_no_redis_returns_none(self, ha_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
@@ -1244,10 +1391,14 @@ class TestDetectDegradationTrajectory:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_insufficient_samples_returns_none(self, ha_mock, redis_mock, patch_deps):
+    async def test_insufficient_samples_returns_none(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        mon._get_baseline = AsyncMock(return_value={"mean": 20.0, "stddev": 2.0, "samples": 5})
+        mon._get_baseline = AsyncMock(
+            return_value={"mean": 20.0, "stddev": 2.0, "samples": 5}
+        )
         result = await mon.detect_degradation_trajectory("sensor.t")
         assert result is None
 
@@ -1255,7 +1406,9 @@ class TestDetectDegradationTrajectory:
     async def test_no_previous_mean_returns_none(self, ha_mock, redis_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        mon._get_baseline = AsyncMock(return_value={"mean": 20.0, "stddev": 2.0, "samples": 50})
+        mon._get_baseline = AsyncMock(
+            return_value={"mean": 20.0, "stddev": 2.0, "samples": 50}
+        )
         redis_mock.get.return_value = None  # no previous baseline
         result = await mon.detect_degradation_trajectory("sensor.t")
         assert result is None
@@ -1266,17 +1419,27 @@ class TestDetectDegradationTrajectory:
     async def test_stable_baseline_returns_none(self, ha_mock, redis_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        mon._get_baseline = AsyncMock(return_value={"mean": 20.0, "stddev": 2.0, "samples": 50})
-        redis_mock.get.return_value = b"20.5"  # prev mean = 20.5, decline = 0.5/20.5 = 2.4%
+        mon._get_baseline = AsyncMock(
+            return_value={"mean": 20.0, "stddev": 2.0, "samples": 50}
+        )
+        redis_mock.get.return_value = (
+            b"20.5"  # prev mean = 20.5, decline = 0.5/20.5 = 2.4%
+        )
         result = await mon.detect_degradation_trajectory("sensor.t")
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_declining_baseline_returns_warning(self, ha_mock, redis_mock, patch_deps):
+    async def test_declining_baseline_returns_warning(
+        self, ha_mock, redis_mock, patch_deps
+    ):
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        mon._get_baseline = AsyncMock(return_value={"mean": 18.0, "stddev": 2.0, "samples": 50})
-        redis_mock.get.return_value = b"25.0"  # prev mean 25, now 18: decline = 7/25 = 28%
+        mon._get_baseline = AsyncMock(
+            return_value={"mean": 18.0, "stddev": 2.0, "samples": 50}
+        )
+        redis_mock.get.return_value = (
+            b"25.0"  # prev mean 25, now 18: decline = 7/25 = 28%
+        )
         result = await mon.detect_degradation_trajectory("sensor.t")
         assert result is not None
         assert "Baseline sinkt" in result
@@ -1296,8 +1459,8 @@ class TestDetectDegradationTrajectory:
 # Test: _check_loop (basic behavior)
 # ---------------------------------------------------------------------------
 
-class TestCheckLoop:
 
+class TestCheckLoop:
     @pytest.mark.asyncio
     async def test_check_loop_sends_alerts(self, ha_mock, patch_deps):
         """check_loop sends detected alerts via _send_alert."""
@@ -1305,6 +1468,7 @@ class TestCheckLoop:
         mon._running = True
 
         call_count = [0]
+
         async def stop_after_one():
             call_count[0] += 1
             if call_count[0] >= 1:
@@ -1327,6 +1491,7 @@ class TestCheckLoop:
         mon._running = True
 
         call_count = [0]
+
         async def fail_then_stop(*args, **kwargs):
             call_count[0] += 1
             if call_count[0] >= 1:
@@ -1343,8 +1508,8 @@ class TestCheckLoop:
 # Test: _add_sample error handling
 # ---------------------------------------------------------------------------
 
-class TestAddSampleErrors:
 
+class TestAddSampleErrors:
     @pytest.mark.asyncio
     async def test_add_sample_pipeline_error(self, ha_mock, redis_mock, patch_deps):
         """Pipeline-Fehler wird geloggt, kein Crash."""
@@ -1360,8 +1525,8 @@ class TestAddSampleErrors:
 # Test: _recalculate_baseline edge cases
 # ---------------------------------------------------------------------------
 
-class TestRecalculateBaselineEdgeCases:
 
+class TestRecalculateBaselineEdgeCases:
     @pytest.mark.asyncio
     async def test_invalid_sample_values_skipped(self, ha_mock, redis_mock, patch_deps):
         """Ungueltige Sample-Werte werden uebersprungen."""
@@ -1369,9 +1534,9 @@ class TestRecalculateBaselineEdgeCases:
         await mon.initialize(redis_mock)
         pipe = redis_mock._pipeline
         # Mix of valid and invalid values
-        pipe.execute.return_value = [
-            [b"10.0", b"not-a-number", b"20.0", b"30.0"]
-        ] + [[] for _ in range(30)]
+        pipe.execute.return_value = [[b"10.0", b"not-a-number", b"20.0", b"30.0"]] + [
+            [] for _ in range(30)
+        ]
 
         await mon._recalculate_baseline("sensor.t")
 
@@ -1394,8 +1559,8 @@ class TestRecalculateBaselineEdgeCases:
 # Test: _should_exclude edge cases
 # ---------------------------------------------------------------------------
 
-class TestShouldExcludeExtended:
 
+class TestShouldExcludeExtended:
     def test_automation_pattern_excluded(self, ha_mock, patch_deps):
         mon = _make_monitor(ha_mock, patch_deps)
         assert mon._should_exclude("automation.morning_routine") is True

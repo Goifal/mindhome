@@ -5,10 +5,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from assistant.workshop_library import WorkshopLibrary, WORKSHOP_DOCS_DIR, SUPPORTED_EXTENSIONS
+from assistant.workshop_library import (
+    WorkshopLibrary,
+    WORKSHOP_DOCS_DIR,
+    SUPPORTED_EXTENSIONS,
+)
 
 
 # ── Fixtures ──────────────────────────────────────────────
+
 
 @pytest.fixture
 def lib():
@@ -29,6 +34,7 @@ def lib_uninit():
 
 # ── Constants ─────────────────────────────────────────────
 
+
 def test_supported_extensions():
     assert SUPPORTED_EXTENSIONS == {".pdf", ".txt", ".md"}
 
@@ -47,6 +53,7 @@ def test_chunk_overlap():
 
 # ── __init__ ──────────────────────────────────────────────
 
+
 def test_init_defaults():
     wl = WorkshopLibrary()
     assert wl.chroma_client is None
@@ -55,6 +62,7 @@ def test_init_defaults():
 
 
 # ── initialize ────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 @patch.object(Path, "mkdir")
@@ -75,6 +83,7 @@ async def test_initialize(mock_mkdir):
 
 
 # ── _chunk_text ───────────────────────────────────────────
+
 
 def test_chunk_text_short():
     wl = WorkshopLibrary()
@@ -118,6 +127,7 @@ def test_chunk_text_whitespace_only_chunks_skipped():
 
 
 # ── ingest_document ───────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_ingest_document_no_collection(lib_uninit):
@@ -187,12 +197,15 @@ async def test_ingest_document_md_success(lib, tmp_path):
 async def test_ingest_document_pdf(lib, tmp_path):
     f = tmp_path / "doc.pdf"
     f.write_bytes(b"%PDF-1.4 fake pdf content")
-    with patch.object(lib, "_extract_pdf", new_callable=AsyncMock, return_value="PDF extracted text"):
+    with patch.object(
+        lib, "_extract_pdf", new_callable=AsyncMock, return_value="PDF extracted text"
+    ):
         result = await lib.ingest_document(str(f))
         assert result["status"] == "ok"
 
 
 # ── search ────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_search_no_collection(lib_uninit):
@@ -227,7 +240,9 @@ async def test_search_with_embedding_fn(lib):
     lib.embedding_fn = MagicMock(return_value=[0.1] * 384)
     lib.collection.query.return_value = {
         "documents": [["Doc1", "Doc2"]],
-        "metadatas": [[{"source": "a.txt", "chunk": 0}, {"source": "b.txt", "chunk": 1}]],
+        "metadatas": [
+            [{"source": "a.txt", "chunk": 0}, {"source": "b.txt", "chunk": 1}]
+        ],
         "distances": [[0.1, 0.5]],
     }
     results = await lib.search("query")
@@ -246,10 +261,13 @@ async def test_search_respects_n_results(lib):
     await lib.search("test", n_results=2)
     call_kwargs = lib.collection.query.call_args
     # n_results should be min(n_results, count) = min(2, 3) = 2
-    assert call_kwargs.kwargs.get("n_results") == 2 or call_kwargs[1].get("n_results") == 2
+    assert (
+        call_kwargs.kwargs.get("n_results") == 2 or call_kwargs[1].get("n_results") == 2
+    )
 
 
 # ── list_documents ────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_list_documents_dir_not_exists(lib):
@@ -274,9 +292,12 @@ async def test_list_documents_with_files(lib, tmp_path):
 
 # ── get_stats ─────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_get_stats_no_collection(lib_uninit):
-    with patch.object(WorkshopLibrary, "list_documents", new_callable=AsyncMock, return_value=[]):
+    with patch.object(
+        WorkshopLibrary, "list_documents", new_callable=AsyncMock, return_value=[]
+    ):
         stats = await lib_uninit.get_stats()
         assert stats["total_chunks"] == 0
 
@@ -284,10 +305,15 @@ async def test_get_stats_no_collection(lib_uninit):
 @pytest.mark.asyncio
 async def test_get_stats_with_data(lib):
     lib.collection.count.return_value = 25
-    with patch.object(lib, "list_documents", new_callable=AsyncMock, return_value=[
-        {"name": "a.txt", "size_mb": 1.5},
-        {"name": "b.pdf", "size_mb": 2.5},
-    ]):
+    with patch.object(
+        lib,
+        "list_documents",
+        new_callable=AsyncMock,
+        return_value=[
+            {"name": "a.txt", "size_mb": 1.5},
+            {"name": "b.pdf", "size_mb": 2.5},
+        ],
+    ):
         stats = await lib.get_stats()
         assert stats["total_chunks"] == 25
         assert stats["total_documents"] == 2
@@ -295,6 +321,7 @@ async def test_get_stats_with_data(lib):
 
 
 # ── _extract_pdf ──────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_extract_pdf_fitz(lib, tmp_path):
@@ -326,11 +353,14 @@ async def test_extract_pdf_all_fail(lib, tmp_path):
 
 # ── Coverage: lines 56-58 (_resolve_embedding) ──────────────
 
+
 @pytest.mark.asyncio
 async def test_resolve_embedding_awaitable(lib):
     """_resolve_embedding awaits coroutines."""
+
     async def _coro():
         return [0.1, 0.2]
+
     result = await lib._resolve_embedding(_coro())
     assert result == [0.1, 0.2]
 
@@ -343,6 +373,7 @@ async def test_resolve_embedding_non_awaitable(lib):
 
 
 # ── Coverage: lines 210-211 (extract_pdf fitz returns empty) ─
+
 
 @pytest.mark.asyncio
 async def test_extract_pdf_fitz_empty_then_pdfplumber(lib, tmp_path):
@@ -373,6 +404,7 @@ async def test_extract_pdf_fitz_empty_then_pdfplumber(lib, tmp_path):
 
 # ── Coverage: lines 216-225 (pdfplumber success path) ────────
 
+
 @pytest.mark.asyncio
 async def test_extract_pdf_pdfplumber_success(lib, tmp_path):
     """pdfplumber extracts text when fitz is not available."""
@@ -398,6 +430,7 @@ async def test_extract_pdf_pdfplumber_success(lib, tmp_path):
         return original_import(name, *args, **kwargs)
 
     import builtins
+
     original_import = builtins.__import__
     with patch.dict("sys.modules", {"fitz": None}):
         with patch("builtins.__import__", side_effect=selective_import):
@@ -407,6 +440,7 @@ async def test_extract_pdf_pdfplumber_success(lib, tmp_path):
 
 
 # ── Coverage: lines 228-229 (pdfplumber exception) ──────────
+
 
 @pytest.mark.asyncio
 async def test_extract_pdf_pdfplumber_exception(lib, tmp_path):
@@ -434,6 +468,7 @@ async def test_extract_pdf_pdfplumber_exception(lib, tmp_path):
         return original_import(name, *args, **kwargs)
 
     import builtins
+
     original_import = builtins.__import__
     with patch.dict("sys.modules", {"fitz": None}):
         with patch("builtins.__import__", side_effect=selective_import):
@@ -442,6 +477,7 @@ async def test_extract_pdf_pdfplumber_exception(lib, tmp_path):
 
 
 # ── Coverage: lines 234-243 (PyPDF2 success path) ───────────
+
 
 @pytest.mark.asyncio
 async def test_extract_pdf_pypdf2_success(lib, tmp_path):
@@ -466,6 +502,7 @@ async def test_extract_pdf_pypdf2_success(lib, tmp_path):
         return original_import(name, *args, **kwargs)
 
     import builtins
+
     original_import = builtins.__import__
     with patch.dict("sys.modules", {"fitz": None, "pdfplumber": None}):
         with patch("builtins.__import__", side_effect=selective_import):
@@ -474,6 +511,7 @@ async def test_extract_pdf_pypdf2_success(lib, tmp_path):
 
 
 # ── Coverage: lines 246-247 (PyPDF2 exception) ──────────────
+
 
 @pytest.mark.asyncio
 async def test_extract_pdf_pypdf2_exception(lib, tmp_path):
@@ -494,6 +532,7 @@ async def test_extract_pdf_pypdf2_exception(lib, tmp_path):
         return original_import(name, *args, **kwargs)
 
     import builtins
+
     original_import = builtins.__import__
     with patch.dict("sys.modules", {"fitz": None, "pdfplumber": None}):
         with patch("builtins.__import__", side_effect=selective_import):
@@ -502,6 +541,7 @@ async def test_extract_pdf_pypdf2_exception(lib, tmp_path):
 
 
 # ── Coverage: lines 216-225 pdfplumber with None page text ───
+
 
 @pytest.mark.asyncio
 async def test_extract_pdf_pdfplumber_none_page_text(lib, tmp_path):
@@ -528,6 +568,7 @@ async def test_extract_pdf_pdfplumber_none_page_text(lib, tmp_path):
         return original_import(name, *args, **kwargs)
 
     import builtins
+
     original_import = builtins.__import__
     with patch.dict("sys.modules", {"fitz": None}):
         with patch("builtins.__import__", side_effect=selective_import):

@@ -24,13 +24,29 @@ import pytest
 
 # Erlaubte Funktionen (Subset aus FunctionExecutor._ALLOWED_FUNCTIONS)
 _ALLOWED_FUNCTIONS = {
-    "set_light", "set_cover", "set_climate", "set_switch",
-    "play_media", "set_media_player", "lock_door",
-    "get_weather", "get_lights", "get_switches", "get_covers",
-    "get_media", "get_climate", "get_entity_state",
-    "get_house_status", "get_room_climate", "get_calendar_events",
-    "send_notification", "play_sound", "activate_scene",
-    "get_alarms", "set_wakeup_alarm", "cancel_alarm",
+    "set_light",
+    "set_cover",
+    "set_climate",
+    "set_switch",
+    "play_media",
+    "set_media_player",
+    "lock_door",
+    "get_weather",
+    "get_lights",
+    "get_switches",
+    "get_covers",
+    "get_media",
+    "get_climate",
+    "get_entity_state",
+    "get_house_status",
+    "get_room_climate",
+    "get_calendar_events",
+    "send_notification",
+    "play_sound",
+    "activate_scene",
+    "get_alarms",
+    "set_wakeup_alarm",
+    "cancel_alarm",
 }
 
 _ARG_KEY_TO_FUNC = {
@@ -43,9 +59,12 @@ _ARG_KEY_TO_FUNC = {
 }
 
 _DOMAIN_TO_FUNC = {
-    "light.": "set_light", "switch.": "set_switch",
-    "cover.": "set_cover", "climate.": "set_climate",
-    "media_player.": "play_media", "lock.": "lock_door",
+    "light.": "set_light",
+    "switch.": "set_switch",
+    "cover.": "set_cover",
+    "climate.": "set_climate",
+    "media_player.": "play_media",
+    "lock.": "lock_door",
 }
 
 
@@ -67,7 +86,7 @@ def extract_tool_calls(text: str) -> list[dict]:
             pass
 
     # Muster 2: XML-Tags
-    m = re.search(r'<tool_call>\s*(\{.*?\})\s*</tool_call>', text, re.DOTALL)
+    m = re.search(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", text, re.DOTALL)
     if m:
         try:
             obj = json.loads(m.group(1))
@@ -81,8 +100,8 @@ def extract_tool_calls(text: str) -> list[dict]:
             pass
 
     # Muster 3: Code-Block
-    m_func = re.search(r'`(\w+)`', text)
-    m_json = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+    m_func = re.search(r"`(\w+)`", text)
+    m_json = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
     if m_func and m_json:
         func_name = m_func.group(1)
         if func_name in _ALLOWED_FUNCTIONS:
@@ -93,7 +112,9 @@ def extract_tool_calls(text: str) -> list[dict]:
                 pass
 
     # Muster 4: Bare JSON
-    m_bare = re.search(r'\{[^{}]*"(?:entity_id|room|state|position|adjust)"[^{}]*\}', text)
+    m_bare = re.search(
+        r'\{[^{}]*"(?:entity_id|room|state|position|adjust)"[^{}]*\}', text
+    )
     if m_bare:
         try:
             args = json.loads(m_bare.group(0))
@@ -111,7 +132,11 @@ def extract_tool_calls(text: str) -> list[dict]:
                         func_name = _ARG_KEY_TO_FUNC[key]
                         break
 
-            if not func_name and "state" in args and ("room" in args or "entity_id" in args):
+            if (
+                not func_name
+                and "state" in args
+                and ("room" in args or "entity_id" in args)
+            ):
                 eid = args.get("entity_id", "")
                 if eid.startswith("cover."):
                     func_name = "set_cover"
@@ -136,11 +161,14 @@ def extract_tool_calls(text: str) -> list[dict]:
 # Muster 1: Standard JSON
 # ============================================================
 
+
 class TestStandardJSON:
     """{"name": "func", "arguments": {...}}"""
 
     def test_set_light(self):
-        text = '{"name": "set_light", "arguments": {"room": "wohnzimmer", "state": "on"}}'
+        text = (
+            '{"name": "set_light", "arguments": {"room": "wohnzimmer", "state": "on"}}'
+        )
         result = extract_tool_calls(text)
         assert len(result) == 1
         assert result[0]["function"]["name"] == "set_light"
@@ -173,6 +201,7 @@ class TestStandardJSON:
 # Muster 2: XML-Tags
 # ============================================================
 
+
 class TestXMLTags:
     """<tool_call>{...}</tool_call>"""
 
@@ -199,6 +228,7 @@ class TestXMLTags:
 # Muster 3: Code-Block
 # ============================================================
 
+
 class TestCodeBlock:
     """`func_name` ... ```json {...} ```"""
 
@@ -222,6 +252,7 @@ class TestCodeBlock:
 # ============================================================
 # Muster 4: Bare JSON
 # ============================================================
+
 
 class TestBareJSON:
     """Bare JSON mit entity_id oder room+state."""
@@ -292,6 +323,7 @@ class TestBareJSON:
 # ============================================================
 # Edge Cases
 # ============================================================
+
 
 class TestToolCallEdgeCases:
     """Grenzfaelle und Fehlerfaelle."""

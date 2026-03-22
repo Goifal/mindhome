@@ -31,10 +31,18 @@ _PREFIX = "mha:seasonal"
 
 # Saisonale Zuordnung
 _SEASONS = {
-    12: "winter", 1: "winter", 2: "winter",
-    3: "fruehling", 4: "fruehling", 5: "fruehling",
-    6: "sommer", 7: "sommer", 8: "sommer",
-    9: "herbst", 10: "herbst", 11: "herbst",
+    12: "winter",
+    1: "winter",
+    2: "winter",
+    3: "fruehling",
+    4: "fruehling",
+    5: "fruehling",
+    6: "sommer",
+    7: "sommer",
+    8: "sommer",
+    9: "herbst",
+    10: "herbst",
+    11: "herbst",
 }
 
 _SEASON_LABELS = {
@@ -97,7 +105,7 @@ class SeasonalInsightEngine:
 
         # Temperature-based season hints
         _TEMP_SEASON_HINTS = {
-            "winter": (-10, 8),    # typical winter range
+            "winter": (-10, 8),  # typical winter range
             "fruehling": (5, 18),
             "sommer": (18, 40),
             "herbst": (5, 16),
@@ -117,10 +125,14 @@ class SeasonalInsightEngine:
 
                 # Outdoor temperature sensor
                 if (
-                    "outdoor" in eid.lower()
-                    or "aussen" in eid.lower()
-                    or "outside" in eid.lower()
-                ) and eid.startswith("sensor.") and "temperature" in eid.lower():
+                    (
+                        "outdoor" in eid.lower()
+                        or "aussen" in eid.lower()
+                        or "outside" in eid.lower()
+                    )
+                    and eid.startswith("sensor.")
+                    and "temperature" in eid.lower()
+                ):
                     try:
                         outdoor_temp = float(state_val)
                     except (ValueError, TypeError):
@@ -133,8 +145,12 @@ class SeasonalInsightEngine:
                     sunset = attrs.get("next_setting", "")
                     if sunrise and sunset:
                         try:
-                            rise_dt = datetime.fromisoformat(sunrise.replace("Z", "+00:00"))
-                            set_dt = datetime.fromisoformat(sunset.replace("Z", "+00:00"))
+                            rise_dt = datetime.fromisoformat(
+                                sunrise.replace("Z", "+00:00")
+                            )
+                            set_dt = datetime.fromisoformat(
+                                sunset.replace("Z", "+00:00")
+                            )
                             # Approximate daylight hours
                             diff = (set_dt - rise_dt).total_seconds() / 3600
                             if 0 < diff < 24:
@@ -162,7 +178,9 @@ class SeasonalInsightEngine:
                             # Temperature suggests different season (transitional period)
                             logger.debug(
                                 "Hybrid detection: month=%s, temp=%.1f°C suggests %s",
-                                month_season, outdoor_temp, season,
+                                month_season,
+                                outdoor_temp,
+                                season,
                             )
                             # Don't override, just reduce confidence
                             break
@@ -198,7 +216,9 @@ class SeasonalInsightEngine:
         if self.enabled and self.redis:
             self._running = True
             self._task = asyncio.create_task(self._seasonal_loop())
-            self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+            self._task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
+            )
             logger.info("SeasonalInsightEngine initialisiert")
 
     async def stop(self):
@@ -211,7 +231,9 @@ class SeasonalInsightEngine:
             except asyncio.CancelledError:
                 pass
 
-    async def log_seasonal_action(self, action: str, args: dict, person: str = "") -> None:
+    async def log_seasonal_action(
+        self, action: str, args: dict, person: str = ""
+    ) -> None:
         """Loggt eine Aktion fuer saisonale Analyse.
 
         Wird bei jeder ausgefuehrten Aktion aufgerufen.
@@ -273,7 +295,9 @@ class SeasonalInsightEngine:
             return None
 
         # Saisonwechsel erkennen
-        transition_insight = await self._check_seasonal_transition(current_season, title)
+        transition_insight = await self._check_seasonal_transition(
+            current_season, title
+        )
         if transition_insight:
             try:
                 await self.redis.setex(cooldown_key, 7 * 86400, "1")
@@ -292,7 +316,9 @@ class SeasonalInsightEngine:
 
         return None
 
-    async def _check_seasonal_transition(self, current_season: str, title: str) -> Optional[str]:
+    async def _check_seasonal_transition(
+        self, current_season: str, title: str
+    ) -> Optional[str]:
         """Erkennt Saisonwechsel und gibt kontextsensitive Tipps.
 
         Nutzt optional LLM + HA-Status fuer situationsbezogene Vorschlaege.
@@ -350,7 +376,9 @@ class SeasonalInsightEngine:
 
         return tip
 
-    async def _llm_seasonal_tip(self, season: str, season_label: str, title: str) -> Optional[str]:
+    async def _llm_seasonal_tip(
+        self, season: str, season_label: str, title: str
+    ) -> Optional[str]:
         """Generiert einen kontextsensitiven Saisontipp via LLM.
 
         Berücksichtigt den aktuellen Haus-Status (Heizung, Rolladen, etc.)
@@ -375,14 +403,18 @@ class SeasonalInsightEngine:
                             mode = s.get("state", "off")
                             temp = s.get("attributes", {}).get("temperature", "")
                             name = s.get("attributes", {}).get("friendly_name", eid)
-                            climate_states.append(f"{name}: {mode}" + (f" ({temp}°C)" if temp else ""))
+                            climate_states.append(
+                                f"{name}: {mode}" + (f" ({temp}°C)" if temp else "")
+                            )
                         elif eid.startswith("cover."):
                             pos = s.get("attributes", {}).get("current_position", "")
                             name = s.get("attributes", {}).get("friendly_name", eid)
                             if pos:
                                 cover_states.append(f"{name}: {pos}%")
                     if climate_states:
-                        house_context += f"Heizung/Klima: {', '.join(climate_states[:5])}\n"
+                        house_context += (
+                            f"Heizung/Klima: {', '.join(climate_states[:5])}\n"
+                        )
                     if cover_states:
                         house_context += f"Rolladen: {', '.join(cover_states[:5])}\n"
             except Exception as e:
@@ -391,11 +423,14 @@ class SeasonalInsightEngine:
         # Circuit Breaker Pruefung vor LLM-Aufruf
         cb = cb_registry.get("seasonal_insight")
         if cb and not cb.is_available:
-            logger.debug("SeasonalInsight: Circuit Breaker OPEN — LLM-Aufruf uebersprungen")
+            logger.debug(
+                "SeasonalInsight: Circuit Breaker OPEN — LLM-Aufruf uebersprungen"
+            )
             return None
 
         try:
             from .config import settings
+
             response = await asyncio.wait_for(
                 self._ollama.chat(
                     messages=[
@@ -429,7 +464,7 @@ class SeasonalInsightEngine:
             if "<think>" in content:
                 think_end = content.find("</think>")
                 if think_end != -1:
-                    content = content[think_end + 8:].strip()
+                    content = content[think_end + 8 :].strip()
 
             if content and len(content) > 20:
                 if cb:
@@ -446,7 +481,9 @@ class SeasonalInsightEngine:
 
         return None
 
-    async def _check_year_over_year(self, current_month: int, title: str) -> Optional[str]:
+    async def _check_year_over_year(
+        self, current_month: int, title: str
+    ) -> Optional[str]:
         """Vergleicht Aktionen mit Vorjahres-Monat."""
         if not self.redis:
             return None
@@ -462,8 +499,22 @@ class SeasonalInsightEngine:
             if not raw_last:
                 return None  # Keine Vorjahres-Daten
 
-            current_data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_current.items()} if raw_current else {}
-            last_year_data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_last.items()}
+            current_data = (
+                {
+                    (k.decode() if isinstance(k, bytes) else k): (
+                        v.decode() if isinstance(v, bytes) else v
+                    )
+                    for k, v in raw_current.items()
+                }
+                if raw_current
+                else {}
+            )
+            last_year_data = {
+                (k.decode() if isinstance(k, bytes) else k): (
+                    v.decode() if isinstance(v, bytes) else v
+                )
+                for k, v in raw_last.items()
+            }
 
             # Vergleiche Heizungs-Aktionen
             heat_current = int(current_data.get("set_climate", 0))
@@ -503,7 +554,9 @@ class SeasonalInsightEngine:
                 months_with_data = 0
                 while True:
                     cursor, keys = await self.redis.scan(
-                        cursor, match=f"{_PREFIX}:monthly:*", count=50,
+                        cursor,
+                        match=f"{_PREFIX}:monthly:*",
+                        count=50,
                     )
                     months_with_data += len(keys)
                     if cursor == 0:

@@ -45,11 +45,13 @@ class ConnectionManager:
         if not self.active_connections:
             return
 
-        message = json.dumps({
-            "event": event,
-            "data": data or {},
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        message = json.dumps(
+            {
+                "event": event,
+                "data": data or {},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
         disconnected = []
         # Snapshot-Kopie um concurrent modification zu vermeiden
@@ -68,13 +70,17 @@ class ConnectionManager:
             except ValueError:
                 pass
 
-    async def send_personal(self, websocket: WebSocket, event: str, data: Optional[dict] = None):
+    async def send_personal(
+        self, websocket: WebSocket, event: str, data: Optional[dict] = None
+    ):
         """Event an einen bestimmten Client senden."""
-        message = json.dumps({
-            "event": event,
-            "data": data or {},
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        message = json.dumps(
+            {
+                "event": event,
+                "data": data or {},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
         try:
             await websocket.send_text(message)
         except Exception as e:
@@ -103,11 +109,14 @@ async def emit_speaking(text: str, tts_data: Optional[dict] = None) -> None:
 
 async def emit_action(function_name: str, args: dict, result: dict) -> None:
     """Signalisiert: Assistant fuehrt Aktion aus."""
-    await ws_manager.broadcast("assistant.action", {
-        "function": function_name,
-        "args": args,
-        "result": result,
-    })
+    await ws_manager.broadcast(
+        "assistant.action",
+        {
+            "function": function_name,
+            "args": args,
+            "result": result,
+        },
+    )
 
 
 async def emit_listening() -> None:
@@ -117,10 +126,13 @@ async def emit_listening() -> None:
 
 async def emit_sound(sound_event: str, volume: float = 0.5) -> None:
     """Phase 9: Signalisiert einen Sound-Event."""
-    await ws_manager.broadcast("assistant.sound", {
-        "sound": sound_event,
-        "volume": volume,
-    })
+    await ws_manager.broadcast(
+        "assistant.sound",
+        {
+            "sound": sound_event,
+            "volume": volume,
+        },
+    )
 
 
 async def emit_progress(step: str, message: str) -> None:
@@ -128,10 +140,13 @@ async def emit_progress(step: str, message: str) -> None:
 
     Jarvis 'denkt laut' — sendet Zwischen-Meldungen statt still zu arbeiten.
     """
-    await ws_manager.broadcast("assistant.progress", {
-        "step": step,
-        "message": message,
-    })
+    await ws_manager.broadcast(
+        "assistant.progress",
+        {
+            "step": step,
+            "message": message,
+        },
+    )
 
 
 async def emit_stream_start() -> None:
@@ -159,12 +174,15 @@ async def emit_proactive(
     notification_id: str = "",
 ):
     """Signalisiert: Proaktive Meldung (mit ID fuer Feedback-Tracking)."""
-    await ws_manager.broadcast("assistant.proactive", {
-        "text": text,
-        "event_type": event_type,
-        "urgency": urgency,
-        "notification_id": notification_id,
-    })
+    await ws_manager.broadcast(
+        "assistant.proactive",
+        {
+            "text": text,
+            "event_type": event_type,
+            "urgency": urgency,
+            "notification_id": notification_id,
+        },
+    )
 
 
 async def emit_workshop(
@@ -199,39 +217,49 @@ async def emit_interrupt(
     Konfigurierbar via interrupt_queue.* in settings.yaml.
     """
     from .config import yaml_config
+
     iq_cfg = yaml_config.get("interrupt_queue", {})
 
     if not iq_cfg.get("enabled", True):
         # Interrupt deaktiviert — normalen Weg nehmen
-        await ws_manager.broadcast("assistant.proactive", {
-            "text": text,
-            "event_type": event_type,
-            "urgency": "critical",
-            "notification_id": "",
-        })
+        await ws_manager.broadcast(
+            "assistant.proactive",
+            {
+                "text": text,
+                "event_type": event_type,
+                "urgency": "critical",
+                "notification_id": "",
+            },
+        )
         return
 
     pause_ms = iq_cfg.get("pause_ms", 300)
 
     # 1. Interrupt-Signal: Client soll sofort alles stoppen
-    await ws_manager.broadcast("assistant.interrupt", {
-        "reason": event_type,
-        "protocol": protocol,
-    })
+    await ws_manager.broadcast(
+        "assistant.interrupt",
+        {
+            "reason": event_type,
+            "protocol": protocol,
+        },
+    )
 
     # 2. Kurze Pause damit der Client reagieren kann
     await asyncio.sleep(pause_ms / 1000.0)
 
     # 3. Notfall-Meldung senden (als proactive mit urgency=critical)
-    await ws_manager.broadcast("assistant.proactive", {
-        "text": text,
-        "event_type": event_type,
-        "urgency": "critical",
-        "notification_id": "",
-        "interrupt": True,
-        "protocol": protocol,
-        "actions_taken": actions_taken or [],
-    })
+    await ws_manager.broadcast(
+        "assistant.proactive",
+        {
+            "text": text,
+            "event_type": event_type,
+            "urgency": "critical",
+            "notification_id": "",
+            "interrupt": True,
+            "protocol": protocol,
+            "actions_taken": actions_taken or [],
+        },
+    )
 
 
 async def handle_ack_critical(event_id: str) -> bool:
@@ -247,6 +275,7 @@ async def handle_ack_critical(event_id: str) -> bool:
     """
     try:
         import assistant.main as main_module
+
         brain = main_module.brain
         if brain and hasattr(brain, "memory") and hasattr(brain.memory, "redis"):
             redis = brain.memory.redis

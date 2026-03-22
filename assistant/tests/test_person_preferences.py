@@ -24,6 +24,7 @@ from assistant.person_preferences import (
 # Fixtures
 # ============================================================
 
+
 @pytest.fixture
 def prefs():
     redis = AsyncMock()
@@ -38,8 +39,8 @@ def prefs():
 # get()
 # ============================================================
 
-class TestGet:
 
+class TestGet:
     @pytest.mark.asyncio
     async def test_get_returns_default_when_missing(self, prefs):
         result = await prefs.get("Max", "default_brightness", 50)
@@ -80,8 +81,8 @@ class TestGet:
 # set()
 # ============================================================
 
-class TestSet:
 
+class TestSet:
     @pytest.mark.asyncio
     async def test_set_basic(self, prefs):
         result = await prefs.set("Max", "default_brightness", 70)
@@ -136,8 +137,8 @@ class TestSet:
 # get_all()
 # ============================================================
 
-class TestGetAll:
 
+class TestGetAll:
     @pytest.mark.asyncio
     async def test_get_all_empty(self, prefs):
         result = await prefs.get_all("Max")
@@ -145,10 +146,12 @@ class TestGetAll:
 
     @pytest.mark.asyncio
     async def test_get_all_with_data(self, prefs):
-        prefs.redis.hgetall = AsyncMock(return_value={
-            "default_brightness": "70",
-            "preferred_color_temp": "warm",
-        })
+        prefs.redis.hgetall = AsyncMock(
+            return_value={
+                "default_brightness": "70",
+                "preferred_color_temp": "warm",
+            }
+        )
         result = await prefs.get_all("Max")
         assert result["default_brightness"] == 70.0
         assert result["preferred_color_temp"] == "warm"
@@ -163,22 +166,28 @@ class TestGetAll:
 # set_many()
 # ============================================================
 
-class TestSetMany:
 
+class TestSetMany:
     @pytest.mark.asyncio
     async def test_set_many_all_valid(self, prefs):
-        count = await prefs.set_many("Max", {
-            "default_brightness": 60,
-            "default_temperature": 21,
-        })
+        count = await prefs.set_many(
+            "Max",
+            {
+                "default_brightness": 60,
+                "default_temperature": 21,
+            },
+        )
         assert count == 2
 
     @pytest.mark.asyncio
     async def test_set_many_partial_valid(self, prefs):
-        count = await prefs.set_many("Max", {
-            "default_brightness": 60,
-            "preferred_color_temp": "invalid_value",
-        })
+        count = await prefs.set_many(
+            "Max",
+            {
+                "default_brightness": 60,
+                "preferred_color_temp": "invalid_value",
+            },
+        )
         assert count == 1
 
 
@@ -186,13 +195,15 @@ class TestSetMany:
 # learn_from_correction()
 # ============================================================
 
-class TestLearnFromCorrection:
 
+class TestLearnFromCorrection:
     @pytest.mark.asyncio
     async def test_learns_brightness(self, prefs):
         await prefs.learn_from_correction(
-            "Max", "set_light",
-            {"brightness": 50}, {"brightness": 80},
+            "Max",
+            "set_light",
+            {"brightness": 50},
+            {"brightness": 80},
         )
         prefs.redis.hset.assert_called()
         # Should have stored default_brightness=80
@@ -202,32 +213,40 @@ class TestLearnFromCorrection:
     @pytest.mark.asyncio
     async def test_learns_temperature(self, prefs):
         await prefs.learn_from_correction(
-            "Max", "set_climate",
-            {"temperature": 20}, {"temperature": 22},
+            "Max",
+            "set_climate",
+            {"temperature": 20},
+            {"temperature": 22},
         )
         prefs.redis.hset.assert_called()
 
     @pytest.mark.asyncio
     async def test_no_learn_same_value(self, prefs):
         await prefs.learn_from_correction(
-            "Max", "set_light",
-            {"brightness": 50}, {"brightness": 50},
+            "Max",
+            "set_light",
+            {"brightness": 50},
+            {"brightness": 50},
         )
         prefs.redis.hset.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_no_learn_unknown_action(self, prefs):
         await prefs.learn_from_correction(
-            "Max", "unknown_action",
-            {"x": 1}, {"x": 2},
+            "Max",
+            "unknown_action",
+            {"x": 1},
+            {"x": 2},
         )
         prefs.redis.hset.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_no_learn_empty_person(self, prefs):
         await prefs.learn_from_correction(
-            "", "set_light",
-            {"brightness": 50}, {"brightness": 80},
+            "",
+            "set_light",
+            {"brightness": 50},
+            {"brightness": 80},
         )
         prefs.redis.hset.assert_not_called()
 
@@ -236,8 +255,8 @@ class TestLearnFromCorrection:
 # get_context_hint()
 # ============================================================
 
-class TestGetContextHint:
 
+class TestGetContextHint:
     @pytest.mark.asyncio
     async def test_hint_empty_when_no_prefs(self, prefs):
         result = await prefs.get_context_hint("Max")
@@ -245,9 +264,11 @@ class TestGetContextHint:
 
     @pytest.mark.asyncio
     async def test_hint_includes_values(self, prefs):
-        prefs.redis.hgetall = AsyncMock(return_value={
-            "default_brightness": "70",
-        })
+        prefs.redis.hgetall = AsyncMock(
+            return_value={
+                "default_brightness": "70",
+            }
+        )
         result = await prefs.get_context_hint("Max")
         assert "Max" in result
         assert "70" in result
@@ -257,8 +278,8 @@ class TestGetContextHint:
 # KNOWN_PREFERENCES Schema
 # ============================================================
 
-class TestKnownPreferences:
 
+class TestKnownPreferences:
     def test_brightness_range(self):
         spec = KNOWN_PREFERENCES["default_brightness"]
         assert spec["min"] == 0

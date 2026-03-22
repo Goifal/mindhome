@@ -46,7 +46,7 @@ class WellnessAdvisor:
         self.inner_state = inner_state
         self.calendar_intelligence = None  # E2: Calendar-Integration — set by Brain
         self.executor = None  # Phase 17.4: FunctionExecutor fuer Ambient Actions
-        self._ollama = None   # LLM fuer natuerlichere Nachrichten-Varianz
+        self._ollama = None  # LLM fuer natuerlichere Nachrichten-Varianz
         self.redis: Optional[aioredis.Redis] = None
         self._notify_callback = None
         self._task: Optional[asyncio.Task] = None
@@ -134,7 +134,9 @@ class WellnessAdvisor:
         """Initialisiert den Wellness Advisor."""
         self.redis = redis_client
         if self.enabled:
-            logger.info("WellnessAdvisor initialisiert (Intervall: %ds)", self.check_interval)
+            logger.info(
+                "WellnessAdvisor initialisiert (Intervall: %ds)", self.check_interval
+            )
         else:
             logger.info("WellnessAdvisor deaktiviert")
 
@@ -153,8 +155,11 @@ class WellnessAdvisor:
         self.hydration_check = cfg.get("hydration_reminder", True)
         self.hydration_interval_hours = cfg.get("hydration_interval_hours", 2)
         self._suppress_when_away = cfg.get("suppress_when_away", True)
-        logger.info("WellnessAdvisor Config reloaded (enabled=%s, interval=%ds)",
-                     self.enabled, self.check_interval)
+        logger.info(
+            "WellnessAdvisor Config reloaded (enabled=%s, interval=%ds)",
+            self.enabled,
+            self.check_interval,
+        )
 
     def set_ollama(self, ollama_client):
         """Setzt den OllamaClient fuer LLM-basierte Nachrichten-Varianz."""
@@ -170,7 +175,9 @@ class WellnessAdvisor:
             return
         self._running = True
         self._task = asyncio.create_task(self._wellness_loop())
-        self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        self._task.add_done_callback(
+            lambda t: t.exception() if not t.cancelled() else None
+        )
 
     async def stop(self):
         """Stoppt den Wellness-Loop."""
@@ -213,7 +220,9 @@ class WellnessAdvisor:
 
                 # F-061: Wellness-Checks bei aktiven Notfaellen unterdruecken
                 if self.redis:
-                    active_threats = await _safe_redis(self.redis, "get", "mha:threat:active")
+                    active_threats = await _safe_redis(
+                        self.redis, "get", "mha:threat:active"
+                    )
                     if active_threats:
                         logger.debug("Wellness-Checks uebersprungen: aktive Bedrohung")
                         await asyncio.sleep(self.check_interval)
@@ -288,15 +297,21 @@ class WellnessAdvisor:
 
         if not pc_start:
             # Timer starten
-            await _safe_redis(self.redis, "setex", "mha:wellness:pc_start", 86400, now.isoformat())
+            await _safe_redis(
+                self.redis, "setex", "mha:wellness:pc_start", 86400, now.isoformat()
+            )
             return
 
         try:
             # Fix: Redis gibt bytes zurueck — decode vor fromisoformat
-            pc_start_str = pc_start.decode() if isinstance(pc_start, bytes) else pc_start
+            pc_start_str = (
+                pc_start.decode() if isinstance(pc_start, bytes) else pc_start
+            )
             start_dt = datetime.fromisoformat(pc_start_str)
         except (ValueError, TypeError):
-            await _safe_redis(self.redis, "setex", "mha:wellness:pc_start", 86400, now.isoformat())
+            await _safe_redis(
+                self.redis, "setex", "mha:wellness:pc_start", 86400, now.isoformat()
+            )
             return
 
         minutes = (now - start_dt).total_seconds() / 60
@@ -330,35 +345,51 @@ class WellnessAdvisor:
 
         # Mood-abhaengige Nachrichten: Bei Stress direkter, bei Muedigkeit sanfter
         if mood == "stressed" and hours >= 2:
-            msg = random.choice([
-                f"{addressing}, {time_str} am Rechner bei diesem Stresspegel. Kurze Pause — nicht optional.",
-                f"{time_str} durchgehend, {addressing}. Fuenf Minuten Fenster auf, Augen zu. Ich pass hier auf.",
-            ])
+            msg = random.choice(
+                [
+                    f"{addressing}, {time_str} am Rechner bei diesem Stresspegel. Kurze Pause — nicht optional.",
+                    f"{time_str} durchgehend, {addressing}. Fuenf Minuten Fenster auf, Augen zu. Ich pass hier auf.",
+                ]
+            )
             urgency = "medium"
         elif mood == "tired":
-            msg = random.choice([
-                f"{addressing}, {time_str} am Rechner. Vielleicht reicht es fuer heute.",
-                f"Seit {time_str} am Bildschirm, {addressing}. Morgen ist auch ein Tag.",
-            ])
+            msg = random.choice(
+                [
+                    f"{addressing}, {time_str} am Rechner. Vielleicht reicht es fuer heute.",
+                    f"Seit {time_str} am Bildschirm, {addressing}. Morgen ist auch ein Tag.",
+                ]
+            )
             urgency = "medium"
         elif hours >= 3:
-            msg = random.choice([
-                f"{time_str} am Rechner, {addressing}. Ich mache mir langsam Gedanken.",
-                f"{addressing}, {time_str} ohne Pause. Darf ich anmerken — das ist ambitioniert.",
-            ])
+            msg = random.choice(
+                [
+                    f"{time_str} am Rechner, {addressing}. Ich mache mir langsam Gedanken.",
+                    f"{addressing}, {time_str} ohne Pause. Darf ich anmerken — das ist ambitioniert.",
+                ]
+            )
             urgency = "low"
         else:
-            msg = random.choice([
-                f"Du sitzt seit {time_str} am Rechner, {addressing}. Eine kurze Pause waere nicht das Schlechteste.",
-                f"{time_str} Bildschirmzeit, {addressing}. Kurz aufstehen — ich halte die Stellung.",
-                f"{addressing}, {time_str} durchgehend. Ein Glas Wasser und fuenf Minuten stehen.",
-            ])
+            msg = random.choice(
+                [
+                    f"Du sitzt seit {time_str} am Rechner, {addressing}. Eine kurze Pause waere nicht das Schlechteste.",
+                    f"{time_str} Bildschirmzeit, {addressing}. Kurz aufstehen — ich halte die Stellung.",
+                    f"{addressing}, {time_str} durchgehend. Ein Glas Wasser und fuenf Minuten stehen.",
+                ]
+            )
             urgency = "low"
 
         await self._send_nudge("pc_break", msg, urgency=urgency)
-        await _safe_redis(self.redis, "setex", "mha:wellness:last_break_reminder", 86400, now.isoformat())
+        await _safe_redis(
+            self.redis,
+            "setex",
+            "mha:wellness:last_break_reminder",
+            86400,
+            now.isoformat(),
+        )
         # Timer zuruecksetzen damit nach Cooldown nicht sofort wieder feuert
-        await _safe_redis(self.redis, "setex", "mha:wellness:pc_start", 86400, now.isoformat())
+        await _safe_redis(
+            self.redis, "setex", "mha:wellness:pc_start", 86400, now.isoformat()
+        )
 
     # ------------------------------------------------------------------
     # Stress-Intervention
@@ -387,12 +418,20 @@ class WellnessAdvisor:
                 # Fix: Redis bytes decode
                 last_str = last.decode() if isinstance(last, bytes) else last
                 last_dt = datetime.fromisoformat(last_str)
-                if (datetime.now(timezone.utc) - last_dt).total_seconds() < cooldown_sec:
+                if (
+                    datetime.now(timezone.utc) - last_dt
+                ).total_seconds() < cooldown_sec:
                     return
             except (ValueError, TypeError):
                 pass
 
-        await _safe_redis(self.redis, "setex", "mha:wellness:last_stress_nudge", 86400, datetime.now(timezone.utc).isoformat())
+        await _safe_redis(
+            self.redis,
+            "setex",
+            "mha:wellness:last_stress_nudge",
+            86400,
+            datetime.now(timezone.utc).isoformat(),
+        )
 
         # Trend-Eskalation: Bei "declining" deutlichere Nachricht
         trend_hint = ""
@@ -407,22 +446,28 @@ class WellnessAdvisor:
             if hour >= 20:
                 msg = f"{addressing}, deutlich erhoehter Stress um {hour} Uhr. {trend_hint}Soll ich das Licht dimmen und Feierabend einlaeuten?"
             else:
-                msg = random.choice([
-                    f"{addressing}, der Stresspegel ist deutlich erhoert. {trend_hint}Licht auf 40%, fuenf Minuten — ich manage den Rest.",
-                    f"Das Stresslevel ist hoch, {addressing}. {trend_hint}Soll ich das Licht runterfahren und fuer fuenf Minuten Ruhe sorgen?",
-                ])
+                msg = random.choice(
+                    [
+                        f"{addressing}, der Stresspegel ist deutlich erhoert. {trend_hint}Licht auf 40%, fuenf Minuten — ich manage den Rest.",
+                        f"Das Stresslevel ist hoch, {addressing}. {trend_hint}Soll ich das Licht runterfahren und fuer fuenf Minuten Ruhe sorgen?",
+                    ]
+                )
             urgency = "medium"
         elif mood == "frustrated":
-            msg = random.choice([
-                f"Läuft nicht rund, {addressing}. {trend_hint}Sag mir was du brauchst — ich kümmer mich.",
-                f"{addressing}, ich merk das. {trend_hint}Kurz durchatmen — ich halte die Stellung.",
-            ])
+            msg = random.choice(
+                [
+                    f"Läuft nicht rund, {addressing}. {trend_hint}Sag mir was du brauchst — ich kümmer mich.",
+                    f"{addressing}, ich merk das. {trend_hint}Kurz durchatmen — ich halte die Stellung.",
+                ]
+            )
             urgency = "low"
         else:
-            msg = random.choice([
-                f"{addressing}, wenn ich anmerken darf — es scheint etwas stressig. {trend_hint}Kurze Pause?",
-                f"Viel auf einmal heute, {addressing}. {trend_hint}Fuenf Minuten vom Bildschirm wuerden helfen.",
-            ])
+            msg = random.choice(
+                [
+                    f"{addressing}, wenn ich anmerken darf — es scheint etwas stressig. {trend_hint}Kurze Pause?",
+                    f"Viel auf einmal heute, {addressing}. {trend_hint}Fuenf Minuten vom Bildschirm wuerden helfen.",
+                ]
+            )
             urgency = "low"
 
         await self._send_nudge("stress_detected", msg, urgency=urgency)
@@ -483,15 +528,19 @@ class WellnessAdvisor:
             if mood == "stressed":
                 msg = f"{addressing}, {hour} Uhr. {meal_de.capitalize()}?"
             elif mood == "good":
-                msg = random.choice([
-                    f"Es ist {hour} Uhr, {addressing}. Wie sieht's mit {meal_de.lower()} aus?",
-                    f"{addressing}, {hour} Uhr. Dein Magen wird sich ueber {meal_de.lower()} freuen.",
-                ])
+                msg = random.choice(
+                    [
+                        f"Es ist {hour} Uhr, {addressing}. Wie sieht's mit {meal_de.lower()} aus?",
+                        f"{addressing}, {hour} Uhr. Dein Magen wird sich ueber {meal_de.lower()} freuen.",
+                    ]
+                )
             else:
-                msg = random.choice([
-                    f"Es ist {hour} Uhr, {addressing}. Schon {meal_de.lower()} gehabt?",
-                    f"{addressing}, nur zur Erinnerung — {hour} Uhr, {meal_de.lower()} steht an.",
-                ])
+                msg = random.choice(
+                    [
+                        f"Es ist {hour} Uhr, {addressing}. Schon {meal_de.lower()} gehabt?",
+                        f"{addressing}, nur zur Erinnerung — {hour} Uhr, {meal_de.lower()} steht an.",
+                    ]
+                )
 
             await self._send_nudge("meal_reminder", msg)
 
@@ -569,10 +618,12 @@ class WellnessAdvisor:
             )
             urgency = "low"
         elif hour >= 2:
-            msg = random.choice([
-                f"{addressing}, es ist {hour} Uhr. {pattern_hint}Darf ich den Feierabend vorschlagen?",
-                f"{hour} Uhr, {addressing}. {pattern_hint}Das Bett wartet — ich hab hier alles im Griff.",
-            ])
+            msg = random.choice(
+                [
+                    f"{addressing}, es ist {hour} Uhr. {pattern_hint}Darf ich den Feierabend vorschlagen?",
+                    f"{hour} Uhr, {addressing}. {pattern_hint}Das Bett wartet — ich hab hier alles im Griff.",
+                ]
+            )
             urgency = "low"
         else:
             msg = f"Es ist {hour} Uhr, {addressing}. {pattern_hint}Nur zur Kenntnis."
@@ -610,6 +661,7 @@ class WellnessAdvisor:
                 try:
                     # HA liefert start_time als "2026-03-04 08:00:00"
                     from datetime import timedelta
+
                     tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).date()
                     event_dt = datetime.fromisoformat(start_time)
                     if event_dt.date() == tomorrow:
@@ -646,21 +698,27 @@ class WellnessAdvisor:
 
             # Heute hinzufuegen (Set — kein Duplikat)
             await _safe_redis(self.redis, "sadd", key, today)
-            await _safe_redis(self.redis, "expire", key, 30 * 86400)  # 30 Tage aufbewahren
+            await _safe_redis(
+                self.redis, "expire", key, 30 * 86400
+            )  # 30 Tage aufbewahren
 
             # Aufeinanderfolgende Naechte zaehlen (rueckwaerts von heute)
             consecutive = 1
             check_date = datetime.now(timezone.utc).date()
             for _ in range(14):  # Max 14 Tage zurueck
                 check_date = check_date - timedelta(days=1)
-                is_member = await _safe_redis(self.redis, "sismember", key, check_date.isoformat())
+                is_member = await _safe_redis(
+                    self.redis, "sismember", key, check_date.isoformat()
+                )
                 if is_member:
                     consecutive += 1
                 else:
                     break
 
             if consecutive > 1:
-                logger.info("Late-Night Pattern: %d aufeinanderfolgende Naechte", consecutive)
+                logger.info(
+                    "Late-Night Pattern: %d aufeinanderfolgende Naechte", consecutive
+                )
 
             return consecutive
 
@@ -688,7 +746,9 @@ class WellnessAdvisor:
                 # Fix: Redis bytes decode
                 last_str = last.decode() if isinstance(last, bytes) else last
                 last_dt = datetime.fromisoformat(last_str)
-                elapsed_h = (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600
+                elapsed_h = (
+                    datetime.now(timezone.utc) - last_dt
+                ).total_seconds() / 3600
                 if elapsed_h < self.hydration_interval_hours:
                     return
             except (ValueError, TypeError):
@@ -704,7 +764,9 @@ class WellnessAdvisor:
             logger.debug("Hydration Activity-Check fehlgeschlagen: %s", e)
             return
 
-        await _safe_redis(self.redis, "setex", key, 86400, datetime.now(timezone.utc).isoformat())
+        await _safe_redis(
+            self.redis, "setex", key, 86400, datetime.now(timezone.utc).isoformat()
+        )
         addressing = await self._get_addressing()
 
         mood_data = self.mood.get_current_mood()
@@ -713,11 +775,13 @@ class WellnessAdvisor:
         if mood == "stressed":
             msg = f"{addressing}. Wasser."
         else:
-            msg = random.choice([
-                f"{addressing}, ein Glas Wasser waere jetzt keine schlechte Idee.",
-                f"Kurze Erinnerung, {addressing} — trinken nicht vergessen.",
-                f"{addressing}, Hydration. Dein Koerper wird es dir danken.",
-            ])
+            msg = random.choice(
+                [
+                    f"{addressing}, ein Glas Wasser waere jetzt keine schlechte Idee.",
+                    f"Kurze Erinnerung, {addressing} — trinken nicht vergessen.",
+                    f"{addressing}, Hydration. Dein Koerper wird es dir danken.",
+                ]
+            )
 
         await self._send_nudge("hydration", msg)
 
@@ -765,16 +829,23 @@ class WellnessAdvisor:
         if not executed:
             return
 
-        await _safe_redis(self.redis, "setex", key, 86400, datetime.now(timezone.utc).isoformat())
+        await _safe_redis(
+            self.redis, "setex", key, 86400, datetime.now(timezone.utc).isoformat()
+        )
 
         # Jarvis meldet was er getan hat — beilaeufig
         addressing = await self._get_addressing()
         action_names = [a.get("action", "") for a in executed]
 
-        if "light.dimmen" in action_names and "media_player.volume_down" in action_names:
+        if (
+            "light.dimmen" in action_names
+            and "media_player.volume_down" in action_names
+        ):
             msg = f"Licht gedimmt, Musik leiser, {addressing}. Schien mir angemessen."
         elif "light.dimmen" in action_names:
-            msg = f"Ich hab das Licht etwas gedimmt, {addressing}. Schien mir angemessen."
+            msg = (
+                f"Ich hab das Licht etwas gedimmt, {addressing}. Schien mir angemessen."
+            )
         elif "media_player.volume_down" in action_names:
             msg = f"Musik etwas leiser, {addressing}."
         elif any(a.startswith("scene.") for a in action_names):
@@ -783,7 +854,9 @@ class WellnessAdvisor:
             msg = f"Kleine Anpassung vorgenommen, {addressing}."
 
         await self._send_nudge("ambient_action", msg)
-        logger.info("Mood-Ambient: %d Aktionen ausgefuehrt: %s", len(executed), action_names)
+        logger.info(
+            "Mood-Ambient: %d Aktionen ausgefuehrt: %s", len(executed), action_names
+        )
 
     # ------------------------------------------------------------------
     # LLM-Rewrite fuer Nachrichten-Varianz
@@ -804,6 +877,7 @@ class WellnessAdvisor:
 
         try:
             from .config import settings
+
             response = await asyncio.wait_for(
                 self._ollama.chat(
                     messages=[
@@ -833,7 +907,7 @@ class WellnessAdvisor:
             if "<think>" in content:
                 think_end = content.find("</think>")
                 if think_end != -1:
-                    content = content[think_end + 8:].strip()
+                    content = content[think_end + 8 :].strip()
 
             if content and 8 < len(content) < len(message) * 2.5:
                 return content
@@ -866,8 +940,12 @@ class WellnessAdvisor:
             try:
                 event = await self.calendar_intelligence.is_in_event()
                 if event and event.get("in_event"):
-                    logger.debug("Wellness-Nudge [%s] unterdrueckt: Termin '%s' bis %s",
-                                 nudge_type, event.get("summary", "?"), event.get("ends_at", "?"))
+                    logger.debug(
+                        "Wellness-Nudge [%s] unterdrueckt: Termin '%s' bis %s",
+                        nudge_type,
+                        event.get("summary", "?"),
+                        event.get("ends_at", "?"),
+                    )
                     return
             except Exception as e:
                 logger.debug("Kalender-Check fuer Wellness-Nudge fehlgeschlagen: %s", e)
@@ -883,10 +961,12 @@ class WellnessAdvisor:
                 for kw in ["fenster", "lueft", "frischluft", "window"]
             ):
                 from .state_change_log import StateChangeLog, DEVICE_DEPENDENCIES
+
                 states = await self.ha.get_states() or []
                 state_dict = {
                     s["entity_id"]: s.get("state", "")
-                    for s in states if "entity_id" in s
+                    for s in states
+                    if "entity_id" in s
                 }
                 scl = StateChangeLog.__new__(StateChangeLog)
                 conflicts = scl.detect_conflicts(state_dict)
@@ -926,12 +1006,15 @@ class WellnessAdvisor:
                 pc_raw = await self.redis.get(pc_key)
                 if pc_raw:
                     import time
+
                     pc_start = float(pc_raw)
                     hours = (time.time() - pc_start) / 3600
                     if hours > 8:
                         score -= 15
                         hints.append(f"PC-Session laeuft seit {hours:.0f}h")
-                        recommendations.append("Regelmaessige Bildschirmpausen einlegen")
+                        recommendations.append(
+                            "Regelmaessige Bildschirmpausen einlegen"
+                        )
 
             # Schlafzeitpunkt pruefen
             if self.redis:
@@ -985,6 +1068,7 @@ class WellnessAdvisor:
         }
 
         import random
+
         options = suggestions.get(activity, suggestions["pc"])
         return random.choice(options)
 
@@ -1048,6 +1132,7 @@ class WellnessAdvisor:
 
         try:
             from datetime import timedelta
+
             today = datetime.now(timezone.utc)
 
             for days_ago in range(1, 8):
@@ -1084,7 +1169,9 @@ class WellnessAdvisor:
 
         try:
             sent_raw = await _safe_redis(self.redis, "get", "mha:wellness:breaks_sent")
-            ack_raw = await _safe_redis(self.redis, "get", "mha:wellness:breaks_acknowledged")
+            ack_raw = await _safe_redis(
+                self.redis, "get", "mha:wellness:breaks_acknowledged"
+            )
 
             sent = int(sent_raw) if sent_raw else 0
             acknowledged = int(ack_raw) if ack_raw else 0
@@ -1116,6 +1203,7 @@ class WellnessAdvisor:
                 )
                 if pc_start_raw:
                     import time as _time
+
                     try:
                         pc_start = float(pc_start_raw)
                         hours = (_time.time() - pc_start) / 3600
@@ -1127,7 +1215,11 @@ class WellnessAdvisor:
             # Faktor 2: Gestresste Stimmung
             if self.mood:
                 mood_data = self.mood.get_current_mood()
-                current_mood = mood_data if isinstance(mood_data, str) else mood_data.get("mood", "neutral")
+                current_mood = (
+                    mood_data
+                    if isinstance(mood_data, str)
+                    else mood_data.get("mood", "neutral")
+                )
                 if current_mood in ("stressed", "frustrated"):
                     factors.append(f"Stimmung: {current_mood}")
 

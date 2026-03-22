@@ -15,6 +15,7 @@ import pytest
 # Standalone copies of the functions under test
 # ---------------------------------------------------------------------------
 
+
 def parse_dt(dt_str):
     if not dt_str:
         return None
@@ -40,13 +41,15 @@ def detect_habits(events, habit_min_occurrences=3):
         for title, count in counts.items():
             if count >= habit_min_occurrences and title:
                 day, hour = slot_key.split("_")
-                habits.append({
-                    "type": "recurring_event",
-                    "title": title,
-                    "day": day,
-                    "hour": int(hour),
-                    "count": count,
-                })
+                habits.append(
+                    {
+                        "type": "recurring_event",
+                        "title": title,
+                        "day": day,
+                        "hour": int(hour),
+                        "count": count,
+                    }
+                )
     return habits
 
 
@@ -57,28 +60,36 @@ def detect_conflicts(events, commute_minutes=30):
         start = parse_dt(ev.get("start", ""))
         end = parse_dt(ev.get("end", ""))
         if start and end and not ev.get("all_day"):
-            timed_events.append({
-                "start": start, "end": end, "summary": ev.get("summary", ""),
-            })
+            timed_events.append(
+                {
+                    "start": start,
+                    "end": end,
+                    "summary": ev.get("summary", ""),
+                }
+            )
     timed_events.sort(key=lambda e: e["start"])
     for i in range(len(timed_events) - 1):
         curr = timed_events[i]
         nxt = timed_events[i + 1]
         gap = (nxt["start"] - curr["end"]).total_seconds() / 60
         if gap < 0:
-            conflicts.append({
-                "type": "overlap",
-                "event_a": curr["summary"],
-                "event_b": nxt["summary"],
-                "gap_minutes": round(gap),
-            })
+            conflicts.append(
+                {
+                    "type": "overlap",
+                    "event_a": curr["summary"],
+                    "event_b": nxt["summary"],
+                    "gap_minutes": round(gap),
+                }
+            )
         elif 0 < gap < commute_minutes:
-            conflicts.append({
-                "type": "tight_schedule",
-                "event_a": curr["summary"],
-                "event_b": nxt["summary"],
-                "gap_minutes": round(gap),
-            })
+            conflicts.append(
+                {
+                    "type": "tight_schedule",
+                    "event_a": curr["summary"],
+                    "event_b": nxt["summary"],
+                    "gap_minutes": round(gap),
+                }
+            )
     return conflicts
 
 
@@ -96,17 +107,20 @@ def detect_breaks(events):
         next_start = timed_events[i + 1]["start"]
         gap = (next_start - curr_end).total_seconds() / 60
         if 30 <= gap <= 180:
-            breaks.append({
-                "start": curr_end.strftime("%H:%M"),
-                "end": next_start.strftime("%H:%M"),
-                "duration_minutes": round(gap),
-            })
+            breaks.append(
+                {
+                    "start": curr_end.strftime("%H:%M"),
+                    "end": next_start.strftime("%H:%M"),
+                    "duration_minutes": round(gap),
+                }
+            )
     return breaks
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_event(summary, start, end, all_day=False):
     """Build a minimal event dict."""
@@ -129,12 +143,15 @@ def _monday_time(hour, minute=0):
 # parse_dt tests
 # ---------------------------------------------------------------------------
 
-class TestParseDt:
 
-    @pytest.mark.parametrize("input_str, expected_year, expected_month", [
-        ("2026-03-08T10:00:00", 2026, 3),
-        ("2026-12-25T23:59:59", 2026, 12),
-    ])
+class TestParseDt:
+    @pytest.mark.parametrize(
+        "input_str, expected_year, expected_month",
+        [
+            ("2026-03-08T10:00:00", 2026, 3),
+            ("2026-12-25T23:59:59", 2026, 12),
+        ],
+    )
     def test_iso_with_t(self, input_str, expected_year, expected_month):
         result = parse_dt(input_str)
         assert result is not None
@@ -160,20 +177,26 @@ class TestParseDt:
         assert result.month == 3
         assert result.day == 8
 
-    @pytest.mark.parametrize("input_str", [
-        "",
-        None,
-    ])
+    @pytest.mark.parametrize(
+        "input_str",
+        [
+            "",
+            None,
+        ],
+    )
     def test_empty_or_none_returns_none(self, input_str):
         assert parse_dt(input_str) is None
 
-    @pytest.mark.parametrize("input_str", [
-        "not-a-date",
-        "2026/03/08",
-        "13-13-2026",
-        "abc123",
-        "2026-13-01T00:00:00",
-    ])
+    @pytest.mark.parametrize(
+        "input_str",
+        [
+            "not-a-date",
+            "2026/03/08",
+            "13-13-2026",
+            "abc123",
+            "2026-13-01T00:00:00",
+        ],
+    )
     def test_invalid_strings_return_none(self, input_str):
         assert parse_dt(input_str) is None
 
@@ -185,8 +208,8 @@ class TestParseDt:
 # detect_habits tests
 # ---------------------------------------------------------------------------
 
-class TestDetectHabits:
 
+class TestDetectHabits:
     def test_recurring_event_at_threshold(self):
         """Three identical events on the same weekday+hour are detected."""
         events = [
@@ -206,8 +229,7 @@ class TestDetectHabits:
     def test_above_threshold(self):
         """Five occurrences should still produce exactly one habit entry."""
         events = [
-            _make_event("Yoga", _monday_time(7), _monday_time(8))
-            for _ in range(5)
+            _make_event("Yoga", _monday_time(7), _monday_time(8)) for _ in range(5)
         ]
         habits = detect_habits(events)
         assert len(habits) == 1
@@ -243,10 +265,7 @@ class TestDetectHabits:
 
     def test_empty_summary_excluded(self):
         """Events with empty string summary should not become habits."""
-        events = [
-            _make_event("", _monday_time(10), _monday_time(11))
-            for _ in range(4)
-        ]
+        events = [_make_event("", _monday_time(10), _monday_time(11)) for _ in range(4)]
         habits = detect_habits(events)
         assert habits == []
 
@@ -276,10 +295,10 @@ class TestDetectHabits:
 
     def test_multiple_habits_detected(self):
         """Two distinct recurring patterns should yield two habits."""
-        events = (
-            [_make_event("Standup", _monday_time(9), _monday_time(9, 30)) for _ in range(3)]
-            + [_make_event("Lunch", _monday_time(12), _monday_time(13)) for _ in range(3)]
-        )
+        events = [
+            _make_event("Standup", _monday_time(9), _monday_time(9, 30))
+            for _ in range(3)
+        ] + [_make_event("Lunch", _monday_time(12), _monday_time(13)) for _ in range(3)]
         habits = detect_habits(events)
         assert len(habits) == 2
         titles = {h["title"] for h in habits}
@@ -290,8 +309,8 @@ class TestDetectHabits:
 # detect_conflicts tests
 # ---------------------------------------------------------------------------
 
-class TestDetectConflicts:
 
+class TestDetectConflicts:
     def test_overlapping_events(self):
         """Event B starts before event A ends -> overlap."""
         events = [
@@ -400,8 +419,8 @@ class TestDetectConflicts:
 # detect_breaks tests
 # ---------------------------------------------------------------------------
 
-class TestDetectBreaks:
 
+class TestDetectBreaks:
     def test_break_detected_at_lower_bound(self):
         """A 30-minute gap is the minimum break (30 <= gap)."""
         events = [
@@ -461,8 +480,8 @@ class TestDetectBreaks:
         """Two valid gaps between three events."""
         events = [
             _make_event("A", _monday_time(8), _monday_time(9)),
-            _make_event("B", _monday_time(10), _monday_time(11)),    # 60 min gap before
-            _make_event("C", _monday_time(12), _monday_time(13)),    # 60 min gap before
+            _make_event("B", _monday_time(10), _monday_time(11)),  # 60 min gap before
+            _make_event("C", _monday_time(12), _monday_time(13)),  # 60 min gap before
         ]
         breaks = detect_breaks(events)
         assert len(breaks) == 2
@@ -490,13 +509,16 @@ class TestDetectBreaks:
         assert breaks[0]["end"] == "11:00"
         assert breaks[0]["duration_minutes"] == 60
 
-    @pytest.mark.parametrize("gap_minutes, expected_count", [
-        (29, 0),
-        (30, 1),
-        (90, 1),
-        (180, 1),
-        (181, 0),
-    ])
+    @pytest.mark.parametrize(
+        "gap_minutes, expected_count",
+        [
+            (29, 0),
+            (30, 1),
+            (90, 1),
+            (180, 1),
+            (181, 0),
+        ],
+    )
     def test_boundary_gaps(self, gap_minutes, expected_count):
         """Parametrized boundary check for break detection window."""
         end_a = 10 * 60  # event A ends at 10:00
@@ -504,8 +526,11 @@ class TestDetectBreaks:
         end_b = start_b + 30
         events = [
             _make_event("A", _monday_time(9), _monday_time(end_a // 60, end_a % 60)),
-            _make_event("B", _monday_time(start_b // 60, start_b % 60),
-                        _monday_time(end_b // 60, end_b % 60)),
+            _make_event(
+                "B",
+                _monday_time(start_b // 60, start_b % 60),
+                _monday_time(end_b // 60, end_b % 60),
+            ),
         ]
         breaks = detect_breaks(events)
         assert len(breaks) == expected_count

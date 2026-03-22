@@ -52,7 +52,10 @@ class DailySummarizer:
         self.run_hour = summarizer_cfg.get("run_hour", 3)
         self.run_minute = summarizer_cfg.get("run_minute", 0)
         from .config import resolve_model
-        self.model = resolve_model(summarizer_cfg.get("model", ""), fallback_tier="smart")
+
+        self.model = resolve_model(
+            summarizer_cfg.get("model", ""), fallback_tier="smart"
+        )
         self.max_tokens_daily = summarizer_cfg.get("max_tokens_daily", 512)
         self.max_tokens_weekly = summarizer_cfg.get("max_tokens_weekly", 384)
         self.max_tokens_monthly = summarizer_cfg.get("max_tokens_monthly", 512)
@@ -73,10 +76,13 @@ class DailySummarizer:
                 pass
         self._running = True
         self._task = asyncio.create_task(self._nightly_loop())
-        self._task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        self._task.add_done_callback(
+            lambda t: t.exception() if not t.cancelled() else None
+        )
         logger.info(
             "DailySummarizer initialisiert (Nachtlauf: %02d:%02d)",
-            self.run_hour, self.run_minute,
+            self.run_hour,
+            self.run_minute,
         )
 
     def set_notify_callback(self, callback):
@@ -115,17 +121,21 @@ class DailySummarizer:
                 await asyncio.sleep(wait_seconds)
 
                 # Tages-Summary fuer gestern
-                yesterday = (datetime.now(_LOCAL_TZ) - timedelta(days=1)).strftime("%Y-%m-%d")
+                yesterday = (datetime.now(_LOCAL_TZ) - timedelta(days=1)).strftime(
+                    "%Y-%m-%d"
+                )
                 daily_summary = await self.summarize_day(yesterday)
 
                 # Callback: Zusammenfassung proaktiv melden
                 if daily_summary and self._notify_callback:
                     try:
-                        await self._notify_callback({
-                            "type": "daily_summary",
-                            "date": yesterday,
-                            "text": daily_summary,
-                        })
+                        await self._notify_callback(
+                            {
+                                "type": "daily_summary",
+                                "date": yesterday,
+                                "text": daily_summary,
+                            }
+                        )
                     except Exception as e:
                         logger.error("Summary-Notify Fehler: %s", e)
 
@@ -175,7 +185,9 @@ class DailySummarizer:
 
         if summary:
             await self._store_summary(date, DAILY, summary)
-            logger.info("Tages-Summary fuer %s erstellt (%d Zeichen)", date, len(summary))
+            logger.info(
+                "Tages-Summary fuer %s erstellt (%d Zeichen)", date, len(summary)
+            )
 
         return summary
 
@@ -189,7 +201,9 @@ class DailySummarizer:
             end_date: Letzter Tag der Woche (default: gestern)
         """
         if not end_date:
-            end_date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+            end_date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime(
+                "%Y-%m-%d"
+            )
 
         end_dt = datetime.strptime(end_date, "%Y-%m-%d")
         start_dt = end_dt - timedelta(days=6)
@@ -257,7 +271,9 @@ class DailySummarizer:
 
         # Alle Tages-Summaries parallel laden
         if valid_dates:
-            results = await asyncio.gather(*(self._get_summary(date, DAILY) for date in valid_dates))
+            results = await asyncio.gather(
+                *(self._get_summary(date, DAILY) for date in valid_dates)
+            )
             for date, day_summary in zip(valid_dates, results):
                 if day_summary:
                     summaries.append(f"[{date}]: {day_summary}")
@@ -293,15 +309,19 @@ class DailySummarizer:
             summaries = []
             if results and results.get("documents"):
                 for i, doc in enumerate(results["documents"][0]):
-                    meta = results["metadatas"][0][i] if results.get("metadatas") else {}
-                    summaries.append({
-                        "content": doc,
-                        "date": meta.get("date", ""),
-                        "summary_type": meta.get("type", ""),
-                        "relevance": results["distances"][0][i]
-                        if results.get("distances")
-                        else 0,
-                    })
+                    meta = (
+                        results["metadatas"][0][i] if results.get("metadatas") else {}
+                    )
+                    summaries.append(
+                        {
+                            "content": doc,
+                            "date": meta.get("date", ""),
+                            "summary_type": meta.get("type", ""),
+                            "relevance": results["distances"][0][i]
+                            if results.get("distances")
+                            else 0,
+                        }
+                    )
             return summaries
         except Exception as e:
             logger.error("Fehler bei Summary-Suche: %s", e)
@@ -409,11 +429,13 @@ class DailySummarizer:
                 await asyncio.to_thread(
                     self.chroma_collection.upsert,
                     documents=[content],
-                    metadatas=[{
-                        "date": date,
-                        "type": summary_type,
-                        "created_at": datetime.now(timezone.utc).isoformat(),
-                    }],
+                    metadatas=[
+                        {
+                            "date": date,
+                            "type": summary_type,
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                        }
+                    ],
                     ids=[doc_id],
                 )
             except Exception as e:
@@ -448,16 +470,23 @@ Format: Fliesstext, kurze Saetze."""
         # Aktive Geraete-Konflikte des Tages einbinden
         try:
             from .state_change_log import StateChangeLog
+
             conflict_summary = StateChangeLog.format_conflicts_for_prompt()
             if conflict_summary:
                 parts.append("\nGeraete-Konflikte des Tages:")
-                parts.append(conflict_summary.replace("\n\nAKTIVE GERAETE-KONFLIKTE:\n", "").split("\nErwaehne")[0].strip())
+                parts.append(
+                    conflict_summary.replace("\n\nAKTIVE GERAETE-KONFLIKTE:\n", "")
+                    .split("\nErwaehne")[0]
+                    .strip()
+                )
         except Exception as e:
             logger.debug("Zusammenfassung fehlgeschlagen: %s", e)
 
-        parts.append("\nFasse zusammen: Was wurde besprochen? "
-                     "Welche Aktionen? Stimmung? Besonderheiten? "
-                     "Gab es Geraete-Konflikte (z.B. offene Fenster bei laufender Heizung)?")
+        parts.append(
+            "\nFasse zusammen: Was wurde besprochen? "
+            "Welche Aktionen? Stimmung? Besonderheiten? "
+            "Gab es Geraete-Konflikte (z.B. offene Fenster bei laufender Heizung)?"
+        )
         parts.append("Maximal 200 Woerter.")
 
         return "\n".join(parts)
@@ -469,8 +498,10 @@ Format: Fliesstext, kurze Saetze."""
         for summary in daily_summaries:
             parts.append(summary)
 
-        parts.append("\nFasse die Woche zusammen: Muster, Trends, "
-                     "wichtige Ereignisse, Stimmungsverlauf.")
+        parts.append(
+            "\nFasse die Woche zusammen: Muster, Trends, "
+            "wichtige Ereignisse, Stimmungsverlauf."
+        )
         parts.append("Maximal 150 Woerter.")
 
         return "\n".join(parts)
@@ -482,8 +513,10 @@ Format: Fliesstext, kurze Saetze."""
         for summary in summaries:
             parts.append(summary)
 
-        parts.append("\nFasse den Monat zusammen: Uebergreifende Muster, "
-                     "Veraenderungen, wichtige Meilensteine.")
+        parts.append(
+            "\nFasse den Monat zusammen: Uebergreifende Muster, "
+            "Veraenderungen, wichtige Meilensteine."
+        )
         parts.append("Maximal 200 Woerter.")
 
         return "\n".join(parts)
@@ -512,10 +545,15 @@ Format: Fliesstext, kurze Saetze."""
                 _formality_raw = _formality_raw.decode()
             formality = int(float(_formality_raw or 80))
 
-            mood_history = await self.redis.lrange("mha:personality:mood_history", 0, 99)
+            mood_history = await self.redis.lrange(
+                "mha:personality:mood_history", 0, 99
+            )
             avg_mood = 0.5
             if mood_history:
-                values = [float(v.decode() if isinstance(v, bytes) else v) for v in mood_history]
+                values = [
+                    float(v.decode() if isinstance(v, bytes) else v)
+                    for v in mood_history
+                ]
                 if values:
                     avg_mood = round(sum(values) / len(values), 2)
 

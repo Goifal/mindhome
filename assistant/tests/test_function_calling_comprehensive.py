@@ -27,8 +27,8 @@ from assistant.function_calling import (
 
 # ── _has_tor_keyword ──────────────────────────────────────────────────
 
-class TestHasTorKeyword:
 
+class TestHasTorKeyword:
     def test_gartentor(self):
         assert _has_tor_keyword("binary_sensor.gartentor") is True
 
@@ -65,8 +65,8 @@ class TestHasTorKeyword:
 
 # ── is_window_or_door ─────────────────────────────────────────────────
 
-class TestIsWindowOrDoor:
 
+class TestIsWindowOrDoor:
     def test_device_class_window(self):
         state = {"attributes": {"device_class": "window"}}
         assert is_window_or_door("binary_sensor.fenster_kueche", state) is True
@@ -81,92 +81,149 @@ class TestIsWindowOrDoor:
 
     def test_device_class_running_rejected(self):
         state = {"attributes": {"device_class": "running"}}
-        with patch("assistant.function_calling.get_opening_sensor_config", return_value={}), \
-             patch("assistant.function_calling._mindhome_device_domains", {}):
+        with (
+            patch(
+                "assistant.function_calling.get_opening_sensor_config", return_value={}
+            ),
+            patch("assistant.function_calling._mindhome_device_domains", {}),
+        ):
             assert is_window_or_door("binary_sensor.process", state) is False
 
     def test_device_class_plug_rejected(self):
         state = {"attributes": {"device_class": "plug"}}
-        with patch("assistant.function_calling.get_opening_sensor_config", return_value={}), \
-             patch("assistant.function_calling._mindhome_device_domains", {}):
+        with (
+            patch(
+                "assistant.function_calling.get_opening_sensor_config", return_value={}
+            ),
+            patch("assistant.function_calling._mindhome_device_domains", {}),
+        ):
             assert is_window_or_door("binary_sensor.steckdose", state) is False
 
     def test_keyword_window_in_id(self):
         state = {"attributes": {}}
-        with patch("assistant.function_calling.get_opening_sensor_config", return_value={}), \
-             patch("assistant.function_calling._mindhome_device_domains", {}):
+        with (
+            patch(
+                "assistant.function_calling.get_opening_sensor_config", return_value={}
+            ),
+            patch("assistant.function_calling._mindhome_device_domains", {}),
+        ):
             assert is_window_or_door("binary_sensor.kitchen_window", state) is True
 
     def test_keyword_fenster_in_id(self):
         state = {"attributes": {}}
-        with patch("assistant.function_calling.get_opening_sensor_config", return_value={}), \
-             patch("assistant.function_calling._mindhome_device_domains", {}):
+        with (
+            patch(
+                "assistant.function_calling.get_opening_sensor_config", return_value={}
+            ),
+            patch("assistant.function_calling._mindhome_device_domains", {}),
+        ):
             assert is_window_or_door("binary_sensor.fenster_bad", state) is True
 
     def test_keyword_tuer_in_id(self):
         state = {"attributes": {}}
-        with patch("assistant.function_calling.get_opening_sensor_config", return_value={}), \
-             patch("assistant.function_calling._mindhome_device_domains", {}):
+        with (
+            patch(
+                "assistant.function_calling.get_opening_sensor_config", return_value={}
+            ),
+            patch("assistant.function_calling._mindhome_device_domains", {}),
+        ):
             assert is_window_or_door("binary_sensor.haustuer_kontakt", state) is True
 
     def test_keyword_gate_in_id(self):
         state = {"attributes": {}}
-        with patch("assistant.function_calling.get_opening_sensor_config", return_value={}), \
-             patch("assistant.function_calling._mindhome_device_domains", {}):
+        with (
+            patch(
+                "assistant.function_calling.get_opening_sensor_config", return_value={}
+            ),
+            patch("assistant.function_calling._mindhome_device_domains", {}),
+        ):
             assert is_window_or_door("binary_sensor.garden_gate", state) is True
 
     def test_tor_keyword_in_id(self):
         state = {"attributes": {}}
-        with patch("assistant.function_calling.get_opening_sensor_config", return_value={}), \
-             patch("assistant.function_calling._mindhome_device_domains", {}):
+        with (
+            patch(
+                "assistant.function_calling.get_opening_sensor_config", return_value={}
+            ),
+            patch("assistant.function_calling._mindhome_device_domains", {}),
+        ):
             assert is_window_or_door("binary_sensor.gartentor", state) is True
 
     def test_not_binary_sensor_without_config(self):
         state = {"attributes": {}}
-        with patch("assistant.function_calling.get_opening_sensor_config", return_value={}), \
-             patch("assistant.function_calling._mindhome_device_domains", {}):
+        with (
+            patch(
+                "assistant.function_calling.get_opening_sensor_config", return_value={}
+            ),
+            patch("assistant.function_calling._mindhome_device_domains", {}),
+        ):
             assert is_window_or_door("light.fenster_licht", state) is False
 
     def test_monitor_not_window(self):
         state = {"attributes": {}}
-        with patch("assistant.function_calling.get_opening_sensor_config", return_value={}), \
-             patch("assistant.function_calling._mindhome_device_domains", {}):
+        with (
+            patch(
+                "assistant.function_calling.get_opening_sensor_config", return_value={}
+            ),
+            patch("assistant.function_calling._mindhome_device_domains", {}),
+        ):
             assert is_window_or_door("binary_sensor.system_monitor", state) is False
 
     def test_opening_sensor_config_match(self):
         state = {"attributes": {}}
-        with patch("assistant.function_calling.get_opening_sensor_config",
-                   return_value={"type": "window", "room": "kueche"}):
+        with patch(
+            "assistant.function_calling.get_opening_sensor_config",
+            return_value={"type": "window", "room": "kueche"},
+        ):
             assert is_window_or_door("binary_sensor.custom_sensor", state) is True
 
     def test_mindhome_domain_door_window(self):
         state = {"attributes": {}}
-        with patch("assistant.function_calling.get_opening_sensor_config", return_value={}), \
-             patch("assistant.function_calling._mindhome_device_domains",
-                   {"binary_sensor.custom": "door_window"}):
+        with (
+            patch(
+                "assistant.function_calling.get_opening_sensor_config", return_value={}
+            ),
+            patch(
+                "assistant.function_calling._mindhome_device_domains",
+                {"binary_sensor.custom": "door_window"},
+            ),
+        ):
             assert is_window_or_door("binary_sensor.custom", state) is True
 
     def test_mindhome_domain_switch(self):
         state = {"attributes": {}}
-        with patch("assistant.function_calling.get_opening_sensor_config", return_value={}), \
-             patch("assistant.function_calling._mindhome_device_domains",
-                   {"switch.steckdose_fenster": "switch"}):
+        with (
+            patch(
+                "assistant.function_calling.get_opening_sensor_config", return_value={}
+            ),
+            patch(
+                "assistant.function_calling._mindhome_device_domains",
+                {"switch.steckdose_fenster": "switch"},
+            ),
+        ):
             assert is_window_or_door("switch.steckdose_fenster", state) is False
 
 
 # ── get_opening_sensor_config ─────────────────────────────────────────
 
-class TestGetOpeningSensorConfig:
 
+class TestGetOpeningSensorConfig:
     def test_found(self):
-        with patch("assistant.config.yaml_config", {
-            "opening_sensors": {"entities": {"binary_sensor.fenster": {"type": "window"}}},
-        }):
+        with patch(
+            "assistant.config.yaml_config",
+            {
+                "opening_sensors": {
+                    "entities": {"binary_sensor.fenster": {"type": "window"}}
+                },
+            },
+        ):
             result = get_opening_sensor_config("binary_sensor.fenster")
         assert result["type"] == "window"
 
     def test_not_found(self):
-        with patch("assistant.config.yaml_config", {"opening_sensors": {"entities": {}}}):
+        with patch(
+            "assistant.config.yaml_config", {"opening_sensors": {"entities": {}}}
+        ):
             result = get_opening_sensor_config("binary_sensor.unknown")
         assert result == {}
 
@@ -178,11 +235,13 @@ class TestGetOpeningSensorConfig:
 
 # ── get_mindhome_domain / get_mindhome_room ──────────────────────────
 
-class TestMindhomeHelpers:
 
+class TestMindhomeHelpers:
     def test_get_domain_found(self):
-        with patch("assistant.function_calling._mindhome_device_domains",
-                   {"switch.test": "switch"}):
+        with patch(
+            "assistant.function_calling._mindhome_device_domains",
+            {"switch.test": "switch"},
+        ):
             assert get_mindhome_domain("switch.test") == "switch"
 
     def test_get_domain_not_found(self):
@@ -190,8 +249,10 @@ class TestMindhomeHelpers:
             assert get_mindhome_domain("switch.unknown") == ""
 
     def test_get_room_found(self):
-        with patch("assistant.function_calling._mindhome_device_rooms",
-                   {"light.kueche": "Kueche"}):
+        with patch(
+            "assistant.function_calling._mindhome_device_rooms",
+            {"light.kueche": "Kueche"},
+        ):
             assert get_mindhome_room("light.kueche") == "Kueche"
 
     def test_get_room_not_found(self):
@@ -201,8 +262,8 @@ class TestMindhomeHelpers:
 
 # ── TOR False Positives ──────────────────────────────────────────────
 
-class TestTorFalsePositives:
 
+class TestTorFalsePositives:
     def test_is_tuple(self):
         assert isinstance(_TOR_FALSE_POSITIVES, tuple)
 
@@ -218,8 +279,8 @@ class TestTorFalsePositives:
 
 # ── Default Roles ────────────────────────────────────────────────────
 
-class TestDefaultRoles:
 
+class TestDefaultRoles:
     def test_indoor_temp_exists(self):
         assert "indoor_temp" in _DEFAULT_ROLES
 
@@ -243,8 +304,8 @@ class TestDefaultRoles:
 
 # ── Device Class to Role Mapping ─────────────────────────────────────
 
-class TestDeviceClassToRole:
 
+class TestDeviceClassToRole:
     def test_temperature_maps_to_indoor_temp(self):
         assert _DEVICE_CLASS_TO_ROLE["temperature"] == "indoor_temp"
 
@@ -272,8 +333,8 @@ class TestDeviceClassToRole:
 
 # ── Tool Definitions ─────────────────────────────────────────────────
 
-class TestToolDefinitionsComprehensive:
 
+class TestToolDefinitionsComprehensive:
     def _tool_names(self):
         tools = get_assistant_tools()
         return [t["function"]["name"] for t in tools]
@@ -292,13 +353,18 @@ class TestToolDefinitionsComprehensive:
     def test_no_empty_descriptions(self):
         for tool in get_assistant_tools():
             desc = tool["function"].get("description", "")
-            assert len(desc) > 10, f"Tool {tool['function']['name']} has too short description"
+            assert len(desc) > 10, (
+                f"Tool {tool['function']['name']} has too short description"
+            )
 
     def test_core_tools_present(self):
         names = self._tool_names()
         core_tools = [
-            "set_light", "set_climate", "set_cover",
-            "get_weather", "get_room_climate",
+            "set_light",
+            "set_climate",
+            "set_cover",
+            "get_weather",
+            "get_room_climate",
         ]
         for tool in core_tools:
             assert tool in names, f"Core tool {tool} missing"
@@ -316,8 +382,8 @@ class TestToolDefinitionsComprehensive:
 
 # ── get_opening_type ─────────────────────────────────────────────────
 
-class TestGetOpeningType:
 
+class TestGetOpeningType:
     def test_gate_type(self):
         try:
             from assistant.function_calling import get_opening_type

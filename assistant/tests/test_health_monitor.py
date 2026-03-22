@@ -56,6 +56,7 @@ def monitor(ha, redis_m):
 
 # ── Init & Config ────────────────────────────────────────
 
+
 class TestInit:
     def test_defaults_loaded(self, monitor):
         assert monitor.co2_warn == 1000
@@ -79,6 +80,7 @@ class TestInit:
 
 # ── CO2 Checks ───────────────────────────────────────────
 
+
 class TestCO2:
     def test_co2_below_warn(self, monitor):
         assert monitor._check_co2("sensor.co2", "CO2", 800) is None
@@ -98,6 +100,7 @@ class TestCO2:
 
 # ── Humidity Checks ──────────────────────────────────────
 
+
 class TestHumidity:
     def test_humidity_normal(self, monitor):
         assert monitor._check_humidity("sensor.h", "Luft", 50) is None
@@ -115,6 +118,7 @@ class TestHumidity:
 
 # ── Temperature Checks ──────────────────────────────────
 
+
 class TestTemperature:
     def test_temp_normal(self, monitor):
         assert monitor._check_temperature("sensor.t", "Temp", 22) is None
@@ -131,6 +135,7 @@ class TestTemperature:
 
 
 # ── Humidor ──────────────────────────────────────────────
+
 
 class TestHumidor:
     def test_humidor_normal(self, monitor):
@@ -158,6 +163,7 @@ class TestHumidor:
 
 # ── Alert Cooldown ───────────────────────────────────────
 
+
 class TestAlertCooldown:
     def test_make_alert_first_time(self, monitor):
         alert = monitor._make_alert("sensor.x", "co2_warn", "medium", "msg", {})
@@ -177,6 +183,7 @@ class TestAlertCooldown:
 
 
 # ── Scoring ──────────────────────────────────────────────
+
 
 class TestScoring:
     def test_score_co2_excellent(self):
@@ -209,6 +216,7 @@ class TestScoring:
 
 # ── check_all ────────────────────────────────────────────
 
+
 class TestCheckAll:
     @pytest.mark.asyncio
     async def test_check_all_empty_states(self, monitor, ha):
@@ -222,7 +230,10 @@ class TestCheckAll:
             {
                 "entity_id": "sensor.wohnzimmer_co2",
                 "state": "1200",
-                "attributes": {"device_class": "carbon_dioxide", "friendly_name": "CO2"},
+                "attributes": {
+                    "device_class": "carbon_dioxide",
+                    "friendly_name": "CO2",
+                },
             }
         ]
         alerts = await monitor.check_all()
@@ -235,7 +246,10 @@ class TestCheckAll:
             {
                 "entity_id": "sensor.aquarea_temperature",
                 "state": "50",
-                "attributes": {"device_class": "temperature", "friendly_name": "Aquarea Temp"},
+                "attributes": {
+                    "device_class": "temperature",
+                    "friendly_name": "Aquarea Temp",
+                },
             }
         ]
         alerts = await monitor.check_all()
@@ -247,7 +261,10 @@ class TestCheckAll:
             {
                 "entity_id": "sensor.co2_status",
                 "state": "unavailable",
-                "attributes": {"device_class": "carbon_dioxide", "friendly_name": "CO2"},
+                "attributes": {
+                    "device_class": "carbon_dioxide",
+                    "friendly_name": "CO2",
+                },
             }
         ]
         alerts = await monitor.check_all()
@@ -255,6 +272,7 @@ class TestCheckAll:
 
 
 # ── get_status ───────────────────────────────────────────
+
 
 class TestGetStatus:
     @pytest.mark.asyncio
@@ -270,7 +288,10 @@ class TestGetStatus:
             {
                 "entity_id": "sensor.room_co2",
                 "state": "500",
-                "attributes": {"device_class": "carbon_dioxide", "friendly_name": "CO2"},
+                "attributes": {
+                    "device_class": "carbon_dioxide",
+                    "friendly_name": "CO2",
+                },
             },
             {
                 "entity_id": "sensor.room_humidity",
@@ -284,6 +305,7 @@ class TestGetStatus:
 
 
 # ── Hydration ────────────────────────────────────────────
+
 
 class TestHydration:
     @pytest.mark.asyncio
@@ -315,6 +337,7 @@ class TestHydration:
 
 # ── Send Alert ───────────────────────────────────────────
 
+
 class TestSendAlert:
     @pytest.mark.asyncio
     async def test_send_alert_with_callback(self, monitor):
@@ -332,6 +355,7 @@ class TestSendAlert:
 
 
 # ── Trend Summary ────────────────────────────────────────
+
 
 class TestTrendSummary:
     @pytest.mark.asyncio

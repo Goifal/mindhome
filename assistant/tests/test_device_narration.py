@@ -1,6 +1,7 @@
 """
 Tests fuer Feature 3: Geraete-Persoenlichkeit (narrate_device_event).
 """
+
 import pytest
 from unittest.mock import patch
 
@@ -12,6 +13,7 @@ class TestDeviceNarration:
     def personality(self):
         """Personality-Instanz fuer Narration-Tests."""
         from assistant.personality import PersonalityEngine
+
         p = PersonalityEngine.__new__(PersonalityEngine)
         p._current_formality = 70
         p.formality_start = 70
@@ -19,17 +21,13 @@ class TestDeviceNarration:
 
     def test_narrate_known_device_waschmaschine(self, personality):
         """Bekanntes Geraet (Waschmaschine) gibt Narration zurueck."""
-        result = personality.narrate_device_event(
-            "switch.waschmaschine", "turned_off"
-        )
+        result = personality.narrate_device_event("switch.waschmaschine", "turned_off")
         assert result is not None
         assert "Fleissige" in result
 
     def test_narrate_known_device_saugroboter(self, personality):
         """Saugroboter hat Nickname 'der Kleine'."""
-        result = personality.narrate_device_event(
-            "switch.saugroboter", "turned_on"
-        )
+        result = personality.narrate_device_event("switch.saugroboter", "turned_on")
         assert result is not None
         assert "Kleine" in result
 
@@ -42,25 +40,19 @@ class TestDeviceNarration:
 
     def test_invalid_event_type_returns_none(self, personality):
         """Ungueltiger Event-Typ gibt None zurueck."""
-        result = personality.narrate_device_event(
-            "switch.waschmaschine", "exploded"
-        )
+        result = personality.narrate_device_event("switch.waschmaschine", "exploded")
         assert result is None
 
     def test_event_turned_off(self, personality):
         """turned_off Event liefert passende Nachricht."""
-        result = personality.narrate_device_event(
-            "switch.waschmaschine", "turned_off"
-        )
+        result = personality.narrate_device_event("switch.waschmaschine", "turned_off")
         assert result is not None
         # Template enthaelt typischerweise "erledigt" oder "fertig" oder "Vollzug"
         assert any(w in result for w in ["erledigt", "fertig", "Vollzug"])
 
     def test_event_turned_on(self, personality):
         """turned_on Event liefert passende Nachricht."""
-        result = personality.narrate_device_event(
-            "switch.kaffeemaschine", "turned_on"
-        )
+        result = personality.narrate_device_event("switch.kaffeemaschine", "turned_on")
         assert result is not None
         assert "Barista" in result
 
@@ -74,9 +66,7 @@ class TestDeviceNarration:
 
     def test_event_anomaly(self, personality):
         """anomaly Event liefert Warnmeldung."""
-        result = personality.narrate_device_event(
-            "switch.spuelmaschine", "anomaly"
-        )
+        result = personality.narrate_device_event("switch.spuelmaschine", "anomaly")
         assert result is not None
         assert "Gruendliche" in result
 

@@ -32,7 +32,12 @@ from assistant.autonomy import (
 _DEFAULT_TRUST_CFG = {
     "default": 0,
     "persons": {"lisa": 1, "max": 2},
-    "guest_allowed_actions": ["set_light", "set_climate", "play_media", "get_entity_state"],
+    "guest_allowed_actions": [
+        "set_light",
+        "set_climate",
+        "play_media",
+        "get_entity_state",
+    ],
     "security_actions": ["lock_door", "arm_security_system", "set_presence_mode"],
     "room_restrictions": {"gast": ["kueche", "wohnzimmer"]},
 }
@@ -47,8 +52,10 @@ def am():
 
     yaml_mock = {"trust_levels": _DEFAULT_TRUST_CFG}
 
-    with patch("assistant.autonomy.settings", mock_settings), \
-         patch("assistant.autonomy.yaml_config", yaml_mock):
+    with (
+        patch("assistant.autonomy.settings", mock_settings),
+        patch("assistant.autonomy.yaml_config", yaml_mock),
+    ):
         mgr = AutonomyManager()
         yield mgr
 
@@ -66,8 +73,10 @@ def _make_autonomy(level=2, trust_cfg=None, autonomy_cfg=None):
     if autonomy_cfg is not None:
         yaml_mock["autonomy"] = autonomy_cfg
 
-    with patch("assistant.autonomy.settings", mock_settings), \
-         patch("assistant.autonomy.yaml_config", yaml_mock):
+    with (
+        patch("assistant.autonomy.settings", mock_settings),
+        patch("assistant.autonomy.yaml_config", yaml_mock),
+    ):
         return AutonomyManager()
 
 
@@ -223,9 +232,10 @@ class TestCanPersonAct:
     def test_room_scoping_for_guest(self, am):
         """Gast darf nur in zugewiesenen Raeumen handeln."""
         # Gast "gast" hat room_restrictions: ["kueche", "wohnzimmer"]
-        with patch("assistant.autonomy.yaml_config", {"trust_levels": {
-            "room_restrictions": {"gast": ["kueche", "wohnzimmer"]}
-        }}):
+        with patch(
+            "assistant.autonomy.yaml_config",
+            {"trust_levels": {"room_restrictions": {"gast": ["kueche", "wohnzimmer"]}}},
+        ):
             result = am.can_person_act("Gast", "set_light", room="kueche")
             assert result["allowed"] is True
             result = am.can_person_act("Gast", "set_light", room="schlafzimmer")
@@ -285,39 +295,55 @@ class TestCanExecute:
     """Tests fuer can_execute() — Autonomie-Level UND Person-Trust kombiniert."""
 
     def test_owner_with_sufficient_level(self, am):
-        result = am.can_execute(person="Sir", action_type="respond_to_command", function_name="set_light")
+        result = am.can_execute(
+            person="Sir", action_type="respond_to_command", function_name="set_light"
+        )
         assert result["allowed"] is True
         assert result["autonomy_ok"] is True
         assert result["trust_ok"] is True
 
     def test_owner_with_insufficient_level(self):
         am = _make_autonomy(level=1)
-        result = am.can_execute(person="Sir", action_type="proactive_info", function_name="set_light")
+        result = am.can_execute(
+            person="Sir", action_type="proactive_info", function_name="set_light"
+        )
         assert result["allowed"] is False
         assert result["autonomy_ok"] is False
         assert result["trust_ok"] is True
         assert "reason" in result
 
     def test_guest_blocked_by_trust(self, am):
-        result = am.can_execute(person="Fremder", action_type="respond_to_command", function_name="lock_door")
+        result = am.can_execute(
+            person="Fremder",
+            action_type="respond_to_command",
+            function_name="lock_door",
+        )
         assert result["allowed"] is False
         assert result["autonomy_ok"] is True
         assert result["trust_ok"] is False
 
     def test_guest_allowed_for_light(self, am):
-        result = am.can_execute(person="Fremder", action_type="respond_to_command", function_name="set_light")
+        result = am.can_execute(
+            person="Fremder",
+            action_type="respond_to_command",
+            function_name="set_light",
+        )
         assert result["allowed"] is True
 
     def test_both_blocked_reports_both_reasons(self):
         am = _make_autonomy(level=1)
-        result = am.can_execute(person="Fremder", action_type="proactive_info", function_name="lock_door")
+        result = am.can_execute(
+            person="Fremder", action_type="proactive_info", function_name="lock_door"
+        )
         assert result["allowed"] is False
         assert result["autonomy_ok"] is False
         assert result["trust_ok"] is False
         assert "reason" in result
 
     def test_empty_person_treated_as_guest(self, am):
-        result = am.can_execute(person="", action_type="respond_to_command", function_name="lock_door")
+        result = am.can_execute(
+            person="", action_type="respond_to_command", function_name="lock_door"
+        )
         assert result["allowed"] is False
         assert result["trust_level"] == 0
 
@@ -393,10 +419,13 @@ class TestDomainSpecificAutonomy:
 
     def test_domain_levels_override_global(self):
         """Domain-Level ueberschreibt globales Level wenn aktiviert."""
-        am = _make_autonomy(level=2, autonomy_cfg={
-            "domain_levels_enabled": True,
-            "domain_levels": {"climate": 4, "light": 3},
-        })
+        am = _make_autonomy(
+            level=2,
+            autonomy_cfg={
+                "domain_levels_enabled": True,
+                "domain_levels": {"climate": 4, "light": 3},
+            },
+        )
         # Globales Level ist 2, aber Climate-Domain hat Level 4
         assert am.can_act("adjust_temperature_small", domain="climate") is True
         # Light-Domain hat Level 3 → reicht fuer set_light (Level 3)
@@ -404,38 +433,50 @@ class TestDomainSpecificAutonomy:
 
     def test_domain_level_auto_resolved_from_action(self):
         """Domaene wird aus ACTION_DOMAIN_MAP automatisch aufgeloest."""
-        am = _make_autonomy(level=2, autonomy_cfg={
-            "domain_levels_enabled": True,
-            "domain_levels": {"climate": 4},
-        })
+        am = _make_autonomy(
+            level=2,
+            autonomy_cfg={
+                "domain_levels_enabled": True,
+                "domain_levels": {"climate": 4},
+            },
+        )
         # adjust_temperature_small mappt zu "climate" in ACTION_DOMAIN_MAP
         assert am.can_act("adjust_temperature_small") is True
 
     def test_domain_level_explicit_overrides_auto(self):
         """Explizite Domaene hat Vorrang vor automatischer Aufloesung."""
-        am = _make_autonomy(level=2, autonomy_cfg={
-            "domain_levels_enabled": True,
-            "domain_levels": {"climate": 4, "security": 1},
-        })
+        am = _make_autonomy(
+            level=2,
+            autonomy_cfg={
+                "domain_levels_enabled": True,
+                "domain_levels": {"climate": 4, "security": 1},
+            },
+        )
         # Aktion adjust_temperature_small mappt zu climate (Level 4),
         # aber explizite Domaene "security" hat Level 1
         assert am.can_act("adjust_temperature_small", domain="security") is False
 
     def test_domain_fallback_to_global_for_unknown_domain(self):
         """Unbekannte Domaene faellt auf globales Level zurueck."""
-        am = _make_autonomy(level=3, autonomy_cfg={
-            "domain_levels_enabled": True,
-            "domain_levels": {"climate": 5},
-        })
+        am = _make_autonomy(
+            level=3,
+            autonomy_cfg={
+                "domain_levels_enabled": True,
+                "domain_levels": {"climate": 5},
+            },
+        )
         # "notification" ist nicht in domain_levels konfiguriert → globales Level 3
         assert am.can_act("proactive_info", domain="notification") is True
 
     def test_domain_levels_in_level_info(self):
         """get_level_info zeigt domain_levels wenn aktiviert."""
-        am = _make_autonomy(level=2, autonomy_cfg={
-            "domain_levels_enabled": True,
-            "domain_levels": {"climate": 4, "light": 3},
-        })
+        am = _make_autonomy(
+            level=2,
+            autonomy_cfg={
+                "domain_levels_enabled": True,
+                "domain_levels": {"climate": 4, "light": 3},
+            },
+        )
         info = am.get_level_info()
         assert info["domain_levels_enabled"] is True
         assert "domain_levels" in info
@@ -444,10 +485,13 @@ class TestDomainSpecificAutonomy:
 
     def test_invalid_domain_in_config_ignored(self):
         """Domaenen die nicht in AUTONOMY_DOMAINS stehen werden ignoriert."""
-        am = _make_autonomy(level=2, autonomy_cfg={
-            "domain_levels_enabled": True,
-            "domain_levels": {"climate": 4, "nonexistent_domain": 5},
-        })
+        am = _make_autonomy(
+            level=2,
+            autonomy_cfg={
+                "domain_levels_enabled": True,
+                "domain_levels": {"climate": 4, "nonexistent_domain": 5},
+            },
+        )
         assert "nonexistent_domain" not in am._domain_levels
         assert "climate" in am._domain_levels
 
@@ -457,26 +501,36 @@ class TestDomainSpecificCanExecute:
 
     def test_domain_level_sufficient_trust_ok(self):
         """Domain-Level reicht + Trust OK → erlaubt."""
-        am = _make_autonomy(level=1, autonomy_cfg={
-            "domain_levels_enabled": True,
-            "domain_levels": {"light": 3},
-        })
+        am = _make_autonomy(
+            level=1,
+            autonomy_cfg={
+                "domain_levels_enabled": True,
+                "domain_levels": {"light": 3},
+            },
+        )
         result = am.can_execute(
-            person="Sir", action_type="set_light",
-            function_name="set_light", domain="light",
+            person="Sir",
+            action_type="set_light",
+            function_name="set_light",
+            domain="light",
         )
         assert result["allowed"] is True
         assert result["autonomy_level"] == 3  # Domain-Level, nicht global
 
     def test_domain_level_insufficient(self):
         """Domain-Level reicht nicht → blockiert trotz Owner."""
-        am = _make_autonomy(level=1, autonomy_cfg={
-            "domain_levels_enabled": True,
-            "domain_levels": {"security": 1},
-        })
+        am = _make_autonomy(
+            level=1,
+            autonomy_cfg={
+                "domain_levels_enabled": True,
+                "domain_levels": {"security": 1},
+            },
+        )
         result = am.can_execute(
-            person="Sir", action_type="create_automation",
-            function_name="set_light", domain="security",
+            person="Sir",
+            action_type="create_automation",
+            function_name="set_light",
+            domain="security",
         )
         assert result["allowed"] is False
         assert result["autonomy_ok"] is False
@@ -508,7 +562,9 @@ class TestAutonomyEdgeCases:
             if req_level == 1:
                 assert action in allowed, f"Level 1 sollte '{action}' erlauben"
             else:
-                assert action not in allowed, f"Level 1 sollte '{action}' NICHT erlauben"
+                assert action not in allowed, (
+                    f"Level 1 sollte '{action}' NICHT erlauben"
+                )
 
     def test_level_5_allows_everything(self):
         """Level 5 (Autopilot) darf alles in ACTION_PERMISSIONS."""
@@ -526,7 +582,7 @@ class TestAutonomyEdgeCases:
             info = am.get_level_info()
             current_actions = set(info["allowed_actions"])
             assert prev_actions.issubset(current_actions), (
-                f"Level {level} fehlen Aktionen die Level {level-1} hatte: "
+                f"Level {level} fehlen Aktionen die Level {level - 1} hatte: "
                 f"{prev_actions - current_actions}"
             )
             prev_actions = current_actions
@@ -541,13 +597,19 @@ class TestAutonomyEdgeCases:
 
     def test_custom_action_permissions_from_config(self):
         """Action-Permissions aus Config ueberschreiben Defaults."""
-        am = _make_autonomy(level=2, autonomy_cfg={
-            "action_permissions": {"proactive_info": 1},  # Normalerweise Level 2
-        })
+        am = _make_autonomy(
+            level=2,
+            autonomy_cfg={
+                "action_permissions": {"proactive_info": 1},  # Normalerweise Level 2
+            },
+        )
         # proactive_info jetzt auf Level 1 → Level 2 reicht sowieso
-        am_l1 = _make_autonomy(level=1, autonomy_cfg={
-            "action_permissions": {"proactive_info": 1},
-        })
+        am_l1 = _make_autonomy(
+            level=1,
+            autonomy_cfg={
+                "action_permissions": {"proactive_info": 1},
+            },
+        )
         assert am_l1.can_act("proactive_info") is True
 
     def test_trust_level_global_keyword(self):
@@ -596,15 +658,35 @@ class TestSafetyCapsExtended:
         """Temperatur exakt am Minimum/Maximum ist gueltig."""
         am = _make_autonomy(level=5)
         caps = am.SAFETY_CAPS
-        assert am.check_safety_caps("set_temperature", {"temperature": caps["min_temperature"]})["allowed"] is True
-        assert am.check_safety_caps("set_temperature", {"temperature": caps["max_temperature"]})["allowed"] is True
+        assert (
+            am.check_safety_caps(
+                "set_temperature", {"temperature": caps["min_temperature"]}
+            )["allowed"]
+            is True
+        )
+        assert (
+            am.check_safety_caps(
+                "set_temperature", {"temperature": caps["max_temperature"]}
+            )["allowed"]
+            is True
+        )
 
     def test_temperature_just_outside_boundaries(self):
         """Temperatur knapp ausserhalb der Grenzen wird blockiert."""
         am = _make_autonomy(level=5)
         caps = am.SAFETY_CAPS
-        assert am.check_safety_caps("set_temperature", {"temperature": caps["min_temperature"] - 0.1})["allowed"] is False
-        assert am.check_safety_caps("set_temperature", {"temperature": caps["max_temperature"] + 0.1})["allowed"] is False
+        assert (
+            am.check_safety_caps(
+                "set_temperature", {"temperature": caps["min_temperature"] - 0.1}
+            )["allowed"]
+            is False
+        )
+        assert (
+            am.check_safety_caps(
+                "set_temperature", {"temperature": caps["max_temperature"] + 0.1}
+            )["allowed"]
+            is False
+        )
 
     def test_set_brightness_function_also_checked(self):
         """set_brightness hat gleiche Brightness-Grenzen wie set_light."""
@@ -657,9 +739,12 @@ class TestAutonomyEvolution:
     @pytest.mark.asyncio
     async def test_evaluate_evolution_disabled(self):
         """Evolution disabled in Config gibt None zurueck."""
-        am = _make_autonomy(level=1, autonomy_cfg={
-            "evolution": {"enabled": False},
-        })
+        am = _make_autonomy(
+            level=1,
+            autonomy_cfg={
+                "evolution": {"enabled": False},
+            },
+        )
         redis = AsyncMock()
         am.set_redis(redis)
         result = await am.evaluate_evolution()
@@ -668,9 +753,12 @@ class TestAutonomyEvolution:
     @pytest.mark.asyncio
     async def test_evaluate_evolution_max_level_reached(self):
         """Bereits auf max_level → kein Aufstieg moeglich."""
-        am = _make_autonomy(level=3, autonomy_cfg={
-            "evolution": {"enabled": True, "max_level": 3},
-        })
+        am = _make_autonomy(
+            level=3,
+            autonomy_cfg={
+                "evolution": {"enabled": True, "max_level": 3},
+            },
+        )
         redis = AsyncMock()
         am.set_redis(redis)
         result = await am.evaluate_evolution()
@@ -679,9 +767,12 @@ class TestAutonomyEvolution:
     @pytest.mark.asyncio
     async def test_evaluate_evolution_level_5_never_auto(self):
         """Level 5 (Autopilot) kann nie automatisch erreicht werden."""
-        am = _make_autonomy(level=4, autonomy_cfg={
-            "evolution": {"enabled": True, "max_level": 5},
-        })
+        am = _make_autonomy(
+            level=4,
+            autonomy_cfg={
+                "evolution": {"enabled": True, "max_level": 5},
+            },
+        )
         redis = AsyncMock()
         am.set_redis(redis)
         result = await am.evaluate_evolution()
@@ -690,20 +781,30 @@ class TestAutonomyEvolution:
     @pytest.mark.asyncio
     async def test_evaluate_evolution_not_ready(self):
         """Kriterien nicht erfuellt → ready=False."""
-        am = _make_autonomy(level=1, autonomy_cfg={
-            "evolution": {"enabled": True, "max_level": 3},
-        })
+        am = _make_autonomy(
+            level=1,
+            autonomy_cfg={
+                "evolution": {"enabled": True, "max_level": 3},
+            },
+        )
         redis = AsyncMock()
-        redis.hgetall = AsyncMock(return_value={
-            "total": "10", "accepted": "8", "rejected": "2",
-        })
+        redis.hgetall = AsyncMock(
+            return_value={
+                "total": "10",
+                "accepted": "8",
+                "rejected": "2",
+            }
+        )
         redis.get = AsyncMock(return_value=datetime.now(timezone.utc).isoformat())
         am.set_redis(redis)
 
-        with patch("assistant.autonomy.yaml_config", {
-            "trust_levels": _DEFAULT_TRUST_CFG,
-            "autonomy": {"evolution": {"enabled": True, "max_level": 3}},
-        }):
+        with patch(
+            "assistant.autonomy.yaml_config",
+            {
+                "trust_levels": _DEFAULT_TRUST_CFG,
+                "autonomy": {"evolution": {"enabled": True, "max_level": 3}},
+            },
+        ):
             result = await am.evaluate_evolution()
             assert result is not None
             assert result["ready"] is False
@@ -712,22 +813,32 @@ class TestAutonomyEvolution:
     @pytest.mark.asyncio
     async def test_evaluate_evolution_ready(self):
         """Alle Kriterien erfuellt → ready=True."""
-        am = _make_autonomy(level=1, autonomy_cfg={
-            "evolution": {"enabled": True, "max_level": 3},
-        })
+        am = _make_autonomy(
+            level=1,
+            autonomy_cfg={
+                "evolution": {"enabled": True, "max_level": 3},
+            },
+        )
         redis = AsyncMock()
-        redis.hgetall = AsyncMock(return_value={
-            "total": "300", "accepted": "250", "rejected": "50",
-        })
+        redis.hgetall = AsyncMock(
+            return_value={
+                "total": "300",
+                "accepted": "250",
+                "rejected": "50",
+            }
+        )
         # first_start = 60 Tage her
         start = datetime(2026, 1, 1, tzinfo=timezone.utc)
         redis.get = AsyncMock(return_value=start.isoformat())
         am.set_redis(redis)
 
-        with patch("assistant.autonomy.yaml_config", {
-            "trust_levels": _DEFAULT_TRUST_CFG,
-            "autonomy": {"evolution": {"enabled": True, "max_level": 3}},
-        }):
+        with patch(
+            "assistant.autonomy.yaml_config",
+            {
+                "trust_levels": _DEFAULT_TRUST_CFG,
+                "autonomy": {"evolution": {"enabled": True, "max_level": 3}},
+            },
+        ):
             result = await am.evaluate_evolution()
             assert result is not None
             assert result["ready"] is True
@@ -736,21 +847,31 @@ class TestAutonomyEvolution:
     @pytest.mark.asyncio
     async def test_apply_evolution_resets_stats(self):
         """apply_evolution setzt Redis-Statistiken zurueck."""
-        am = _make_autonomy(level=1, autonomy_cfg={
-            "evolution": {"enabled": True, "max_level": 3},
-        })
+        am = _make_autonomy(
+            level=1,
+            autonomy_cfg={
+                "evolution": {"enabled": True, "max_level": 3},
+            },
+        )
         redis = AsyncMock()
-        redis.hgetall = AsyncMock(return_value={
-            "total": "300", "accepted": "250", "rejected": "50",
-        })
+        redis.hgetall = AsyncMock(
+            return_value={
+                "total": "300",
+                "accepted": "250",
+                "rejected": "50",
+            }
+        )
         start = datetime(2026, 1, 1, tzinfo=timezone.utc)
         redis.get = AsyncMock(return_value=start.isoformat())
         am.set_redis(redis)
 
-        with patch("assistant.autonomy.yaml_config", {
-            "trust_levels": _DEFAULT_TRUST_CFG,
-            "autonomy": {"evolution": {"enabled": True, "max_level": 3}},
-        }):
+        with patch(
+            "assistant.autonomy.yaml_config",
+            {
+                "trust_levels": _DEFAULT_TRUST_CFG,
+                "autonomy": {"evolution": {"enabled": True, "max_level": 3}},
+            },
+        ):
             result = await am.apply_evolution()
             assert result is True
             assert am.level == 2
@@ -758,9 +879,12 @@ class TestAutonomyEvolution:
 
     def test_get_evolution_info(self):
         """get_evolution_info gibt strukturierte Daten zurueck."""
-        am = _make_autonomy(level=2, autonomy_cfg={
-            "evolution": {"enabled": True, "max_level": 3},
-        })
+        am = _make_autonomy(
+            level=2,
+            autonomy_cfg={
+                "evolution": {"enabled": True, "max_level": 3},
+            },
+        )
         info = am.get_evolution_info()
         assert info["enabled"] is True
         assert info["max_level"] == 3
@@ -828,18 +952,24 @@ class TestTrustEdgeCases:
         mock_settings.user_name = "Sir"
         yaml_mock = {"trust_levels": trust_cfg}
 
-        with patch("assistant.autonomy.settings", mock_settings), \
-             patch("assistant.autonomy.yaml_config", yaml_mock):
+        with (
+            patch("assistant.autonomy.settings", mock_settings),
+            patch("assistant.autonomy.yaml_config", yaml_mock),
+        ):
             am = AutonomyManager()
             # In erlaubtem Raum
             result = am.can_execute(
-                person="Fremder", action_type="respond_to_command",
-                function_name="set_light", room="kueche",
+                person="Fremder",
+                action_type="respond_to_command",
+                function_name="set_light",
+                room="kueche",
             )
             assert result["allowed"] is True
             # In nicht-erlaubtem Raum
             result = am.can_execute(
-                person="Fremder", action_type="respond_to_command",
-                function_name="set_light", room="schlafzimmer",
+                person="Fremder",
+                action_type="respond_to_command",
+                function_name="set_light",
+                room="schlafzimmer",
             )
             assert result["allowed"] is False

@@ -53,11 +53,13 @@ class SituationModel:
         snapshot = self._build_snapshot(states)
         try:
             await self.redis.setex(
-                KEY_LAST_SNAPSHOT, SNAPSHOT_TTL,
+                KEY_LAST_SNAPSHOT,
+                SNAPSHOT_TTL,
                 json.dumps(snapshot, ensure_ascii=False),
             )
             await self.redis.setex(
-                KEY_LAST_INTERACTION, SNAPSHOT_TTL,
+                KEY_LAST_INTERACTION,
+                SNAPSHOT_TTL,
                 datetime.now(timezone.utc).isoformat(),
             )
         except Exception as e:
@@ -89,7 +91,11 @@ class SituationModel:
 
         last_time = ""
         if raw_time:
-            t = raw_time if isinstance(raw_time, str) else raw_time.decode(errors="replace")
+            t = (
+                raw_time
+                if isinstance(raw_time, str)
+                else raw_time.decode(errors="replace")
+            )
             try:
                 last_dt = datetime.fromisoformat(t)
                 # Ensure both are naive for consistent subtraction
@@ -117,13 +123,19 @@ class SituationModel:
             return None
 
         # Maximal N Aenderungen melden (die wichtigsten)
-        changes = changes[:self.max_changes]
+        changes = changes[: self.max_changes]
 
-        header = f"Seit dem letzten Gespraech ({last_time}):" if last_time else "Seit dem letzten Gespraech:"
+        header = (
+            f"Seit dem letzten Gespraech ({last_time}):"
+            if last_time
+            else "Seit dem letzten Gespraech:"
+        )
         delta_text = f"\n\nSITUATIONS-DELTA:\n{header}\n"
         for change in changes:
             delta_text += f"- {change}\n"
-        delta_text += "Erwaehne relevante Aenderungen beilaeufig wenn es zum Gespraech passt."
+        delta_text += (
+            "Erwaehne relevante Aenderungen beilaeufig wenn es zum Gespraech passt."
+        )
 
         return delta_text
 
@@ -247,27 +259,33 @@ class SituationModel:
             window_names = ", ".join(sorted(opened))
             for name, diff in temp_drops.items():
                 causal_matched_temps.add(name)
-                changes.append((
-                    2,
-                    f"{name}: Temperatur um {abs(diff):.1f} Grad gesunken "
-                    f"({old_temps[name]:.0f} → {new_temps[name]:.0f}°C) "
-                    f"— vermutlich weil {window_names} geöffnet wurde"
-                ))
+                changes.append(
+                    (
+                        2,
+                        f"{name}: Temperatur um {abs(diff):.1f} Grad gesunken "
+                        f"({old_temps[name]:.0f} → {new_temps[name]:.0f}°C) "
+                        f"— vermutlich weil {window_names} geöffnet wurde",
+                    )
+                )
 
         # Verbleibende Temperatur-Aenderungen (nicht kausal verknuepft)
         for name, diff in temp_drops.items():
             if name not in causal_matched_temps:
-                changes.append((
-                    3,
-                    f"{name}: Temperatur um {abs(diff):.1f} Grad gesunken "
-                    f"({old_temps[name]:.0f} → {new_temps[name]:.0f}°C)"
-                ))
+                changes.append(
+                    (
+                        3,
+                        f"{name}: Temperatur um {abs(diff):.1f} Grad gesunken "
+                        f"({old_temps[name]:.0f} → {new_temps[name]:.0f}°C)",
+                    )
+                )
         for name, diff in temp_rises.items():
-            changes.append((
-                3,
-                f"{name}: Temperatur um {abs(diff):.1f} Grad gestiegen "
-                f"({old_temps[name]:.0f} → {new_temps[name]:.0f}°C)"
-            ))
+            changes.append(
+                (
+                    3,
+                    f"{name}: Temperatur um {abs(diff):.1f} Grad gestiegen "
+                    f"({old_temps[name]:.0f} → {new_temps[name]:.0f}°C)",
+                )
+            )
 
         # Temperatur-Drift: Kleine Aenderungen (<threshold) die ueber laengere Zeit
         # in eine Richtung gehen. Nur melden wenn altes Snapshot >1h alt ist
@@ -276,7 +294,9 @@ class SituationModel:
         if old_ts:
             try:
                 old_dt = datetime.fromisoformat(old_ts)
-                hours_elapsed = (datetime.now(timezone.utc) - old_dt).total_seconds() / 3600
+                hours_elapsed = (
+                    datetime.now(timezone.utc) - old_dt
+                ).total_seconds() / 3600
                 if hours_elapsed >= 1.0:
                     for name in set(old_temps) & set(new_temps):
                         if name in temp_drops or name in temp_rises:
@@ -284,11 +304,13 @@ class SituationModel:
                         diff = new_temps[name] - old_temps[name]
                         if 0.5 <= abs(diff) < self.temp_threshold:
                             direction = "gesunken" if diff < 0 else "gestiegen"
-                            changes.append((
-                                5,
-                                f"{name}: Temperatur langsam um {abs(diff):.1f} Grad {direction} "
-                                f"(ueber {hours_elapsed:.0f}h, {old_temps[name]:.1f} → {new_temps[name]:.1f}°C)"
-                            ))
+                            changes.append(
+                                (
+                                    5,
+                                    f"{name}: Temperatur langsam um {abs(diff):.1f} Grad {direction} "
+                                    f"(ueber {hours_elapsed:.0f}h, {old_temps[name]:.1f} → {new_temps[name]:.1f}°C)",
+                                )
+                            )
             except (ValueError, TypeError):
                 pass
 
@@ -300,17 +322,17 @@ class SituationModel:
         # 3. Tueren geoeffnet/geschlossen
         old_doors = set(old.get("open_doors", []))
         new_doors = set(new.get("open_doors", []))
-        for d in (new_doors - old_doors):
+        for d in new_doors - old_doors:
             changes.append((2, f"{d} wurde geöffnet"))
-        for d in (old_doors - new_doors):
+        for d in old_doors - new_doors:
             changes.append((4, f"{d} wurde geschlossen"))
 
         # 4. Schloesser (Sicherheit — hohe Prio)
         old_locks = set(old.get("locks_unlocked", []))
         new_locks = set(new.get("locks_unlocked", []))
-        for l in (new_locks - old_locks):
+        for l in new_locks - old_locks:
             changes.append((1, f"{l} wurde entriegelt"))
-        for l in (old_locks - new_locks):
+        for l in old_locks - new_locks:
             changes.append((3, f"{l} wurde verriegelt"))
 
         # 5. Personen — gekommen/gegangen
@@ -341,9 +363,9 @@ class SituationModel:
         # 7. Medien
         old_media = set(old.get("media_playing", []))
         new_media = set(new.get("media_playing", []))
-        for m in (new_media - old_media):
+        for m in new_media - old_media:
             changes.append((4, f"{m} spielt jetzt Musik"))
-        for m in (old_media - new_media):
+        for m in old_media - new_media:
             changes.append((5, f"{m} wurde gestoppt"))
 
         # 8. Batterien: Neue niedrige Batterien melden
@@ -353,7 +375,9 @@ class SituationModel:
             if name not in old_bat:
                 changes.append((3, f"{name}: Batterie bei {level}%"))
             elif old_bat[name] - level >= 5:
-                changes.append((3, f"{name}: Batterie von {old_bat[name]}% auf {level}% gefallen"))
+                changes.append(
+                    (3, f"{name}: Batterie von {old_bat[name]}% auf {level}% gefallen")
+                )
 
         # 9. Saugroboter
         old_vac = old.get("vacuum_states", {})
@@ -363,9 +387,12 @@ class SituationModel:
             new_s = new_vac.get(name, "")
             if old_s != new_s and new_s:
                 _vac_states_de = {
-                    "cleaning": "saugt", "returning": "fährt zurück",
-                    "docked": "in Station", "paused": "pausiert",
-                    "idle": "bereit", "error": "FEHLER",
+                    "cleaning": "saugt",
+                    "returning": "fährt zurück",
+                    "docked": "in Station",
+                    "paused": "pausiert",
+                    "idle": "bereit",
+                    "error": "FEHLER",
                 }
                 state_de = _vac_states_de.get(new_s, new_s)
                 changes.append((4, f"{name}: {state_de}"))

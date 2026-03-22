@@ -34,7 +34,9 @@ class TestSaveUploadEdgeCases:
     @patch("assistant.file_handler._extract_text", return_value=None)
     @patch("assistant.file_handler.UPLOAD_DIR")
     @patch("assistant.file_handler.ensure_upload_dir")
-    def test_filename_with_unicode_chars(self, mock_ensure, mock_dir, mock_extract, tmp_path):
+    def test_filename_with_unicode_chars(
+        self, mock_ensure, mock_dir, mock_extract, tmp_path
+    ):
         """Unicode characters not in the allowed set are stripped."""
         mock_dir.__truediv__ = lambda self, name: tmp_path / name
         result = save_upload("bericht_\u00fc\u00e4\u00f6.txt", b"data")
@@ -46,7 +48,9 @@ class TestSaveUploadEdgeCases:
     @patch("assistant.file_handler._extract_text", return_value=None)
     @patch("assistant.file_handler.UPLOAD_DIR")
     @patch("assistant.file_handler.ensure_upload_dir")
-    def test_filename_with_spaces_preserved(self, mock_ensure, mock_dir, mock_extract, tmp_path):
+    def test_filename_with_spaces_preserved(
+        self, mock_ensure, mock_dir, mock_extract, tmp_path
+    ):
         """Spaces in filenames are preserved (in the allowed chars)."""
         mock_dir.__truediv__ = lambda self, name: tmp_path / name
         result = save_upload("my report.txt", b"data")
@@ -56,7 +60,9 @@ class TestSaveUploadEdgeCases:
     @patch("assistant.file_handler._extract_text", return_value=None)
     @patch("assistant.file_handler.UPLOAD_DIR")
     @patch("assistant.file_handler.ensure_upload_dir")
-    def test_filename_with_dashes_and_underscores(self, mock_ensure, mock_dir, mock_extract, tmp_path):
+    def test_filename_with_dashes_and_underscores(
+        self, mock_ensure, mock_dir, mock_extract, tmp_path
+    ):
         """Dashes and underscores are allowed in filenames."""
         mock_dir.__truediv__ = lambda self, name: tmp_path / name
         result = save_upload("my-report_v2.txt", b"data")
@@ -65,7 +71,9 @@ class TestSaveUploadEdgeCases:
     @patch("assistant.file_handler._extract_text", return_value="extracted content")
     @patch("assistant.file_handler.UPLOAD_DIR")
     @patch("assistant.file_handler.ensure_upload_dir")
-    def test_url_contains_unique_name(self, mock_ensure, mock_dir, mock_extract, tmp_path):
+    def test_url_contains_unique_name(
+        self, mock_ensure, mock_dir, mock_extract, tmp_path
+    ):
         """URL in result contains the unique filename."""
         mock_dir.__truediv__ = lambda self, name: tmp_path / name
         result = save_upload("report.pdf", b"pdf content")
@@ -74,7 +82,9 @@ class TestSaveUploadEdgeCases:
     @patch("assistant.file_handler._extract_text", return_value=None)
     @patch("assistant.file_handler.UPLOAD_DIR")
     @patch("assistant.file_handler.ensure_upload_dir")
-    def test_image_file_type_detected(self, mock_ensure, mock_dir, mock_extract, tmp_path):
+    def test_image_file_type_detected(
+        self, mock_ensure, mock_dir, mock_extract, tmp_path
+    ):
         """Image extensions produce file type 'image'."""
         mock_dir.__truediv__ = lambda self, name: tmp_path / name
         result = save_upload("photo.png", b"\x89PNG")
@@ -83,7 +93,9 @@ class TestSaveUploadEdgeCases:
     @patch("assistant.file_handler._extract_text", return_value=None)
     @patch("assistant.file_handler.UPLOAD_DIR")
     @patch("assistant.file_handler.ensure_upload_dir")
-    def test_audio_file_type_detected(self, mock_ensure, mock_dir, mock_extract, tmp_path):
+    def test_audio_file_type_detected(
+        self, mock_ensure, mock_dir, mock_extract, tmp_path
+    ):
         mock_dir.__truediv__ = lambda self, name: tmp_path / name
         result = save_upload("recording.mp3", b"audio data")
         assert result["type"] == "audio"
@@ -91,7 +103,9 @@ class TestSaveUploadEdgeCases:
     @patch("assistant.file_handler._extract_text", return_value=None)
     @patch("assistant.file_handler.UPLOAD_DIR")
     @patch("assistant.file_handler.ensure_upload_dir")
-    def test_video_file_type_detected(self, mock_ensure, mock_dir, mock_extract, tmp_path):
+    def test_video_file_type_detected(
+        self, mock_ensure, mock_dir, mock_extract, tmp_path
+    ):
         mock_dir.__truediv__ = lambda self, name: tmp_path / name
         result = save_upload("clip.mp4", b"video data")
         assert result["type"] == "video"
@@ -230,13 +244,15 @@ class TestBuildFileContextEdgeCases:
 
     def test_document_with_extracted_text_and_vision(self):
         """Document with both extracted text and vision description."""
-        files = [{
-            "name": "scan.pdf",
-            "type": "document",
-            "size": 1024,
-            "extracted_text": "PDF content here",
-            "vision_description": "A scanned document",
-        }]
+        files = [
+            {
+                "name": "scan.pdf",
+                "type": "document",
+                "size": 1024,
+                "extracted_text": "PDF content here",
+                "vision_description": "A scanned document",
+            }
+        ]
         result = build_file_context(files)
         # For documents, extracted_text goes under "Inhalt:" not "OCR-Text"
         assert "Inhalt:" in result
@@ -264,7 +280,13 @@ class TestBuildFileContextEdgeCases:
 
     def test_large_file_mb_formatting(self):
         """Large files show decimal MB."""
-        files = [{"name": "huge.bin", "type": "document", "size": 15 * 1024 * 1024 + 512 * 1024}]
+        files = [
+            {
+                "name": "huge.bin",
+                "type": "document",
+                "size": 15 * 1024 * 1024 + 512 * 1024,
+            }
+        ]
         result = build_file_context(files)
         assert "MB" in result
         assert "15.5 MB" in result
@@ -272,9 +294,24 @@ class TestBuildFileContextEdgeCases:
     def test_many_files_all_types(self):
         """Multiple files of different types in one context."""
         files = [
-            {"name": "doc.pdf", "type": "document", "size": 1024, "extracted_text": "PDF text"},
-            {"name": "photo.jpg", "type": "image", "size": 2048, "vision_description": "A cat"},
-            {"name": "scan.png", "type": "image", "size": 3072, "extracted_text": "OCR text"},
+            {
+                "name": "doc.pdf",
+                "type": "document",
+                "size": 1024,
+                "extracted_text": "PDF text",
+            },
+            {
+                "name": "photo.jpg",
+                "type": "image",
+                "size": 2048,
+                "vision_description": "A cat",
+            },
+            {
+                "name": "scan.png",
+                "type": "image",
+                "size": 3072,
+                "extracted_text": "OCR text",
+            },
             {"name": "video.mp4", "type": "video", "size": 4096},
             {"name": "audio.mp3", "type": "audio", "size": 5120},
             {"name": "raw.bmp", "type": "image", "size": 6144},
@@ -339,7 +376,21 @@ class TestConstantsValidation:
 
     def test_no_executable_extensions_allowed(self):
         """Dangerous executable extensions should never be allowed."""
-        dangerous = {"exe", "bat", "cmd", "sh", "ps1", "msi", "com", "vbs", "js", "php", "py", "rb", "pl"}
+        dangerous = {
+            "exe",
+            "bat",
+            "cmd",
+            "sh",
+            "ps1",
+            "msi",
+            "com",
+            "vbs",
+            "js",
+            "php",
+            "py",
+            "rb",
+            "pl",
+        }
         assert ALLOWED_EXTENSIONS.isdisjoint(dangerous)
 
     def test_no_html_or_svg_allowed(self):

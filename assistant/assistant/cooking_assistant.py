@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CookingTimer:
     """Ein Software-Timer für Koch-Schritte."""
+
     label: str
     duration_seconds: int
     started_at: float = 0.0
@@ -66,6 +67,7 @@ class CookingTimer:
 @dataclass
 class CookingStep:
     """Ein einzelner Koch-Schritt."""
+
     number: int
     instruction: str
     timer_minutes: Optional[int] = None
@@ -74,6 +76,7 @@ class CookingStep:
 @dataclass
 class CookingSession:
     """Eine aktive Koch-Session mit Rezept und Schritten."""
+
     dish: str
     portions: int = 2
     ingredients: list[str] = field(default_factory=list)
@@ -100,37 +103,77 @@ class CookingSession:
 
 # Koch-Intent Erkennung
 COOKING_START_TRIGGERS = [
-    "ich will", "ich möchte", "lass uns", "wir kochen",
-    "wir backen", "hilf mir", "ich koche", "ich backe",
+    "ich will",
+    "ich möchte",
+    "lass uns",
+    "wir kochen",
+    "wir backen",
+    "hilf mir",
+    "ich koche",
+    "ich backe",
 ]
 
 COOKING_KEYWORDS = [
-    "kochen", "backen", "zubereiten", "braten", "grillen",
+    "kochen",
+    "backen",
+    "zubereiten",
+    "braten",
+    "grillen",
     "rezept für",
-    "wie mache ich", "wie macht man", "wie bereite ich",
-    "wie koche ich", "wie backe ich", "wie brate ich",
+    "wie mache ich",
+    "wie macht man",
+    "wie bereite ich",
+    "wie koche ich",
+    "wie backe ich",
+    "wie brate ich",
 ]
 
 # Navigation per Sprache
-NAV_NEXT = ["weiter", "nächster schritt", "next", "und dann",
-            "was kommt jetzt", "wie gehts weiter"]
+NAV_NEXT = [
+    "weiter",
+    "nächster schritt",
+    "next",
+    "und dann",
+    "was kommt jetzt",
+    "wie gehts weiter",
+]
 NAV_PREV = ["zurück", "vorheriger schritt", "nochmal den letzten"]
-NAV_REPEAT = ["nochmal", "wiederhole", "wie war das", "sag das nochmal",
-              "repeat", "bitte nochmal"]
+NAV_REPEAT = [
+    "nochmal",
+    "wiederhole",
+    "wie war das",
+    "sag das nochmal",
+    "repeat",
+    "bitte nochmal",
+]
 NAV_STATUS = ["wo bin ich", "welcher schritt", "status", "übersicht"]
-NAV_TIMER = ["timer", "stell timer", "stell einen timer", "weck mich",
-             "erinner mich"]
+NAV_TIMER = ["timer", "stell timer", "stell einen timer", "weck mich", "erinner mich"]
 NAV_TIMER_CHECK = ["wie lange noch", "timer status", "läuft der timer"]
-NAV_STOP = ["stop kochen", "stopp kochen", "abbrechen", "koch session beenden",
-            "fertig kochen", "ich bin fertig", "koch modus beenden",
-            "kochen beenden", "kochmodus beenden", "beende kochen",
-            "beende den koch", "kochen stopp", "kochen stop",
-            "kochen beende", "beenden"]
-NAV_INGREDIENTS = ["zutaten", "was brauche ich", "einkaufsliste",
-                   "welche zutaten"]
+NAV_STOP = [
+    "stop kochen",
+    "stopp kochen",
+    "abbrechen",
+    "koch session beenden",
+    "fertig kochen",
+    "ich bin fertig",
+    "koch modus beenden",
+    "kochen beenden",
+    "kochmodus beenden",
+    "beende kochen",
+    "beende den koch",
+    "kochen stopp",
+    "kochen stop",
+    "kochen beende",
+    "beenden",
+]
+NAV_INGREDIENTS = ["zutaten", "was brauche ich", "einkaufsliste", "welche zutaten"]
 NAV_PORTIONS = ["für", "portionen", "personen"]
-NAV_SAVE = ["merk dir das rezept", "rezept speichern", "speichere das rezept",
-            "merk dir dieses rezept"]
+NAV_SAVE = [
+    "merk dir das rezept",
+    "rezept speichern",
+    "speichere das rezept",
+    "merk dir dieses rezept",
+]
 
 
 RECIPE_GENERATION_PROMPT = """Du bist ein erfahrener Koch-Assistent. Erstelle ein Rezept auf Deutsch.
@@ -237,8 +280,17 @@ class CookingAssistant:
 
         # "Ich will X kochen/backen"
         if any(t in text_lower for t in COOKING_START_TRIGGERS):
-            if any(kw in text_lower for kw in ["kochen", "backen", "zubereiten",
-                                                 "braten", "grillen", "machen"]):
+            if any(
+                kw in text_lower
+                for kw in [
+                    "kochen",
+                    "backen",
+                    "zubereiten",
+                    "braten",
+                    "grillen",
+                    "machen",
+                ]
+            ):
                 return True
 
         return False
@@ -248,9 +300,18 @@ class CookingAssistant:
         if not self.has_active_session:
             return False
         text_lower = text.lower().strip()
-        all_nav = (NAV_NEXT + NAV_PREV + NAV_REPEAT + NAV_STATUS +
-                   NAV_TIMER + NAV_TIMER_CHECK + NAV_STOP +
-                   NAV_INGREDIENTS + NAV_PORTIONS + NAV_SAVE)
+        all_nav = (
+            NAV_NEXT
+            + NAV_PREV
+            + NAV_REPEAT
+            + NAV_STATUS
+            + NAV_TIMER
+            + NAV_TIMER_CHECK
+            + NAV_STOP
+            + NAV_INGREDIENTS
+            + NAV_PORTIONS
+            + NAV_SAVE
+        )
         return any(kw in text_lower for kw in all_nav)
 
     async def _search_recipe_store(self, dish: str) -> Optional[str]:
@@ -276,7 +337,9 @@ class CookingAssistant:
             best = good_hits[0]
             logger.info(
                 "Rezept aus Recipe Store gefunden: '%s' (Relevanz: %.2f, Quelle: %s)",
-                dish, best.get("relevance", 0), best.get("source", "?"),
+                dish,
+                best.get("relevance", 0),
+                best.get("source", "?"),
             )
             combined = "\n\n".join(h["content"] for h in good_hits)
             return combined
@@ -285,8 +348,13 @@ class CookingAssistant:
             return None
 
     async def _parse_stored_recipe(
-        self, recipe_text: str, dish: str, portions: int,
-        person: str, model: str, preferences: str,
+        self,
+        recipe_text: str,
+        dish: str,
+        portions: int,
+        person: str,
+        model: str,
+        preferences: str,
     ) -> Optional[CookingSession]:
         """Wandelt gespeicherten Rezepttext in strukturierte CookingSession um."""
         prompt = STORED_RECIPE_PARSE_PROMPT.format(
@@ -296,7 +364,10 @@ class CookingAssistant:
         )
         messages = [
             {"role": "system", "content": prompt},
-            {"role": "user", "content": f"Wandle das Rezept für {dish} um ({portions} Portionen)"},
+            {
+                "role": "user",
+                "content": f"Wandle das Rezept für {dish} um ({portions} Portionen)",
+            },
         ]
         response = await self.ollama.chat(
             messages=messages,
@@ -305,8 +376,10 @@ class CookingAssistant:
             max_tokens=self.max_tokens,
         )
         if "error" in response:
-            logger.warning("Gespeichertes Rezept konnte nicht geparst werden: %s",
-                           response["error"])
+            logger.warning(
+                "Gespeichertes Rezept konnte nicht geparst werden: %s",
+                response["error"],
+            )
             return None
 
         content = response.get("message", {}).get("content", "")
@@ -335,11 +408,20 @@ class CookingAssistant:
             self._search_recipe_store(dish),
         )
 
-        logger.info("Koch-Session starten: '%s' für %d Portionen (Person: %s)",
-                     dish, portions, person)
+        logger.info(
+            "Koch-Session starten: '%s' für %d Portionen (Person: %s)",
+            dish,
+            portions,
+            person,
+        )
         if stored_recipe:
             session = await self._parse_stored_recipe(
-                stored_recipe, dish, portions, person, model, preferences,
+                stored_recipe,
+                dish,
+                portions,
+                person,
+                model,
+                preferences,
             )
             if session and session.steps:
                 self.session = session
@@ -354,9 +436,13 @@ class CookingAssistant:
                     parts.append(f"  - {ing}")
                 parts.append(f"\nDas Rezept hat {session.total_steps} Schritte.")
                 parts.append("Sag 'weiter' wenn du bereit bist für den ersten Schritt.")
-                parts.append("Du kannst jederzeit 'zutaten', 'nochmal', 'zurück' oder 'stop kochen' sagen.")
+                parts.append(
+                    "Du kannst jederzeit 'zutaten', 'nochmal', 'zurück' oder 'stop kochen' sagen."
+                )
                 return "\n".join(parts)
-            logger.info("Gespeichertes Rezept nicht parsbar, Fallback auf LLM-Generierung")
+            logger.info(
+                "Gespeichertes Rezept nicht parsbar, Fallback auf LLM-Generierung"
+            )
 
         # Kein Treffer oder Parse fehlgeschlagen: Rezept via LLM generieren
         prompt = RECIPE_GENERATION_PROMPT.format(
@@ -381,13 +467,16 @@ class CookingAssistant:
         # Fallback-Kaskade: deep(32b) → smart(14b) → fast(8b)
         if "error" in response:
             from .config import settings
+
             fallback_chain = [settings.model_smart, settings.model_fast]
             for fallback_model in fallback_chain:
                 if fallback_model == model:
                     continue
                 logger.warning(
-                    "Rezept-Generierung mit %s fehlgeschlagen (%s), "
-                    "Fallback auf %s", model, response["error"], fallback_model,
+                    "Rezept-Generierung mit %s fehlgeschlagen (%s), Fallback auf %s",
+                    model,
+                    response["error"],
+                    fallback_model,
                 )
                 response = await self.ollama.chat(
                     messages=messages,
@@ -431,7 +520,9 @@ class CookingAssistant:
 
         parts.append(f"\nDas Rezept hat {session.total_steps} Schritte.")
         parts.append("Sag 'weiter' wenn du bereit bist für den ersten Schritt.")
-        parts.append("Du kannst jederzeit 'zutaten', 'nochmal', 'zurück' oder 'stop kochen' sagen.")
+        parts.append(
+            "Du kannst jederzeit 'zutaten', 'nochmal', 'zurück' oder 'stop kochen' sagen."
+        )
 
         return "\n".join(parts)
 
@@ -499,11 +590,15 @@ class CookingAssistant:
         if step is None:
             # Alle Schritte durch
             elapsed = int(time.time() - session.started_at) // 60
-            return (f"Fertig! Alle {session.total_steps} Schritte abgeschlossen. "
-                    f"Das hat etwa {elapsed} Minuten gedauert. "
-                    f"Guten Appetit! Sag 'merk dir das rezept' wenn du es speichern willst.")
+            return (
+                f"Fertig! Alle {session.total_steps} Schritte abgeschlossen. "
+                f"Das hat etwa {elapsed} Minuten gedauert. "
+                f"Guten Appetit! Sag 'merk dir das rezept' wenn du es speichern willst."
+            )
 
-        response = f"Schritt {step.number} von {session.total_steps}:\n{step.instruction}"
+        response = (
+            f"Schritt {step.number} von {session.total_steps}:\n{step.instruction}"
+        )
 
         if step.timer_minutes:
             response += f"\n(Dieser Schritt dauert {step.timer_minutes} Minuten. Sag 'timer' wenn ich einen stellen soll.)"
@@ -565,7 +660,9 @@ class CookingAssistant:
         if not self.session.ingredients:
             return "Keine Zutaten gespeichert."
 
-        parts = [f"Zutaten für {self.session.dish} ({self.session.portions} Portionen):"]
+        parts = [
+            f"Zutaten für {self.session.dish} ({self.session.portions} Portionen):"
+        ]
         for ing in self.session.ingredients:
             parts.append(f"  - {ing}")
         return "\n".join(parts)
@@ -584,20 +681,32 @@ class CookingAssistant:
             return "Einkaufslisten-Modul nicht verfuegbar."
 
         try:
-            result = await smart_shopping.add_missing_ingredients(self.session.ingredients)
+            result = await smart_shopping.add_missing_ingredients(
+                self.session.ingredients
+            )
             added = result.get("added", [])
             already = result.get("already_on_list", [])
             parts = []
             if added:
-                parts.append(f"{len(added)} Zutaten zur Einkaufsliste hinzugefuegt: {', '.join(added)}")
+                parts.append(
+                    f"{len(added)} Zutaten zur Einkaufsliste hinzugefuegt: {', '.join(added)}"
+                )
             if already:
                 parts.append(f"{len(already)} waren bereits auf der Liste")
-            return " | ".join(parts) if parts else "Alle Zutaten sind bereits auf der Liste."
+            return (
+                " | ".join(parts)
+                if parts
+                else "Alle Zutaten sind bereits auf der Liste."
+            )
         except Exception as e:
-            logger.warning("Zutaten zur Einkaufsliste hinzufuegen fehlgeschlagen: %s", e)
+            logger.warning(
+                "Zutaten zur Einkaufsliste hinzufuegen fehlgeschlagen: %s", e
+            )
             return "Fehler beim Hinzufuegen zur Einkaufsliste."
 
-    async def push_missing_to_shopping(self, recipe_name: str, missing_ingredients: list[str]) -> dict:
+    async def push_missing_to_shopping(
+        self, recipe_name: str, missing_ingredients: list[str]
+    ) -> dict:
         """Uebertraegt fehlende Zutaten eines Rezepts in die Einkaufsliste.
 
         Integration mit smart_shopping.py falls verfuegbar.
@@ -610,13 +719,18 @@ class CookingAssistant:
             Dict mit success, added_count, message
         """
         if not missing_ingredients:
-            return {"success": True, "added_count": 0, "message": "Keine fehlenden Zutaten."}
+            return {
+                "success": True,
+                "added_count": 0,
+                "message": "Keine fehlenden Zutaten.",
+            }
 
         try:
             # Smart Shopping Integration
             shopping = None
             try:
                 import assistant.main as main_module
+
                 if hasattr(main_module, "brain"):
                     shopping = getattr(main_module.brain, "smart_shopping", None)
             except Exception:
@@ -634,17 +748,22 @@ class CookingAssistant:
                         if result.get("success"):
                             added += 1
                     except Exception as e:
-                        logger.debug("Shopping add_item Fehler fuer '%s': %s", ingredient, e)
+                        logger.debug(
+                            "Shopping add_item Fehler fuer '%s': %s", ingredient, e
+                        )
             elif self.redis:
                 # Fallback: Direkt in Redis-Shopping-Liste
                 for ingredient in missing_ingredients:
-                    entry = json.dumps({
-                        "item": ingredient,
-                        "category": "Lebensmittel",
-                        "note": f"Fuer: {recipe_name}",
-                        "source": "cooking_assistant",
-                        "added_at": datetime.now(timezone.utc).isoformat(),
-                    }, ensure_ascii=False)
+                    entry = json.dumps(
+                        {
+                            "item": ingredient,
+                            "category": "Lebensmittel",
+                            "note": f"Fuer: {recipe_name}",
+                            "source": "cooking_assistant",
+                            "added_at": datetime.now(timezone.utc).isoformat(),
+                        },
+                        ensure_ascii=False,
+                    )
                     await self.redis.rpush("mha:shopping:list", entry)
                     added += 1
 
@@ -774,10 +893,14 @@ class CookingAssistant:
             if remaining > 0:
                 await asyncio.sleep(remaining)
             timer.finished = True
-            message = f"{get_person_title()}, der Timer für '{timer.label}' ist abgelaufen!"
+            message = (
+                f"{get_person_title()}, der Timer für '{timer.label}' ist abgelaufen!"
+            )
             logger.info("Koch-Timer abgelaufen: %s", timer.label)
             if self._notify_callback and self.timer_notify_tts:
-                await self._notify_callback({"message": message, "type": "cooking_timer"})
+                await self._notify_callback(
+                    {"message": message, "type": "cooking_timer"}
+                )
         except asyncio.CancelledError:
             pass
         finally:
@@ -853,7 +976,9 @@ class CookingAssistant:
         text_lower = text.lower().strip()
 
         # "Rezept für X" / "Rezept für X"
-        match = re.search(r"rezept\s+(?:für|für)\s+(.+?)(?:\s+für\s+\d|\s+für\s+\d|$)", text_lower)
+        match = re.search(
+            r"rezept\s+(?:für|für)\s+(.+?)(?:\s+für\s+\d|\s+für\s+\d|$)", text_lower
+        )
         if match:
             return match.group(1).strip().rstrip(".?!")
 
@@ -883,7 +1008,10 @@ class CookingAssistant:
             return match.group(1).strip()
 
         # "Koche/Backe mir X"
-        match = re.search(r"(?:koch|back|brat|grill)\w*\s+(?:mir\s+)?(.+?)(?:\s+für\s+\d|\s+für\s+\d|$)", text_lower)
+        match = re.search(
+            r"(?:koch|back|brat|grill)\w*\s+(?:mir\s+)?(.+?)(?:\s+für\s+\d|\s+für\s+\d|$)",
+            text_lower,
+        )
         if match:
             dish = match.group(1).strip().rstrip(".?!")
             # Keine Navigation-Keywords als Gericht
@@ -891,7 +1019,9 @@ class CookingAssistant:
                 return dish
 
         # "Hilf mir bei/beim X"
-        match = re.search(r"hilf\s+mir\s+(?:bei|beim)\s+(.+?)(?:\s+kochen|\s+backen|$)", text_lower)
+        match = re.search(
+            r"hilf\s+mir\s+(?:bei|beim)\s+(.+?)(?:\s+kochen|\s+backen|$)", text_lower
+        )
         if match:
             return match.group(1).strip().rstrip(".?!")
 
@@ -910,6 +1040,7 @@ class CookingAssistant:
             return ""
         try:
             from .config import settings
+
             response = await asyncio.wait_for(
                 self.ollama.chat(
                     messages=[
@@ -931,9 +1062,11 @@ class CookingAssistant:
                 timeout=3.0,
             )
             dish = (response.get("message", {}).get("content", "") or "").strip()
-            dish = dish.strip('"\'.-!? ')
+            dish = dish.strip("\"'.-!? ")
             if dish and dish.upper() != "NONE" and len(dish) > 1 and len(dish) < 60:
-                logger.info("Koch-Gericht per LLM erkannt: '%s' (Regex fehlgeschlagen)", dish)
+                logger.info(
+                    "Koch-Gericht per LLM erkannt: '%s' (Regex fehlgeschlagen)", dish
+                )
                 return dish.lower()
         except Exception as e:
             logger.debug("LLM Gericht-Erkennung fehlgeschlagen: %s", e)
@@ -941,7 +1074,9 @@ class CookingAssistant:
 
     def _extract_explicit_portions(self, text: str) -> int:
         """Extrahiert Portionen NUR wenn explizit Zahl+Keyword genannt wird. Gibt 0 zurück wenn nicht."""
-        match = re.search(r"(?:für|für)\s+(\d+)\s*(?:portionen?|personen?|leute)", text.lower())
+        match = re.search(
+            r"(?:für|für)\s+(\d+)\s*(?:portionen?|personen?|leute)", text.lower()
+        )
         if match:
             return min(int(match.group(1)), 20)
 
@@ -964,7 +1099,9 @@ class CookingAssistant:
 
         return self.default_portions
 
-    def _parse_recipe(self, content: str, dish: str, portions: int, person: str) -> Optional[CookingSession]:
+    def _parse_recipe(
+        self, content: str, dish: str, portions: int, person: str
+    ) -> Optional[CookingSession]:
         """Parst die LLM-Antwort in eine CookingSession."""
         try:
             # JSON aus der Antwort extrahieren
@@ -980,11 +1117,13 @@ class CookingAssistant:
 
             steps = []
             for i, s in enumerate(raw_steps):
-                steps.append(CookingStep(
-                    number=s.get("number", i + 1),
-                    instruction=s.get("instruction", ""),
-                    timer_minutes=s.get("timer_minutes"),
-                ))
+                steps.append(
+                    CookingStep(
+                        number=s.get("number", i + 1),
+                        instruction=s.get("instruction", ""),
+                        timer_minutes=s.get("timer_minutes"),
+                    )
+                )
 
             if not steps:
                 return None
@@ -1015,19 +1154,24 @@ class CookingAssistant:
             active_timers = []
             for t in self.session.timers:
                 if not t.is_done:
-                    active_timers.append({
-                        "label": t.label,
-                        "duration_seconds": t.duration_seconds,
-                        "started_at": t.started_at,
-                    })
+                    active_timers.append(
+                        {
+                            "label": t.label,
+                            "duration_seconds": t.duration_seconds,
+                            "started_at": t.started_at,
+                        }
+                    )
 
             data = {
                 "dish": self.session.dish,
                 "portions": self.session.portions,
                 "ingredients": self.session.ingredients,
                 "steps": [
-                    {"number": s.number, "instruction": s.instruction,
-                     "timer_minutes": s.timer_minutes}
+                    {
+                        "number": s.number,
+                        "instruction": s.instruction,
+                        "timer_minutes": s.timer_minutes,
+                    }
                     for s in self.session.steps
                 ],
                 "current_step": self.session.current_step,
@@ -1085,13 +1229,19 @@ class CookingAssistant:
                 if not timer.is_done:
                     self.session.timers.append(timer)
                     task = asyncio.create_task(self._timer_watcher(timer))
-                    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+                    task.add_done_callback(
+                        lambda t: t.exception() if not t.cancelled() else None
+                    )
                     self._timer_tasks.append(task)
                     restored_timers += 1
 
-            logger.info("Koch-Session wiederhergestellt: %s (Schritt %d/%d, %d Timer)",
-                        self.session.dish, self.session.current_step + 1,
-                        self.session.total_steps, restored_timers)
+            logger.info(
+                "Koch-Session wiederhergestellt: %s (Schritt %d/%d, %d Timer)",
+                self.session.dish,
+                self.session.current_step + 1,
+                self.session.total_steps,
+                restored_timers,
+            )
         except Exception as e:
             logger.debug("Koch-Session nicht wiederhergestellt: %s", e)
 
@@ -1117,11 +1267,26 @@ class CookingAssistant:
                 if content and category in ("health", "preference"):
                     # Nur essen-relevante Fakten
                     _lower = content.lower()
-                    if any(kw in _lower for kw in (
-                        "allerg", "essen", "mag", "hass", "vegetar", "vegan",
-                        "laktose", "gluten", "unvertraeg", "diaet", "kein",
-                        "nicht essen", "kochen", "gericht", "rezept",
-                    )):
+                    if any(
+                        kw in _lower
+                        for kw in (
+                            "allerg",
+                            "essen",
+                            "mag",
+                            "hass",
+                            "vegetar",
+                            "vegan",
+                            "laktose",
+                            "gluten",
+                            "unvertraeg",
+                            "diaet",
+                            "kein",
+                            "nicht essen",
+                            "kochen",
+                            "gericht",
+                            "rezept",
+                        )
+                    ):
                         if content not in seen:
                             seen.add(content)
                             prefs.append(f"- {content}")
@@ -1143,9 +1308,11 @@ class CookingAssistant:
         except Exception as e:
             # F-028: Bei Fehler WARNEN statt stumm ignorieren — Allergien sind sicherheitsrelevant
             logger.error("WARNUNG: Allergie/Praeferenz-Check fehlgeschlagen: %s", e)
-            return ("\n⚠ WARNUNG: Allergie-Datenbank nicht erreichbar. "
-                    "Frage den Nutzer AKTIV nach Allergien und Unvertraeglichkeiten "
-                    "bevor du Rezepte vorschlaegst!")
+            return (
+                "\n⚠ WARNUNG: Allergie-Datenbank nicht erreichbar. "
+                "Frage den Nutzer AKTIV nach Allergien und Unvertraeglichkeiten "
+                "bevor du Rezepte vorschlaegst!"
+            )
 
         return ""
 
@@ -1216,8 +1383,17 @@ class CookingAssistant:
         Returns:
             Liste von Dicts mit parallel_with Hinweisen.
         """
-        wait_keywords = ("warten", "kochen", "backen", "sieden", "ziehen lassen",
-                         "ruhen", "gehen lassen", "abkuehlen", "marinieren")
+        wait_keywords = (
+            "warten",
+            "kochen",
+            "backen",
+            "sieden",
+            "ziehen lassen",
+            "ruhen",
+            "gehen lassen",
+            "abkuehlen",
+            "marinieren",
+        )
 
         result = []
         for i, step in enumerate(steps):
@@ -1227,9 +1403,7 @@ class CookingAssistant:
 
             if any(kw in desc for kw in wait_keywords) and i + 1 < len(steps):
                 next_desc = steps[i + 1].get("description", "")
-                entry["parallel_with"] = (
-                    f"Waehrend Schritt {i + 1} laeuft: {next_desc}"
-                )
+                entry["parallel_with"] = f"Waehrend Schritt {i + 1} laeuft: {next_desc}"
 
             result.append(entry)
 

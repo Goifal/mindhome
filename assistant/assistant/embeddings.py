@@ -65,7 +65,10 @@ def get_embedding_function():
     model_name = kb_config.get("embedding_model", DEFAULT_MODEL)
 
     try:
-        from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+        from chromadb.utils.embedding_functions import (
+            SentenceTransformerEmbeddingFunction,
+        )
+
         try:
             _embedding_fn = SentenceTransformerEmbeddingFunction(
                 model_name=model_name,
@@ -77,13 +80,16 @@ def get_embedding_function():
                 online_err,
             )
             import os as _os
+
             _prev = _os.environ.get("HF_HUB_OFFLINE")
             _os.environ["HF_HUB_OFFLINE"] = "1"
             try:
                 _embedding_fn = SentenceTransformerEmbeddingFunction(
                     model_name=model_name,
                 )
-                logger.info("Embedding-Modell aus lokalem Cache geladen: %s", model_name)
+                logger.info(
+                    "Embedding-Modell aus lokalem Cache geladen: %s", model_name
+                )
             finally:
                 if _prev is None:
                     _os.environ.pop("HF_HUB_OFFLINE", None)
@@ -99,5 +105,7 @@ def get_embedding_function():
         )
         return None
     except Exception as e:
-        logger.error("Embedding-Modell '%s' konnte nicht geladen werden: %s", model_name, e)
+        logger.error(
+            "Embedding-Modell '%s' konnte nicht geladen werden: %s", model_name, e
+        )
         return None

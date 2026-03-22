@@ -53,14 +53,28 @@ class DiagnosticsEngine:
         self.alert_cooldown = int(diag_cfg.get("alert_cooldown_minutes", 240))
 
         # Entity-Filter: Nur bestimmte Domains ueberwachen
-        self.monitor_domains = diag_cfg.get("monitor_domains", [
-            "sensor", "binary_sensor", "light", "switch",
-            "cover", "climate", "lock", "fan",
-        ])
+        self.monitor_domains = diag_cfg.get(
+            "monitor_domains",
+            [
+                "sensor",
+                "binary_sensor",
+                "light",
+                "switch",
+                "cover",
+                "climate",
+                "lock",
+                "fan",
+            ],
+        )
         # Zusaetzliche Ausschluss-Patterns (entity_id enthaelt Pattern → ueberspringen)
-        self.exclude_patterns = diag_cfg.get("exclude_patterns", [
-            "weather.", "sun.", "forecast",
-        ])
+        self.exclude_patterns = diag_cfg.get(
+            "exclude_patterns",
+            [
+                "weather.",
+                "sun.",
+                "forecast",
+            ],
+        )
         # Whitelist: Wenn gesetzt, NUR diese Entities ueberwachen
         self.monitored_entities: list[str] = diag_cfg.get("monitored_entities", [])
 
@@ -78,12 +92,16 @@ class DiagnosticsEngine:
         # Nach N aufeinanderfolgenden Diagnostik-Zyklen → auto-suppress
         self._suppress_after_cycles = int(diag_cfg.get("suppress_after_cycles", 3))
         # Aktuell unterdrueckte Entities (auto-erkannt)
-        self._auto_suppressed: dict[str, dict] = {}  # {entity_id: {"since": dt, "type": str}}
+        self._auto_suppressed: dict[
+            str, dict
+        ] = {}  # {entity_id: {"since": dt, "type": str}}
 
         if self.enabled:
             logger.info(
                 "DiagnosticsEngine initialisiert (battery<%d%%, stale>%dmin, offline>%dmin)",
-                self.battery_threshold, self.stale_minutes, self.offline_minutes,
+                self.battery_threshold,
+                self.stale_minutes,
+                self.offline_minutes,
             )
 
     async def check_all(self) -> dict:
@@ -116,11 +134,13 @@ class DiagnosticsEngine:
         result["disk_space"] = disk_status
         if disk_status.get("status") == "warning":
             result["healthy"] = False
-            result["issues"].append({
-                "entity_id": "system.disk",
-                "type": "disk_space_low",
-                "message": f"Disk space low: {disk_status['free_pct']:.1f}% free",
-            })
+            result["issues"].append(
+                {
+                    "entity_id": "system.disk",
+                    "type": "disk_space_low",
+                    "message": f"Disk space low: {disk_status['free_pct']:.1f}% free",
+                }
+            )
 
         return result
 
@@ -128,6 +148,7 @@ class DiagnosticsEngine:
     def check_disk_space() -> dict:
         """Prueft den verfuegbaren Speicherplatz."""
         import shutil
+
         usage = shutil.disk_usage("/")
         free_pct = (usage.free / usage.total) * 100
         if free_pct < 10:
@@ -238,7 +259,9 @@ class DiagnosticsEngine:
                     pass
 
             # 3. Stale-Sensor-Check: Sensor hat sich lange nicht aktualisiert
-            if entity_id.startswith("sensor.") or entity_id.startswith("binary_sensor."):
+            if entity_id.startswith("sensor.") or entity_id.startswith(
+                "binary_sensor."
+            ):
                 if current_state not in ("unavailable", "unknown") and last_changed:
                     try:
                         changed_dt = datetime.fromisoformat(
@@ -251,7 +274,9 @@ class DiagnosticsEngine:
                             # Nur bei Sensoren die sich _regelmaessig_ aendern sollten
                             # Energy/Power: Stabile Werte sind normal (z.B. Nacht)
                             if device_class in (
-                                "motion", "temperature", "humidity",
+                                "motion",
+                                "temperature",
+                                "humidity",
                                 "battery",
                             ):
                                 seen_problematic.add(entity_id)
@@ -297,7 +322,10 @@ class DiagnosticsEngine:
 
             # Schwelle erreicht? → auto-suppress
             streak = self._offline_streak[entity_id]
-            if streak["count"] >= self._suppress_after_cycles and entity_id not in self._auto_suppressed:
+            if (
+                streak["count"] >= self._suppress_after_cycles
+                and entity_id not in self._auto_suppressed
+            ):
                 self._auto_suppressed[entity_id] = {
                     "since": streak["first_seen"],
                     "type": streak["type"],
@@ -305,7 +333,8 @@ class DiagnosticsEngine:
                 }
                 logger.info(
                     "Auto-Suppress: %s nach %d Zyklen als dauerhaft offline erkannt",
-                    entity_id, streak["count"],
+                    entity_id,
+                    streak["count"],
                 )
 
         # Streaks zuruecksetzen fuer Entities die NICHT mehr problematisch sind
@@ -326,12 +355,15 @@ class DiagnosticsEngine:
             info = self._auto_suppressed.pop(entity_id)
             result = {
                 "entity_id": entity_id,
-                "was_suppressed_since": info["since"].isoformat() if hasattr(info["since"], "isoformat") else str(info["since"]),
+                "was_suppressed_since": info["since"].isoformat()
+                if hasattr(info["since"], "isoformat")
+                else str(info["since"]),
                 "type": info["type"],
             }
             logger.info(
                 "Auto-Suppress aufgehoben: %s ist wieder online (war suppressed seit %s)",
-                entity_id, info.get("suppressed_at", "?"),
+                entity_id,
+                info.get("suppressed_at", "?"),
             )
 
         # Streak zuruecksetzen
@@ -386,7 +418,9 @@ class DiagnosticsEngine:
             "total_entities": total,
             "unavailable": unavailable,
             "unknown": unknown,
-            "healthy_percent": round((total - unavailable - unknown) / max(total, 1) * 100, 1),
+            "healthy_percent": round(
+                (total - unavailable - unknown) / max(total, 1) * 100, 1
+            ),
             "low_batteries": low_batteries,
             "domains": domains,
         }
@@ -459,34 +493,40 @@ class DiagnosticsEngine:
                     next_due = last_date + timedelta(days=interval)
                     if today >= next_due:
                         days_overdue = (today - next_due).days
-                        due.append({
-                            "name": name,
-                            "days_overdue": days_overdue,
-                            "priority": priority,
-                            "last_done": str(last_date),
-                            "description": task.get("description", ""),
-                            "entity_id": task.get("entity_id", ""),
-                        })
+                        due.append(
+                            {
+                                "name": name,
+                                "days_overdue": days_overdue,
+                                "priority": priority,
+                                "last_done": str(last_date),
+                                "description": task.get("description", ""),
+                                "entity_id": task.get("entity_id", ""),
+                            }
+                        )
                 except (ValueError, TypeError):
                     # Ungueltiges Datum → als faellig markieren
-                    due.append({
+                    due.append(
+                        {
+                            "name": name,
+                            "days_overdue": 0,
+                            "priority": priority,
+                            "last_done": None,
+                            "description": task.get("description", ""),
+                            "entity_id": task.get("entity_id", ""),
+                        }
+                    )
+            else:
+                # Noch nie gemacht → faellig
+                due.append(
+                    {
                         "name": name,
                         "days_overdue": 0,
                         "priority": priority,
                         "last_done": None,
                         "description": task.get("description", ""),
                         "entity_id": task.get("entity_id", ""),
-                    })
-            else:
-                # Noch nie gemacht → faellig
-                due.append({
-                    "name": name,
-                    "days_overdue": 0,
-                    "priority": priority,
-                    "last_done": None,
-                    "description": task.get("description", ""),
-                    "entity_id": task.get("entity_id", ""),
-                })
+                    }
+                )
 
         return due
 
@@ -539,6 +579,7 @@ class DiagnosticsEngine:
                 example = self._maintenance_file.with_suffix(".yaml.example")
                 if example.exists():
                     import shutil
+
                     shutil.copy2(example, self._maintenance_file)
             if self._maintenance_file.exists():
                 with open(self._maintenance_file) as f:
@@ -572,8 +613,8 @@ class DiagnosticsEngine:
         # Disk-Space
         try:
             usage = shutil.disk_usage("/")
-            total_gb = usage.total / (1024 ** 3)
-            free_gb = usage.free / (1024 ** 3)
+            total_gb = usage.total / (1024**3)
+            free_gb = usage.free / (1024**3)
             used_pct = (usage.used / usage.total) * 100
             result["disk"] = {
                 "total_gb": round(total_gb, 1),
@@ -593,6 +634,7 @@ class DiagnosticsEngine:
 
         # Memory via /proc/meminfo (Linux)
         try:
+
             def _read_meminfo():
                 meminfo_path = Path("/proc/meminfo")
                 if not meminfo_path.exists():
@@ -657,7 +699,9 @@ class DiagnosticsEngine:
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.get(f"{settings.ollama_url}/api/tags") as resp:
                         return "ollama", {
-                            "status": "connected" if resp.status == 200 else "disconnected",
+                            "status": "connected"
+                            if resp.status == 200
+                            else "disconnected",
                         }
             except Exception as e:
                 logger.error("Ollama Health-Check fehlgeschlagen: %s", e)
@@ -666,6 +710,7 @@ class DiagnosticsEngine:
         async def _check_redis():
             try:
                 import redis.asyncio as aioredis
+
                 r = aioredis.from_url(settings.redis_url, socket_timeout=3)
                 try:
                     await r.ping()
@@ -680,9 +725,13 @@ class DiagnosticsEngine:
             try:
                 timeout = aiohttp.ClientTimeout(total=5)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.get(f"{settings.chroma_url}/api/v1/heartbeat") as resp:
+                    async with session.get(
+                        f"{settings.chroma_url}/api/v1/heartbeat"
+                    ) as resp:
                         return "chromadb", {
-                            "status": "connected" if resp.status == 200 else "disconnected",
+                            "status": "connected"
+                            if resp.status == 200
+                            else "disconnected",
                         }
             except Exception as e:
                 logger.error("ChromaDB Health-Check fehlgeschlagen: %s", e)
@@ -696,11 +745,17 @@ class DiagnosticsEngine:
                     "status": "connected" if mh_status else "disconnected",
                 }
             except Exception as e:
-                return "mindhome_addon", {"url": settings.mindhome_url, "status": f"disconnected: {e}"}
+                return "mindhome_addon", {
+                    "url": settings.mindhome_url,
+                    "status": f"disconnected: {e}",
+                }
 
         check_results = await asyncio.gather(
-            _check_ha(), _check_ollama(), _check_redis(),
-            _check_chromadb(), _check_mindhome(),
+            _check_ha(),
+            _check_ollama(),
+            _check_redis(),
+            _check_chromadb(),
+            _check_mindhome(),
         )
 
         results = {}
@@ -726,6 +781,7 @@ class DiagnosticsEngine:
 
         # Parallel: Entity-Checks, System-Status, Netzwerk-Konnektivitaet
         import asyncio
+
         issues, system_status, connectivity = await asyncio.gather(
             self.check_entities(),
             self.get_system_status(),
@@ -749,9 +805,12 @@ class DiagnosticsEngine:
         report["maintenance"] = maintenance
 
         # Summary berechnen
-        total_warnings = len(issues) + len(resources.get("warnings", [])) + len(maintenance)
+        total_warnings = (
+            len(issues) + len(resources.get("warnings", [])) + len(maintenance)
+        )
         disconnected = sum(
-            1 for svc in connectivity.values()
+            1
+            for svc in connectivity.values()
             if "disconnected" in str(svc.get("status", ""))
         )
         total_warnings += disconnected
@@ -792,35 +851,46 @@ class DiagnosticsEngine:
                 async with session.get(f"{settings.ollama_url}/api/tags") as resp:
                     elapsed = asyncio.get_event_loop().time() - start
                     if resp.status != 200:
-                        issues.append((
-                            "Ich bin gerade etwas langsamer im Denken — mein Sprachmodell ist ausgelastet",
-                            "warning",
-                        ))
+                        issues.append(
+                            (
+                                "Ich bin gerade etwas langsamer im Denken — mein Sprachmodell ist ausgelastet",
+                                "warning",
+                            )
+                        )
                     elif elapsed > 5.0:
-                        issues.append((
-                            "Ich bin gerade etwas langsamer im Denken — mein Sprachmodell ist ausgelastet",
-                            "warning",
-                        ))
+                        issues.append(
+                            (
+                                "Ich bin gerade etwas langsamer im Denken — mein Sprachmodell ist ausgelastet",
+                                "warning",
+                            )
+                        )
                     elif elapsed > 2.0:
-                        issues.append((
-                            "Meine Antworten koennten gerade etwas langsamer sein — Ollama ist ausgelastet",
-                            "info",
-                        ))
+                        issues.append(
+                            (
+                                "Meine Antworten koennten gerade etwas langsamer sein — Ollama ist ausgelastet",
+                                "info",
+                            )
+                        )
         except asyncio.TimeoutError:
-            issues.append((
-                "Ich bin gerade etwas langsamer im Denken — mein Sprachmodell ist ausgelastet",
-                "warning",
-            ))
+            issues.append(
+                (
+                    "Ich bin gerade etwas langsamer im Denken — mein Sprachmodell ist ausgelastet",
+                    "warning",
+                )
+            )
         except Exception as e:
             logger.warning("Ollama-Erreichbarkeitspruefung fehlgeschlagen: %s", e)
-            issues.append((
-                "Mein Sprachmodell ist gerade nicht erreichbar — ich arbeite mit Einschraenkungen",
-                "warning",
-            ))
+            issues.append(
+                (
+                    "Mein Sprachmodell ist gerade nicht erreichbar — ich arbeite mit Einschraenkungen",
+                    "warning",
+                )
+            )
 
         # --- Redis-Konnektivitaet pruefen ---
         try:
             import redis.asyncio as aioredis
+
             r = aioredis.from_url(settings.redis_url, socket_timeout=3)
             try:
                 await r.ping()
@@ -828,45 +898,58 @@ class DiagnosticsEngine:
                 await r.aclose()
         except Exception as e:
             logger.warning("Redis-Erreichbarkeitspruefung fehlgeschlagen: %s", e)
-            issues.append((
-                "Mein Kurzzeitgedaechtnis ist gerade eingeschraenkt",
-                "warning",
-            ))
+            issues.append(
+                (
+                    "Mein Kurzzeitgedaechtnis ist gerade eingeschraenkt",
+                    "warning",
+                )
+            )
 
         # --- Home Assistant Erreichbarkeit pruefen ---
         try:
             ha_ok = await self.ha.is_available()
             if not ha_ok:
-                issues.append((
+                issues.append(
+                    (
+                        "Ich habe gerade keinen Zugriff auf die Haussteuerung — Home Assistant antwortet nicht",
+                        "warning",
+                    )
+                )
+        except Exception as e:
+            logger.warning(
+                "Home-Assistant-Erreichbarkeitspruefung fehlgeschlagen: %s", e
+            )
+            issues.append(
+                (
                     "Ich habe gerade keinen Zugriff auf die Haussteuerung — Home Assistant antwortet nicht",
                     "warning",
-                ))
-        except Exception as e:
-            logger.warning("Home-Assistant-Erreichbarkeitspruefung fehlgeschlagen: %s", e)
-            issues.append((
-                "Ich habe gerade keinen Zugriff auf die Haussteuerung — Home Assistant antwortet nicht",
-                "warning",
-            ))
+                )
+            )
 
         # --- Speicherplatz pruefen ---
         try:
             usage = shutil.disk_usage("/")
             free_pct = (usage.free / usage.total) * 100
             if free_pct < 5:
-                issues.append((
-                    "Mir geht der Speicherplatz aus — eventuell sollten wir aufraeumen",
-                    "warning",
-                ))
+                issues.append(
+                    (
+                        "Mir geht der Speicherplatz aus — eventuell sollten wir aufraeumen",
+                        "warning",
+                    )
+                )
             elif free_pct < 10:
-                issues.append((
-                    "Der Speicherplatz wird knapp — wir sollten bald aufraeumen",
-                    "info",
-                ))
+                issues.append(
+                    (
+                        "Der Speicherplatz wird knapp — wir sollten bald aufraeumen",
+                        "info",
+                    )
+                )
         except Exception as e:
             logger.debug("Speicherplatzpruefung fehlgeschlagen: %s", e)
 
         # --- Arbeitsspeicher pruefen ---
         try:
+
             def _read_meminfo_status():
                 meminfo_path = Path("/proc/meminfo")
                 if not meminfo_path.exists():
@@ -888,15 +971,19 @@ class DiagnosticsEngine:
                 if total > 0:
                     used_pct = ((total - available) / total) * 100
                     if used_pct > 95:
-                        issues.append((
-                            "Der Arbeitsspeicher ist fast voll — ich koennte instabil werden",
-                            "warning",
-                        ))
+                        issues.append(
+                            (
+                                "Der Arbeitsspeicher ist fast voll — ich koennte instabil werden",
+                                "warning",
+                            )
+                        )
                     elif used_pct > 90:
-                        issues.append((
-                            "Der Arbeitsspeicher wird knapp — Leistung koennte eingeschraenkt sein",
-                            "info",
-                        ))
+                        issues.append(
+                            (
+                                "Der Arbeitsspeicher wird knapp — Leistung koennte eingeschraenkt sein",
+                                "info",
+                            )
+                        )
         except Exception as e:
             logger.debug("Arbeitsspeicherpruefung fehlgeschlagen: %s", e)
 
@@ -949,38 +1036,46 @@ class DiagnosticsEngine:
 
                 if status == "low_battery":
                     battery = entity.get("battery_level", "?")
-                    hints.append({
-                        "message": f"{name} hat nur noch {battery}% Batterie",
-                        "severity": "info",
-                        "entity_id": eid,
-                        "type": "battery",
-                    })
+                    hints.append(
+                        {
+                            "message": f"{name} hat nur noch {battery}% Batterie",
+                            "severity": "info",
+                            "entity_id": eid,
+                            "type": "battery",
+                        }
+                    )
                 elif status == "stale":
                     minutes = entity.get("stale_minutes", 0)
                     hours = int(minutes / 60)
-                    hints.append({
-                        "message": f"{name} meldet seit {hours}h nichts — moeglicherweise offline",
-                        "severity": "warning" if hours > 12 else "info",
-                        "entity_id": eid,
-                        "type": "stale",
-                    })
+                    hints.append(
+                        {
+                            "message": f"{name} meldet seit {hours}h nichts — moeglicherweise offline",
+                            "severity": "warning" if hours > 12 else "info",
+                            "entity_id": eid,
+                            "type": "stale",
+                        }
+                    )
                 elif status == "offline":
-                    hints.append({
-                        "message": f"{name} ist offline",
-                        "severity": "warning",
-                        "entity_id": eid,
-                        "type": "offline",
-                    })
+                    hints.append(
+                        {
+                            "message": f"{name} ist offline",
+                            "severity": "warning",
+                            "entity_id": eid,
+                            "type": "offline",
+                        }
+                    )
 
             # System-Ressourcen pruefen
             sys_status = self.check_system_resources()
             if sys_status.get("disk_usage_percent", 0) > 85:
-                hints.append({
-                    "message": f"Festplattenspeicher bei {sys_status['disk_usage_percent']}%",
-                    "severity": "warning",
-                    "entity_id": "",
-                    "type": "system",
-                })
+                hints.append(
+                    {
+                        "message": f"Festplattenspeicher bei {sys_status['disk_usage_percent']}%",
+                        "severity": "warning",
+                        "entity_id": "",
+                        "type": "system",
+                    }
+                )
 
         except Exception as e:
             logger.debug("Proaktive Diagnostik-Hints Fehler: %s", e)
@@ -1110,7 +1205,9 @@ class DiagnosticsEngine:
                 area_counts[area] = area_counts.get(area, 0) + 1
 
         # Bereich mit den meisten Ausfaellen
-        for area, count in sorted(area_counts.items(), key=lambda x: x[1], reverse=True):
+        for area, count in sorted(
+            area_counts.items(), key=lambda x: x[1], reverse=True
+        ):
             if count >= 3:
                 return f"WiFi-Problem in {area} — {count} Sensoren betroffen"
 
@@ -1149,4 +1246,6 @@ class DiagnosticsEngine:
                 "5. Sensor-Firmware-Update pruefen (falls OTA verfuegbar)",
             ],
         }
-        return playbooks.get(issue_type, [f"Kein Playbook fuer '{issue_type}' verfuegbar."])
+        return playbooks.get(
+            issue_type, [f"Kein Playbook fuer '{issue_type}' verfuegbar."]
+        )

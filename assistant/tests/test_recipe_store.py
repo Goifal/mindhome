@@ -6,10 +6,17 @@ from unittest.mock import AsyncMock, MagicMock, patch, mock_open
 
 import pytest
 
-from assistant.recipe_store import RecipeStore, REC_UPLOAD_MAX_SIZE, REC_UPLOAD_ALLOWED, DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP
+from assistant.recipe_store import (
+    RecipeStore,
+    REC_UPLOAD_MAX_SIZE,
+    REC_UPLOAD_ALLOWED,
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_CHUNK_OVERLAP,
+)
 
 
 # ── Fixtures ──────────────────────────────────────────────
+
 
 @pytest.fixture
 def store():
@@ -29,6 +36,7 @@ def store_uninit():
 
 # ── Constants ─────────────────────────────────────────────
 
+
 def test_upload_max_size():
     assert REC_UPLOAD_MAX_SIZE == 10 * 1024 * 1024
 
@@ -47,6 +55,7 @@ def test_default_chunk_overlap():
 
 # ── __init__ ──────────────────────────────────────────────
 
+
 def test_init_defaults():
     s = RecipeStore()
     assert s.chroma_collection is None
@@ -56,6 +65,7 @@ def test_init_defaults():
 
 
 # ── _load_ingested_hashes ─────────────────────────────────
+
 
 def test_load_ingested_hashes_no_collection():
     s = RecipeStore()
@@ -82,6 +92,7 @@ def test_load_ingested_hashes_exception(store):
 
 
 # ── search ────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_search_no_collection(store_uninit):
@@ -140,6 +151,7 @@ async def test_search_empty_results(store):
 
 # ── ingest_file ───────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_ingest_file_no_collection(store_uninit):
     result = await store_uninit.ingest_file(Path("/tmp/test.txt"))
@@ -147,7 +159,10 @@ async def test_ingest_file_no_collection(store_uninit):
 
 
 @pytest.mark.asyncio
-@patch("assistant.recipe_store.yaml_config", {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}})
+@patch(
+    "assistant.recipe_store.yaml_config",
+    {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}},
+)
 @patch("assistant.recipe_store.KnowledgeBase")
 async def test_ingest_file_txt(mock_kb, store, tmp_path):
     recipe_file = tmp_path / "test_recipe.txt"
@@ -162,7 +177,10 @@ async def test_ingest_file_txt(mock_kb, store, tmp_path):
 
 
 @pytest.mark.asyncio
-@patch("assistant.recipe_store.yaml_config", {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}})
+@patch(
+    "assistant.recipe_store.yaml_config",
+    {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}},
+)
 @patch("assistant.recipe_store.KnowledgeBase")
 async def test_ingest_file_skips_existing_hashes(mock_kb, store, tmp_path):
     recipe_file = tmp_path / "test.txt"
@@ -188,6 +206,7 @@ async def test_ingest_file_empty_content(mock_kb, store, tmp_path):
 
 # ── ingest_all ────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_ingest_all_no_dir(store_uninit):
     result = await store_uninit.ingest_all()
@@ -195,6 +214,7 @@ async def test_ingest_all_no_dir(store_uninit):
 
 
 # ── get_stats ─────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_get_stats_no_collection(store_uninit):
@@ -227,6 +247,7 @@ async def test_get_stats_exception(store):
 
 # ── get_chunks ────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_get_chunks_no_collection(store_uninit):
     result = await store_uninit.get_chunks()
@@ -256,7 +277,9 @@ async def test_get_chunks_with_offset_limit(store):
     store.chroma_collection.get.return_value = {
         "ids": [f"id{i}" for i in range(5)],
         "documents": [f"doc{i}" for i in range(5)],
-        "metadatas": [{"source_file": "a.txt", "chunk_index": str(i)} for i in range(5)],
+        "metadatas": [
+            {"source_file": "a.txt", "chunk_index": str(i)} for i in range(5)
+        ],
     }
     chunks = await store.get_chunks(offset=1, limit=2)
     assert len(chunks) == 2
@@ -275,6 +298,7 @@ async def test_get_chunks_filter_by_source(store):
 
 
 # ── delete_chunks ─────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_delete_chunks_no_collection(store_uninit):
@@ -304,6 +328,7 @@ async def test_delete_chunks_exception(store):
 
 # ── delete_source_chunks ──────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_delete_source_chunks_no_collection(store_uninit):
     result = await store_uninit.delete_source_chunks("a.txt")
@@ -332,6 +357,7 @@ async def test_delete_source_chunks_success(store):
 
 # ── clear ─────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_clear_no_client(store_uninit):
     result = await store_uninit.clear()
@@ -358,6 +384,7 @@ async def test_clear_exception(store):
 
 # ── rebuild ───────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 @patch("assistant.recipe_store.yaml_config", {"recipe_store": {}})
 async def test_rebuild_clear_fails(store):
@@ -381,6 +408,7 @@ async def test_rebuild_success(mock_ef, store):
 
 # ── reingest_file ─────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_reingest_file_no_recipes_dir(store_uninit):
     result = await store_uninit.reingest_file("test.txt")
@@ -388,6 +416,7 @@ async def test_reingest_file_no_recipes_dir(store_uninit):
 
 
 # ── initialize ───────────────────────────────────────────
+
 
 class TestInitialize:
     """Tests fuer initialize()."""
@@ -400,7 +429,10 @@ class TestInitialize:
         assert s.chroma_collection is None
 
     @pytest.mark.asyncio
-    @patch("assistant.recipe_store.yaml_config", {"recipe_store": {"enabled": True, "auto_ingest": False}})
+    @patch(
+        "assistant.recipe_store.yaml_config",
+        {"recipe_store": {"enabled": True, "auto_ingest": False}},
+    )
     @patch("assistant.recipe_store.settings")
     async def test_chromadb_exception(self, mock_settings):
         mock_settings.chroma_url = "http://localhost:8000"
@@ -412,7 +444,10 @@ class TestInitialize:
         assert s.chroma_collection is None
 
     @pytest.mark.asyncio
-    @patch("assistant.recipe_store.yaml_config", {"recipe_store": {"enabled": True, "auto_ingest": True}})
+    @patch(
+        "assistant.recipe_store.yaml_config",
+        {"recipe_store": {"enabled": True, "auto_ingest": True}},
+    )
     @patch("assistant.recipe_store.settings")
     async def test_successful_init_with_auto_ingest(self, mock_settings, tmp_path):
         mock_settings.chroma_url = "http://localhost:8000"
@@ -426,15 +461,18 @@ class TestInitialize:
         mock_chromadb.HttpClient.return_value = mock_client
 
         s = RecipeStore()
-        with patch.dict("sys.modules", {"chromadb": mock_chromadb}), \
-             patch("assistant.embeddings.get_embedding_function", return_value=None), \
-             patch.object(Path, "mkdir"):
+        with (
+            patch.dict("sys.modules", {"chromadb": mock_chromadb}),
+            patch("assistant.embeddings.get_embedding_function", return_value=None),
+            patch.object(Path, "mkdir"),
+        ):
             # Override _recipes_dir to a temp dir with no files
             await s.initialize()
         assert s.chroma_collection is mock_collection
 
 
 # ── ingest_all with files ────────────────────────────────
+
 
 class TestIngestAll:
     """Tests fuer ingest_all() with actual file iteration."""
@@ -446,7 +484,10 @@ class TestIngestAll:
         assert result == 0
 
     @pytest.mark.asyncio
-    @patch("assistant.recipe_store.yaml_config", {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}})
+    @patch(
+        "assistant.recipe_store.yaml_config",
+        {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}},
+    )
     @patch("assistant.recipe_store.KnowledgeBase")
     async def test_ingest_all_with_files(self, mock_kb, store, tmp_path):
         (tmp_path / "recipe1.txt").write_text("Rezept eins")
@@ -461,7 +502,10 @@ class TestIngestAll:
         assert result == 2
 
     @pytest.mark.asyncio
-    @patch("assistant.recipe_store.yaml_config", {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}})
+    @patch(
+        "assistant.recipe_store.yaml_config",
+        {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}},
+    )
     @patch("assistant.recipe_store.KnowledgeBase")
     async def test_ingest_all_with_exception(self, mock_kb, store, tmp_path):
         (tmp_path / "bad.txt").write_text("bad content")
@@ -476,11 +520,15 @@ class TestIngestAll:
 
 # ── ingest_file additional paths ─────────────────────────
 
+
 class TestIngestFilePdf:
     """Tests fuer ingest_file() PDF path and error paths."""
 
     @pytest.mark.asyncio
-    @patch("assistant.recipe_store.yaml_config", {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}})
+    @patch(
+        "assistant.recipe_store.yaml_config",
+        {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}},
+    )
     @patch("assistant.recipe_store.KnowledgeBase")
     async def test_ingest_pdf_file(self, mock_kb, store, tmp_path):
         pdf_file = tmp_path / "recipe.pdf"
@@ -503,7 +551,10 @@ class TestIngestFilePdf:
         assert result == 0
 
     @pytest.mark.asyncio
-    @patch("assistant.recipe_store.yaml_config", {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}})
+    @patch(
+        "assistant.recipe_store.yaml_config",
+        {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}},
+    )
     @patch("assistant.recipe_store.KnowledgeBase")
     async def test_ingest_file_chunk_add_exception(self, mock_kb, store, tmp_path):
         recipe_file = tmp_path / "test.txt"
@@ -517,6 +568,7 @@ class TestIngestFilePdf:
 
 
 # ── delete_source_chunks hash cleanup ────────────────────
+
 
 class TestDeleteSourceChunksHashCleanup:
     """Tests fuer delete_source_chunks() no-results and error paths."""
@@ -536,6 +588,7 @@ class TestDeleteSourceChunksHashCleanup:
 
 # ── reingest_file ────────────────────────────────────────
 
+
 class TestReingestFile:
     """Tests fuer reingest_file() with actual file lookup."""
 
@@ -546,7 +599,10 @@ class TestReingestFile:
         assert result == 0
 
     @pytest.mark.asyncio
-    @patch("assistant.recipe_store.yaml_config", {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}})
+    @patch(
+        "assistant.recipe_store.yaml_config",
+        {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}},
+    )
     @patch("assistant.recipe_store.KnowledgeBase")
     async def test_reingest_file_success(self, mock_kb, store, tmp_path):
         recipe = tmp_path / "recipe.txt"

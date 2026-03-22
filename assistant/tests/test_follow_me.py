@@ -66,6 +66,7 @@ def disabled_engine(ha_mock):
 # get_profile Tests
 # ============================================================
 
+
 class TestGetProfile:
     def test_known_person(self, engine):
         profile = engine.get_profile("alice")
@@ -87,12 +88,16 @@ class TestGetProfile:
 # _find_speaker Tests
 # ============================================================
 
+
 class TestFindSpeaker:
-    @pytest.mark.parametrize("room,expected", [
-        ("wohnzimmer", "media_player.wohnzimmer_speaker"),
-        ("Schlafzimmer", "media_player.schlafzimmer_speaker"),
-        ("kueche", "media_player.kueche_speaker"),
-    ])
+    @pytest.mark.parametrize(
+        "room,expected",
+        [
+            ("wohnzimmer", "media_player.wohnzimmer_speaker"),
+            ("Schlafzimmer", "media_player.schlafzimmer_speaker"),
+            ("kueche", "media_player.kueche_speaker"),
+        ],
+    )
     def test_find_existing_speaker(self, engine, room, expected):
         speakers = FOLLOW_ME_CONFIG["multi_room"]["room_speakers"]
         assert engine._find_speaker(room, speakers) == expected
@@ -121,10 +126,13 @@ class TestFindSpeaker:
 # cleanup_stale_tracking Tests
 # ============================================================
 
+
 class TestCleanupStaleTracking:
     def test_removes_stale_entries(self, engine):
         engine._person_room["alice"] = "wohnzimmer"
-        engine._last_transfer["alice"] = datetime.now(timezone.utc) - timedelta(hours=10)
+        engine._last_transfer["alice"] = datetime.now(timezone.utc) - timedelta(
+            hours=10
+        )
         engine._person_room["bob"] = "kueche"
         engine._last_transfer["bob"] = datetime.now(timezone.utc) - timedelta(hours=10)
 
@@ -145,7 +153,9 @@ class TestCleanupStaleTracking:
 
     def test_mixed_stale_and_recent(self, engine):
         engine._person_room["alice"] = "wohnzimmer"
-        engine._last_transfer["alice"] = datetime.now(timezone.utc) - timedelta(hours=10)
+        engine._last_transfer["alice"] = datetime.now(timezone.utc) - timedelta(
+            hours=10
+        )
         engine._person_room["bob"] = "kueche"
         engine._last_transfer["bob"] = datetime.now(timezone.utc) - timedelta(hours=1)
 
@@ -162,6 +172,7 @@ class TestCleanupStaleTracking:
 # ============================================================
 # health_status Tests
 # ============================================================
+
 
 class TestHealthStatus:
     def test_returns_correct_structure(self, engine):
@@ -184,6 +195,7 @@ class TestHealthStatus:
 # handle_motion Tests
 # ============================================================
 
+
 class TestHandleMotion:
     @pytest.mark.asyncio
     async def test_returns_none_when_disabled(self, disabled_engine):
@@ -195,9 +207,7 @@ class TestHandleMotion:
     @pytest.mark.asyncio
     async def test_returns_none_for_unknown_sensor(self, engine, ha_mock):
         with patch("assistant.follow_me.yaml_config", FOLLOW_ME_CONFIG):
-            result = await engine.handle_motion(
-                "binary_sensor.motion_garage", "alice"
-            )
+            result = await engine.handle_motion("binary_sensor.motion_garage", "alice")
         assert result is None
 
     @pytest.mark.asyncio
@@ -236,12 +246,16 @@ class TestHandleMotion:
     async def test_room_change_triggers_transfer(self, engine, ha_mock):
         """Room change after cooldown should trigger transfer with music."""
         engine._person_room["alice"] = "wohnzimmer"
-        engine._last_transfer["alice"] = datetime.now(timezone.utc) - timedelta(seconds=120)
+        engine._last_transfer["alice"] = datetime.now(timezone.utc) - timedelta(
+            seconds=120
+        )
 
         ha_mock.get_state = AsyncMock(return_value={"state": "playing"})
 
-        with patch("assistant.follow_me.yaml_config", FOLLOW_ME_CONFIG), \
-             patch("assistant.config.get_room_profiles", return_value={"rooms": {}}):
+        with (
+            patch("assistant.follow_me.yaml_config", FOLLOW_ME_CONFIG),
+            patch("assistant.config.get_room_profiles", return_value={"rooms": {}}),
+        ):
             result = await engine.handle_motion(
                 "binary_sensor.motion_schlafzimmer", "alice"
             )
@@ -256,9 +270,7 @@ class TestHandleMotion:
     async def test_default_person_key_when_empty(self, engine, ha_mock):
         """Empty person string should use 'default' as key."""
         with patch("assistant.follow_me.yaml_config", FOLLOW_ME_CONFIG):
-            await engine.handle_motion(
-                "binary_sensor.motion_wohnzimmer", ""
-            )
+            await engine.handle_motion("binary_sensor.motion_wohnzimmer", "")
         assert "default" in engine._person_room
 
     @pytest.mark.asyncio
@@ -266,21 +278,22 @@ class TestHandleMotion:
         """When others remain in old room, old speaker should NOT be paused."""
         engine._person_room["alice"] = "wohnzimmer"
         engine._person_room["bob"] = "wohnzimmer"
-        engine._last_transfer["alice"] = datetime.now(timezone.utc) - timedelta(seconds=120)
+        engine._last_transfer["alice"] = datetime.now(timezone.utc) - timedelta(
+            seconds=120
+        )
 
         ha_mock.get_state = AsyncMock(return_value={"state": "playing"})
 
-        with patch("assistant.follow_me.yaml_config", FOLLOW_ME_CONFIG), \
-             patch("assistant.config.get_room_profiles", return_value={"rooms": {}}):
-            result = await engine.handle_motion(
-                "binary_sensor.motion_kueche", "alice"
-            )
+        with (
+            patch("assistant.follow_me.yaml_config", FOLLOW_ME_CONFIG),
+            patch("assistant.config.get_room_profiles", return_value={"rooms": {}}),
+        ):
+            result = await engine.handle_motion("binary_sensor.motion_kueche", "alice")
 
         assert result is not None
         # media_pause should NOT have been called (bob still in wohnzimmer)
         pause_calls = [
-            c for c in ha_mock.call_service.call_args_list
-            if c.args[1] == "media_pause"
+            c for c in ha_mock.call_service.call_args_list if c.args[1] == "media_pause"
         ]
         assert len(pause_calls) == 0
 
@@ -288,9 +301,14 @@ class TestHandleMotion:
     async def test_no_motion_sensors_configured(self, engine, ha_mock):
         """No motion sensors in config should return None."""
         empty_config = {
-            "follow_me": {"enabled": True, "cooldown_seconds": 60,
-                          "transfer_music": True, "transfer_lights": True,
-                          "transfer_climate": False, "profiles": {}},
+            "follow_me": {
+                "enabled": True,
+                "cooldown_seconds": 60,
+                "transfer_music": True,
+                "transfer_lights": True,
+                "transfer_climate": False,
+                "profiles": {},
+            },
             "multi_room": {},
         }
         with patch("assistant.follow_me.yaml_config", empty_config):
@@ -304,8 +322,8 @@ class TestHandleMotion:
 # _transfer_climate Tests
 # ============================================================
 
-class TestTransferClimate:
 
+class TestTransferClimate:
     @pytest.mark.asyncio
     async def test_climate_transfer_success(self, engine, ha_mock):
         profile = {"comfort_temp": 23, "eco_temp_offset": 3}
@@ -343,8 +361,8 @@ class TestTransferClimate:
 # _transfer_lights Tests
 # ============================================================
 
-class TestTransferLights:
 
+class TestTransferLights:
     @pytest.mark.asyncio
     async def test_lights_transfer_with_room_profiles(self, engine, ha_mock):
         """Lights transferred using room profile entities."""
@@ -359,8 +377,13 @@ class TestTransferLights:
                 },
             }
         }
-        with patch("assistant.follow_me.yaml_config", {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}}), \
-             patch("assistant.config.get_room_profiles", return_value=room_profiles):
+        with (
+            patch(
+                "assistant.follow_me.yaml_config",
+                {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}},
+            ),
+            patch("assistant.config.get_room_profiles", return_value=room_profiles),
+        ):
             result = await engine._transfer_lights(
                 "wohnzimmer", "schlafzimmer", profile, []
             )
@@ -381,10 +404,17 @@ class TestTransferLights:
                 },
             }
         }
-        with patch("assistant.follow_me.yaml_config", {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}}), \
-             patch("assistant.config.get_room_profiles", return_value=room_profiles), \
-             patch("assistant.follow_me.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0, tzinfo=timezone.utc)  # 2 PM (daytime)
+        with (
+            patch(
+                "assistant.follow_me.yaml_config",
+                {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}},
+            ),
+            patch("assistant.config.get_room_profiles", return_value=room_profiles),
+            patch("assistant.follow_me.datetime") as mock_dt,
+        ):
+            mock_dt.now.return_value = datetime(
+                2025, 6, 15, 14, 0, tzinfo=timezone.utc
+            )  # 2 PM (daytime)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             result = await engine._transfer_lights(
                 "wohnzimmer", "schlafzimmer", profile, []
@@ -392,8 +422,7 @@ class TestTransferLights:
         assert result is not None
         # Check that brightness_pct was set to daytime value (100)
         turn_on_calls = [
-            c for c in ha_mock.call_service.call_args_list
-            if c.args[1] == "turn_on"
+            c for c in ha_mock.call_service.call_args_list if c.args[1] == "turn_on"
         ]
         assert len(turn_on_calls) >= 1
         assert turn_on_calls[0].args[2]["brightness_pct"] == 100
@@ -412,18 +441,24 @@ class TestTransferLights:
                 },
             }
         }
-        with patch("assistant.follow_me.yaml_config", {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}}), \
-             patch("assistant.config.get_room_profiles", return_value=room_profiles), \
-             patch("assistant.follow_me.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 0, tzinfo=timezone.utc)  # 11 PM (nighttime)
+        with (
+            patch(
+                "assistant.follow_me.yaml_config",
+                {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}},
+            ),
+            patch("assistant.config.get_room_profiles", return_value=room_profiles),
+            patch("assistant.follow_me.datetime") as mock_dt,
+        ):
+            mock_dt.now.return_value = datetime(
+                2025, 6, 15, 23, 0, tzinfo=timezone.utc
+            )  # 11 PM (nighttime)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             result = await engine._transfer_lights(
                 "wohnzimmer", "schlafzimmer", profile, []
             )
         assert result is not None
         turn_on_calls = [
-            c for c in ha_mock.call_service.call_args_list
-            if c.args[1] == "turn_on"
+            c for c in ha_mock.call_service.call_args_list if c.args[1] == "turn_on"
         ]
         assert len(turn_on_calls) >= 1
         assert turn_on_calls[0].args[2]["brightness_pct"] == 30
@@ -433,15 +468,19 @@ class TestTransferLights:
         """When no light_entities in room profile, falls back to light.{room}."""
         profile = {"light_brightness": 75}
         room_profiles = {"rooms": {}}
-        with patch("assistant.follow_me.yaml_config", {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}}), \
-             patch("assistant.config.get_room_profiles", return_value=room_profiles):
+        with (
+            patch(
+                "assistant.follow_me.yaml_config",
+                {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}},
+            ),
+            patch("assistant.config.get_room_profiles", return_value=room_profiles),
+        ):
             result = await engine._transfer_lights(
                 "wohnzimmer", "schlafzimmer", profile, []
             )
         assert result is not None
         turn_on_calls = [
-            c for c in ha_mock.call_service.call_args_list
-            if c.args[1] == "turn_on"
+            c for c in ha_mock.call_service.call_args_list if c.args[1] == "turn_on"
         ]
         assert any("light.schlafzimmer" in str(c) for c in turn_on_calls)
 
@@ -450,25 +489,30 @@ class TestTransferLights:
         """Color temp passed when in profile."""
         profile = {"light_brightness": 80, "light_color_temp": 4000}
         room_profiles = {"rooms": {}}
-        with patch("assistant.follow_me.yaml_config", {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}}), \
-             patch("assistant.config.get_room_profiles", return_value=room_profiles):
+        with (
+            patch(
+                "assistant.follow_me.yaml_config",
+                {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}},
+            ),
+            patch("assistant.config.get_room_profiles", return_value=room_profiles),
+        ):
             result = await engine._transfer_lights(
                 "wohnzimmer", "schlafzimmer", profile, []
             )
         assert result is not None
         turn_on_calls = [
-            c for c in ha_mock.call_service.call_args_list
-            if c.args[1] == "turn_on"
+            c for c in ha_mock.call_service.call_args_list if c.args[1] == "turn_on"
         ]
         assert turn_on_calls[0].args[2]["color_temp_kelvin"] == 4000
 
     @pytest.mark.asyncio
     async def test_lights_transfer_exception(self, engine, ha_mock):
         """Exception during lights transfer returns None."""
-        with patch("assistant.config.get_room_profiles", side_effect=RuntimeError("config error")):
-            result = await engine._transfer_lights(
-                "wohnzimmer", "schlafzimmer", {}, []
-            )
+        with patch(
+            "assistant.config.get_room_profiles",
+            side_effect=RuntimeError("config error"),
+        ):
+            result = await engine._transfer_lights("wohnzimmer", "schlafzimmer", {}, [])
         assert result is None
 
 
@@ -476,14 +520,12 @@ class TestTransferLights:
 # _transfer_music Tests
 # ============================================================
 
-class TestTransferMusic:
 
+class TestTransferMusic:
     @pytest.mark.asyncio
     async def test_music_transfer_no_speaker(self, engine, ha_mock):
         """No speaker found returns None."""
-        result = await engine._transfer_music(
-            "garage", "kueche", {}, []
-        )
+        result = await engine._transfer_music("garage", "kueche", {}, [])
         assert result is None
 
     @pytest.mark.asyncio
@@ -491,9 +533,7 @@ class TestTransferMusic:
         """Old speaker not playing returns None."""
         speakers = FOLLOW_ME_CONFIG["multi_room"]["room_speakers"]
         ha_mock.get_state = AsyncMock(return_value={"state": "idle"})
-        result = await engine._transfer_music(
-            "wohnzimmer", "kueche", speakers, []
-        )
+        result = await engine._transfer_music("wohnzimmer", "kueche", speakers, [])
         assert result is None
 
     @pytest.mark.asyncio
@@ -502,9 +542,7 @@ class TestTransferMusic:
         speakers = FOLLOW_ME_CONFIG["multi_room"]["room_speakers"]
         ha_mock.get_state = AsyncMock(return_value={"state": "playing"})
         ha_mock.call_service = AsyncMock(side_effect=RuntimeError("HA error"))
-        result = await engine._transfer_music(
-            "wohnzimmer", "kueche", speakers, []
-        )
+        result = await engine._transfer_music("wohnzimmer", "kueche", speakers, [])
         assert result is None
 
 
@@ -514,7 +552,6 @@ class TestTransferMusic:
 
 
 class TestPhase7PresenceContext:
-
     @pytest.fixture
     def engine(self, ha_mock):
         with patch("assistant.follow_me.yaml_config", FOLLOW_ME_CONFIG):

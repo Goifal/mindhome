@@ -34,6 +34,7 @@ def event_loop():
 async def app():
     """FastAPI App importieren."""
     from assistant.main import app as fastapi_app
+
     yield fastapi_app
 
 
@@ -67,25 +68,22 @@ class TestUnauthenticatedAccess:
             response = await client.post(path)
         else:
             response = await client.get(path)
-        assert response.status_code == 401, \
+        assert response.status_code == 401, (
             f"{method} {path} ohne Token erlaubt! Status: {response.status_code}"
+        )
 
     @pytest.mark.asyncio
     async def test_invalid_token_rejected(self, client):
         """Zufaelliger Token wird abgelehnt."""
         response = await client.get(
-            "/api/ui/api-key",
-            params={"token": "invalid_random_token_xyz"}
+            "/api/ui/api-key", params={"token": "invalid_random_token_xyz"}
         )
         assert response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_factory_reset_without_token_rejected(self, client):
         """Factory-Reset ohne Token muss 401 zurueckgeben."""
-        response = await client.post(
-            "/api/ui/factory-reset",
-            json={"pin": "0000"}
-        )
+        response = await client.post("/api/ui/factory-reset", json={"pin": "0000"})
         assert response.status_code == 401
 
 
@@ -134,8 +132,7 @@ class TestPinBruteForceProtection:
         responses = []
         for i in range(6):
             resp = await client.post(
-                "/api/ui/auth",
-                json={"pin": f"wrong{i}", "action": "login"}
+                "/api/ui/auth", json={"pin": f"wrong{i}", "action": "login"}
             )
             responses.append(resp.status_code)
 
@@ -146,6 +143,7 @@ class TestPinBruteForceProtection:
         if not has_rate_limit:
             # Direkt die Funktion pruefen
             from assistant.main import _check_pin_rate_limit
+
             # Wenn 5+ Versuche aufgezeichnet: sollte False sein
             # testclient IP kann variieren
             pass
@@ -178,8 +176,9 @@ class TestWorkshopHardwareSecurity:
         """Hardware-Endpoints ohne Token muessen abgelehnt werden."""
         response = await client.post(endpoint, json={})
         # Erwartet: 401 (kein Token) oder 403 (Trust-Level zu niedrig)
-        assert response.status_code in (401, 403, 422), \
+        assert response.status_code in (401, 403, 422), (
             f"{endpoint} erlaubt unauthentifizierten Zugriff! Status: {response.status_code}"
+        )
 
 
 # ---------------------------------------------------------------
@@ -226,13 +225,12 @@ class TestCorsConfiguration:
             headers={
                 "Origin": "http://evil.example.com",
                 "Access-Control-Request-Method": "GET",
-            }
+            },
         )
         # Evil origin sollte NICHT in Allow-Origin stehen
         allow_origin = response.headers.get("access-control-allow-origin", "")
         assert allow_origin != "*", "CORS erlaubt Wildcard-Origin!"
-        assert "evil.example.com" not in allow_origin, \
-            "CORS erlaubt beliebige Origins!"
+        assert "evil.example.com" not in allow_origin, "CORS erlaubt beliebige Origins!"
 
     @pytest.mark.asyncio
     async def test_cors_allows_localhost(self, client):
@@ -242,7 +240,7 @@ class TestCorsConfiguration:
             headers={
                 "Origin": "http://localhost:8123",
                 "Access-Control-Request-Method": "GET",
-            }
+            },
         )
         allow_origin = response.headers.get("access-control-allow-origin", "")
         assert "localhost" in allow_origin or allow_origin == "*"
@@ -264,8 +262,12 @@ class TestSensitiveDataProtection:
             body = response.text.lower()
             # Wenn Health-Check erfolgreich: pruefen ob Secrets geleakt werden
             if response.status_code == 200:
-                assert "api_key" not in body or "****" in body or "redacted" in body or response.json().get("api_key") is None, \
-                    "Health-Endpoint leakt API-Key!"
+                assert (
+                    "api_key" not in body
+                    or "****" in body
+                    or "redacted" in body
+                    or response.json().get("api_key") is None
+                ), "Health-Endpoint leakt API-Key!"
         except Exception:
             # Health-Check kann fehlschlagen wenn Ollama/Redis nicht erreichbar
             # Das ist OK — der Endpoint existiert und ist oeffentlich

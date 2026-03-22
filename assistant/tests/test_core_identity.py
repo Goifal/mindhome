@@ -8,14 +8,19 @@ Testet:
 """
 
 from assistant.core_identity import (
-    NAME, FULL_NAME, ROLE,
-    VALUES, BOUNDARIES, RELATIONSHIP, EMOTIONAL_RANGE,
-    build_identity_block, IDENTITY_BLOCK,
+    NAME,
+    FULL_NAME,
+    ROLE,
+    VALUES,
+    BOUNDARIES,
+    RELATIONSHIP,
+    EMOTIONAL_RANGE,
+    build_identity_block,
+    IDENTITY_BLOCK,
 )
 
 
 class TestCoreConstants:
-
     def test_name(self):
         assert NAME == "J.A.R.V.I.S."
 
@@ -42,7 +47,6 @@ class TestCoreConstants:
 
 
 class TestBuildIdentityBlock:
-
     def test_contains_name(self):
         block = build_identity_block()
         assert NAME in block

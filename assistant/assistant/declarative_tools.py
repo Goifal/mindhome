@@ -42,30 +42,52 @@ def _get_max_tools() -> int:
     """Gibt das konfigurierte Maximum an Tools zurueck."""
     return yaml_config.get("declarative_tools", {}).get("max_tools", DEFAULT_MAX_TOOLS)
 
-VALID_TYPES = frozenset({
-    "entity_comparison",
-    "multi_entity_formula",
-    "event_counter",
-    "threshold_monitor",
-    "trend_analyzer",
-    "entity_aggregator",
-    "schedule_checker",
-    "state_duration",
-    "time_comparison",
-})
 
-VALID_OPERATIONS = frozenset({
-    "difference", "ratio", "percentage_change",
-})
+VALID_TYPES = frozenset(
+    {
+        "entity_comparison",
+        "multi_entity_formula",
+        "event_counter",
+        "threshold_monitor",
+        "trend_analyzer",
+        "entity_aggregator",
+        "schedule_checker",
+        "state_duration",
+        "time_comparison",
+    }
+)
 
-VALID_FORMULAS = frozenset({
-    "average", "weighted_average", "sum", "min", "max", "difference",
-})
+VALID_OPERATIONS = frozenset(
+    {
+        "difference",
+        "ratio",
+        "percentage_change",
+    }
+)
+
+VALID_FORMULAS = frozenset(
+    {
+        "average",
+        "weighted_average",
+        "sum",
+        "min",
+        "max",
+        "difference",
+    }
+)
 
 # Zeitraum-Kuerzel -> Stunden
 TIME_RANGE_MAP = {
-    "1h": 1, "2h": 2, "3h": 3, "6h": 6, "12h": 12,
-    "24h": 24, "today": 24, "48h": 48, "7d": 168, "30d": 720,
+    "1h": 1,
+    "2h": 2,
+    "3h": 3,
+    "6h": 6,
+    "12h": 12,
+    "24h": 24,
+    "today": 24,
+    "48h": 48,
+    "7d": 168,
+    "30d": 720,
 }
 
 
@@ -95,7 +117,9 @@ class DeclarativeToolRegistry:
         """Speichert Tools auf Disk."""
         TOOLS_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(TOOLS_FILE, "w") as f:
-            yaml.dump({"tools": self._tools}, f, default_flow_style=False, allow_unicode=True)
+            yaml.dump(
+                {"tools": self._tools}, f, default_flow_style=False, allow_unicode=True
+            )
 
     def list_tools(self) -> list[dict]:
         """Liefert alle Tools als Liste."""
@@ -191,7 +215,9 @@ class DeclarativeToolRegistry:
                 return "Mindestens 2 Entities als Liste erforderlich."
             agg = config.get("aggregation", "")
             if agg not in ("average", "min", "max", "sum"):
-                return f"Ungueltige Aggregation '{agg}'. Erlaubt: average, min, max, sum"
+                return (
+                    f"Ungueltige Aggregation '{agg}'. Erlaubt: average, min, max, sum"
+                )
 
         elif tool_type == "schedule_checker":
             schedules = config.get("schedules", [])
@@ -434,7 +460,12 @@ class DeclarativeToolExecutor:
             f"Status: {status_label}\n"
             f"Bereich: {th_min or '—'}{unit} bis {th_max or '—'}{unit}"
         )
-        return {"success": True, "message": msg, "value": val, "in_range": status == "OK"}
+        return {
+            "success": True,
+            "message": msg,
+            "value": val,
+            "in_range": status == "OK",
+        }
 
     # ── trend_analyzer ────────────────────────────────────────
     async def _exec_trend_analyzer(self, config: dict, description: str) -> dict:
@@ -488,9 +519,14 @@ class DeclarativeToolExecutor:
             f"  Trend: {trend} ({trend_diff:+.1f}{unit})"
         )
         return {
-            "success": True, "message": msg,
-            "current": current, "avg": avg, "min": val_min, "max": val_max,
-            "trend": trend, "trend_diff": trend_diff,
+            "success": True,
+            "message": msg,
+            "current": current,
+            "avg": avg,
+            "min": val_min,
+            "max": val_max,
+            "trend": trend,
+            "trend_diff": trend_diff,
         }
 
     # ── entity_aggregator ─────────────────────────────────────
@@ -533,10 +569,19 @@ class DeclarativeToolExecutor:
         # Zusaetzlich: waermstes/kaeltestes bei avg
         if aggregation == "average" and len(values) >= 2:
             sorted_items = sorted(values.items(), key=lambda x: x[1])
-            lines.append(f"Niedrigster: {sorted_items[0][0]} ({sorted_items[0][1]:.1f}{unit})")
-            lines.append(f"Hoechster: {sorted_items[-1][0]} ({sorted_items[-1][1]:.1f}{unit})")
+            lines.append(
+                f"Niedrigster: {sorted_items[0][0]} ({sorted_items[0][1]:.1f}{unit})"
+            )
+            lines.append(
+                f"Hoechster: {sorted_items[-1][0]} ({sorted_items[-1][1]:.1f}{unit})"
+            )
 
-        return {"success": True, "message": "\n".join(lines), "result": result, "values": values}
+        return {
+            "success": True,
+            "message": "\n".join(lines),
+            "result": result,
+            "values": values,
+        }
 
     # ── schedule_checker ──────────────────────────────────────
     async def _exec_schedule_checker(self, config: dict, description: str) -> dict:
@@ -596,7 +641,6 @@ class DeclarativeToolExecutor:
             "active": active_schedule is not None,
             "schedule": active_schedule.get("label", "") if active_schedule else "",
         }
-
 
     # ── state_duration ─────────────────────────────────────────
     async def _exec_state_duration(self, config: dict, description: str) -> dict:
@@ -659,8 +703,10 @@ class DeclarativeToolExecutor:
             f"Anteil: {pct:.1f}% der Gesamtzeit"
         )
         return {
-            "success": True, "message": msg,
-            "duration_seconds": total_seconds, "duration_hours": total_hours,
+            "success": True,
+            "message": msg,
+            "duration_seconds": total_seconds,
+            "duration_hours": total_hours,
             "percentage": pct,
         }
 
@@ -701,7 +747,9 @@ class DeclarativeToolExecutor:
 
         # Vorherige Periode (doppelter Zeitraum holen, erste Haelfte nehmen)
         try:
-            full_history = await self.ha.get_history(entity_id, hours=current_hours + offset_hours)
+            full_history = await self.ha.get_history(
+                entity_id, hours=current_hours + offset_hours
+            )
         except Exception as e:
             logger.debug("Historical period retrieval failed: %s", e)
             full_history = None
@@ -735,11 +783,18 @@ class DeclarativeToolExecutor:
         previous_val = None
         if full_history and current_history:
             current_count = len(current_history)
-            previous_entries = full_history[:-current_count] if current_count < len(full_history) else []
+            previous_entries = (
+                full_history[:-current_count]
+                if current_count < len(full_history)
+                else []
+            )
             previous_val = _aggregate(previous_entries)
 
         if previous_val is None:
-            return {"success": False, "message": f"Keine historischen Daten fuer Vergleich ({period_label})"}
+            return {
+                "success": False,
+                "message": f"Keine historischen Daten fuer Vergleich ({period_label})",
+            }
 
         diff = current_val - previous_val
         pct_change = ((diff / previous_val) * 100) if previous_val != 0 else 0
@@ -753,9 +808,12 @@ class DeclarativeToolExecutor:
             f"  Aenderung: {diff:+.1f}{unit} ({pct_change:+.1f}%) — {trend}"
         )
         return {
-            "success": True, "message": msg,
-            "current": current_val, "previous": previous_val,
-            "diff": diff, "pct_change": pct_change,
+            "success": True,
+            "message": msg,
+            "current": current_val,
+            "previous": previous_val,
+            "diff": diff,
+            "pct_change": pct_change,
         }
 
 
@@ -775,9 +833,11 @@ def get_registry() -> DeclarativeToolRegistry:
 # Tool-Vorschlaege: Regel-basierte Analyse + LLM-Verfeinerung
 # ══════════════════════════════════════════════════════════════
 
+
 def _slugify(text: str) -> str:
     """Erzeugt einen Tool-Namen aus einem Text."""
     import re
+
     slug = text.lower().replace(" ", "_").replace("-", "_")
     slug = re.sub(r"[^a-z0-9_]", "", slug)
     slug = re.sub(r"_+", "_", slug).strip("_")
@@ -800,7 +860,7 @@ def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]
     existing_names = set(existing_tools.keys())
 
     # Entities nach Typ gruppieren
-    temp_sensors: list[dict] = []      # {eid, friendly, outdoor}
+    temp_sensors: list[dict] = []  # {eid, friendly, outdoor}
     humidity_sensors: list[dict] = []
     energy_sensors: list[dict] = []
     power_sensors: list[dict] = []
@@ -814,8 +874,18 @@ def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]
     media_players: list[dict] = []
     switches: list[dict] = []
 
-    outdoor_kw = ("aussen", "outdoor", "balkon", "garten", "terrasse",
-                  "draussen", "exterior", "outside", "weather", "wetter")
+    outdoor_kw = (
+        "aussen",
+        "outdoor",
+        "balkon",
+        "garten",
+        "terrasse",
+        "draussen",
+        "exterior",
+        "outside",
+        "weather",
+        "wetter",
+    )
 
     # Hidden-Entities filtern (is_entity_hidden aus function_calling)
     try:
@@ -841,23 +911,50 @@ def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]
 
         if domain == "sensor":
             if dc == "temperature" or unit in ("°C", "°F"):
-                temp_sensors.append({"eid": eid, "friendly": friendly, "outdoor": is_outdoor})
-            elif dc == "humidity" or (unit in ("%", "%rH") and ("humid" in lower_eid or "feucht" in lower_eid or "luftfeuch" in lower_eid)):
+                temp_sensors.append(
+                    {"eid": eid, "friendly": friendly, "outdoor": is_outdoor}
+                )
+            elif dc == "humidity" or (
+                unit in ("%", "%rH")
+                and (
+                    "humid" in lower_eid
+                    or "feucht" in lower_eid
+                    or "luftfeuch" in lower_eid
+                )
+            ):
                 humidity_sensors.append({"eid": eid, "friendly": friendly})
             elif dc == "energy" or unit in ("kWh", "Wh"):
                 energy_sensors.append({"eid": eid, "friendly": friendly})
             elif dc == "power" or unit in ("W", "kW"):
                 power_sensors.append({"eid": eid, "friendly": friendly})
-            elif dc in ("co2", "carbon_dioxide") or (unit == "ppm" and "co2" in lower_eid):
+            elif dc in ("co2", "carbon_dioxide") or (
+                unit == "ppm" and "co2" in lower_eid
+            ):
                 co2_sensors.append({"eid": eid, "friendly": friendly})
             elif dc == "battery":
                 battery_sensors.append({"eid": eid, "friendly": friendly})
         elif domain == "binary_sensor":
             # Nur Name-Teil nach dem Punkt fuer Keyword-Matching (vermeidet False Positives)
-            name_part = "_" + lower_eid.split(".", 1)[1] + "_" if "." in lower_eid else lower_eid
-            if dc in ("window", "opening") or "_fenster" in name_part or ("_window" in name_part and "_windows_" not in name_part):
+            name_part = (
+                "_" + lower_eid.split(".", 1)[1] + "_"
+                if "." in lower_eid
+                else lower_eid
+            )
+            if (
+                dc in ("window", "opening")
+                or "_fenster" in name_part
+                or ("_window" in name_part and "_windows_" not in name_part)
+            ):
                 binary_window.append({"eid": eid, "friendly": friendly})
-            elif dc == "door" or "_tuer" in name_part or ("_door" in name_part and "_outdoor" not in name_part and "_indoor" not in name_part):
+            elif (
+                dc == "door"
+                or "_tuer" in name_part
+                or (
+                    "_door" in name_part
+                    and "_outdoor" not in name_part
+                    and "_indoor" not in name_part
+                )
+            ):
                 binary_door.append({"eid": eid, "friendly": friendly})
             elif dc == "motion" or "_motion" in name_part or "_bewegung" in name_part:
                 binary_motion.append({"eid": eid, "friendly": friendly})
@@ -873,11 +970,18 @@ def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]
     suggestions: list[dict] = []
 
     def _add(name: str, desc: str, tool_type: str, config: dict, reason: str):
-        if name not in existing_names and not any(sg["name"] == name for sg in suggestions):
-            suggestions.append({
-                "name": name, "description": desc,
-                "type": tool_type, "config": config, "reason": reason,
-            })
+        if name not in existing_names and not any(
+            sg["name"] == name for sg in suggestions
+        ):
+            suggestions.append(
+                {
+                    "name": name,
+                    "description": desc,
+                    "type": tool_type,
+                    "config": config,
+                    "reason": reason,
+                }
+            )
 
     # ── Temperatur-Vorschlaege ────────────────────────────────
     indoor = [t for t in temp_sensors if not t["outdoor"]]
@@ -885,80 +989,114 @@ def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]
 
     # Innen vs. Aussen Vergleich
     if indoor and outdoor:
-        _add("innen_vs_aussen",
-             f"Temperaturunterschied {indoor[0]['friendly'] or 'innen'} vs. {outdoor[0]['friendly'] or 'aussen'}",
-             "entity_comparison",
-             {"entity_a": indoor[0]["eid"], "entity_b": outdoor[0]["eid"], "operation": "difference"},
-             "Du hast Innen- und Aussen-Temperatursensoren — der Vergleich hilft bei Lueftungsentscheidungen.")
+        _add(
+            "innen_vs_aussen",
+            f"Temperaturunterschied {indoor[0]['friendly'] or 'innen'} vs. {outdoor[0]['friendly'] or 'aussen'}",
+            "entity_comparison",
+            {
+                "entity_a": indoor[0]["eid"],
+                "entity_b": outdoor[0]["eid"],
+                "operation": "difference",
+            },
+            "Du hast Innen- und Aussen-Temperatursensoren — der Vergleich hilft bei Lueftungsentscheidungen.",
+        )
 
     # Durchschnittstemperatur aller Raeume
     if len(indoor) >= 2:
-        _add("raumtemperaturen",
-             f"Durchschnittstemperatur aller {len(indoor)} Räume",
-             "entity_aggregator",
-             {"entities": [t["eid"] for t in indoor[:8]], "aggregation": "average"},
-             f"{len(indoor)} Temperatursensoren gefunden — so sehe ich den Durchschnitt und den kältesten Raum.")
+        _add(
+            "raumtemperaturen",
+            f"Durchschnittstemperatur aller {len(indoor)} Räume",
+            "entity_aggregator",
+            {"entities": [t["eid"] for t in indoor[:8]], "aggregation": "average"},
+            f"{len(indoor)} Temperatursensoren gefunden — so sehe ich den Durchschnitt und den kältesten Raum.",
+        )
 
     # Kaeltester Raum
     if len(indoor) >= 3:
-        _add("kaeltester_raum",
-             "Findet den kältesten Raum",
-             "entity_aggregator",
-             {"entities": [t["eid"] for t in indoor[:8]], "aggregation": "min"},
-             "Bei mehreren Raeumen kann ich erkennen wo es zu kalt ist.")
+        _add(
+            "kaeltester_raum",
+            "Findet den kältesten Raum",
+            "entity_aggregator",
+            {"entities": [t["eid"] for t in indoor[:8]], "aggregation": "min"},
+            "Bei mehreren Raeumen kann ich erkennen wo es zu kalt ist.",
+        )
 
     # Aussen-Temperatur Trend
     if outdoor:
-        _add("temperatur_trend_aussen",
-             f"Temperatur-Trend aussen ({outdoor[0]['friendly'] or outdoor[0]['eid']})",
-             "trend_analyzer",
-             {"entity": outdoor[0]["eid"], "time_range": "24h"},
-             "Der Trend der Aussentemperatur hilft bei Empfehlungen zu Heizung und Lueftung.")
+        _add(
+            "temperatur_trend_aussen",
+            f"Temperatur-Trend aussen ({outdoor[0]['friendly'] or outdoor[0]['eid']})",
+            "trend_analyzer",
+            {"entity": outdoor[0]["eid"], "time_range": "24h"},
+            "Der Trend der Aussentemperatur hilft bei Empfehlungen zu Heizung und Lueftung.",
+        )
 
     # Raumtemperatur Komfortbereich
     if indoor:
-        _add("raumtemperatur_check",
-             f"Raumtemperatur Komfortbereich ({indoor[0]['friendly'] or 'Hauptsensor'})",
-             "threshold_monitor",
-             {"entity": indoor[0]["eid"], "thresholds": {"min": 19, "max": 23}},
-             "Ich kann warnen wenn die Raumtemperatur aus dem Wohlfuehlbereich faellt.")
+        _add(
+            "raumtemperatur_check",
+            f"Raumtemperatur Komfortbereich ({indoor[0]['friendly'] or 'Hauptsensor'})",
+            "threshold_monitor",
+            {"entity": indoor[0]["eid"], "thresholds": {"min": 19, "max": 23}},
+            "Ich kann warnen wenn die Raumtemperatur aus dem Wohlfuehlbereich faellt.",
+        )
 
     # ── Luftfeuchtigkeit ──────────────────────────────────────
     if humidity_sensors:
-        _add("luftfeuchtigkeit_check",
-             f"Luftfeuchtigkeit Komfortbereich ({humidity_sensors[0]['friendly'] or humidity_sensors[0]['eid']})",
-             "threshold_monitor",
-             {"entity": humidity_sensors[0]["eid"], "thresholds": {"min": 40, "max": 60}},
-             "Luftfeuchtigkeit zwischen 40-60% ist optimal — darauf kann ich hinweisen.")
+        _add(
+            "luftfeuchtigkeit_check",
+            f"Luftfeuchtigkeit Komfortbereich ({humidity_sensors[0]['friendly'] or humidity_sensors[0]['eid']})",
+            "threshold_monitor",
+            {
+                "entity": humidity_sensors[0]["eid"],
+                "thresholds": {"min": 40, "max": 60},
+            },
+            "Luftfeuchtigkeit zwischen 40-60% ist optimal — darauf kann ich hinweisen.",
+        )
 
     if len(humidity_sensors) >= 2:
-        _add("feuchtester_raum",
-             "Hoechste Luftfeuchtigkeit finden",
-             "entity_aggregator",
-             {"entities": [h["eid"] for h in humidity_sensors[:6]], "aggregation": "max"},
-             f"{len(humidity_sensors)} Feuchtigkeitssensoren — ich finde den feuchtesten Raum.")
+        _add(
+            "feuchtester_raum",
+            "Hoechste Luftfeuchtigkeit finden",
+            "entity_aggregator",
+            {
+                "entities": [h["eid"] for h in humidity_sensors[:6]],
+                "aggregation": "max",
+            },
+            f"{len(humidity_sensors)} Feuchtigkeitssensoren — ich finde den feuchtesten Raum.",
+        )
 
     # ── CO2 ───────────────────────────────────────────────────
     if co2_sensors:
-        _add("co2_warnung",
-             f"CO2-Warnung ({co2_sensors[0]['friendly'] or co2_sensors[0]['eid']})",
-             "threshold_monitor",
-             {"entity": co2_sensors[0]["eid"], "thresholds": {"max": 1000}},
-             "CO2 ueber 1000 ppm beeintraechtigt die Konzentration — ich kann rechtzeitig warnen.")
+        _add(
+            "co2_warnung",
+            f"CO2-Warnung ({co2_sensors[0]['friendly'] or co2_sensors[0]['eid']})",
+            "threshold_monitor",
+            {"entity": co2_sensors[0]["eid"], "thresholds": {"max": 1000}},
+            "CO2 ueber 1000 ppm beeintraechtigt die Konzentration — ich kann rechtzeitig warnen.",
+        )
 
     # ── Energie ───────────────────────────────────────────────
     if energy_sensors:
-        _add("stromverbrauch_trend",
-             f"Stromverbrauch Trend ({energy_sensors[0]['friendly'] or energy_sensors[0]['eid']})",
-             "trend_analyzer",
-             {"entity": energy_sensors[0]["eid"], "time_range": "7d"},
-             "Ein 7-Tage-Trend zeigt ob der Stromverbrauch steigt oder sinkt.")
+        _add(
+            "stromverbrauch_trend",
+            f"Stromverbrauch Trend ({energy_sensors[0]['friendly'] or energy_sensors[0]['eid']})",
+            "trend_analyzer",
+            {"entity": energy_sensors[0]["eid"], "time_range": "7d"},
+            "Ein 7-Tage-Trend zeigt ob der Stromverbrauch steigt oder sinkt.",
+        )
 
-        _add("strom_vs_gestern",
-             f"Stromverbrauch heute vs. gestern ({energy_sensors[0]['friendly'] or energy_sensors[0]['eid']})",
-             "time_comparison",
-             {"entity": energy_sensors[0]["eid"], "compare_period": "yesterday", "aggregation": "average"},
-             "Tagesvergleich zeigt ob heute mehr oder weniger Strom verbraucht wird.")
+        _add(
+            "strom_vs_gestern",
+            f"Stromverbrauch heute vs. gestern ({energy_sensors[0]['friendly'] or energy_sensors[0]['eid']})",
+            "time_comparison",
+            {
+                "entity": energy_sensors[0]["eid"],
+                "compare_period": "yesterday",
+                "aggregation": "average",
+            },
+            "Tagesvergleich zeigt ob heute mehr oder weniger Strom verbraucht wird.",
+        )
 
     if len(energy_sensors) >= 2:
         # Eindeutige Labels erzeugen (Kollisionsvermeidung)
@@ -974,88 +1112,146 @@ def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]
                 label = f"{base}_{counter}"
                 counter += 1
             energy_entities[label] = e["eid"]
-        _add("gesamt_stromverbrauch",
-             "Summe aller Energiezaehler",
-             "multi_entity_formula",
-             {"entities": energy_entities, "formula": "sum"},
-             f"{len(energy_sensors)} Energiezaehler — die Summe gibt den Gesamtverbrauch.")
+        _add(
+            "gesamt_stromverbrauch",
+            "Summe aller Energiezaehler",
+            "multi_entity_formula",
+            {"entities": energy_entities, "formula": "sum"},
+            f"{len(energy_sensors)} Energiezaehler — die Summe gibt den Gesamtverbrauch.",
+        )
 
     # Strom: 2 Power-Sensoren vergleichen (z.B. Solar vs. Verbrauch)
     if len(power_sensors) >= 2:
-        solar = [p for p in power_sensors if any(kw in p["eid"].lower() for kw in ("solar", "pv", "photovoltaik"))]
+        solar = [
+            p
+            for p in power_sensors
+            if any(kw in p["eid"].lower() for kw in ("solar", "pv", "photovoltaik"))
+        ]
         consumption = [p for p in power_sensors if p not in solar]
         if solar and consumption:
-            _add("solar_vs_verbrauch",
-                 f"Solar vs. Verbrauch ({solar[0]['friendly'] or 'Solar'} / {consumption[0]['friendly'] or 'Verbrauch'})",
-                 "entity_comparison",
-                 {"entity_a": solar[0]["eid"], "entity_b": consumption[0]["eid"], "operation": "ratio"},
-                 "Verhaeltnis Solar-Erzeugung zu Verbrauch — zeigt die Eigenverbrauchs-Quote.")
+            _add(
+                "solar_vs_verbrauch",
+                f"Solar vs. Verbrauch ({solar[0]['friendly'] or 'Solar'} / {consumption[0]['friendly'] or 'Verbrauch'})",
+                "entity_comparison",
+                {
+                    "entity_a": solar[0]["eid"],
+                    "entity_b": consumption[0]["eid"],
+                    "operation": "ratio",
+                },
+                "Verhaeltnis Solar-Erzeugung zu Verbrauch — zeigt die Eigenverbrauchs-Quote.",
+            )
 
     # ── Batterie ──────────────────────────────────────────────
     if battery_sensors:
         lowest_bat = battery_sensors[0]
-        _add("batterie_check",
-             f"Batterie-Warnung ({lowest_bat['friendly'] or lowest_bat['eid']})",
-             "threshold_monitor",
-             {"entity": lowest_bat["eid"], "thresholds": {"min": 20}},
-             "Ich warne wenn die Batterie unter 20% faellt — bevor der Sensor ausfaellt.")
+        _add(
+            "batterie_check",
+            f"Batterie-Warnung ({lowest_bat['friendly'] or lowest_bat['eid']})",
+            "threshold_monitor",
+            {"entity": lowest_bat["eid"], "thresholds": {"min": 20}},
+            "Ich warne wenn die Batterie unter 20% faellt — bevor der Sensor ausfaellt.",
+        )
 
     # ── Fenster ───────────────────────────────────────────────
     if binary_window:
-        _add("fenster_oeffnungen",
-             f"Fenster-Oeffnungen zaehlen ({len(binary_window)} Sensoren)",
-             "event_counter",
-             {"entities": [w["eid"] for w in binary_window[:6]], "count_state": "on", "time_range": "24h"},
-             f"{len(binary_window)} Fensterkontakte — ich zaehle wie oft gelueftet wurde.")
+        _add(
+            "fenster_oeffnungen",
+            f"Fenster-Oeffnungen zaehlen ({len(binary_window)} Sensoren)",
+            "event_counter",
+            {
+                "entities": [w["eid"] for w in binary_window[:6]],
+                "count_state": "on",
+                "time_range": "24h",
+            },
+            f"{len(binary_window)} Fensterkontakte — ich zaehle wie oft gelueftet wurde.",
+        )
 
-        _add("fenster_offen_dauer",
-             f"Fenster-Oeffnungsdauer ({binary_window[0]['friendly'] or binary_window[0]['eid']})",
-             "state_duration",
-             {"entity": binary_window[0]["eid"], "target_state": "on", "time_range": "24h"},
-             "Wie lange war das Fenster heute offen? Hilft bei der Heizungs-Optimierung.")
+        _add(
+            "fenster_offen_dauer",
+            f"Fenster-Oeffnungsdauer ({binary_window[0]['friendly'] or binary_window[0]['eid']})",
+            "state_duration",
+            {
+                "entity": binary_window[0]["eid"],
+                "target_state": "on",
+                "time_range": "24h",
+            },
+            "Wie lange war das Fenster heute offen? Hilft bei der Heizungs-Optimierung.",
+        )
 
     # ── Tueren ────────────────────────────────────────────────
     if binary_door:
-        _add("tuer_oeffnungen",
-             f"Tuer-Oeffnungen zaehlen ({len(binary_door)} Sensoren)",
-             "event_counter",
-             {"entities": [d["eid"] for d in binary_door[:6]], "count_state": "on", "time_range": "24h"},
-             f"{len(binary_door)} Tuerkontakte — ich sehe wie aktiv der Haushalt ist.")
+        _add(
+            "tuer_oeffnungen",
+            f"Tuer-Oeffnungen zaehlen ({len(binary_door)} Sensoren)",
+            "event_counter",
+            {
+                "entities": [d["eid"] for d in binary_door[:6]],
+                "count_state": "on",
+                "time_range": "24h",
+            },
+            f"{len(binary_door)} Tuerkontakte — ich sehe wie aktiv der Haushalt ist.",
+        )
 
     # ── Bewegung ──────────────────────────────────────────────
     if binary_motion:
-        _add("bewegung_aktivitaet",
-             f"Bewegungsmelder-Aktivität ({len(binary_motion)} Sensoren)",
-             "event_counter",
-             {"entities": [m["eid"] for m in binary_motion[:6]], "count_state": "on", "time_range": "24h"},
-             f"{len(binary_motion)} Bewegungsmelder — zeigt Aktivitaetsmuster im Haus.")
+        _add(
+            "bewegung_aktivitaet",
+            f"Bewegungsmelder-Aktivität ({len(binary_motion)} Sensoren)",
+            "event_counter",
+            {
+                "entities": [m["eid"] for m in binary_motion[:6]],
+                "count_state": "on",
+                "time_range": "24h",
+            },
+            f"{len(binary_motion)} Bewegungsmelder — zeigt Aktivitaetsmuster im Haus.",
+        )
 
     # ── Heizung ───────────────────────────────────────────────
     if climate_entities:
-        _add("heizung_laufzeit",
-             f"Heizungs-Laufzeit ({climate_entities[0]['friendly'] or climate_entities[0]['eid']})",
-             "state_duration",
-             {"entity": climate_entities[0]["eid"], "target_state": "heating", "time_range": "24h"},
-             "Wie viele Stunden hat die Heizung heute gelaufen? Wichtig fuer Energiekosten.")
+        _add(
+            "heizung_laufzeit",
+            f"Heizungs-Laufzeit ({climate_entities[0]['friendly'] or climate_entities[0]['eid']})",
+            "state_duration",
+            {
+                "entity": climate_entities[0]["eid"],
+                "target_state": "heating",
+                "time_range": "24h",
+            },
+            "Wie viele Stunden hat die Heizung heute gelaufen? Wichtig fuer Energiekosten.",
+        )
 
     # ── Medien ────────────────────────────────────────────────
     if media_players:
-        tv = [m for m in media_players if any(kw in m["eid"].lower()
-              for kw in ("tv", "fernseh", "fire_tv", "apple_tv", "chromecast"))]
+        tv = [
+            m
+            for m in media_players
+            if any(
+                kw in m["eid"].lower()
+                for kw in ("tv", "fernseh", "fire_tv", "apple_tv", "chromecast")
+            )
+        ]
         if tv:
-            _add("tv_nutzung",
-                 f"TV-Nutzung ({tv[0]['friendly'] or tv[0]['eid']})",
-                 "state_duration",
-                 {"entity": tv[0]["eid"], "target_state": "on", "time_range": "7d"},
-                 "Wie viele Stunden lief der Fernseher diese Woche?")
+            _add(
+                "tv_nutzung",
+                f"TV-Nutzung ({tv[0]['friendly'] or tv[0]['eid']})",
+                "state_duration",
+                {"entity": tv[0]["eid"], "target_state": "on", "time_range": "7d"},
+                "Wie viele Stunden lief der Fernseher diese Woche?",
+            )
 
     # ── Licht ─────────────────────────────────────────────────
     if len(lights) >= 3:
-        _add("licht_schaltungen",
-             f"Licht-Schaltungen zaehlen ({len(lights)} Lichter)",
-             "event_counter",
-             {"entities": [l["eid"] for l in lights[:8]], "count_state": "on", "time_range": "24h"},
-             f"{len(lights)} Lichter — zeigt wie oft Lichter geschaltet wurden (Automatisierungs-Potential).")
+        _add(
+            "licht_schaltungen",
+            f"Licht-Schaltungen zaehlen ({len(lights)} Lichter)",
+            "event_counter",
+            {
+                "entities": [l["eid"] for l in lights[:8]],
+                "count_state": "on",
+                "time_range": "24h",
+            },
+            f"{len(lights)} Lichter — zeigt wie oft Lichter geschaltet wurden (Automatisierungs-Potential).",
+        )
 
     return suggestions
 
@@ -1081,8 +1277,10 @@ async def refine_suggestions_with_llm(
     # Vorschlaege als kompaktes Format fuer das LLM aufbereiten
     items = []
     for i, s in enumerate(suggestions):
-        items.append(f"{i+1}. Name: {s['name']}, Typ: {s['type']}, "
-                     f"Beschreibung: {s['description']}, Grund: {s['reason']}")
+        items.append(
+            f"{i + 1}. Name: {s['name']}, Typ: {s['type']}, "
+            f"Beschreibung: {s['description']}, Grund: {s['reason']}"
+        )
 
     prompt = (
         "Du bist Jarvis, ein Smart-Home-Assistent. "
@@ -1093,7 +1291,7 @@ async def refine_suggestions_with_llm(
         "3. Gib fuer jeden einen verbesserten 'reason' (1 Satz, warum das dem User hilft)\n\n"
         "Vorschlaege:\n" + "\n".join(items) + "\n\n"
         "Antworte NUR als JSON-Array. Jedes Element: "
-        '{\"index\": 1, \"description\": \"...\", \"reason\": \"...\"}\n'
+        '{"index": 1, "description": "...", "reason": "..."}\n'
         "Keine Erklaerungen, nur das JSON-Array."
     )
 
@@ -1123,6 +1321,7 @@ async def refine_suggestions_with_llm(
 
         # JSON parsen
         import json
+
         text = content.strip()
         start = text.find("[")
         end = text.rfind("]")
@@ -1130,7 +1329,7 @@ async def refine_suggestions_with_llm(
             logger.debug("LLM-Antwort kein JSON-Array: %s", text[:200])
             return suggestions
 
-        refined = json.loads(text[start:end + 1])
+        refined = json.loads(text[start : end + 1])
         if not isinstance(refined, list):
             return suggestions
 
@@ -1169,9 +1368,15 @@ async def refine_suggestions_with_llm(
             if i not in seen:
                 result.append(s)
 
-        logger.info("LLM-Verfeinerung: %d/%d Vorschlaege verfeinert", len(idx_map), len(suggestions))
+        logger.info(
+            "LLM-Verfeinerung: %d/%d Vorschlaege verfeinert",
+            len(idx_map),
+            len(suggestions),
+        )
         return result
 
     except Exception as e:
-        logger.warning("LLM-Verfeinerung fehlgeschlagen (Fallback auf Regel-Basis): %s", e)
+        logger.warning(
+            "LLM-Verfeinerung fehlgeschlagen (Fallback auf Regel-Basis): %s", e
+        )
         return suggestions

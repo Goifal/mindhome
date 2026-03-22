@@ -39,13 +39,29 @@ logger = logging.getLogger(__name__)
 # Defaults — werden von planner-Config in settings.yaml ueberschrieben
 _DEFAULT_MAX_ITERATIONS = 8
 _DEFAULT_COMPLEX_KEYWORDS = [
-    "alles", "fertig machen", "vorbereiten",
-    "gehe weg", "fahre weg", "verreise", "urlaub",
-    "routine", "morgenroutine", "abendroutine",
-    "wenn ich", "falls ich", "bevor ich",
-    "zuerst", "danach", "und dann", "ausserdem",
-    "komplett", "ueberall", "in allen",
-    "party", "besuch kommt", "gaeste",
+    "alles",
+    "fertig machen",
+    "vorbereiten",
+    "gehe weg",
+    "fahre weg",
+    "verreise",
+    "urlaub",
+    "routine",
+    "morgenroutine",
+    "abendroutine",
+    "wenn ich",
+    "falls ich",
+    "bevor ich",
+    "zuerst",
+    "danach",
+    "und dann",
+    "ausserdem",
+    "komplett",
+    "ueberall",
+    "in allen",
+    "party",
+    "besuch kommt",
+    "gaeste",
 ]
 
 # Config-Werte laden
@@ -87,6 +103,7 @@ WICHTIG: Du bist und bleibst J.A.R.V.I.S. — auch beim Planen. Dein Ton aendert
 @dataclass
 class PlanStep:
     """Ein einzelner Schritt im Plan."""
+
     function: str
     args: dict
     result: Optional[dict] = None
@@ -98,6 +115,7 @@ class PlanStep:
 @dataclass
 class ActionPlan:
     """Ein kompletter Aktionsplan."""
+
     request: str
     steps: list[PlanStep] = field(default_factory=list)
     summary: str = ""
@@ -142,7 +160,9 @@ class ActionPlanner:
         self.validator = validator
         self._last_plan: Optional[ActionPlan] = None
         self._redis = None
-        self._pending_plans: dict[str, dict] = {}  # In-Memory Cache fuer laufende Dialoge
+        self._pending_plans: dict[
+            str, dict
+        ] = {}  # In-Memory Cache fuer laufende Dialoge
         self._max_pending_plans = 5  # Maximal gleichzeitige Planungen
         self._max_plan_messages = 20  # Max Messages pro Plan (Memory-Schutz)
 
@@ -156,14 +176,34 @@ class ActionPlanner:
 
     # Fragewoerter — wenn der Satz damit beginnt, ist es eine Frage, kein Befehl
     _QUESTION_STARTS = (
-        "was ", "wer ", "wie ", "wo ", "warum ", "wieso ", "weshalb ",
-        "wann ", "welche ", "welcher ", "welches ", "wieviel ",
-        "wie viel", "woher ", "wohin ",
+        "was ",
+        "wer ",
+        "wie ",
+        "wo ",
+        "warum ",
+        "wieso ",
+        "weshalb ",
+        "wann ",
+        "welche ",
+        "welcher ",
+        "welches ",
+        "wieviel ",
+        "wie viel",
+        "woher ",
+        "wohin ",
     )
     # Polite forms that are only questions if combined with '?'
     _POLITE_STARTS = (
-        "kannst du", "koenntest du", "wuerdest du", "hast du", "bist du",
-        "machst du", "denkst du", "findest du", "magst du", "weisst du",
+        "kannst du",
+        "koenntest du",
+        "wuerdest du",
+        "hast du",
+        "bist du",
+        "machst du",
+        "denkst du",
+        "findest du",
+        "magst du",
+        "weisst du",
     )
 
     def is_complex_request(self, text: str) -> bool:
@@ -231,7 +271,10 @@ class ActionPlanner:
 
             # LLM aufrufen — Modell und max_tokens aus planner-Config
             from .config import resolve_model
-            planner_model = resolve_model(_planner_cfg.get("model", ""), fallback_tier="deep")
+
+            planner_model = resolve_model(
+                _planner_cfg.get("model", ""), fallback_tier="deep"
+            )
             planner_max_tokens = int(_planner_cfg.get("max_tokens", 512))
 
             # SICHERHEIT: Tools VOR dem LLM-Aufruf nach Trust-Level filtern
@@ -239,7 +282,8 @@ class ActionPlanner:
             if autonomy:
                 effective_person = person if person else "__anonymous_guest__"
                 available_tools = [
-                    t for t in available_tools
+                    t
+                    for t in available_tools
                     if autonomy.can_person_act(
                         effective_person,
                         t.get("function", {}).get("name", ""),
@@ -273,7 +317,9 @@ class ActionPlanner:
             tool_results = []
 
             # Phase 1: Validierung + Trust-Check (sequentiell, kein I/O)
-            valid_steps: list[tuple[PlanStep, str, dict]] = []  # (step, func_name, func_args)
+            valid_steps: list[
+                tuple[PlanStep, str, dict]
+            ] = []  # (step, func_name, func_args)
             for tool_call in tool_calls:
                 func = tool_call.get("function", {})
                 func_name = func.get("name", "")
@@ -286,7 +332,10 @@ class ActionPlanner:
                 if not validation.ok:
                     if validation.needs_confirmation:
                         step.status = "blocked"
-                        step.result = {"needs_confirmation": True, "reason": validation.reason}
+                        step.result = {
+                            "needs_confirmation": True,
+                            "reason": validation.reason,
+                        }
                         plan.needs_confirmation = True
                         plan.confirmation_reasons.append(validation.reason)
                         tool_results.append(
@@ -299,31 +348,44 @@ class ActionPlanner:
                             f"FEHLER: {func_name} - {validation.reason}"
                         )
                     plan.steps.append(step)
-                    all_actions.append({
-                        "function": func_name,
-                        "args": func_args,
-                        "result": step.result,
-                    })
+                    all_actions.append(
+                        {
+                            "function": func_name,
+                            "args": func_args,
+                            "result": step.result,
+                        }
+                    )
                     continue
 
                 # SICHERHEIT: Trust-Level Pre-Check (wie in brain.py)
                 if autonomy:
                     effective_person = person if person else "__anonymous_guest__"
-                    action_room = func_args.get("room", "") if isinstance(func_args, dict) else ""
-                    trust_check = autonomy.can_person_act(effective_person, func_name, room=action_room)
+                    action_room = (
+                        func_args.get("room", "") if isinstance(func_args, dict) else ""
+                    )
+                    trust_check = autonomy.can_person_act(
+                        effective_person, func_name, room=action_room
+                    )
                     if not trust_check["allowed"]:
                         logger.warning(
                             "Planner Trust-Check fehlgeschlagen: %s darf '%s' nicht (%s)",
-                            effective_person, func_name, trust_check.get("reason", ""),
+                            effective_person,
+                            func_name,
+                            trust_check.get("reason", ""),
                         )
                         step.status = "blocked"
-                        step.result = {"success": False, "message": f"blocked: {trust_check.get('reason', 'Keine Berechtigung')}"}
+                        step.result = {
+                            "success": False,
+                            "message": f"blocked: {trust_check.get('reason', 'Keine Berechtigung')}",
+                        }
                         plan.steps.append(step)
-                        all_actions.append({
-                            "function": func_name,
-                            "args": func_args,
-                            "result": step.result,
-                        })
+                        all_actions.append(
+                            {
+                                "function": func_name,
+                                "args": func_args,
+                                "result": step.result,
+                            }
+                        )
                         tool_results.append(
                             f"BLOCKIERT: {func_name} - Keine Berechtigung ({trust_check.get('reason', '')})"
                         )
@@ -346,11 +408,14 @@ class ActionPlanner:
                 try:
                     from .state_change_log import StateChangeLog
                     import assistant.main as main_module
+
                     if hasattr(main_module, "brain"):
                         _states = await main_module.brain.ha.get_states() or []
                         for _vs_step, _vs_fn, _vs_args in valid_steps:
                             _dep_hints = StateChangeLog.check_action_dependencies(
-                                _vs_fn, _vs_args, _states,
+                                _vs_fn,
+                                _vs_args,
+                                _states,
                             )
                             if _dep_hints:
                                 plan.confirmation_reasons.extend(_dep_hints)
@@ -364,23 +429,34 @@ class ActionPlanner:
                     logger.debug("Planner Dependency-Check: %s", _dep_err)
 
             # Phase 2: Ausfuehrung — parallel oder sequentiell (Narration)
-            use_parallel = len(valid_steps) > 1 and not (self.narration_enabled and self.step_delay > 0)
+            use_parallel = len(valid_steps) > 1 and not (
+                self.narration_enabled and self.step_delay > 0
+            )
 
             if use_parallel:
                 # Parallele Ausfuehrung: Alle Steps gleichzeitig starten
-                logger.info("Planner: %d Tool-Calls parallel ausfuehren", len(valid_steps))
+                logger.info(
+                    "Planner: %d Tool-Calls parallel ausfuehren", len(valid_steps)
+                )
 
-                async def _run_step(s: PlanStep, fn: str, fa: dict) -> tuple[PlanStep, str, dict, dict]:
+                async def _run_step(
+                    s: PlanStep, fn: str, fa: dict
+                ) -> tuple[PlanStep, str, dict, dict]:
                     s.status = "running"
                     res = await self.executor.execute(fn, fa)
                     s.result = res
                     s.status = "done" if res.get("success", False) else "failed"
                     return s, fn, fa, res
 
-                tasks = [asyncio.create_task(_run_step(s, fn, fa)) for s, fn, fa in valid_steps]
+                tasks = [
+                    asyncio.create_task(_run_step(s, fn, fa))
+                    for s, fn, fa in valid_steps
+                ]
                 done, pending = await asyncio.wait(tasks, timeout=120)
                 if pending:
-                    logger.warning("T3: Action planner %d steps timed out (120s)", len(pending))
+                    logger.warning(
+                        "T3: Action planner %d steps timed out (120s)", len(pending)
+                    )
                     for t in pending:
                         t.cancel()
                 results = []
@@ -403,35 +479,46 @@ class ActionPlanner:
                         if idx < len(valid_steps):
                             err_step, err_fn, err_fa = valid_steps[idx]
                             err_step.status = "failed"
-                            err_step.result = {"success": False, "message": f"Exception: {r}"}
+                            err_step.result = {
+                                "success": False,
+                                "message": f"Exception: {r}",
+                            }
                             plan.steps.append(err_step)
-                            all_actions.append({
-                                "function": err_fn,
-                                "args": err_fa,
-                                "result": err_step.result,
-                            })
+                            all_actions.append(
+                                {
+                                    "function": err_fn,
+                                    "args": err_fa,
+                                    "result": err_step.result,
+                                }
+                            )
                             tool_results.append(f"{err_fn}: Fehler — {r}")
                         continue
                     step, func_name, func_args, result = r
                     plan.steps.append(step)
-                    all_actions.append({
-                        "function": func_name,
-                        "args": func_args,
-                        "result": result,
-                    })
-                    await emit_action(func_name, func_args, result)
-                    tool_results.append(
-                        f"{func_name}: {result.get('message', 'OK')}"
+                    all_actions.append(
+                        {
+                            "function": func_name,
+                            "args": func_args,
+                            "result": result,
+                        }
                     )
+                    await emit_action(func_name, func_args, result)
+                    tool_results.append(f"{func_name}: {result.get('message', 'OK')}")
                     logger.info(
                         "Planner Step: %s(%s) -> %s",
-                        func_name, func_args, result.get("message", ""),
+                        func_name,
+                        func_args,
+                        result.get("message", ""),
                     )
             else:
                 # Sequentielle Ausfuehrung (Narration-Modus oder einzelner Step)
                 for step, func_name, func_args in valid_steps:
                     # Narration: Kurze Pause zwischen Schritten
-                    if self.narration_enabled and len(plan.steps) > 0 and self.step_delay > 0:
+                    if (
+                        self.narration_enabled
+                        and len(plan.steps) > 0
+                        and self.step_delay > 0
+                    ):
                         await asyncio.sleep(self.step_delay)
 
                     # Ausfuehren
@@ -445,10 +532,16 @@ class ActionPlanner:
                         error_msg = result.get("message", "Unbekannter Fehler")
                         try:
                             replan_result = await self._attempt_replan(
-                                func_name, func_args, error_msg, plan, planner_messages,
+                                func_name,
+                                func_args,
+                                error_msg,
+                                plan,
+                                planner_messages,
                             )
                         except Exception as rp_err:
-                            logger.error("Re-Planning Ausnahme fuer '%s': %s", func_name, rp_err)
+                            logger.error(
+                                "Re-Planning Ausnahme fuer '%s': %s", func_name, rp_err
+                            )
                             replan_result = None
                         if replan_result:
                             tool_results.append(
@@ -458,7 +551,9 @@ class ActionPlanner:
                         else:
                             # Kein Re-Planning moeglich — Rollback
                             try:
-                                rollback_count = await self._rollback_completed_steps(plan.steps)
+                                rollback_count = await self._rollback_completed_steps(
+                                    plan.steps
+                                )
                             except Exception as rb_err:
                                 logger.error("Rollback Ausnahme: %s", rb_err)
                                 rollback_count = 0
@@ -466,53 +561,63 @@ class ActionPlanner:
                                 plan.rollback_performed = True
                                 logger.info(
                                     "Rollback: %d Step(s) nach Fehler in '%s' zurueckgerollt",
-                                    rollback_count, func_name,
+                                    rollback_count,
+                                    func_name,
                                 )
                                 tool_results.append(
                                     f"ROLLBACK: {rollback_count} vorherige Aktion(en) zurueckgesetzt"
                                 )
 
                     plan.steps.append(step)
-                    all_actions.append({
-                        "function": func_name,
-                        "args": func_args,
-                        "result": result,
-                    })
+                    all_actions.append(
+                        {
+                            "function": func_name,
+                            "args": func_args,
+                            "result": result,
+                        }
+                    )
 
                     # WebSocket: Aktion melden
                     await emit_action(func_name, func_args, result)
 
                     # Narration: beschreiben was passiert
-                    if self.narration_enabled and self.narrate_actions and result.get("success"):
+                    if (
+                        self.narration_enabled
+                        and self.narrate_actions
+                        and result.get("success")
+                    ):
                         narration = self._get_narration_text(func_name, func_args)
                         if narration:
                             await emit_speaking(narration)
 
-                    tool_results.append(
-                        f"{func_name}: {result.get('message', 'OK')}"
-                    )
+                    tool_results.append(f"{func_name}: {result.get('message', 'OK')}")
 
                     logger.info(
                         "Planner Step: %s(%s) -> %s",
-                        func_name, func_args, result.get("message", ""),
+                        func_name,
+                        func_args,
+                        result.get("message", ""),
                     )
 
             # Ergebnisse zurueck an LLM fuer naechste Iteration
             # Aktuelle Antwort des LLM als assistant message hinzufuegen
             valid_tool_calls = [
-                tc for tc in tool_calls
-                if isinstance(tc, dict) and "function" in tc
+                tc for tc in tool_calls if isinstance(tc, dict) and "function" in tc
             ]
-            planner_messages.append({
-                "role": "assistant",
-                "content": response_text or "",
-                "tool_calls": valid_tool_calls,
-            })
+            planner_messages.append(
+                {
+                    "role": "assistant",
+                    "content": response_text or "",
+                    "tool_calls": valid_tool_calls,
+                }
+            )
             # Tool-Ergebnisse als tool response
-            planner_messages.append({
-                "role": "tool",
-                "content": "\n".join(tool_results),
-            })
+            planner_messages.append(
+                {
+                    "role": "tool",
+                    "content": "\n".join(tool_results),
+                }
+            )
 
         else:
             # Max Iterations erreicht
@@ -569,9 +674,43 @@ class ActionPlanner:
                 if a.get("position", 50) != 50
                 else ""
             ),
-            "set_climate": lambda a: "",  # Leise, keine Narration
-            "activate_scene": lambda a: "",  # Wird vom LLM zusammengefasst
-            "play_media": lambda a: "",
+            "set_climate": lambda a: (
+                f"Temperatur {a.get('room', '')} wird auf {a.get('temperature', '')}°C angepasst..."
+                if a.get("temperature")
+                else f"Klima {a.get('room', '')} wird angepasst..."
+            ),
+            "set_climate_curve": lambda a: "Heizkurve wird justiert...",
+            "activate_scene": lambda a: (
+                f"Szene '{a.get('scene', '')}' wird aktiviert..."
+                if a.get("scene")
+                else "Szene wird aktiviert..."
+            ),
+            "play_media": lambda a: (
+                f"Medien in {a.get('room', '')} werden gestartet..."
+                if a.get("room")
+                else "Medien werden gestartet..."
+            ),
+            "set_switch": lambda a: (
+                f"Schalter {a.get('room', '')} wird betaetigt..."
+                if a.get("room")
+                else "Schalter wird betaetigt..."
+            ),
+            "set_fan": lambda a: (
+                f"Luefter {a.get('room', '')} wird eingestellt..."
+                if a.get("room")
+                else "Luefter wird eingestellt..."
+            ),
+            "lock_door": lambda a: (
+                f"Tuerschloss {a.get('room', '')} wird betaetigt..."
+                if a.get("room")
+                else "Tuerschloss wird betaetigt..."
+            ),
+            "set_vacuum": lambda a: "Saugroboter startet...",
+            "set_alarm": lambda a: (
+                f"Alarm {a.get('room', '')} wird {'scharf' if a.get('state') == 'arm' else 'deaktiviert'}..."
+                if a.get("state")
+                else "Alarmsystem wird konfiguriert..."
+            ),
         }
 
         generator = narrations.get(func_name)
@@ -585,8 +724,13 @@ class ActionPlanner:
 
     # Keywords die auf Planungs-Anfragen hindeuten (benoetigen Rueckfragen)
     PLANNING_KEYWORDS = [
-        "plane", "organisiere", "bereite vor", "dinner party",
-        "feier", "event planen", "vorbereiten fuer",
+        "plane",
+        "organisiere",
+        "bereite vor",
+        "dinner party",
+        "feier",
+        "event planen",
+        "vorbereiten fuer",
     ]
 
     def is_planning_request(self, text: str) -> bool:
@@ -607,7 +751,10 @@ class ActionPlanner:
             Dict mit response (Rueckfrage oder Plan), plan_id, status
         """
         import hashlib, time
-        plan_id = f"plan_{hashlib.md5(f'{text}{time.monotonic()}'.encode()).hexdigest()[:8]}"
+
+        plan_id = (
+            f"plan_{hashlib.md5(f'{text}{time.monotonic()}'.encode()).hexdigest()[:8]}"
+        )
 
         planning_prompt = f"""Analysiere diese Planungsanfrage und stelle die noetigsten Rueckfragen.
 WICHTIG: Stelle maximal 2-3 Fragen. Nicht zu viele auf einmal.
@@ -620,7 +767,9 @@ Person: {person or get_person_title(person)}"""
         try:
             response = await self.ollama.chat(
                 messages=[
-                    {"role": "system", "content": f"""Du bist {settings.assistant_name}, der intelligente Butler.
+                    {
+                        "role": "system",
+                        "content": f"""Du bist {settings.assistant_name}, der intelligente Butler.
 Du hilfst bei der Planung von Events/Aktivitaeten.
 Stelle kurze, praesize Rueckfragen um den Plan zu verfeinern.
 Deutsch. Butler-Stil. Max 3 Fragen.
@@ -630,7 +779,8 @@ Sehr gerne, {get_person_title(person)}. Fuer die Planung brauche ich noch:
 2. Welche Uhrzeit?
 3. Soll ich auch eine Einkaufsliste erstellen?
 Sobald ich die Details habe, kuemmere ich mich um alles."
-"""},
+""",
+                    },
                     {"role": "user", "content": planning_prompt},
                 ],
                 model=settings.model_fast,
@@ -641,15 +791,21 @@ Sobald ich die Details habe, kuemmere ich mich um alles."
 
             # Plan-State speichern fuer Follow-Up (mit Timestamp fuer Auto-Expiry)
             import time as _time
+
             # Expired Plans aufraumen bevor neuer hinzukommt (Memory-Schutz)
             self._cleanup_expired_plans()
             # Aelteste Plans entfernen wenn Limit erreicht
             while len(self._pending_plans) >= self._max_pending_plans:
-                oldest_id = min(list(self._pending_plans.keys()),
-                                key=lambda k: self._pending_plans[k].get("created_at", 0))
+                oldest_id = min(
+                    list(self._pending_plans.keys()),
+                    key=lambda k: self._pending_plans[k].get("created_at", 0),
+                )
                 self._pending_plans.pop(oldest_id, None)
-                logger.info("Planungs-Dialog %s entfernt (max %d erreicht)",
-                            oldest_id, self._max_pending_plans)
+                logger.info(
+                    "Planungs-Dialog %s entfernt (max %d erreicht)",
+                    oldest_id,
+                    self._max_pending_plans,
+                )
             self._pending_plans[plan_id] = {
                 "original_request": text,
                 "person": person,
@@ -687,7 +843,10 @@ Sobald ich die Details habe, kuemmere ich mich um alles."
         """
         plan_state = self._pending_plans.get(plan_id)
         if not plan_state:
-            return {"response": "Der Plan ist abgelaufen. Was soll ich planen?", "status": "error"}
+            return {
+                "response": "Der Plan ist abgelaufen. Was soll ich planen?",
+                "status": "error",
+            }
 
         plan_state["messages"].append({"role": "user", "content": text})
 
@@ -695,7 +854,8 @@ Sobald ich die Details habe, kuemmere ich mich um alles."
         if len(plan_state["messages"]) > self._max_plan_messages:
             # Erste und letzte Messages behalten, Mitte kuerzen
             plan_state["messages"] = (
-                plan_state["messages"][:2] + plan_state["messages"][-(self._max_plan_messages - 2):]
+                plan_state["messages"][:2]
+                + plan_state["messages"][-(self._max_plan_messages - 2) :]
             )
 
         finalize_prompt = """Basierend auf den bisherigen Informationen:
@@ -714,11 +874,14 @@ Soll ich das so umsetzen, oder gibt es Aenderungen?"
 """
 
         messages = [
-            {"role": "system", "content": f"""Du bist {settings.assistant_name}.
+            {
+                "role": "system",
+                "content": f"""Du bist {settings.assistant_name}.
 Du planst ein Event/Aktivitaet basierend auf der Konversation.
 Erstelle einen konkreten, ausfuehrbaren Plan.
 Deutsch. Butler-Stil. Praezise.
-Frage am Ende ob der Plan so umgesetzt werden soll."""},
+Frage am Ende ob der Plan so umgesetzt werden soll.""",
+            },
         ]
         messages.extend(plan_state["messages"])
         messages.append({"role": "user", "content": finalize_prompt})
@@ -731,7 +894,9 @@ Frage am Ende ob der Plan so umgesetzt werden soll."""},
             )
 
             response_text = response.get("message", {}).get("content", "")
-            plan_state["messages"].append({"role": "assistant", "content": response_text})
+            plan_state["messages"].append(
+                {"role": "assistant", "content": response_text}
+            )
             plan_state["status"] = "plan_proposed"
 
             return {
@@ -742,7 +907,10 @@ Frage am Ende ob der Plan so umgesetzt werden soll."""},
 
         except Exception as e:
             logger.error("Planning Dialog Continue Fehler: %s", e)
-            return {"response": "Die Planung hakt gerade. Nochmal von vorn?", "status": "error"}
+            return {
+                "response": "Die Planung hakt gerade. Nochmal von vorn?",
+                "status": "error",
+            }
 
     def has_pending_plan(self) -> Optional[str]:
         """Prueft ob ein Planungs-Dialog laeuft.
@@ -751,6 +919,7 @@ Frage am Ende ob der Plan so umgesetzt werden soll."""},
             Plan-ID oder None. Expired Plans (>10 Min) werden automatisch entfernt.
         """
         import time as _time
+
         expired = []
         result = None
         for plan_id, state in self._pending_plans.items():
@@ -769,8 +938,10 @@ Frage am Ende ob der Plan so umgesetzt werden soll."""},
     def _cleanup_expired_plans(self):
         """Entfernt abgelaufene Plans (>10 Min). Wird vor neuen Plans aufgerufen."""
         import time as _time
+
         expired = [
-            pid for pid, state in self._pending_plans.items()
+            pid
+            for pid, state in self._pending_plans.items()
             if (_time.time() - state.get("created_at", 0)) > 600
         ]
         for pid in expired:
@@ -811,13 +982,18 @@ Frage am Ende ob der Plan so umgesetzt werden soll."""},
 
         try:
             tools = get_assistant_tools()
-            replan_messages = list(planner_messages) + [{
-                "role": "user",
-                "content": replan_prompt,
-            }]
+            replan_messages = list(planner_messages) + [
+                {
+                    "role": "user",
+                    "content": replan_prompt,
+                }
+            ]
 
             from .config import resolve_model
-            replan_model = resolve_model(_planner_cfg.get("model", ""), fallback_tier="smart")
+
+            replan_model = resolve_model(
+                _planner_cfg.get("model", ""), fallback_tier="smart"
+            )
 
             response = await asyncio.wait_for(
                 self.ollama.chat(
@@ -848,7 +1024,9 @@ Frage am Ende ob der Plan so umgesetzt werden soll."""},
 
             logger.info(
                 "Re-Planning: Alternative fuer '%s' -> '%s'(%s)",
-                failed_func, alt_name, alt_args,
+                failed_func,
+                alt_name,
+                alt_args,
             )
 
             alt_result = await self.executor.execute(alt_name, alt_args)
@@ -874,7 +1052,9 @@ Frage am Ende ob der Plan so umgesetzt werden soll."""},
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _get_rollback_info(func_name: str, func_args: dict) -> tuple[Optional[str], Optional[dict]]:
+    def _get_rollback_info(
+        func_name: str, func_args: dict
+    ) -> tuple[Optional[str], Optional[dict]]:
         """Bestimmt die Rollback-Aktion fuer eine gegebene Funktion.
 
         Gibt (rollback_function, rollback_args) zurueck oder (None, None)
@@ -941,7 +1121,8 @@ Frage am Ende ob der Plan so umgesetzt werden soll."""},
                     rollback_count += 1
                     logger.info(
                         "Rollback: %s(%s) -> %s",
-                        step.rollback_function, step.rollback_args,
+                        step.rollback_function,
+                        step.rollback_args,
                         result.get("message", "OK"),
                     )
             except Exception as e:
@@ -953,9 +1134,7 @@ Frage am Ende ob der Plan so umgesetzt werden soll."""},
     # Phase 11C: Cost Estimation, Resource Conflicts, Partial Success
     # ------------------------------------------------------------------
 
-    def _estimate_cost(
-        self, action: str, duration_minutes: int = 30
-    ) -> Optional[dict]:
+    def _estimate_cost(self, action: str, duration_minutes: int = 30) -> Optional[dict]:
         """Schaetzt die Kosten einer Aktion basierend auf Geraetetyp.
 
         Args:

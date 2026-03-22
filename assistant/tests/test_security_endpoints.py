@@ -78,6 +78,7 @@ class TestEndpointAuthRequirements:
     @pytest.fixture(autouse=True)
     def load_source(self):
         import pathlib
+
         self.main_source = (
             pathlib.Path(__file__).parent.parent / "assistant" / "main.py"
         ).read_text()
@@ -86,6 +87,7 @@ class TestEndpointAuthRequirements:
         """Prueft ob ein Endpoint _check_token aufruft."""
         # Finde die Endpoint-Definition
         import re
+
         pattern = rf'@app\.\w+\("{re.escape(endpoint_path)}"\)\s*\nasync def \w+\([^)]*\).*?(?=@app\.\w+\(|class |def [a-z])'
         match = re.search(pattern, self.main_source, re.DOTALL)
         if not match:
@@ -115,6 +117,7 @@ class TestEndpointPinRateLimit:
     @pytest.fixture(autouse=True)
     def load_source(self):
         import pathlib
+
         self.main_source = (
             pathlib.Path(__file__).parent.parent / "assistant" / "main.py"
         ).read_text()
@@ -122,6 +125,7 @@ class TestEndpointPinRateLimit:
     def _endpoint_has_rate_limit(self, endpoint_path: str) -> bool:
         """Prueft ob ein Endpoint _check_pin_rate_limit aufruft."""
         import re
+
         pattern = rf'@app\.\w+\("{re.escape(endpoint_path)}"\)\s*\nasync def \w+\([^)]*\).*?(?=@app\.\w+\(|class |def [a-z])'
         match = re.search(pattern, self.main_source, re.DOTALL)
         if not match:
@@ -149,6 +153,7 @@ class TestWorkshopHardwareTrustLevel:
     @pytest.fixture(autouse=True)
     def load_source(self):
         import pathlib
+
         self.main_source = (
             pathlib.Path(__file__).parent.parent / "assistant" / "main.py"
         ).read_text()
@@ -166,6 +171,7 @@ class TestWorkshopHardwareTrustLevel:
 
     def _endpoint_has_hardware_check(self, endpoint_path: str) -> bool:
         import re
+
         pattern = rf'@app\.\w+\("{re.escape(endpoint_path)}"\)\s*\nasync def \w+\([^)]*\).*?(?=@app\.\w+\(|class |def [a-z])'
         match = re.search(pattern, self.main_source, re.DOTALL)
         if not match:
@@ -174,8 +180,9 @@ class TestWorkshopHardwareTrustLevel:
 
     @pytest.mark.parametrize("endpoint", HARDWARE_ENDPOINTS)
     def test_hardware_endpoint_has_trust_check(self, endpoint):
-        assert self._endpoint_has_hardware_check(endpoint), \
+        assert self._endpoint_has_hardware_check(endpoint), (
             f"{endpoint} fehlt _require_hardware_owner Check"
+        )
 
 
 # ---------------------------------------------------------------
@@ -188,16 +195,33 @@ class TestSsrfPrevention:
 
     # Korrekte RFC 1918 Prefixes
     _ALLOWED_PREFIXES = (
-        "192.168.", "10.", "172.16.", "172.17.", "172.18.",
-        "172.19.", "172.20.", "172.21.", "172.22.", "172.23.",
-        "172.24.", "172.25.", "172.26.", "172.27.", "172.28.",
-        "172.29.", "172.30.", "172.31.",
-        "127.", "localhost", "::1",
+        "192.168.",
+        "10.",
+        "172.16.",
+        "172.17.",
+        "172.18.",
+        "172.19.",
+        "172.20.",
+        "172.21.",
+        "172.22.",
+        "172.23.",
+        "172.24.",
+        "172.25.",
+        "172.26.",
+        "172.27.",
+        "172.28.",
+        "172.29.",
+        "172.30.",
+        "172.31.",
+        "127.",
+        "localhost",
+        "::1",
     )
 
     def _is_allowed(self, url: str) -> bool:
         """Simuliert die URL-Validierung aus addon/routes/chat.py."""
         from urllib.parse import urlparse
+
         try:
             parsed = urlparse(url)
             host = parsed.hostname or ""
@@ -248,14 +272,21 @@ class TestAddonCorsConfig:
     @pytest.fixture(autouse=True)
     def load_source(self):
         import pathlib
+
         self.addon_source = (
             pathlib.Path(__file__).parent.parent.parent
-            / "addon" / "rootfs" / "opt" / "mindhome" / "app.py"
+            / "addon"
+            / "rootfs"
+            / "opt"
+            / "mindhome"
+            / "app.py"
         ).read_text()
 
     def test_cors_not_wildcard(self):
         """CORS darf nicht mehr blanket '*' sein."""
-        assert 'CORS(app)' not in self.addon_source or 'CORS_ORIGINS' in self.addon_source
+        assert (
+            "CORS(app)" not in self.addon_source or "CORS_ORIGINS" in self.addon_source
+        )
 
     def test_cors_configurable(self):
         """CORS_ORIGINS env var wird gelesen."""

@@ -21,6 +21,7 @@ from assistant.llm_enhancer import (
 # Fixtures
 # ============================================================
 
+
 @pytest.fixture
 def ollama_mock():
     mock = AsyncMock()
@@ -91,6 +92,7 @@ def enhancer(ollama_mock, enhancer_config):
 # Sanitize
 # ============================================================
 
+
 class TestSanitize:
     def test_normal_text(self):
         assert _sanitize("Mir ist kalt") == "Mir ist kalt"
@@ -138,6 +140,7 @@ class TestSanitize:
 # Smart Intent Recognition
 # ============================================================
 
+
 class TestSmartIntentRecognizer:
     def test_is_implicit_positive(self, smart_intent):
         assert smart_intent._is_implicit("Mir ist kalt")
@@ -184,11 +187,13 @@ class TestSmartIntentRecognizer:
     async def test_recognize_cold(self, smart_intent, ollama_mock):
         ollama_mock.chat.return_value = {
             "message": {
-                "content": json.dumps({
-                    "action": "set_climate",
-                    "intent": "Heizung hochdrehen",
-                    "confidence": 0.85,
-                })
+                "content": json.dumps(
+                    {
+                        "action": "set_climate",
+                        "intent": "Heizung hochdrehen",
+                        "confidence": 0.85,
+                    }
+                )
             }
         }
         result = await smart_intent.recognize("Mir ist kalt", room="Wohnzimmer")
@@ -206,11 +211,13 @@ class TestSmartIntentRecognizer:
     async def test_recognize_low_confidence_filtered(self, smart_intent, ollama_mock):
         ollama_mock.chat.return_value = {
             "message": {
-                "content": json.dumps({
-                    "action": "set_light",
-                    "intent": "Licht an",
-                    "confidence": 0.3,
-                })
+                "content": json.dumps(
+                    {
+                        "action": "set_light",
+                        "intent": "Licht an",
+                        "confidence": 0.3,
+                    }
+                )
             }
         }
         result = await smart_intent.recognize("Mir ist irgendwie so")
@@ -219,9 +226,7 @@ class TestSmartIntentRecognizer:
     @pytest.mark.asyncio
     async def test_recognize_no_action(self, smart_intent, ollama_mock):
         ollama_mock.chat.return_value = {
-            "message": {
-                "content": json.dumps({"action": "none"})
-            }
+            "message": {"content": json.dumps({"action": "none"})}
         }
         result = await smart_intent.recognize("Mir ist langweilig")
         assert result is None
@@ -255,11 +260,13 @@ class TestSmartIntentRecognizer:
         """Room state gets injected into prompt context."""
         ollama_mock.chat.return_value = {
             "message": {
-                "content": json.dumps({
-                    "action": "set_climate",
-                    "intent": "Heizung hoch",
-                    "confidence": 0.9,
-                })
+                "content": json.dumps(
+                    {
+                        "action": "set_climate",
+                        "intent": "Heizung hoch",
+                        "confidence": 0.9,
+                    }
+                )
             }
         }
         result = await smart_intent.recognize(
@@ -270,7 +277,11 @@ class TestSmartIntentRecognizer:
         assert result is not None
         # Verify room_state was passed in the prompt
         call_args = ollama_mock.chat.call_args
-        prompt_content = call_args[1]["messages"][0]["content"] if "messages" in call_args[1] else call_args[0][0][0]["content"]
+        prompt_content = (
+            call_args[1]["messages"][0]["content"]
+            if "messages" in call_args[1]
+            else call_args[0][0][0]["content"]
+        )
         assert "18 Grad" in prompt_content
 
     @pytest.mark.asyncio
@@ -292,15 +303,19 @@ class TestSmartIntentRecognizer:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_recognize_time_of_day_auto_detection(self, smart_intent, ollama_mock):
+    async def test_recognize_time_of_day_auto_detection(
+        self, smart_intent, ollama_mock
+    ):
         """When no time_of_day is given, it should be auto-detected."""
         ollama_mock.chat.return_value = {
             "message": {
-                "content": json.dumps({
-                    "action": "set_light",
-                    "intent": "Licht an",
-                    "confidence": 0.9,
-                })
+                "content": json.dumps(
+                    {
+                        "action": "set_light",
+                        "intent": "Licht an",
+                        "confidence": 0.9,
+                    }
+                )
             }
         }
         result = await smart_intent.recognize("Es ist so dunkel hier")
@@ -311,6 +326,7 @@ class TestSmartIntentRecognizer:
 # ============================================================
 # Conversation Summarizer
 # ============================================================
+
 
 class TestConversationSummarizer:
     @pytest.mark.asyncio
@@ -356,7 +372,9 @@ class TestConversationSummarizer:
     @pytest.mark.asyncio
     async def test_summarize_for_context(self, summarizer, ollama_mock):
         ollama_mock.chat.return_value = {
-            "message": {"content": "User fragt nach Heizung, Jarvis hat auf 22 Grad gestellt."}
+            "message": {
+                "content": "User fragt nach Heizung, Jarvis hat auf 22 Grad gestellt."
+            }
         }
         messages = [
             {"role": "user", "content": "Stell die Heizung auf 22"},
@@ -370,7 +388,9 @@ class TestConversationSummarizer:
     @pytest.mark.asyncio
     async def test_summarize_think_tags_removed(self, summarizer, ollama_mock):
         ollama_mock.chat.return_value = {
-            "message": {"content": "<think>Let me think...</think>User hat nach Licht gefragt."}
+            "message": {
+                "content": "<think>Let me think...</think>User hat nach Licht gefragt."
+            }
         }
         messages = [{"role": "user", "content": f"msg{i}"} for i in range(5)]
         result = await summarizer.summarize(messages)
@@ -388,9 +408,7 @@ class TestConversationSummarizer:
     @pytest.mark.asyncio
     async def test_summarize_short_result_rejected(self, summarizer, ollama_mock):
         """Summary shorter than 10 chars is rejected."""
-        ollama_mock.chat.return_value = {
-            "message": {"content": "OK"}
-        }
+        ollama_mock.chat.return_value = {"message": {"content": "OK"}}
         messages = [{"role": "user", "content": f"msg{i}"} for i in range(5)]
         result = await summarizer.summarize(messages)
         assert result is None
@@ -399,7 +417,9 @@ class TestConversationSummarizer:
     async def test_summarize_with_person_name(self, summarizer, ollama_mock):
         """Person name should appear in conversation formatting."""
         ollama_mock.chat.return_value = {
-            "message": {"content": "Max hat nach dem Licht gefragt und Jarvis hat es eingeschaltet."}
+            "message": {
+                "content": "Max hat nach dem Licht gefragt und Jarvis hat es eingeschaltet."
+            }
         }
         messages = [
             {"role": "user", "content": "Mach das Licht an"},
@@ -411,11 +431,17 @@ class TestConversationSummarizer:
         assert result is not None
         # Verify "Max" was used in the prompt
         call_args = ollama_mock.chat.call_args
-        prompt_content = call_args[1]["messages"][0]["content"] if "messages" in call_args[1] else call_args[0][0][0]["content"]
+        prompt_content = (
+            call_args[1]["messages"][0]["content"]
+            if "messages" in call_args[1]
+            else call_args[0][0][0]["content"]
+        )
         assert "Max" in prompt_content
 
     @pytest.mark.asyncio
-    async def test_summarize_empty_content_messages_filtered(self, summarizer, ollama_mock):
+    async def test_summarize_empty_content_messages_filtered(
+        self, summarizer, ollama_mock
+    ):
         """Messages with empty content should be filtered out."""
         ollama_mock.chat.return_value = {
             "message": {"content": "Der User hat nach dem Wetter gefragt."}
@@ -437,11 +463,11 @@ class TestConversationSummarizer:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_summarize_for_context_short_result_rejected(self, summarizer, ollama_mock):
+    async def test_summarize_for_context_short_result_rejected(
+        self, summarizer, ollama_mock
+    ):
         """Context summary shorter than 5 chars is rejected."""
-        ollama_mock.chat.return_value = {
-            "message": {"content": "OK"}
-        }
+        ollama_mock.chat.return_value = {"message": {"content": "OK"}}
         messages = [{"role": "user", "content": f"msg{i}"} for i in range(5)]
         result = await summarizer.summarize_for_context(messages)
         assert result is None
@@ -459,6 +485,7 @@ class TestConversationSummarizer:
 # Proactive Suggester
 # ============================================================
 
+
 class TestProactiveSuggester:
     @pytest.mark.asyncio
     async def test_generate_suggestion_basic(self, proactive, ollama_mock):
@@ -467,14 +494,16 @@ class TestProactiveSuggester:
                 "content": "Du gehst freitags immer um 18 Uhr joggen. Soll ich die Heizung vorwaermen?"
             }
         }
-        patterns = [{
-            "type": "time",
-            "action": "set_climate",
-            "args": {"temperature": 22},
-            "confidence": 0.85,
-            "occurrences": 5,
-            "description": "Jeden Freitag um 18:00 → Heizung auf 22",
-        }]
+        patterns = [
+            {
+                "type": "time",
+                "action": "set_climate",
+                "args": {"temperature": 22},
+                "confidence": 0.85,
+                "occurrences": 5,
+                "description": "Jeden Freitag um 18:00 → Heizung auf 22",
+            }
+        ]
         result = await proactive.generate_suggestion(patterns, person="Max")
         assert result is not None
         assert "suggestion" in result
@@ -490,7 +519,15 @@ class TestProactiveSuggester:
         enhancer_config["llm_enhancer"]["proactive_suggestions"]["enabled"] = False
         with patch("assistant.llm_enhancer.yaml_config", enhancer_config):
             p = ProactiveSuggester(ollama_mock)
-        patterns = [{"type": "time", "action": "test", "confidence": 0.9, "occurrences": 5, "description": "test"}]
+        patterns = [
+            {
+                "type": "time",
+                "action": "test",
+                "confidence": 0.9,
+                "occurrences": 5,
+                "description": "test",
+            }
+        ]
         result = await p.generate_suggestion(patterns)
         assert result is None
 
@@ -498,16 +535,30 @@ class TestProactiveSuggester:
     async def test_daily_limit(self, proactive, ollama_mock):
         proactive.max_suggestions_per_day = 1
         proactive._suggestions_today = 1
-        patterns = [{"type": "time", "action": "test", "confidence": 0.9, "occurrences": 5, "description": "test"}]
+        patterns = [
+            {
+                "type": "time",
+                "action": "test",
+                "confidence": 0.9,
+                "occurrences": 5,
+                "description": "test",
+            }
+        ]
         result = await proactive.generate_suggestion(patterns)
         assert result is None
 
     @pytest.mark.asyncio
     async def test_keine_response(self, proactive, ollama_mock):
-        ollama_mock.chat.return_value = {
-            "message": {"content": "KEINE"}
-        }
-        patterns = [{"type": "time", "action": "test", "confidence": 0.9, "occurrences": 5, "description": "test"}]
+        ollama_mock.chat.return_value = {"message": {"content": "KEINE"}}
+        patterns = [
+            {
+                "type": "time",
+                "action": "test",
+                "confidence": 0.9,
+                "occurrences": 5,
+                "description": "test",
+            }
+        ]
         result = await proactive.generate_suggestion(patterns)
         assert result is None
 
@@ -519,13 +570,15 @@ class TestProactiveSuggester:
                 "content": "Du machst das Licht immer um 22 Uhr aus. Soll ich das automatisieren?"
             }
         }
-        patterns = [{
-            "type": "time",
-            "action": "set_light",
-            "confidence": 0.9,
-            "occurrences": 5,
-            "description": "Licht um 22 Uhr aus",
-        }]
+        patterns = [
+            {
+                "type": "time",
+                "action": "set_light",
+                "confidence": 0.9,
+                "occurrences": 5,
+                "description": "Licht um 22 Uhr aus",
+            }
+        ]
         before = proactive._suggestions_today
         await proactive.generate_suggestion(patterns)
         assert proactive._suggestions_today == before + 1
@@ -533,10 +586,16 @@ class TestProactiveSuggester:
     @pytest.mark.asyncio
     async def test_too_short_response_rejected(self, proactive, ollama_mock):
         """Response shorter than 10 chars should be rejected."""
-        ollama_mock.chat.return_value = {
-            "message": {"content": "Nein"}
-        }
-        patterns = [{"type": "time", "action": "test", "confidence": 0.9, "occurrences": 5, "description": "test"}]
+        ollama_mock.chat.return_value = {"message": {"content": "Nein"}}
+        patterns = [
+            {
+                "type": "time",
+                "action": "test",
+                "confidence": 0.9,
+                "occurrences": 5,
+                "description": "test",
+            }
+        ]
         result = await proactive.generate_suggestion(patterns)
         assert result is None
 
@@ -544,7 +603,15 @@ class TestProactiveSuggester:
     async def test_llm_error_returns_none(self, proactive, ollama_mock):
         """LLM exception should be caught and return None."""
         ollama_mock.chat.side_effect = Exception("Connection refused")
-        patterns = [{"type": "time", "action": "test", "confidence": 0.9, "occurrences": 5, "description": "test"}]
+        patterns = [
+            {
+                "type": "time",
+                "action": "test",
+                "confidence": 0.9,
+                "occurrences": 5,
+                "description": "test",
+            }
+        ]
         result = await proactive.generate_suggestion(patterns)
         assert result is None
 
@@ -557,9 +624,27 @@ class TestProactiveSuggester:
             }
         }
         patterns = [
-            {"type": "time", "action": "set_light", "confidence": 0.5, "occurrences": 3, "description": "Licht"},
-            {"type": "time", "action": "set_climate", "confidence": 0.95, "occurrences": 10, "description": "Heizung"},
-            {"type": "time", "action": "set_cover", "confidence": 0.7, "occurrences": 5, "description": "Rollladen"},
+            {
+                "type": "time",
+                "action": "set_light",
+                "confidence": 0.5,
+                "occurrences": 3,
+                "description": "Licht",
+            },
+            {
+                "type": "time",
+                "action": "set_climate",
+                "confidence": 0.95,
+                "occurrences": 10,
+                "description": "Heizung",
+            },
+            {
+                "type": "time",
+                "action": "set_cover",
+                "confidence": 0.7,
+                "occurrences": 5,
+                "description": "Rollladen",
+            },
         ]
         result = await proactive.generate_suggestion(patterns, person="Max")
         assert result is not None
@@ -574,7 +659,15 @@ class TestProactiveSuggester:
                 "content": "<think>Analysiere Muster...</think>Soll ich die Heizung vorwaermen?"
             }
         }
-        patterns = [{"type": "time", "action": "set_climate", "confidence": 0.9, "occurrences": 5, "description": "Heizung"}]
+        patterns = [
+            {
+                "type": "time",
+                "action": "set_climate",
+                "confidence": 0.9,
+                "occurrences": 5,
+                "description": "Heizung",
+            }
+        ]
         result = await proactive.generate_suggestion(patterns)
         assert result is not None
         assert "<think>" not in result["suggestion"]
@@ -582,6 +675,7 @@ class TestProactiveSuggester:
     def test_check_daily_limit_resets_on_new_day(self, proactive):
         """Daily limit should reset when the day changes."""
         from datetime import date, timedelta
+
         proactive._suggestions_today = 5
         proactive._last_reset_day = date.today() - timedelta(days=1)
         assert proactive._check_daily_limit() is True
@@ -593,7 +687,15 @@ class TestProactiveSuggester:
         enhancer_config["llm_enhancer"]["proactive_suggestions"]["min_patterns"] = 3
         with patch("assistant.llm_enhancer.yaml_config", enhancer_config):
             p = ProactiveSuggester(ollama_mock)
-        patterns = [{"type": "time", "action": "test", "confidence": 0.9, "occurrences": 5, "description": "test"}]
+        patterns = [
+            {
+                "type": "time",
+                "action": "test",
+                "confidence": 0.9,
+                "occurrences": 5,
+                "description": "test",
+            }
+        ]
         result = await p.generate_suggestion(patterns)
         assert result is None
 
@@ -601,6 +703,7 @@ class TestProactiveSuggester:
 # ============================================================
 # Response Rewriter
 # ============================================================
+
 
 class TestResponseRewriter:
     def test_should_rewrite_too_short(self, rewriter):
@@ -641,9 +744,7 @@ class TestResponseRewriter:
     @pytest.mark.asyncio
     async def test_rewrite_basic(self, rewriter, ollama_mock):
         ollama_mock.chat.return_value = {
-            "message": {
-                "content": "22 Grad im Wohnzimmer, Sir. Angenehm."
-            }
+            "message": {"content": "22 Grad im Wohnzimmer, Sir. Angenehm."}
         }
         result = await rewriter.rewrite(
             response="Die Temperatur im Wohnzimmer betraegt 22 Grad Celsius.",
@@ -667,9 +768,7 @@ class TestResponseRewriter:
     @pytest.mark.asyncio
     async def test_rewrite_too_long_fallback(self, rewriter, ollama_mock):
         original = "Kurze Antwort hier."
-        ollama_mock.chat.return_value = {
-            "message": {"content": "x" * 500}
-        }
+        ollama_mock.chat.return_value = {"message": {"content": "x" * 500}}
         result = await rewriter.rewrite(response=original, user_text="Test")
         assert result == original
 
@@ -694,9 +793,7 @@ class TestResponseRewriter:
     @pytest.mark.asyncio
     async def test_rewrite_empty_response_from_llm(self, rewriter, ollama_mock):
         """Empty LLM response should fall back to original."""
-        ollama_mock.chat.return_value = {
-            "message": {"content": ""}
-        }
+        ollama_mock.chat.return_value = {"message": {"content": ""}}
         original = "Die Temperatur betraegt 22 Grad."
         result = await rewriter.rewrite(response=original, user_text="Test")
         assert result == original
@@ -705,7 +802,9 @@ class TestResponseRewriter:
     async def test_rewrite_think_tags_removed(self, rewriter, ollama_mock):
         """Think tags should be stripped from rewritten response."""
         ollama_mock.chat.return_value = {
-            "message": {"content": "<think>Let me rephrase...</think>22 Grad im Wohnzimmer."}
+            "message": {
+                "content": "<think>Let me rephrase...</think>22 Grad im Wohnzimmer."
+            }
         }
         result = await rewriter.rewrite(
             response="Die Temperatur im Wohnzimmer betraegt 22 Grad.",
@@ -746,13 +845,22 @@ class TestResponseRewriter:
             mood="stressed",
         )
         call_args = ollama_mock.chat.call_args
-        prompt_content = call_args[1]["messages"][0]["content"] if "messages" in call_args[1] else call_args[0][0][0]["content"]
-        assert "gestresst" in prompt_content or "stressed" in prompt_content.lower() or "kurz" in prompt_content
+        prompt_content = (
+            call_args[1]["messages"][0]["content"]
+            if "messages" in call_args[1]
+            else call_args[0][0][0]["content"]
+        )
+        assert (
+            "gestresst" in prompt_content
+            or "stressed" in prompt_content.lower()
+            or "kurz" in prompt_content
+        )
 
 
 # ============================================================
 # LLMEnhancer Integration
 # ============================================================
+
 
 class TestLLMEnhancer:
     def test_init(self, enhancer):

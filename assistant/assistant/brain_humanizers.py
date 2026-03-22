@@ -52,7 +52,9 @@ class BrainHumanizersMixin:
             elif func_name == "get_climate":
                 return self._humanize_climate_list(raw)
         except Exception as e:
-            logger.warning("Humanize fehlgeschlagen für %s: %s", func_name, e, exc_info=True)
+            logger.warning(
+                "Humanize fehlgeschlagen für %s: %s", func_name, e, exc_info=True
+            )
         # Kein Template vorhanden — Rohdaten zurueckgeben
         return raw
 
@@ -64,13 +66,18 @@ class BrainHumanizersMixin:
         from datetime import datetime as _dt
 
         _conditions_map = {
-            "bewoelkt": "bewölkt", "bewölkt": "bewölkt",
-            "sonnig": "sonnig", "wolkenlos": "wolkenlos",
-            "klare nacht": "klare Nacht", "regen": "regnerisch",
+            "bewoelkt": "bewölkt",
+            "bewölkt": "bewölkt",
+            "sonnig": "sonnig",
+            "wolkenlos": "wolkenlos",
+            "klare nacht": "klare Nacht",
+            "regen": "regnerisch",
             "teilweise bewoelkt": "teilweise bewölkt",
             "teilweise bewölkt": "teilweise bewölkt",
-            "nebel": "neblig", "schnee": "verschneit",
-            "gewitter": "gewittrig", "windig": "windig",
+            "nebel": "neblig",
+            "schnee": "verschneit",
+            "gewitter": "gewittrig",
+            "windig": "windig",
             "starkregen": "Starkregen",
         }
 
@@ -101,9 +108,17 @@ class BrainHumanizersMixin:
                 break
 
         # Wind extrahieren
-        wind_match = re.search(r"Wind\s+(?:aus\s+)?(\w+)\s+(?:mit\s+)?(\d+)[.,]?\d*\s*km/h", current_line, re.IGNORECASE)
+        wind_match = re.search(
+            r"Wind\s+(?:aus\s+)?(\w+)\s+(?:mit\s+)?(\d+)[.,]?\d*\s*km/h",
+            current_line,
+            re.IGNORECASE,
+        )
         if not wind_match:
-            wind_match = re.search(r"Wind\s+(\d+)[.,]?\d*\s*km/h\s+aus\s+(\w+)", current_line, re.IGNORECASE)
+            wind_match = re.search(
+                r"Wind\s+(\d+)[.,]?\d*\s*km/h\s+aus\s+(\w+)",
+                current_line,
+                re.IGNORECASE,
+            )
             if wind_match:
                 wind_speed = int(wind_match.group(1))
                 wind_dir = wind_match.group(2)
@@ -122,13 +137,31 @@ class BrainHumanizersMixin:
 
         # Windrichtung: HA liefert englische Abkuerzungen (N, NE, SSW etc.)
         _wind_dir_map = {
-            "n": "Nord", "nne": "Nord-Nordost", "ne": "Nordost", "ene": "Ost-Nordost",
-            "e": "Ost", "ese": "Ost-Südost", "se": "Südost", "sse": "Süd-Südost",
-            "s": "Süd", "ssw": "Süd-Südwest", "sw": "Südwest", "wsw": "West-Südwest",
-            "w": "West", "wnw": "West-Nordwest", "nw": "Nordwest", "nnw": "Nord-Nordwest",
+            "n": "Nord",
+            "nne": "Nord-Nordost",
+            "ne": "Nordost",
+            "ene": "Ost-Nordost",
+            "e": "Ost",
+            "ese": "Ost-Südost",
+            "se": "Südost",
+            "sse": "Süd-Südost",
+            "s": "Süd",
+            "ssw": "Süd-Südwest",
+            "sw": "Südwest",
+            "wsw": "West-Südwest",
+            "w": "West",
+            "wnw": "West-Nordwest",
+            "nw": "Nordwest",
+            "nnw": "Nord-Nordwest",
             # Ausgeschriebene englische Varianten
-            "north": "Nord", "northeast": "Nordost", "east": "Ost", "southeast": "Südost",
-            "south": "Süd", "southwest": "Südwest", "west": "West", "northwest": "Nordwest",
+            "north": "Nord",
+            "northeast": "Nordost",
+            "east": "Ost",
+            "southeast": "Südost",
+            "south": "Süd",
+            "southwest": "Südwest",
+            "west": "West",
+            "northwest": "Nordwest",
         }
         if wind_dir:
             wind_dir = _wind_dir_map.get(wind_dir.lower(), wind_dir)
@@ -138,7 +171,9 @@ class BrainHumanizersMixin:
 
         # Kontext-Kommentar (JARVIS-Persoenlichkeit)
         if temp <= 0:
-            result += f" Handschuhe empfohlen, {get_person_title(self._current_person)}."
+            result += (
+                f" Handschuhe empfohlen, {get_person_title(self._current_person)}."
+            )
         elif temp <= 5:
             result += " Jacke empfohlen."
         elif temp >= 30:
@@ -146,15 +181,22 @@ class BrainHumanizersMixin:
 
         # --- Forecast-Zeilen verarbeiten ---
         if forecast_lines:
-            _weekdays = ["Montag", "Dienstag", "Mittwoch", "Donnerstag",
-                         "Freitag", "Samstag", "Sonntag"]
+            _weekdays = [
+                "Montag",
+                "Dienstag",
+                "Mittwoch",
+                "Donnerstag",
+                "Freitag",
+                "Samstag",
+                "Sonntag",
+            ]
             fc_parts = []
             for fc_line in forecast_lines[:3]:
-                date_m = re.search(r'VORHERSAGE\s+(\d{4}-\d{2}-\d{2}):', fc_line)
-                temp_hi = re.search(r'Hoch\s+(-?\d+)', fc_line)
-                temp_lo = re.search(r'Tief\s+(-?\d+)', fc_line)
-                cond_m = re.search(r':\s+(\w[\w\s]*?),\s+Hoch', fc_line)
-                precip_m = re.search(r'Niederschlag\s+(\d+[.,]?\d*)\s*mm', fc_line)
+                date_m = re.search(r"VORHERSAGE\s+(\d{4}-\d{2}-\d{2}):", fc_line)
+                temp_hi = re.search(r"Hoch\s+(-?\d+)", fc_line)
+                temp_lo = re.search(r"Tief\s+(-?\d+)", fc_line)
+                cond_m = re.search(r":\s+(\w[\w\s]*?),\s+Hoch", fc_line)
+                precip_m = re.search(r"Niederschlag\s+(\d+[.,]?\d*)\s*mm", fc_line)
 
                 if not (date_m and temp_hi):
                     continue
@@ -206,11 +248,15 @@ class BrainHumanizersMixin:
         elif "WOCHE" in raw_upper:
             prefix_single = "Diese Woche steht"
             prefix_multi = "Diese Woche stehen"
-            prefix_free = f"Die Woche ist frei, {get_person_title(self._current_person)}."
+            prefix_free = (
+                f"Die Woche ist frei, {get_person_title(self._current_person)}."
+            )
         else:
             prefix_single = "Heute steht"
             prefix_multi = "Heute stehen"
-            prefix_free = f"Heute ist nichts geplant, {get_person_title(self._current_person)}."
+            prefix_free = (
+                f"Heute ist nichts geplant, {get_person_title(self._current_person)}."
+            )
 
         # "KEINE TERMINE" Varianten
         if "KEINE TERMINE" in raw_upper or "(0)" in raw:
@@ -265,8 +311,8 @@ class BrainHumanizersMixin:
 
     def _humanize_room_climate(self, raw: str) -> str:
         """Raum-Klima — JARVIS-Stil mit Messwert-Praezision."""
-        temp_m = re.search(r'(-?\d+[.,]?\d*)\s*°?C', raw)
-        hum_m = re.search(r'(\d+[.,]?\d*)\s*%', raw)
+        temp_m = re.search(r"(-?\d+[.,]?\d*)\s*°?C", raw)
+        hum_m = re.search(r"(\d+[.,]?\d*)\s*%", raw)
         parts = []
         if temp_m:
             parts.append(f"{temp_m.group(1)} Grad")
@@ -314,10 +360,15 @@ class BrainHumanizersMixin:
                 if names:
                     if detail == "kompakt":
                         count = len([n.strip() for n in names.split(",") if n.strip()])
-                        parts.append(f"{count} Person{'en' if count > 1 else ''} zuhause")
+                        parts.append(
+                            f"{count} Person{'en' if count > 1 else ''} zuhause"
+                        )
                     else:
-                        parts.append(f"{names} ist zuhause" if "," not in names
-                                     else f"{names} sind zuhause")
+                        parts.append(
+                            f"{names} ist zuhause"
+                            if "," not in names
+                            else f"{names} sind zuhause"
+                        )
             elif line.startswith("Unterwegs:"):
                 names = line.replace("Unterwegs:", "").strip()
                 if names and detail != "kompakt":
@@ -343,7 +394,9 @@ class BrainHumanizersMixin:
                 if weather:
                     if detail == "kompakt":
                         temp_m = re.search(r"(-?\d+)\s*°C", weather)
-                        cond = weather.split(",")[0].strip() if "," in weather else weather
+                        cond = (
+                            weather.split(",")[0].strip() if "," in weather else weather
+                        )
                         if temp_m:
                             parts.append(f"Draussen {temp_m.group(1)}°C, {cond}")
                         else:
@@ -357,9 +410,13 @@ class BrainHumanizersMixin:
                 if lights:
                     light_list = [l.strip() for l in lights.split(",")]
                     if detail == "kompakt":
-                        parts.append(f"{len(light_list)} Licht{'er' if len(light_list) > 1 else ''} an")
+                        parts.append(
+                            f"{len(light_list)} Licht{'er' if len(light_list) > 1 else ''} an"
+                        )
                     elif detail == "normal":
-                        names_only = [re.sub(r":\s*\d+%", "", l).strip() for l in light_list]
+                        names_only = [
+                            re.sub(r":\s*\d+%", "", l).strip() for l in light_list
+                        ]
                         if len(names_only) <= 4:
                             parts.append(f"Lichter an: {', '.join(names_only)}")
                         else:
@@ -504,7 +561,7 @@ class BrainHumanizersMixin:
         lines = raw.strip().split("\n")
         active = []
         for line in lines:
-            temp_m = re.search(r'(-?\d+[.,]?\d*)\s*°?C', line)
+            temp_m = re.search(r"(-?\d+[.,]?\d*)\s*°?C", line)
             name = line.lstrip("- ").split("[")[0].split(":")[0].strip()
             if temp_m and name:
                 active.append(f"{name}: {temp_m.group(1)}°C")
@@ -532,9 +589,19 @@ class BrainHumanizersMixin:
         arrow = "↑" if delta > 0 else "↓"
         abs_delta = abs(delta)
         # Ganzzahl-Formatierung wenn kein Nachkomma noetig
-        fmt_cur = f"{current_value:.0f}" if current_value == int(current_value) else f"{current_value:.1f}"
-        fmt_prev = f"{previous_value:.0f}" if previous_value == int(previous_value) else f"{previous_value:.1f}"
-        fmt_delta = f"{abs_delta:.0f}" if abs_delta == int(abs_delta) else f"{abs_delta:.1f}"
+        fmt_cur = (
+            f"{current_value:.0f}"
+            if current_value == int(current_value)
+            else f"{current_value:.1f}"
+        )
+        fmt_prev = (
+            f"{previous_value:.0f}"
+            if previous_value == int(previous_value)
+            else f"{previous_value:.1f}"
+        )
+        fmt_delta = (
+            f"{abs_delta:.0f}" if abs_delta == int(abs_delta) else f"{abs_delta:.1f}"
+        )
 
         return f"{fmt_cur}{unit}, vorher {fmt_prev}{unit} ({arrow}{fmt_delta}{unit})"
 
@@ -631,8 +698,10 @@ class BrainHumanizersMixin:
         for descs in actions_by_type.values():
             all_descs.extend(descs)
 
-        action_text = " und ".join(all_descs) if len(all_descs) <= 2 else (
-            ", ".join(all_descs[:-1]) + f" und {all_descs[-1]}"
+        action_text = (
+            " und ".join(all_descs)
+            if len(all_descs) <= 2
+            else (", ".join(all_descs[:-1]) + f" und {all_descs[-1]}")
         )
 
         # Variierte Bestaetigungen
@@ -649,10 +718,21 @@ class BrainHumanizersMixin:
     def _describe_action(func: str, action: str, room: str) -> Optional[str]:
         """Generiert eine menschenlesbare Beschreibung einer Geraeteaktion."""
         # Deutsche Grammatik: "im" (Maskulin/Neutrum) vs. "in der" (Feminin)
-        _feminine_rooms = {"küche", "kueche", "garage", "werkstatt", "waschküche", "waschkueche"}
+        _feminine_rooms = {
+            "küche",
+            "kueche",
+            "garage",
+            "werkstatt",
+            "waschküche",
+            "waschkueche",
+        }
         if room and room != "all":
             r_cap = room.capitalize()
-            room_suffix = f" in der {r_cap}" if room.lower() in _feminine_rooms else f" im {r_cap}"
+            room_suffix = (
+                f" in der {r_cap}"
+                if room.lower() in _feminine_rooms
+                else f" im {r_cap}"
+            )
         elif room == "all":
             room_suffix = " überall"
         else:

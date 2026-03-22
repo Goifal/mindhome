@@ -33,7 +33,10 @@ def mock_redis():
 
 @pytest.fixture
 def tracker():
-    with patch("assistant.feedback.yaml_config", {"feedback": {"auto_timeout_seconds": 120, "base_cooldown_seconds": 300}}):
+    with patch(
+        "assistant.feedback.yaml_config",
+        {"feedback": {"auto_timeout_seconds": 120, "base_cooldown_seconds": 300}},
+    ):
         t = FeedbackTracker()
     return t
 
@@ -82,7 +85,10 @@ async def test_track_notification(tracker, mock_redis):
 async def test_record_feedback_from_pending(tracker, mock_redis):
     tracker.redis = mock_redis
     mock_redis.get.return_value = str(DEFAULT_SCORE)
-    tracker._pending["n1"] = {"event_type": "door_open", "sent_at": datetime.now(timezone.utc)}
+    tracker._pending["n1"] = {
+        "event_type": "door_open",
+        "sent_at": datetime.now(timezone.utc),
+    }
     result = await tracker.record_feedback("n1", "thanked")
     assert result is not None
     assert result["event_type"] == "door_open"
@@ -311,7 +317,10 @@ async def test_record_feedback_empty_event_type(tracker, mock_redis):
     tracker.redis = mock_redis
     # notification_id not in pending, so fallback to notification_id as event_type
     # But if we pass empty string, event_type will be empty
-    tracker._pending["n_empty"] = {"event_type": "", "sent_at": datetime.now(timezone.utc)}
+    tracker._pending["n_empty"] = {
+        "event_type": "",
+        "sent_at": datetime.now(timezone.utc),
+    }
     result = await tracker.record_feedback("n_empty", "acknowledged")
     assert result is None
 
@@ -325,10 +334,15 @@ async def test_record_feedback_empty_event_type(tracker, mock_redis):
 async def test_get_stats_full_scan(tracker, mock_redis):
     """Full stats scan collects all event types (lines 255-297)."""
     tracker.redis = mock_redis
-    mock_redis.scan = AsyncMock(return_value=(0, [
-        b"mha:feedback:score:door_open",
-        b"mha:feedback:score:temp_warn",
-    ]))
+    mock_redis.scan = AsyncMock(
+        return_value=(
+            0,
+            [
+                b"mha:feedback:score:door_open",
+                b"mha:feedback:score:temp_warn",
+            ],
+        )
+    )
     mock_redis.mget = AsyncMock(return_value=[b"0.7", b"0.3"])
     mock_redis.hgetall = AsyncMock(return_value={b"total_sent": b"5"})
     mock_redis.lrange = AsyncMock(return_value=[])
@@ -366,10 +380,15 @@ async def test_get_all_scores_no_redis(tracker):
 async def test_get_all_scores_with_data(tracker, mock_redis):
     """Returns all scores from Redis (lines 331-345)."""
     tracker.redis = mock_redis
-    mock_redis.scan = AsyncMock(return_value=(0, [
-        b"mha:feedback:score:event_a",
-        b"mha:feedback:score:event_b",
-    ]))
+    mock_redis.scan = AsyncMock(
+        return_value=(
+            0,
+            [
+                b"mha:feedback:score:event_a",
+                b"mha:feedback:score:event_b",
+            ],
+        )
+    )
     mock_redis.mget = AsyncMock(return_value=[b"0.8", b"0.4"])
 
     result = await tracker.get_all_scores()
@@ -397,7 +416,9 @@ async def test_update_score_with_person(tracker, mock_redis):
     """Per-person score is updated (lines 362-369)."""
     tracker.redis = mock_redis
     mock_redis.get.return_value = "0.5"
-    with patch("assistant.feedback.yaml_config", {"feedback": {"smoothing_enabled": False}}):
+    with patch(
+        "assistant.feedback.yaml_config", {"feedback": {"smoothing_enabled": False}}
+    ):
         new_score = await tracker._update_score("door_open", 0.1, person="Max")
     assert new_score == 0.6
     # Should have called setex twice: global + person
@@ -488,10 +509,14 @@ async def test_get_recent_feedback_no_redis(tracker):
 async def test_get_recent_feedback_with_data(tracker, mock_redis):
     """Returns parsed feedback entries (lines 435-438)."""
     tracker.redis = mock_redis
-    mock_redis.lrange = AsyncMock(return_value=[
-        json.dumps({"type": "thanked", "delta": 0.2, "timestamp": "2025-01-01T12:00:00"}),
-        "invalid-json",  # Should be skipped
-    ])
+    mock_redis.lrange = AsyncMock(
+        return_value=[
+            json.dumps(
+                {"type": "thanked", "delta": 0.2, "timestamp": "2025-01-01T12:00:00"}
+            ),
+            "invalid-json",  # Should be skipped
+        ]
+    )
     result = await tracker._get_recent_feedback("event")
     assert len(result) == 1
     assert result[0]["type"] == "thanked"
@@ -653,7 +678,9 @@ async def test_update_score_clamps_to_zero(tracker, mock_redis):
     """Score should never go below 0.0."""
     tracker.redis = mock_redis
     mock_redis.get.return_value = "0.05"
-    with patch("assistant.feedback.yaml_config", {"feedback": {"smoothing_enabled": False}}):
+    with patch(
+        "assistant.feedback.yaml_config", {"feedback": {"smoothing_enabled": False}}
+    ):
         new_score = await tracker._update_score("event", -0.20)
     assert new_score == 0.0
 
@@ -663,7 +690,9 @@ async def test_update_score_clamps_to_one(tracker, mock_redis):
     """Score should never exceed 1.0."""
     tracker.redis = mock_redis
     mock_redis.get.return_value = "0.95"
-    with patch("assistant.feedback.yaml_config", {"feedback": {"smoothing_enabled": False}}):
+    with patch(
+        "assistant.feedback.yaml_config", {"feedback": {"smoothing_enabled": False}}
+    ):
         new_score = await tracker._update_score("event", 0.20)
     assert new_score == 1.0
 
@@ -738,7 +767,9 @@ async def test_repeated_feedback_accumulates(tracker, mock_redis):
     tracker.redis = mock_redis
     # Start at 0.5
     mock_redis.get.return_value = "0.5"
-    with patch("assistant.feedback.yaml_config", {"feedback": {"smoothing_enabled": False}}):
+    with patch(
+        "assistant.feedback.yaml_config", {"feedback": {"smoothing_enabled": False}}
+    ):
         r1 = await tracker.record_feedback("event_a", "thanked")
         assert r1["new_score"] == 0.7
 

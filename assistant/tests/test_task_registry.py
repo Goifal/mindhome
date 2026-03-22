@@ -13,6 +13,7 @@ from assistant.task_registry import TaskRegistry
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _noop():
     """A coroutine that completes immediately."""
     return "done"
@@ -37,6 +38,7 @@ async def _raise_error():
 # ---------------------------------------------------------------------------
 # create_task
 # ---------------------------------------------------------------------------
+
 
 class TestCreateTask:
     @pytest.mark.asyncio
@@ -107,6 +109,7 @@ class TestCreateTask:
 # _on_task_done
 # ---------------------------------------------------------------------------
 
+
 class TestOnTaskDone:
     @pytest.mark.asyncio
     async def test_on_task_done_logs_error_on_exception(self, caplog):
@@ -140,6 +143,7 @@ class TestOnTaskDone:
 # cancel
 # ---------------------------------------------------------------------------
 
+
 class TestCancel:
     @pytest.mark.asyncio
     async def test_cancel_running_task_returns_true(self):
@@ -163,6 +167,7 @@ class TestCancel:
 # ---------------------------------------------------------------------------
 # is_running
 # ---------------------------------------------------------------------------
+
 
 class TestIsRunning:
     @pytest.mark.asyncio
@@ -188,6 +193,7 @@ class TestIsRunning:
 # ---------------------------------------------------------------------------
 # active_tasks / task_count
 # ---------------------------------------------------------------------------
+
 
 class TestActiveTasksAndCount:
     @pytest.mark.asyncio
@@ -222,6 +228,7 @@ class TestActiveTasksAndCount:
 # shutdown
 # ---------------------------------------------------------------------------
 
+
 class TestShutdown:
     @pytest.mark.asyncio
     async def test_shutdown_cancels_all_tasks(self):
@@ -250,6 +257,7 @@ class TestShutdown:
 # ---------------------------------------------------------------------------
 # status
 # ---------------------------------------------------------------------------
+
 
 class TestStatus:
     @pytest.mark.asyncio
@@ -286,6 +294,7 @@ class TestStatus:
 # Zusaetzliche Tests fuer 100% Coverage — Zeilen 119-121
 # ---------------------------------------------------------------------------
 
+
 class TestShutdownTimeout:
     """Tests fuer shutdown Timeout-Handling — Zeilen 119-121."""
 
@@ -313,6 +322,7 @@ class TestShutdownTimeout:
 # ---------------------------------------------------------------------------
 # Backpressure / MAX_ACTIVE_TASKS
 # ---------------------------------------------------------------------------
+
 
 class TestBackpressure:
     @pytest.mark.asyncio
@@ -362,6 +372,7 @@ class TestBackpressure:
 # _cleanup_done_tasks
 # ---------------------------------------------------------------------------
 
+
 class TestCleanupDoneTasks:
     @pytest.mark.asyncio
     async def test_cleanup_removes_finished_tasks(self):
@@ -386,6 +397,7 @@ class TestCleanupDoneTasks:
 # ---------------------------------------------------------------------------
 # Persistent Tasks / Watchdog
 # ---------------------------------------------------------------------------
+
 
 class TestPersistentTasks:
     @pytest.mark.asyncio
@@ -440,6 +452,7 @@ class TestPersistentTasks:
 # ---------------------------------------------------------------------------
 # Status edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestStatusEdgeCases:
     @pytest.mark.asyncio

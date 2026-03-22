@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from assistant.config import yaml_config
+
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -27,17 +28,21 @@ from assistant.anticipation import AnticipationEngine
 # Fixtures
 # ============================================================
 
+
 @pytest.fixture
 def anticipation():
-    with patch("assistant.anticipation.yaml_config", {
-        "anticipation": {
-            "enabled": True,
-            "history_days": 30,
-            "min_confidence": 0.6,
-            "check_interval_minutes": 15,
-            "thresholds": {"ask": 0.6, "suggest": 0.8, "auto": 0.95},
+    with patch(
+        "assistant.anticipation.yaml_config",
+        {
+            "anticipation": {
+                "enabled": True,
+                "history_days": 30,
+                "min_confidence": 0.6,
+                "check_interval_minutes": 15,
+                "thresholds": {"ask": 0.6, "suggest": 0.8, "auto": 0.95},
+            },
         },
-    }):
+    ):
         engine = AnticipationEngine()
     return engine
 
@@ -52,8 +57,8 @@ def anticipation_with_redis(anticipation, redis_mock):
 # Initialisierung
 # ============================================================
 
-class TestAnticipationInit:
 
+class TestAnticipationInit:
     def test_default_config(self, anticipation):
         assert anticipation.enabled is True
         assert anticipation.history_days == 30
@@ -68,8 +73,12 @@ class TestAnticipationInit:
     @pytest.mark.asyncio
     async def test_stop(self, anticipation):
         import asyncio
+
         anticipation._running = True
-        async def noop(): pass
+
+        async def noop():
+            pass
+
         task = asyncio.ensure_future(noop())
         await task
         anticipation._task = task
@@ -86,12 +95,15 @@ class TestAnticipationInit:
 # Action Logging
 # ============================================================
 
-class TestActionLogging:
 
+class TestActionLogging:
     @pytest.mark.asyncio
     async def test_log_action(self, anticipation_with_redis):
         await anticipation_with_redis.log_action(
-            "set_light", {"state": "on"}, person="Max", weather_condition="sunny",
+            "set_light",
+            {"state": "on"},
+            person="Max",
+            weather_condition="sunny",
         )
         pipe = anticipation_with_redis.redis._pipeline
         pipe.lpush.assert_called()
@@ -107,21 +119,23 @@ class TestActionLogging:
 # Zeit-Muster Erkennung
 # ============================================================
 
-class TestTimePatterns:
 
+class TestTimePatterns:
     def test_detect_time_pattern(self, anticipation):
         now = datetime.now(timezone.utc)
         entries = []
         # 10 gleiche Aktionen am gleichen Wochentag/Stunde
         for i in range(10):
-            entries.append({
-                "action": "set_light",
-                "args": '{"state": "off"}',
-                "weekday": 0,
-                "hour": 22,
-                "timestamp": (now - timedelta(days=i * 7)).isoformat(),
-                "weather": "",
-            })
+            entries.append(
+                {
+                    "action": "set_light",
+                    "args": '{"state": "off"}',
+                    "weekday": 0,
+                    "hour": 22,
+                    "timestamp": (now - timedelta(days=i * 7)).isoformat(),
+                    "weather": "",
+                }
+            )
 
         patterns = anticipation._detect_time_patterns(entries)
         assert len(patterns) > 0
@@ -132,8 +146,14 @@ class TestTimePatterns:
 
     def test_too_few_entries(self, anticipation):
         entries = [
-            {"action": "set_light", "args": "{}", "weekday": 0, "hour": 22,
-             "timestamp": datetime.now(timezone.utc).isoformat(), "weather": ""},
+            {
+                "action": "set_light",
+                "args": "{}",
+                "weekday": 0,
+                "hour": 22,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "weather": "",
+            },
         ]
         patterns = anticipation._detect_time_patterns(entries)
         assert len(patterns) == 0
@@ -143,22 +163,34 @@ class TestTimePatterns:
 # Sequenz-Muster Erkennung
 # ============================================================
 
-class TestSequencePatterns:
 
+class TestSequencePatterns:
     def test_detect_sequence(self, anticipation):
         now = datetime.now(timezone.utc)
         entries = []
         # 8 Paare von set_light → set_cover innerhalb 2 Min
         for i in range(8):
             t = now - timedelta(days=i)
-            entries.append({
-                "action": "set_light", "args": "{}", "weekday": 0, "hour": 22,
-                "timestamp": t.isoformat(), "weather": "",
-            })
-            entries.append({
-                "action": "set_cover", "args": '{"position": 0}', "weekday": 0, "hour": 22,
-                "timestamp": (t + timedelta(seconds=60)).isoformat(), "weather": "",
-            })
+            entries.append(
+                {
+                    "action": "set_light",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 22,
+                    "timestamp": t.isoformat(),
+                    "weather": "",
+                }
+            )
+            entries.append(
+                {
+                    "action": "set_cover",
+                    "args": '{"position": 0}',
+                    "weekday": 0,
+                    "hour": 22,
+                    "timestamp": (t + timedelta(seconds=60)).isoformat(),
+                    "weather": "",
+                }
+            )
 
         patterns = anticipation._detect_sequence_patterns(entries)
         assert len(patterns) > 0
@@ -170,10 +202,16 @@ class TestSequencePatterns:
         now = datetime.now(timezone.utc)
         entries = []
         for i in range(10):
-            entries.append({
-                "action": "set_light", "args": "{}", "weekday": 0, "hour": 22,
-                "timestamp": (now + timedelta(seconds=i * 30)).isoformat(), "weather": "",
-            })
+            entries.append(
+                {
+                    "action": "set_light",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 22,
+                    "timestamp": (now + timedelta(seconds=i * 30)).isoformat(),
+                    "weather": "",
+                }
+            )
         patterns = anticipation._detect_sequence_patterns(entries)
         assert len(patterns) == 0  # Gleiche Aktion wird ignoriert
 
@@ -182,24 +220,34 @@ class TestSequencePatterns:
 # Kontext-Muster Erkennung
 # ============================================================
 
-class TestContextPatterns:
 
+class TestContextPatterns:
     def test_detect_evening_cluster(self, anticipation):
         entries = []
         now = datetime.now(timezone.utc)
         # 15 set_cover Aktionen abends, 2 morgens
         for i in range(15):
-            entries.append({
-                "action": "set_cover", "args": "{}", "weekday": 0,
-                "hour": 19, "timestamp": (now - timedelta(days=i)).isoformat(),
-                "weather": "",
-            })
+            entries.append(
+                {
+                    "action": "set_cover",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 19,
+                    "timestamp": (now - timedelta(days=i)).isoformat(),
+                    "weather": "",
+                }
+            )
         for i in range(2):
-            entries.append({
-                "action": "set_cover", "args": "{}", "weekday": 0,
-                "hour": 8, "timestamp": (now - timedelta(days=i)).isoformat(),
-                "weather": "",
-            })
+            entries.append(
+                {
+                    "action": "set_cover",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 8,
+                    "timestamp": (now - timedelta(days=i)).isoformat(),
+                    "weather": "",
+                }
+            )
 
         patterns = anticipation._detect_context_patterns(entries)
         ctx_patterns = [p for p in patterns if p["type"] == "context"]
@@ -210,17 +258,27 @@ class TestContextPatterns:
         now = datetime.now(timezone.utc)
         # 8 set_cover bei Regen, 2 bei Sonne
         for i in range(8):
-            entries.append({
-                "action": "set_cover", "args": "{}", "weekday": 0,
-                "hour": 14, "timestamp": (now - timedelta(days=i)).isoformat(),
-                "weather": "rainy",
-            })
+            entries.append(
+                {
+                    "action": "set_cover",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 14,
+                    "timestamp": (now - timedelta(days=i)).isoformat(),
+                    "weather": "rainy",
+                }
+            )
         for i in range(2):
-            entries.append({
-                "action": "set_cover", "args": "{}", "weekday": 0,
-                "hour": 14, "timestamp": (now - timedelta(days=i + 10)).isoformat(),
-                "weather": "sunny",
-            })
+            entries.append(
+                {
+                    "action": "set_cover",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 14,
+                    "timestamp": (now - timedelta(days=i + 10)).isoformat(),
+                    "weather": "sunny",
+                }
+            )
 
         patterns = anticipation._detect_context_patterns(entries)
         weather_patterns = [p for p in patterns if "weather:" in p.get("context", "")]
@@ -231,27 +289,65 @@ class TestContextPatterns:
 # Kausale Ketten (Phase 18)
 # ============================================================
 
-class TestCausalChains:
 
+class TestCausalChains:
     def test_detect_chain_3_actions(self, anticipation):
         now = datetime.now(timezone.utc)
         entries = []
         # 4 gleiche Ketten: set_light → set_cover → set_climate innerhalb 5 Min
         for i in range(4):
             t = now - timedelta(days=i)
-            entries.append({"action": "set_light", "args": "{}", "weekday": 0, "hour": 22,
-                            "timestamp": t.isoformat(), "weather": ""})
-            entries.append({"action": "set_cover", "args": "{}", "weekday": 0, "hour": 22,
-                            "timestamp": (t + timedelta(seconds=120)).isoformat(), "weather": ""})
-            entries.append({"action": "set_climate", "args": "{}", "weekday": 0, "hour": 22,
-                            "timestamp": (t + timedelta(seconds=240)).isoformat(), "weather": ""})
+            entries.append(
+                {
+                    "action": "set_light",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 22,
+                    "timestamp": t.isoformat(),
+                    "weather": "",
+                }
+            )
+            entries.append(
+                {
+                    "action": "set_cover",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 22,
+                    "timestamp": (t + timedelta(seconds=120)).isoformat(),
+                    "weather": "",
+                }
+            )
+            entries.append(
+                {
+                    "action": "set_climate",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 22,
+                    "timestamp": (t + timedelta(seconds=240)).isoformat(),
+                    "weather": "",
+                }
+            )
             # Luecke zwischen Ketten
-            entries.append({"action": "other", "args": "{}", "weekday": 0, "hour": 23,
-                            "timestamp": (t + timedelta(hours=2)).isoformat(), "weather": ""})
+            entries.append(
+                {
+                    "action": "other",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 23,
+                    "timestamp": (t + timedelta(hours=2)).isoformat(),
+                    "weather": "",
+                }
+            )
 
-        with patch("assistant.anticipation.yaml_config", {
-            "anticipation": {"causal_chain_window_min": 10, "causal_chain_min_occurrences": 3},
-        }):
+        with patch(
+            "assistant.anticipation.yaml_config",
+            {
+                "anticipation": {
+                    "causal_chain_window_min": 10,
+                    "causal_chain_min_occurrences": 3,
+                },
+            },
+        ):
             patterns = anticipation._detect_causal_chains(entries)
 
         causal = [p for p in patterns if p["type"] == "causal_chain"]
@@ -262,16 +358,46 @@ class TestCausalChains:
         now = datetime.now(timezone.utc)
         entries = []
         # Nur 1 Kette → unter Minimum
-        entries.append({"action": "a", "args": "{}", "weekday": 0, "hour": 10,
-                        "timestamp": now.isoformat(), "weather": ""})
-        entries.append({"action": "b", "args": "{}", "weekday": 0, "hour": 10,
-                        "timestamp": (now + timedelta(seconds=30)).isoformat(), "weather": ""})
-        entries.append({"action": "c", "args": "{}", "weekday": 0, "hour": 10,
-                        "timestamp": (now + timedelta(seconds=60)).isoformat(), "weather": ""})
+        entries.append(
+            {
+                "action": "a",
+                "args": "{}",
+                "weekday": 0,
+                "hour": 10,
+                "timestamp": now.isoformat(),
+                "weather": "",
+            }
+        )
+        entries.append(
+            {
+                "action": "b",
+                "args": "{}",
+                "weekday": 0,
+                "hour": 10,
+                "timestamp": (now + timedelta(seconds=30)).isoformat(),
+                "weather": "",
+            }
+        )
+        entries.append(
+            {
+                "action": "c",
+                "args": "{}",
+                "weekday": 0,
+                "hour": 10,
+                "timestamp": (now + timedelta(seconds=60)).isoformat(),
+                "weather": "",
+            }
+        )
 
-        with patch("assistant.anticipation.yaml_config", {
-            "anticipation": {"causal_chain_window_min": 10, "causal_chain_min_occurrences": 3},
-        }):
+        with patch(
+            "assistant.anticipation.yaml_config",
+            {
+                "anticipation": {
+                    "causal_chain_window_min": 10,
+                    "causal_chain_min_occurrences": 3,
+                },
+            },
+        ):
             patterns = anticipation._detect_causal_chains(entries)
 
         assert len(patterns) == 0
@@ -281,27 +407,41 @@ class TestCausalChains:
 # Implizite Voraussetzungen
 # ============================================================
 
-class TestImplicitPrerequisites:
 
+class TestImplicitPrerequisites:
     def test_entspannen_intent(self, anticipation):
-        with patch("assistant.anticipation.yaml_config", {"anticipation": {"intent_sequences": {}}}):
+        with patch(
+            "assistant.anticipation.yaml_config",
+            {"anticipation": {"intent_sequences": {}}},
+        ):
             actions = anticipation.detect_implicit_prerequisites("Ich will entspannen")
         assert len(actions) > 0
         assert "Rollladen runter" in actions
 
     def test_schlafen_intent(self, anticipation):
-        with patch("assistant.anticipation.yaml_config", {"anticipation": {"intent_sequences": {}}}):
+        with patch(
+            "assistant.anticipation.yaml_config",
+            {"anticipation": {"intent_sequences": {}}},
+        ):
             actions = anticipation.detect_implicit_prerequisites("Zeit zum schlafen")
         assert len(actions) > 0
         assert "Alle Lichter aus" in actions
 
     def test_negation_blocks(self, anticipation):
-        with patch("assistant.anticipation.yaml_config", {"anticipation": {"intent_sequences": {}}}):
-            actions = anticipation.detect_implicit_prerequisites("Ich will nicht entspannen")
+        with patch(
+            "assistant.anticipation.yaml_config",
+            {"anticipation": {"intent_sequences": {}}},
+        ):
+            actions = anticipation.detect_implicit_prerequisites(
+                "Ich will nicht entspannen"
+            )
         assert len(actions) == 0
 
     def test_unknown_intent(self, anticipation):
-        with patch("assistant.anticipation.yaml_config", {"anticipation": {"intent_sequences": {}}}):
+        with patch(
+            "assistant.anticipation.yaml_config",
+            {"anticipation": {"intent_sequences": {}}},
+        ):
             actions = anticipation.detect_implicit_prerequisites("Pizza bestellen")
         assert len(actions) == 0
 
@@ -310,8 +450,8 @@ class TestImplicitPrerequisites:
 # Feedback
 # ============================================================
 
-class TestFeedback:
 
+class TestFeedback:
     @pytest.mark.asyncio
     async def test_accept_feedback(self, anticipation_with_redis):
         anticipation_with_redis.redis.get = AsyncMock(return_value=None)
@@ -339,8 +479,8 @@ class TestFeedback:
 # Pattern Detection (Integration)
 # ============================================================
 
-class TestDetectPatterns:
 
+class TestDetectPatterns:
     @pytest.mark.asyncio
     async def test_no_redis(self, anticipation):
         result = await anticipation.detect_patterns()
@@ -348,10 +488,20 @@ class TestDetectPatterns:
 
     @pytest.mark.asyncio
     async def test_too_few_entries(self, anticipation_with_redis):
-        anticipation_with_redis.redis.lrange = AsyncMock(return_value=[
-            json.dumps({"action": "a", "args": "{}", "weekday": 0, "hour": 10,
-                        "timestamp": datetime.now(timezone.utc).isoformat(), "weather": ""}),
-        ])
+        anticipation_with_redis.redis.lrange = AsyncMock(
+            return_value=[
+                json.dumps(
+                    {
+                        "action": "a",
+                        "args": "{}",
+                        "weekday": 0,
+                        "hour": 10,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "weather": "",
+                    }
+                ),
+            ]
+        )
         result = await anticipation_with_redis.detect_patterns()
         assert result == []  # < 10 Eintraege
 
@@ -360,12 +510,13 @@ class TestDetectPatterns:
 # NEW: Stop with CancelledError — Lines 72-73
 # ============================================================
 
-class TestStopCancelledError:
 
+class TestStopCancelledError:
     @pytest.mark.asyncio
     async def test_stop_cancels_running_task(self, anticipation):
         """Stop cancels a running task and handles CancelledError (lines 72-73)."""
         import asyncio
+
         anticipation._running = True
 
         async def slow_loop():
@@ -382,8 +533,8 @@ class TestStopCancelledError:
 # NEW: log_action exception — Lines 112-113
 # ============================================================
 
-class TestLogActionException:
 
+class TestLogActionException:
     @pytest.mark.asyncio
     async def test_log_action_exception(self, anticipation):
         """Exception in log_action is caught (lines 112-113)."""
@@ -399,18 +550,26 @@ class TestLogActionException:
 # NEW: detect_patterns with bytes entries — Lines 135
 # ============================================================
 
-class TestDetectPatternsBytes:
 
+class TestDetectPatternsBytes:
     @pytest.mark.asyncio
     async def test_detect_patterns_bytes_entries(self, anticipation_with_redis):
         """Handles bytes entries in action log (line 135)."""
         now = datetime.now(timezone.utc)
         entries = []
         for i in range(15):
-            entries.append(json.dumps({
-                "action": "set_light", "args": "{}", "weekday": 0, "hour": 22,
-                "timestamp": (now - timedelta(days=i)).isoformat(), "weather": "",
-            }).encode("utf-8"))  # bytes, not str
+            entries.append(
+                json.dumps(
+                    {
+                        "action": "set_light",
+                        "args": "{}",
+                        "weekday": 0,
+                        "hour": 22,
+                        "timestamp": (now - timedelta(days=i)).isoformat(),
+                        "weather": "",
+                    }
+                ).encode("utf-8")
+            )  # bytes, not str
 
         anticipation_with_redis.redis.lrange = AsyncMock(return_value=entries)
         result = await anticipation_with_redis.detect_patterns()
@@ -422,12 +581,14 @@ class TestDetectPatternsBytes:
 # NEW: detect_patterns exception — Lines 157-159
 # ============================================================
 
-class TestDetectPatternsException:
 
+class TestDetectPatternsException:
     @pytest.mark.asyncio
     async def test_detect_patterns_exception(self, anticipation_with_redis):
         """Exception in detect_patterns returns [] (lines 157-159)."""
-        anticipation_with_redis.redis.lrange = AsyncMock(side_effect=Exception("Redis fail"))
+        anticipation_with_redis.redis.lrange = AsyncMock(
+            side_effect=Exception("Redis fail")
+        )
         result = await anticipation_with_redis.detect_patterns()
         assert result == []
 
@@ -436,15 +597,29 @@ class TestDetectPatternsException:
 # NEW: _detect_time_patterns person filter — Lines 176-178
 # ============================================================
 
-class TestTimePatternPersonFilter:
 
+class TestTimePatternPersonFilter:
     def test_person_filter_too_few(self, anticipation):
         """Person filter with too few entries returns [] (lines 176-178)."""
         entries = [
-            {"action": "set_light", "args": "{}", "weekday": 0, "hour": 22,
-             "timestamp": datetime.now(timezone.utc).isoformat(), "weather": "", "person": "Max"},
-            {"action": "set_light", "args": "{}", "weekday": 0, "hour": 22,
-             "timestamp": datetime.now(timezone.utc).isoformat(), "weather": "", "person": "Anna"},
+            {
+                "action": "set_light",
+                "args": "{}",
+                "weekday": 0,
+                "hour": 22,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "weather": "",
+                "person": "Max",
+            },
+            {
+                "action": "set_light",
+                "args": "{}",
+                "weekday": 0,
+                "hour": 22,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "weather": "",
+                "person": "Anna",
+            },
         ]
         result = anticipation._detect_time_patterns(entries, person="Max")
         assert result == []
@@ -453,11 +628,16 @@ class TestTimePatternPersonFilter:
         """Invalid timestamp uses fallback weight (lines 209-210)."""
         entries = []
         for i in range(5):
-            entries.append({
-                "action": "set_light", "args": "{}", "weekday": 0, "hour": 22,
-                "timestamp": "not-a-timestamp",  # Invalid
-                "weather": "",
-            })
+            entries.append(
+                {
+                    "action": "set_light",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 22,
+                    "timestamp": "not-a-timestamp",  # Invalid
+                    "weather": "",
+                }
+            )
         result = anticipation._detect_time_patterns(entries)
         # Should not raise; fallback weight is used
         assert isinstance(result, list)
@@ -467,12 +647,17 @@ class TestTimePatternPersonFilter:
         now = datetime.now(timezone.utc)
         entries = []
         for i in range(10):
-            entries.append({
-                "action": "set_light", "args": '{"state": "off"}',
-                "weekday": 0, "hour": 22,
-                "timestamp": (now - timedelta(days=i * 7)).isoformat(),
-                "weather": "", "person": "Max",
-            })
+            entries.append(
+                {
+                    "action": "set_light",
+                    "args": '{"state": "off"}',
+                    "weekday": 0,
+                    "hour": 22,
+                    "timestamp": (now - timedelta(days=i * 7)).isoformat(),
+                    "weather": "",
+                    "person": "Max",
+                }
+            )
         result = anticipation._detect_time_patterns(entries, person="Max")
         if result:
             assert result[0].get("person") == "Max"
@@ -482,33 +667,58 @@ class TestTimePatternPersonFilter:
 # NEW: _detect_sequence_patterns edge cases — Lines 258, 283-284
 # ============================================================
 
-class TestSequencePatternsEdgeCases:
 
+class TestSequencePatternsEdgeCases:
     def test_sequence_person_filter(self, anticipation):
         """Sequence patterns filter by person (line 258)."""
         now = datetime.now(timezone.utc)
         entries = []
         for i in range(8):
             t = now - timedelta(days=i)
-            entries.append({
-                "action": "set_light", "args": "{}", "weekday": 0, "hour": 22,
-                "timestamp": t.isoformat(), "weather": "", "person": "Max",
-            })
-            entries.append({
-                "action": "set_cover", "args": "{}", "weekday": 0, "hour": 22,
-                "timestamp": (t + timedelta(seconds=60)).isoformat(),
-                "weather": "", "person": "Max",
-            })
+            entries.append(
+                {
+                    "action": "set_light",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 22,
+                    "timestamp": t.isoformat(),
+                    "weather": "",
+                    "person": "Max",
+                }
+            )
+            entries.append(
+                {
+                    "action": "set_cover",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 22,
+                    "timestamp": (t + timedelta(seconds=60)).isoformat(),
+                    "weather": "",
+                    "person": "Max",
+                }
+            )
         result = anticipation._detect_sequence_patterns(entries, person="Max")
         assert isinstance(result, list)
 
     def test_sequence_invalid_timestamp(self, anticipation):
         """Invalid timestamp in sequence is skipped (lines 283-284)."""
         entries = [
-            {"action": "a", "args": "{}", "weekday": 0, "hour": 10,
-             "timestamp": "invalid", "weather": ""},
-            {"action": "b", "args": "{}", "weekday": 0, "hour": 10,
-             "timestamp": "also-invalid", "weather": ""},
+            {
+                "action": "a",
+                "args": "{}",
+                "weekday": 0,
+                "hour": 10,
+                "timestamp": "invalid",
+                "weather": "",
+            },
+            {
+                "action": "b",
+                "args": "{}",
+                "weekday": 0,
+                "hour": 10,
+                "timestamp": "also-invalid",
+                "weather": "",
+            },
         ]
         result = anticipation._detect_sequence_patterns(entries)
         assert result == []
@@ -519,15 +729,28 @@ class TestSequencePatternsEdgeCases:
         entries = []
         for i in range(8):
             t = now - timedelta(days=i)
-            entries.append({
-                "action": "set_light", "args": "{}", "weekday": 0, "hour": 22,
-                "timestamp": t.isoformat(), "weather": "", "person": "Anna",
-            })
-            entries.append({
-                "action": "set_cover", "args": '{"position": 0}', "weekday": 0, "hour": 22,
-                "timestamp": (t + timedelta(seconds=60)).isoformat(),
-                "weather": "", "person": "Anna",
-            })
+            entries.append(
+                {
+                    "action": "set_light",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 22,
+                    "timestamp": t.isoformat(),
+                    "weather": "",
+                    "person": "Anna",
+                }
+            )
+            entries.append(
+                {
+                    "action": "set_cover",
+                    "args": '{"position": 0}',
+                    "weekday": 0,
+                    "hour": 22,
+                    "timestamp": (t + timedelta(seconds=60)).isoformat(),
+                    "weather": "",
+                    "person": "Anna",
+                }
+            )
         result = anticipation._detect_sequence_patterns(entries, person="Anna")
         if result:
             assert result[0].get("person") == "Anna"
@@ -537,25 +760,39 @@ class TestSequencePatternsEdgeCases:
 # NEW: _detect_context_patterns edge cases — Lines 329, 337, 345, 364, 383, 410, 428
 # ============================================================
 
-class TestContextPatternsEdgeCases:
 
+class TestContextPatternsEdgeCases:
     def test_context_person_filter(self, anticipation):
         """Context patterns filter by person (line 329)."""
         entries = []
         now = datetime.now(timezone.utc)
         for i in range(20):
-            entries.append({
-                "action": "set_cover", "args": "{}", "weekday": 0,
-                "hour": 19, "timestamp": (now - timedelta(days=i)).isoformat(),
-                "weather": "", "person": "Max",
-            })
+            entries.append(
+                {
+                    "action": "set_cover",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 19,
+                    "timestamp": (now - timedelta(days=i)).isoformat(),
+                    "weather": "",
+                    "person": "Max",
+                }
+            )
         result = anticipation._detect_context_patterns(entries, person="Max")
         assert isinstance(result, list)
 
     def test_context_empty_action_skipped(self, anticipation):
         """Empty action is skipped (line 337)."""
-        entries = [{"action": "", "args": "{}", "weekday": 0, "hour": 10,
-                    "timestamp": datetime.now(timezone.utc).isoformat(), "weather": ""}]
+        entries = [
+            {
+                "action": "",
+                "args": "{}",
+                "weekday": 0,
+                "hour": 10,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "weather": "",
+            }
+        ]
         result = anticipation._detect_context_patterns(entries)
         assert result == []
 
@@ -564,11 +801,16 @@ class TestContextPatternsEdgeCases:
         entries = []
         now = datetime.now(timezone.utc)
         for i in range(10):
-            entries.append({
-                "action": "set_light", "args": "{}", "weekday": 0,
-                "hour": 23, "timestamp": (now - timedelta(days=i)).isoformat(),
-                "weather": "",
-            })
+            entries.append(
+                {
+                    "action": "set_light",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 23,
+                    "timestamp": (now - timedelta(days=i)).isoformat(),
+                    "weather": "",
+                }
+            )
         result = anticipation._detect_context_patterns(entries)
         assert isinstance(result, list)
 
@@ -577,11 +819,16 @@ class TestContextPatternsEdgeCases:
         entries = []
         now = datetime.now(timezone.utc)
         for i in range(6):
-            entries.append({
-                "action": "rare_action" if i < 3 else "common_action", "args": "{}", "weekday": 0,
-                "hour": 19, "timestamp": (now - timedelta(days=i)).isoformat(),
-                "weather": "",
-            })
+            entries.append(
+                {
+                    "action": "rare_action" if i < 3 else "common_action",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 19,
+                    "timestamp": (now - timedelta(days=i)).isoformat(),
+                    "weather": "",
+                }
+            )
         result = anticipation._detect_context_patterns(entries)
         # rare_action has < 5 total => skipped
         for p in result:
@@ -592,11 +839,17 @@ class TestContextPatternsEdgeCases:
         entries = []
         now = datetime.now(timezone.utc)
         for i in range(10):
-            entries.append({
-                "action": "set_cover", "args": "{}", "weekday": 0,
-                "hour": 14, "timestamp": (now - timedelta(days=i)).isoformat(),
-                "weather": "rainy", "person": "Anna",
-            })
+            entries.append(
+                {
+                    "action": "set_cover",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 14,
+                    "timestamp": (now - timedelta(days=i)).isoformat(),
+                    "weather": "rainy",
+                    "person": "Anna",
+                }
+            )
         result = anticipation._detect_context_patterns(entries, person="Anna")
         weather_patterns = [p for p in result if "weather:" in p.get("context", "")]
         if weather_patterns:
@@ -607,21 +860,45 @@ class TestContextPatternsEdgeCases:
 # NEW: _detect_causal_chains edge cases — Lines 472-474, 486-488, 515, 527
 # ============================================================
 
-class TestCausalChainsEdgeCases:
 
+class TestCausalChainsEdgeCases:
     def test_causal_chain_invalid_start_timestamp(self, anticipation):
         """Invalid timestamp at chain start skipped (lines 472-474)."""
         entries = [
-            {"action": "a", "args": "{}", "weekday": 0, "hour": 10,
-             "timestamp": "invalid", "weather": ""},
-            {"action": "b", "args": "{}", "weekday": 0, "hour": 10,
-             "timestamp": datetime.now(timezone.utc).isoformat(), "weather": ""},
-            {"action": "c", "args": "{}", "weekday": 0, "hour": 10,
-             "timestamp": datetime.now(timezone.utc).isoformat(), "weather": ""},
+            {
+                "action": "a",
+                "args": "{}",
+                "weekday": 0,
+                "hour": 10,
+                "timestamp": "invalid",
+                "weather": "",
+            },
+            {
+                "action": "b",
+                "args": "{}",
+                "weekday": 0,
+                "hour": 10,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "weather": "",
+            },
+            {
+                "action": "c",
+                "args": "{}",
+                "weekday": 0,
+                "hour": 10,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "weather": "",
+            },
         ]
-        with patch("assistant.anticipation.yaml_config", {
-            "anticipation": {"causal_chain_window_min": 10, "causal_chain_min_occurrences": 1},
-        }):
+        with patch(
+            "assistant.anticipation.yaml_config",
+            {
+                "anticipation": {
+                    "causal_chain_window_min": 10,
+                    "causal_chain_min_occurrences": 1,
+                },
+            },
+        ):
             result = anticipation._detect_causal_chains(entries)
         assert isinstance(result, list)
 
@@ -629,16 +906,40 @@ class TestCausalChainsEdgeCases:
         """Invalid timestamp inside cluster skipped (lines 486-488)."""
         now = datetime.now(timezone.utc)
         entries = [
-            {"action": "a", "args": "{}", "weekday": 0, "hour": 10,
-             "timestamp": now.isoformat(), "weather": ""},
-            {"action": "b", "args": "{}", "weekday": 0, "hour": 10,
-             "timestamp": "invalid", "weather": ""},
-            {"action": "c", "args": "{}", "weekday": 0, "hour": 10,
-             "timestamp": (now + timedelta(seconds=30)).isoformat(), "weather": ""},
+            {
+                "action": "a",
+                "args": "{}",
+                "weekday": 0,
+                "hour": 10,
+                "timestamp": now.isoformat(),
+                "weather": "",
+            },
+            {
+                "action": "b",
+                "args": "{}",
+                "weekday": 0,
+                "hour": 10,
+                "timestamp": "invalid",
+                "weather": "",
+            },
+            {
+                "action": "c",
+                "args": "{}",
+                "weekday": 0,
+                "hour": 10,
+                "timestamp": (now + timedelta(seconds=30)).isoformat(),
+                "weather": "",
+            },
         ]
-        with patch("assistant.anticipation.yaml_config", {
-            "anticipation": {"causal_chain_window_min": 10, "causal_chain_min_occurrences": 1},
-        }):
+        with patch(
+            "assistant.anticipation.yaml_config",
+            {
+                "anticipation": {
+                    "causal_chain_window_min": 10,
+                    "causal_chain_min_occurrences": 1,
+                },
+            },
+        ):
             result = anticipation._detect_causal_chains(entries)
         assert isinstance(result, list)
 
@@ -648,20 +949,38 @@ class TestCausalChainsEdgeCases:
         entries = []
         # Create many entries to dilute confidence
         for i in range(100):
-            entries.append({
-                "action": f"action_{i}", "args": "{}", "weekday": 0, "hour": 10,
-                "timestamp": (now + timedelta(seconds=i * 700)).isoformat(), "weather": "",
-            })
+            entries.append(
+                {
+                    "action": f"action_{i}",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 10,
+                    "timestamp": (now + timedelta(seconds=i * 700)).isoformat(),
+                    "weather": "",
+                }
+            )
         # Add one chain of 3 (which won't have enough confidence)
         for i in range(3):
-            entries.append({
-                "action": "chain_a", "args": "{}", "weekday": 0, "hour": 10,
-                "timestamp": (now + timedelta(seconds=i * 10)).isoformat(), "weather": "",
-            })
+            entries.append(
+                {
+                    "action": "chain_a",
+                    "args": "{}",
+                    "weekday": 0,
+                    "hour": 10,
+                    "timestamp": (now + timedelta(seconds=i * 10)).isoformat(),
+                    "weather": "",
+                }
+            )
         anticipation.min_confidence = 0.99
-        with patch("assistant.anticipation.yaml_config", {
-            "anticipation": {"causal_chain_window_min": 10, "causal_chain_min_occurrences": 1},
-        }):
+        with patch(
+            "assistant.anticipation.yaml_config",
+            {
+                "anticipation": {
+                    "causal_chain_window_min": 10,
+                    "causal_chain_min_occurrences": 1,
+                },
+            },
+        ):
             result = anticipation._detect_causal_chains(entries)
         # Reset
         anticipation.min_confidence = 0.6
@@ -675,15 +994,27 @@ class TestCausalChainsEdgeCases:
         for rep in range(4):
             t = now - timedelta(hours=rep * 2)
             for idx, action in enumerate(["x", "y", "z"]):
-                entries.append({
-                    "action": action, "args": "{}", "weekday": 0, "hour": 10,
-                    "timestamp": (t + timedelta(seconds=idx * 30)).isoformat(),
-                    "weather": "", "person": "Max",
-                })
+                entries.append(
+                    {
+                        "action": action,
+                        "args": "{}",
+                        "weekday": 0,
+                        "hour": 10,
+                        "timestamp": (t + timedelta(seconds=idx * 30)).isoformat(),
+                        "weather": "",
+                        "person": "Max",
+                    }
+                )
 
-        with patch("assistant.anticipation.yaml_config", {
-            "anticipation": {"causal_chain_window_min": 10, "causal_chain_min_occurrences": 3},
-        }):
+        with patch(
+            "assistant.anticipation.yaml_config",
+            {
+                "anticipation": {
+                    "causal_chain_window_min": 10,
+                    "causal_chain_min_occurrences": 3,
+                },
+            },
+        ):
             result = anticipation._detect_causal_chains(entries, person="Max")
         if result:
             assert result[0].get("person") == "Max"
@@ -693,8 +1024,8 @@ class TestCausalChainsEdgeCases:
 # NEW: get_suggestions — Lines 585-689
 # ============================================================
 
-class TestGetSuggestions:
 
+class TestGetSuggestions:
     @pytest.mark.asyncio
     async def test_no_redis(self, anticipation):
         """No redis returns [] (line 585)."""
@@ -704,7 +1035,12 @@ class TestGetSuggestions:
     @pytest.mark.asyncio
     async def test_no_patterns(self, anticipation_with_redis):
         """No patterns returns [] (line 590)."""
-        with patch.object(anticipation_with_redis, "detect_patterns", new_callable=AsyncMock, return_value=[]):
+        with patch.object(
+            anticipation_with_redis,
+            "detect_patterns",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
             result = await anticipation_with_redis.get_suggestions()
         assert result == []
 
@@ -722,8 +1058,12 @@ class TestGetSuggestions:
             "description": "Jeden Tag um jetzt",
         }
         anticipation_with_redis.redis.get = AsyncMock(return_value=None)
-        with patch.object(anticipation_with_redis, "detect_patterns",
-                          new_callable=AsyncMock, return_value=[pattern]):
+        with patch.object(
+            anticipation_with_redis,
+            "detect_patterns",
+            new_callable=AsyncMock,
+            return_value=[pattern],
+        ):
             result = await anticipation_with_redis.get_suggestions()
         assert len(result) >= 1
         assert result[0]["mode"] == "suggest"  # 0.85 >= suggest threshold
@@ -736,13 +1076,17 @@ class TestGetSuggestions:
             "action": "set_light",
             "args": {},
             "weekday": 6,  # Sunday
-            "hour": 3,     # 3 AM — unlikely to be current
+            "hour": 3,  # 3 AM — unlikely to be current
             "confidence": 0.9,
             "description": "Wrong time",
         }
         anticipation_with_redis.redis.get = AsyncMock(return_value=None)
-        with patch.object(anticipation_with_redis, "detect_patterns",
-                          new_callable=AsyncMock, return_value=[pattern]):
+        with patch.object(
+            anticipation_with_redis,
+            "detect_patterns",
+            new_callable=AsyncMock,
+            return_value=[pattern],
+        ):
             result = await anticipation_with_redis.get_suggestions()
         # May or may not match depending on current time
         assert isinstance(result, list)
@@ -759,14 +1103,20 @@ class TestGetSuggestions:
             "confidence": 0.7,
             "description": "Nach set_light folgt set_cover",
         }
-        recent_entry = json.dumps({
-            "action": "set_light",
-            "timestamp": now.isoformat(),
-        })
+        recent_entry = json.dumps(
+            {
+                "action": "set_light",
+                "timestamp": now.isoformat(),
+            }
+        )
         anticipation_with_redis.redis.get = AsyncMock(return_value=None)
         anticipation_with_redis.redis.lrange = AsyncMock(return_value=[recent_entry])
-        with patch.object(anticipation_with_redis, "detect_patterns",
-                          new_callable=AsyncMock, return_value=[pattern]):
+        with patch.object(
+            anticipation_with_redis,
+            "detect_patterns",
+            new_callable=AsyncMock,
+            return_value=[pattern],
+        ):
             result = await anticipation_with_redis.get_suggestions()
         assert len(result) >= 1
 
@@ -793,8 +1143,12 @@ class TestGetSuggestions:
             "description": "Test context pattern",
         }
         anticipation_with_redis.redis.get = AsyncMock(return_value=None)
-        with patch.object(anticipation_with_redis, "detect_patterns",
-                          new_callable=AsyncMock, return_value=[pattern]):
+        with patch.object(
+            anticipation_with_redis,
+            "detect_patterns",
+            new_callable=AsyncMock,
+            return_value=[pattern],
+        ):
             result = await anticipation_with_redis.get_suggestions()
         assert len(result) >= 1
         assert result[0]["mode"] == "auto"  # 0.96 >= auto threshold
@@ -811,10 +1165,20 @@ class TestGetSuggestions:
             "description": "Bei Regen Rolladen",
         }
         anticipation_with_redis.redis.get = AsyncMock(return_value=None)
-        with patch.object(anticipation_with_redis, "detect_patterns",
-                          new_callable=AsyncMock, return_value=[pattern]), \
-             patch.object(anticipation_with_redis, "_get_current_weather",
-                          new_callable=AsyncMock, return_value="rainy"):
+        with (
+            patch.object(
+                anticipation_with_redis,
+                "detect_patterns",
+                new_callable=AsyncMock,
+                return_value=[pattern],
+            ),
+            patch.object(
+                anticipation_with_redis,
+                "_get_current_weather",
+                new_callable=AsyncMock,
+                return_value="rainy",
+            ),
+        ):
             result = await anticipation_with_redis.get_suggestions()
         assert len(result) >= 1
 
@@ -833,8 +1197,12 @@ class TestGetSuggestions:
         }
         # Return truthy value to indicate already suggested
         anticipation_with_redis.redis.get = AsyncMock(return_value=b"1")
-        with patch.object(anticipation_with_redis, "detect_patterns",
-                          new_callable=AsyncMock, return_value=[pattern]):
+        with patch.object(
+            anticipation_with_redis,
+            "detect_patterns",
+            new_callable=AsyncMock,
+            return_value=[pattern],
+        ):
             result = await anticipation_with_redis.get_suggestions()
         assert len(result) == 0
 
@@ -852,8 +1220,12 @@ class TestGetSuggestions:
             "description": "Low confidence",
         }
         anticipation_with_redis.redis.get = AsyncMock(return_value=None)
-        with patch.object(anticipation_with_redis, "detect_patterns",
-                          new_callable=AsyncMock, return_value=[pattern]):
+        with patch.object(
+            anticipation_with_redis,
+            "detect_patterns",
+            new_callable=AsyncMock,
+            return_value=[pattern],
+        ):
             result = await anticipation_with_redis.get_suggestions()
         if result:
             assert result[0]["mode"] == "ask"
@@ -863,8 +1235,8 @@ class TestGetSuggestions:
 # NEW: _get_current_weather — Lines 693-700
 # ============================================================
 
-class TestGetCurrentWeather:
 
+class TestGetCurrentWeather:
     @pytest.mark.asyncio
     async def test_weather_from_cache(self, anticipation_with_redis):
         """Gets weather from Redis cache (lines 694-697)."""
@@ -895,7 +1267,9 @@ class TestGetCurrentWeather:
     @pytest.mark.asyncio
     async def test_weather_exception(self, anticipation_with_redis):
         """Exception returns empty string (lines 698-699)."""
-        anticipation_with_redis.redis.get = AsyncMock(side_effect=Exception("Redis error"))
+        anticipation_with_redis.redis.get = AsyncMock(
+            side_effect=Exception("Redis error")
+        )
         result = await anticipation_with_redis._get_current_weather()
         assert result == ""
 
@@ -904,12 +1278,14 @@ class TestGetCurrentWeather:
 # NEW: record_feedback exception — Lines 737-738
 # ============================================================
 
-class TestRecordFeedbackException:
 
+class TestRecordFeedbackException:
     @pytest.mark.asyncio
     async def test_feedback_exception(self, anticipation_with_redis):
         """Exception in record_feedback is caught (lines 737-738)."""
-        anticipation_with_redis.redis.get = AsyncMock(side_effect=Exception("Redis error"))
+        anticipation_with_redis.redis.get = AsyncMock(
+            side_effect=Exception("Redis error")
+        )
         # Should not raise
         await anticipation_with_redis.record_feedback("test", accepted=True)
 
@@ -918,8 +1294,8 @@ class TestRecordFeedbackException:
 # NEW: _check_loop — Lines 750-754, 763-765
 # ============================================================
 
-class TestCheckLoop:
 
+class TestCheckLoop:
     @pytest.mark.asyncio
     async def test_check_loop_runs_and_notifies(self, anticipation_with_redis):
         """Check loop processes suggestions and notifies (lines 750-754)."""
@@ -951,9 +1327,14 @@ class TestCheckLoop:
 
         # Patch quiet hours to never-quiet range so the loop doesn't skip
         _no_quiet = {"ambient_presence": {"quiet_start": 0, "quiet_end": 0}}
-        with patch.object(anticipation_with_redis, "get_suggestions",
-                          side_effect=mock_get_suggestions), \
-             patch("assistant.config.yaml_config", _no_quiet):
+        with (
+            patch.object(
+                anticipation_with_redis,
+                "get_suggestions",
+                side_effect=mock_get_suggestions,
+            ),
+            patch("assistant.config.yaml_config", _no_quiet),
+        ):
             anticipation_with_redis._running = True
             task = asyncio.create_task(anticipation_with_redis._check_loop())
             await asyncio.sleep(0.1)
@@ -990,10 +1371,15 @@ class TestCheckLoop:
             await _original_sleep(min(seconds, 0.01))
 
         anticipation_with_redis.check_interval = 0.01
-        with patch.object(anticipation_with_redis, "get_suggestions",
-                          side_effect=mock_get_suggestions), \
-             patch("assistant.config.yaml_config", _no_quiet), \
-             patch("asyncio.sleep", side_effect=_fast_sleep):
+        with (
+            patch.object(
+                anticipation_with_redis,
+                "get_suggestions",
+                side_effect=mock_get_suggestions,
+            ),
+            patch("assistant.config.yaml_config", _no_quiet),
+            patch("asyncio.sleep", side_effect=_fast_sleep),
+        ):
             anticipation_with_redis._running = True
             task = asyncio.create_task(anticipation_with_redis._check_loop())
             await _original_sleep(0.2)
@@ -1011,23 +1397,29 @@ class TestCheckLoop:
 # NEW: detect_implicit_prerequisites with configured intents
 # ============================================================
 
-class TestImplicitPrerequisitesConfig:
 
+class TestImplicitPrerequisitesConfig:
     def test_configured_intent_sequences(self, anticipation):
         """Uses intent_sequences from config when available."""
-        with patch("assistant.anticipation.yaml_config", {
-            "anticipation": {
-                "intent_sequences": {
-                    "party": ["Musik laut", "Licht bunt"],
+        with patch(
+            "assistant.anticipation.yaml_config",
+            {
+                "anticipation": {
+                    "intent_sequences": {
+                        "party": ["Musik laut", "Licht bunt"],
+                    },
                 },
             },
-        }):
+        ):
             result = anticipation.detect_implicit_prerequisites("Lass uns party machen")
         assert result == ["Musik laut", "Licht bunt"]
 
     def test_negation_kein(self, anticipation):
         """Negation with 'kein' blocks match."""
-        with patch("assistant.anticipation.yaml_config", {"anticipation": {"intent_sequences": {}}}):
+        with patch(
+            "assistant.anticipation.yaml_config",
+            {"anticipation": {"intent_sequences": {}}},
+        ):
             result = anticipation.detect_implicit_prerequisites("kein schlafen heute")
         assert result == []
 
@@ -1036,12 +1428,14 @@ class TestImplicitPrerequisitesConfig:
 # Phase 3A: Multi-Tag-Antizipation
 # ============================================================
 
+
 class TestPhase3APredictFuture:
     """Tests fuer Multi-Tag-Vorhersagen."""
 
     @pytest.fixture
     def anticipation(self, redis_mock):
         from assistant.anticipation import AnticipationEngine
+
         a = AnticipationEngine()
         a.redis = redis_mock
         return a
@@ -1062,14 +1456,17 @@ class TestPhase3APredictFuture:
     async def test_predict_with_patterns(self, anticipation, redis_mock):
         """Vorhersage mit genug Daten sollte Ergebnisse liefern."""
         from datetime import datetime
+
         entries = []
         for i in range(50):
-            entry = json.dumps({
-                "action": "make_coffee",
-                "weekday": datetime.now(timezone.utc).weekday(),
-                "hour": 7,
-                "timestamp": f"2026-03-{10+i%15:02d}T07:00:00",
-            })
+            entry = json.dumps(
+                {
+                    "action": "make_coffee",
+                    "weekday": datetime.now(timezone.utc).weekday(),
+                    "hour": 7,
+                    "timestamp": f"2026-03-{10 + i % 15:02d}T07:00:00",
+                }
+            )
             entries.append(entry.encode())
         redis_mock.lrange = AsyncMock(return_value=entries)
         redis_mock.get = AsyncMock(return_value=None)
@@ -1135,6 +1532,7 @@ class TestPhase3APredictFuture:
 # Calendar-Weather Crossref (get_calendar_weather_crossrefs)
 # ============================================================
 
+
 class TestCalendarWeatherCrossref:
     """Tests for calendar x weather cross-reference suggestions.
 
@@ -1146,8 +1544,11 @@ class TestCalendarWeatherCrossref:
     """
 
     _CROSSREF_CONFIG = {
-        "anticipation": {"enabled": True, "min_confidence": 0.6,
-                         "thresholds": {"ask": 0.6, "suggest": 0.8, "auto": 0.95}},
+        "anticipation": {
+            "enabled": True,
+            "min_confidence": 0.6,
+            "thresholds": {"ask": 0.6, "suggest": 0.8, "auto": 0.95},
+        },
         "predictive_needs": {"enabled": True},
     }
 
@@ -1183,8 +1584,10 @@ class TestCalendarWeatherCrossref:
         redis.get = AsyncMock(side_effect=mock_get)
         redis.setex = AsyncMock()
 
-        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG), \
-             patch("assistant.anticipation.datetime") as mock_dt:
+        with (
+            patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG),
+            patch("assistant.anticipation.datetime") as mock_dt,
+        ):
             mock_dt.now.return_value = fake_now
             mock_dt.fromisoformat = datetime.fromisoformat
             result = await anticipation_with_redis.get_calendar_weather_crossrefs()
@@ -1227,13 +1630,17 @@ class TestCalendarWeatherCrossref:
         redis.get = AsyncMock(side_effect=mock_get)
         redis.setex = AsyncMock()
 
-        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG), \
-             patch("assistant.anticipation.datetime") as mock_dt:
+        with (
+            patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG),
+            patch("assistant.anticipation.datetime") as mock_dt,
+        ):
             mock_dt.now.return_value = fake_now
             mock_dt.fromisoformat = datetime.fromisoformat
             result = await anticipation_with_redis.get_calendar_weather_crossrefs()
 
-        rain_or_heat = [r for r in result if r["type"] in ("calendar_rain", "calendar_heat")]
+        rain_or_heat = [
+            r for r in result if r["type"] in ("calendar_rain", "calendar_heat")
+        ]
         assert len(rain_or_heat) == 0
 
     @pytest.mark.asyncio
@@ -1261,11 +1668,15 @@ class TestCalendarWeatherCrossref:
         redis.get = AsyncMock(side_effect=mock_get)
         redis.setex = AsyncMock()
 
-        cfg = {**self._CROSSREF_CONFIG,
-               "predictive_needs": {"enabled": True, "hot_threshold": 33}}
+        cfg = {
+            **self._CROSSREF_CONFIG,
+            "predictive_needs": {"enabled": True, "hot_threshold": 33},
+        }
 
-        with patch("assistant.anticipation.yaml_config", cfg), \
-             patch("assistant.anticipation.datetime") as mock_dt:
+        with (
+            patch("assistant.anticipation.yaml_config", cfg),
+            patch("assistant.anticipation.datetime") as mock_dt,
+        ):
             mock_dt.now.return_value = fake_now
             mock_dt.fromisoformat = datetime.fromisoformat
             result = await anticipation_with_redis.get_calendar_weather_crossrefs()
@@ -1277,7 +1688,9 @@ class TestCalendarWeatherCrossref:
     @pytest.mark.asyncio
     async def test_crossref_early_morning_event(self, anticipation_with_redis):
         """Tomorrow early event + late evening generates early-morning hint."""
-        fake_now = self._naive_now().replace(hour=22, minute=30, second=0, microsecond=0)
+        fake_now = self._naive_now().replace(
+            hour=22, minute=30, second=0, microsecond=0
+        )
         tomorrow = fake_now + timedelta(days=1)
         event_start = tomorrow.replace(hour=7, minute=0)
         event = self._make_event("Fruehstueckstreffen", event_start.isoformat())
@@ -1300,8 +1713,10 @@ class TestCalendarWeatherCrossref:
         redis.get = AsyncMock(side_effect=mock_get)
         redis.setex = AsyncMock()
 
-        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG), \
-             patch("assistant.anticipation.datetime") as mock_dt:
+        with (
+            patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG),
+            patch("assistant.anticipation.datetime") as mock_dt,
+        ):
             mock_dt.now.return_value = fake_now
             mock_dt.fromisoformat = datetime.fromisoformat
             result = await anticipation_with_redis.get_calendar_weather_crossrefs()
@@ -1334,11 +1749,15 @@ class TestCalendarWeatherCrossref:
         redis.get = AsyncMock(side_effect=mock_get)
         redis.setex = AsyncMock()
 
-        cfg = {**self._CROSSREF_CONFIG,
-               "predictive_needs": {"enabled": True, "cold_threshold": 5}}
+        cfg = {
+            **self._CROSSREF_CONFIG,
+            "predictive_needs": {"enabled": True, "cold_threshold": 5},
+        }
 
-        with patch("assistant.anticipation.yaml_config", cfg), \
-             patch("assistant.anticipation.datetime") as mock_dt:
+        with (
+            patch("assistant.anticipation.yaml_config", cfg),
+            patch("assistant.anticipation.datetime") as mock_dt,
+        ):
             mock_dt.now.return_value = fake_now
             mock_dt.fromisoformat = datetime.fromisoformat
             result = await anticipation_with_redis.get_calendar_weather_crossrefs()
@@ -1357,8 +1776,7 @@ class TestCalendarWeatherCrossref:
     @pytest.mark.asyncio
     async def test_crossref_disabled_config(self, anticipation_with_redis):
         """Disabled predictive_needs returns empty list."""
-        cfg = {**self._CROSSREF_CONFIG,
-               "predictive_needs": {"enabled": False}}
+        cfg = {**self._CROSSREF_CONFIG, "predictive_needs": {"enabled": False}}
         with patch("assistant.anticipation.yaml_config", cfg):
             result = await anticipation_with_redis.get_calendar_weather_crossrefs()
         assert result == []
@@ -1388,8 +1806,10 @@ class TestCalendarWeatherCrossref:
         redis.get = AsyncMock(side_effect=mock_get)
         redis.setex = AsyncMock()
 
-        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG), \
-             patch("assistant.anticipation.datetime") as mock_dt:
+        with (
+            patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG),
+            patch("assistant.anticipation.datetime") as mock_dt,
+        ):
             mock_dt.now.return_value = fake_now
             mock_dt.fromisoformat = datetime.fromisoformat
             result = await anticipation_with_redis.get_calendar_weather_crossrefs()
@@ -1419,8 +1839,10 @@ class TestCalendarWeatherCrossref:
         redis.get = AsyncMock(side_effect=mock_get)
         redis.setex = AsyncMock()
 
-        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG), \
-             patch("assistant.anticipation.datetime") as mock_dt:
+        with (
+            patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG),
+            patch("assistant.anticipation.datetime") as mock_dt,
+        ):
             mock_dt.now.return_value = fake_now
             mock_dt.fromisoformat = datetime.fromisoformat
             result = await anticipation_with_redis.get_calendar_weather_crossrefs()
@@ -1460,8 +1882,10 @@ class TestCalendarWeatherCrossref:
         redis.get = AsyncMock(side_effect=mock_get)
         redis.setex = AsyncMock()
 
-        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG), \
-             patch("assistant.anticipation.datetime") as mock_dt:
+        with (
+            patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG),
+            patch("assistant.anticipation.datetime") as mock_dt,
+        ):
             mock_dt.now.return_value = fake_now
             mock_dt.fromisoformat = datetime.fromisoformat
             result = await anticipation_with_redis.get_calendar_weather_crossrefs()
@@ -1469,7 +1893,9 @@ class TestCalendarWeatherCrossref:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_crossref_event_far_future_no_rain_alert(self, anticipation_with_redis):
+    async def test_crossref_event_far_future_no_rain_alert(
+        self, anticipation_with_redis
+    ):
         """Event more than 45 min away does not trigger rain alert."""
         fake_now = self._naive_now()
         event_start = fake_now + timedelta(minutes=90)
@@ -1493,8 +1919,10 @@ class TestCalendarWeatherCrossref:
         redis.get = AsyncMock(side_effect=mock_get)
         redis.setex = AsyncMock()
 
-        with patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG), \
-             patch("assistant.anticipation.datetime") as mock_dt:
+        with (
+            patch("assistant.anticipation.yaml_config", self._CROSSREF_CONFIG),
+            patch("assistant.anticipation.datetime") as mock_dt,
+        ):
             mock_dt.now.return_value = fake_now
             mock_dt.fromisoformat = datetime.fromisoformat
             result = await anticipation_with_redis.get_calendar_weather_crossrefs()
@@ -1527,10 +1955,14 @@ class TestCalendarWeatherCrossref:
         redis.get = AsyncMock(side_effect=mock_get)
         redis.setex = AsyncMock()
 
-        cfg = {**self._CROSSREF_CONFIG,
-               "predictive_needs": {"enabled": True, "hot_threshold": 33}}
-        with patch("assistant.anticipation.yaml_config", cfg), \
-             patch("assistant.anticipation.datetime") as mock_dt:
+        cfg = {
+            **self._CROSSREF_CONFIG,
+            "predictive_needs": {"enabled": True, "hot_threshold": 33},
+        }
+        with (
+            patch("assistant.anticipation.yaml_config", cfg),
+            patch("assistant.anticipation.datetime") as mock_dt,
+        ):
             mock_dt.now.return_value = fake_now
             mock_dt.fromisoformat = datetime.fromisoformat
             result = await anticipation_with_redis.get_calendar_weather_crossrefs()
@@ -1542,6 +1974,7 @@ class TestCalendarWeatherCrossref:
 # ============================================================
 # Crossref integration in get_suggestions
 # ============================================================
+
 
 class TestCrossrefInGetSuggestions:
     """Tests that calendar-weather crossrefs are integrated into get_suggestions."""
@@ -1561,21 +1994,37 @@ class TestCrossrefInGetSuggestions:
         }
         # A pattern that won't match current time (weekday 6, hour 3)
         dummy_pattern = {
-            "type": "time", "action": "noop", "args": {},
+            "type": "time",
+            "action": "noop",
+            "args": {},
             "weekday": (datetime.now(_LOCAL_TZ).weekday() + 3) % 7,
-            "hour": 3, "confidence": 0.7, "description": "dummy",
+            "hour": 3,
+            "confidence": 0.7,
+            "description": "dummy",
         }
 
         anticipation_with_redis.redis.get = AsyncMock(return_value=None)
 
-        with patch.object(anticipation_with_redis, "detect_patterns",
-                          new_callable=AsyncMock, return_value=[dummy_pattern]), \
-             patch.object(anticipation_with_redis, "get_calendar_weather_crossrefs",
-                          new_callable=AsyncMock, return_value=[crossref]):
+        with (
+            patch.object(
+                anticipation_with_redis,
+                "detect_patterns",
+                new_callable=AsyncMock,
+                return_value=[dummy_pattern],
+            ),
+            patch.object(
+                anticipation_with_redis,
+                "get_calendar_weather_crossrefs",
+                new_callable=AsyncMock,
+                return_value=[crossref],
+            ),
+        ):
             result = await anticipation_with_redis.get_suggestions()
 
         # Find the crossref suggestion among results
-        crossref_results = [s for s in result if s.get("pattern", {}).get("type") == "calendar_crossref"]
+        crossref_results = [
+            s for s in result if s.get("pattern", {}).get("type") == "calendar_crossref"
+        ]
         assert len(crossref_results) == 1
         assert crossref_results[0]["action"] == "send_notification"
         assert crossref_results[0]["description"] == "Schirm nicht vergessen"
@@ -1584,7 +2033,9 @@ class TestCrossrefInGetSuggestions:
         assert crossref_results[0]["urgency"] == "medium"
 
     @pytest.mark.asyncio
-    async def test_crossref_exception_does_not_break_suggestions(self, anticipation_with_redis):
+    async def test_crossref_exception_does_not_break_suggestions(
+        self, anticipation_with_redis
+    ):
         """Exception in crossref does not prevent other suggestions from returning."""
         now = datetime.now(_LOCAL_TZ)
         pattern = {
@@ -1599,10 +2050,20 @@ class TestCrossrefInGetSuggestions:
 
         anticipation_with_redis.redis.get = AsyncMock(return_value=None)
 
-        with patch.object(anticipation_with_redis, "detect_patterns",
-                          new_callable=AsyncMock, return_value=[pattern]), \
-             patch.object(anticipation_with_redis, "get_calendar_weather_crossrefs",
-                          new_callable=AsyncMock, side_effect=Exception("Crossref boom")):
+        with (
+            patch.object(
+                anticipation_with_redis,
+                "detect_patterns",
+                new_callable=AsyncMock,
+                return_value=[pattern],
+            ),
+            patch.object(
+                anticipation_with_redis,
+                "get_calendar_weather_crossrefs",
+                new_callable=AsyncMock,
+                side_effect=Exception("Crossref boom"),
+            ),
+        ):
             result = await anticipation_with_redis.get_suggestions()
 
         # Regular pattern suggestion still returned despite crossref failure
@@ -1610,7 +2071,9 @@ class TestCrossrefInGetSuggestions:
         assert result[0]["action"] == "set_light"
 
     @pytest.mark.asyncio
-    async def test_crossref_empty_returns_no_extra_suggestions(self, anticipation_with_redis):
+    async def test_crossref_empty_returns_no_extra_suggestions(
+        self, anticipation_with_redis
+    ):
         """Empty crossref list adds nothing beyond matched patterns.
 
         Note: get_suggestions returns early when detect_patterns is empty,
@@ -1618,19 +2081,35 @@ class TestCrossrefInGetSuggestions:
         when patterns exist but don't match.
         """
         dummy_pattern = {
-            "type": "time", "action": "noop", "args": {},
+            "type": "time",
+            "action": "noop",
+            "args": {},
             "weekday": (datetime.now(_LOCAL_TZ).weekday() + 3) % 7,
-            "hour": 3, "confidence": 0.7, "description": "dummy",
+            "hour": 3,
+            "confidence": 0.7,
+            "description": "dummy",
         }
         anticipation_with_redis.redis.get = AsyncMock(return_value=None)
 
-        with patch.object(anticipation_with_redis, "detect_patterns",
-                          new_callable=AsyncMock, return_value=[dummy_pattern]), \
-             patch.object(anticipation_with_redis, "get_calendar_weather_crossrefs",
-                          new_callable=AsyncMock, return_value=[]):
+        with (
+            patch.object(
+                anticipation_with_redis,
+                "detect_patterns",
+                new_callable=AsyncMock,
+                return_value=[dummy_pattern],
+            ),
+            patch.object(
+                anticipation_with_redis,
+                "get_calendar_weather_crossrefs",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+        ):
             result = await anticipation_with_redis.get_suggestions()
 
-        crossref_results = [s for s in result if s.get("pattern", {}).get("type") == "calendar_crossref"]
+        crossref_results = [
+            s for s in result if s.get("pattern", {}).get("type") == "calendar_crossref"
+        ]
         assert len(crossref_results) == 0
 
     @pytest.mark.asyncio
@@ -1639,10 +2118,20 @@ class TestCrossrefInGetSuggestions:
         so crossrefs are never reached."""
         anticipation_with_redis.redis.get = AsyncMock(return_value=None)
 
-        with patch.object(anticipation_with_redis, "detect_patterns",
-                          new_callable=AsyncMock, return_value=[]), \
-             patch.object(anticipation_with_redis, "get_calendar_weather_crossrefs",
-                          new_callable=AsyncMock, return_value=[{"type": "rain", "message": "x", "urgency": "high"}]):
+        with (
+            patch.object(
+                anticipation_with_redis,
+                "detect_patterns",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch.object(
+                anticipation_with_redis,
+                "get_calendar_weather_crossrefs",
+                new_callable=AsyncMock,
+                return_value=[{"type": "rain", "message": "x", "urgency": "high"}],
+            ),
+        ):
             result = await anticipation_with_redis.get_suggestions()
 
         assert result == []
@@ -1655,20 +2144,36 @@ class TestCrossrefInGetSuggestions:
             {"type": "preheat", "message": "Vorheizen?", "urgency": "low"},
         ]
         dummy_pattern = {
-            "type": "time", "action": "noop", "args": {},
+            "type": "time",
+            "action": "noop",
+            "args": {},
             "weekday": (datetime.now(_LOCAL_TZ).weekday() + 3) % 7,
-            "hour": 3, "confidence": 0.7, "description": "dummy",
+            "hour": 3,
+            "confidence": 0.7,
+            "description": "dummy",
         }
 
         anticipation_with_redis.redis.get = AsyncMock(return_value=None)
 
-        with patch.object(anticipation_with_redis, "detect_patterns",
-                          new_callable=AsyncMock, return_value=[dummy_pattern]), \
-             patch.object(anticipation_with_redis, "get_calendar_weather_crossrefs",
-                          new_callable=AsyncMock, return_value=crossrefs):
+        with (
+            patch.object(
+                anticipation_with_redis,
+                "detect_patterns",
+                new_callable=AsyncMock,
+                return_value=[dummy_pattern],
+            ),
+            patch.object(
+                anticipation_with_redis,
+                "get_calendar_weather_crossrefs",
+                new_callable=AsyncMock,
+                return_value=crossrefs,
+            ),
+        ):
             result = await anticipation_with_redis.get_suggestions()
 
-        crossref_results = [s for s in result if s.get("pattern", {}).get("type") == "calendar_crossref"]
+        crossref_results = [
+            s for s in result if s.get("pattern", {}).get("type") == "calendar_crossref"
+        ]
         assert len(crossref_results) == 2
         assert crossref_results[0]["urgency"] == "medium"
         assert crossref_results[1]["urgency"] == "low"
@@ -1699,11 +2204,20 @@ class TestCrossrefInGetSuggestions:
         redis.get = AsyncMock(side_effect=mock_get)
         redis.setex = AsyncMock()
 
-        with patch("assistant.anticipation.yaml_config", {
-            "anticipation": {"enabled": True, "min_confidence": 0.6,
-                             "thresholds": {"ask": 0.6, "suggest": 0.8, "auto": 0.95}},
-            "predictive_needs": {"enabled": True},
-        }), patch("assistant.anticipation.datetime") as mock_dt:
+        with (
+            patch(
+                "assistant.anticipation.yaml_config",
+                {
+                    "anticipation": {
+                        "enabled": True,
+                        "min_confidence": 0.6,
+                        "thresholds": {"ask": 0.6, "suggest": 0.8, "auto": 0.95},
+                    },
+                    "predictive_needs": {"enabled": True},
+                },
+            ),
+            patch("assistant.anticipation.datetime") as mock_dt,
+        ):
             mock_dt.now.return_value = fake_now
             mock_dt.fromisoformat = datetime.fromisoformat
             result = await anticipation_with_redis.get_calendar_weather_crossrefs()
@@ -1736,11 +2250,20 @@ class TestCrossrefInGetSuggestions:
         redis.get = AsyncMock(side_effect=mock_get)
         redis.setex = AsyncMock()
 
-        with patch("assistant.anticipation.yaml_config", {
-            "anticipation": {"enabled": True, "min_confidence": 0.6,
-                             "thresholds": {"ask": 0.6, "suggest": 0.8, "auto": 0.95}},
-            "predictive_needs": {"enabled": True},
-        }), patch("assistant.anticipation.datetime") as mock_dt:
+        with (
+            patch(
+                "assistant.anticipation.yaml_config",
+                {
+                    "anticipation": {
+                        "enabled": True,
+                        "min_confidence": 0.6,
+                        "thresholds": {"ask": 0.6, "suggest": 0.8, "auto": 0.95},
+                    },
+                    "predictive_needs": {"enabled": True},
+                },
+            ),
+            patch("assistant.anticipation.datetime") as mock_dt,
+        ):
             mock_dt.now.return_value = fake_now
             mock_dt.fromisoformat = datetime.fromisoformat
             result = await anticipation_with_redis.get_calendar_weather_crossrefs()
@@ -1753,8 +2276,8 @@ class TestCrossrefInGetSuggestions:
 # _pattern_matches_current_context
 # ============================================================
 
-class TestPatternMatchesCurrentContext:
 
+class TestPatternMatchesCurrentContext:
     def test_time_pattern_matches(self, anticipation):
         """Time pattern matches when weekday and hour match."""
         now = datetime.now(_LOCAL_TZ)
@@ -1770,7 +2293,11 @@ class TestPatternMatchesCurrentContext:
     def test_time_pattern_wrong_hour(self, anticipation):
         """Time pattern fails on wrong hour."""
         now = datetime.now(_LOCAL_TZ)
-        pattern = {"type": "time", "weekday": now.weekday(), "hour": (now.hour + 5) % 24}
+        pattern = {
+            "type": "time",
+            "weekday": now.weekday(),
+            "hour": (now.hour + 5) % 24,
+        }
         assert anticipation._pattern_matches_current_context(pattern, now, "") is False
 
     def test_context_time_cluster_morning(self, anticipation):
@@ -1807,13 +2334,18 @@ class TestPatternMatchesCurrentContext:
         """Context weather pattern matches current weather."""
         now = datetime.now(_LOCAL_TZ)
         pattern = {"type": "context", "context": "weather:rainy"}
-        assert anticipation._pattern_matches_current_context(pattern, now, "rainy") is True
+        assert (
+            anticipation._pattern_matches_current_context(pattern, now, "rainy") is True
+        )
 
     def test_context_weather_mismatch(self, anticipation):
         """Context weather pattern fails on different weather."""
         now = datetime.now(_LOCAL_TZ)
         pattern = {"type": "context", "context": "weather:rainy"}
-        assert anticipation._pattern_matches_current_context(pattern, now, "sunny") is False
+        assert (
+            anticipation._pattern_matches_current_context(pattern, now, "sunny")
+            is False
+        )
 
     def test_causal_chain_hour_trigger_match(self, anticipation):
         """Causal chain with hour trigger matches current hour."""
@@ -1837,13 +2369,18 @@ class TestPatternMatchesCurrentContext:
         """Causal chain with weather trigger matches current weather."""
         now = datetime.now(_LOCAL_TZ)
         pattern = {"type": "causal_chain", "trigger": "rainy"}
-        assert anticipation._pattern_matches_current_context(pattern, now, "rainy") is True
+        assert (
+            anticipation._pattern_matches_current_context(pattern, now, "rainy") is True
+        )
 
     def test_causal_chain_weather_trigger_mismatch(self, anticipation):
         """Causal chain weather trigger fails on different weather."""
         now = datetime.now(_LOCAL_TZ)
         pattern = {"type": "causal_chain", "trigger": "rainy"}
-        assert anticipation._pattern_matches_current_context(pattern, now, "sunny") is False
+        assert (
+            anticipation._pattern_matches_current_context(pattern, now, "sunny")
+            is False
+        )
 
     def test_sequence_pattern_returns_false(self, anticipation):
         """Sequence patterns are not auto-executable."""
@@ -1862,8 +2399,8 @@ class TestPatternMatchesCurrentContext:
 # auto_execute_ready_patterns
 # ============================================================
 
-class TestAutoExecuteReadyPatterns:
 
+class TestAutoExecuteReadyPatterns:
     @pytest.mark.asyncio
     async def test_low_autonomy_skips(self, anticipation):
         """Autonomy level < 3 skips execution."""
@@ -2012,8 +2549,8 @@ class TestAutoExecuteReadyPatterns:
 # detect_habit_drift
 # ============================================================
 
-class TestDetectHabitDrift:
 
+class TestDetectHabitDrift:
     @pytest.mark.asyncio
     async def test_no_redis_returns_empty(self, anticipation):
         """No redis returns empty list."""
@@ -2033,10 +2570,15 @@ class TestDetectHabitDrift:
         now = datetime.now(_LOCAL_TZ)
         entries = []
         for i in range(15):
-            entries.append(json.dumps({
-                "action": "set_light", "hour": 22,
-                "timestamp": (now - timedelta(days=1)).isoformat(),
-            }).encode())
+            entries.append(
+                json.dumps(
+                    {
+                        "action": "set_light",
+                        "hour": 22,
+                        "timestamp": (now - timedelta(days=1)).isoformat(),
+                    }
+                ).encode()
+            )
         anticipation_with_redis.redis.lrange = AsyncMock(return_value=entries)
         result = await anticipation_with_redis.detect_habit_drift()
         assert result == []
@@ -2048,16 +2590,26 @@ class TestDetectHabitDrift:
         entries = []
         # Previous week: set_light actions (8-14 days ago)
         for i in range(5):
-            entries.append(json.dumps({
-                "action": "set_light", "hour": 22,
-                "timestamp": (now - timedelta(days=10 + i * 0.5)).isoformat(),
-            }).encode())
+            entries.append(
+                json.dumps(
+                    {
+                        "action": "set_light",
+                        "hour": 22,
+                        "timestamp": (now - timedelta(days=10 + i * 0.5)).isoformat(),
+                    }
+                ).encode()
+            )
         # Recent week: only set_cover actions (0-7 days ago)
         for i in range(5):
-            entries.append(json.dumps({
-                "action": "set_cover", "hour": 20,
-                "timestamp": (now - timedelta(days=1 + i * 0.5)).isoformat(),
-            }).encode())
+            entries.append(
+                json.dumps(
+                    {
+                        "action": "set_cover",
+                        "hour": 20,
+                        "timestamp": (now - timedelta(days=1 + i * 0.5)).isoformat(),
+                    }
+                ).encode()
+            )
         anticipation_with_redis.redis.lrange = AsyncMock(return_value=entries)
         result = await anticipation_with_redis.detect_habit_drift()
 
@@ -2072,21 +2624,36 @@ class TestDetectHabitDrift:
         entries = []
         # Previous week: set_light actions
         for i in range(5):
-            entries.append(json.dumps({
-                "action": "set_light", "hour": 22,
-                "timestamp": (now - timedelta(days=10 + i * 0.5)).isoformat(),
-            }).encode())
+            entries.append(
+                json.dumps(
+                    {
+                        "action": "set_light",
+                        "hour": 22,
+                        "timestamp": (now - timedelta(days=10 + i * 0.5)).isoformat(),
+                    }
+                ).encode()
+            )
         # Recent week: set_light AND set_climate (new)
         for i in range(5):
-            entries.append(json.dumps({
-                "action": "set_light", "hour": 22,
-                "timestamp": (now - timedelta(days=1 + i * 0.5)).isoformat(),
-            }).encode())
+            entries.append(
+                json.dumps(
+                    {
+                        "action": "set_light",
+                        "hour": 22,
+                        "timestamp": (now - timedelta(days=1 + i * 0.5)).isoformat(),
+                    }
+                ).encode()
+            )
         for i in range(3):
-            entries.append(json.dumps({
-                "action": "set_climate", "hour": 18,
-                "timestamp": (now - timedelta(days=1 + i * 0.5)).isoformat(),
-            }).encode())
+            entries.append(
+                json.dumps(
+                    {
+                        "action": "set_climate",
+                        "hour": 18,
+                        "timestamp": (now - timedelta(days=1 + i * 0.5)).isoformat(),
+                    }
+                ).encode()
+            )
         anticipation_with_redis.redis.lrange = AsyncMock(return_value=entries)
         result = await anticipation_with_redis.detect_habit_drift()
 
@@ -2102,17 +2669,27 @@ class TestDetectHabitDrift:
         # Previous week: set_light at 20:00
         for i in range(5):
             ts = (now - timedelta(days=10 + i * 0.5)).replace(hour=20, minute=0)
-            entries.append(json.dumps({
-                "action": "set_light", "hour": 20,
-                "timestamp": ts.isoformat(),
-            }).encode())
+            entries.append(
+                json.dumps(
+                    {
+                        "action": "set_light",
+                        "hour": 20,
+                        "timestamp": ts.isoformat(),
+                    }
+                ).encode()
+            )
         # Recent week: set_light at 22:00 (2h shift)
         for i in range(5):
             ts = (now - timedelta(days=1 + i * 0.5)).replace(hour=22, minute=0)
-            entries.append(json.dumps({
-                "action": "set_light", "hour": 22,
-                "timestamp": ts.isoformat(),
-            }).encode())
+            entries.append(
+                json.dumps(
+                    {
+                        "action": "set_light",
+                        "hour": 22,
+                        "timestamp": ts.isoformat(),
+                    }
+                ).encode()
+            )
         anticipation_with_redis.redis.lrange = AsyncMock(return_value=entries)
         result = await anticipation_with_redis.detect_habit_drift()
 
@@ -2123,7 +2700,9 @@ class TestDetectHabitDrift:
     @pytest.mark.asyncio
     async def test_exception_returns_empty(self, anticipation_with_redis):
         """Exception in drift detection returns empty list."""
-        anticipation_with_redis.redis.lrange = AsyncMock(side_effect=Exception("Redis error"))
+        anticipation_with_redis.redis.lrange = AsyncMock(
+            side_effect=Exception("Redis error")
+        )
         result = await anticipation_with_redis.detect_habit_drift()
         assert result == []
 
@@ -2132,15 +2711,27 @@ class TestDetectHabitDrift:
 # _aggregate_action_stats
 # ============================================================
 
-class TestAggregateActionStats:
 
+class TestAggregateActionStats:
     def test_basic_aggregation(self, anticipation):
         """Actions are aggregated with correct counts and avg hours."""
         now = datetime.now(_LOCAL_TZ)
         entries = [
-            {"action": "set_light", "hour": 22, "timestamp": now.replace(hour=22, minute=0).isoformat()},
-            {"action": "set_light", "hour": 22, "timestamp": now.replace(hour=22, minute=30).isoformat()},
-            {"action": "set_light", "hour": 22, "timestamp": now.replace(hour=23, minute=0).isoformat()},
+            {
+                "action": "set_light",
+                "hour": 22,
+                "timestamp": now.replace(hour=22, minute=0).isoformat(),
+            },
+            {
+                "action": "set_light",
+                "hour": 22,
+                "timestamp": now.replace(hour=22, minute=30).isoformat(),
+            },
+            {
+                "action": "set_light",
+                "hour": 22,
+                "timestamp": now.replace(hour=23, minute=0).isoformat(),
+            },
         ]
         result = AnticipationEngine._aggregate_action_stats(entries)
         assert "set_light" in result
@@ -2151,7 +2742,11 @@ class TestAggregateActionStats:
     def test_single_occurrence_ignored(self, anticipation):
         """Actions with only 1 occurrence are excluded."""
         entries = [
-            {"action": "rare_action", "hour": 10, "timestamp": datetime.now(_LOCAL_TZ).isoformat()},
+            {
+                "action": "rare_action",
+                "hour": 10,
+                "timestamp": datetime.now(_LOCAL_TZ).isoformat(),
+            },
         ]
         result = AnticipationEngine._aggregate_action_stats(entries)
         assert "rare_action" not in result
@@ -2159,8 +2754,16 @@ class TestAggregateActionStats:
     def test_empty_action_skipped(self, anticipation):
         """Entries with empty action are skipped."""
         entries = [
-            {"action": "", "hour": 10, "timestamp": datetime.now(_LOCAL_TZ).isoformat()},
-            {"action": "", "hour": 11, "timestamp": datetime.now(_LOCAL_TZ).isoformat()},
+            {
+                "action": "",
+                "hour": 10,
+                "timestamp": datetime.now(_LOCAL_TZ).isoformat(),
+            },
+            {
+                "action": "",
+                "hour": 11,
+                "timestamp": datetime.now(_LOCAL_TZ).isoformat(),
+            },
         ]
         result = AnticipationEngine._aggregate_action_stats(entries)
         assert len(result) == 0
@@ -2195,8 +2798,8 @@ class TestAggregateActionStats:
 # check_routine_deviation
 # ============================================================
 
-class TestCheckRoutineDeviation:
 
+class TestCheckRoutineDeviation:
     @pytest.mark.asyncio
     async def test_no_redis_returns_empty(self, anticipation):
         """No redis returns empty list."""
@@ -2224,8 +2827,13 @@ class TestCheckRoutineDeviation:
         """Person with < 3 arrival events has no deviation."""
         now = datetime.now(_LOCAL_TZ).replace(hour=20, minute=30)
         entries = [
-            json.dumps({"action": "person_arrived", "person": "Max",
-                        "timestamp": (now - timedelta(days=1)).replace(hour=18).isoformat()}).encode(),
+            json.dumps(
+                {
+                    "action": "person_arrived",
+                    "person": "Max",
+                    "timestamp": (now - timedelta(days=1)).replace(hour=18).isoformat(),
+                }
+            ).encode(),
         ]
         anticipation_with_redis.redis.lrange = AsyncMock(return_value=entries)
 
@@ -2243,10 +2851,17 @@ class TestCheckRoutineDeviation:
         # At 21:30, delay = (21.5 - 18.5) * 60 = 180 min >= 90 => deviation
         entries = []
         for i in range(5):
-            entries.append(json.dumps({
-                "action": "person_arrived", "person": "Max",
-                "timestamp": (now - timedelta(days=i + 1)).replace(hour=18, minute=0).isoformat(),
-            }).encode())
+            entries.append(
+                json.dumps(
+                    {
+                        "action": "person_arrived",
+                        "person": "Max",
+                        "timestamp": (now - timedelta(days=i + 1))
+                        .replace(hour=18, minute=0)
+                        .isoformat(),
+                    }
+                ).encode()
+            )
         anticipation_with_redis.redis.lrange = AsyncMock(return_value=entries)
 
         with patch("assistant.anticipation.datetime") as mock_dt:
@@ -2264,10 +2879,17 @@ class TestCheckRoutineDeviation:
         now = datetime.now(_LOCAL_TZ).replace(hour=18, minute=30)
         entries = []
         for i in range(5):
-            entries.append(json.dumps({
-                "action": "person_arrived", "person": "Max",
-                "timestamp": (now - timedelta(days=i + 1)).replace(hour=18, minute=0).isoformat(),
-            }).encode())
+            entries.append(
+                json.dumps(
+                    {
+                        "action": "person_arrived",
+                        "person": "Max",
+                        "timestamp": (now - timedelta(days=i + 1))
+                        .replace(hour=18, minute=0)
+                        .isoformat(),
+                    }
+                ).encode()
+            )
         anticipation_with_redis.redis.lrange = AsyncMock(return_value=entries)
 
         with patch("assistant.anticipation.datetime") as mock_dt:
@@ -2291,35 +2913,45 @@ class TestCheckRoutineDeviation:
 # get_person_predictions
 # ============================================================
 
-class TestGetPersonPredictions:
 
+class TestGetPersonPredictions:
     @pytest.mark.asyncio
     async def test_empty_person_returns_all(self, anticipation_with_redis):
         """Empty person string returns all predictions."""
-        anticipation_with_redis.predict_future_needs = AsyncMock(return_value=[
-            {"action": "a", "person": "Max"},
-            {"action": "b", "person": ""},
-        ])
+        anticipation_with_redis.predict_future_needs = AsyncMock(
+            return_value=[
+                {"action": "a", "person": "Max"},
+                {"action": "b", "person": ""},
+            ]
+        )
         result = await anticipation_with_redis.get_person_predictions("", days_ahead=7)
         assert len(result) == 2
 
     @pytest.mark.asyncio
     async def test_filters_by_person(self, anticipation_with_redis):
         """Predictions are filtered to specific person + unassigned."""
-        anticipation_with_redis.predict_future_needs = AsyncMock(return_value=[
-            {"action": "a", "person": "Max"},
-            {"action": "b", "person": "Anna"},
-            {"action": "c", "person": ""},
-        ])
-        result = await anticipation_with_redis.get_person_predictions("Max", days_ahead=7)
+        anticipation_with_redis.predict_future_needs = AsyncMock(
+            return_value=[
+                {"action": "a", "person": "Max"},
+                {"action": "b", "person": "Anna"},
+                {"action": "c", "person": ""},
+            ]
+        )
+        result = await anticipation_with_redis.get_person_predictions(
+            "Max", days_ahead=7
+        )
         assert len(result) == 2
         assert all(p.get("person", "") in ("Max", "") for p in result)
 
     @pytest.mark.asyncio
     async def test_case_insensitive_filter(self, anticipation_with_redis):
         """Person filter is case insensitive."""
-        anticipation_with_redis.predict_future_needs = AsyncMock(return_value=[
-            {"action": "a", "person": "Max"},
-        ])
-        result = await anticipation_with_redis.get_person_predictions("max", days_ahead=3)
+        anticipation_with_redis.predict_future_needs = AsyncMock(
+            return_value=[
+                {"action": "a", "person": "Max"},
+            ]
+        )
+        result = await anticipation_with_redis.get_person_predictions(
+            "max", days_ahead=3
+        )
         assert len(result) == 1

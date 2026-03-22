@@ -52,12 +52,18 @@ class CameraManager:
         # Kamera-Entity finden
         entity_id = await self._find_camera(camera_name or room)
         if not entity_id:
-            return {"success": False, "message": f"Keine Kamera fuer '{camera_name or room}' gefunden."}
+            return {
+                "success": False,
+                "message": f"Keine Kamera fuer '{camera_name or room}' gefunden.",
+            }
 
         # Snapshot holen
         image_data = await self._get_snapshot(entity_id)
         if not image_data:
-            return {"success": False, "message": "Kamera-Snapshot konnte nicht abgerufen werden."}
+            return {
+                "success": False,
+                "message": "Kamera-Snapshot konnte nicht abgerufen werden.",
+            }
 
         # Bild an Vision-LLM senden
         description = await self._analyze_image(image_data)
@@ -134,7 +140,9 @@ class CameraManager:
             logger.error("Kamera-Snapshot fehlgeschlagen fuer %s: %s", entity_id, e)
             return None
 
-    async def _analyze_image(self, image_data: bytes, context: str = "general") -> Optional[str]:
+    async def _analyze_image(
+        self, image_data: bytes, context: str = "general"
+    ) -> Optional[str]:
         """Analysiert ein Bild mit dem Vision-LLM."""
         try:
             image_b64 = base64.b64encode(image_data).decode("utf-8")
@@ -199,7 +207,8 @@ class CameraManager:
                 for s in states:
                     eid = s.get("entity_id", "")
                     if eid.startswith("camera.") and any(
-                        kw in eid.lower() for kw in ("outdoor", "aussen", "garten", "einfahrt", "hof")
+                        kw in eid.lower()
+                        for kw in ("outdoor", "aussen", "garten", "einfahrt", "hof")
                     ):
                         camera_entity = eid
                         break

@@ -23,7 +23,10 @@ def ha_mock():
 
 @pytest.fixture
 def planner(ha_mock):
-    with patch("assistant.proactive_planner.yaml_config", {"proactive_planner": {"enabled": True}}):
+    with patch(
+        "assistant.proactive_planner.yaml_config",
+        {"proactive_planner": {"enabled": True}},
+    ):
         p = ProactiveSequencePlanner(ha=ha_mock)
     return p
 
@@ -38,8 +41,8 @@ def planner_with_redis(planner, redis_mock):
 # Initialisierung
 # ============================================================
 
-class TestPlannerInit:
 
+class TestPlannerInit:
     def test_default_config(self, planner):
         assert planner.enabled is True
         assert planner.min_autonomy_for_auto == 4
@@ -50,7 +53,10 @@ class TestPlannerInit:
         assert planner.redis is redis_mock
 
     def test_disabled(self, ha_mock):
-        with patch("assistant.proactive_planner.yaml_config", {"proactive_planner": {"enabled": False}}):
+        with patch(
+            "assistant.proactive_planner.yaml_config",
+            {"proactive_planner": {"enabled": False}},
+        ):
             p = ProactiveSequencePlanner(ha=ha_mock)
         assert p.enabled is False
 
@@ -59,8 +65,8 @@ class TestPlannerInit:
 # Person Arrived
 # ============================================================
 
-class TestArrivalSequence:
 
+class TestArrivalSequence:
     @pytest.mark.asyncio
     async def test_evening_arrival_with_eco(self, planner_with_redis):
         p = planner_with_redis
@@ -75,7 +81,9 @@ class TestArrivalSequence:
 
         with patch("assistant.proactive_planner.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 6, 15, 19, 0)  # 19 Uhr
-            result = await p.plan_from_context_change("person_arrived", context, autonomy_level=2)
+            result = await p.plan_from_context_change(
+                "person_arrived", context, autonomy_level=2
+            )
 
         assert result is not None
         assert result["trigger"] == "person_arrived"
@@ -97,7 +105,9 @@ class TestArrivalSequence:
 
         with patch("assistant.proactive_planner.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 6, 15, 12, 0)  # Mittags
-            result = await p.plan_from_context_change("person_arrived", context, autonomy_level=2)
+            result = await p.plan_from_context_change(
+                "person_arrived", context, autonomy_level=2
+            )
 
         # Tagsüber kein Licht, kein Eco → keine Aktionen → None
         assert result is None
@@ -114,7 +124,9 @@ class TestArrivalSequence:
 
         with patch("assistant.proactive_planner.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 6, 15, 20, 0)
-            result = await p.plan_from_context_change("person_arrived", context, autonomy_level=5)
+            result = await p.plan_from_context_change(
+                "person_arrived", context, autonomy_level=5
+            )
 
         assert result is not None
         assert result["needs_confirmation"] is False  # Level 5 >= 4
@@ -124,8 +136,8 @@ class TestArrivalSequence:
 # Weather Changed
 # ============================================================
 
-class TestWeatherSequence:
 
+class TestWeatherSequence:
     @pytest.mark.asyncio
     async def test_rain_with_open_windows(self, planner_with_redis):
         p = planner_with_redis
@@ -173,8 +185,8 @@ class TestWeatherSequence:
 # Guest Sequence
 # ============================================================
 
-class TestGuestSequence:
 
+class TestGuestSequence:
     @pytest.mark.asyncio
     async def test_evening_guest_event(self, planner_with_redis):
         p = planner_with_redis
@@ -195,8 +207,8 @@ class TestGuestSequence:
 # Cooldown
 # ============================================================
 
-class TestCooldown:
 
+class TestCooldown:
     @pytest.mark.asyncio
     async def test_cooldown_blocks_repeat(self, planner_with_redis):
         p = planner_with_redis
@@ -215,8 +227,8 @@ class TestCooldown:
 # Safety: Security-Aktionen
 # ============================================================
 
-class TestSecuritySafety:
 
+class TestSecuritySafety:
     @pytest.mark.asyncio
     async def test_security_action_always_needs_confirmation(self, planner_with_redis):
         p = planner_with_redis
@@ -226,7 +238,13 @@ class TestSecuritySafety:
         async def fake_plan(*args, **kwargs):
             return {
                 "trigger": "person_arrived",
-                "actions": [{"type": "unlock_door", "args": {}, "description": "Tuer entriegeln"}],
+                "actions": [
+                    {
+                        "type": "unlock_door",
+                        "args": {},
+                        "description": "Tuer entriegeln",
+                    }
+                ],
                 "message": "Test",
                 "auto_message": "Test",
             }
@@ -234,7 +252,9 @@ class TestSecuritySafety:
         p._plan_arrival_sequence = fake_plan
 
         context = {"person": {"name": "Max"}}
-        result = await p.plan_from_context_change("person_arrived", context, autonomy_level=5)
+        result = await p.plan_from_context_change(
+            "person_arrived", context, autonomy_level=5
+        )
 
         assert result is not None
         assert result["needs_confirmation"] is True  # Trotz Level 5!
@@ -244,8 +264,8 @@ class TestSecuritySafety:
 # Disabled Planner
 # ============================================================
 
-class TestDisabledPlanner:
 
+class TestDisabledPlanner:
     @pytest.mark.asyncio
     async def test_disabled_returns_none(self, planner):
         planner.enabled = False
@@ -257,8 +277,8 @@ class TestDisabledPlanner:
 # Status
 # ============================================================
 
-class TestPlannerStatus:
 
+class TestPlannerStatus:
     @pytest.mark.asyncio
     async def test_status_without_redis(self, planner):
         status = await planner.get_status()
@@ -276,13 +296,17 @@ class TestPlannerStatus:
 # Zusaetzliche Tests fuer 100% Coverage
 # ============================================================
 
+
 class TestCooldownExceptions:
     """Tests fuer Cooldown-Exception-Handling — Zeilen 74-75, 94-95."""
 
     @pytest.mark.asyncio
     async def test_cooldown_check_exception(self, ha_mock):
         """Cooldown-Check Exception wird abgefangen (Zeilen 74-75)."""
-        with patch("assistant.proactive_planner.yaml_config", {"proactive_planner": {"enabled": True}}):
+        with patch(
+            "assistant.proactive_planner.yaml_config",
+            {"proactive_planner": {"enabled": True}},
+        ):
             p = ProactiveSequencePlanner(ha=ha_mock)
         redis = AsyncMock()
         redis.exists = AsyncMock(side_effect=Exception("Redis down"))
@@ -300,7 +324,10 @@ class TestCooldownExceptions:
     @pytest.mark.asyncio
     async def test_cooldown_set_exception(self, ha_mock):
         """Cooldown-Set Exception wird abgefangen (Zeilen 94-95)."""
-        with patch("assistant.proactive_planner.yaml_config", {"proactive_planner": {"enabled": True}}):
+        with patch(
+            "assistant.proactive_planner.yaml_config",
+            {"proactive_planner": {"enabled": True}},
+        ):
             p = ProactiveSequencePlanner(ha=ha_mock)
         redis = AsyncMock()
         redis.exists = AsyncMock(return_value=0)
@@ -338,7 +365,10 @@ class TestStatusExceptions:
     @pytest.mark.asyncio
     async def test_status_redis_scan_exception(self, ha_mock):
         """get_status faengt Scan-Fehler ab (Zeilen 241-243)."""
-        with patch("assistant.proactive_planner.yaml_config", {"proactive_planner": {"enabled": True}}):
+        with patch(
+            "assistant.proactive_planner.yaml_config",
+            {"proactive_planner": {"enabled": True}},
+        ):
             p = ProactiveSequencePlanner(ha=ha_mock)
         redis = AsyncMock()
         redis.scan = AsyncMock(side_effect=Exception("Scan failed"))
@@ -351,13 +381,17 @@ class TestStatusExceptions:
 # Anticipation→Planner Bridge (_enrich_plan_from_patterns)
 # ============================================================
 
+
 class TestAnticipationBridge:
     """Tests fuer _enrich_plan_from_patterns() — Gelernte Muster in Plaene integrieren."""
 
     @pytest.fixture
     def planner_with_anticipation(self, ha_mock, redis_mock):
         anticipation = AsyncMock()
-        with patch("assistant.proactive_planner.yaml_config", {"proactive_planner": {"enabled": True}}):
+        with patch(
+            "assistant.proactive_planner.yaml_config",
+            {"proactive_planner": {"enabled": True}},
+        ):
             p = ProactiveSequencePlanner(ha=ha_mock, anticipation=anticipation)
         p.redis = redis_mock
         return p
@@ -366,21 +400,25 @@ class TestAnticipationBridge:
     async def test_enrich_adds_learned_actions(self, planner_with_anticipation):
         """Gelernte Causal Chains mit hoher Confidence werden hinzugefuegt."""
         p = planner_with_anticipation
-        p.anticipation.detect_patterns = AsyncMock(return_value=[
-            {
-                "type": "causal_chain",
-                "confidence": 0.9,
-                "chain_actions": [
-                    {"action": "turn_on_radio", "args": {"room": "kueche"}},
-                ],
-            },
-        ])
+        p.anticipation.detect_patterns = AsyncMock(
+            return_value=[
+                {
+                    "type": "causal_chain",
+                    "confidence": 0.9,
+                    "chain_actions": [
+                        {"action": "turn_on_radio", "args": {"room": "kueche"}},
+                    ],
+                },
+            ]
+        )
         plan = {
             "trigger": "person_arrived",
             "actions": [{"type": "set_light", "args": {"state": "on"}}],
             "message": "Test",
         }
-        learned = await p._enrich_plan_from_patterns(plan, "person_arrived", {"person": {"name": "max"}})
+        learned = await p._enrich_plan_from_patterns(
+            plan, "person_arrived", {"person": {"name": "max"}}
+        )
         assert len(learned) == 1
         assert learned[0]["function"] == "turn_on_radio"
         assert learned[0]["type"] == "learned_pattern"
@@ -389,40 +427,65 @@ class TestAnticipationBridge:
     async def test_enrich_skips_low_confidence(self, planner_with_anticipation):
         """Patterns mit niedriger Confidence werden ignoriert."""
         p = planner_with_anticipation
-        p.anticipation.detect_patterns = AsyncMock(return_value=[
-            {"type": "causal_chain", "confidence": 0.5, "chain_actions": [{"action": "play_music"}]},
-        ])
-        learned = await p._enrich_plan_from_patterns({"actions": [], "message": ""}, "test", {})
+        p.anticipation.detect_patterns = AsyncMock(
+            return_value=[
+                {
+                    "type": "causal_chain",
+                    "confidence": 0.5,
+                    "chain_actions": [{"action": "play_music"}],
+                },
+            ]
+        )
+        learned = await p._enrich_plan_from_patterns(
+            {"actions": [], "message": ""}, "test", {}
+        )
         assert len(learned) == 0
 
     @pytest.mark.asyncio
     async def test_enrich_max_5_actions(self, planner_with_anticipation):
         """Maximal 5 zusaetzliche Aktionen."""
         p = planner_with_anticipation
-        p.anticipation.detect_patterns = AsyncMock(return_value=[
-            {
-                "type": "causal_chain",
-                "confidence": 0.9,
-                "chain_actions": [{"action": f"action_{i}"} for i in range(10)],
-            },
-        ])
-        learned = await p._enrich_plan_from_patterns({"actions": [], "message": ""}, "test", {})
+        p.anticipation.detect_patterns = AsyncMock(
+            return_value=[
+                {
+                    "type": "causal_chain",
+                    "confidence": 0.9,
+                    "chain_actions": [{"action": f"action_{i}"} for i in range(10)],
+                },
+            ]
+        )
+        learned = await p._enrich_plan_from_patterns(
+            {"actions": [], "message": ""}, "test", {}
+        )
         assert len(learned) <= 5
 
     @pytest.mark.asyncio
     async def test_enrich_without_anticipation(self, ha_mock):
         """Ohne Anticipation-Engine werden keine Aktionen hinzugefuegt."""
-        with patch("assistant.proactive_planner.yaml_config", {"proactive_planner": {"enabled": True}}):
+        with patch(
+            "assistant.proactive_planner.yaml_config",
+            {"proactive_planner": {"enabled": True}},
+        ):
             p = ProactiveSequencePlanner(ha=ha_mock, anticipation=None)
-        learned = await p._enrich_plan_from_patterns({"actions": [], "message": ""}, "test", {})
+        learned = await p._enrich_plan_from_patterns(
+            {"actions": [], "message": ""}, "test", {}
+        )
         assert len(learned) == 0
 
     @pytest.mark.asyncio
     async def test_enrich_skips_non_causal_chain(self, planner_with_anticipation):
         """Nur causal_chain Patterns werden verwendet."""
         p = planner_with_anticipation
-        p.anticipation.detect_patterns = AsyncMock(return_value=[
-            {"type": "time_pattern", "confidence": 0.95, "chain_actions": [{"action": "test"}]},
-        ])
-        learned = await p._enrich_plan_from_patterns({"actions": [], "message": ""}, "test", {})
+        p.anticipation.detect_patterns = AsyncMock(
+            return_value=[
+                {
+                    "type": "time_pattern",
+                    "confidence": 0.95,
+                    "chain_actions": [{"action": "test"}],
+                },
+            ]
+        )
+        learned = await p._enrich_plan_from_patterns(
+            {"actions": [], "message": ""}, "test", {}
+        )
         assert len(learned) == 0

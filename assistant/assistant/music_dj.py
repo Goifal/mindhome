@@ -16,6 +16,7 @@ from .config import yaml_config, get_person_title
 
 logger = logging.getLogger(__name__)
 from zoneinfo import ZoneInfo
+
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Genre → Spotify-Suchquery (kuratiert)
@@ -192,15 +193,22 @@ class MusicDJ:
             score = await self.redis.hget(key, genre)
             if score is not None and int(score) <= -3:
                 # Genre blockiert — Fallback auf easy_listening
-                logger.info("Genre '%s' blockiert fuer %s (Score: %s)", genre, person, score)
-                return "easy_listening" if genre != "easy_listening" else "acoustic_morning"
+                logger.info(
+                    "Genre '%s' blockiert fuer %s (Score: %s)", genre, person, score
+                )
+                return (
+                    "easy_listening"
+                    if genre != "easy_listening"
+                    else "acoustic_morning"
+                )
         except Exception as e:
             logger.debug("Preference-Check Fehler: %s", e)
 
         return genre
 
-    async def _llm_rewrite_reason(self, reason: str, label: str,
-                                   mood: str, time_of_day: str) -> str:
+    async def _llm_rewrite_reason(
+        self, reason: str, label: str, mood: str, time_of_day: str
+    ) -> str:
         """Schreibt den Empfehlungsgrund via LLM natuerlicher um.
 
         Fallback auf Original bei Fehler oder wenn LLM deaktiviert.
@@ -213,6 +221,7 @@ class MusicDJ:
         try:
             from .config import settings
             from .ollama_client import strip_think_tags
+
             prompt = (
                 "Du bist JARVIS, ein britischer Smart-Home-Butler. "
                 "Formuliere diesen Musik-Empfehlungsgrund als EINEN natuerlichen Satz um. "
@@ -290,7 +299,10 @@ class MusicDJ:
 
         # LLM-Rewrite fuer natuerlicheren Empfehlungsgrund
         reason = await self._llm_rewrite_reason(
-            reason, label, context["mood"], context["time_of_day"],
+            reason,
+            label,
+            context["mood"],
+            context["time_of_day"],
         )
 
         # Letzte Empfehlung in Redis speichern
@@ -299,13 +311,15 @@ class MusicDJ:
                 await self.redis.setex(
                     "mha:music_dj:last_recommendation",
                     14400,  # 4h TTL
-                    json.dumps({
-                        "genre": genre,
-                        "query": query,
-                        "label": label,
-                        "person": person,
-                        "context": {**context, "activity": activity},
-                    }),
+                    json.dumps(
+                        {
+                            "genre": genre,
+                            "query": query,
+                            "label": label,
+                            "person": person,
+                            "context": {**context, "activity": activity},
+                        }
+                    ),
                 )
             except Exception as e:
                 logger.debug("Empfehlung nicht gespeichert: %s", e)
@@ -339,7 +353,10 @@ class MusicDJ:
             if not rec.get("success"):
                 return rec
             if rec.get("genre") is None:
-                return {"success": True, "message": rec.get("reason", "Keine Musik empfohlen.")}
+                return {
+                    "success": True,
+                    "message": rec.get("reason", "Keine Musik empfohlen."),
+                }
             genre = rec["genre"]
             query = rec["query"]
             label = rec["label"]
@@ -381,11 +398,17 @@ class MusicDJ:
         try:
             raw = await self.redis.get("mha:music_dj:last_recommendation")
             if not raw:
-                return {"success": False, "message": "Keine aktuelle Empfehlung zum Bewerten."}
+                return {
+                    "success": False,
+                    "message": "Keine aktuelle Empfehlung zum Bewerten.",
+                }
             last = json.loads(raw)
         except Exception as e:
             logger.debug("Last recommendation load failed: %s", e)
-            return {"success": False, "message": "Empfehlung konnte nicht geladen werden."}
+            return {
+                "success": False,
+                "message": "Empfehlung konnte nicht geladen werden.",
+            }
 
         genre = last.get("genre", "unknown")
         person_key = (person or last.get("person", "default")).lower()
@@ -398,11 +421,13 @@ class MusicDJ:
 
             # Feedback-History speichern (max 50)
             fb_key = f"mha:music_dj:feedback:{person_key}"
-            entry = json.dumps({
-                "genre": genre,
-                "positive": positive,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
+            entry = json.dumps(
+                {
+                    "genre": genre,
+                    "positive": positive,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
             await self.redis.lpush(fb_key, entry)
             await self.redis.ltrim(fb_key, 0, 49)
         except Exception as e:
@@ -411,10 +436,16 @@ class MusicDJ:
 
         label = GENRE_LABELS.get(genre, genre)
         if positive:
-            return {"success": True, "message": f"Vermerkt. {label} kommt auf die Liste."}
+            return {
+                "success": True,
+                "message": f"Vermerkt. {label} kommt auf die Liste.",
+            }
         else:
             blocked = " Wird kuenftig gemieden." if new_score <= -3 else ""
-            return {"success": True, "message": f"Verstanden. {label} ist nicht nach deinem Geschmack.{blocked}"}
+            return {
+                "success": True,
+                "message": f"Verstanden. {label} ist nicht nach deinem Geschmack.{blocked}",
+            }
 
     async def get_music_status(self) -> dict:
         """Gibt den aktuellen Music-DJ-Status zurueck."""

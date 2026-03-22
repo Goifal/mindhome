@@ -6,10 +6,15 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 
-from assistant.sound_manager import SoundManager, TTS_CHIME_TEXTS, DEFAULT_SOUND_DESCRIPTIONS
+from assistant.sound_manager import (
+    SoundManager,
+    TTS_CHIME_TEXTS,
+    DEFAULT_SOUND_DESCRIPTIONS,
+)
 
 
 # ── Fixtures ──────────────────────────────────────────────────
+
 
 @pytest.fixture
 def ha_client():
@@ -22,24 +27,28 @@ def ha_client():
 
 @pytest.fixture
 def sm(ha_client):
-    with patch("assistant.sound_manager.yaml_config", {
-        "sounds": {
-            "enabled": True,
-            "events": {"doorbell": "/local/sounds/doorbell.mp3"},
-            "night_volume_factor": 0.4,
-            "sound_base_url": "/local/sounds",
-            "tts_entity": "",
-            "default_speaker": "",
-            "alexa_speakers": ["media_player.echo_kueche"],
+    with patch(
+        "assistant.sound_manager.yaml_config",
+        {
+            "sounds": {
+                "enabled": True,
+                "events": {"doorbell": "/local/sounds/doorbell.mp3"},
+                "night_volume_factor": 0.4,
+                "sound_base_url": "/local/sounds",
+                "tts_entity": "",
+                "default_speaker": "",
+                "alexa_speakers": ["media_player.echo_kueche"],
+            },
+            "volume": {"evening_start": 22, "morning_start": 7},
+            "multi_room": {"room_speakers": {"wohnzimmer": "media_player.wz_speaker"}},
         },
-        "volume": {"evening_start": 22, "morning_start": 7},
-        "multi_room": {"room_speakers": {"wohnzimmer": "media_player.wz_speaker"}},
-    }):
+    ):
         manager = SoundManager(ha_client)
     return manager
 
 
 # ── __init__ ──────────────────────────────────────────────────
+
 
 def test_init_defaults(sm):
     assert sm.enabled is True
@@ -51,16 +60,20 @@ def test_init_defaults(sm):
 
 def test_init_disabled():
     ha = AsyncMock()
-    with patch("assistant.sound_manager.yaml_config", {
-        "sounds": {"enabled": False, "events": {}},
-        "volume": {},
-        "multi_room": {},
-    }):
+    with patch(
+        "assistant.sound_manager.yaml_config",
+        {
+            "sounds": {"enabled": False, "events": {}},
+            "volume": {},
+            "multi_room": {},
+        },
+    ):
         mgr = SoundManager(ha)
     assert mgr.enabled is False
 
 
 # ── _is_alexa_speaker / _alexa_notify_service ─────────────────
+
 
 def test_is_alexa_speaker_true(sm):
     assert sm._is_alexa_speaker("media_player.echo_kueche") is True
@@ -76,6 +89,7 @@ def test_alexa_notify_service(sm):
 
 
 # ── _is_tts_speaker ──────────────────────────────────────────
+
 
 def test_is_tts_speaker_valid(sm):
     assert sm._is_tts_speaker("media_player.kitchen_speaker") is True
@@ -102,6 +116,7 @@ def test_is_tts_speaker_device_class_tv(sm):
 
 
 # ── _get_auto_volume ──────────────────────────────────────────
+
 
 def test_get_auto_volume_alarm_always_full(sm):
     vol = sm._get_auto_volume("alarm")
@@ -130,11 +145,14 @@ def test_get_auto_volume_sleeping_activity(sm):
 
 
 def test_get_auto_volume_weather_boost(sm):
-    with patch("assistant.sound_manager.yaml_config", {
-        "sounds": {"weather_volume_boost": 0.15},
-        "volume": {},
-        "multi_room": {},
-    }):
+    with patch(
+        "assistant.sound_manager.yaml_config",
+        {
+            "sounds": {"weather_volume_boost": 0.15},
+            "volume": {},
+            "multi_room": {},
+        },
+    ):
         with patch("assistant.sound_manager.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 1, 1, 12, 0)
             vol_normal = sm._get_auto_volume("confirmed", weather_condition="")
@@ -150,6 +168,7 @@ def test_get_auto_volume_alarm_ignores_activity(sm):
 
 
 # ── play_event_sound ──────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_play_event_sound_disabled(sm):
@@ -168,9 +187,21 @@ async def test_play_event_sound_anti_spam(sm):
 @pytest.mark.asyncio
 async def test_play_event_sound_success(sm):
     sm._last_sound_time.clear()
-    with patch.object(sm, '_resolve_speaker', new_callable=AsyncMock, return_value="media_player.wz_speaker"):
-        with patch.object(sm, '_play_sound_file', new_callable=AsyncMock, return_value=True):
-            with patch.object(sm, '_get_current_weather_condition', new_callable=AsyncMock, return_value=""):
+    with patch.object(
+        sm,
+        "_resolve_speaker",
+        new_callable=AsyncMock,
+        return_value="media_player.wz_speaker",
+    ):
+        with patch.object(
+            sm, "_play_sound_file", new_callable=AsyncMock, return_value=True
+        ):
+            with patch.object(
+                sm,
+                "_get_current_weather_condition",
+                new_callable=AsyncMock,
+                return_value="",
+            ):
                 result = await sm.play_event_sound("doorbell", volume=0.5)
     assert result is True
 
@@ -178,10 +209,24 @@ async def test_play_event_sound_success(sm):
 @pytest.mark.asyncio
 async def test_play_event_sound_fallback_tts(sm):
     sm._last_sound_time.clear()
-    with patch.object(sm, '_resolve_speaker', new_callable=AsyncMock, return_value="media_player.wz_speaker"):
-        with patch.object(sm, '_play_sound_file', new_callable=AsyncMock, return_value=False):
-            with patch.object(sm, '_play_tts_chime', new_callable=AsyncMock, return_value=True):
-                with patch.object(sm, '_get_current_weather_condition', new_callable=AsyncMock, return_value=""):
+    with patch.object(
+        sm,
+        "_resolve_speaker",
+        new_callable=AsyncMock,
+        return_value="media_player.wz_speaker",
+    ):
+        with patch.object(
+            sm, "_play_sound_file", new_callable=AsyncMock, return_value=False
+        ):
+            with patch.object(
+                sm, "_play_tts_chime", new_callable=AsyncMock, return_value=True
+            ):
+                with patch.object(
+                    sm,
+                    "_get_current_weather_condition",
+                    new_callable=AsyncMock,
+                    return_value="",
+                ):
                     result = await sm.play_event_sound("warning", volume=0.5)
     assert result is True
 
@@ -189,13 +234,21 @@ async def test_play_event_sound_fallback_tts(sm):
 @pytest.mark.asyncio
 async def test_play_event_sound_no_speaker(sm):
     sm._last_sound_time.clear()
-    with patch.object(sm, '_resolve_speaker', new_callable=AsyncMock, return_value=None):
-        with patch.object(sm, '_get_current_weather_condition', new_callable=AsyncMock, return_value=""):
+    with patch.object(
+        sm, "_resolve_speaker", new_callable=AsyncMock, return_value=None
+    ):
+        with patch.object(
+            sm,
+            "_get_current_weather_condition",
+            new_callable=AsyncMock,
+            return_value="",
+        ):
             result = await sm.play_event_sound("doorbell", volume=0.5)
     assert result is False
 
 
 # ── _play_sound_file ──────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_play_sound_file_alexa_skipped(sm):
@@ -212,6 +265,7 @@ async def test_play_sound_file_custom_url(sm):
 
 # ── _play_tts_chime ───────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_play_tts_chime_unknown_event(sm):
     result = await sm._play_tts_chime("unknown_event", "media_player.wz_speaker")
@@ -220,20 +274,26 @@ async def test_play_tts_chime_unknown_event(sm):
 
 @pytest.mark.asyncio
 async def test_play_tts_chime_alexa(sm):
-    with patch.object(sm, '_speak_via_alexa', new_callable=AsyncMock, return_value=True):
+    with patch.object(
+        sm, "_speak_via_alexa", new_callable=AsyncMock, return_value=True
+    ):
         result = await sm._play_tts_chime("warning", "media_player.echo_kueche")
     assert result is True
 
 
 # ── _resolve_speaker ──────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_resolve_speaker_room_config(sm):
-    with patch("assistant.sound_manager.yaml_config", {
-        "multi_room": {"room_speakers": {"wohnzimmer": "media_player.wz_speaker"}},
-        "sounds": {},
-        "volume": {},
-    }):
+    with patch(
+        "assistant.sound_manager.yaml_config",
+        {
+            "multi_room": {"room_speakers": {"wohnzimmer": "media_player.wz_speaker"}},
+            "sounds": {},
+            "volume": {},
+        },
+    ):
         result = await sm._resolve_speaker("wohnzimmer")
     assert result == "media_player.wz_speaker"
 
@@ -247,6 +307,7 @@ async def test_resolve_speaker_default(sm):
 
 # ── _find_tts_entity ─────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_find_tts_entity_configured(sm):
     sm._configured_tts_entity = "tts.piper"
@@ -259,10 +320,12 @@ async def test_find_tts_entity_configured(sm):
 async def test_find_tts_entity_auto_piper(sm):
     sm._cached_tts_entity = None
     sm._configured_tts_entity = ""
-    sm.ha.get_states = AsyncMock(return_value=[
-        {"entity_id": "tts.piper_de", "state": "idle"},
-        {"entity_id": "tts.other", "state": "idle"},
-    ])
+    sm.ha.get_states = AsyncMock(
+        return_value=[
+            {"entity_id": "tts.piper_de", "state": "idle"},
+            {"entity_id": "tts.other", "state": "idle"},
+        ]
+    )
     sm._states_cache = None
     result = await sm._find_tts_entity()
     assert result == "tts.piper_de"
@@ -272,15 +335,18 @@ async def test_find_tts_entity_auto_piper(sm):
 async def test_find_tts_entity_fallback(sm):
     sm._cached_tts_entity = None
     sm._configured_tts_entity = ""
-    sm.ha.get_states = AsyncMock(return_value=[
-        {"entity_id": "tts.google_say", "state": "idle"},
-    ])
+    sm.ha.get_states = AsyncMock(
+        return_value=[
+            {"entity_id": "tts.google_say", "state": "idle"},
+        ]
+    )
     sm._states_cache = None
     result = await sm._find_tts_entity()
     assert result == "tts.google_say"
 
 
 # ── get_sound_info ────────────────────────────────────────────
+
 
 def test_get_sound_info(sm):
     info = sm.get_sound_info()
@@ -291,6 +357,7 @@ def test_get_sound_info(sm):
 
 
 # ── States cache ──────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_states_cache_hit(sm):
@@ -312,8 +379,18 @@ async def test_states_cache_expired(sm):
 
 # ── Constants ─────────────────────────────────────────────────
 
+
 def test_tts_chime_texts_coverage():
-    expected = {"listening", "confirmed", "warning", "alarm", "doorbell", "greeting", "error", "goodnight"}
+    expected = {
+        "listening",
+        "confirmed",
+        "warning",
+        "alarm",
+        "doorbell",
+        "greeting",
+        "error",
+        "goodnight",
+    }
     assert set(TTS_CHIME_TEXTS.keys()) == expected
 
 
@@ -406,13 +483,25 @@ class TestSpeakViaAlexaExtended:
 class TestResolveSpeakerExtended:
     @pytest.mark.asyncio
     async def test_resolve_speaker_room_not_in_config(self, sm):
-        with patch("assistant.sound_manager.yaml_config", {
-            "multi_room": {"room_speakers": {"wohnzimmer": "media_player.wz_speaker"}},
-            "sounds": {}, "volume": {},
-        }):
-            sm.ha.get_states = AsyncMock(return_value=[
-                {"entity_id": "media_player.kueche_speaker", "state": "idle", "attributes": {}},
-            ])
+        with patch(
+            "assistant.sound_manager.yaml_config",
+            {
+                "multi_room": {
+                    "room_speakers": {"wohnzimmer": "media_player.wz_speaker"}
+                },
+                "sounds": {},
+                "volume": {},
+            },
+        ):
+            sm.ha.get_states = AsyncMock(
+                return_value=[
+                    {
+                        "entity_id": "media_player.kueche_speaker",
+                        "state": "idle",
+                        "attributes": {},
+                    },
+                ]
+            )
             sm._states_cache = None
             result = await sm._resolve_speaker("kueche")
             assert result == "media_player.kueche_speaker"
@@ -420,9 +509,14 @@ class TestResolveSpeakerExtended:
     @pytest.mark.asyncio
     async def test_resolve_speaker_no_room_no_default(self, sm):
         sm._configured_default_speaker = ""
-        with patch("assistant.sound_manager.yaml_config", {
-            "multi_room": {}, "sounds": {}, "volume": {},
-        }):
+        with patch(
+            "assistant.sound_manager.yaml_config",
+            {
+                "multi_room": {},
+                "sounds": {},
+                "volume": {},
+            },
+        ):
             sm.ha.get_states = AsyncMock(return_value=[])
             sm._states_cache = None
             result = await sm._resolve_speaker()
@@ -433,22 +527,37 @@ class TestFindDefaultSpeakerExtended:
     @pytest.mark.asyncio
     async def test_find_default_speaker_from_room_speakers(self, sm):
         sm._configured_default_speaker = ""
-        with patch("assistant.sound_manager.yaml_config", {
-            "multi_room": {"room_speakers": {"wz": "media_player.wz"}},
-            "sounds": {}, "volume": {},
-        }):
+        with patch(
+            "assistant.sound_manager.yaml_config",
+            {
+                "multi_room": {"room_speakers": {"wz": "media_player.wz"}},
+                "sounds": {},
+                "volume": {},
+            },
+        ):
             result = await sm._find_default_speaker()
             assert result == "media_player.wz"
 
     @pytest.mark.asyncio
     async def test_find_default_speaker_auto_detect(self, sm):
         sm._configured_default_speaker = ""
-        with patch("assistant.sound_manager.yaml_config", {
-            "multi_room": {}, "sounds": {}, "volume": {},
-        }):
-            sm.ha.get_states = AsyncMock(return_value=[
-                {"entity_id": "media_player.bathroom_speaker", "state": "idle", "attributes": {}},
-            ])
+        with patch(
+            "assistant.sound_manager.yaml_config",
+            {
+                "multi_room": {},
+                "sounds": {},
+                "volume": {},
+            },
+        ):
+            sm.ha.get_states = AsyncMock(
+                return_value=[
+                    {
+                        "entity_id": "media_player.bathroom_speaker",
+                        "state": "idle",
+                        "attributes": {},
+                    },
+                ]
+            )
             sm._states_cache = None
             result = await sm._find_default_speaker()
             assert result == "media_player.bathroom_speaker"
@@ -474,9 +583,11 @@ class TestFindTtsEntityExtended:
     async def test_find_tts_no_tts_entities(self, sm):
         sm._cached_tts_entity = None
         sm._configured_tts_entity = ""
-        sm.ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "light.wz", "state": "on"},
-        ])
+        sm.ha.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "light.wz", "state": "on"},
+            ]
+        )
         sm._states_cache = None
         result = await sm._find_tts_entity()
         assert result is None
@@ -508,20 +619,28 @@ class TestGetAutoVolumeExtended:
         assert vol < 0.4
 
     def test_goodnight_ignores_weather_boost(self, sm):
-        with patch("assistant.sound_manager.yaml_config", {
-            "sounds": {"weather_volume_boost": 0.15},
-            "volume": {}, "multi_room": {},
-        }):
+        with patch(
+            "assistant.sound_manager.yaml_config",
+            {
+                "sounds": {"weather_volume_boost": 0.15},
+                "volume": {},
+                "multi_room": {},
+            },
+        ):
             with patch("assistant.sound_manager.datetime") as mock_dt:
                 mock_dt.now.return_value = datetime(2025, 1, 1, 12, 0)
                 vol = sm._get_auto_volume("goodnight", weather_condition="rainy")
         assert vol == 0.3  # No weather boost for goodnight
 
     def test_volume_capped_at_1(self, sm):
-        with patch("assistant.sound_manager.yaml_config", {
-            "sounds": {"weather_volume_boost": 0.9},
-            "volume": {}, "multi_room": {},
-        }):
+        with patch(
+            "assistant.sound_manager.yaml_config",
+            {
+                "sounds": {"weather_volume_boost": 0.9},
+                "volume": {},
+                "multi_room": {},
+            },
+        ):
             with patch("assistant.sound_manager.datetime") as mock_dt:
                 mock_dt.now.return_value = datetime(2025, 1, 1, 12, 0)
                 vol = sm._get_auto_volume("warning", weather_condition="rainy")
@@ -533,9 +652,21 @@ class TestPlayEventSoundExtended:
     async def test_play_event_sound_silent_event_no_tts(self, sm):
         """Silent events skip TTS fallback."""
         sm._last_sound_time.clear()
-        with patch.object(sm, '_resolve_speaker', new_callable=AsyncMock, return_value="media_player.wz_speaker"):
-            with patch.object(sm, '_play_sound_file', new_callable=AsyncMock, return_value=False):
-                with patch.object(sm, '_get_current_weather_condition', new_callable=AsyncMock, return_value=""):
+        with patch.object(
+            sm,
+            "_resolve_speaker",
+            new_callable=AsyncMock,
+            return_value="media_player.wz_speaker",
+        ):
+            with patch.object(
+                sm, "_play_sound_file", new_callable=AsyncMock, return_value=False
+            ):
+                with patch.object(
+                    sm,
+                    "_get_current_weather_condition",
+                    new_callable=AsyncMock,
+                    return_value="",
+                ):
                     result = await sm.play_event_sound("confirmed", volume=0.5)
         # Silent event, no TTS → still returns True (volume-ping)
         assert result is True
@@ -544,9 +675,21 @@ class TestPlayEventSoundExtended:
     async def test_play_event_sound_cleans_old_entries(self, sm):
         """Anti-spam dict cleanup when > 50 entries."""
         sm._last_sound_time = {f"event_{i}": time.time() - 120 for i in range(55)}
-        with patch.object(sm, '_resolve_speaker', new_callable=AsyncMock, return_value="media_player.wz"):
-            with patch.object(sm, '_play_sound_file', new_callable=AsyncMock, return_value=True):
-                with patch.object(sm, '_get_current_weather_condition', new_callable=AsyncMock, return_value=""):
+        with patch.object(
+            sm,
+            "_resolve_speaker",
+            new_callable=AsyncMock,
+            return_value="media_player.wz",
+        ):
+            with patch.object(
+                sm, "_play_sound_file", new_callable=AsyncMock, return_value=True
+            ):
+                with patch.object(
+                    sm,
+                    "_get_current_weather_condition",
+                    new_callable=AsyncMock,
+                    return_value="",
+                ):
                     result = await sm.play_event_sound("doorbell", volume=0.5)
         assert result is True
 
@@ -554,16 +697,30 @@ class TestPlayEventSoundExtended:
     async def test_play_event_sound_volume_set_exception(self, sm):
         sm._last_sound_time.clear()
         call_count = 0
+
         async def side_effect(*args, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
                 raise Exception("Volume set failed")
             return True
+
         sm.ha.call_service = AsyncMock(side_effect=side_effect)
-        with patch.object(sm, '_resolve_speaker', new_callable=AsyncMock, return_value="media_player.wz"):
-            with patch.object(sm, '_play_sound_file', new_callable=AsyncMock, return_value=True):
-                with patch.object(sm, '_get_current_weather_condition', new_callable=AsyncMock, return_value=""):
+        with patch.object(
+            sm,
+            "_resolve_speaker",
+            new_callable=AsyncMock,
+            return_value="media_player.wz",
+        ):
+            with patch.object(
+                sm, "_play_sound_file", new_callable=AsyncMock, return_value=True
+            ):
+                with patch.object(
+                    sm,
+                    "_get_current_weather_condition",
+                    new_callable=AsyncMock,
+                    return_value="",
+                ):
                     result = await sm.play_event_sound("doorbell", volume=0.5)
         assert result is True
 
@@ -571,16 +728,35 @@ class TestPlayEventSoundExtended:
 class TestSpeakResponseExtended:
     @pytest.mark.asyncio
     async def test_speak_response_no_speaker(self, sm):
-        with patch.object(sm, '_resolve_speaker', new_callable=AsyncMock, return_value=None):
+        with patch.object(
+            sm, "_resolve_speaker", new_callable=AsyncMock, return_value=None
+        ):
             result = await sm.speak_response("Hallo")
         assert result is False
 
     @pytest.mark.asyncio
     async def test_speak_response_alexa(self, sm):
-        with patch.object(sm, '_resolve_speaker', new_callable=AsyncMock, return_value="media_player.echo_kueche"):
-            with patch.object(sm, '_speak_via_alexa', new_callable=AsyncMock, return_value=True):
-                with patch.object(sm, '_get_current_weather_condition', new_callable=AsyncMock, return_value=""):
-                    with patch.object(sm, '_get_states_cached', new_callable=AsyncMock, return_value=[]):
+        with patch.object(
+            sm,
+            "_resolve_speaker",
+            new_callable=AsyncMock,
+            return_value="media_player.echo_kueche",
+        ):
+            with patch.object(
+                sm, "_speak_via_alexa", new_callable=AsyncMock, return_value=True
+            ):
+                with patch.object(
+                    sm,
+                    "_get_current_weather_condition",
+                    new_callable=AsyncMock,
+                    return_value="",
+                ):
+                    with patch.object(
+                        sm,
+                        "_get_states_cached",
+                        new_callable=AsyncMock,
+                        return_value=[],
+                    ):
                         result = await sm.speak_response("Hallo")
         assert result is True
 
@@ -588,18 +764,39 @@ class TestSpeakResponseExtended:
     async def test_speak_response_with_target_speaker(self, sm):
         sm._cached_tts_entity = "tts.piper"
         sm.ha.call_service = AsyncMock(return_value=True)
-        with patch.object(sm, '_get_current_weather_condition', new_callable=AsyncMock, return_value=""):
-            with patch.object(sm, '_get_states_cached', new_callable=AsyncMock, return_value=[]):
-                result = await sm.speak_response("Hallo", tts_data={"target_speaker": "media_player.bedroom"})
+        with patch.object(
+            sm,
+            "_get_current_weather_condition",
+            new_callable=AsyncMock,
+            return_value="",
+        ):
+            with patch.object(
+                sm, "_get_states_cached", new_callable=AsyncMock, return_value=[]
+            ):
+                result = await sm.speak_response(
+                    "Hallo", tts_data={"target_speaker": "media_player.bedroom"}
+                )
         assert result is True
 
     @pytest.mark.asyncio
     async def test_speak_response_no_tts_entity(self, sm):
         sm._cached_tts_entity = None
         sm._configured_tts_entity = ""
-        with patch.object(sm, '_resolve_speaker', new_callable=AsyncMock, return_value="media_player.wz"):
-            with patch.object(sm, '_get_current_weather_condition', new_callable=AsyncMock, return_value=""):
-                with patch.object(sm, '_get_states_cached', new_callable=AsyncMock, return_value=[]):
+        with patch.object(
+            sm,
+            "_resolve_speaker",
+            new_callable=AsyncMock,
+            return_value="media_player.wz",
+        ):
+            with patch.object(
+                sm,
+                "_get_current_weather_condition",
+                new_callable=AsyncMock,
+                return_value="",
+            ):
+                with patch.object(
+                    sm, "_get_states_cached", new_callable=AsyncMock, return_value=[]
+                ):
                     result = await sm.speak_response("Hallo")
         assert result is False
 
@@ -658,7 +855,13 @@ class TestIsTtsSpeakerExtended:
         assert sm._is_tts_speaker("media_player.kodi_wz") is False
 
     def test_device_class_receiver(self, sm):
-        assert sm._is_tts_speaker("media_player.generic", {"device_class": "receiver"}) is False
+        assert (
+            sm._is_tts_speaker("media_player.generic", {"device_class": "receiver"})
+            is False
+        )
 
     def test_valid_speaker_with_attributes(self, sm):
-        assert sm._is_tts_speaker("media_player.sonos_wz", {"device_class": "speaker"}) is True
+        assert (
+            sm._is_tts_speaker("media_player.sonos_wz", {"device_class": "speaker"})
+            is True
+        )

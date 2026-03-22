@@ -55,14 +55,33 @@ def tmp_data_dir(tmp_path):
     """Redirect all file paths to a temporary directory."""
     data_dir = tmp_path / "data"
     data_dir.mkdir()
-    with patch("assistant.cover_config._DATA_DIR", data_dir), \
-         patch("assistant.cover_config._COVER_CONFIG_FILE", data_dir / "cover_configs.json"), \
-         patch("assistant.cover_config._COVER_GROUPS_FILE", data_dir / "cover_groups.json"), \
-         patch("assistant.cover_config._COVER_SCENES_FILE", data_dir / "cover_scenes.json"), \
-         patch("assistant.cover_config._COVER_SCHEDULES_FILE", data_dir / "cover_schedules.json"), \
-         patch("assistant.cover_config._COVER_SENSORS_FILE", data_dir / "cover_sensors.json"), \
-         patch("assistant.cover_config._COVER_LOG_FILE", data_dir / "cover_action_log.json"), \
-         patch("assistant.cover_config._POWER_CLOSE_FILE", data_dir / "cover_power_close.json"):
+    with (
+        patch("assistant.cover_config._DATA_DIR", data_dir),
+        patch(
+            "assistant.cover_config._COVER_CONFIG_FILE", data_dir / "cover_configs.json"
+        ),
+        patch(
+            "assistant.cover_config._COVER_GROUPS_FILE", data_dir / "cover_groups.json"
+        ),
+        patch(
+            "assistant.cover_config._COVER_SCENES_FILE", data_dir / "cover_scenes.json"
+        ),
+        patch(
+            "assistant.cover_config._COVER_SCHEDULES_FILE",
+            data_dir / "cover_schedules.json",
+        ),
+        patch(
+            "assistant.cover_config._COVER_SENSORS_FILE",
+            data_dir / "cover_sensors.json",
+        ),
+        patch(
+            "assistant.cover_config._COVER_LOG_FILE", data_dir / "cover_action_log.json"
+        ),
+        patch(
+            "assistant.cover_config._POWER_CLOSE_FILE",
+            data_dir / "cover_power_close.json",
+        ),
+    ):
         yield data_dir
 
 
@@ -185,17 +204,21 @@ class TestCoverScenes:
     """Tests fuer Cover-Szenen CRUD."""
 
     def test_create_scene(self):
-        scene = create_cover_scene({
-            "name": "Kino",
-            "positions": {"cover.wz": 0, "cover.sz": 50},
-        })
+        scene = create_cover_scene(
+            {
+                "name": "Kino",
+                "positions": {"cover.wz": 0, "cover.sz": 50},
+            }
+        )
         assert scene["id"] == 1
         assert scene["name"] == "Kino"
         assert scene["positions"]["cover.wz"] == 0
 
     def test_update_scene(self):
         create_cover_scene({"name": "Tag"})
-        result = update_cover_scene(1, {"name": "Nacht", "positions": {"cover.wz": 100}})
+        result = update_cover_scene(
+            1, {"name": "Nacht", "positions": {"cover.wz": 100}}
+        )
         assert result["name"] == "Nacht"
         assert result["positions"] == {"cover.wz": 100}
 
@@ -234,11 +257,14 @@ class TestCoverSchedules:
         sched = create_cover_schedule({"position": -10})
         assert sched["position"] == 0
 
-    @pytest.mark.parametrize("pos,expected", [
-        (0, 0),
-        (50, 50),
-        (100, 100),
-    ])
+    @pytest.mark.parametrize(
+        "pos,expected",
+        [
+            (0, 0),
+            (50, 50),
+            (100, 100),
+        ],
+    )
     def test_create_schedule_valid_positions(self, pos, expected):
         sched = create_cover_schedule({"position": pos})
         assert sched["position"] == expected
@@ -352,12 +378,14 @@ class TestPowerCloseRules:
     """Tests fuer Power-Close-Regeln CRUD."""
 
     def test_create_rule(self):
-        rule = create_power_close_rule({
-            "power_sensor": "sensor.tv_power",
-            "threshold": 80,
-            "cover_ids": ["cover.wz"],
-            "close_position": 10,
-        })
+        rule = create_power_close_rule(
+            {
+                "power_sensor": "sensor.tv_power",
+                "threshold": 80,
+                "cover_ids": ["cover.wz"],
+                "close_position": 10,
+            }
+        )
         assert rule["id"] == 1
         assert rule["power_sensor"] == "sensor.tv_power"
         assert rule["threshold"] == 80
@@ -451,6 +479,7 @@ class TestSaveListCoverage:
     def test_save_list_error_raises(self, tmp_data_dir):
         """_save_list wirft Exception bei Schreibfehler (Zeilen 79-81)."""
         from assistant.cover_config import _save_list
+
         with patch("assistant.cover_config._ensure_dir"):
             mock_path = MagicMock()
             mock_path.exists.return_value = False
@@ -500,7 +529,10 @@ class TestLogCoverActionCoverage:
     def test_log_cover_action_save_error(self, tmp_data_dir):
         """log_cover_action faengt Fehler beim Speichern ab (Zeilen 303-304)."""
         from assistant.cover_config import _save_list
-        with patch("assistant.cover_config._save_list", side_effect=Exception("write error")):
+
+        with patch(
+            "assistant.cover_config._save_list", side_effect=Exception("write error")
+        ):
             # Sollte nicht werfen, sondern Fehler loggen
             log_cover_action("cover.test", 50, "test_reason")
             # Kein Assert noetig — der Test prueft dass keine Exception ausbricht

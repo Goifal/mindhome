@@ -14,6 +14,7 @@ from collections import deque
 
 # --- ExplainabilityEngine ---
 
+
 def explain_last(decisions, n=1):
     if not decisions:
         return []
@@ -27,7 +28,8 @@ def explain_by_domain(decisions, domain, n=5):
 def explain_by_action(decisions, action_keyword, n=5):
     kw = action_keyword.lower()
     return [
-        d for d in reversed(decisions)
+        d
+        for d in reversed(decisions)
         if kw in d.get("action", "").lower() or kw in d.get("reason", "").lower()
     ][:n]
 
@@ -80,13 +82,29 @@ def get_stats(decisions):
 # --- ActionPlanner ---
 
 COMPLEX_KEYWORDS = [
-    "alles", "fertig machen", "vorbereiten",
-    "gehe weg", "fahre weg", "verreise", "urlaub",
-    "routine", "morgenroutine", "abendroutine",
-    "wenn ich", "falls ich", "bevor ich",
-    "zuerst", "danach", "und dann", "ausserdem",
-    "komplett", "ueberall", "in allen",
-    "party", "besuch kommt", "gaeste",
+    "alles",
+    "fertig machen",
+    "vorbereiten",
+    "gehe weg",
+    "fahre weg",
+    "verreise",
+    "urlaub",
+    "routine",
+    "morgenroutine",
+    "abendroutine",
+    "wenn ich",
+    "falls ich",
+    "bevor ich",
+    "zuerst",
+    "danach",
+    "und dann",
+    "ausserdem",
+    "komplett",
+    "ueberall",
+    "in allen",
+    "party",
+    "besuch kommt",
+    "gaeste",
 ]
 
 QUESTION_STARTS = ("was ", "wie ", "warum ", "wo ", "wer ", "wann ", "welch")
@@ -125,7 +143,10 @@ def get_rollback_info(func_name, func_args):
     rollback_map = {
         "set_light": lambda args: (
             "set_light",
-            {"room": args.get("room", ""), "state": "off" if args.get("state") == "on" else "on"},
+            {
+                "room": args.get("room", ""),
+                "state": "off" if args.get("state") == "on" else "on",
+            },
         ),
         "set_climate": lambda args: (
             "set_climate",
@@ -142,8 +163,15 @@ def get_rollback_info(func_name, func_args):
 # Helpers / Fixtures
 # ---------------------------------------------------------------------------
 
-def _decision(action="Licht an", reason="Befehl", domain="light",
-              trigger="user_command", confidence=1.0, time_str=""):
+
+def _decision(
+    action="Licht an",
+    reason="Befehl",
+    domain="light",
+    trigger="user_command",
+    confidence=1.0,
+    time_str="",
+):
     """Convenience factory for decision dicts."""
     return {
         "action": action,
@@ -159,6 +187,7 @@ def _decision(action="Licht an", reason="Befehl", domain="light",
 # 1. explain_last
 # ---------------------------------------------------------------------------
 
+
 class TestExplainLast:
     def test_empty_list(self):
         assert explain_last([]) == []
@@ -172,11 +201,14 @@ class TestExplainLast:
         assert len(result) == 1
         assert result[0]["action"] == "Licht an"
 
-    @pytest.mark.parametrize("n, expected_count", [
-        (1, 1),
-        (2, 2),
-        (3, 3),
-    ])
+    @pytest.mark.parametrize(
+        "n, expected_count",
+        [
+            (1, 1),
+            (2, 2),
+            (3, 3),
+        ],
+    )
     def test_n_items(self, n, expected_count):
         decisions = [_decision(action=f"action_{i}") for i in range(5)]
         result = explain_last(decisions, n=n)
@@ -200,6 +232,7 @@ class TestExplainLast:
 # ---------------------------------------------------------------------------
 # 2. explain_by_domain
 # ---------------------------------------------------------------------------
+
 
 class TestExplainByDomain:
     def test_filter_matching_domain(self):
@@ -238,6 +271,7 @@ class TestExplainByDomain:
 # ---------------------------------------------------------------------------
 # 3. explain_by_action
 # ---------------------------------------------------------------------------
+
 
 class TestExplainByAction:
     def test_keyword_in_action(self):
@@ -283,16 +317,20 @@ class TestExplainByAction:
 # 4. format_explanation
 # ---------------------------------------------------------------------------
 
+
 class TestFormatExplanation:
-    @pytest.mark.parametrize("trigger, expected_label", [
-        ("user_command", "auf deinen Befehl"),
-        ("automation", "durch eine Automation"),
-        ("anticipation", "weil ich ein Muster erkannt habe"),
-        ("proactive", "proaktiv"),
-        ("schedule", "nach Zeitplan"),
-        ("sensor", "wegen Sensordaten"),
-        ("conflict", "zur Konfliktloesung"),
-    ])
+    @pytest.mark.parametrize(
+        "trigger, expected_label",
+        [
+            ("user_command", "auf deinen Befehl"),
+            ("automation", "durch eine Automation"),
+            ("anticipation", "weil ich ein Muster erkannt habe"),
+            ("proactive", "proaktiv"),
+            ("schedule", "nach Zeitplan"),
+            ("sensor", "wegen Sensordaten"),
+            ("conflict", "zur Konfliktloesung"),
+        ],
+    )
     def test_trigger_labels(self, trigger, expected_label):
         d = _decision(trigger=trigger)
         result = format_explanation(d)
@@ -350,6 +388,7 @@ class TestFormatExplanation:
 # 5. get_stats
 # ---------------------------------------------------------------------------
 
+
 class TestGetStats:
     def test_empty(self):
         result = get_stats([])
@@ -386,47 +425,60 @@ class TestGetStats:
 # 6. is_complex_request
 # ---------------------------------------------------------------------------
 
+
 class TestIsComplexRequest:
-    @pytest.mark.parametrize("text", [
-        "Mach alles aus",
-        "Wohnung fertig machen zum Schlafen",
-        "Bitte vorbereiten fuer Gaeste",
-        "Ich fahre weg morgen",
-        "Starte die Morgenroutine",
-        "Wenn ich nach Hause komme, Licht an",
-        "Zuerst Licht an und dann Heizung hoch",
-        "Mach ueberall das Licht an",
-        "Es kommt Besuch kommt heute Abend",
-        "Urlaub ab morgen",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Mach alles aus",
+            "Wohnung fertig machen zum Schlafen",
+            "Bitte vorbereiten fuer Gaeste",
+            "Ich fahre weg morgen",
+            "Starte die Morgenroutine",
+            "Wenn ich nach Hause komme, Licht an",
+            "Zuerst Licht an und dann Heizung hoch",
+            "Mach ueberall das Licht an",
+            "Es kommt Besuch kommt heute Abend",
+            "Urlaub ab morgen",
+        ],
+    )
     def test_complex_keywords_match(self, text):
         assert is_complex_request(text) is True
 
-    @pytest.mark.parametrize("text", [
-        "Was ist die Temperatur?",
-        "Wie warm ist es?",
-        "Warum ist das Licht an?",
-        "Wo ist mein Handy?",
-        "Wer hat das Licht angemacht?",
-        "Wann geht die Sonne unter?",
-        "Welche Lichter sind an?",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Was ist die Temperatur?",
+            "Wie warm ist es?",
+            "Warum ist das Licht an?",
+            "Wo ist mein Handy?",
+            "Wer hat das Licht angemacht?",
+            "Wann geht die Sonne unter?",
+            "Welche Lichter sind an?",
+        ],
+    )
     def test_questions_with_w_words_excluded(self, text):
         assert is_complex_request(text) is False
 
-    @pytest.mark.parametrize("text", [
-        "Ist alles in Ordnung?",
-        "Laeuft die Routine schon?",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Ist alles in Ordnung?",
+            "Laeuft die Routine schon?",
+        ],
+    )
     def test_questions_with_question_mark_excluded(self, text):
         assert is_complex_request(text) is False
 
-    @pytest.mark.parametrize("text", [
-        "Licht an",
-        "Heizung auf 22 Grad",
-        "Rolladen runter",
-        "Spiel etwas Musik",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Licht an",
+            "Heizung auf 22 Grad",
+            "Rolladen runter",
+            "Spiel etwas Musik",
+        ],
+    )
     def test_normal_text_not_complex(self, text):
         assert is_complex_request(text) is False
 
@@ -441,19 +493,26 @@ class TestIsComplexRequest:
 # 7. get_narration_text
 # ---------------------------------------------------------------------------
 
+
 class TestGetNarrationText:
     def test_set_light_dimming(self):
-        result = get_narration_text("set_light", {"state": "on", "brightness": 30, "room": "Wohnzimmer"})
+        result = get_narration_text(
+            "set_light", {"state": "on", "brightness": 30, "room": "Wohnzimmer"}
+        )
         assert "Licht" in result
         assert "Wohnzimmer" in result
         assert "dimmt" in result
 
     def test_set_light_not_dimming_full_brightness(self):
-        result = get_narration_text("set_light", {"state": "on", "brightness": 100, "room": "Kueche"})
+        result = get_narration_text(
+            "set_light", {"state": "on", "brightness": 100, "room": "Kueche"}
+        )
         assert result == ""
 
     def test_set_light_not_dimming_state_off(self):
-        result = get_narration_text("set_light", {"state": "off", "brightness": 30, "room": "Bad"})
+        result = get_narration_text(
+            "set_light", {"state": "off", "brightness": 30, "room": "Bad"}
+        )
         assert result == ""
 
     def test_set_light_no_brightness_defaults_to_100(self):
@@ -462,7 +521,9 @@ class TestGetNarrationText:
         assert result == ""
 
     def test_set_cover_moving(self):
-        result = get_narration_text("set_cover", {"position": 0, "room": "Schlafzimmer"})
+        result = get_narration_text(
+            "set_cover", {"position": 0, "room": "Schlafzimmer"}
+        )
         assert "Rolladen" in result
         assert "Schlafzimmer" in result
         assert "faehrt" in result
@@ -476,7 +537,9 @@ class TestGetNarrationText:
         result = get_narration_text("set_cover", {"room": "Buero"})
         assert result == ""
 
-    @pytest.mark.parametrize("func_name", ["set_climate", "activate_scene", "play_media"])
+    @pytest.mark.parametrize(
+        "func_name", ["set_climate", "activate_scene", "play_media"]
+    )
     def test_known_functions_return_empty(self, func_name):
         result = get_narration_text(func_name, {"room": "Test"})
         assert result == ""
@@ -490,9 +553,12 @@ class TestGetNarrationText:
 # 8. get_rollback_info
 # ---------------------------------------------------------------------------
 
+
 class TestGetRollbackInfo:
     def test_set_light_on_to_off(self):
-        func, args = get_rollback_info("set_light", {"room": "Wohnzimmer", "state": "on"})
+        func, args = get_rollback_info(
+            "set_light", {"room": "Wohnzimmer", "state": "on"}
+        )
         assert func == "set_light"
         assert args["room"] == "Wohnzimmer"
         assert args["state"] == "off"
@@ -504,7 +570,9 @@ class TestGetRollbackInfo:
         assert args["state"] == "on"
 
     def test_set_climate_preserves_temperature(self):
-        func, args = get_rollback_info("set_climate", {"room": "Bad", "temperature": 24})
+        func, args = get_rollback_info(
+            "set_climate", {"room": "Bad", "temperature": 24}
+        )
         assert func == "set_climate"
         assert args["room"] == "Bad"
         assert args["temperature"] == 24

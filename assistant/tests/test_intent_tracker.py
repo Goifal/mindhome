@@ -103,7 +103,9 @@ class TestParseIntents:
         assert result == []
 
     def test_filters_empty_intents(self, tracker):
-        llm_output = json.dumps([{"intent": "", "deadline": "2026-03-01"}, {"intent": "Urlaub"}])
+        llm_output = json.dumps(
+            [{"intent": "", "deadline": "2026-03-01"}, {"intent": "Urlaub"}]
+        )
         result = tracker._parse_intents(llm_output, "Max")
         assert len(result) == 1
         assert result[0]["intent"] == "Urlaub"
@@ -126,7 +128,9 @@ class TestExtractIntents:
     @pytest.mark.asyncio
     async def test_no_time_keywords_skipped(self, tracker):
         """Text ohne Zeitangaben wird uebersprungen."""
-        result = await tracker.extract_intents("Wie wird das Wetter in Berlin sein dieses Jahr?")
+        result = await tracker.extract_intents(
+            "Wie wird das Wetter in Berlin sein dieses Jahr?"
+        )
         assert result == []
 
     @pytest.mark.asyncio
@@ -229,15 +233,17 @@ class TestGetActiveIntents:
 
         pipe_mock = MagicMock()
         pipe_mock.hgetall = MagicMock()
-        pipe_mock.execute = AsyncMock(return_value=[
-            {
-                b"intent": b"Besuch der Eltern",
-                b"deadline": b"2026-03-25",
-                b"status": b"active",
-                b"intent_id": b"intent_001",
-                b"suggested_actions": b'["Gaestemodus vorbereiten"]',
-            }
-        ])
+        pipe_mock.execute = AsyncMock(
+            return_value=[
+                {
+                    b"intent": b"Besuch der Eltern",
+                    b"deadline": b"2026-03-25",
+                    b"status": b"active",
+                    b"intent_id": b"intent_001",
+                    b"suggested_actions": b'["Gaestemodus vorbereiten"]',
+                }
+            ]
+        )
         tracker.redis.pipeline = MagicMock(return_value=pipe_mock)
 
         result = await tracker.get_active_intents()
@@ -260,7 +266,9 @@ class TestGetActiveIntents:
 
         result = await tracker.get_active_intents()
         assert result == []
-        tracker.redis.srem.assert_called_once_with("mha:intents:active", "intent_expired")
+        tracker.redis.srem.assert_called_once_with(
+            "mha:intents:active", "intent_expired"
+        )
 
     @pytest.mark.asyncio
     async def test_redis_error_returns_empty(self, tracker):
@@ -378,7 +386,9 @@ class TestGetDueIntents:
         }
 
         with patch.object(tracker, "get_active_intents", return_value=[intent]):
-            with patch.object(tracker, "dismiss_intent", new_callable=AsyncMock) as mock_dismiss:
+            with patch.object(
+                tracker, "dismiss_intent", new_callable=AsyncMock
+            ) as mock_dismiss:
                 with patch("assistant.intent_tracker.datetime") as mock_dt:
                     mock_dt.now.return_value = fake_now
                     mock_dt.strptime = datetime.strptime
@@ -651,13 +661,17 @@ class TestExtractIntentsAdvanced:
         """LLM-Antwort mit gueltigem Intent wird korrekt geparst."""
         tracker.ollama.chat.return_value = {
             "message": {
-                "content": json.dumps([{
-                    "intent": "Elternbesuch",
-                    "deadline": "2026-03-25",
-                    "person": "Eltern",
-                    "suggested_actions": ["Gaestemodus vorbereiten"],
-                    "reminder_text": "Deine Eltern kommen morgen.",
-                }]),
+                "content": json.dumps(
+                    [
+                        {
+                            "intent": "Elternbesuch",
+                            "deadline": "2026-03-25",
+                            "person": "Eltern",
+                            "suggested_actions": ["Gaestemodus vorbereiten"],
+                            "reminder_text": "Deine Eltern kommen morgen.",
+                        }
+                    ]
+                ),
             },
         }
         result = await tracker.extract_intents(

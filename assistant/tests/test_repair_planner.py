@@ -37,9 +37,11 @@ YAML_CFG = {
 @pytest.fixture
 def ollama():
     m = AsyncMock()
-    m.chat = AsyncMock(return_value={
-        "message": {"role": "assistant", "content": "Test-Antwort"},
-    })
+    m.chat = AsyncMock(
+        return_value={
+            "message": {"role": "assistant", "content": "Test-Antwort"},
+        }
+    )
     return m
 
 
@@ -81,10 +83,13 @@ def _make_session(steps=3, current_step=0):
         title="Test-Projekt",
         category="maker",
         steps=[
-            RepairStep(number=i + 1, title=f"Schritt {i + 1}",
-                       description=f"Beschreibung {i + 1}",
-                       tools=["Loetkolben"] if i == 0 else [],
-                       parts=["ESP32"] if i == 0 else [])
+            RepairStep(
+                number=i + 1,
+                title=f"Schritt {i + 1}",
+                description=f"Beschreibung {i + 1}",
+                tools=["Loetkolben"] if i == 0 else [],
+                parts=["ESP32"] if i == 0 else [],
+            )
             for i in range(steps)
         ],
         current_step=current_step,
@@ -93,6 +98,7 @@ def _make_session(steps=3, current_step=0):
 
 
 # ── Dataclass Tests ──────────────────────────────────────
+
 
 class TestRepairSession:
     def test_total_steps(self):
@@ -120,6 +126,7 @@ class TestRepairSession:
 
 # ── Projekt-CRUD ─────────────────────────────────────────
 
+
 class TestProjectCRUD:
     @pytest.mark.asyncio
     async def test_create_project(self, planner, redis_m):
@@ -140,8 +147,12 @@ class TestProjectCRUD:
     @pytest.mark.asyncio
     async def test_get_project(self, planner, redis_m):
         redis_m.hgetall.return_value = {
-            "id": "p1", "title": "Proj", "parts": "[]", "tools": "[]",
-            "notes": "[]", "expenses": "[]",
+            "id": "p1",
+            "title": "Proj",
+            "parts": "[]",
+            "tools": "[]",
+            "notes": "[]",
+            "expenses": "[]",
         }
         proj = await planner.get_project("p1")
         assert proj["title"] == "Proj"
@@ -161,8 +172,12 @@ class TestProjectCRUD:
     @pytest.mark.asyncio
     async def test_add_project_note(self, planner, redis_m):
         redis_m.hgetall.return_value = {
-            "id": "p1", "title": "P", "notes": "[]",
-            "parts": "[]", "tools": "[]", "expenses": "[]",
+            "id": "p1",
+            "title": "P",
+            "notes": "[]",
+            "parts": "[]",
+            "tools": "[]",
+            "expenses": "[]",
         }
         result = await planner.add_project_note("p1", "Test-Notiz")
         assert result["status"] == "ok"
@@ -177,8 +192,12 @@ class TestProjectCRUD:
     @pytest.mark.asyncio
     async def test_add_part(self, planner, redis_m):
         redis_m.hgetall.return_value = {
-            "id": "p1", "title": "P", "parts": "[]",
-            "tools": "[]", "notes": "[]", "expenses": "[]",
+            "id": "p1",
+            "title": "P",
+            "parts": "[]",
+            "tools": "[]",
+            "notes": "[]",
+            "expenses": "[]",
         }
         result = await planner.add_part("p1", "Widerstand", quantity=10)
         assert result["status"] == "ok"
@@ -187,9 +206,12 @@ class TestProjectCRUD:
     @pytest.mark.asyncio
     async def test_add_missing_to_shopping_all_available(self, planner, redis_m):
         redis_m.hgetall.return_value = {
-            "id": "p1", "title": "P",
+            "id": "p1",
+            "title": "P",
             "parts": json.dumps([{"name": "X", "available": True}]),
-            "tools": "[]", "notes": "[]", "expenses": "[]",
+            "tools": "[]",
+            "notes": "[]",
+            "expenses": "[]",
         }
         result = await planner.add_missing_to_shopping("p1")
         assert result["status"] == "ok"
@@ -197,9 +219,12 @@ class TestProjectCRUD:
     @pytest.mark.asyncio
     async def test_add_missing_to_shopping_missing(self, planner, redis_m):
         redis_m.hgetall.return_value = {
-            "id": "p1", "title": "P",
+            "id": "p1",
+            "title": "P",
             "parts": json.dumps([{"name": "X", "available": False}]),
-            "tools": "[]", "notes": "[]", "expenses": "[]",
+            "tools": "[]",
+            "notes": "[]",
+            "expenses": "[]",
         }
         result = await planner.add_missing_to_shopping("p1")
         assert result["status"] == "confirm_needed"
@@ -207,6 +232,7 @@ class TestProjectCRUD:
 
 
 # ── Navigation ───────────────────────────────────────────
+
 
 class TestNavigation:
     def test_is_repair_navigation_no_session(self, planner):
@@ -221,7 +247,11 @@ class TestNavigation:
     @pytest.mark.asyncio
     async def test_next_step(self, planner, redis_m):
         planner._session = _make_session(steps=3, current_step=0)
-        with patch("assistant.repair_planner.emit_workshop", new_callable=AsyncMock, create=True):
+        with patch(
+            "assistant.repair_planner.emit_workshop",
+            new_callable=AsyncMock,
+            create=True,
+        ):
             result = await planner.handle_navigation("weiter")
         assert "Schritt 2" in result
 
@@ -258,6 +288,7 @@ class TestNavigation:
 
 # ── Inventar / Budget / Templates ────────────────────────
 
+
 class TestInventarAndBudget:
     @pytest.mark.asyncio
     async def test_add_workshop_item(self, planner, redis_m):
@@ -279,8 +310,12 @@ class TestInventarAndBudget:
     @pytest.mark.asyncio
     async def test_add_expense(self, planner, redis_m):
         redis_m.hgetall.return_value = {
-            "id": "p1", "title": "P", "expenses": "[]",
-            "parts": "[]", "tools": "[]", "notes": "[]",
+            "id": "p1",
+            "title": "P",
+            "expenses": "[]",
+            "parts": "[]",
+            "tools": "[]",
+            "notes": "[]",
         }
         result = await planner.add_expense("p1", "Draht", 3.50)
         assert result["status"] == "ok"
@@ -298,6 +333,7 @@ class TestInventarAndBudget:
 
 
 # ── Workshop Environment ─────────────────────────────────
+
 
 class TestWorkshopEnvironment:
     @pytest.mark.asyncio
@@ -320,13 +356,18 @@ class TestWorkshopEnvironment:
 
 # ── Safety Checklist ─────────────────────────────────────
 
+
 class TestSafetyChecklist:
     @pytest.mark.asyncio
     async def test_safety_checklist_loeten(self, planner, redis_m):
         redis_m.hgetall.return_value = {
-            "id": "p1", "title": "P", "category": "maker",
+            "id": "p1",
+            "title": "P",
+            "category": "maker",
             "tools": json.dumps(["loetkolben"]),
-            "parts": "[]", "notes": "[]", "expenses": "[]",
+            "parts": "[]",
+            "notes": "[]",
+            "expenses": "[]",
         }
         result = await planner.generate_safety_checklist("p1")
         assert "Loetkolben-Ablage" in result
@@ -334,8 +375,13 @@ class TestSafetyChecklist:
     @pytest.mark.asyncio
     async def test_safety_checklist_reparatur(self, planner, redis_m):
         redis_m.hgetall.return_value = {
-            "id": "p1", "title": "P", "category": "reparatur",
-            "tools": "[]", "parts": "[]", "notes": "[]", "expenses": "[]",
+            "id": "p1",
+            "title": "P",
+            "category": "reparatur",
+            "tools": "[]",
+            "parts": "[]",
+            "notes": "[]",
+            "expenses": "[]",
         }
         result = await planner.generate_safety_checklist("p1")
         assert "Strom" in result
@@ -348,6 +394,7 @@ class TestSafetyChecklist:
 
 
 # ── Tool Lending ─────────────────────────────────────────
+
 
 class TestToolLending:
     @pytest.mark.asyncio

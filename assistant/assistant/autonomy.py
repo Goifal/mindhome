@@ -62,28 +62,24 @@ ACTION_PERMISSIONS = {
     # Level 1: Assistent - nur auf Befehle reagieren
     "respond_to_command": 1,
     "execute_function_call": 1,
-
     # Level 2: Butler - proaktive Infos
     "proactive_info": 2,
     "morning_briefing": 2,
     "arrival_greeting": 2,
     "security_alert": 1,  # Immer, auch bei Level 1
-
     # Level 3: Mitbewohner - kleine Aenderungen
     "adjust_temperature_small": 3,  # +/- 1 Grad
     "adjust_light_auto": 3,
     "pause_reminder": 3,
-    "set_light": 3,          # Licht schalten (Anticipation)
-    "set_cover": 3,          # Rolllaeden steuern (Anticipation)
-    "set_climate": 3,        # Klima steuern (Anticipation)
-    "play_media": 3,         # Medien abspielen (Anticipation)
-    "get_active_intents": 2, # Intents abfragen (nur Info)
-
+    "set_light": 3,  # Licht schalten (Anticipation)
+    "set_cover": 3,  # Rolllaeden steuern (Anticipation)
+    "set_climate": 3,  # Klima steuern (Anticipation)
+    "play_media": 3,  # Medien abspielen (Anticipation)
+    "get_active_intents": 2,  # Intents abfragen (nur Info)
     # Level 4: Vertrauter - Routinen anpassen
     "modify_routine": 4,
     "suggest_scene": 4,
     "learn_preferences": 4,
-
     # Level 5: Autopilot - Automationen erstellen
     "create_automation": 5,
     "modify_schedule": 5,
@@ -112,13 +108,32 @@ class AutonomyManager:
         self._person_trust: dict[str, int] = {
             name: int(level) for name, level in raw_persons.items()
         }
-        self._guest_actions = set(trust_cfg.get("guest_allowed_actions", [
-            "set_light", "set_climate", "play_media", "get_entity_state", "play_sound",
-            "get_house_status", "get_room_climate",
-        ]))
-        self._security_actions = set(trust_cfg.get("security_actions", [
-            "lock_door", "unlock_door", "arm_security_system", "disarm_alarm", "set_presence_mode",
-        ]))
+        self._guest_actions = set(
+            trust_cfg.get(
+                "guest_allowed_actions",
+                [
+                    "set_light",
+                    "set_climate",
+                    "play_media",
+                    "get_entity_state",
+                    "play_sound",
+                    "get_house_status",
+                    "get_room_climate",
+                ],
+            )
+        )
+        self._security_actions = set(
+            trust_cfg.get(
+                "security_actions",
+                [
+                    "lock_door",
+                    "unlock_door",
+                    "arm_security_system",
+                    "disarm_alarm",
+                    "set_presence_mode",
+                ],
+            )
+        )
 
         # Konfigurierbare Action-Permissions und Evolution-Criteria
         auto_cfg = yaml_config.get("autonomy", {})
@@ -152,13 +167,19 @@ class AutonomyManager:
         self._temporal_enabled = temporal_cfg.get("enabled", False) or False
         self._temporal_night_start = int(temporal_cfg.get("night_start_hour") or 22)
         self._temporal_night_end = int(temporal_cfg.get("night_end_hour") or 6)
-        self._temporal_night_offset = int(temporal_cfg.get("night_offset") if temporal_cfg.get("night_offset") is not None else -1)
+        self._temporal_night_offset = int(
+            temporal_cfg.get("night_offset")
+            if temporal_cfg.get("night_offset") is not None
+            else -1
+        )
         self._temporal_day_offset = int(temporal_cfg.get("day_offset") or 0)
 
         # De-escalation config (#41)
         deesc_cfg = auto_cfg.get("deescalation", {}) or {}
         self._deescalation_enabled = deesc_cfg.get("enabled", False) or False
-        self._deescalation_min_acceptance = float(deesc_cfg.get("min_acceptance_rate") or 0.5)
+        self._deescalation_min_acceptance = float(
+            deesc_cfg.get("min_acceptance_rate") or 0.5
+        )
         self._deescalation_eval_days = int(deesc_cfg.get("evaluation_days") or 14)
 
     def can_act(self, action_type: str, domain: str = "") -> bool:
@@ -180,7 +201,10 @@ class AutonomyManager:
         if not allowed:
             logger.debug(
                 "Aktion '%s' braucht Level %d, effektiv: %d (Domaene: %s)",
-                action_type, required_level, effective_level, domain or "global",
+                action_type,
+                required_level,
+                effective_level,
+                domain or "global",
             )
         return allowed
 
@@ -206,7 +230,9 @@ class AutonomyManager:
             return 0
         hour = datetime.now(_LOCAL_TZ).hour
         if self._temporal_night_start > self._temporal_night_end:
-            is_night = hour >= self._temporal_night_start or hour < self._temporal_night_end
+            is_night = (
+                hour >= self._temporal_night_start or hour < self._temporal_night_end
+            )
         else:
             is_night = self._temporal_night_start <= hour < self._temporal_night_end
         return self._temporal_night_offset if is_night else self._temporal_day_offset
@@ -273,18 +299,22 @@ class AutonomyManager:
     # ------------------------------------------------------------------
 
     SAFETY_CAPS = {
-        "max_temperature_change": 3,       # Max +/- Grad pro Aktion
-        "min_temperature": 14,             # Absolutes Minimum (Celsius)
-        "max_temperature": 30,             # Absolutes Maximum (Celsius)
-        "max_actions_per_minute": 10,      # Rate-Limit pro Person
-        "max_actions_per_hour": 100,       # Rate-Limit pro Person
+        "max_temperature_change": 3,  # Max +/- Grad pro Aktion
+        "min_temperature": 14,  # Absolutes Minimum (Celsius)
+        "max_temperature": 30,  # Absolutes Maximum (Celsius)
+        "max_actions_per_minute": 10,  # Rate-Limit pro Person
+        "max_actions_per_hour": 100,  # Rate-Limit pro Person
         "max_automation_creations_per_day": 5,
-        "max_brightness": 100,             # Prozent
+        "max_brightness": 100,  # Prozent
     }
 
     def can_execute(
-        self, person: str, action_type: str,
-        function_name: str = "", domain: str = "", room: str = "",
+        self,
+        person: str,
+        action_type: str,
+        function_name: str = "",
+        domain: str = "",
+        room: str = "",
     ) -> dict:
         """Kombinierte Pruefung: Autonomie-Level UND Person-Trust.
 
@@ -426,7 +456,8 @@ class AutonomyManager:
             "name": self.LEVEL_NAMES.get(self.level, "Unbekannt"),
             "description": descriptions.get(self.level, ""),
             "allowed_actions": [
-                action for action, req in self._action_permissions.items()
+                action
+                for action, req in self._action_permissions.items()
                 if self.level >= req
             ],
             "domain_levels_enabled": self._domain_levels_enabled,
@@ -639,7 +670,9 @@ class AutonomyManager:
             if not raw_stats:
                 return None
             stats = {
-                (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
+                (k.decode() if isinstance(k, bytes) else k): (
+                    v.decode() if isinstance(v, bytes) else v
+                )
                 for k, v in raw_stats.items()
             }
             total = int(stats.get("total", 0) or 0)
@@ -655,7 +688,8 @@ class AutonomyManager:
                 logger.info(
                     "De-Eskalation vorgeschlagen: Level %d -> %d "
                     "(Akzeptanz: %.1f%% < %.1f%%)",
-                    self.level, proposed_level,
+                    self.level,
+                    proposed_level,
                     acceptance_rate * 100,
                     self._deescalation_min_acceptance * 100,
                 )
@@ -750,7 +784,12 @@ class AutonomyManager:
             raw_stats = await self._redis.hgetall(self._REDIS_KEY_STATS)
             if not raw_stats:
                 return None
-            stats = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_stats.items()}
+            stats = {
+                (k.decode() if isinstance(k, bytes) else k): (
+                    v.decode() if isinstance(v, bytes) else v
+                )
+                for k, v in raw_stats.items()
+            }
 
             total = int(stats.get("total", 0) or 0)
             accepted = int(stats.get("accepted", 0) or 0)
@@ -760,7 +799,11 @@ class AutonomyManager:
             first_start = await self._redis.get("mha:first_start")
             if first_start:
                 try:
-                    start_date = datetime.fromisoformat(first_start.decode() if isinstance(first_start, bytes) else first_start)
+                    start_date = datetime.fromisoformat(
+                        first_start.decode()
+                        if isinstance(first_start, bytes)
+                        else first_start
+                    )
                     days_active = (datetime.now(timezone.utc) - start_date).days
                 except (ValueError, TypeError):
                     days_active = 0
@@ -806,7 +849,9 @@ class AutonomyManager:
                 "total_interactions": total,
                 "acceptance_rate": round(acceptance_rate, 3),
                 "effective_acceptance_rate": round(effective_acceptance, 3),
-                "outcome_score_avg": round(outcome_score_avg, 3) if outcome_score_avg is not None else None,
+                "outcome_score_avg": round(outcome_score_avg, 3)
+                if outcome_score_avg is not None
+                else None,
                 "outcome_boost": round(outcome_boost, 3),
                 "criteria": criteria,
                 "meets_days": meets_days,
@@ -819,7 +864,10 @@ class AutonomyManager:
                 logger.info(
                     "Autonomy Evolution bereit: Level %d -> %d "
                     "(Tage: %d, Interaktionen: %d, Akzeptanz: %.1f%%)",
-                    self.level, next_level, days_active, total,
+                    self.level,
+                    next_level,
+                    days_active,
+                    total,
                     acceptance_rate * 100,
                 )
 

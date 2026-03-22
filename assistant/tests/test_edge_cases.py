@@ -21,18 +21,25 @@ from assistant.visitor_manager import VisitorManager, _KEY_KNOWN, _KEY_LAST_RING
 @pytest.fixture
 def mood_mock():
     mock = MagicMock()
-    mock.get_current_mood = MagicMock(return_value={
-        "mood": "neutral", "stress_level": 0.0, "tiredness_level": 0.0,
-    })
+    mock.get_current_mood = MagicMock(
+        return_value={
+            "mood": "neutral",
+            "stress_level": 0.0,
+            "tiredness_level": 0.0,
+        }
+    )
     return mock
 
 
 @pytest.fixture
 def activity_mock():
     mock = AsyncMock()
-    mock.detect_activity = AsyncMock(return_value={
-        "activity": "relaxing", "confidence": 0.8,
-    })
+    mock.detect_activity = AsyncMock(
+        return_value={
+            "activity": "relaxing",
+            "confidence": 0.8,
+        }
+    )
     return mock
 
 
@@ -142,7 +149,9 @@ class TestMusicDJStressThresholds:
     async def test_medium_stress_normal_mood(self, dj, mood_mock, activity_mock):
         """Stress 0.4 mit normalem Mood — kein Focus-Genre."""
         mood_mock.get_current_mood.return_value = {
-            "mood": "neutral", "stress_level": 0.4, "tiredness": 0.0,
+            "mood": "neutral",
+            "stress_level": 0.4,
+            "tiredness": 0.0,
         }
         result = await dj.get_recommendation()
         assert result["success"] is True
@@ -153,7 +162,9 @@ class TestMusicDJStressThresholds:
     async def test_high_stress_gets_calm(self, dj, mood_mock, activity_mock):
         """Hoher Stress → beruhigende Musik."""
         mood_mock.get_current_mood.return_value = {
-            "mood": "stressed", "stress_level": 0.8, "tiredness": 0.0,
+            "mood": "stressed",
+            "stress_level": 0.8,
+            "tiredness": 0.0,
         }
         result = await dj.get_recommendation()
         assert result["success"] is True
@@ -230,11 +241,13 @@ class TestVisitorManagerRedisEdgeCases:
     @pytest.mark.asyncio
     async def test_history_with_corrupt_entries(self, vm, redis_mock):
         """History mit teilweise korrupten JSON-Eintraegen."""
-        redis_mock.lrange = AsyncMock(return_value=[
-            json.dumps({"person_id": "mama", "name": "Mama", "timestamp": "now"}),
-            "{{corrupt",
-            json.dumps({"person_id": "papa", "name": "Papa", "timestamp": "now"}),
-        ])
+        redis_mock.lrange = AsyncMock(
+            return_value=[
+                json.dumps({"person_id": "mama", "name": "Mama", "timestamp": "now"}),
+                "{{corrupt",
+                json.dumps({"person_id": "papa", "name": "Papa", "timestamp": "now"}),
+            ]
+        )
         result = await vm.get_visit_history()
         assert result["count"] == 2  # Korrupter Eintrag uebersprungen
 
@@ -250,14 +263,18 @@ class TestVisitorManagerAutoUnlockWorkflow:
         assert result["success"] is True
 
         # 2. Klingel-Event mit erwartetem Besucher
-        redis_mock.hgetall = AsyncMock(return_value={
-            "mama": json.dumps({
-                "id": "mama",
-                "name": "Mama",
-                "expected_time": "15:00",
-                "auto_unlock": True,
-            }),
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                "mama": json.dumps(
+                    {
+                        "id": "mama",
+                        "name": "Mama",
+                        "expected_time": "15:00",
+                        "auto_unlock": True,
+                    }
+                ),
+            }
+        )
         ring_result = await vm.handle_doorbell("Aeltere Dame vor der Tuer")
         assert ring_result["handled"] is True
         assert ring_result["auto_unlocked"] is True
@@ -274,18 +291,24 @@ class TestVisitorManagerAutoUnlockWorkflow:
     @pytest.mark.asyncio
     async def test_multiple_expected_only_first_auto_unlock(self, vm, redis_mock):
         """Mehrere erwartete Besucher — nur der erste mit auto_unlock wird entriegelt."""
-        redis_mock.hgetall = AsyncMock(return_value={
-            "lieferant": json.dumps({
-                "id": "lieferant",
-                "name": "DHL",
-                "auto_unlock": False,
-            }),
-            "mama": json.dumps({
-                "id": "mama",
-                "name": "Mama",
-                "auto_unlock": True,
-            }),
-        })
+        redis_mock.hgetall = AsyncMock(
+            return_value={
+                "lieferant": json.dumps(
+                    {
+                        "id": "lieferant",
+                        "name": "DHL",
+                        "auto_unlock": False,
+                    }
+                ),
+                "mama": json.dumps(
+                    {
+                        "id": "mama",
+                        "name": "Mama",
+                        "auto_unlock": True,
+                    }
+                ),
+            }
+        )
         result = await vm.handle_doorbell("Person")
         assert result["handled"] is True
         assert result["expected"] is True
@@ -302,23 +325,28 @@ class TestFunctionCallingWhitelist:
 
     def test_manage_visitor_in_whitelist(self):
         from assistant.function_calling import FunctionExecutor
+
         assert "manage_visitor" in FunctionExecutor._ALLOWED_FUNCTIONS
 
     def test_recommend_music_in_whitelist(self):
         from assistant.function_calling import FunctionExecutor
+
         assert "recommend_music" in FunctionExecutor._ALLOWED_FUNCTIONS
 
     def test_describe_doorbell_in_whitelist(self):
         from assistant.function_calling import FunctionExecutor
+
         assert "describe_doorbell" in FunctionExecutor._ALLOWED_FUNCTIONS
 
     def test_lock_door_in_whitelist(self):
         from assistant.function_calling import FunctionExecutor
+
         assert "lock_door" in FunctionExecutor._ALLOWED_FUNCTIONS
 
     def test_handler_methods_exist(self):
         """Alle Whitelist-Funktionen haben einen _exec_ Handler."""
         from assistant.function_calling import FunctionExecutor
+
         for func_name in FunctionExecutor._ALLOWED_FUNCTIONS:
             handler = f"_exec_{func_name}"
             assert hasattr(FunctionExecutor, handler), f"Handler {handler} fehlt"

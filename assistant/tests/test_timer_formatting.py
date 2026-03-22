@@ -14,6 +14,7 @@ import pytest
 # format_remaining (extrahiert aus GeneralTimer)
 # ============================================================
 
+
 def format_remaining(secs: int) -> str:
     """Formatiert verbleibende Sekunden als deutsche Zeitangabe."""
     if secs <= 0:
@@ -52,6 +53,7 @@ def validate_duration(duration_minutes: int) -> bool:
 # ============================================================
 # format_remaining Tests
 # ============================================================
+
 
 class TestFormatRemaining:
     """Testet Zeitformatierung."""
@@ -100,6 +102,7 @@ class TestFormatRemaining:
 # format_duration_string Tests
 # ============================================================
 
+
 class TestFormatDurationString:
     """Testet Timer-Bestaetigungs-String."""
 
@@ -129,6 +132,7 @@ class TestFormatDurationString:
 # ============================================================
 # Duration Validation Tests
 # ============================================================
+
 
 class TestDurationValidation:
     """Testet Timer-Dauer-Validierung."""

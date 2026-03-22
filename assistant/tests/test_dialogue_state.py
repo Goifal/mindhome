@@ -9,7 +9,18 @@ from assistant.dialogue_state import DialogueState, DialogueStateManager
 
 @pytest.fixture
 def dsm():
-    with patch("assistant.dialogue_state.yaml_config", {"dialogue": {"enabled": True, "timeout_seconds": 300, "auto_resolve_references": True, "clarification_enabled": True, "max_clarification_options": 5}}):
+    with patch(
+        "assistant.dialogue_state.yaml_config",
+        {
+            "dialogue": {
+                "enabled": True,
+                "timeout_seconds": 300,
+                "auto_resolve_references": True,
+                "clarification_enabled": True,
+                "max_clarification_options": 5,
+            }
+        },
+    ):
         return DialogueStateManager()
 
 
@@ -86,9 +97,14 @@ def test_get_state_resets_stale(dsm):
 
 
 def test_track_turn(dsm):
-    dsm.track_turn("Licht an", person="Max", room="Wohnzimmer",
-                   entities=["light.wohnzimmer"], domain="light",
-                   actions=[{"description": "Licht eingeschaltet"}])
+    dsm.track_turn(
+        "Licht an",
+        person="Max",
+        room="Wohnzimmer",
+        entities=["light.wohnzimmer"],
+        domain="light",
+        actions=[{"description": "Licht eingeschaltet"}],
+    )
     state = dsm._get_state("Max")
     assert state.turn_count == 1
     assert "wohnzimmer" in state.last_rooms
@@ -131,14 +147,17 @@ def test_resolve_room_reference(dsm):
 
 def test_resolve_hier_with_current_room(dsm):
     dsm.track_turn("x", person="Max")
-    result = dsm.resolve_references("Mach hier das Licht an", person="Max", current_room="Kueche")
+    result = dsm.resolve_references(
+        "Mach hier das Licht an", person="Max", current_room="Kueche"
+    )
     assert result["had_references"] is True
     assert "Kueche" in result["resolved_rooms"]
 
 
 def test_resolve_action_reference(dsm):
-    dsm.track_turn("Licht an", person="Max",
-                   actions=[{"description": "Licht eingeschaltet"}])
+    dsm.track_turn(
+        "Licht an", person="Max", actions=[{"description": "Licht eingeschaltet"}]
+    )
     result = dsm.resolve_references("nochmal", person="Max")
     assert result["had_references"] is True
 
@@ -212,9 +231,13 @@ def test_get_context_prompt_empty(dsm):
 
 
 def test_get_context_prompt_with_data(dsm):
-    dsm.track_turn("Licht an", person="Max", room="Wohnzimmer",
-                   entities=["light.wohnzimmer"],
-                   actions=[{"description": "Licht ein"}])
+    dsm.track_turn(
+        "Licht an",
+        person="Max",
+        room="Wohnzimmer",
+        entities=["light.wohnzimmer"],
+        actions=[{"description": "Licht ein"}],
+    )
     prompt = dsm.get_context_prompt("Max")
     assert "light.wohnzimmer" in prompt
     assert "wohnzimmer" in prompt.lower()
@@ -265,6 +288,7 @@ class TestGetStateEviction:
     def test_evict_oldest_entries_when_over_50(self, dsm):
         """Wenn mehr als 50 Eintraege, werden die aeltesten 25 entfernt (Zeilen 112-117)."""
         import time as _time
+
         # 51 verschiedene Personen eintragen
         for i in range(51):
             state = dsm._get_state(f"person_{i}")
@@ -303,7 +327,9 @@ class TestGetContextPromptClarification:
     def test_context_prompt_with_pending_clarification(self, dsm):
         """Offene Klaerungsfrage erscheint im Kontext-Prompt (Zeilen 365-366)."""
         dsm.track_turn("Licht an", person="Max", entities=["light.a"])
-        dsm.start_clarification("Max", "Welches Licht meinst du?", ["A", "B"], "Licht an")
+        dsm.start_clarification(
+            "Max", "Welches Licht meinst du?", ["A", "B"], "Licht an"
+        )
         prompt = dsm.get_context_prompt("Max")
         assert "OFFENE KLAERUNGSFRAGE" in prompt
         assert "Welches Licht meinst du?" in prompt
@@ -315,7 +341,6 @@ class TestGetContextPromptClarification:
 
 
 class TestPhase6ExtendedDialogue:
-
     def test_conversation_depth_initial(self, dsm):
         assert dsm.get_conversation_depth("Max") == 0
 
@@ -344,8 +369,9 @@ class TestPhase6ExtendedDialogue:
         assert result == ""
 
     def test_implicit_context_with_history(self, dsm):
-        dsm.track_turn("Licht an", person="Max", room="Kueche",
-                        entities=["light.kueche"])
+        dsm.track_turn(
+            "Licht an", person="Max", room="Kueche", entities=["light.kueche"]
+        )
         result = dsm.get_implicit_context("Max")
         assert "kueche" in result.lower()
 
@@ -354,36 +380,43 @@ class TestPhase6ExtendedDialogue:
         assert result == ""
 
     def test_suggest_follow_up_light_on(self, dsm):
-        dsm.track_turn("Licht an", person="Max",
-                        actions=[{"action": "set_light", "args": {"state": "on"}}])
+        dsm.track_turn(
+            "Licht an",
+            person="Max",
+            actions=[{"action": "set_light", "args": {"state": "on"}}],
+        )
         dsm.track_turn("ok", person="Max")
         result = dsm.suggest_follow_up({"success": True}, person="Max")
         assert "Helligkeit" in result or "Farbe" in result
 
     def test_suggest_follow_up_climate(self, dsm):
-        dsm.track_turn("Heizung an", person="Max",
-                        actions=[{"action": "set_climate"}])
+        dsm.track_turn("Heizung an", person="Max", actions=[{"action": "set_climate"}])
         dsm.track_turn("ok", person="Max")
         result = dsm.suggest_follow_up({"success": True}, person="Max")
         assert "Temperatur" in result
 
     def test_suggest_follow_up_media(self, dsm):
-        dsm.track_turn("Musik an", person="Max",
-                        actions=[{"action": "play_media"}])
+        dsm.track_turn("Musik an", person="Max", actions=[{"action": "play_media"}])
         dsm.track_turn("ok", person="Max")
         result = dsm.suggest_follow_up({"success": True}, person="Max")
         assert "Lautstaerke" in result
 
     def test_suggest_follow_up_cover_closed(self, dsm):
-        dsm.track_turn("Rollladen runter", person="Max",
-                        actions=[{"action": "set_cover", "args": {"state": "closed"}}])
+        dsm.track_turn(
+            "Rollladen runter",
+            person="Max",
+            actions=[{"action": "set_cover", "args": {"state": "closed"}}],
+        )
         dsm.track_turn("ok", person="Max")
         result = dsm.suggest_follow_up({"success": True}, person="Max")
         assert "Licht" in result
 
     def test_suggest_follow_up_failed_action(self, dsm):
-        dsm.track_turn("Licht an", person="Max",
-                        actions=[{"action": "set_light", "args": {"state": "on"}}])
+        dsm.track_turn(
+            "Licht an",
+            person="Max",
+            actions=[{"action": "set_light", "args": {"state": "on"}}],
+        )
         dsm.track_turn("ok", person="Max")
         result = dsm.suggest_follow_up({"success": False}, person="Max")
         assert result == ""
@@ -398,8 +431,9 @@ class TestEllipsisResolution:
     """Tests fuer _resolve_ellipsis — ergaenzt Kontext bei 'Und', 'Auch', 'Dort'."""
 
     def test_ellipsis_und_prefix(self, dsm):
-        dsm.track_turn("Licht an", person="Max", room="Kueche",
-                        entities=["light.kueche"])
+        dsm.track_turn(
+            "Licht an", person="Max", room="Kueche", entities=["light.kueche"]
+        )
         result = dsm._resolve_ellipsis("Und im Flur", person="Max")
         assert "(Raum: kueche)" in result
         assert "(Geraet: light.kueche)" in result
@@ -491,8 +525,9 @@ class TestAmbiguityRanking:
         assert entity_names[0] == "light.wohnzimmer"
 
     def test_score_capped_at_1(self, dsm):
-        dsm.track_turn("x", person="Max", room="kueche",
-                        entities=["light.kueche_decke"])
+        dsm.track_turn(
+            "x", person="Max", room="kueche", entities=["light.kueche_decke"]
+        )
         ranked = dsm._rank_ambiguity(
             ["light.kueche_decke"], "kueche decke", person="Max"
         )
@@ -560,84 +595,98 @@ class TestTemporalReferences:
 
     def test_temporal_reference_with_matching_action(self, dsm):
         from datetime import datetime, timedelta, timezone
+
         dsm._redis = MagicMock()
         now = datetime.now(timezone.utc)
         yesterday = now - timedelta(days=1)
-        dsm.set_action_log_cache([
-            {
-                "action": "set_light",
-                "description": "Licht im Wohnzimmer eingeschaltet",
-                "timestamp": yesterday.isoformat(),
-                "success": True,
-            }
-        ])
+        dsm.set_action_log_cache(
+            [
+                {
+                    "action": "set_light",
+                    "description": "Licht im Wohnzimmer eingeschaltet",
+                    "timestamp": yesterday.isoformat(),
+                    "success": True,
+                }
+            ]
+        )
         result = dsm._resolve_temporal_reference("wie gestern", person="Max")
         assert "Licht im Wohnzimmer" in result
         assert "wie gestern" in result
 
     def test_temporal_reference_wie_immer_broad_window(self, dsm):
         from datetime import datetime, timedelta, timezone
+
         dsm._redis = MagicMock()
         now = datetime.now(timezone.utc)
         five_days_ago = now - timedelta(days=5)
-        dsm.set_action_log_cache([
-            {
-                "action": "set_light",
-                "description": "Morgenroutine",
-                "timestamp": five_days_ago.isoformat(),
-                "success": True,
-            }
-        ])
+        dsm.set_action_log_cache(
+            [
+                {
+                    "action": "set_light",
+                    "description": "Morgenroutine",
+                    "timestamp": five_days_ago.isoformat(),
+                    "success": True,
+                }
+            ]
+        )
         result = dsm._resolve_temporal_reference("wie immer", person="Max")
         assert "Morgenroutine" in result
 
     def test_temporal_reference_skips_failed_actions(self, dsm):
         from datetime import datetime, timedelta, timezone
+
         dsm._redis = MagicMock()
         now = datetime.now(timezone.utc)
         yesterday = now - timedelta(days=1)
-        dsm.set_action_log_cache([
-            {
-                "action": "set_light",
-                "description": "Failed action",
-                "timestamp": yesterday.isoformat(),
-                "success": False,
-            }
-        ])
+        dsm.set_action_log_cache(
+            [
+                {
+                    "action": "set_light",
+                    "description": "Failed action",
+                    "timestamp": yesterday.isoformat(),
+                    "success": False,
+                }
+            ]
+        )
         result = dsm._resolve_temporal_reference("wie gestern", person="Max")
         assert result == ""
 
     def test_temporal_reference_skips_invalid_timestamp(self, dsm):
         dsm._redis = MagicMock()
-        dsm.set_action_log_cache([
-            {
-                "action": "set_light",
-                "timestamp": "invalid-date",
-                "success": True,
-            }
-        ])
+        dsm.set_action_log_cache(
+            [
+                {
+                    "action": "set_light",
+                    "timestamp": "invalid-date",
+                    "success": True,
+                }
+            ]
+        )
         result = dsm._resolve_temporal_reference("wie gestern", person="Max")
         assert result == ""
 
     def test_temporal_reference_deduplicates(self, dsm):
         from datetime import datetime, timedelta, timezone
+
         dsm._redis = MagicMock()
         now = datetime.now(timezone.utc)
         yesterday = now - timedelta(days=1)
-        dsm.set_action_log_cache([
-            {
-                "action": "set_light",
-                "description": "Licht an",
-                "timestamp": yesterday.isoformat(),
-                "success": True,
-            },
-            {
-                "action": "set_light",
-                "description": "Licht an",
-                "timestamp": (yesterday - timedelta(minutes=5)).isoformat(),
-                "success": True,
-            },
-        ])
+        dsm.set_action_log_cache(
+            [
+                {
+                    "action": "set_light",
+                    "description": "Licht an",
+                    "timestamp": yesterday.isoformat(),
+                    "success": True,
+                },
+                {
+                    "action": "set_light",
+                    "description": "Licht an",
+                    "timestamp": (yesterday - timedelta(minutes=5)).isoformat(),
+                    "success": True,
+                },
+            ]
+        )
         result = dsm._resolve_temporal_reference("wie gestern", person="Max")
         # Should deduplicate — "Licht an" appears only once
         assert result.count("Licht an") == 1
@@ -714,8 +763,11 @@ class TestEdgeCases:
         assert state.turn_count == 2
 
     def test_get_context_prompt_with_last_action(self, dsm):
-        dsm.track_turn("Licht an", person="Max",
-                        actions=[{"description": "Wohnzimmer Licht eingeschaltet"}])
+        dsm.track_turn(
+            "Licht an",
+            person="Max",
+            actions=[{"description": "Wohnzimmer Licht eingeschaltet"}],
+        )
         prompt = dsm.get_context_prompt("Max")
         assert "Letzte Aktion" in prompt
         assert "Wohnzimmer Licht eingeschaltet" in prompt
@@ -754,7 +806,10 @@ class TestEdgeCases:
 
     def test_start_clarification_caps_options(self, dsm):
         """start_clarification should cap options at max_clarification_options."""
-        dsm.start_clarification("Max", "Welches?",
-                                [f"opt_{i}" for i in range(10)], "text")
+        dsm.start_clarification(
+            "Max", "Welches?", [f"opt_{i}" for i in range(10)], "text"
+        )
         state = dsm._get_state("Max")
-        assert len(state.pending_clarification["options"]) <= dsm.max_clarification_options
+        assert (
+            len(state.pending_clarification["options"]) <= dsm.max_clarification_options
+        )

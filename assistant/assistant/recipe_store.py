@@ -56,10 +56,13 @@ class RecipeStore:
                 port=_parsed.port or 8000,
             )
             from .embeddings import get_embedding_function
+
             ef = get_embedding_function()
             col_kwargs = {
                 "name": "mha_recipes",
-                "metadata": {"description": "MindHome Assistant - Rezeptdatenbank (Kochmodus)"},
+                "metadata": {
+                    "description": "MindHome Assistant - Rezeptdatenbank (Kochmodus)"
+                },
             }
             if ef:
                 col_kwargs["embedding_function"] = ef
@@ -120,7 +123,9 @@ class RecipeStore:
             async with sem:
                 return await self.ingest_file(fp)
 
-        results = await asyncio.gather(*[_ingest_limited(fp) for fp in filepaths], return_exceptions=True)
+        results = await asyncio.gather(
+            *[_ingest_limited(fp) for fp in filepaths], return_exceptions=True
+        )
         total_chunks = sum(r for r in results if isinstance(r, int))
         for r in results:
             if isinstance(r, BaseException):
@@ -139,7 +144,9 @@ class RecipeStore:
             content = await asyncio.to_thread(KnowledgeBase._extract_pdf_text, filepath)
         else:
             try:
-                content = await asyncio.to_thread(filepath.read_text, encoding="utf-8", errors="ignore")
+                content = await asyncio.to_thread(
+                    filepath.read_text, encoding="utf-8", errors="ignore"
+                )
             except Exception as e:
                 logger.warning("Fehler beim Lesen von %s: %s", filepath.name, e)
                 return 0
@@ -179,12 +186,16 @@ class RecipeStore:
                 self._ingested_hashes.add(content_hash)
                 new_chunks += 1
             except Exception as e:
-                logger.debug("Fehler beim Speichern von Rezept-Chunk %s: %s", chunk_id, e)
+                logger.debug(
+                    "Fehler beim Speichern von Rezept-Chunk %s: %s", chunk_id, e
+                )
 
         if new_chunks > 0:
             logger.info(
                 "Recipe Store: %s -> %d/%d Chunks gespeichert",
-                filepath.name, new_chunks, len(chunks),
+                filepath.name,
+                new_chunks,
+                len(chunks),
             )
         return new_chunks
 
@@ -219,12 +230,14 @@ class RecipeStore:
                         if results.get("metadatas") and results["metadatas"][0]
                         else {}
                     )
-                    hits.append({
-                        "content": doc,
-                        "source": meta.get("source_file", "unbekannt"),
-                        "relevance": round(1.0 - min(distance, 1.0), 2),
-                        "distance": round(distance, 3),
-                    })
+                    hits.append(
+                        {
+                            "content": doc,
+                            "source": meta.get("source_file", "unbekannt"),
+                            "relevance": round(1.0 - min(distance, 1.0), 2),
+                            "distance": round(distance, 3),
+                        }
+                    )
 
             return hits
         except Exception as e:
@@ -239,7 +252,8 @@ class RecipeStore:
         try:
             total = await asyncio.to_thread(self.chroma_collection.count)
             existing = await asyncio.to_thread(
-                self.chroma_collection.get, include=["metadatas"],
+                self.chroma_collection.get,
+                include=["metadatas"],
             )
             sources = set()
             if existing and existing.get("metadatas"):
@@ -256,7 +270,9 @@ class RecipeStore:
             logger.error("Fehler bei Recipe-Stats: %s", e)
             return {"enabled": True, "total_chunks": 0, "sources": []}
 
-    async def get_chunks(self, source: str = "", offset: int = 0, limit: int = 50) -> list[dict]:
+    async def get_chunks(
+        self, source: str = "", offset: int = 0, limit: int = 50
+    ) -> list[dict]:
         """Gibt alle Rezept-Chunks zurueck (optional gefiltert nach Quelle)."""
         if not self.chroma_collection:
             return []
@@ -279,15 +295,17 @@ class RecipeStore:
                 for i, chunk_id in enumerate(results["ids"]):
                     doc = results["documents"][i] if results.get("documents") else ""
                     meta = results["metadatas"][i] if results.get("metadatas") else {}
-                    chunks.append({
-                        "id": chunk_id,
-                        "content": doc[:200] + ("..." if len(doc) > 200 else ""),
-                        "content_full": doc,
-                        "source": meta.get("source_file", "unbekannt"),
-                        "chunk_index": meta.get("chunk_index", 0),
-                    })
+                    chunks.append(
+                        {
+                            "id": chunk_id,
+                            "content": doc[:200] + ("..." if len(doc) > 200 else ""),
+                            "content_full": doc,
+                            "source": meta.get("source_file", "unbekannt"),
+                            "chunk_index": meta.get("chunk_index", 0),
+                        }
+                    )
             chunks.sort(key=lambda c: (c["source"], int(c.get("chunk_index", 0))))
-            return chunks[offset:offset + limit]
+            return chunks[offset : offset + limit]
         except Exception as e:
             logger.error("Fehler beim Laden der Rezept-Chunks: %s", e)
             return []
@@ -320,15 +338,21 @@ class RecipeStore:
                 return 0
 
             chunk_ids = results["ids"]
-            for meta in (results.get("metadatas") or []):
+            for meta in results.get("metadatas") or []:
                 h = meta.get("content_hash", "")
                 self._ingested_hashes.discard(h)
 
             await asyncio.to_thread(self.chroma_collection.delete, ids=chunk_ids)
-            logger.info("Recipe Store: %d Chunks von '%s' geloescht", len(chunk_ids), source_file)
+            logger.info(
+                "Recipe Store: %d Chunks von '%s' geloescht",
+                len(chunk_ids),
+                source_file,
+            )
             return len(chunk_ids)
         except Exception as e:
-            logger.error("Fehler beim Loeschen von Rezept-Quelle '%s': %s", source_file, e)
+            logger.error(
+                "Fehler beim Loeschen von Rezept-Quelle '%s': %s", source_file, e
+            )
             return 0
 
     async def reingest_file(self, filename: str) -> int:
@@ -355,12 +379,17 @@ class RecipeStore:
             return False
 
         try:
-            await asyncio.to_thread(self._chroma_client.delete_collection, "mha_recipes")
+            await asyncio.to_thread(
+                self._chroma_client.delete_collection, "mha_recipes"
+            )
             from .embeddings import get_embedding_function
+
             ef = get_embedding_function()
             col_kwargs = {
                 "name": "mha_recipes",
-                "metadata": {"description": "MindHome Assistant - Rezeptdatenbank (Kochmodus)"},
+                "metadata": {
+                    "description": "MindHome Assistant - Rezeptdatenbank (Kochmodus)"
+                },
             }
             if ef:
                 col_kwargs["embedding_function"] = ef
@@ -378,10 +407,14 @@ class RecipeStore:
         """Loescht die Collection und liest alle Rezepte mit dem aktuellen Embedding-Modell neu ein."""
         cleared = await self.clear()
         if not cleared:
-            return {"success": False, "error": "Collection konnte nicht geloescht werden"}
+            return {
+                "success": False,
+                "error": "Collection konnte nicht geloescht werden",
+            }
 
         new_chunks = await self.ingest_all()
         from .embeddings import DEFAULT_MODEL
+
         rec_config = yaml_config.get("recipe_store", {})
         model = rec_config.get("embedding_model", DEFAULT_MODEL)
         return {

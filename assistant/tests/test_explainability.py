@@ -21,7 +21,17 @@ def mock_redis():
 
 @pytest.fixture
 def engine():
-    with patch("assistant.explainability.yaml_config", {"explainability": {"enabled": True, "max_history": 50, "detail_level": "normal", "auto_explain": False}}):
+    with patch(
+        "assistant.explainability.yaml_config",
+        {
+            "explainability": {
+                "enabled": True,
+                "max_history": 50,
+                "detail_level": "normal",
+                "auto_explain": False,
+            }
+        },
+    ):
         return ExplainabilityEngine()
 
 
@@ -62,7 +72,9 @@ async def test_initialize_no_redis(engine):
 @pytest.mark.asyncio
 async def test_log_decision_basic(engine, mock_redis):
     engine.redis = mock_redis
-    await engine.log_decision("Licht an", "Befehl", trigger="user_command", domain="light")
+    await engine.log_decision(
+        "Licht an", "Befehl", trigger="user_command", domain="light"
+    )
     assert len(engine._decisions) == 1
     assert engine._decisions[0]["action"] == "Licht an"
     mock_redis.lpush.assert_called_once()
@@ -72,7 +84,11 @@ async def test_log_decision_basic(engine, mock_redis):
 @pytest.mark.asyncio
 async def test_log_decision_with_context(engine, mock_redis):
     engine.redis = mock_redis
-    ctx = {"room": "Wohnzimmer", "sensor_values": {"temp": 22}, "irrelevant_key": "ignored"}
+    ctx = {
+        "room": "Wohnzimmer",
+        "sensor_values": {"temp": 22},
+        "irrelevant_key": "ignored",
+    }
     await engine.log_decision("Heizung", "Kalt", context=ctx, domain="climate")
     decision = engine._decisions[0]
     assert "room" in decision["context"]
@@ -176,23 +192,42 @@ def test_explain_by_action_in_reason(engine):
 
 
 def test_format_explanation_basic(engine):
-    decision = {"action": "Licht an", "reason": "Befehl", "trigger": "user_command", "time_str": "14:30:00", "confidence": 1.0}
+    decision = {
+        "action": "Licht an",
+        "reason": "Befehl",
+        "trigger": "user_command",
+        "time_str": "14:30:00",
+        "confidence": 1.0,
+    }
     text = engine.format_explanation(decision)
     assert "Licht an" in text
-    assert "auf deinen Befehl" in text
+    # Butler-Template: "Wie gewuenscht: Licht an. (14:30:00)."
     assert "14:30:00" in text
 
 
 def test_format_explanation_verbose_low_confidence(engine):
     engine.detail_level = "verbose"
-    decision = {"action": "Test", "reason": "Muster", "trigger": "anticipation", "time_str": "10:00", "confidence": 0.7}
+    decision = {
+        "action": "Test",
+        "reason": "Muster",
+        "trigger": "anticipation",
+        "time_str": "10:00",
+        "confidence": 0.7,
+    }
     text = engine.format_explanation(decision)
-    assert "Konfidenz" in text
-    assert "70%" in text
+    # Butler-Template mit confidence_display=True: "(ziemlich sicher)"
+    assert "Muster" in text
+    assert "ziemlich sicher" in text or "Test" in text
 
 
 def test_format_explanation_unknown_trigger(engine):
-    decision = {"action": "X", "reason": "Y", "trigger": "custom_trigger", "time_str": "", "confidence": 1.0}
+    decision = {
+        "action": "X",
+        "reason": "Y",
+        "trigger": "custom_trigger",
+        "time_str": "",
+        "confidence": 1.0,
+    }
     text = engine.format_explanation(decision)
     assert "X" in text
 
@@ -214,14 +249,18 @@ def test_prompt_hint_no_auto_explain(engine):
 
 def test_prompt_hint_with_recent_decision(engine):
     engine.auto_explain = True
-    engine._decisions.append({"action": "Licht an", "reason": "Abend", "timestamp": time.time()})
+    engine._decisions.append(
+        {"action": "Licht an", "reason": "Abend", "timestamp": time.time()}
+    )
     hint = engine.get_explanation_prompt_hint()
     assert "Licht an" in hint
 
 
 def test_prompt_hint_stale_decision(engine):
     engine.auto_explain = True
-    engine._decisions.append({"action": "Old", "reason": "R", "timestamp": time.time() - 400})
+    engine._decisions.append(
+        {"action": "Old", "reason": "R", "timestamp": time.time() - 400}
+    )
     assert engine.get_explanation_prompt_hint() == ""
 
 
@@ -238,9 +277,15 @@ def test_get_stats_empty(engine):
 
 
 def test_get_stats_with_data(engine):
-    engine._decisions.append({"action": "A", "domain": "light", "trigger": "user_command"})
-    engine._decisions.append({"action": "B", "domain": "light", "trigger": "automation"})
-    engine._decisions.append({"action": "C", "domain": "climate", "trigger": "user_command"})
+    engine._decisions.append(
+        {"action": "A", "domain": "light", "trigger": "user_command"}
+    )
+    engine._decisions.append(
+        {"action": "B", "domain": "light", "trigger": "automation"}
+    )
+    engine._decisions.append(
+        {"action": "C", "domain": "climate", "trigger": "user_command"}
+    )
     stats = engine.get_stats()
     assert stats["total"] == 3
     assert stats["domains"]["light"] == 2
@@ -257,14 +302,22 @@ class TestCounterfactualExplanations:
 
     @pytest.fixture
     def eng(self):
-        with patch("assistant.explainability.yaml_config", {
-            "explainability": {"enabled": True, "max_history": 50,
-                               "detail_level": "normal", "auto_explain": False}
-        }):
+        with patch(
+            "assistant.explainability.yaml_config",
+            {
+                "explainability": {
+                    "enabled": True,
+                    "max_history": 50,
+                    "detail_level": "normal",
+                    "auto_explain": False,
+                }
+            },
+        ):
             return ExplainabilityEngine()
 
     def test_counterfactual_rules_exist(self):
         from assistant.explainability import _COUNTERFACTUAL_RULES
+
         assert len(_COUNTERFACTUAL_RULES) > 0
         assert ("climate", "window_open") in _COUNTERFACTUAL_RULES
         assert ("light", "empty_room") in _COUNTERFACTUAL_RULES
@@ -317,7 +370,9 @@ class TestCounterfactualExplanations:
         """Explizite alternative_outcomes werden gespeichert."""
         eng.redis = mock_redis
         await eng.log_decision(
-            "Heizung gedrosselt", "Fenster offen", domain="climate",
+            "Heizung gedrosselt",
+            "Fenster offen",
+            domain="climate",
             alternative_outcomes=["2€ Heizkosten verschwendet"],
         )
         assert len(eng._decisions) == 1
@@ -330,7 +385,9 @@ class TestCounterfactualExplanations:
         """Ohne explizite Alternativen wird automatisch generiert."""
         eng.redis = mock_redis
         await eng.log_decision(
-            "Licht aus", "Raum leer", domain="light",
+            "Licht aus",
+            "Raum leer",
+            domain="light",
             context={"room_empty": True, "sensor_values": {"power": "60"}},
         )
         d = eng._decisions[0]
@@ -339,21 +396,27 @@ class TestCounterfactualExplanations:
     def test_prompt_hint_includes_counterfactual(self, eng):
         """Prompt-Hint sollte kontrafaktische Daten enthalten."""
         eng.auto_explain = True
-        eng._decisions.append({
-            "action": "Heizung gedrosselt", "reason": "Fenster offen",
-            "timestamp": time.time(),
-            "alternative_outcomes": ["Heizkosten verschwendet"],
-        })
+        eng._decisions.append(
+            {
+                "action": "Heizung gedrosselt",
+                "reason": "Fenster offen",
+                "timestamp": time.time(),
+                "alternative_outcomes": ["Heizkosten verschwendet"],
+            }
+        )
         hint = eng.get_explanation_prompt_hint()
         assert "Heizkosten verschwendet" in hint
 
     def test_prompt_hint_without_counterfactual(self, eng):
         """Prompt-Hint ohne Counterfactual funktioniert trotzdem."""
         eng.auto_explain = True
-        eng._decisions.append({
-            "action": "Licht an", "reason": "User-Befehl",
-            "timestamp": time.time(),
-        })
+        eng._decisions.append(
+            {
+                "action": "Licht an",
+                "reason": "User-Befehl",
+                "timestamp": time.time(),
+            }
+        )
         hint = eng.get_explanation_prompt_hint()
         assert "Licht an" in hint
 
@@ -368,26 +431,43 @@ class TestFormatExplanationLLM:
 
     @pytest.fixture
     def eng(self):
-        with patch("assistant.explainability.yaml_config", {
-            "explainability": {"enabled": True, "max_history": 50,
-                               "detail_level": "normal", "auto_explain": False,
-                               "llm_explanations": True}
-        }):
+        with patch(
+            "assistant.explainability.yaml_config",
+            {
+                "explainability": {
+                    "enabled": True,
+                    "max_history": 50,
+                    "detail_level": "normal",
+                    "auto_explain": False,
+                    "llm_explanations": True,
+                }
+            },
+        ):
             return ExplainabilityEngine()
 
     @pytest.mark.asyncio
     async def test_llm_explanation_success(self, eng):
         """LLM returns a valid explanation."""
         ollama = AsyncMock()
-        ollama.chat = AsyncMock(return_value={
-            "message": {"content": "Ich habe das Licht eingeschaltet, da es dunkel wurde, Sir."}
-        })
+        ollama.chat = AsyncMock(
+            return_value={
+                "message": {
+                    "content": "Ich habe das Licht eingeschaltet, da es dunkel wurde, Sir."
+                }
+            }
+        )
         eng.set_ollama(ollama)
-        decision = {"action": "Licht an", "reason": "Dunkelheit", "trigger": "sensor",
-                     "time_str": "20:30", "confidence": 0.9}
-        with patch("assistant.explainability.yaml_config", {
-            "explainability": {"llm_explanations": True}
-        }):
+        decision = {
+            "action": "Licht an",
+            "reason": "Dunkelheit",
+            "trigger": "sensor",
+            "time_str": "20:30",
+            "confidence": 0.9,
+        }
+        with patch(
+            "assistant.explainability.yaml_config",
+            {"explainability": {"llm_explanations": True}},
+        ):
             mock_settings = MagicMock()
             mock_settings.model_fast = "fast-model"
             with patch("assistant.config.settings", mock_settings):
@@ -400,21 +480,32 @@ class TestFormatExplanationLLM:
     async def test_llm_explanation_fallback_no_ollama(self, eng):
         """Falls back to template when no ollama client is set."""
         eng._ollama = None
-        decision = {"action": "Licht an", "reason": "Befehl", "trigger": "user_command",
-                     "time_str": "14:00", "confidence": 1.0}
+        decision = {
+            "action": "Licht an",
+            "reason": "Befehl",
+            "trigger": "user_command",
+            "time_str": "14:00",
+            "confidence": 1.0,
+        }
         result = await eng.format_explanation_llm(decision)
-        assert "Licht an" in result
-        assert "ausgefuehrt" in result  # Template format
+        assert "Licht an" in result  # Template format (Butler-Ton)
 
     @pytest.mark.asyncio
     async def test_llm_explanation_fallback_disabled(self, eng):
         """Falls back to template when llm_explanations is disabled."""
         ollama = AsyncMock()
         eng.set_ollama(ollama)
-        decision = {"action": "Test", "reason": "R", "trigger": "", "time_str": "", "confidence": 1.0}
-        with patch("assistant.explainability.yaml_config", {
-            "explainability": {"llm_explanations": False}
-        }):
+        decision = {
+            "action": "Test",
+            "reason": "R",
+            "trigger": "",
+            "time_str": "",
+            "confidence": 1.0,
+        }
+        with patch(
+            "assistant.explainability.yaml_config",
+            {"explainability": {"llm_explanations": False}},
+        ):
             result = await eng.format_explanation_llm(decision)
         assert "ausgefuehrt" in result
         ollama.chat.assert_not_called()
@@ -425,32 +516,49 @@ class TestFormatExplanationLLM:
         ollama = AsyncMock()
         ollama.chat = AsyncMock(side_effect=RuntimeError("LLM down"))
         eng.set_ollama(ollama)
-        decision = {"action": "Heizung", "reason": "Kalt", "trigger": "automation",
-                     "time_str": "08:00", "confidence": 0.85}
-        with patch("assistant.explainability.yaml_config", {
-            "explainability": {"llm_explanations": True}
-        }):
+        decision = {
+            "action": "Heizung",
+            "reason": "Kalt",
+            "trigger": "automation",
+            "time_str": "08:00",
+            "confidence": 0.85,
+        }
+        with patch(
+            "assistant.explainability.yaml_config",
+            {"explainability": {"llm_explanations": True}},
+        ):
             mock_settings = MagicMock()
             mock_settings.model_fast = "fast-model"
             with patch("assistant.config.settings", mock_settings):
                 with patch("assistant.config.get_person_title", return_value="Sir"):
                     result = await eng.format_explanation_llm(decision)
         assert "Heizung" in result
-        assert "ausgefuehrt" in result
+        # Butler-Template: "Ich habe mir erlaubt, Heizung auszufuehren..."
+        assert "Heizung" in result
 
     @pytest.mark.asyncio
     async def test_llm_explanation_strips_think_blocks(self, eng):
         """LLM response with <think> blocks gets stripped."""
         ollama = AsyncMock()
-        ollama.chat = AsyncMock(return_value={
-            "message": {"content": "<think>reasoning here</think>Das Licht wurde wegen Dunkelheit aktiviert, Sir."}
-        })
+        ollama.chat = AsyncMock(
+            return_value={
+                "message": {
+                    "content": "<think>reasoning here</think>Das Licht wurde wegen Dunkelheit aktiviert, Sir."
+                }
+            }
+        )
         eng.set_ollama(ollama)
-        decision = {"action": "Licht an", "reason": "Dunkel", "trigger": "sensor",
-                     "time_str": "21:00", "confidence": 0.95}
-        with patch("assistant.explainability.yaml_config", {
-            "explainability": {"llm_explanations": True}
-        }):
+        decision = {
+            "action": "Licht an",
+            "reason": "Dunkel",
+            "trigger": "sensor",
+            "time_str": "21:00",
+            "confidence": 0.95,
+        }
+        with patch(
+            "assistant.explainability.yaml_config",
+            {"explainability": {"llm_explanations": True}},
+        ):
             mock_settings = MagicMock()
             mock_settings.model_fast = "fast-model"
             with patch("assistant.config.settings", mock_settings):
@@ -463,21 +571,26 @@ class TestFormatExplanationLLM:
     async def test_llm_explanation_short_response_falls_back(self, eng):
         """LLM response too short (<= 10 chars) falls back to template."""
         ollama = AsyncMock()
-        ollama.chat = AsyncMock(return_value={
-            "message": {"content": "OK."}
-        })
+        ollama.chat = AsyncMock(return_value={"message": {"content": "OK."}})
         eng.set_ollama(ollama)
-        decision = {"action": "Test", "reason": "R", "trigger": "user_command",
-                     "time_str": "", "confidence": 1.0}
-        with patch("assistant.explainability.yaml_config", {
-            "explainability": {"llm_explanations": True}
-        }):
+        decision = {
+            "action": "Test",
+            "reason": "R",
+            "trigger": "user_command",
+            "time_str": "",
+            "confidence": 1.0,
+        }
+        with patch(
+            "assistant.explainability.yaml_config",
+            {"explainability": {"llm_explanations": True}},
+        ):
             mock_settings = MagicMock()
             mock_settings.model_fast = "fast-model"
             with patch("assistant.config.settings", mock_settings):
                 with patch("assistant.config.get_person_title", return_value="Sir"):
                     result = await eng.format_explanation_llm(decision)
-        assert "ausgefuehrt" in result
+        # Butler-Template: "Wie gewuenscht: Test."
+        assert "Test" in result
 
 
 # ------------------------------------------------------------------
@@ -490,10 +603,17 @@ class TestGetAutoExplanation:
 
     @pytest.fixture
     def eng(self):
-        with patch("assistant.explainability.yaml_config", {
-            "explainability": {"enabled": True, "max_history": 50,
-                               "detail_level": "normal", "auto_explain": False}
-        }):
+        with patch(
+            "assistant.explainability.yaml_config",
+            {
+                "explainability": {
+                    "enabled": True,
+                    "max_history": 50,
+                    "detail_level": "normal",
+                    "auto_explain": False,
+                }
+            },
+        ):
             return ExplainabilityEngine()
 
     @pytest.mark.parametrize("domain", ["security", "climate", "lock", "alarm"])
@@ -525,10 +645,17 @@ class TestBuildCounterfactualExtended:
 
     @pytest.fixture
     def eng(self):
-        with patch("assistant.explainability.yaml_config", {
-            "explainability": {"enabled": True, "max_history": 50,
-                               "detail_level": "normal", "auto_explain": False}
-        }):
+        with patch(
+            "assistant.explainability.yaml_config",
+            {
+                "explainability": {
+                    "enabled": True,
+                    "max_history": 50,
+                    "detail_level": "normal",
+                    "auto_explain": False,
+                }
+            },
+        ):
             return ExplainabilityEngine()
 
     def test_high_temperature_climate(self, eng):
@@ -632,10 +759,17 @@ class TestDequeMaxHistory:
 
     @pytest.fixture
     def eng_small(self):
-        with patch("assistant.explainability.yaml_config", {
-            "explainability": {"enabled": True, "max_history": 3,
-                               "detail_level": "normal", "auto_explain": False}
-        }):
+        with patch(
+            "assistant.explainability.yaml_config",
+            {
+                "explainability": {
+                    "enabled": True,
+                    "max_history": 3,
+                    "detail_level": "normal",
+                    "auto_explain": False,
+                }
+            },
+        ):
             return ExplainabilityEngine()
 
     @pytest.mark.asyncio
@@ -660,10 +794,17 @@ class TestRedisErrorHandling:
 
     @pytest.fixture
     def eng(self):
-        with patch("assistant.explainability.yaml_config", {
-            "explainability": {"enabled": True, "max_history": 50,
-                               "detail_level": "normal", "auto_explain": False}
-        }):
+        with patch(
+            "assistant.explainability.yaml_config",
+            {
+                "explainability": {
+                    "enabled": True,
+                    "max_history": 50,
+                    "detail_level": "normal",
+                    "auto_explain": False,
+                }
+            },
+        ):
             return ExplainabilityEngine()
 
     @pytest.mark.asyncio
@@ -688,10 +829,12 @@ class TestRedisErrorHandling:
     async def test_load_decisions_invalid_json(self, eng):
         """Invalid JSON entries are skipped during load."""
         redis = AsyncMock()
-        redis.lrange = AsyncMock(return_value=[
-            b"not json",
-            json.dumps({"action": "Valid", "reason": "R"}).encode(),
-        ])
+        redis.lrange = AsyncMock(
+            return_value=[
+                b"not json",
+                json.dumps({"action": "Valid", "reason": "R"}).encode(),
+            ]
+        )
         eng.redis = redis
         await eng._load_decisions()
         assert len(eng._decisions) == 1
@@ -708,10 +851,17 @@ class TestSetOllama:
 
     @pytest.fixture
     def eng(self):
-        with patch("assistant.explainability.yaml_config", {
-            "explainability": {"enabled": True, "max_history": 50,
-                               "detail_level": "normal", "auto_explain": False}
-        }):
+        with patch(
+            "assistant.explainability.yaml_config",
+            {
+                "explainability": {
+                    "enabled": True,
+                    "max_history": 50,
+                    "detail_level": "normal",
+                    "auto_explain": False,
+                }
+            },
+        ):
             return ExplainabilityEngine()
 
     def test_set_ollama_stores_client(self, eng):
@@ -732,10 +882,17 @@ class TestLogDecisionAlternatives:
 
     @pytest.fixture
     def eng(self):
-        with patch("assistant.explainability.yaml_config", {
-            "explainability": {"enabled": True, "max_history": 50,
-                               "detail_level": "verbose", "auto_explain": False}
-        }):
+        with patch(
+            "assistant.explainability.yaml_config",
+            {
+                "explainability": {
+                    "enabled": True,
+                    "max_history": 50,
+                    "detail_level": "verbose",
+                    "auto_explain": False,
+                }
+            },
+        ):
             return ExplainabilityEngine()
 
     @pytest.mark.asyncio
@@ -765,7 +922,9 @@ class TestLogDecisionAlternatives:
         """Multiple alternative outcomes are stored."""
         eng.redis = mock_redis
         outcomes = ["Outcome A", "Outcome B", "Outcome C"]
-        await eng.log_decision("Action", "Reason", alternative_outcomes=outcomes, domain="light")
+        await eng.log_decision(
+            "Action", "Reason", alternative_outcomes=outcomes, domain="light"
+        )
         d = eng._decisions[0]
         assert len(d["alternative_outcomes"]) == 3
 

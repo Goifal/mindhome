@@ -69,7 +69,9 @@ class TaskRegistry:
             logger.warning(
                 "TaskRegistry Backpressure: %d aktive Tasks (Limit %d) — "
                 "Task '%s' abgelehnt",
-                active_count, self.MAX_ACTIVE_TASKS, name,
+                active_count,
+                self.MAX_ACTIVE_TASKS,
+                name,
             )
             coro.close()
             raise RuntimeError(
@@ -110,7 +112,9 @@ class TaskRegistry:
         if exc:
             logger.error(
                 "Background-Task '%s' fehlgeschlagen: %s",
-                name, exc, exc_info=exc,
+                name,
+                exc,
+                exc_info=exc,
             )
             # Watchdog: Persistente Tasks automatisch neustarten
             if name in self._persistent and not self._shutting_down:
@@ -121,7 +125,10 @@ class TaskRegistry:
                     logger.warning(
                         "Watchdog: Task '%s' wird in %.0fs neugestartet "
                         "(Versuch %d/%d)",
-                        name, backoff, count, self._MAX_RESTARTS,
+                        name,
+                        backoff,
+                        count,
+                        self._MAX_RESTARTS,
                     )
                     # Reset Zaehler wenn letzter Restart >5min her (transient error)
                     last = self._last_restart.get(name, 0)
@@ -132,12 +139,15 @@ class TaskRegistry:
                     self._last_restart[name] = time.monotonic()
                     asyncio.get_event_loop().call_later(
                         backoff,
-                        lambda n=name: asyncio.ensure_future(self._restart_persistent(n)),
+                        lambda n=name: asyncio.ensure_future(
+                            self._restart_persistent(n)
+                        ),
                     )
                 else:
                     logger.error(
                         "Watchdog: Task '%s' hat %d Restarts erreicht — aufgegeben",
-                        name, self._MAX_RESTARTS,
+                        name,
+                        self._MAX_RESTARTS,
                     )
 
     async def _restart_persistent(self, name: str) -> None:
@@ -206,15 +216,25 @@ class TaskRegistry:
                 timeout=timeout,  # T2: Shutdown-Timeout
             )
         except asyncio.TimeoutError:
-            logger.warning("T2: TaskRegistry shutdown timeout (%.0fs) — %d Tasks liefen noch", timeout, len(active))
+            logger.warning(
+                "T2: TaskRegistry shutdown timeout (%.0fs) — %d Tasks liefen noch",
+                timeout,
+                len(active),
+            )
             results = [asyncio.TimeoutError()] * len(active)
 
         cancelled = sum(1 for r in results if isinstance(r, asyncio.CancelledError))
-        errors = sum(1 for r in results if isinstance(r, Exception) and not isinstance(r, asyncio.CancelledError))
+        errors = sum(
+            1
+            for r in results
+            if isinstance(r, Exception) and not isinstance(r, asyncio.CancelledError)
+        )
 
         logger.info(
             "TaskRegistry: %d Tasks beendet (%d cancelled, %d Fehler)",
-            len(active), cancelled, errors,
+            len(active),
+            cancelled,
+            errors,
         )
 
         self._tasks.clear()
@@ -223,11 +243,13 @@ class TaskRegistry:
         """Status fuer Diagnostik/Metrics."""
         active = []
         for name, task in self._tasks.items():
-            active.append({
-                "name": name,
-                "done": task.done(),
-                "cancelled": task.cancelled() if task.done() else False,
-            })
+            active.append(
+                {
+                    "name": name,
+                    "done": task.done(),
+                    "cancelled": task.cancelled() if task.done() else False,
+                }
+            )
         return {
             "total_registered": len(self._tasks),
             "active": len([t for t in active if not t["done"]]),

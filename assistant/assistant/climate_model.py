@@ -26,12 +26,12 @@ logger = logging.getLogger(__name__)
 
 # Typische thermische Eigenschaften (vereinfacht)
 DEFAULT_ROOM_THERMAL = {
-    "heat_loss_coefficient": 0.015,   # Waermeverlust pro Minute pro Grad Delta (gut isoliert)
-    "heating_power_per_min": 0.08,    # Grad pro Minute bei voller Heizleistung
-    "cooling_power_per_min": 0.1,     # Grad pro Minute bei voller Kuehlung
-    "window_open_factor": 5.0,        # Multiplikator fuer Waermeverlust bei offenem Fenster
-    "sun_gain_per_min": 0.02,         # Grad pro Minute bei direkter Sonneneinstrahlung
-    "thermal_mass_factor": 1.0,       # Traegheit (1.0 = normal, >1 = schwerer Beton)
+    "heat_loss_coefficient": 0.015,  # Waermeverlust pro Minute pro Grad Delta (gut isoliert)
+    "heating_power_per_min": 0.08,  # Grad pro Minute bei voller Heizleistung
+    "cooling_power_per_min": 0.1,  # Grad pro Minute bei voller Kuehlung
+    "window_open_factor": 5.0,  # Multiplikator fuer Waermeverlust bei offenem Fenster
+    "sun_gain_per_min": 0.02,  # Grad pro Minute bei direkter Sonneneinstrahlung
+    "thermal_mass_factor": 1.0,  # Traegheit (1.0 = normal, >1 = schwerer Beton)
 }
 
 
@@ -122,15 +122,24 @@ class ClimateModel:
         if not self.enabled:
             return {"error": "Climate Model deaktiviert"}
 
-        if state.current_temp < CLIMATE_TEMP_MIN or state.current_temp > CLIMATE_TEMP_MAX:
+        if (
+            state.current_temp < CLIMATE_TEMP_MIN
+            or state.current_temp > CLIMATE_TEMP_MAX
+        ):
             logger.warning(
                 "Temperatur ausserhalb des normalen Bereichs (%.0f-%.0f°C) in %s: %.1f°C",
-                CLIMATE_TEMP_MIN, CLIMATE_TEMP_MAX, state.room, state.current_temp,
+                CLIMATE_TEMP_MIN,
+                CLIMATE_TEMP_MAX,
+                state.room,
+                state.current_temp,
             )
         if state.target_temp < CLIMATE_TEMP_MIN or state.target_temp > CLIMATE_TEMP_MAX:
             logger.warning(
                 "Zieltemperatur ausserhalb des normalen Bereichs (%.0f-%.0f°C) in %s: %.1f°C",
-                CLIMATE_TEMP_MIN, CLIMATE_TEMP_MAX, state.room, state.target_temp,
+                CLIMATE_TEMP_MIN,
+                CLIMATE_TEMP_MAX,
+                state.room,
+                state.target_temp,
             )
 
         duration = min(duration_minutes, self.max_simulation_minutes)
@@ -154,11 +163,16 @@ class ClimateModel:
             if "set_target" in changes:
                 target = changes["set_target"]
                 if not (CLIMATE_TEMP_MIN <= target <= CLIMATE_TEMP_MAX):
-                    logger.warning("Temperature %.1f°C is outside recommended range (5-35°C)", target)
+                    logger.warning(
+                        "Temperature %.1f°C is outside recommended range (5-35°C)",
+                        target,
+                    )
             if changes.get("close_windows"):
                 sim_state.windows_open = 0
             if changes.get("open_windows"):
-                sim_state.windows_open = max(1, sim_state.windows_open + changes.get("open_windows", 1))
+                sim_state.windows_open = max(
+                    1, sim_state.windows_open + changes.get("open_windows", 1)
+                )
             if "set_target" in changes:
                 sim_state.target_temp = changes["set_target"]
             if changes.get("heating_off"):
@@ -235,9 +249,14 @@ class ClimateModel:
 
         # Beschreibung generieren
         description = self._generate_description(
-            state, sim_state, changes or {},
-            final_temp, temp_change, duration,
-            reached_target, time_to_target,
+            state,
+            sim_state,
+            changes or {},
+            final_temp,
+            temp_change,
+            duration,
+            reached_target,
+            time_to_target,
         )
 
         return {
@@ -298,6 +317,7 @@ class ClimateModel:
 
         # Zieltemperatur
         import re
+
         temp_match = re.search(r"(\d{1,2})[°\s]*(grad|c)?", q)
         if temp_match:
             target = int(temp_match.group(1))
@@ -370,7 +390,11 @@ class ClimateModel:
                 )
 
             if abs(room_state.current_temp - room_state.target_temp) > 3:
-                direction = "steigt" if room_state.current_temp < room_state.target_temp else "sinkt"
+                direction = (
+                    "steigt"
+                    if room_state.current_temp < room_state.target_temp
+                    else "sinkt"
+                )
                 hints.append(
                     f"{room_state.room}: Temperatur {direction} "
                     f"(aktuell: {room_state.current_temp}°C, Ziel: {room_state.target_temp}°C)."
@@ -433,7 +457,9 @@ class ClimateModel:
         heating_active = scenario not in ("heating_off",)
         windows_open = 1 if scenario == "windows_open" else 0
         # Geschlossene Rolladen reduzieren Waermeverlust um ca. 30%
-        cover_factor = CLIMATE_COVER_HEAT_FACTOR if scenario == "all_covers_closed" else 1.0
+        cover_factor = (
+            CLIMATE_COVER_HEAT_FACTOR if scenario == "all_covers_closed" else 1.0
+        )
 
         for minute in range(step_minutes, total_minutes + step_minutes, step_minutes):
             delta = outdoor_temp - temp
@@ -468,7 +494,11 @@ class ClimateModel:
 
         # Empfehlung generieren
         recommendation = self._generate_scenario_recommendation(
-            scenario, min_temp, time_to_critical, critical_temp, outdoor_temp,
+            scenario,
+            min_temp,
+            time_to_critical,
+            critical_temp,
+            outdoor_temp,
         )
 
         return {
@@ -567,8 +597,19 @@ class ClimateModel:
         normal_target = CLIMATE_COMFORT_DEFAULT
         normal_delta = normal_target - outdoor_temp
         # Heizanteil: wie viel % der Zeit muss geheizt werden
-        normal_duty = min(1.0, max(0.0, normal_delta * thermal["heat_loss_coefficient"] /
-                                   thermal["heating_power_per_min"])) if normal_delta > 0 else 0.0
+        normal_duty = (
+            min(
+                1.0,
+                max(
+                    0.0,
+                    normal_delta
+                    * thermal["heat_loss_coefficient"]
+                    / thermal["heating_power_per_min"],
+                ),
+            )
+            if normal_delta > 0
+            else 0.0
+        )
         normal_kwh = base_heating_kw * normal_duty * duration_hours
 
         # Szenario-Verbrauch berechnen
@@ -577,8 +618,19 @@ class ClimateModel:
         elif scenario == "vacation_3days":
             vacation_target = CLIMATE_VACATION_TARGET
             vacation_delta = vacation_target - outdoor_temp
-            vacation_duty = min(1.0, max(0.0, vacation_delta * thermal["heat_loss_coefficient"] /
-                                         thermal["heating_power_per_min"])) if vacation_delta > 0 else 0.0
+            vacation_duty = (
+                min(
+                    1.0,
+                    max(
+                        0.0,
+                        vacation_delta
+                        * thermal["heat_loss_coefficient"]
+                        / thermal["heating_power_per_min"],
+                    ),
+                )
+                if vacation_delta > 0
+                else 0.0
+            )
             scenario_kwh = base_heating_kw * vacation_duty * duration_hours
         elif scenario == "windows_open":
             # Fenster offen: mehr Waermeverlust, Heizung muss mehr arbeiten
@@ -594,8 +646,9 @@ class ClimateModel:
 
         scenario_kwh = round(scenario_kwh, 1)
         cost_eur = round(scenario_kwh * price_per_kwh, 2)
-        vs_normal_pct = round(((scenario_kwh - normal_kwh) / normal_kwh * 100)
-                              if normal_kwh > 0 else 0)
+        vs_normal_pct = round(
+            ((scenario_kwh - normal_kwh) / normal_kwh * 100) if normal_kwh > 0 else 0
+        )
 
         return {
             "kwh_total": scenario_kwh,
@@ -648,16 +701,28 @@ class ClimateModel:
 
         # Temperaturverlauf
         if abs(temp_change) < 0.5:
-            parts.append(f"Die Temperatur bleibt in {duration} Minuten bei ca. {final_temp}°C.")
+            parts.append(
+                f"Die Temperatur bleibt in {duration} Minuten bei ca. {final_temp}°C."
+            )
         elif temp_change > 0:
-            parts.append(f"Die Temperatur steigt in {duration} Minuten von {original.current_temp}°C auf {final_temp}°C (+{temp_change}°C).")
+            parts.append(
+                f"Die Temperatur steigt in {duration} Minuten von {original.current_temp}°C auf {final_temp}°C (+{temp_change}°C)."
+            )
         else:
-            parts.append(f"Die Temperatur sinkt in {duration} Minuten von {original.current_temp}°C auf {final_temp}°C ({temp_change}°C).")
+            parts.append(
+                f"Die Temperatur sinkt in {duration} Minuten von {original.current_temp}°C auf {final_temp}°C ({temp_change}°C)."
+            )
 
         # Ziel erreicht?
         if reached_target and time_to_target:
-            parts.append(f"Zieltemperatur ({simulated.target_temp}°C) wird in ca. {time_to_target} Minuten erreicht.")
-        elif not reached_target and (simulated.heating_active or simulated.cooling_active):
-            parts.append(f"Zieltemperatur ({simulated.target_temp}°C) wird in {duration} Minuten voraussichtlich nicht erreicht.")
+            parts.append(
+                f"Zieltemperatur ({simulated.target_temp}°C) wird in ca. {time_to_target} Minuten erreicht."
+            )
+        elif not reached_target and (
+            simulated.heating_active or simulated.cooling_active
+        ):
+            parts.append(
+                f"Zieltemperatur ({simulated.target_temp}°C) wird in {duration} Minuten voraussichtlich nicht erreicht."
+            )
 
         return " ".join(parts)

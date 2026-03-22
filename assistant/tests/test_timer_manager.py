@@ -24,6 +24,7 @@ from assistant.timer_manager import (
 # Fixtures
 # ============================================================
 
+
 @pytest.fixture
 def manager():
     mgr = TimerManager()
@@ -41,8 +42,8 @@ def manager():
 # GeneralTimer Dataclass
 # ============================================================
 
-class TestGeneralTimer:
 
+class TestGeneralTimer:
     def test_new_timer_not_started(self):
         t = GeneralTimer(id="t1", label="Test", duration_seconds=60)
         assert t.started_at == 0.0
@@ -101,8 +102,9 @@ class TestGeneralTimer:
         assert t.format_remaining() == "abgelaufen"
 
     def test_to_dict(self):
-        t = GeneralTimer(id="t1", label="Pizza", duration_seconds=600,
-                         room="kueche", person="Max")
+        t = GeneralTimer(
+            id="t1", label="Pizza", duration_seconds=600, room="kueche", person="Max"
+        )
         t.start()
         d = t.to_dict()
         assert d["id"] == "t1"
@@ -146,8 +148,8 @@ class TestGeneralTimer:
 # TimerManager.create_timer
 # ============================================================
 
-class TestCreateTimer:
 
+class TestCreateTimer:
     @pytest.mark.asyncio
     async def test_create_basic_timer(self, manager):
         result = await manager.create_timer(duration_minutes=5, label="Test")
@@ -188,7 +190,9 @@ class TestCreateTimer:
     async def test_action_on_expire_hint(self, manager):
         action = {"function": "set_light", "args": {"room": "kueche", "state": "off"}}
         result = await manager.create_timer(
-            duration_minutes=5, label="Kueche", action_on_expire=action,
+            duration_minutes=5,
+            label="Kueche",
+            action_on_expire=action,
         )
         assert result["success"] is True
         assert "Aktion" in result["message"]
@@ -205,8 +209,8 @@ class TestCreateTimer:
 # TimerManager.cancel_timer
 # ============================================================
 
-class TestCancelTimer:
 
+class TestCancelTimer:
     @pytest.mark.asyncio
     async def test_cancel_by_id(self, manager):
         result = await manager.create_timer(duration_minutes=5, label="CancelMe")
@@ -235,15 +239,20 @@ class TestCancelTimer:
 # TIMER_ACTION_WHITELIST
 # ============================================================
 
-class TestTimerActionWhitelist:
 
+class TestTimerActionWhitelist:
     def test_safe_actions_present(self):
         for action in ["set_light", "set_climate", "set_cover", "play_media"]:
             assert action in TIMER_ACTION_WHITELIST
 
     def test_dangerous_actions_absent(self):
-        for action in ["lock_door", "unlock_door", "arm_security_system",
-                        "factory_reset", "delete_all"]:
+        for action in [
+            "lock_door",
+            "unlock_door",
+            "arm_security_system",
+            "factory_reset",
+            "delete_all",
+        ]:
             assert action not in TIMER_ACTION_WHITELIST
 
     def test_whitelist_is_frozenset(self):

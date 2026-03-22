@@ -122,12 +122,16 @@ class CircuitBreaker:
 
             if self._state == CircuitState.HALF_OPEN:
                 self._state = CircuitState.OPEN
-                logger.warning("Circuit %s: HALF_OPEN -> OPEN (Test-Call fehlgeschlagen)", self.name)
+                logger.warning(
+                    "Circuit %s: HALF_OPEN -> OPEN (Test-Call fehlgeschlagen)",
+                    self.name,
+                )
             elif self._failure_count >= self.failure_threshold:
                 self._state = CircuitState.OPEN
                 logger.warning(
                     "Circuit %s: CLOSED -> OPEN (%d Fehler)",
-                    self.name, self._failure_count,
+                    self.name,
+                    self._failure_count,
                 )
 
     def reset(self) -> None:
@@ -266,15 +270,27 @@ registry = CircuitBreakerRegistry()
 
 # Standard-Breaker fuer die Hauptdienste registrieren
 ollama_breaker = registry.register("ollama", failure_threshold=5, recovery_timeout=15)
-ha_breaker = registry.register("home_assistant", failure_threshold=5, recovery_timeout=20)
-mindhome_breaker = registry.register("mindhome", failure_threshold=5, recovery_timeout=20)
+ha_breaker = registry.register(
+    "home_assistant", failure_threshold=5, recovery_timeout=20
+)
+mindhome_breaker = registry.register(
+    "mindhome", failure_threshold=5, recovery_timeout=20
+)
 redis_breaker = registry.register("redis", failure_threshold=5, recovery_timeout=10)
-chromadb_breaker = registry.register("chromadb", failure_threshold=5, recovery_timeout=15)
-web_search_breaker = registry.register("web_search", failure_threshold=3, recovery_timeout=120)
+chromadb_breaker = registry.register(
+    "chromadb", failure_threshold=5, recovery_timeout=15
+)
+web_search_breaker = registry.register(
+    "web_search", failure_threshold=3, recovery_timeout=120
+)
 
 # Circuit Breaker fuer Insight-Engines (LLM-Aufrufe)
-insight_breaker = registry.register("insight_engine", failure_threshold=3, recovery_timeout=60)
-seasonal_breaker = registry.register("seasonal_insight", failure_threshold=3, recovery_timeout=120)
+insight_breaker = registry.register(
+    "insight_engine", failure_threshold=3, recovery_timeout=60
+)
+seasonal_breaker = registry.register(
+    "seasonal_insight", failure_threshold=3, recovery_timeout=120
+)
 
 
 class AsyncCircuitBreakerContext:
@@ -310,7 +326,8 @@ class AsyncCircuitBreakerContext:
                 self.breaker.record_failure()
                 logger.warning(
                     "Circuit %s: Fehler aufgezeichnet (%s)",
-                    self.breaker.name, exc_val,
+                    self.breaker.name,
+                    exc_val,
                 )
         return False
 
@@ -321,7 +338,9 @@ class CircuitOpenError(Exception):
     def __init__(self, service_name: str, fallback=None):
         self.service_name = service_name
         self.fallback = fallback
-        super().__init__(f"Circuit Breaker '{service_name}' ist OPEN — Aufruf abgelehnt")
+        super().__init__(
+            f"Circuit Breaker '{service_name}' ist OPEN — Aufruf abgelehnt"
+        )
 
 
 class PredictiveWarmer:
@@ -348,7 +367,7 @@ class PredictiveWarmer:
             hours = self._call_hours.setdefault(breaker_name, [])
             hours.append(hour)
             if len(hours) > self._max_history:
-                self._call_hours[breaker_name] = hours[-self._max_history:]
+                self._call_hours[breaker_name] = hours[-self._max_history :]
 
     def analyze_patterns(self) -> dict[str, dict]:
         """Analysiert Aufrufmuster und identifiziert Peak-Stunden.

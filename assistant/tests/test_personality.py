@@ -69,13 +69,19 @@ from assistant.personality import (
 # Fixtures
 # ============================================================
 
+
 @pytest.fixture
 def personality():
-    with patch("assistant.personality.yaml_config", {"personality": {
-        "sarcasm_level": 3,
-        "opinion_intensity": 2,
-        "self_irony_enabled": True,
-    }}):
+    with patch(
+        "assistant.personality.yaml_config",
+        {
+            "personality": {
+                "sarcasm_level": 3,
+                "opinion_intensity": 2,
+                "self_irony_enabled": True,
+            }
+        },
+    ):
         with patch("assistant.personality.settings") as mock_settings:
             mock_settings.user_name = "Max"
             mock_settings.assistant_name = "Jarvis"
@@ -87,8 +93,8 @@ def personality():
 # Initialisierung
 # ============================================================
 
-class TestPersonalityInit:
 
+class TestPersonalityInit:
     def test_default_values(self, personality):
         assert personality.sarcasm_level == 3
         assert personality.opinion_intensity == 2
@@ -111,8 +117,8 @@ class TestPersonalityInit:
 # Mood Styles
 # ============================================================
 
-class TestMoodStyles:
 
+class TestMoodStyles:
     def test_all_moods_defined(self):
         for mood in ["good", "neutral", "stressed", "frustrated", "tired"]:
             assert mood in MOOD_STYLES
@@ -130,8 +136,8 @@ class TestMoodStyles:
 # Humor Templates
 # ============================================================
 
-class TestHumorTemplates:
 
+class TestHumorTemplates:
     def test_all_levels_defined(self):
         for level in range(1, 6):
             assert level in HUMOR_TEMPLATES
@@ -147,8 +153,8 @@ class TestHumorTemplates:
 # Complexity Prompts
 # ============================================================
 
-class TestComplexityPrompts:
 
+class TestComplexityPrompts:
     def test_all_modes_defined(self):
         assert "kurz" in COMPLEXITY_PROMPTS
         assert "normal" in COMPLEXITY_PROMPTS
@@ -162,8 +168,8 @@ class TestComplexityPrompts:
 # Formality Prompts
 # ============================================================
 
-class TestFormalityPrompts:
 
+class TestFormalityPrompts:
     def test_all_levels_defined(self):
         assert "formal" in FORMALITY_PROMPTS
         assert "butler" in FORMALITY_PROMPTS
@@ -175,8 +181,8 @@ class TestFormalityPrompts:
 # Easter Eggs
 # ============================================================
 
-class TestEasterEggs:
 
+class TestEasterEggs:
     def test_no_easter_egg(self, personality):
         personality._easter_eggs = [
             {"triggers": ["test phrase"], "responses": ["Antwort"], "enabled": True},
@@ -186,7 +192,11 @@ class TestEasterEggs:
 
     def test_easter_egg_triggered(self, personality):
         personality._easter_eggs = [
-            {"triggers": ["jarvis bist du da"], "responses": ["Immer, Sir."], "enabled": True},
+            {
+                "triggers": ["jarvis bist du da"],
+                "responses": ["Immer, Sir."],
+                "enabled": True,
+            },
         ]
         result = personality.check_easter_egg("Jarvis bist du da?")
         assert result is not None
@@ -203,8 +213,8 @@ class TestEasterEggs:
 # Opinion Rule Matching
 # ============================================================
 
-class TestOpinionRules:
 
+class TestOpinionRules:
     def test_match_rule_basic(self, personality):
         rule = {
             "check_action": "set_climate",
@@ -213,7 +223,10 @@ class TestOpinionRules:
             "check_value": 25,
             "min_intensity": 1,
         }
-        assert personality._match_rule(rule, "set_climate", {"temperature": 28}, hour=12) is True
+        assert (
+            personality._match_rule(rule, "set_climate", {"temperature": 28}, hour=12)
+            is True
+        )
 
     def test_no_match_wrong_action(self, personality):
         rule = {
@@ -223,7 +236,10 @@ class TestOpinionRules:
             "check_value": 25,
             "min_intensity": 1,
         }
-        assert personality._match_rule(rule, "set_light", {"temperature": 28}, hour=12) is False
+        assert (
+            personality._match_rule(rule, "set_light", {"temperature": 28}, hour=12)
+            is False
+        )
 
     def test_no_match_value_below(self, personality):
         rule = {
@@ -233,7 +249,10 @@ class TestOpinionRules:
             "check_value": 25,
             "min_intensity": 1,
         }
-        assert personality._match_rule(rule, "set_climate", {"temperature": 20}, hour=12) is False
+        assert (
+            personality._match_rule(rule, "set_climate", {"temperature": 20}, hour=12)
+            is False
+        )
 
     def test_match_hour_check(self, personality):
         rule = {
@@ -263,8 +282,8 @@ class TestOpinionRules:
 # Bestaetigungen
 # ============================================================
 
-class TestConfirmations:
 
+class TestConfirmations:
     def test_success_confirmations_exist(self):
         assert len(CONFIRMATIONS_SUCCESS) > 5
 
@@ -279,20 +298,28 @@ class TestConfirmations:
 # Person Profiles
 # ============================================================
 
-class TestPersonProfiles:
 
+class TestPersonProfiles:
     def test_empty_profile_for_unknown(self):
-        with patch("assistant.personality.yaml_config", {"person_profiles": {"enabled": True, "profiles": {}}}):
+        with patch(
+            "assistant.personality.yaml_config",
+            {"person_profiles": {"enabled": True, "profiles": {}}},
+        ):
             profile = PersonalityEngine._get_person_profile("unknown")
         assert profile == {}
 
     def test_profile_disabled(self):
-        with patch("assistant.personality.yaml_config", {"person_profiles": {"enabled": False}}):
+        with patch(
+            "assistant.personality.yaml_config", {"person_profiles": {"enabled": False}}
+        ):
             profile = PersonalityEngine._get_person_profile("Max")
         assert profile == {}
 
     def test_empty_person_name(self):
-        with patch("assistant.personality.yaml_config", {"person_profiles": {"enabled": True, "profiles": {"max": {"humor": 4}}}}):
+        with patch(
+            "assistant.personality.yaml_config",
+            {"person_profiles": {"enabled": True, "profiles": {"max": {"humor": 4}}}},
+        ):
             profile = PersonalityEngine._get_person_profile("")
         assert profile == {}
 
@@ -301,24 +328,28 @@ class TestPersonProfiles:
 # Humor Templates Laden
 # ============================================================
 
-class TestLoadHumorTemplates:
 
+class TestLoadHumorTemplates:
     def test_default_templates(self):
         result = PersonalityEngine._load_humor_templates({})
         assert result == dict(HUMOR_TEMPLATES)
 
     def test_custom_templates_string_keys(self):
-        result = PersonalityEngine._load_humor_templates({
-            "humor_templates": {"1": "No humor", "3": "Some humor"},
-        })
+        result = PersonalityEngine._load_humor_templates(
+            {
+                "humor_templates": {"1": "No humor", "3": "Some humor"},
+            }
+        )
         assert 1 in result
         assert 3 in result
         assert result[1] == "No humor"
 
     def test_invalid_templates_fallback(self):
-        result = PersonalityEngine._load_humor_templates({
-            "humor_templates": {"invalid": None},
-        })
+        result = PersonalityEngine._load_humor_templates(
+            {
+                "humor_templates": {"invalid": None},
+            }
+        )
         assert result == dict(HUMOR_TEMPLATES)
 
 
@@ -326,14 +357,19 @@ class TestLoadHumorTemplates:
 # Reload Config
 # ============================================================
 
-class TestReloadConfig:
 
+class TestReloadConfig:
     def test_reload_updates_sarcasm(self, personality):
-        with patch("assistant.personality.yaml_config", {"personality": {
-            "sarcasm_level": 5,
-            "opinion_intensity": 3,
-            "self_irony_enabled": False,
-        }}):
+        with patch(
+            "assistant.personality.yaml_config",
+            {
+                "personality": {
+                    "sarcasm_level": 5,
+                    "opinion_intensity": 3,
+                    "self_irony_enabled": False,
+                }
+            },
+        ):
             personality.reload_config()
         assert personality.sarcasm_level == 5
         assert personality.opinion_intensity == 3
@@ -344,15 +380,20 @@ class TestReloadConfig:
 # Phase 2A: Humor-Erweiterungen
 # ============================================================
 
+
 class TestPhase2AHumorFatigue:
     """Tests fuer taegliche Humor-Fatigue."""
 
     @pytest.fixture
     def personality(self):
         from assistant.personality import PersonalityEngine
-        with patch("assistant.personality.yaml_config", {
-            "personality": {"sarcasm_level": 4},
-        }):
+
+        with patch(
+            "assistant.personality.yaml_config",
+            {
+                "personality": {"sarcasm_level": 4},
+            },
+        ):
             p = PersonalityEngine()
             p._redis = AsyncMock()
             return p
@@ -365,7 +406,9 @@ class TestPhase2AHumorFatigue:
         results = []
         for _ in range(20):
             r = await personality.generate_contextual_humor(
-                "set_light", {"room": "wohnzimmer"}, mood="good",
+                "set_light",
+                {"room": "wohnzimmer"},
+                mood="good",
             )
             results.append(r)
         # Mindestens 50% sollten None sein (80% Chance)
@@ -378,7 +421,9 @@ class TestPhase2AHumorFatigue:
         personality._redis.get = AsyncMock(return_value=b"3")
         # Sarcasm level zu niedrig fuer Situation, aber Fatigue sollte nicht greifen
         result = await personality.generate_contextual_humor(
-            "set_light", {"room": "wz"}, mood="good",
+            "set_light",
+            {"room": "wz"},
+            mood="good",
         )
         # Result kann None sein (keine passende Situation), aber nicht wegen Fatigue
 
@@ -389,9 +434,13 @@ class TestPhase2AInnerStateHumor:
     @pytest.fixture
     def personality(self):
         from assistant.personality import PersonalityEngine
-        with patch("assistant.personality.yaml_config", {
-            "personality": {"sarcasm_level": 4},
-        }):
+
+        with patch(
+            "assistant.personality.yaml_config",
+            {
+                "personality": {"sarcasm_level": 4},
+            },
+        ):
             p = PersonalityEngine()
             p._redis = AsyncMock()
             return p
@@ -399,6 +448,7 @@ class TestPhase2AInnerStateHumor:
     def test_inner_state_modifies_humor_section(self, personality):
         """Inner-State beeinflusst _build_humor_section."""
         from unittest.mock import MagicMock
+
         inner = MagicMock()
         inner.mood = "amuesiert"
         personality._inner_state = inner
@@ -408,6 +458,7 @@ class TestPhase2AInnerStateHumor:
     def test_inner_state_irritiert_reduces_level(self, personality):
         """Irritierter Jarvis reduziert Humor-Level."""
         from unittest.mock import MagicMock
+
         inner = MagicMock()
         inner.mood = "irritiert"
         personality._inner_state = inner
@@ -421,6 +472,7 @@ class TestPhase2AGagEvolution:
     @pytest.fixture
     def personality(self):
         from assistant.personality import PersonalityEngine
+
         with patch("assistant.personality.yaml_config", {"personality": {}}):
             p = PersonalityEngine()
             p._redis = AsyncMock()
@@ -429,9 +481,13 @@ class TestPhase2AGagEvolution:
     @pytest.mark.asyncio
     async def test_episode_2_callback(self, personality):
         """Episode 2 → Callback auf letzten Gag."""
-        personality._redis.lrange = AsyncMock(return_value=[
-            json.dumps({"type": "repeated_question", "date": "Montag", "timestamp": 1.0}),
-        ])
+        personality._redis.lrange = AsyncMock(
+            return_value=[
+                json.dumps(
+                    {"type": "repeated_question", "date": "Montag", "timestamp": 1.0}
+                ),
+            ]
+        )
         pipe_mock = MagicMock()
         pipe_mock.lpush = MagicMock()
         pipe_mock.ltrim = MagicMock()
@@ -447,7 +503,9 @@ class TestPhase2AGagEvolution:
     async def test_episode_5_statistics(self, personality):
         """Episode 5+ → Statistik-Humor."""
         history = [
-            json.dumps({"type": "thermostat_war", "date": f"Tag{i}", "timestamp": float(i)})
+            json.dumps(
+                {"type": "thermostat_war", "date": f"Tag{i}", "timestamp": float(i)}
+            )
             for i in range(4)
         ]
         personality._redis.lrange = AsyncMock(return_value=history)
@@ -467,15 +525,20 @@ class TestPhase2AGagEvolution:
 # Phase 5.1: Delayed Callback Humor
 # ============================================================
 
+
 class TestCallbackHumor:
     """Tests fuer store_humor_context() und get_callback_humor()."""
 
     @pytest.fixture
     def personality(self):
         from assistant.personality import PersonalityEngine
-        with patch("assistant.personality.yaml_config", {
-            "personality": {"sarcasm_level": 3},
-        }):
+
+        with patch(
+            "assistant.personality.yaml_config",
+            {
+                "personality": {"sarcasm_level": 3},
+            },
+        ):
             p = PersonalityEngine()
             p._redis = AsyncMock()
             return p
@@ -483,7 +546,9 @@ class TestCallbackHumor:
     @pytest.mark.asyncio
     async def test_store_humor_context(self, personality):
         """Humor-Kontext wird in Redis gespeichert."""
-        await personality.store_humor_context("max", "failed_action", "Licht ging nicht an")
+        await personality.store_humor_context(
+            "max", "failed_action", "Licht ging nicht an"
+        )
         personality._redis.lpush.assert_called()
 
     @pytest.mark.asyncio
@@ -497,11 +562,14 @@ class TestCallbackHumor:
     async def test_get_callback_too_recent(self, personality):
         """Kontexte unter 1 Stunde alt werden nicht verwendet."""
         import time
-        ctx = json.dumps({
-            "type": "failed_action",
-            "text": "Licht ging nicht an",
-            "timestamp": time.time() - 600,  # 10 Min — zu frisch
-        })
+
+        ctx = json.dumps(
+            {
+                "type": "failed_action",
+                "text": "Licht ging nicht an",
+                "timestamp": time.time() - 600,  # 10 Min — zu frisch
+            }
+        )
         personality._redis.lrange = AsyncMock(return_value=[ctx])
         personality._redis.get = AsyncMock(return_value=None)
         result = await personality.get_callback_humor("max")
@@ -511,11 +579,14 @@ class TestCallbackHumor:
     async def test_get_callback_daily_limit(self, personality):
         """Maximal 1 Callback pro Tag."""
         import time
-        ctx = json.dumps({
-            "type": "failed_action",
-            "text": "Licht ging nicht an",
-            "timestamp": time.time() - 7200,  # 2h her — alt genug
-        })
+
+        ctx = json.dumps(
+            {
+                "type": "failed_action",
+                "text": "Licht ging nicht an",
+                "timestamp": time.time() - 7200,  # 2h her — alt genug
+            }
+        )
         personality._redis.lrange = AsyncMock(return_value=[ctx])
         personality._redis.get = AsyncMock(return_value="1")  # Schon 1 Callback heute
         result = await personality.get_callback_humor("max")
@@ -525,11 +596,14 @@ class TestCallbackHumor:
     async def test_get_callback_success_path(self, personality):
         """Erfolgreicher Callback: alt genug, kein Daily-Limit."""
         import time
-        ctx = json.dumps({
-            "type": "failed_action",
-            "text": "Licht ging nicht an",
-            "timestamp": time.time() - 7200,  # 2h alt — alt genug
-        })
+
+        ctx = json.dumps(
+            {
+                "type": "failed_action",
+                "text": "Licht ging nicht an",
+                "timestamp": time.time() - 7200,  # 2h alt — alt genug
+            }
+        )
         personality._redis.lrange = AsyncMock(return_value=[ctx])
         personality._redis.exists = AsyncMock(return_value=False)
         personality._redis.setex = AsyncMock()
@@ -553,11 +627,14 @@ class TestCallbackHumor:
     async def test_get_callback_bold_claim_type(self, personality):
         """Callback fuer bold_claim Typ."""
         import time
-        ctx = json.dumps({
-            "type": "bold_claim",
-            "text": "Ich kann das in 5 Minuten",
-            "timestamp": time.time() - 10800,  # 3h alt
-        })
+
+        ctx = json.dumps(
+            {
+                "type": "bold_claim",
+                "text": "Ich kann das in 5 Minuten",
+                "timestamp": time.time() - 10800,  # 3h alt
+            }
+        )
         personality._redis.lrange = AsyncMock(return_value=[ctx])
         personality._redis.exists = AsyncMock(return_value=False)
         personality._redis.setex = AsyncMock()
@@ -570,11 +647,14 @@ class TestCallbackHumor:
     async def test_get_callback_unknown_type_skipped(self, personality):
         """Unbekannter Kontext-Typ wird uebersprungen."""
         import time
-        ctx = json.dumps({
-            "type": "unknown_type",
-            "text": "something",
-            "timestamp": time.time() - 7200,
-        })
+
+        ctx = json.dumps(
+            {
+                "type": "unknown_type",
+                "text": "something",
+                "timestamp": time.time() - 7200,
+            }
+        )
         personality._redis.lrange = AsyncMock(return_value=[ctx])
         personality._redis.exists = AsyncMock(return_value=False)
         result = await personality.get_callback_humor("max")

@@ -27,6 +27,7 @@ from .config import yaml_config, settings
 
 logger = logging.getLogger(__name__)
 from zoneinfo import ZoneInfo
+
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Stimmungs-Zustände
@@ -39,38 +40,121 @@ MOOD_TIRED = "tired"
 # Keywords fuer Stimmungserkennung (Defaults, ueberschrieben durch settings.yaml)
 _mood_cfg = yaml_config.get("mood", {})
 
-POSITIVE_KEYWORDS = _mood_cfg.get("positive_keywords", [
-    "danke", "super", "perfekt", "toll", "geil", "nice", "cool", "genau",
-    "klasse", "wunderbar", "prima", "top", "gut gemacht", "laeuft",
-    "haha", "lol", "witzig", "lustig", "freut mich", "ja gerne",
-])
+POSITIVE_KEYWORDS = _mood_cfg.get(
+    "positive_keywords",
+    [
+        "danke",
+        "super",
+        "perfekt",
+        "toll",
+        "geil",
+        "nice",
+        "cool",
+        "genau",
+        "klasse",
+        "wunderbar",
+        "prima",
+        "top",
+        "gut gemacht",
+        "laeuft",
+        "haha",
+        "lol",
+        "witzig",
+        "lustig",
+        "freut mich",
+        "ja gerne",
+    ],
+)
 
-NEGATIVE_KEYWORDS = _mood_cfg.get("negative_keywords", [
-    "nein", "falsch", "nicht das", "stimmt nicht", "geht nicht",
-    "funktioniert nicht", "kaputt", "nervig", "nervt", "schlecht",
-    "mist", "verdammt", "scheisse", "bloed", "egal",
-    "naja", "nutzlos", "unbrauchbar", "geht so", "passt nicht",
-    "hilft nicht", "bringt nichts", "sinnlos", "quatsch", "unsinn",
-])
+NEGATIVE_KEYWORDS = _mood_cfg.get(
+    "negative_keywords",
+    [
+        "nein",
+        "falsch",
+        "nicht das",
+        "stimmt nicht",
+        "geht nicht",
+        "funktioniert nicht",
+        "kaputt",
+        "nervig",
+        "nervt",
+        "schlecht",
+        "mist",
+        "verdammt",
+        "scheisse",
+        "bloed",
+        "egal",
+        "naja",
+        "nutzlos",
+        "unbrauchbar",
+        "geht so",
+        "passt nicht",
+        "hilft nicht",
+        "bringt nichts",
+        "sinnlos",
+        "quatsch",
+        "unsinn",
+    ],
+)
 
-IMPATIENT_KEYWORDS = _mood_cfg.get("impatient_keywords", [
-    "schnell", "sofort", "jetzt", "los", "mach schon", "beeil dich",
-    "endlich", "nochmal", "schon wieder", "hab ich doch gesagt",
-    "zum dritten mal", "wie oft noch", "kapierst du",
-    "wieso dauert das", "viel zu lange", "dauert ewig",
-    "wann endlich", "wird das noch", "komm schon",
-])
+IMPATIENT_KEYWORDS = _mood_cfg.get(
+    "impatient_keywords",
+    [
+        "schnell",
+        "sofort",
+        "jetzt",
+        "los",
+        "mach schon",
+        "beeil dich",
+        "endlich",
+        "nochmal",
+        "schon wieder",
+        "hab ich doch gesagt",
+        "zum dritten mal",
+        "wie oft noch",
+        "kapierst du",
+        "wieso dauert das",
+        "viel zu lange",
+        "dauert ewig",
+        "wann endlich",
+        "wird das noch",
+        "komm schon",
+    ],
+)
 
-TIRED_KEYWORDS = _mood_cfg.get("tired_keywords", [
-    "muede", "schlafen", "bett", "gute nacht", "nacht",
-    "gaehn", "erschoepft", "fertig", "genug fuer heute",
-    "schluss fuer heute", "feierabend", "ins bett",
-    "bin fertig", "hab keinen bock", "ko", "bin platt",
-    "keine energie", "bin am ende", "todmuede", "hundemuede",
-])
+TIRED_KEYWORDS = _mood_cfg.get(
+    "tired_keywords",
+    [
+        "muede",
+        "schlafen",
+        "bett",
+        "gute nacht",
+        "nacht",
+        "gaehn",
+        "erschoepft",
+        "fertig",
+        "genug fuer heute",
+        "schluss fuer heute",
+        "feierabend",
+        "ins bett",
+        "bin fertig",
+        "hab keinen bock",
+        "ko",
+        "bin platt",
+        "keine energie",
+        "bin am ende",
+        "todmuede",
+        "hundemuede",
+    ],
+)
 
 FRUSTRATED_PREFIXES = [
-    "nein ", "nein!", "nein,", "falsch!", "nicht!", "stopp!",
+    "nein ",
+    "nein!",
+    "nein,",
+    "falsch!",
+    "nicht!",
+    "stopp!",
 ]
 
 
@@ -85,7 +169,7 @@ class MoodDetector:
         self.redis: Optional[redis.Redis] = None
         self._ollama = None  # N1: OllamaClient fuer LLM-basierte Sentiment-Analyse
         self._analyze_lock = asyncio.Lock()
-        self._voice_lock = __import__('threading').Lock()
+        self._voice_lock = __import__("threading").Lock()
 
         # Per-Person State Storage
         # {person_key: {mood, stress, tiredness, frustration, positive,
@@ -115,7 +199,9 @@ class MoodDetector:
         self.tired_hour_end = mood_cfg.get("tired_hour_end", 5)
 
         # Stress-Boost Werte (konfigurierbar via settings.yaml)
-        self.rapid_command_stress_boost = mood_cfg.get("rapid_command_stress_boost", 0.15)
+        self.rapid_command_stress_boost = mood_cfg.get(
+            "rapid_command_stress_boost", 0.15
+        )
         self.positive_stress_reduction = mood_cfg.get("positive_stress_reduction", 0.1)
         self.negative_stress_boost = mood_cfg.get("negative_stress_boost", 0.1)
         self.impatient_stress_boost = mood_cfg.get("impatient_stress_boost", 0.2)
@@ -186,7 +272,7 @@ class MoodDetector:
                         "Beruecksichtige die Uhrzeit bei der Bewertung "
                         "(z.B. 'muede' am Morgen vs. spaet abends).\n"
                         "Antworte NUR mit einem JSON-Objekt, kein anderer Text.\n"
-                        "Format: {\"sentiment\": \"...\", \"intensity\": 0.0-1.0, \"nuance\": \"...\", \"root_cause\": \"...\"}\n"
+                        'Format: {"sentiment": "...", "intensity": 0.0-1.0, "nuance": "...", "root_cause": "..."}\n'
                         "sentiment: gut|neutral|gestresst|frustriert|muede|aufgeregt|besorgt\n"
                         "intensity: Staerke der Emotion (0.0=kaum, 1.0=sehr stark)\n"
                         "nuance: Ein Wort das den Unterton beschreibt (z.B. ungeduldig, entspannt, genervt, dankbar)\n"
@@ -211,10 +297,12 @@ class MoodDetector:
 
             # JSON aus Antwort extrahieren (LLM koennte Markdown-Wrapper nutzen)
             if "{" in content:
-                json_str = content[content.index("{"):content.rindex("}") + 1]
+                json_str = content[content.index("{") : content.rindex("}") + 1]
                 result = json.loads(json_str)
                 # Validierung
-                if result.get("sentiment") and isinstance(result.get("intensity", 0), (int, float)):
+                if result.get("sentiment") and isinstance(
+                    result.get("intensity", 0), (int, float)
+                ):
                     result["intensity"] = max(0.0, min(1.0, float(result["intensity"])))
                     return result
         except asyncio.TimeoutError:
@@ -236,26 +324,60 @@ class MoodDetector:
 
         # Sentiment-Mapping auf interne Scores
         sentiment_map = {
-            "gut": {"stress": -0.15, "tiredness": 0.0, "frustration": -1, "positive": 1},
-            "neutral": {"stress": 0.0, "tiredness": 0.0, "frustration": 0, "positive": 0},
-            "gestresst": {"stress": 0.2, "tiredness": 0.0, "frustration": 0, "positive": 0},
-            "frustriert": {"stress": 0.15, "tiredness": 0.0, "frustration": 2, "positive": 0},
+            "gut": {
+                "stress": -0.15,
+                "tiredness": 0.0,
+                "frustration": -1,
+                "positive": 1,
+            },
+            "neutral": {
+                "stress": 0.0,
+                "tiredness": 0.0,
+                "frustration": 0,
+                "positive": 0,
+            },
+            "gestresst": {
+                "stress": 0.2,
+                "tiredness": 0.0,
+                "frustration": 0,
+                "positive": 0,
+            },
+            "frustriert": {
+                "stress": 0.15,
+                "tiredness": 0.0,
+                "frustration": 2,
+                "positive": 0,
+            },
             "muede": {"stress": 0.0, "tiredness": 0.2, "frustration": 0, "positive": 0},
-            "aufgeregt": {"stress": 0.1, "tiredness": -0.1, "frustration": 0, "positive": 0},
-            "besorgt": {"stress": 0.15, "tiredness": 0.0, "frustration": 0, "positive": 0},
+            "aufgeregt": {
+                "stress": 0.1,
+                "tiredness": -0.1,
+                "frustration": 0,
+                "positive": 0,
+            },
+            "besorgt": {
+                "stress": 0.15,
+                "tiredness": 0.0,
+                "frustration": 0,
+                "positive": 0,
+            },
         }
 
         adjustments = sentiment_map.get(sentiment, sentiment_map["neutral"])
         weight = llm_weight * intensity
 
-        self._stress_level = max(0.0, min(1.0,
-            self._stress_level + adjustments["stress"] * weight))
-        self._tiredness_level = max(0.0, min(1.0,
-            self._tiredness_level + adjustments["tiredness"] * weight))
-        self._frustration_count = max(0,
-            self._frustration_count + int(adjustments["frustration"] * weight))
-        self._positive_count = max(0,
-            self._positive_count + int(adjustments["positive"] * weight))
+        self._stress_level = max(
+            0.0, min(1.0, self._stress_level + adjustments["stress"] * weight)
+        )
+        self._tiredness_level = max(
+            0.0, min(1.0, self._tiredness_level + adjustments["tiredness"] * weight)
+        )
+        self._frustration_count = max(
+            0, self._frustration_count + int(adjustments["frustration"] * weight)
+        )
+        self._positive_count = max(
+            0, self._positive_count + int(adjustments["positive"] * weight)
+        )
 
         signals.append(f"llm_sentiment:{sentiment}")
         if nuance:
@@ -297,8 +419,9 @@ class MoodDetector:
         state = self._person_states.get(person_key, {})
         return state.get("root_cause", "unbekannt")
 
-    def generate_empathy_statement(self, mood: str = "", root_cause: str = "",
-                                    person: str = "") -> Optional[str]:
+    def generate_empathy_statement(
+        self, mood: str = "", root_cause: str = "", person: str = ""
+    ) -> Optional[str]:
         """Generiert ein einfuehlsames Statement basierend auf Stimmung und Ursache.
 
         Args:
@@ -458,13 +581,20 @@ class MoodDetector:
             try:
                 # Alle person-spezifischen Keys laden
                 keys = await self.redis.keys("mha:mood:state:*")
-                for rkey in (keys or []):
+                for rkey in keys or []:
                     rkey = rkey.decode() if isinstance(rkey, bytes) else rkey
                     raw = await self.redis.hgetall(rkey)
                     if raw:
-                        saved = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()}
+                        saved = {
+                            (k.decode() if isinstance(k, bytes) else k): (
+                                v.decode() if isinstance(v, bytes) else v
+                            )
+                            for k, v in raw.items()
+                        }
                         # Key-Format: mha:mood:state:{person_key}
-                        person_key = rkey.rsplit(":", 1)[-1] if ":" in rkey else "_default"
+                        person_key = (
+                            rkey.rsplit(":", 1)[-1] if ":" in rkey else "_default"
+                        )
                         self._person_states[person_key] = {
                             "mood": saved.get("mood", MOOD_NEUTRAL),
                             "stress": float(saved.get("stress", 0.0)),
@@ -482,7 +612,12 @@ class MoodDetector:
                 # Legacy: alten globalen Key migrieren
                 raw_legacy = await self.redis.hgetall("mha:mood:state")
                 if raw_legacy and "_default" not in self._person_states:
-                    legacy = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_legacy.items()}
+                    legacy = {
+                        (k.decode() if isinstance(k, bytes) else k): (
+                            v.decode() if isinstance(v, bytes) else v
+                        )
+                        for k, v in raw_legacy.items()
+                    }
                     self._person_states["_default"] = {
                         "mood": legacy.get("mood", MOOD_NEUTRAL),
                         "stress": float(legacy.get("stress", 0.0)),
@@ -504,7 +639,8 @@ class MoodDetector:
         self._load_person_state("")
         logger.info(
             "MoodDetector initialisiert (Personen: %d, Default-Stimmung: %s)",
-            len(self._person_states), self._current_mood,
+            len(self._person_states),
+            self._current_mood,
         )
 
     async def analyze(self, text: str, person: str = "") -> dict:
@@ -534,10 +670,16 @@ class MoodDetector:
         # 1. Zeitliches Muster: 4+ schnelle aufeinanderfolgende Befehle = Stress
         if self._interaction_times:
             time_since_last = now - self._interaction_times[-1]
-            rapid_count = sum(1 for i in range(1, len(self._interaction_times))
-                             if self._interaction_times[i] - self._interaction_times[i-1] < self.rapid_command_threshold)
+            rapid_count = sum(
+                1
+                for i in range(1, len(self._interaction_times))
+                if self._interaction_times[i] - self._interaction_times[i - 1]
+                < self.rapid_command_threshold
+            )
             if time_since_last < self.rapid_command_threshold and rapid_count >= 3:
-                self._stress_level = min(1.0, self._stress_level + self.rapid_command_stress_boost)
+                self._stress_level = min(
+                    1.0, self._stress_level + self.rapid_command_stress_boost
+                )
                 signals.append("rapid_commands")
 
         # 2. Text-Analyse
@@ -550,16 +692,28 @@ class MoodDetector:
         # Folgetext (>= 6 Woerter insgesamt) mit korrigierendem Inhalt.
         # Kurze Saetze wie "Das stimmt nicht, falsch!" sind Frustration, keine Korrektur.
         _is_correction = False
-        _correction_starters = ("nein", "falsch", "stimmt nicht", "nicht ganz",
-                                "das stimmt nicht", "das ist falsch", "ne ")
-        if any(text_lower.startswith(s) for s in _correction_starters) and text_len >= 6:
+        _correction_starters = (
+            "nein",
+            "falsch",
+            "stimmt nicht",
+            "nicht ganz",
+            "das stimmt nicht",
+            "das ist falsch",
+            "ne ",
+        )
+        if (
+            any(text_lower.startswith(s) for s in _correction_starters)
+            and text_len >= 6
+        ):
             _is_correction = True
             signals.append("correction_detected")
 
         # Positive Signale
         if any(kw in text_lower for kw in POSITIVE_KEYWORDS):
             self._positive_count += 1
-            self._stress_level = max(0.0, self._stress_level - self.positive_stress_reduction)
+            self._stress_level = max(
+                0.0, self._stress_level - self.positive_stress_reduction
+            )
             self._frustration_count = max(0, self._frustration_count - 1)
             signals.append("positive_language")
 
@@ -567,16 +721,22 @@ class MoodDetector:
         if any(kw in text_lower for kw in NEGATIVE_KEYWORDS):
             if _is_correction:
                 # Korrektur: kein Frustrations-Anstieg, nur minimaler Stress
-                self._stress_level = min(1.0, self._stress_level + self.negative_stress_boost * 0.2)
+                self._stress_level = min(
+                    1.0, self._stress_level + self.negative_stress_boost * 0.2
+                )
                 signals.append("negative_language_correction")
             else:
                 self._frustration_count += 1
-                self._stress_level = min(1.0, self._stress_level + self.negative_stress_boost)
+                self._stress_level = min(
+                    1.0, self._stress_level + self.negative_stress_boost
+                )
                 signals.append("negative_language")
 
         # Ungeduldige Signale
         if any(kw in text_lower for kw in IMPATIENT_KEYWORDS):
-            self._stress_level = min(1.0, self._stress_level + self.impatient_stress_boost)
+            self._stress_level = min(
+                1.0, self._stress_level + self.impatient_stress_boost
+            )
             self._frustration_count += 1
             signals.append("impatient_language")
 
@@ -589,7 +749,9 @@ class MoodDetector:
         # Bei Korrekturen: aehnliches Thema ist erwartet, nicht frustrierend
         if self._last_texts and self._is_repetition(text_lower) and not _is_correction:
             self._frustration_count += 2
-            self._stress_level = min(1.0, self._stress_level + self.repetition_stress_boost)
+            self._stress_level = min(
+                1.0, self._stress_level + self.repetition_stress_boost
+            )
             signals.append("repetition")
 
         # Eskalations-Erkennung: Mehrere aehnliche Anfragen hintereinander
@@ -597,10 +759,14 @@ class MoodDetector:
         # Bei Korrekturen: Themen-Overlap ist normal, keine Eskalation
         if len(self._last_texts) >= 2 and not _is_correction:
             _recent = list(self._last_texts)[-2:]
-            _rep_count = sum(1 for lt in _recent if self._word_overlap(text_lower, lt) > 0.5)
+            _rep_count = sum(
+                1 for lt in _recent if self._word_overlap(text_lower, lt) > 0.5
+            )
             if _rep_count >= 1:
                 # 2x aehnlich in letzten Nachrichten = Eskalation → doppelter Stress-Boost
-                self._stress_level = min(1.0, self._stress_level + self.repetition_stress_boost * 2)
+                self._stress_level = min(
+                    1.0, self._stress_level + self.repetition_stress_boost * 2
+                )
                 self._frustration_count += 2
                 signals.append("escalation")
 
@@ -611,7 +777,9 @@ class MoodDetector:
             signals.append("exclamation_marks")
 
         # Frustrierter Anfang — bei Korrekturen nicht triggern
-        if not _is_correction and any(text_lower.startswith(p) for p in FRUSTRATED_PREFIXES):
+        if not _is_correction and any(
+            text_lower.startswith(p) for p in FRUSTRATED_PREFIXES
+        ):
             self._frustration_count += 1
             signals.append("frustrated_prefix")
 
@@ -680,8 +848,10 @@ class MoodDetector:
             logger.info(
                 "Mood [%s]: %s (Stress: %.2f, Muede: %.2f, Signale: %s)",
                 person or "default",
-                self._current_mood, self._stress_level,
-                self._tiredness_level, ", ".join(signals),
+                self._current_mood,
+                self._stress_level,
+                self._tiredness_level,
+                ", ".join(signals),
             )
 
         return result
@@ -764,8 +934,8 @@ class MoodDetector:
 
         # Trend-Erkennung
         if len(recent) >= 4:
-            first_half = recent[:len(recent) // 2]
-            second_half = recent[len(recent) // 2:]
+            first_half = recent[: len(recent) // 2]
+            second_half = recent[len(recent) // 2 :]
             first_neg = sum(1 for s in first_half if s in ("negative", "impatient"))
             second_neg = sum(1 for s in second_half if s in ("negative", "impatient"))
 
@@ -805,22 +975,38 @@ class MoodDetector:
         """
         # 1. Direkte Ironie-Marker (hochpraezise)
         irony_markers = [
-            "ja klar", "na super", "na toll", "ach wirklich",
-            "wie schoen", "ganz toll", "super gemacht", "laeuft ja",
-            "laeuft bei dir", "wie immer perfekt", "mega hilfreich",
-            "grossartig", "fantastisch wie immer", "ganz grosses kino",
-            "herzlichen glueckwunsch", "bravo", "oh wie schoen",
-            "was fuer eine ueberraschung", "wer haette das gedacht",
+            "ja klar",
+            "na super",
+            "na toll",
+            "ach wirklich",
+            "wie schoen",
+            "ganz toll",
+            "super gemacht",
+            "laeuft ja",
+            "laeuft bei dir",
+            "wie immer perfekt",
+            "mega hilfreich",
+            "grossartig",
+            "fantastisch wie immer",
+            "ganz grosses kino",
+            "herzlichen glueckwunsch",
+            "bravo",
+            "oh wie schoen",
+            "was fuer eine ueberraschung",
+            "wer haette das gedacht",
         ]
         for marker in irony_markers:
             if marker in text_lower:
                 # Nur ironisch wenn kuerzlich negative Sentiments
                 recent_neg = sum(
-                    1 for s in list(self._interaction_sentiments)[-3:]
+                    1
+                    for s in list(self._interaction_sentiments)[-3:]
                     if s in ("negative", "impatient")
                 )
                 if recent_neg >= 1:
-                    logger.debug("Ironie erkannt via Marker '%s' (person=%s)", marker, person)
+                    logger.debug(
+                        "Ironie erkannt via Marker '%s' (person=%s)", marker, person
+                    )
                     return True
 
         # 2. Uebertreibung + negativer Kontext
@@ -832,7 +1018,8 @@ class MoodDetector:
 
         if has_exaggeration and has_positive:
             recent_neg = sum(
-                1 for s in list(self._interaction_sentiments)[-3:]
+                1
+                for s in list(self._interaction_sentiments)[-3:]
                 if s in ("negative", "impatient")
             )
             if recent_neg >= 2:
@@ -843,7 +1030,9 @@ class MoodDetector:
         if self._frustration_count >= 2 and self._stress_level > 0.4:
             # Kurze positive Aussage bei hohem Stress = wahrscheinlich ironisch
             if len(text_lower.split()) <= 5 and has_positive:
-                logger.debug("Ironie erkannt via Frustrations-Kontext (person=%s)", person)
+                logger.debug(
+                    "Ironie erkannt via Frustrations-Kontext (person=%s)", person
+                )
                 return True
 
         return False
@@ -890,60 +1079,76 @@ class MoodDetector:
         hour = datetime.now(_LOCAL_TZ).hour
 
         if self._current_mood == MOOD_STRESSED:
-            suggestions.append({
-                "action": "scene.entspannung",
-                "reason": "User wirkt gestresst - Entspannungs-Szene koennte helfen",
-                "priority": "medium",
-            })
-            if self._stress_level >= 0.7:
-                suggestions.append({
-                    "action": "light.dimmen",
-                    "reason": "Hoher Stress - gedimmtes Licht wirkt beruhigend",
+            suggestions.append(
+                {
+                    "action": "scene.entspannung",
+                    "reason": "User wirkt gestresst - Entspannungs-Szene koennte helfen",
                     "priority": "medium",
-                    "params": {"brightness_pct": 40},
-                })
+                }
+            )
+            if self._stress_level >= 0.7:
+                suggestions.append(
+                    {
+                        "action": "light.dimmen",
+                        "reason": "Hoher Stress - gedimmtes Licht wirkt beruhigend",
+                        "priority": "medium",
+                        "params": {"brightness_pct": 40},
+                    }
+                )
             # Musik leiser bei Stress
             if self._stress_level >= 0.5:
-                suggestions.append({
-                    "action": "media_player.volume_down",
-                    "reason": "Stress erkannt - Musik-Lautstärke reduzieren",
-                    "priority": "medium",
-                    "params": {"volume_pct": 30},
-                })
+                suggestions.append(
+                    {
+                        "action": "media_player.volume_down",
+                        "reason": "Stress erkannt - Musik-Lautstärke reduzieren",
+                        "priority": "medium",
+                        "params": {"volume_pct": 30},
+                    }
+                )
 
         elif self._current_mood == MOOD_FRUSTRATED:
-            suggestions.append({
-                "action": "simplify_responses",
-                "reason": "User ist frustriert - kuerzere Antworten, direkt handeln",
-                "priority": "high",
-            })
-            if self._frustration_count >= 4:
-                suggestions.append({
-                    "action": "offer_help",
-                    "reason": "Anhaltende Frustration - proaktiv Hilfe anbieten",
+            suggestions.append(
+                {
+                    "action": "simplify_responses",
+                    "reason": "User ist frustriert - kuerzere Antworten, direkt handeln",
                     "priority": "high",
-                })
+                }
+            )
+            if self._frustration_count >= 4:
+                suggestions.append(
+                    {
+                        "action": "offer_help",
+                        "reason": "Anhaltende Frustration - proaktiv Hilfe anbieten",
+                        "priority": "high",
+                    }
+                )
 
         elif self._current_mood == MOOD_TIRED:
             if hour >= 22 or hour < 5:
-                suggestions.append({
-                    "action": "scene.gute_nacht",
-                    "reason": "User ist muede und es ist spaet - Gute-Nacht-Routine vorschlagen",
+                suggestions.append(
+                    {
+                        "action": "scene.gute_nacht",
+                        "reason": "User ist muede und es ist spaet - Gute-Nacht-Routine vorschlagen",
+                        "priority": "medium",
+                    }
+                )
+            suggestions.append(
+                {
+                    "action": "reduce_notifications",
+                    "reason": "User ist muede - weniger proaktive Meldungen",
                     "priority": "medium",
-                })
-            suggestions.append({
-                "action": "reduce_notifications",
-                "reason": "User ist muede - weniger proaktive Meldungen",
-                "priority": "medium",
-            })
+                }
+            )
 
         elif self._current_mood == MOOD_GOOD:
             if 18 <= hour <= 21:
-                suggestions.append({
-                    "action": "scene.gemuetlich",
-                    "reason": "Gute Stimmung am Abend - Gemuetlichkeit verstaerken",
-                    "priority": "low",
-                })
+                suggestions.append(
+                    {
+                        "action": "scene.gemuetlich",
+                        "reason": "Gute Stimmung am Abend - Gemuetlichkeit verstaerken",
+                        "priority": "low",
+                    }
+                )
 
         return suggestions
 
@@ -975,35 +1180,49 @@ class MoodDetector:
             try:
                 if action.startswith("scene."):
                     scene_name = action.split(".", 1)[1]
-                    result = await executor.execute("activate_scene", {"scene": scene_name})
-                    executed.append({
-                        "action": action,
-                        "reason": suggestion["reason"],
-                        "result": result,
-                    })
+                    result = await executor.execute(
+                        "activate_scene", {"scene": scene_name}
+                    )
+                    executed.append(
+                        {
+                            "action": action,
+                            "reason": suggestion["reason"],
+                            "result": result,
+                        }
+                    )
                 elif action == "light.dimmen":
                     params = suggestion.get("params", {})
-                    result = await executor.execute("set_light", {
-                        "room": "wohnzimmer",
-                        "brightness": params.get("brightness_pct", 40),
-                    })
-                    executed.append({
-                        "action": action,
-                        "reason": suggestion["reason"],
-                        "result": result,
-                    })
+                    result = await executor.execute(
+                        "set_light",
+                        {
+                            "room": "wohnzimmer",
+                            "brightness": params.get("brightness_pct", 40),
+                        },
+                    )
+                    executed.append(
+                        {
+                            "action": action,
+                            "reason": suggestion["reason"],
+                            "result": result,
+                        }
+                    )
                 elif action == "media_player.volume_down":
                     params = suggestion.get("params", {})
                     vol_pct = params.get("volume_pct", 30)
-                    result = await executor.execute("play_media", {
-                        "action": "volume",
-                        "volume": vol_pct,
-                    })
-                    executed.append({
-                        "action": action,
-                        "reason": suggestion["reason"],
-                        "result": result,
-                    })
+                    result = await executor.execute(
+                        "play_media",
+                        {
+                            "action": "volume",
+                            "volume": vol_pct,
+                        },
+                    )
+                    executed.append(
+                        {
+                            "action": action,
+                            "reason": suggestion["reason"],
+                            "result": result,
+                        }
+                    )
             except Exception as e:
                 logger.warning("Mood-Aktion '%s' fehlgeschlagen: %s", action, e)
 
@@ -1034,12 +1253,16 @@ class MoodDetector:
         if mood == MOOD_STRESSED:
             hints.append("User ist unter Stress. Antworte ruhig und effizient.")
             if stress >= 0.7:
-                hints.append("Stress-Level sehr hoch. Schlage bei Gelegenheit eine Pause vor.")
+                hints.append(
+                    "Stress-Level sehr hoch. Schlage bei Gelegenheit eine Pause vor."
+                )
 
         elif mood == MOOD_FRUSTRATED:
             hints.append("User ist frustriert. Nicht rechtfertigen, sondern loesen.")
             if frustration >= 4:
-                hints.append("Anhaltende Frustration. Frage ob du anders helfen kannst.")
+                hints.append(
+                    "Anhaltende Frustration. Frage ob du anders helfen kannst."
+                )
 
         elif mood == MOOD_TIRED:
             hints.append("User ist muede. Minimal antworten. Kein Humor.")
@@ -1051,7 +1274,9 @@ class MoodDetector:
         if len(sentiments) >= 3:
             recent = list(sentiments)[-3:]
             if all(s == "negative" for s in recent):
-                hints.append("WARNUNG: 3x negativ hintereinander. Eskalation vermeiden.")
+                hints.append(
+                    "WARNUNG: 3x negativ hintereinander. Eskalation vermeiden."
+                )
 
         # Mood-Trend einbauen
         trend = self.get_mood_trend(person)
@@ -1072,11 +1297,16 @@ class MoodDetector:
             emo = voice_emotion["emotion"]
             conf = voice_emotion["confidence"]
             emotion_labels = {
-                "happy": "froehlich", "sad": "traurig", "angry": "aergerlich",
-                "anxious": "aengstlich/nervoes", "tired": "muede",
+                "happy": "froehlich",
+                "sad": "traurig",
+                "angry": "aergerlich",
+                "anxious": "aengstlich/nervoes",
+                "tired": "muede",
             }
             if emo != "neutral":
-                hints.append(f"Stimm-Emotion: {emotion_labels.get(emo, emo)} ({conf:.0%} Konfidenz).")
+                hints.append(
+                    f"Stimm-Emotion: {emotion_labels.get(emo, emo)} ({conf:.0%} Konfidenz)."
+                )
 
         return " ".join(hints)
 
@@ -1084,7 +1314,9 @@ class MoodDetector:
     # Phase 9: Voice Emotion Detection
     # ------------------------------------------------------------------
 
-    async def analyze_voice_metadata(self, metadata: dict, person: str = "") -> list[str]:
+    async def analyze_voice_metadata(
+        self, metadata: dict, person: str = ""
+    ) -> list[str]:
         """
         Phase 9: Analysiert Sprach-Metadaten fuer Stimmungserkennung.
 
@@ -1116,24 +1348,36 @@ class MoodDetector:
                     stress_boost = (wpm - self.wpm_fast) / 100.0 * self.voice_weight
                     self._stress_level = min(1.0, self._stress_level + stress_boost)
                     signals.append("voice_fast")
-                    logger.debug("Voice: schnell (%.0f WPM) -> Stress +%.2f", wpm, stress_boost)
+                    logger.debug(
+                        "Voice: schnell (%.0f WPM) -> Stress +%.2f", wpm, stress_boost
+                    )
                 elif wpm < self.wpm_slow:
                     # Langsames Sprechen = Muedigkeit
                     tired_boost = (self.wpm_slow - wpm) / 100.0 * self.voice_weight
-                    self._tiredness_level = min(1.0, self._tiredness_level + tired_boost)
+                    self._tiredness_level = min(
+                        1.0, self._tiredness_level + tired_boost
+                    )
                     signals.append("voice_slow")
-                    logger.debug("Voice: langsam (%.0f WPM) -> Muedigkeit +%.2f", wpm, tired_boost)
+                    logger.debug(
+                        "Voice: langsam (%.0f WPM) -> Muedigkeit +%.2f",
+                        wpm,
+                        tired_boost,
+                    )
 
             # Lautstaerke
             volume = metadata.get("volume")
             if volume is not None:
                 if volume > 0.8:
                     # Lautes Sprechen = aufgeregt/frustriert
-                    self._stress_level = min(1.0, self._stress_level + 0.1 * self.voice_weight)
+                    self._stress_level = min(
+                        1.0, self._stress_level + 0.1 * self.voice_weight
+                    )
                     signals.append("voice_loud")
                 elif volume < 0.2:
                     # Leises Sprechen = muede/unsicher
-                    self._tiredness_level = min(1.0, self._tiredness_level + 0.1 * self.voice_weight)
+                    self._tiredness_level = min(
+                        1.0, self._tiredness_level + 0.1 * self.voice_weight
+                    )
                     signals.append("voice_quiet")
 
             # Sehr kurze Aufnahme mit wenig Woertern = knappe Befehle
@@ -1142,17 +1386,26 @@ class MoodDetector:
             if duration > 0 and word_count > 0:
                 if duration < 1.5 and word_count <= 3:
                     # Extrem knappe Befehle = ungeduldig
-                    self._stress_level = min(1.0, self._stress_level + 0.05 * self.voice_weight)
+                    self._stress_level = min(
+                        1.0, self._stress_level + 0.05 * self.voice_weight
+                    )
                     signals.append("voice_curt")
 
             # Schnelle Nachfrage (<5s nach letztem Befehl) = Ungeduld/Stress
             if metadata.get("rapid_follow_up"):
-                self._stress_level = min(1.0, self._stress_level + 0.1 * self.voice_weight)
+                self._stress_level = min(
+                    1.0, self._stress_level + 0.1 * self.voice_weight
+                )
                 signals.append("rapid_follow_up")
-                logger.debug("Voice: schnelle Nachfrage -> Stress +%.2f", 0.1 * self.voice_weight)
+                logger.debug(
+                    "Voice: schnelle Nachfrage -> Stress +%.2f", 0.1 * self.voice_weight
+                )
 
             # Phase 9.5: Erweiterte Emotionserkennung wenn Pitch/Energie verfuegbar
-            if metadata.get("pitch_mean") is not None or metadata.get("energy_rms") is not None:
+            if (
+                metadata.get("pitch_mean") is not None
+                or metadata.get("energy_rms") is not None
+            ):
                 try:
                     emotion_result = self.detect_audio_emotion(metadata)
                     if emotion_result.get("confidence", 0) > 0.4:
@@ -1186,8 +1439,14 @@ class MoodDetector:
             return {"emotion": "neutral", "confidence": 0.0, "signals": []}
 
         signals = []
-        scores = {"happy": 0.0, "sad": 0.0, "angry": 0.0, "anxious": 0.0,
-                  "tired": 0.0, "neutral": 0.3}
+        scores = {
+            "happy": 0.0,
+            "sad": 0.0,
+            "angry": 0.0,
+            "anxious": 0.0,
+            "tired": 0.0,
+            "neutral": 0.3,
+        }
 
         wpm = metadata.get("wpm", 0)
         volume = metadata.get("volume", 0.5)
@@ -1270,10 +1529,12 @@ class MoodDetector:
         }
         if best_emotion in emotion_mood_map and confidence > 0.4:
             stress_d, tired_d = emotion_mood_map[best_emotion]
-            self._stress_level = min(1.0, max(0.0,
-                self._stress_level + stress_d * self.voice_weight))
-            self._tiredness_level = min(1.0, max(0.0,
-                self._tiredness_level + tired_d * self.voice_weight))
+            self._stress_level = min(
+                1.0, max(0.0, self._stress_level + stress_d * self.voice_weight)
+            )
+            self._tiredness_level = min(
+                1.0, max(0.0, self._tiredness_level + tired_d * self.voice_weight)
+            )
 
         result = {
             "emotion": best_emotion,
@@ -1296,14 +1557,17 @@ class MoodDetector:
             return
         try:
             redis_key = f"mha:mood:state:{self._active_person_key}"
-            await self.redis.hset(redis_key, mapping={
-                "mood": self._current_mood,
-                "stress": str(self._stress_level),
-                "tiredness": str(self._tiredness_level),
-                "frustration": str(self._frustration_count),
-                "positive": str(self._positive_count),
-                "updated": datetime.now(timezone.utc).isoformat(),
-            })
+            await self.redis.hset(
+                redis_key,
+                mapping={
+                    "mood": self._current_mood,
+                    "stress": str(self._stress_level),
+                    "tiredness": str(self._tiredness_level),
+                    "frustration": str(self._frustration_count),
+                    "positive": str(self._positive_count),
+                    "updated": datetime.now(timezone.utc).isoformat(),
+                },
+            )
             # 1h TTL - Reset nach laengerer Inaktivitaet
             await self.redis.expire(redis_key, 3600)
         except Exception as e:

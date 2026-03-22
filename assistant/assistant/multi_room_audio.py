@@ -24,8 +24,8 @@ from .ha_client import HomeAssistantClient
 logger = logging.getLogger(__name__)
 
 # Redis Keys
-_KEY_GROUPS = "mha:audio:groups"          # Hash: group_name -> JSON
-_KEY_ACTIVE_GROUP = "mha:audio:active"    # String: aktuell aktive Gruppe
+_KEY_GROUPS = "mha:audio:groups"  # Hash: group_name -> JSON
+_KEY_ACTIVE_GROUP = "mha:audio:active"  # String: aktuell aktive Gruppe
 
 _DEFAULT_MAX_GROUPS = 10
 
@@ -46,15 +46,19 @@ class MultiRoomAudio:
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis-Verbindung."""
         self.redis = redis_client
-        logger.info("MultiRoomAudio initialisiert (enabled: %s, native_grouping: %s)",
-                     self.enabled, self.use_native_grouping)
+        logger.info(
+            "MultiRoomAudio initialisiert (enabled: %s, native_grouping: %s)",
+            self.enabled,
+            self.use_native_grouping,
+        )
 
     # ------------------------------------------------------------------
     # Gruppen-Verwaltung
     # ------------------------------------------------------------------
 
-    async def create_group(self, name: str, speakers: list[str],
-                           description: str = "") -> dict:
+    async def create_group(
+        self, name: str, speakers: list[str], description: str = ""
+    ) -> dict:
         """Erstellt eine benannte Speaker-Gruppe.
 
         Args:
@@ -76,11 +80,17 @@ class MultiRoomAudio:
         # Duplikat-Check
         existing = await self._get_group(name)
         if existing:
-            return {"success": False, "message": f"Gruppe '{name}' existiert bereits mit {len(existing.get('speakers', []))} Speakern. Loesche sie zuerst oder nutze modify_group."}
+            return {
+                "success": False,
+                "message": f"Gruppe '{name}' existiert bereits mit {len(existing.get('speakers', []))} Speakern. Loesche sie zuerst oder nutze modify_group.",
+            }
 
         count = await self.redis.hlen(_KEY_GROUPS)
         if count >= self.max_groups:
-            return {"success": False, "message": f"Maximale Gruppenanzahl ({self.max_groups}) erreicht."}
+            return {
+                "success": False,
+                "message": f"Maximale Gruppenanzahl ({self.max_groups}) erreicht.",
+            }
 
         group = {
             "name": name,
@@ -125,8 +135,12 @@ class MultiRoomAudio:
         except Exception as e:
             return {"success": False, "message": str(e)}
 
-    async def modify_group(self, name: str, add_speakers: list[str] = None,
-                           remove_speakers: list[str] = None) -> dict:
+    async def modify_group(
+        self,
+        name: str,
+        add_speakers: list[str] = None,
+        remove_speakers: list[str] = None,
+    ) -> dict:
         """Fuegt Speaker hinzu oder entfernt sie aus einer Gruppe."""
         if not self.redis or not self.enabled:
             return {"success": False, "message": "Multi-Room Audio nicht verfuegbar."}
@@ -140,7 +154,9 @@ class MultiRoomAudio:
             for s in add_speakers:
                 if s not in group["speakers"]:
                     group["speakers"].append(s)
-                    group["speaker_volumes"][s] = group.get("volume", self.default_volume)
+                    group["speaker_volumes"][s] = group.get(
+                        "volume", self.default_volume
+                    )
                     changes.append(f"+{s}")
         if remove_speakers:
             for s in remove_speakers:
@@ -154,7 +170,10 @@ class MultiRoomAudio:
 
         try:
             await self.redis.hset(_KEY_GROUPS, name.lower(), json.dumps(group))
-            return {"success": True, "message": f"Gruppe '{name}' aktualisiert: {', '.join(changes)} ({len(group['speakers'])} Speaker)"}
+            return {
+                "success": True,
+                "message": f"Gruppe '{name}' aktualisiert: {', '.join(changes)} ({len(group['speakers'])} Speaker)",
+            }
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -179,9 +198,13 @@ class MultiRoomAudio:
     # Wiedergabe
     # ------------------------------------------------------------------
 
-    async def play_to_group(self, group_name: str, query: str = "",
-                            media_content_id: str = "",
-                            media_content_type: str = "music") -> dict:
+    async def play_to_group(
+        self,
+        group_name: str,
+        query: str = "",
+        media_content_id: str = "",
+        media_content_type: str = "music",
+    ) -> dict:
         """Spielt Musik synchron auf allen Speakern einer Gruppe.
 
         Args:
@@ -195,7 +218,10 @@ class MultiRoomAudio:
 
         group = await self._get_group(group_name)
         if not group:
-            return {"success": False, "message": f"Gruppe '{group_name}' nicht gefunden."}
+            return {
+                "success": False,
+                "message": f"Gruppe '{group_name}' nicht gefunden.",
+            }
 
         speakers = group.get("speakers", [])
         if not speakers:
@@ -203,18 +229,26 @@ class MultiRoomAudio:
 
         content_id = media_content_id or query
         if not content_id:
-            return {"success": False, "message": "Kein Inhalt angegeben (query oder media_content_id)."}
+            return {
+                "success": False,
+                "message": "Kein Inhalt angegeben (query oder media_content_id).",
+            }
 
         # Aktive Gruppe merken
         await self.redis.set(_KEY_ACTIVE_GROUP, group_name.lower())
 
         if self.use_native_grouping and len(speakers) > 1:
-            return await self._play_native_group(speakers, content_id, media_content_type, group)
+            return await self._play_native_group(
+                speakers, content_id, media_content_type, group
+            )
 
-        return await self._play_parallel(speakers, content_id, media_content_type, group)
+        return await self._play_parallel(
+            speakers, content_id, media_content_type, group
+        )
 
-    async def _play_native_group(self, speakers: list[str], content_id: str,
-                                 content_type: str, group: dict) -> dict:
+    async def _play_native_group(
+        self, speakers: list[str], content_id: str, content_type: str, group: dict
+    ) -> dict:
         """Nutzt HA media_player.join fuer native Gruppierung."""
         leader = speakers[0]
         followers = speakers[1:]
@@ -225,19 +259,27 @@ class MultiRoomAudio:
 
             # 2. Speaker joinen
             if followers:
-                await self.ha.call_service("media_player", "join", {
-                    "entity_id": leader,
-                    "group_members": followers,
-                })
+                await self.ha.call_service(
+                    "media_player",
+                    "join",
+                    {
+                        "entity_id": leader,
+                        "group_members": followers,
+                    },
+                )
                 # Kurz warten bis Gruppierung aktiv
                 await asyncio.sleep(1)
 
             # 3. Auf Leader abspielen (Follower bekommen es automatisch)
-            await self.ha.call_service("media_player", "play_media", {
-                "entity_id": leader,
-                "media_content_id": content_id,
-                "media_content_type": content_type,
-            })
+            await self.ha.call_service(
+                "media_player",
+                "play_media",
+                {
+                    "entity_id": leader,
+                    "media_content_id": content_id,
+                    "media_content_type": content_type,
+                },
+            )
 
             speaker_names = await self._get_speaker_names(speakers)
             return {
@@ -245,22 +287,29 @@ class MultiRoomAudio:
                 "message": f"Spiele '{content_id}' auf Gruppe '{group['name']}' ({len(speakers)} Speaker: {', '.join(speaker_names)})",
             }
         except Exception as e:
-            logger.error("Native Gruppierung fehlgeschlagen, Fallback auf parallel: %s", e)
+            logger.error(
+                "Native Gruppierung fehlgeschlagen, Fallback auf parallel: %s", e
+            )
             return await self._play_parallel(speakers, content_id, content_type, group)
 
-    async def _play_parallel(self, speakers: list[str], content_id: str,
-                             content_type: str, group: dict) -> dict:
+    async def _play_parallel(
+        self, speakers: list[str], content_id: str, content_type: str, group: dict
+    ) -> dict:
         """Paralleles play_media auf alle Speaker (Fallback)."""
         try:
             await self._set_group_volumes(group)
 
             # Parallel auf alle Speaker abspielen
             tasks = [
-                self.ha.call_service("media_player", "play_media", {
-                    "entity_id": speaker,
-                    "media_content_id": content_id,
-                    "media_content_type": content_type,
-                })
+                self.ha.call_service(
+                    "media_player",
+                    "play_media",
+                    {
+                        "entity_id": speaker,
+                        "media_content_id": content_id,
+                        "media_content_type": content_type,
+                    },
+                )
                 for speaker in speakers
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -284,7 +333,10 @@ class MultiRoomAudio:
 
         group = await self._get_group(group_name)
         if not group:
-            return {"success": False, "message": f"Gruppe '{group_name}' nicht gefunden."}
+            return {
+                "success": False,
+                "message": f"Gruppe '{group_name}' nicht gefunden.",
+            }
 
         speakers = group.get("speakers", [])
         try:
@@ -297,13 +349,20 @@ class MultiRoomAudio:
             # Native Gruppierung auflösen
             if self.use_native_grouping and len(speakers) > 1:
                 try:
-                    await self.ha.call_service("media_player", "unjoin", {
-                        "entity_id": speakers[0],
-                    })
+                    await self.ha.call_service(
+                        "media_player",
+                        "unjoin",
+                        {
+                            "entity_id": speakers[0],
+                        },
+                    )
                 except Exception as e:
                     logger.debug("Unhandled: %s", e)
             await self.redis.delete(_KEY_ACTIVE_GROUP)
-            return {"success": True, "message": f"Wiedergabe auf Gruppe '{group['name']}' gestoppt."}
+            return {
+                "success": True,
+                "message": f"Wiedergabe auf Gruppe '{group['name']}' gestoppt.",
+            }
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -314,7 +373,10 @@ class MultiRoomAudio:
 
         group = await self._get_group(group_name)
         if not group:
-            return {"success": False, "message": f"Gruppe '{group_name}' nicht gefunden."}
+            return {
+                "success": False,
+                "message": f"Gruppe '{group_name}' nicht gefunden.",
+            }
 
         try:
             tasks = [
@@ -322,7 +384,10 @@ class MultiRoomAudio:
                 for s in group.get("speakers", [])
             ]
             await asyncio.gather(*tasks, return_exceptions=True)
-            return {"success": True, "message": f"Wiedergabe auf Gruppe '{group['name']}' pausiert."}
+            return {
+                "success": True,
+                "message": f"Wiedergabe auf Gruppe '{group['name']}' pausiert.",
+            }
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -330,8 +395,9 @@ class MultiRoomAudio:
     # Lautstaerke
     # ------------------------------------------------------------------
 
-    async def set_group_volume(self, group_name: str, volume: int,
-                               speaker: str = "") -> dict:
+    async def set_group_volume(
+        self, group_name: str, volume: int, speaker: str = ""
+    ) -> dict:
         """Setzt die Lautstaerke fuer eine Gruppe oder einen einzelnen Speaker.
 
         Args:
@@ -344,24 +410,37 @@ class MultiRoomAudio:
 
         group = await self._get_group(group_name)
         if not group:
-            return {"success": False, "message": f"Gruppe '{group_name}' nicht gefunden."}
+            return {
+                "success": False,
+                "message": f"Gruppe '{group_name}' nicht gefunden.",
+            }
 
         volume = max(0, min(100, volume))
 
         if speaker:
             # Einzelnen Speaker in der Gruppe aendern
             if speaker not in group.get("speakers", []):
-                return {"success": False, "message": f"Speaker '{speaker}' nicht in Gruppe '{group_name}'."}
+                return {
+                    "success": False,
+                    "message": f"Speaker '{speaker}' nicht in Gruppe '{group_name}'.",
+                }
             group["speaker_volumes"][speaker] = volume
             await self.redis.hset(_KEY_GROUPS, group_name.lower(), json.dumps(group))
             try:
-                await self.ha.call_service("media_player", "volume_set", {
-                    "entity_id": speaker,
-                    "volume_level": volume / 100.0,
-                })
+                await self.ha.call_service(
+                    "media_player",
+                    "volume_set",
+                    {
+                        "entity_id": speaker,
+                        "volume_level": volume / 100.0,
+                    },
+                )
             except Exception as e:
                 logger.debug("Unhandled: %s", e)
-            return {"success": True, "message": f"Lautstaerke von {speaker} in '{group_name}': {volume}%"}
+            return {
+                "success": True,
+                "message": f"Lautstaerke von {speaker} in '{group_name}': {volume}%",
+            }
 
         # Alle Speaker der Gruppe
         group["volume"] = volume
@@ -369,17 +448,24 @@ class MultiRoomAudio:
             group["speaker_volumes"][s] = volume
         await self.redis.hset(_KEY_GROUPS, group_name.lower(), json.dumps(group))
         await self._set_group_volumes(group)
-        return {"success": True, "message": f"Lautstaerke der Gruppe '{group_name}': {volume}%"}
+        return {
+            "success": True,
+            "message": f"Lautstaerke der Gruppe '{group_name}': {volume}%",
+        }
 
     async def _set_group_volumes(self, group: dict):
         """Setzt die Lautstaerke aller Speaker einer Gruppe."""
         tasks = []
         for speaker, vol in group.get("speaker_volumes", {}).items():
             tasks.append(
-                self.ha.call_service("media_player", "volume_set", {
-                    "entity_id": speaker,
-                    "volume_level": vol / 100.0,
-                })
+                self.ha.call_service(
+                    "media_player",
+                    "volume_set",
+                    {
+                        "entity_id": speaker,
+                        "volume_level": vol / 100.0,
+                    },
+                )
             )
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -396,7 +482,10 @@ class MultiRoomAudio:
         if group_name:
             group = await self._get_group(group_name)
             if not group:
-                return {"success": False, "message": f"Gruppe '{group_name}' nicht gefunden."}
+                return {
+                    "success": False,
+                    "message": f"Gruppe '{group_name}' nicht gefunden.",
+                }
             return await self._build_group_status(group)
 
         groups = await self.list_groups()
@@ -404,12 +493,18 @@ class MultiRoomAudio:
             return {"success": True, "message": "Keine Audio-Gruppen vorhanden."}
 
         active_raw = await self.redis.get(_KEY_ACTIVE_GROUP)
-        active = (active_raw.decode() if isinstance(active_raw, bytes) else active_raw) if active_raw else ""
+        active = (
+            (active_raw.decode() if isinstance(active_raw, bytes) else active_raw)
+            if active_raw
+            else ""
+        )
 
         lines = [f"Audio-Gruppen ({len(groups)}):"]
         for g in groups:
             is_active = "▶ " if g.get("name", "").lower() == active else "  "
-            lines.append(f"{is_active}{g['name']} ({len(g.get('speakers', []))} Speaker, Vol: {g.get('volume', '?')}%)")
+            lines.append(
+                f"{is_active}{g['name']} ({len(g.get('speakers', []))} Speaker, Vol: {g.get('volume', '?')}%)"
+            )
             if g.get("description"):
                 lines.append(f"    {g['description']}")
         return {"success": True, "message": "\n".join(lines)}
@@ -492,6 +587,7 @@ class MultiRoomAudio:
 
     async def _get_speaker_names(self, entity_ids: list[str]) -> list[str]:
         """Loest Entity-IDs zu friendly_names auf (parallel statt sequentiell)."""
+
         async def _resolve(eid: str) -> str:
             try:
                 state = await self.ha.get_state(eid)
@@ -512,9 +608,20 @@ class MultiRoomAudio:
         try:
             states = await self.ha.get_states()
             speakers = []
-            excluded = {"tv", "fernseher", "television", "fire_tv", "apple_tv",
-                        "chromecast", "roku", "soundbar", "xbox", "playstation",
-                        "receiver", "avr"}
+            excluded = {
+                "tv",
+                "fernseher",
+                "television",
+                "fire_tv",
+                "apple_tv",
+                "chromecast",
+                "roku",
+                "soundbar",
+                "xbox",
+                "playstation",
+                "receiver",
+                "avr",
+            }
 
             for state in states:
                 eid = state.get("entity_id", "")
@@ -526,11 +633,13 @@ class MultiRoomAudio:
                 attrs = state.get("attributes", {})
                 if attrs.get("device_class") in ("tv", "receiver"):
                     continue
-                speakers.append({
-                    "entity_id": eid,
-                    "name": attrs.get("friendly_name", eid),
-                    "state": state.get("state", "unknown"),
-                })
+                speakers.append(
+                    {
+                        "entity_id": eid,
+                        "name": attrs.get("friendly_name", eid),
+                        "state": state.get("state", "unknown"),
+                    }
+                )
 
             speakers.sort(key=lambda s: s.get("name", ""))
             return speakers
@@ -645,7 +754,8 @@ class MultiRoomAudio:
             for speaker in target_speakers:
                 try:
                     await self.ha.call_service(
-                        "tts", "speak",
+                        "tts",
+                        "speak",
                         entity_id=speaker,
                         message=message,
                     )

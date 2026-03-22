@@ -80,7 +80,10 @@ class TestCookingIntent:
 
 class TestDishExtraction:
     def test_wie_mache_ich(self, assistant):
-        assert assistant._extract_dish("Wie mache ich Pasta Carbonara?") == "pasta carbonara"
+        assert (
+            assistant._extract_dish("Wie mache ich Pasta Carbonara?")
+            == "pasta carbonara"
+        )
 
     def test_wie_macht_man(self, assistant):
         assert assistant._extract_dish("Wie macht man Risotto?") == "risotto"
@@ -222,15 +225,21 @@ class TestPortionScaling:
 
 class TestRecipeParsing:
     def test_valid_json(self, assistant):
-        content = json.dumps({
-            "dish": "Testgericht",
-            "portions": 2,
-            "ingredients": ["100g Mehl", "2 Eier"],
-            "steps": [
-                {"number": 1, "instruction": "Mehl sieben", "timer_minutes": None},
-                {"number": 2, "instruction": "Eier unterruehren", "timer_minutes": None},
-            ],
-        })
+        content = json.dumps(
+            {
+                "dish": "Testgericht",
+                "portions": 2,
+                "ingredients": ["100g Mehl", "2 Eier"],
+                "steps": [
+                    {"number": 1, "instruction": "Mehl sieben", "timer_minutes": None},
+                    {
+                        "number": 2,
+                        "instruction": "Eier unterruehren",
+                        "timer_minutes": None,
+                    },
+                ],
+            }
+        )
         session = assistant._parse_recipe(content, "Testgericht", 2, "max")
         assert session is not None
         assert session.dish == "Testgericht"
@@ -250,19 +259,23 @@ class TestRecipeParsing:
         assert session is None
 
     def test_empty_steps(self, assistant):
-        content = json.dumps({"dish": "Leer", "portions": 1, "ingredients": [], "steps": []})
+        content = json.dumps(
+            {"dish": "Leer", "portions": 1, "ingredients": [], "steps": []}
+        )
         session = assistant._parse_recipe(content, "Leer", 1, "max")
         assert session is None
 
     def test_step_with_timer(self, assistant):
-        content = json.dumps({
-            "dish": "Nudeln",
-            "portions": 2,
-            "ingredients": ["500g Nudeln"],
-            "steps": [
-                {"number": 1, "instruction": "Nudeln kochen", "timer_minutes": 10},
-            ],
-        })
+        content = json.dumps(
+            {
+                "dish": "Nudeln",
+                "portions": 2,
+                "ingredients": ["500g Nudeln"],
+                "steps": [
+                    {"number": 1, "instruction": "Nudeln kochen", "timer_minutes": 10},
+                ],
+            }
+        )
         session = assistant._parse_recipe(content, "Nudeln", 2, "max")
         assert session.steps[0].timer_minutes == 10
 
@@ -275,6 +288,7 @@ class TestTimerDataclass:
 
     def test_started_timer(self):
         import time
+
         timer = CookingTimer(label="Test", duration_seconds=300)
         timer.start()
         assert timer.remaining_seconds > 0
@@ -287,6 +301,7 @@ class TestTimerDataclass:
 
     def test_format_remaining_minutes(self):
         import time
+
         timer = CookingTimer(label="Test", duration_seconds=125, started_at=time.time())
         fmt = timer.format_remaining()
         assert "Minuten" in fmt

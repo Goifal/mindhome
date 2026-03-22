@@ -16,6 +16,7 @@ from assistant.calendar_intelligence import (
 
 # ── Helpers ───────────────────────────────────────────────
 
+
 def _make_event(summary, start_iso, end_iso, all_day=False):
     return {"summary": summary, "start": start_iso, "end": end_iso, "all_day": all_day}
 
@@ -27,33 +28,45 @@ def _make_recurring_events(summary, hour, count=4):
     # Use a known Monday: 2026-03-02 is a Monday
     for i in range(count):
         day = datetime(2026, 3, 2 + 7 * i, hour, 0)
-        events.append(_make_event(
-            summary,
-            day.isoformat(),
-            (day + timedelta(hours=1)).isoformat(),
-        ))
+        events.append(
+            _make_event(
+                summary,
+                day.isoformat(),
+                (day + timedelta(hours=1)).isoformat(),
+            )
+        )
     return events
 
 
 # ── Fixtures ──────────────────────────────────────────────
 
+
 @pytest.fixture
 def ci():
-    with patch("assistant.calendar_intelligence.yaml_config", {
-        "calendar_intelligence": {"enabled": True, "commute_minutes": 30, "habit_min_occurrences": 3}
-    }):
+    with patch(
+        "assistant.calendar_intelligence.yaml_config",
+        {
+            "calendar_intelligence": {
+                "enabled": True,
+                "commute_minutes": 30,
+                "habit_min_occurrences": 3,
+            }
+        },
+    ):
         return CalendarIntelligence()
 
 
 @pytest.fixture
 def ci_disabled():
-    with patch("assistant.calendar_intelligence.yaml_config", {
-        "calendar_intelligence": {"enabled": False}
-    }):
+    with patch(
+        "assistant.calendar_intelligence.yaml_config",
+        {"calendar_intelligence": {"enabled": False}},
+    ):
         return CalendarIntelligence()
 
 
 # ── __init__ ──────────────────────────────────────────────
+
 
 @patch("assistant.calendar_intelligence.yaml_config", {"calendar_intelligence": {}})
 def test_init_defaults():
@@ -66,9 +79,10 @@ def test_init_defaults():
     assert ci._conflicts == []
 
 
-@patch("assistant.calendar_intelligence.yaml_config", {
-    "calendar_intelligence": {"enabled": False, "commute_minutes": 45}
-})
+@patch(
+    "assistant.calendar_intelligence.yaml_config",
+    {"calendar_intelligence": {"enabled": False, "commute_minutes": 45}},
+)
 def test_init_custom_config():
     ci = CalendarIntelligence()
     assert ci.enabled is False
@@ -77,19 +91,28 @@ def test_init_custom_config():
 
 # ── initialize ────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
-@patch("assistant.calendar_intelligence.yaml_config", {"calendar_intelligence": {"enabled": True}})
+@patch(
+    "assistant.calendar_intelligence.yaml_config",
+    {"calendar_intelligence": {"enabled": True}},
+)
 async def test_initialize_with_redis():
     ci = CalendarIntelligence()
     redis = AsyncMock()
-    redis.get = AsyncMock(return_value=json.dumps([{"type": "recurring_event", "title": "Standup"}]))
+    redis.get = AsyncMock(
+        return_value=json.dumps([{"type": "recurring_event", "title": "Standup"}])
+    )
     await ci.initialize(redis)
     assert ci.redis is redis
     assert len(ci._habits) == 1
 
 
 @pytest.mark.asyncio
-@patch("assistant.calendar_intelligence.yaml_config", {"calendar_intelligence": {"enabled": True}})
+@patch(
+    "assistant.calendar_intelligence.yaml_config",
+    {"calendar_intelligence": {"enabled": True}},
+)
 async def test_initialize_without_redis():
     ci = CalendarIntelligence()
     await ci.initialize(None)
@@ -98,7 +121,10 @@ async def test_initialize_without_redis():
 
 
 @pytest.mark.asyncio
-@patch("assistant.calendar_intelligence.yaml_config", {"calendar_intelligence": {"enabled": False}})
+@patch(
+    "assistant.calendar_intelligence.yaml_config",
+    {"calendar_intelligence": {"enabled": False}},
+)
 async def test_initialize_disabled():
     ci = CalendarIntelligence()
     redis = AsyncMock()
@@ -108,6 +134,7 @@ async def test_initialize_disabled():
 
 
 # ── _parse_dt ─────────────────────────────────────────────
+
 
 def test_parse_dt_iso():
     result = CalendarIntelligence._parse_dt("2026-03-08T10:00:00")
@@ -134,6 +161,7 @@ def test_parse_dt_invalid():
 
 
 # ── _detect_conflicts ────────────────────────────────────
+
 
 def test_detect_conflicts_overlap(ci):
     events = [
@@ -178,6 +206,7 @@ def test_detect_conflicts_skips_all_day(ci):
 
 # ── _detect_breaks ────────────────────────────────────────
 
+
 def test_detect_breaks_found(ci):
     events = [
         _make_event("A", "2026-03-08T09:00:00", "2026-03-08T10:00:00"),
@@ -210,6 +239,7 @@ def test_detect_breaks_too_long(ci):
 
 # ── _detect_habits ────────────────────────────────────────
 
+
 def test_detect_habits_recurring(ci):
     events = _make_recurring_events("Team Standup", 10, count=4)
     habits = ci._detect_habits(events)
@@ -226,6 +256,7 @@ def test_detect_habits_not_enough_occurrences(ci):
 
 
 # ── analyze_events ────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_analyze_events_disabled(ci_disabled):
@@ -256,6 +287,7 @@ async def test_analyze_events_no_redis(ci):
 
 # ── get_habits / get_conflicts ────────────────────────────
 
+
 def test_get_habits(ci):
     ci._habits = [{"type": "recurring_event", "title": "test"}]
     assert ci.get_habits() == ci._habits
@@ -267,6 +299,7 @@ def test_get_conflicts(ci):
 
 
 # ── get_context_hint ──────────────────────────────────────
+
 
 def test_get_context_hint_empty(ci):
     assert ci.get_context_hint() == ""
@@ -291,8 +324,12 @@ def test_get_context_hint_limits_items(ci):
 
 # ── Zusaetzliche Tests fuer 100% Coverage ─────────────────
 
+
 @pytest.mark.asyncio
-@patch("assistant.calendar_intelligence.yaml_config", {"calendar_intelligence": {"enabled": True}})
+@patch(
+    "assistant.calendar_intelligence.yaml_config",
+    {"calendar_intelligence": {"enabled": True}},
+)
 async def test_load_habits_no_redis():
     """_load_habits kehrt sofort zurueck wenn kein Redis vorhanden (Zeile 57)."""
     ci = CalendarIntelligence()
@@ -302,7 +339,10 @@ async def test_load_habits_no_redis():
 
 
 @pytest.mark.asyncio
-@patch("assistant.calendar_intelligence.yaml_config", {"calendar_intelligence": {"enabled": True}})
+@patch(
+    "assistant.calendar_intelligence.yaml_config",
+    {"calendar_intelligence": {"enabled": True}},
+)
 async def test_load_habits_exception():
     """_load_habits faengt Exceptions ab (Zeilen 62-63)."""
     ci = CalendarIntelligence()
@@ -314,7 +354,10 @@ async def test_load_habits_exception():
 
 
 @pytest.mark.asyncio
-@patch("assistant.calendar_intelligence.yaml_config", {"calendar_intelligence": {"enabled": True}})
+@patch(
+    "assistant.calendar_intelligence.yaml_config",
+    {"calendar_intelligence": {"enabled": True}},
+)
 async def test_analyze_events_redis_exception():
     """analyze_events faengt Redis-Fehler beim Speichern ab (Zeilen 106-107)."""
     ci = CalendarIntelligence()
@@ -330,23 +373,30 @@ async def test_analyze_events_redis_exception():
     assert "breaks" in result
 
 
-@patch("assistant.calendar_intelligence.yaml_config", {
-    "calendar_intelligence": {"enabled": True, "habit_min_occurrences": 3}
-})
+@patch(
+    "assistant.calendar_intelligence.yaml_config",
+    {"calendar_intelligence": {"enabled": True, "habit_min_occurrences": 3}},
+)
 def test_detect_habits_skips_all_day_and_no_start():
     """_detect_habits ueberspringt all_day Events und Events ohne Start (Zeile 125)."""
     ci = CalendarIntelligence()
     events = [
         _make_event("Holiday", "2026-03-08", "2026-03-09", all_day=True),
-        {"summary": "No start", "start": "", "end": "2026-03-08T10:00:00", "all_day": False},
+        {
+            "summary": "No start",
+            "start": "",
+            "end": "2026-03-08T10:00:00",
+            "all_day": False,
+        },
     ]
     habits = ci._detect_habits(events)
     assert habits == []
 
 
-@patch("assistant.calendar_intelligence.yaml_config", {
-    "calendar_intelligence": {"enabled": True, "habit_min_occurrences": 3}
-})
+@patch(
+    "assistant.calendar_intelligence.yaml_config",
+    {"calendar_intelligence": {"enabled": True, "habit_min_occurrences": 3}},
+)
 def test_detect_habits_midnight_crossing_event():
     """_detect_habits zaehlt Stunden korrekt bei Mitternachts-uebergreifenden Events (Zeilen 155-158)."""
     ci = CalendarIntelligence()

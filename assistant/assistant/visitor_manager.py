@@ -28,17 +28,17 @@ logger = logging.getLogger(__name__)
 
 # Redis Key Prefixes
 _KEY_PREFIX = "mha:visitor"
-_KEY_KNOWN = f"{_KEY_PREFIX}:known"               # Hash: person_id -> JSON(profile)
-_KEY_HISTORY = f"{_KEY_PREFIX}:history"            # List: letzte Besuche (max 100)
-_KEY_LAST_RING = f"{_KEY_PREFIX}:last_ring"        # String: Letzte Klingel-Info (TTL 10min)
-_KEY_EXPECTED = f"{_KEY_PREFIX}:expected"           # Hash: person_id -> JSON(expected_info)
-_KEY_PENDING = f"{_KEY_PREFIX}:pending_entry"       # String: Pending "lass rein" (TTL 5min)
-_KEY_STATS = f"{_KEY_PREFIX}:stats"                # Hash: Statistiken
+_KEY_KNOWN = f"{_KEY_PREFIX}:known"  # Hash: person_id -> JSON(profile)
+_KEY_HISTORY = f"{_KEY_PREFIX}:history"  # List: letzte Besuche (max 100)
+_KEY_LAST_RING = f"{_KEY_PREFIX}:last_ring"  # String: Letzte Klingel-Info (TTL 10min)
+_KEY_EXPECTED = f"{_KEY_PREFIX}:expected"  # Hash: person_id -> JSON(expected_info)
+_KEY_PENDING = f"{_KEY_PREFIX}:pending_entry"  # String: Pending "lass rein" (TTL 5min)
+_KEY_STATS = f"{_KEY_PREFIX}:stats"  # Hash: Statistiken
 
 # Defaults
 _DEFAULT_HISTORY_MAX = 100
-_DEFAULT_RING_TTL = 600          # 10 Minuten
-_DEFAULT_PENDING_TTL = 300       # 5 Minuten
+_DEFAULT_RING_TTL = 600  # 10 Minuten
+_DEFAULT_PENDING_TTL = 300  # 5 Minuten
 
 
 class VisitorManager:
@@ -83,9 +83,9 @@ class VisitorManager:
     # Bekannte Besucher verwalten
     # ------------------------------------------------------------------
 
-    async def add_known_visitor(self, person_id: str, name: str,
-                                relationship: str = "",
-                                notes: str = "") -> dict:
+    async def add_known_visitor(
+        self, person_id: str, name: str, relationship: str = "", notes: str = ""
+    ) -> dict:
         """Fuegt einen bekannten Besucher hinzu oder aktualisiert ihn.
 
         Args:
@@ -127,7 +127,10 @@ class VisitorManager:
 
         existing = await self._get_known_visitor(person_id)
         if not existing:
-            return {"success": False, "message": f"Besucher '{person_id}' nicht gefunden."}
+            return {
+                "success": False,
+                "message": f"Besucher '{person_id}' nicht gefunden.",
+            }
 
         await self.redis.hdel(_KEY_KNOWN, person_id)
         return {"success": True, "message": f"Besucher '{existing['name']}' entfernt."}
@@ -135,7 +138,11 @@ class VisitorManager:
     async def list_known_visitors(self) -> dict:
         """Listet alle bekannten Besucher auf."""
         if not self.redis:
-            return {"success": False, "visitors": [], "message": "Redis nicht verfuegbar"}
+            return {
+                "success": False,
+                "visitors": [],
+                "message": "Redis nicht verfuegbar",
+            }
 
         raw = await self.redis.hgetall(_KEY_KNOWN)
         visitors = []
@@ -173,10 +180,14 @@ class VisitorManager:
     # Erwartete Besucher
     # ------------------------------------------------------------------
 
-    async def expect_visitor(self, person_id: str, name: str = "",
-                             expected_time: str = "",
-                             auto_unlock: bool = False,
-                             notes: str = "") -> dict:
+    async def expect_visitor(
+        self,
+        person_id: str,
+        name: str = "",
+        expected_time: str = "",
+        auto_unlock: bool = False,
+        notes: str = "",
+    ) -> dict:
         """Markiert einen Besucher als erwartet.
 
         Args:
@@ -204,7 +215,11 @@ class VisitorManager:
             "auto_unlock": auto_unlock,
             "notes": notes,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "expires_at": datetime.combine(datetime.now(_LOCAL_TZ).date(), datetime.min.time().replace(hour=23, minute=59, second=59), tzinfo=_LOCAL_TZ).isoformat(),
+            "expires_at": datetime.combine(
+                datetime.now(_LOCAL_TZ).date(),
+                datetime.min.time().replace(hour=23, minute=59, second=59),
+                tzinfo=_LOCAL_TZ,
+            ).isoformat(),
         }
         await self.redis.hset(_KEY_EXPECTED, person_id, json.dumps(info))
 
@@ -354,15 +369,15 @@ class VisitorManager:
         # LLM-Rewrite fuer natuerlichere Besucher-Nachricht
         if raw_rec:
             result["recommendation"] = await self._llm_rewrite_doorbell(
-                raw_rec, camera_description,
+                raw_rec,
+                camera_description,
             )
         else:
             result["recommendation"] = raw_rec
 
         return result
 
-    async def _llm_rewrite_doorbell(self, message: str,
-                                     camera_desc: str = "") -> str:
+    async def _llm_rewrite_doorbell(self, message: str, camera_desc: str = "") -> str:
         """Schreibt die Tuerklingel-Nachricht via LLM natuerlicher um.
 
         Nutzt Kamera-Beschreibung als Kontext fuer persoenlichere Meldung.
@@ -371,15 +386,18 @@ class VisitorManager:
         if not self._ollama:
             return message
         from .config import yaml_config as _yc
+
         if not _yc.get("visitor_management", {}).get("llm_rewrite", True):
             return message
         try:
             from .config import settings
             from .ollama_client import strip_think_tags
+
             title = get_person_title()
             camera_hint = f"\nKamera zeigt: {camera_desc}" if camera_desc else ""
             from datetime import datetime as _dt
             from zoneinfo import ZoneInfo as _ZI
+
             _hour = _dt.now(tz=_ZI("Europe/Berlin")).hour
             if 22 <= _hour or _hour < 6:
                 _time_hint = f"Nacht ({_hour}:00 Uhr)"
@@ -440,7 +458,10 @@ class VisitorManager:
         # Tuer entriegeln
         unlock_result = await self._unlock_door(door)
         if not unlock_result:
-            return {"success": False, "message": f"Tuer '{door}' konnte nicht entriegelt werden."}
+            return {
+                "success": False,
+                "message": f"Tuer '{door}' konnte nicht entriegelt werden.",
+            }
 
         # Ring-Kontext laden fuer History
         try:
@@ -470,9 +491,13 @@ class VisitorManager:
     # Besucher-History
     # ------------------------------------------------------------------
 
-    async def _record_visit(self, person_id: str, name: str,
-                            camera_description: str = "",
-                            auto_unlocked: bool = False):
+    async def _record_visit(
+        self,
+        person_id: str,
+        name: str,
+        camera_description: str = "",
+        auto_unlocked: bool = False,
+    ):
         """Protokolliert einen Besuch in der History."""
         if not self.redis:
             return
@@ -481,7 +506,9 @@ class VisitorManager:
             "person_id": person_id,
             "name": name,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "camera_description": camera_description[:200] if camera_description else "",
+            "camera_description": camera_description[:200]
+            if camera_description
+            else "",
             "auto_unlocked": auto_unlocked,
         }
 
@@ -576,10 +603,14 @@ class VisitorManager:
     async def _unlock_door(self, door: str = "haustuer") -> bool:
         """Entriegelt eine Tuer via FunctionExecutor."""
         if not self.executor:
-            logger.warning("VisitorManager: Kein Executor gesetzt, Tuer kann nicht entriegelt werden")
+            logger.warning(
+                "VisitorManager: Kein Executor gesetzt, Tuer kann nicht entriegelt werden"
+            )
             return False
         try:
-            result = await self.executor.execute("lock_door", {"door": door, "action": "unlock"})
+            result = await self.executor.execute(
+                "lock_door", {"door": door, "action": "unlock"}
+            )
             return result.get("success", False)
         except Exception as e:
             logger.error("VisitorManager: Tuer-Entriegelung fehlgeschlagen: %s", e)

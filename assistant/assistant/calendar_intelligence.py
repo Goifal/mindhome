@@ -93,16 +93,25 @@ class CalendarIntelligence:
                 for key in keys:
                     raw = await self.redis.get(key)
                     if raw:
-                        loc_hash = key.decode("utf-8").removeprefix(prefix) if isinstance(key, bytes) else str(key).removeprefix(prefix)
+                        loc_hash = (
+                            key.decode("utf-8").removeprefix(prefix)
+                            if isinstance(key, bytes)
+                            else str(key).removeprefix(prefix)
+                        )
                         try:
                             self._route_commute_cache[loc_hash] = float(raw)
                         except (ValueError, TypeError):
-                            logger.warning("Ungueltige Pendelzeit in Redis fuer Key %s: %s", key, raw)
+                            logger.warning(
+                                "Ungueltige Pendelzeit in Redis fuer Key %s: %s",
+                                key,
+                                raw,
+                            )
                 if cursor == 0:
                     break
             if self._route_commute_cache:
                 logger.info(
-                    "Per-Route Pendelzeiten geladen: %d Routen", len(self._route_commute_cache)
+                    "Per-Route Pendelzeiten geladen: %d Routen",
+                    len(self._route_commute_cache),
                 )
         except Exception as e:
             logger.warning("Route-Commute-Cache laden fehlgeschlagen: %s", e)
@@ -132,7 +141,9 @@ class CalendarIntelligence:
                 await self.redis.setex(key, 90 * 86400, str(minutes))
                 logger.info(
                     "Pendelzeit gespeichert: '%s' -> %.0f Min. (hash=%s)",
-                    location, minutes, loc_hash,
+                    location,
+                    minutes,
+                    loc_hash,
                 )
             except Exception as e:
                 logger.warning("Pendelzeit speichern fehlgeschlagen: %s", e)
@@ -228,14 +239,16 @@ class CalendarIntelligence:
             for title, count in counts.items():
                 if count >= self.habit_min_occurrences and title:
                     day, hour = slot_key.split("_")
-                    habits.append({
-                        "type": "recurring_event",
-                        "title": title,
-                        "day": day,
-                        "hour": int(hour),
-                        "count": count,
-                        "description": f"{title} findet regelmaessig {day}s um {hour} Uhr statt ({count}x erkannt).",
-                    })
+                    habits.append(
+                        {
+                            "type": "recurring_event",
+                            "title": title,
+                            "day": day,
+                            "hour": int(hour),
+                            "count": count,
+                            "description": f"{title} findet regelmaessig {day}s um {hour} Uhr statt ({count}x erkannt).",
+                        }
+                    )
 
         # Zeitblock-Gewohnheiten (z.B. immer frei zwischen 12-13)
         hour_activity = Counter()
@@ -269,13 +282,15 @@ class CalendarIntelligence:
             start = self._parse_dt(ev.get("start", ""))
             end = self._parse_dt(ev.get("end", ""))
             if start and end and not ev.get("all_day"):
-                timed_events.append({
-                    "start": start,
-                    "end": end,
-                    "summary": ev.get("summary", ""),
-                    "location": ev.get("location", ""),
-                    "_orig": ev,
-                })
+                timed_events.append(
+                    {
+                        "start": start,
+                        "end": end,
+                        "summary": ev.get("summary", ""),
+                        "location": ev.get("location", ""),
+                        "_orig": ev,
+                    }
+                )
 
         timed_events.sort(key=lambda e: e["start"])
 
@@ -287,26 +302,30 @@ class CalendarIntelligence:
 
             if gap < 0:
                 # Direkte Ueberlappung
-                conflicts.append({
-                    "type": "overlap",
-                    "event_a": curr["summary"],
-                    "event_b": nxt["summary"],
-                    "gap_minutes": round(gap),
-                    "description": f"'{curr['summary']}' und '{nxt['summary']}' ueberlappen sich um {abs(round(gap))} Minuten.",
-                })
+                conflicts.append(
+                    {
+                        "type": "overlap",
+                        "event_a": curr["summary"],
+                        "event_b": nxt["summary"],
+                        "gap_minutes": round(gap),
+                        "description": f"'{curr['summary']}' und '{nxt['summary']}' ueberlappen sich um {abs(round(gap))} Minuten.",
+                    }
+                )
             else:
                 # Pendelzeit fuer das naechste Event ermitteln (per-route oder global)
                 commute = self._get_commute_for_event(nxt["_orig"])
                 if 0 < gap < commute:
                     # Pendelzeit-Warnung
-                    conflicts.append({
-                        "type": "tight_schedule",
-                        "event_a": curr["summary"],
-                        "event_b": nxt["summary"],
-                        "gap_minutes": round(gap),
-                        "commute_minutes": round(commute),
-                        "description": f"Nur {round(gap)} Min. zwischen '{curr['summary']}' und '{nxt['summary']}' (Pendelzeit: {round(commute)} Min.).",
-                    })
+                    conflicts.append(
+                        {
+                            "type": "tight_schedule",
+                            "event_a": curr["summary"],
+                            "event_b": nxt["summary"],
+                            "gap_minutes": round(gap),
+                            "commute_minutes": round(commute),
+                            "description": f"Nur {round(gap)} Min. zwischen '{curr['summary']}' und '{nxt['summary']}' (Pendelzeit: {round(commute)} Min.).",
+                        }
+                    )
 
         return conflicts
 
@@ -329,12 +348,14 @@ class CalendarIntelligence:
             gap = (next_start - curr_end).total_seconds() / 60
 
             if 30 <= gap <= 180:
-                breaks.append({
-                    "start": curr_end.strftime("%H:%M"),
-                    "end": next_start.strftime("%H:%M"),
-                    "duration_minutes": round(gap),
-                    "description": f"Freies Zeitfenster: {curr_end.strftime('%H:%M')} - {next_start.strftime('%H:%M')} ({round(gap)} Min.)",
-                })
+                breaks.append(
+                    {
+                        "start": curr_end.strftime("%H:%M"),
+                        "end": next_start.strftime("%H:%M"),
+                        "duration_minutes": round(gap),
+                        "description": f"Freies Zeitfenster: {curr_end.strftime('%H:%M')} - {next_start.strftime('%H:%M')} ({round(gap)} Min.)",
+                    }
+                )
 
         return breaks
 
@@ -358,8 +379,16 @@ class CalendarIntelligence:
                 if not start or not end or ev.get("all_day"):
                     continue
                 # Vergleich in Lokalzeit
-                start_local = start.astimezone(_LOCAL_TZ) if start.tzinfo else start.replace(tzinfo=_LOCAL_TZ)
-                end_local = end.astimezone(_LOCAL_TZ) if end.tzinfo else end.replace(tzinfo=_LOCAL_TZ)
+                start_local = (
+                    start.astimezone(_LOCAL_TZ)
+                    if start.tzinfo
+                    else start.replace(tzinfo=_LOCAL_TZ)
+                )
+                end_local = (
+                    end.astimezone(_LOCAL_TZ)
+                    if end.tzinfo
+                    else end.replace(tzinfo=_LOCAL_TZ)
+                )
                 if start_local <= now <= end_local:
                     return {
                         "in_event": True,

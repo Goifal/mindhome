@@ -53,6 +53,7 @@ class RoutineEngine:
         self._executor = None  # Wird von brain.py gesetzt
         self._personality = None  # Wird von brain.py gesetzt
         self._semantic_memory = None  # Wird von brain.py gesetzt
+        self._explainability = None  # Wird von brain.py gesetzt
         self._vacation_task: Optional[asyncio.Task] = None
 
         # Konfiguration
@@ -68,6 +69,7 @@ class RoutineEngine:
                 "weather",
                 "calendar",
                 "house_status",
+                "night_decisions",
                 "travel",
                 "personal_memory",
                 "device_conflicts",
@@ -126,6 +128,7 @@ class RoutineEngine:
                 "weather",
                 "calendar",
                 "house_status",
+                "night_decisions",
                 "travel",
                 "personal_memory",
                 "device_conflicts",
@@ -180,6 +183,10 @@ class RoutineEngine:
     def set_personality(self, personality):
         """Setzt die PersonalityEngine für personality-konsistente Prompts."""
         self._personality = personality
+
+    def set_explainability(self, explainability):
+        """Setzt die ExplainabilityEngine fuer Nacht-Entscheidungen im Briefing."""
+        self._explainability = explainability
 
     # ------------------------------------------------------------------
     # Morning Briefing (Feature 7.1)
@@ -306,6 +313,8 @@ class RoutineEngine:
                 return await self._get_personal_memory_briefing(person)
             elif module == "device_conflicts":
                 return await self._get_device_conflicts_briefing()
+            elif module == "night_decisions":
+                return await self._get_night_decisions_briefing()
         except Exception as e:
             logger.debug("Briefing-Modul '%s' fehlgeschlagen: %s", module, e)
         return ""
@@ -378,6 +387,10 @@ class RoutineEngine:
         if module == "travel":
             return 4
 
+        # Night decisions — informational, after house_status
+        if module == "night_decisions":
+            return 3
+
         # Personal memory / greeting — informational
         if module == "personal_memory":
             return 2
@@ -409,6 +422,67 @@ class RoutineEngine:
             return "\n".join(lines)
         except Exception as e:
             logger.debug("Device-Conflicts Briefing Fehler: %s", e)
+            return ""
+
+    async def _get_night_decisions_briefing(self) -> str:
+        """Fasst naechtliche Jarvis-Entscheidungen (22:00-07:00) zusammen.
+
+        Holt die letzten Entscheidungen aus der ExplainabilityEngine und filtert
+        auf die Nachtzeit. Gibt max 2 Saetze zurueck.
+        """
+        if not self._explainability or not self._explainability.enabled:
+            return ""
+
+        try:
+            decisions = self._explainability.explain_last(n=20)
+            if not decisions:
+                return ""
+
+            # Nacht-Entscheidungen filtern (22:00 - 07:00)
+            night_decisions = []
+            for d in decisions:
+                ts = d.get("timestamp", "")
+                if not ts:
+                    continue
+                try:
+                    dt = datetime.fromisoformat(ts).astimezone(_TZ)
+                    hour = dt.hour
+                    if hour >= 22 or hour < 7:
+                        # Nur autonome Entscheidungen, keine User-Commands
+                        if d.get("trigger") != "user_command":
+                            night_decisions.append(d)
+                except (ValueError, TypeError):
+                    continue
+
+            if not night_decisions:
+                return ""
+
+            # Max 3 Entscheidungen erwaehnen, Rest als Zaehler
+            count = len(night_decisions)
+            descs = []
+            for d in night_decisions[:3]:
+                action = d.get("action", "")
+                reason = d.get("reason", "")
+                if reason:
+                    descs.append(f"{action} ({reason})")
+                else:
+                    descs.append(action)
+
+            if count <= 3:
+                summary = (
+                    f"Naechtliche Entscheidungen ({count}): " + ", ".join(descs) + "."
+                )
+            else:
+                extra = count - 3
+                summary = (
+                    f"Naechtliche Entscheidungen ({count}): "
+                    + ", ".join(descs)
+                    + f", und {extra} weitere."
+                )
+
+            return summary
+        except Exception as e:
+            logger.debug("Night-Decisions Briefing Fehler: %s", e)
             return ""
 
     async def _get_personal_memory_briefing(self, person: str) -> str:

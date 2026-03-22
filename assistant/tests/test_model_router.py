@@ -24,26 +24,67 @@ MODEL_SMART = "qwen3.5:9b"
 MODEL_DEEP = "qwen3.5:35b"
 
 FAST_KEYWORDS = [
-    "licht", "lampe", "temperatur", "heizung", "rollladen",
-    "jalousie", "szene", "alarm", "tuer",
-    "musik", "pause", "stopp", "stop",
-    "leiser", "lauter", "an", "aus", "schalte", "mach",
+    "licht",
+    "lampe",
+    "temperatur",
+    "heizung",
+    "rollladen",
+    "jalousie",
+    "szene",
+    "alarm",
+    "tuer",
+    "musik",
+    "pause",
+    "stopp",
+    "stop",
+    "leiser",
+    "lauter",
+    "an",
+    "aus",
+    "schalte",
+    "mach",
 ]
 
 DEEP_KEYWORDS = [
-    "erklaer", "erklaere", "warum genau", "im detail",
-    "analysiere", "analyse", "vergleich", "vergleiche",
-    "unterschied zwischen", "vor- und nachteile",
-    "strategie", "plan", "plane", "planung",
-    "optimier", "optimiere", "optimierung",
-    "was waere wenn", "was wäre wenn", "hypothetisch",
-    "stell dir vor", "angenommen",
-    "zusammenfassung", "zusammenfassen", "fasse zusammen",
-    "berechne", "berechnung", "kalkulation",
-    "wie funktioniert", "wie genau",
-    "schreib mir", "schreibe mir", "formuliere",
-    "rezept", "anleitung", "tutorial",
-    "pro und contra", "bewerte", "bewertung",
+    "erklaer",
+    "erklaere",
+    "warum genau",
+    "im detail",
+    "analysiere",
+    "analyse",
+    "vergleich",
+    "vergleiche",
+    "unterschied zwischen",
+    "vor- und nachteile",
+    "strategie",
+    "plan",
+    "plane",
+    "planung",
+    "optimier",
+    "optimiere",
+    "optimierung",
+    "was waere wenn",
+    "was wäre wenn",
+    "hypothetisch",
+    "stell dir vor",
+    "angenommen",
+    "zusammenfassung",
+    "zusammenfassen",
+    "fasse zusammen",
+    "berechne",
+    "berechnung",
+    "kalkulation",
+    "wie funktioniert",
+    "wie genau",
+    "schreib mir",
+    "schreibe mir",
+    "formuliere",
+    "rezept",
+    "anleitung",
+    "tutorial",
+    "pro und contra",
+    "bewerte",
+    "bewertung",
 ]
 
 DEEP_MIN_WORDS = 15
@@ -52,12 +93,13 @@ DEEP_MIN_WORDS = 15
 def word_match(keyword: str, text: str) -> bool:
     """Kopie aus ModelRouter._word_match."""
     if len(keyword) <= 3:
-        return bool(re.search(r'\b' + re.escape(keyword) + r'\b', text))
+        return bool(re.search(r"\b" + re.escape(keyword) + r"\b", text))
     return keyword in text
 
 
 def select_model(
-    text: str, *,
+    text: str,
+    *,
     deep_available: bool = True,
     smart_available: bool = True,
     fast_enabled: bool = True,
@@ -89,7 +131,10 @@ def select_model(
         return cap(MODEL_DEEP)
 
     # 4. Fragen → Smart
-    if any(text_lower.startswith(w) for w in ["was ", "wie ", "warum ", "wann ", "wo ", "wer "]):
+    if any(
+        text_lower.startswith(w)
+        for w in ["was ", "wie ", "warum ", "wann ", "wo ", "wer "]
+    ):
         return cap(MODEL_SMART)
 
     # Default: Smart
@@ -97,7 +142,8 @@ def select_model(
 
 
 def get_fallback_model(
-    current: str, *,
+    current: str,
+    *,
     smart_available: bool = True,
 ) -> str:
     """Kopie von ModelRouter.get_fallback_model."""
@@ -126,6 +172,7 @@ def is_model_installed(model_name: str, available: list[str]) -> bool:
 # ============================================================
 # _word_match Tests
 # ============================================================
+
 
 class TestWordMatch:
     """Keyword-Matching mit Word-Boundary fuer kurze Keywords."""
@@ -159,30 +206,37 @@ class TestWordMatch:
 # select_model Tests
 # ============================================================
 
+
 class TestSelectModel:
     """3-Stufen-Routing."""
 
-    @pytest.mark.parametrize("text", [
-        "Licht an",
-        "Lampe aus",
-        "Musik stopp",
-        "Heizung an",
-        "Rollladen hoch",
-        "Schalte aus",
-        "Pause",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Licht an",
+            "Lampe aus",
+            "Musik stopp",
+            "Heizung an",
+            "Rollladen hoch",
+            "Schalte aus",
+            "Pause",
+        ],
+    )
     def test_short_fast_keywords(self, text):
         assert select_model(text) == MODEL_FAST, f"'{text}' sollte Fast sein"
 
-    @pytest.mark.parametrize("text", [
-        "Erklaer mir Quantenphysik",
-        "Analysiere den Stromverbrauch",
-        "Was waere wenn ich verreise",
-        "Vergleiche die Optionen bitte genau",
-        "Schreib mir eine Einkaufsliste",
-        "Rezept fuer Gulasch",
-        "Wie funktioniert ein Wechselrichter",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Erklaer mir Quantenphysik",
+            "Analysiere den Stromverbrauch",
+            "Was waere wenn ich verreise",
+            "Vergleiche die Optionen bitte genau",
+            "Schreib mir eine Einkaufsliste",
+            "Rezept fuer Gulasch",
+            "Wie funktioniert ein Wechselrichter",
+        ],
+    )
     def test_deep_keywords(self, text):
         assert select_model(text) == MODEL_DEEP, f"'{text}' sollte Deep sein"
 
@@ -191,14 +245,17 @@ class TestSelectModel:
         assert len(long_text.split()) >= DEEP_MIN_WORDS
         assert select_model(long_text) == MODEL_DEEP
 
-    @pytest.mark.parametrize("text", [
-        "Wie geht es dir?",
-        "Wem gehört das Auto?",
-        "Warum ist das so?",
-        "Wann kommt der Regen?",
-        "Wo ist mein Handy?",
-        "Wer hat angerufen?",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Wie geht es dir?",
+            "Wem gehört das Auto?",
+            "Warum ist das so?",
+            "Wann kommt der Regen?",
+            "Wo ist mein Handy?",
+            "Wer hat angerufen?",
+        ],
+    )
     def test_questions_go_smart(self, text):
         assert select_model(text) == MODEL_SMART, f"'{text}' sollte Smart sein"
 
@@ -215,6 +272,7 @@ class TestSelectModel:
 # select_model: Fallback
 # ============================================================
 
+
 class TestSelectModelFallback:
     """Routing-Fallback ohne verfuegbare Modelle."""
 
@@ -223,7 +281,9 @@ class TestSelectModelFallback:
         assert result == MODEL_SMART
 
     def test_deep_keyword_only_fast(self):
-        result = select_model("Erklaer mir Quantenphysik", deep_available=False, smart_available=False)
+        result = select_model(
+            "Erklaer mir Quantenphysik", deep_available=False, smart_available=False
+        )
         assert result == MODEL_FAST
 
     def test_question_only_fast(self):
@@ -234,6 +294,7 @@ class TestSelectModelFallback:
 # ============================================================
 # get_fallback_model Tests
 # ============================================================
+
 
 class TestGetFallbackModel:
     """Kaskade Deep→Smart→Fast."""
@@ -258,6 +319,7 @@ class TestGetFallbackModel:
 # _is_model_installed Tests
 # ============================================================
 
+
 class TestIsModelInstalled:
     """Modell-Erkennung mit Version-Tags."""
 
@@ -281,6 +343,7 @@ class TestIsModelInstalled:
 # Edge Cases
 # ============================================================
 
+
 class TestEdgeCases:
     """Grenzfaelle."""
 
@@ -303,17 +366,24 @@ class TestEdgeCases:
 # Phase 2C: Latenz-Feedback und Urgency-Override
 # ============================================================
 
+
 class TestPhase2CLatencyFeedback:
     """Tests fuer Latenz-Feedback und automatische Degradation."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {"latency_feedback": True}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config",
+                {"models": {}, "model_router": {"latency_feedback": True}},
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             r = ModelRouter()
             r._available_models = [MODEL_FAST, MODEL_SMART, MODEL_DEEP]
             r._deep_available = True
@@ -348,7 +418,9 @@ class TestPhase2CLatencyFeedback:
     def test_degraded_routing_to_smart(self, router):
         """Degradiertes Deep routet zu Smart."""
         router._deep_degraded = True
-        model, tier = router.select_model_and_tier("Erklaere mir die Zusammenhaenge der Quantenphysik im Detail")
+        model, tier = router.select_model_and_tier(
+            "Erklaere mir die Zusammenhaenge der Quantenphysik im Detail"
+        )
         assert tier == "smart"
 
     def test_urgency_override_frustrated(self, router):
@@ -388,17 +460,24 @@ class TestPhase2CLatencyFeedback:
 # select_model_tier_reasoning Tests
 # ============================================================
 
+
 class TestSelectModelTierReasoning:
     """Tests fuer select_model_tier_reasoning() — 3-Tupel mit Reasoning-Flag."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {"latency_feedback": True}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config",
+                {"models": {}, "model_router": {"latency_feedback": True}},
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             r = ModelRouter()
             r._available_models = [MODEL_FAST, MODEL_SMART, MODEL_DEEP]
             r._deep_available = True
@@ -418,7 +497,9 @@ class TestSelectModelTierReasoning:
         assert requires is True
 
     def test_smart_no_reasoning(self, router):
-        model, tier, requires = router.select_model_tier_reasoning("Wie ist das Wetter morgen?")
+        model, tier, requires = router.select_model_tier_reasoning(
+            "Wie ist das Wetter morgen?"
+        )
         assert tier == "smart"
         assert requires is False
 
@@ -430,7 +511,9 @@ class TestSelectModelTierReasoning:
 
     def test_degraded_deep_returns_smart(self, router):
         router._deep_degraded = True
-        model, tier, requires = router.select_model_tier_reasoning("Erklaere mir Quantenphysik")
+        model, tier, requires = router.select_model_tier_reasoning(
+            "Erklaere mir Quantenphysik"
+        )
         assert tier == "smart"
         assert requires is False  # Smart braucht kein Reasoning
 
@@ -445,21 +528,27 @@ class TestSelectModelTierReasoning:
     def test_deep_not_available_falls_back_to_smart(self, router):
         """Deep-Modell nicht verfuegbar → Smart via _cap_model."""
         router._deep_available = False
-        model, tier, requires = router.select_model_tier_reasoning("Analysiere den Stromverbrauch")
+        model, tier, requires = router.select_model_tier_reasoning(
+            "Analysiere den Stromverbrauch"
+        )
         # _cap_model sollte Deep auf Smart reduzieren
         assert model == MODEL_SMART or tier == "smart" or model != MODEL_DEEP
 
     def test_smart_not_available_falls_back_to_fast(self, router):
         """Smart-Modell nicht verfuegbar → Frage faellt auf Fast zurueck."""
         router._smart_available = False
-        model, tier, requires = router.select_model_tier_reasoning("Wie ist das Wetter?")
+        model, tier, requires = router.select_model_tier_reasoning(
+            "Wie ist das Wetter?"
+        )
         assert model == MODEL_FAST
 
     def test_both_deep_and_smart_unavailable(self, router):
         """Nur Fast verfuegbar → alles geht auf Fast."""
         router._deep_available = False
         router._smart_available = False
-        model, tier, requires = router.select_model_tier_reasoning("Erklaere mir Quantenphysik")
+        model, tier, requires = router.select_model_tier_reasoning(
+            "Erklaere mir Quantenphysik"
+        )
         assert model == MODEL_FAST
 
     def test_empty_text_returns_smart(self, router):
@@ -470,7 +559,9 @@ class TestSelectModelTierReasoning:
 
     def test_question_returns_smart_with_no_reasoning(self, router):
         """Fragen → Smart ohne Reasoning."""
-        model, tier, requires = router.select_model_tier_reasoning("Wann kommt der Regen?")
+        model, tier, requires = router.select_model_tier_reasoning(
+            "Wann kommt der Regen?"
+        )
         assert tier == "smart"
         assert requires is False
 
@@ -486,7 +577,9 @@ class TestSelectModelTierReasoning:
 
     def test_fast_keyword_six_words(self, router):
         """Genau 6 Woerter mit Fast-Keyword → Fast."""
-        model, tier, requires = router.select_model_tier_reasoning("Mach bitte das Licht jetzt an")
+        model, tier, requires = router.select_model_tier_reasoning(
+            "Mach bitte das Licht jetzt an"
+        )
         assert tier == "fast"
         assert requires is False
 
@@ -505,66 +598,86 @@ class TestSelectModelTierReasoning:
 # D1: Task-aware Temperature — classify_task + get_task_temperature
 # ============================================================
 
+
 class TestClassifyTask:
     """Tests fuer classify_task() — D1 Task-Klassifizierung."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             return ModelRouter()
 
-    @pytest.mark.parametrize("text,expected", [
-        ("Licht an", "command"),
-        ("Schalte die Lampe aus", "command"),
-        ("Heizung hoch", "command"),
-        ("Musik stopp", "command"),
-    ])
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("Licht an", "command"),
+            ("Schalte die Lampe aus", "command"),
+            ("Heizung hoch", "command"),
+            ("Musik stopp", "command"),
+        ],
+    )
     def test_command_classification(self, router, text, expected):
         assert router.classify_task(text) == expected
 
-    @pytest.mark.parametrize("text,expected", [
-        ("Schreib mir eine Geschichte", "creative"),
-        ("Was waere wenn es keinen Strom gaebe", "creative"),
-        ("Was wäre wenn ich verreise", "creative"),
-        ("Stell dir vor es ist Winter", "creative"),
-        ("Erfinde einen neuen Namen", "creative"),
-        ("Hypothetisch gesprochen", "creative"),
-    ])
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("Schreib mir eine Geschichte", "creative"),
+            ("Was waere wenn es keinen Strom gaebe", "creative"),
+            ("Was wäre wenn ich verreise", "creative"),
+            ("Stell dir vor es ist Winter", "creative"),
+            ("Erfinde einen neuen Namen", "creative"),
+            ("Hypothetisch gesprochen", "creative"),
+        ],
+    )
     def test_creative_classification(self, router, text, expected):
         assert router.classify_task(text) == expected
 
-    @pytest.mark.parametrize("text,expected", [
-        ("Analysiere den Stromverbrauch", "analysis"),
-        ("Vergleiche die zwei Optionen", "analysis"),
-        ("Was ist der Unterschied zwischen A und B", "analysis"),
-        ("Erklaere mir das genauer", "analysis"),
-        ("Optimiere den Grundriss", "analysis"),
-        ("Berechne den Verbrauch", "analysis"),
-        ("Diagnose bitte", "analysis"),
-    ])
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("Analysiere den Stromverbrauch", "analysis"),
+            ("Vergleiche die zwei Optionen", "analysis"),
+            ("Was ist der Unterschied zwischen A und B", "analysis"),
+            ("Erklaere mir das genauer", "analysis"),
+            ("Optimiere den Grundriss", "analysis"),
+            ("Berechne den Verbrauch", "analysis"),
+            ("Diagnose bitte", "analysis"),
+        ],
+    )
     def test_analysis_classification(self, router, text, expected):
         assert router.classify_task(text) == expected
 
-    @pytest.mark.parametrize("text,expected", [
-        ("Was ist die Hauptstadt von Frankreich", "factual"),
-        ("Wann wurde Deutschland vereinigt", "factual"),
-        ("Wo ist der naechste Supermarkt", "factual"),
-        ("Wer hat das Telefon erfunden", "factual"),
-        ("Wie viel Strom haben wir verbraucht", "factual"),
-        ("Wie hoch ist die Miete", "factual"),
-        ("Wie warm ist es draussen", "factual"),
-    ])
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("Was ist die Hauptstadt von Frankreich", "factual"),
+            ("Wann wurde Deutschland vereinigt", "factual"),
+            ("Wo ist der naechste Supermarkt", "factual"),
+            ("Wer hat das Telefon erfunden", "factual"),
+            ("Wie viel Strom haben wir verbraucht", "factual"),
+            ("Wie hoch ist die Miete", "factual"),
+            ("Wie warm ist es draussen", "factual"),
+        ],
+    )
     def test_factual_classification(self, router, text, expected):
         assert router.classify_task(text) == expected
 
     def test_conversation_long_text(self, router):
         """Laengerer Text (>8 Woerter) wird als Conversation klassifiziert."""
-        result = router.classify_task("Ich wollte dir sagen dass ich morgen nicht da bin leider")
+        result = router.classify_task(
+            "Ich wollte dir sagen dass ich morgen nicht da bin leider"
+        )
         assert result == "conversation"
 
     def test_conversation_question_mark(self, router):
@@ -583,12 +696,17 @@ class TestGetTaskTemperature:
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             return ModelRouter()
 
     def test_command_low_temperature(self, router):
@@ -608,7 +726,9 @@ class TestGetTaskTemperature:
         assert temp == 0.4
 
     def test_conversation_temperature(self, router):
-        temp = router.get_task_temperature("Ich wollte dir sagen dass morgen was ansteht bitte")
+        temp = router.get_task_temperature(
+            "Ich wollte dir sagen dass morgen was ansteht bitte"
+        )
         assert temp == 0.7
 
     def test_default_temperature(self, router):
@@ -620,17 +740,23 @@ class TestGetTaskTemperature:
 # get_tier_for_model Tests
 # ============================================================
 
+
 class TestGetTierForModel:
     """Tests fuer get_tier_for_model() — Tier-Name aus Modell ableiten."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             return ModelRouter()
 
     def test_fast_model_returns_fast(self, router):
@@ -658,17 +784,23 @@ class TestGetTierForModel:
 # initialize + _update_availability Tests
 # ============================================================
 
+
 class TestInitializeAndAvailability:
     """Tests fuer initialize() und _update_availability()."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             return ModelRouter()
 
     @pytest.mark.asyncio
@@ -698,9 +830,15 @@ class TestInitializeAndAvailability:
 
     @pytest.mark.asyncio
     async def test_initialize_case_insensitive(self, router):
-        await router.initialize([MODEL_FAST.upper(), MODEL_SMART.upper(), MODEL_DEEP.upper()])
+        await router.initialize(
+            [MODEL_FAST.upper(), MODEL_SMART.upper(), MODEL_DEEP.upper()]
+        )
         # Models are lowercased internally
-        assert router._available_models == [MODEL_FAST.upper().lower(), MODEL_SMART.upper().lower(), MODEL_DEEP.upper().lower()]
+        assert router._available_models == [
+            MODEL_FAST.upper().lower(),
+            MODEL_SMART.upper().lower(),
+            MODEL_DEEP.upper().lower(),
+        ]
 
     def test_update_availability_respects_enabled(self, router):
         """Deaktivierte Modelle sind nicht verfuegbar, auch wenn installiert."""
@@ -722,17 +860,23 @@ class TestInitializeAndAvailability:
 # _is_model_installed (actual class method) Tests
 # ============================================================
 
+
 class TestIsModelInstalledClassMethod:
     """Tests fuer _is_model_installed() auf der tatsaechlichen Klasse."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             return ModelRouter()
 
     def test_empty_list_pessimistic(self, router):
@@ -763,17 +907,23 @@ class TestIsModelInstalledClassMethod:
 # get_best_available Tests
 # ============================================================
 
+
 class TestGetBestAvailable:
     """Tests fuer get_best_available()."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             return ModelRouter()
 
     def test_deep_available(self, router):
@@ -796,17 +946,23 @@ class TestGetBestAvailable:
 # reload_config Tests
 # ============================================================
 
+
 class TestReloadConfig:
     """Tests fuer reload_config() — Konfiguration neu laden."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             r = ModelRouter()
             r._available_models = [MODEL_FAST, MODEL_SMART, MODEL_DEEP]
             return r
@@ -816,10 +972,18 @@ class TestReloadConfig:
         # reload_config() re-imports yaml_config inside _load_config as 'cfg',
         # and re-imports settings as 'cfg' inside reload_config itself.
         # We need to patch both the module-level references and the re-imports.
-        with patch("assistant.model_router.yaml_config", {"models": {"enabled": {"deep": False}}, "model_router": {}}), \
-             patch("assistant.config.yaml_config", {"models": {"enabled": {"deep": False}}, "model_router": {}}), \
-             patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.config.settings") as mock_cfg_settings:
+        with (
+            patch(
+                "assistant.model_router.yaml_config",
+                {"models": {"enabled": {"deep": False}}, "model_router": {}},
+            ),
+            patch(
+                "assistant.config.yaml_config",
+                {"models": {"enabled": {"deep": False}}, "model_router": {}},
+            ),
+            patch("assistant.model_router.settings") as mock_settings,
+            patch("assistant.config.settings") as mock_cfg_settings,
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
@@ -831,10 +995,14 @@ class TestReloadConfig:
 
     def test_reload_detects_model_name_change(self, router):
         """Reload erkennt Aenderungen in Modellnamen."""
-        with patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}), \
-             patch("assistant.config.yaml_config", {"models": {}, "model_router": {}}), \
-             patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.config.settings") as mock_cfg_settings:
+        with (
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+            patch("assistant.config.yaml_config", {"models": {}, "model_router": {}}),
+            patch("assistant.model_router.settings") as mock_settings,
+            patch("assistant.config.settings") as mock_cfg_settings,
+        ):
             mock_settings.model_fast = "new-fast:1b"
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
@@ -846,8 +1014,12 @@ class TestReloadConfig:
 
     def test_reload_no_changes(self, router):
         """Reload ohne Aenderungen laeuft ohne Fehler durch."""
-        with patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}), \
-             patch("assistant.model_router.settings") as mock_settings:
+        with (
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+            patch("assistant.model_router.settings") as mock_settings,
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
@@ -858,17 +1030,23 @@ class TestReloadConfig:
 # select_model (backwards-compatible) Tests
 # ============================================================
 
+
 class TestSelectModelCompat:
     """Tests fuer select_model() — Rueckwaertskompatible API."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             r = ModelRouter()
             r._available_models = [MODEL_FAST, MODEL_SMART, MODEL_DEEP]
             r._deep_available = True
@@ -893,17 +1071,23 @@ class TestSelectModelCompat:
 # get_fallback_model (actual class method) Tests
 # ============================================================
 
+
 class TestGetFallbackModelClass:
     """Tests fuer get_fallback_model() auf der Klasse."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             r = ModelRouter()
             r._smart_available = True
             return r
@@ -931,17 +1115,24 @@ class TestGetFallbackModelClass:
 # Latency feedback — edge cases
 # ============================================================
 
+
 class TestLatencyFeedbackEdgeCases:
     """Zusaetzliche Edge-Cases fuer record_latency."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {"latency_feedback": True}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config",
+                {"models": {}, "model_router": {"latency_feedback": True}},
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             r = ModelRouter()
             r._available_models = [MODEL_FAST, MODEL_SMART, MODEL_DEEP]
             r._deep_available = True
@@ -983,17 +1174,23 @@ class TestLatencyFeedbackEdgeCases:
 # get_routing_stats — edge cases
 # ============================================================
 
+
 class TestGetRoutingStatsExtended:
     """Zusaetzliche Tests fuer get_routing_stats."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             return ModelRouter()
 
     def test_empty_history(self, router):
@@ -1018,17 +1215,23 @@ class TestGetRoutingStatsExtended:
 # get_model_info — extended
 # ============================================================
 
+
 class TestGetModelInfoExtended:
     """Zusaetzliche Tests fuer get_model_info."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             r = ModelRouter()
             r._available_models = [MODEL_FAST, MODEL_SMART, MODEL_DEEP]
             r._deep_available = True
@@ -1060,17 +1263,23 @@ class TestGetModelInfoExtended:
 # _cap_model Tests
 # ============================================================
 
+
 class TestCapModel:
     """Tests fuer _cap_model() — Modell-Begrenzung."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             r = ModelRouter()
             r._deep_available = True
             r._smart_available = True
@@ -1103,17 +1312,23 @@ class TestCapModel:
 # Urgency override — extended
 # ============================================================
 
+
 class TestUrgencyOverrideExtended:
     """Zusaetzliche Tests fuer urgency_override."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             return ModelRouter()
 
     def test_stressed_high_stress(self, router):
@@ -1133,22 +1348,27 @@ class TestUrgencyOverrideExtended:
         assert router.urgency_override("", 0.9) is None
 
 
-
 # ============================================================
 # _update_availability Edge Cases
 # ============================================================
+
 
 class TestUpdateAvailabilityEdgeCases:
     """Edge cases fuer _update_availability."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             return ModelRouter()
 
     def test_deep_disabled_but_installed(self, router):
@@ -1186,17 +1406,23 @@ class TestUpdateAvailabilityEdgeCases:
 # _is_model_installed Edge Cases
 # ============================================================
 
+
 class TestIsModelInstalledEdgeCases:
     """Edge cases fuer _is_model_installed."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             return ModelRouter()
 
     def test_exact_match(self, router):
@@ -1226,17 +1452,23 @@ class TestIsModelInstalledEdgeCases:
 # record_latency Edge Cases
 # ============================================================
 
+
 class TestRecordLatencyEdgeCases:
     """Edge cases fuer record_latency."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             return ModelRouter()
 
     def test_disabled_latency_feedback(self, router):
@@ -1288,17 +1520,23 @@ class TestRecordLatencyEdgeCases:
 # get_routing_stats Tests
 # ============================================================
 
+
 class TestGetRoutingStatsExtended:
     """Extended tests fuer get_routing_stats."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             return ModelRouter()
 
     def test_empty_history(self, router):
@@ -1330,17 +1568,23 @@ class TestGetRoutingStatsExtended:
 # select_model_tier_reasoning with degradation
 # ============================================================
 
+
 class TestSelectModelWithDegradation:
     """Tests fuer Modell-Auswahl bei Deep-Degradation."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             r = ModelRouter()
             r._available_models = [MODEL_FAST, MODEL_SMART, MODEL_DEEP]
             r._deep_available = True
@@ -1350,7 +1594,9 @@ class TestSelectModelWithDegradation:
     def test_deep_keyword_when_degraded(self, router):
         """Deep keyword falls to smart when degraded."""
         router._deep_degraded = True
-        model, tier, reasoning = router.select_model_tier_reasoning("Analysiere den Energieverbrauch")
+        model, tier, reasoning = router.select_model_tier_reasoning(
+            "Analysiere den Energieverbrauch"
+        )
         assert tier == "smart"
         assert reasoning is False
 
@@ -1364,7 +1610,9 @@ class TestSelectModelWithDegradation:
     def test_deep_keyword_not_degraded(self, router):
         """Deep keyword uses deep when not degraded."""
         router._deep_degraded = False
-        model, tier, reasoning = router.select_model_tier_reasoning("Analysiere den Energieverbrauch")
+        model, tier, reasoning = router.select_model_tier_reasoning(
+            "Analysiere den Energieverbrauch"
+        )
         assert tier == "deep"
         assert reasoning is True
 
@@ -1373,17 +1621,23 @@ class TestSelectModelWithDegradation:
 # get_tier_for_model Tests
 # ============================================================
 
+
 class TestGetTierForModel:
     """Tests fuer get_tier_for_model."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             return ModelRouter()
 
     def test_fast_model(self, router):
@@ -1410,17 +1664,23 @@ class TestGetTierForModel:
 # get_fallback_model Edge Cases
 # ============================================================
 
+
 class TestGetFallbackModelEdgeCases:
     """Edge cases fuer get_fallback_model."""
 
     @pytest.fixture
     def router(self):
-        with patch("assistant.model_router.settings") as mock_settings, \
-             patch("assistant.model_router.yaml_config", {"models": {}, "model_router": {}}):
+        with (
+            patch("assistant.model_router.settings") as mock_settings,
+            patch(
+                "assistant.model_router.yaml_config", {"models": {}, "model_router": {}}
+            ),
+        ):
             mock_settings.model_fast = MODEL_FAST
             mock_settings.model_smart = MODEL_SMART
             mock_settings.model_deep = MODEL_DEEP
             from assistant.model_router import ModelRouter
+
             r = ModelRouter()
             r._smart_available = True
             return r

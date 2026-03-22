@@ -38,7 +38,10 @@ KNOWN_PREFERENCES = {
     "default_brightness": {"type": float, "min": 0, "max": 100, "unit": "%"},
     "default_temperature": {"type": float, "min": 15, "max": 28, "unit": "°C"},
     "default_volume": {"type": float, "min": 0, "max": 100, "unit": "%"},
-    "preferred_color_temp": {"type": str, "values": ["warm", "neutral", "cool", "kalt"]},
+    "preferred_color_temp": {
+        "type": str,
+        "values": ["warm", "neutral", "cool", "kalt"],
+    },
     "preferred_music_genre": {"type": str},
     "morning_brightness": {"type": float, "min": 0, "max": 100, "unit": "%"},
     "evening_brightness": {"type": float, "min": 0, "max": 100, "unit": "%"},
@@ -97,15 +100,21 @@ class PersonPreferences:
                 try:
                     value = float(value)
                 except (ValueError, TypeError):
-                    logger.warning("PersonPrefs: Ungueltiger Wert fuer %s: %s", key, value)
+                    logger.warning(
+                        "PersonPrefs: Ungueltiger Wert fuer %s: %s", key, value
+                    )
                     return False
                 if "min" in spec and value < spec["min"]:
                     value = spec["min"]
                 if "max" in spec and value > spec["max"]:
                     value = spec["max"]
             elif "values" in spec and value not in spec["values"]:
-                logger.warning("PersonPrefs: Ungueltiger Wert fuer %s: %s (erlaubt: %s)",
-                               key, value, spec["values"])
+                logger.warning(
+                    "PersonPrefs: Ungueltiger Wert fuer %s: %s (erlaubt: %s)",
+                    key,
+                    value,
+                    spec["values"],
+                )
                 return False
         await self.redis.hset(self._key(person), key, str(value))
         await self.redis.expire(self._key(person), REDIS_TTL)
@@ -126,8 +135,9 @@ class PersonPreferences:
                 count += 1
         return count
 
-    async def learn_from_correction(self, person: str, action: str,
-                                     original_args: dict, corrected_args: dict):
+    async def learn_from_correction(
+        self, person: str, action: str, original_args: dict, corrected_args: dict
+    ):
         """Lernt Praeferenzen aus Korrekturen.
 
         Wenn ein User z.B. immer die Helligkeit von 50 auf 70 korrigiert,
@@ -151,11 +161,15 @@ class PersonPreferences:
 
         action_map = mapping.get(action, {})
         for param, pref_key in action_map.items():
-            if param in corrected_args and corrected_args[param] != original_args.get(param):
+            if param in corrected_args and corrected_args[param] != original_args.get(
+                param
+            ):
                 await self.set(person, pref_key, corrected_args[param])
                 logger.info(
                     "PersonPrefs: Gelernt aus Korrektur: %s bevorzugt %s=%s",
-                    person, pref_key, corrected_args[param],
+                    person,
+                    pref_key,
+                    corrected_args[param],
                 )
 
     async def get_context_hint(self, person: str) -> str:
@@ -183,10 +197,12 @@ class PersonPreferences:
         if not self.redis:
             return
         try:
-            entry = json.dumps({
-                "value": round(value, 2),
-                "ts": datetime.now(timezone.utc).isoformat(),
-            })
+            entry = json.dumps(
+                {
+                    "value": round(value, 2),
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                }
+            )
             hk = self._history_key(person, key)
             await self.redis.lpush(hk, entry)
             await self.redis.ltrim(hk, 0, HISTORY_MAX_ENTRIES - 1)

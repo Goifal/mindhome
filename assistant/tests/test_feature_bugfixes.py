@@ -20,17 +20,24 @@ import pytest
 # 1. Narrative Builder Tests
 # ============================================================
 
+
 class TestNarrativeBuilder:
     """Tests fuer _build_narrative in ProactiveSequencePlanner."""
 
     @pytest.fixture
     def planner(self):
-        with patch("assistant.proactive_planner.yaml_config", {"proactive_planner": {"enabled": True}}):
+        with patch(
+            "assistant.proactive_planner.yaml_config",
+            {"proactive_planner": {"enabled": True}},
+        ):
             from assistant.proactive_planner import ProactiveSequencePlanner
+
             p = ProactiveSequencePlanner.__new__(ProactiveSequencePlanner)
             # Minimal init
             p._ACTION_VERBS = ProactiveSequencePlanner._ACTION_VERBS
-            p._build_narrative = ProactiveSequencePlanner._build_narrative.__get__(p, ProactiveSequencePlanner)
+            p._build_narrative = ProactiveSequencePlanner._build_narrative.__get__(
+                p, ProactiveSequencePlanner
+            )
             return p
 
     def test_energy_trigger_key_matches(self, planner):
@@ -41,7 +48,9 @@ class TestNarrativeBuilder:
 
     def test_energy_trigger_old_key_no_longer_used(self, planner):
         """'energy_price' (alter Key) darf nicht mehr matchen."""
-        actions = [{"type": "set_light", "args": {"state": "off"}, "description": "Licht aus"}]
+        actions = [
+            {"type": "set_light", "args": {"state": "off"}, "description": "Licht aus"}
+        ]
         result = planner._build_narrative(actions, "", "energy_price")
         # Fallback "Sehr wohl" weil der alte Key nicht mehr existiert
         assert "Sehr wohl" in result
@@ -69,7 +78,13 @@ class TestNarrativeBuilder:
 
     def test_single_action(self, planner):
         """Einzelne Aktion korrekt formatiert (kein 'und')."""
-        actions = [{"type": "set_cover", "args": {"position": 0}, "description": "Rollaeden runter"}]
+        actions = [
+            {
+                "type": "set_cover",
+                "args": {"position": 0},
+                "description": "Rollaeden runter",
+            }
+        ]
         result = planner._build_narrative(actions, "", "bedtime")
         assert "Gute Nacht" in result
         assert "fahre die Rollaeden runter" in result
@@ -79,7 +94,11 @@ class TestNarrativeBuilder:
         """Mehrere Aktionen mit 'und' verkettet."""
         actions = [
             {"type": "set_light", "args": {"brightness": 50}, "description": "Dimmen"},
-            {"type": "set_cover", "args": {"position": 100}, "description": "Rollaeden hoch"},
+            {
+                "type": "set_cover",
+                "args": {"position": 100},
+                "description": "Rollaeden hoch",
+            },
         ]
         result = planner._build_narrative(actions, "", "person_arrived")
         assert " und " in result
@@ -87,7 +106,9 @@ class TestNarrativeBuilder:
 
     def test_brightness_zero_no_dimming(self, planner):
         """Brightness 0 ist falsy — darf nicht als 'dimme' interpretiert werden."""
-        actions = [{"type": "set_light", "args": {"brightness": 0}, "description": "Licht aus"}]
+        actions = [
+            {"type": "set_light", "args": {"brightness": 0}, "description": "Licht aus"}
+        ]
         result = planner._build_narrative(actions, "", "bedtime")
         # brightness=0 is falsy, so it should fall to else branch
         assert "schalte die Beleuchtung ein" in result or "dimme" not in result
@@ -102,23 +123,28 @@ class TestNarrativeBuilder:
 # 2. Confidence Decay Tests
 # ============================================================
 
+
 class TestConfidenceDecay:
     """Tests fuer _apply_confidence_decay in LearningObserver."""
 
     @pytest.fixture
     def observer(self, redis_mock):
-        with patch("assistant.learning_observer.yaml_config", {
-            "learning": {
-                "confidence_decay": {
-                    "enabled": True,
-                    "decay_per_day": 0.03,
-                    "minimum_confidence": 0.2,
-                    "max_expected_count": 20,
-                },
-                "min_repetitions": 3,
-            }
-        }):
+        with patch(
+            "assistant.learning_observer.yaml_config",
+            {
+                "learning": {
+                    "confidence_decay": {
+                        "enabled": True,
+                        "decay_per_day": 0.03,
+                        "minimum_confidence": 0.2,
+                        "max_expected_count": 20,
+                    },
+                    "min_repetitions": 3,
+                }
+            },
+        ):
             from assistant.learning_observer import LearningObserver
+
             obs = LearningObserver.__new__(LearningObserver)
             obs.redis = redis_mock
             return obs
@@ -127,6 +153,7 @@ class TestConfidenceDecay:
     async def test_no_op_replace_removed(self, observer):
         """Der no-op time_slot.replace(':', ':') wurde entfernt."""
         import inspect
+
         source = inspect.getsource(observer._apply_confidence_decay)
         assert "replace(':', ':')" not in source
 
@@ -135,7 +162,13 @@ class TestConfidenceDecay:
         """Patterns erhalten ein confidence Feld nach Decay."""
         observer.redis.ttl = AsyncMock(return_value=300 * 86400)  # 65 Tage alt
         patterns = [
-            {"action": "light.on", "time_slot": "08:00", "count": 10, "weekday": -1, "person": ""},
+            {
+                "action": "light.on",
+                "time_slot": "08:00",
+                "count": 10,
+                "weekday": -1,
+                "person": "",
+            },
         ]
         result = await observer._apply_confidence_decay(patterns)
         assert len(result) == 1
@@ -148,7 +181,13 @@ class TestConfidenceDecay:
         # TTL = 1 Tag → 364 Tage alt → massive Decay
         observer.redis.ttl = AsyncMock(return_value=86400)
         patterns = [
-            {"action": "light.on", "time_slot": "08:00", "count": 1, "weekday": -1, "person": ""},
+            {
+                "action": "light.on",
+                "time_slot": "08:00",
+                "count": 1,
+                "weekday": -1,
+                "person": "",
+            },
         ]
         result = await observer._apply_confidence_decay(patterns)
         # count=1 → base_confidence=0.05, age=364 days → decay=10.92 → confidence clamped to min 0.2
@@ -164,7 +203,10 @@ class TestConfidenceDecay:
     @pytest.mark.asyncio
     async def test_disabled_returns_original(self, observer):
         """Bei deaktiviertem Decay werden Patterns unveraendert zurueckgegeben."""
-        with patch("assistant.learning_observer.yaml_config", {"learning": {"confidence_decay": {"enabled": False}}}):
+        with patch(
+            "assistant.learning_observer.yaml_config",
+            {"learning": {"confidence_decay": {"enabled": False}}},
+        ):
             patterns = [{"action": "test", "count": 5}]
             result = await observer._apply_confidence_decay(patterns)
             assert result == patterns
@@ -174,12 +216,14 @@ class TestConfidenceDecay:
 # 3. Pattern Invalidation Tests
 # ============================================================
 
+
 class TestPatternInvalidation:
     """Tests fuer invalidate_pattern in AnticipationEngine."""
 
     @pytest.fixture
     def engine(self, redis_mock):
         from assistant.anticipation import AnticipationEngine
+
         eng = AnticipationEngine.__new__(AnticipationEngine)
         eng.redis = redis_mock
         return eng
@@ -217,12 +261,14 @@ class TestPatternInvalidation:
 # 4. Emotional Tagging Tests
 # ============================================================
 
+
 class TestEmotionalTagging:
     """Tests fuer _detect_emotion und _tag_emotional_context."""
 
     @pytest.fixture
     def conv_memory(self, redis_mock):
         from assistant.conversation_memory import ConversationMemory
+
         cm = ConversationMemory.__new__(ConversationMemory)
         cm.redis = redis_mock
         cm.enabled = True
@@ -285,13 +331,18 @@ class TestEmotionalTagging:
 # 5. Cross-Session References Tests
 # ============================================================
 
+
 class TestCrossSessionReferences:
     """Tests fuer _save/_resolve_cross_session in DialogueStateManager."""
 
     @pytest.fixture
     def dsm(self, redis_mock):
-        with patch("assistant.dialogue_state.yaml_config", {"dialogue_state": {"enabled": True}}):
+        with patch(
+            "assistant.dialogue_state.yaml_config",
+            {"dialogue_state": {"enabled": True}},
+        ):
             from assistant.dialogue_state import DialogueStateManager
+
             d = DialogueStateManager.__new__(DialogueStateManager)
             d._redis = redis_mock
             d.enabled = True
@@ -304,6 +355,7 @@ class TestCrossSessionReferences:
     async def test_save_stores_entities(self, dsm):
         """_save_important_references speichert Entitaeten in Redis."""
         from collections import deque
+
         state = MagicMock()
         state.last_entities = deque(["light.wohnzimmer", "switch.buero"])
         state.last_rooms = deque(["wohnzimmer"])
@@ -319,18 +371,21 @@ class TestCrossSessionReferences:
     async def test_resolve_loads_from_redis(self, dsm):
         """_resolve_cross_session laedt Daten aus Redis bei leerer Session."""
         from collections import deque
+
         state = MagicMock()
         state.last_entities = deque()
         state.last_rooms = deque()
         state.last_domains = deque()
         dsm._get_state = MagicMock(return_value=state)
 
-        stored = json.dumps({
-            "entities": ["light.wohnzimmer"],
-            "rooms": ["wohnzimmer"],
-            "domains": ["light"],
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        })
+        stored = json.dumps(
+            {
+                "entities": ["light.wohnzimmer"],
+                "rooms": ["wohnzimmer"],
+                "domains": ["light"],
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
         dsm._redis.hget = AsyncMock(return_value=stored)
 
         result = await dsm._resolve_cross_session("mach es aus", "testuser")
@@ -340,6 +395,7 @@ class TestCrossSessionReferences:
     async def test_resolve_skips_if_state_not_empty(self, dsm):
         """Keine Cross-Session Aufloesung wenn In-Memory State vorhanden."""
         from collections import deque
+
         state = MagicMock()
         state.last_entities = deque(["light.buero"])
         state.last_rooms = deque()
@@ -353,6 +409,7 @@ class TestCrossSessionReferences:
     async def test_resolve_no_reference_in_text(self, dsm):
         """Kein Pronomen/Referenz im Text → kein Redis-Zugriff."""
         from collections import deque
+
         state = MagicMock()
         state.last_entities = deque()
         state.last_rooms = deque()
@@ -366,12 +423,14 @@ class TestCrossSessionReferences:
 # 6. PredictiveWarmer Tests
 # ============================================================
 
+
 class TestPredictiveWarmer:
     """Tests fuer PredictiveWarmer in circuit_breaker.py."""
 
     @pytest.fixture
     def warmer(self):
         from assistant.circuit_breaker import CircuitBreakerRegistry, PredictiveWarmer
+
         registry = CircuitBreakerRegistry()
         return registry.warmer
 
@@ -408,6 +467,7 @@ class TestPredictiveWarmer:
     def test_try_acquire_records_attempt(self):
         """try_acquire ruft PredictiveWarmer callback auf."""
         from assistant.circuit_breaker import CircuitBreakerRegistry
+
         registry = CircuitBreakerRegistry()
         cb = registry.register("test_service")
         # Warmer verbinden (wie am Modul-Ende geschieht)

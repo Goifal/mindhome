@@ -32,7 +32,6 @@ from assistant.config import (
 
 
 class TestLoadYamlConfig:
-
     def test_load_from_example_when_missing(self, tmp_path):
         """Creates config from .example when settings.yaml is missing (lines 63-64)."""
         example = tmp_path / "settings.yaml.example"
@@ -41,12 +40,16 @@ class TestLoadYamlConfig:
 
         with patch("assistant.config.Path") as MockPath:
             mock_config = MagicMock(spec=Path)
-            mock_config.exists.side_effect = [False, True]  # first check: not exist, then after copy: exists
+            mock_config.exists.side_effect = [
+                False,
+                True,
+            ]  # first check: not exist, then after copy: exists
             mock_config.with_suffix.return_value = example
             mock_config.__str__ = lambda self: str(config_path)
 
             # Directly test the logic by using real files
             import shutil
+
             shutil.copy2(str(example), str(config_path))
             data = yaml.safe_load(config_path.read_text())
             assert data == {"key": "from_example"}
@@ -86,7 +89,6 @@ class TestLoadYamlConfig:
 
 
 class TestModelProfile:
-
     def test_default_profile(self):
         """Default ModelProfile has expected values."""
         mp = ModelProfile()
@@ -128,7 +130,6 @@ class TestModelProfile:
 
 
 class TestApplyHousehold:
-
     def test_apply_household_with_members(self):
         """apply_household_to_config processes members correctly (lines 193-210)."""
         yaml_cfg = {
@@ -136,7 +137,12 @@ class TestApplyHousehold:
                 "primary_user": "Max",
                 "primary_user_entity": "person.max",
                 "members": [
-                    {"name": "Anna", "role": "member", "ha_entity": "person.anna", "title": "Frau Anna"},
+                    {
+                        "name": "Anna",
+                        "role": "member",
+                        "ha_entity": "person.anna",
+                        "title": "Frau Anna",
+                    },
                     {"name": "Tom", "role": "guest", "ha_entity": "person.tom"},
                     {"name": "", "role": "guest"},  # empty name = skip
                 ],
@@ -146,8 +152,10 @@ class TestApplyHousehold:
         mock_settings = MagicMock()
         mock_settings.user_name = "Max"
 
-        with patch("assistant.config.yaml_config", yaml_cfg), \
-             patch("assistant.config.settings", mock_settings):
+        with (
+            patch("assistant.config.yaml_config", yaml_cfg),
+            patch("assistant.config.settings", mock_settings),
+        ):
             apply_household_to_config()
 
         titles = yaml_cfg["persons"]["titles"]
@@ -167,8 +175,10 @@ class TestApplyHousehold:
         mock_settings = MagicMock()
         mock_settings.user_name = "Max"
 
-        with patch("assistant.config.yaml_config", yaml_cfg), \
-             patch("assistant.config.settings", mock_settings):
+        with (
+            patch("assistant.config.yaml_config", yaml_cfg),
+            patch("assistant.config.settings", mock_settings),
+        ):
             apply_household_to_config()
 
         assert yaml_cfg["trust_levels"]["default"] == 0
@@ -179,14 +189,18 @@ class TestApplyHousehold:
             "household": {
                 "primary_user": "Max",
                 "primary_user_entity": "person.max",
-                "members": [{"name": "Anna", "ha_entity": "person.anna", "role": "member"}],
+                "members": [
+                    {"name": "Anna", "ha_entity": "person.anna", "role": "member"}
+                ],
             },
         }
         mock_settings = MagicMock()
         mock_settings.user_name = "Max"
 
-        with patch("assistant.config.yaml_config", yaml_cfg), \
-             patch("assistant.config.settings", mock_settings):
+        with (
+            patch("assistant.config.yaml_config", yaml_cfg),
+            patch("assistant.config.settings", mock_settings),
+        ):
             apply_household_to_config()
 
         assert resolve_person_by_entity("person.anna") == "Anna"
@@ -199,7 +213,6 @@ class TestApplyHousehold:
 
 
 class TestActivePerson:
-
     def test_set_and_get_active_person(self):
         """set_active_person and get_active_person work correctly (lines 248-249)."""
         set_active_person("Anna")
@@ -219,7 +232,6 @@ class TestActivePerson:
 
 
 class TestLookupTitle:
-
     def test_exact_match(self):
         """Exact name match returns title (line 270)."""
         titles = {"anna": "Frau Anna"}
@@ -247,13 +259,15 @@ class TestLookupTitle:
 
 
 class TestGetPersonTitle:
-
     def test_explicit_name_with_title(self):
         """Explicit name with configured title (line 295)."""
-        with patch("assistant.config.yaml_config", {
-            "persons": {"titles": {"anna": "Frau Anna"}},
-            "household": {"primary_user": "Max"},
-        }):
+        with patch(
+            "assistant.config.yaml_config",
+            {
+                "persons": {"titles": {"anna": "Frau Anna"}},
+                "household": {"primary_user": "Max"},
+            },
+        ):
             title = get_person_title("Anna")
         assert title == "Frau Anna"
 
@@ -261,10 +275,13 @@ class TestGetPersonTitle:
         """Falls back to active person title (lines 298-300)."""
         set_active_person("Anna")
         try:
-            with patch("assistant.config.yaml_config", {
-                "persons": {"titles": {"anna": "Frau Anna"}},
-                "household": {"primary_user": "Max"},
-            }):
+            with patch(
+                "assistant.config.yaml_config",
+                {
+                    "persons": {"titles": {"anna": "Frau Anna"}},
+                    "household": {"primary_user": "Max"},
+                },
+            ):
                 title = get_person_title("")
             assert title == "Frau Anna"
         finally:
@@ -273,20 +290,26 @@ class TestGetPersonTitle:
     def test_primary_user_fallback(self):
         """Falls back to primary user title (lines 304-306)."""
         set_active_person("")
-        with patch("assistant.config.yaml_config", {
-            "persons": {"titles": {"max": "Chef"}},
-            "household": {"primary_user": "Max"},
-        }):
+        with patch(
+            "assistant.config.yaml_config",
+            {
+                "persons": {"titles": {"max": "Chef"}},
+                "household": {"primary_user": "Max"},
+            },
+        ):
             title = get_person_title("")
         assert title == "Chef"
 
     def test_sir_fallback(self):
         """Falls back to 'Sir' when nothing else matches (line 307)."""
         set_active_person("")
-        with patch("assistant.config.yaml_config", {
-            "persons": {"titles": {}},
-            "household": {},
-        }):
+        with patch(
+            "assistant.config.yaml_config",
+            {
+                "persons": {"titles": {}},
+                "household": {},
+            },
+        ):
             title = get_person_title("")
         assert title == "Sir"
 
@@ -297,10 +320,10 @@ class TestGetPersonTitle:
 
 
 class TestGetRoomProfiles:
-
     def test_get_room_profiles_cached(self):
         """Returns cached profiles within TTL."""
         import assistant.config as cfg
+
         old_cache = cfg._room_profiles_cache
         old_ts = cfg._room_profiles_ts
         try:
@@ -315,6 +338,7 @@ class TestGetRoomProfiles:
     def test_get_room_profiles_file_not_found(self):
         """Returns {} when file doesn't exist (lines 333)."""
         import assistant.config as cfg
+
         old_cache = cfg._room_profiles_cache
         old_ts = cfg._room_profiles_ts
         try:
@@ -331,6 +355,7 @@ class TestGetRoomProfiles:
     def test_get_room_profiles_load_error(self):
         """Handles load errors gracefully (lines 334-337)."""
         import assistant.config as cfg
+
         old_cache = cfg._room_profiles_cache
         old_ts = cfg._room_profiles_ts
         try:
@@ -352,7 +377,6 @@ class TestGetRoomProfiles:
 
 
 class TestRoomBedSensors:
-
     def test_new_format_list(self):
         """New format: list of objects (lines 352-354)."""
         room_cfg = {
@@ -398,17 +422,12 @@ class TestRoomBedSensors:
 
 
 class TestGetAllBedSensors:
-
     def test_collects_from_all_rooms(self):
         """Collects bed sensors from all rooms (lines 384-385)."""
         profiles = {
             "rooms": {
-                "schlafzimmer": {
-                    "bed_sensors": [{"sensor": "binary_sensor.bed1"}]
-                },
-                "gaestezimmer": {
-                    "bed_sensor": "binary_sensor.guest_bed"
-                },
+                "schlafzimmer": {"bed_sensors": [{"sensor": "binary_sensor.bed1"}]},
+                "gaestezimmer": {"bed_sensor": "binary_sensor.guest_bed"},
             }
         }
         with patch("assistant.config.get_room_profiles", return_value=profiles):

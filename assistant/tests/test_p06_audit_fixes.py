@@ -24,48 +24,71 @@ from assistant.ollama_client import validate_notification
 
 # Meta-leak patterns from brain._filter_response_inner (line 4994)
 _META_LEAK_PATTERNS = [
-    r'\bspeak\b', r'\btts\b', r'\bemit\b',
-    r'\btool_call\b', r'\bfunction_call\b',
-    r'\bset_light\b', r'\bset_cover\b', r'\bset_climate\b',
-    r'\bset_switch\b', r'\bplay_media\b', r'\bset_vacuum\b',
-    r'\bactivate_scene\b', r'\barm_security_system\b',
-    r'\bget_lights\b', r'\bget_covers\b', r'\bget_climate\b',
-    r'\bget_switches\b', r'\bget_house_status\b', r'\bget_weather\b',
-    r'\bget_entity_state\b', r'\bget_entity_history\b',
-    r'\bspeak_response\b', r'\bemit_speaking\b', r'\bemit_action\b',
-    r'\bcall_service\b', r'\bcall_ha_service\b',
-    r'\brun_scene\b', r'\brun_script\b', r'\brun_automation\b',
-    r'<tool_call>.*?</tool_call>',
+    r"\bspeak\b",
+    r"\btts\b",
+    r"\bemit\b",
+    r"\btool_call\b",
+    r"\bfunction_call\b",
+    r"\bset_light\b",
+    r"\bset_cover\b",
+    r"\bset_climate\b",
+    r"\bset_switch\b",
+    r"\bplay_media\b",
+    r"\bset_vacuum\b",
+    r"\bactivate_scene\b",
+    r"\barm_security_system\b",
+    r"\bget_lights\b",
+    r"\bget_covers\b",
+    r"\bget_climate\b",
+    r"\bget_switches\b",
+    r"\bget_house_status\b",
+    r"\bget_weather\b",
+    r"\bget_entity_state\b",
+    r"\bget_entity_history\b",
+    r"\bspeak_response\b",
+    r"\bemit_speaking\b",
+    r"\bemit_action\b",
+    r"\bcall_service\b",
+    r"\bcall_ha_service\b",
+    r"\brun_scene\b",
+    r"\brun_script\b",
+    r"\brun_automation\b",
+    r"<tool_call>.*?</tool_call>",
     r'\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:.*?\}',
 ]
 
 # Pre-TTS pattern from sound_manager.py (line 546)
 _PRE_TTS_PATTERN = re.compile(
-    r'\b(?:speak|tts|emit|tool_call|function_call|call_service'
-    r'|speak_response|emit_speaking|emit_action'
-    r'|set_light|set_cover|set_climate|set_switch|set_vacuum'
-    r'|play_media|activate_scene|arm_security_system'
-    r'|get_lights|get_covers|get_climate|get_switches'
-    r'|get_house_status|get_weather|get_entity_state'
-    r'|run_scene|run_script|run_automation|call_ha_service)\b',
+    r"\b(?:speak|tts|emit|tool_call|function_call|call_service"
+    r"|speak_response|emit_speaking|emit_action"
+    r"|set_light|set_cover|set_climate|set_switch|set_vacuum"
+    r"|play_media|activate_scene|arm_security_system"
+    r"|get_lights|get_covers|get_climate|get_switches"
+    r"|get_house_status|get_weather|get_entity_state"
+    r"|run_scene|run_script|run_automation|call_ha_service)\b",
     re.IGNORECASE,
 )
 
 # Jarvis fallbacks from brain.py (line 5450)
 _JARVIS_FALLBACKS = [
-    "Erledigt.", "Wie gewünscht.", "Wird gemacht.",
-    "Umgesetzt.", "Verstanden.", "Notiert.",
-    "Sir?", "Systeme bereit.",
+    "Erledigt.",
+    "Wie gewünscht.",
+    "Wird gemacht.",
+    "Umgesetzt.",
+    "Verstanden.",
+    "Notiert.",
+    "Sir?",
+    "Systeme bereit.",
 ]
 
 
 def _apply_meta_leak_filter(text: str) -> str:
     """Reproduces the meta-leak filter logic from _filter_response_inner."""
     for pat in _META_LEAK_PATTERNS:
-        text = re.sub(pat, '', text, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r'\s{2,}', ' ', text).strip()
-    text = re.sub(r'\(\s*\)', '', text).strip()
-    text = re.sub(r'^\s*[,;:\-\u2013\u2014]\s*', '', text).strip()
+        text = re.sub(pat, "", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"\s{2,}", " ", text).strip()
+    text = re.sub(r"\(\s*\)", "", text).strip()
+    text = re.sub(r"^\s*[,;:\-\u2013\u2014]\s*", "", text).strip()
     if text:
         text = text[0].upper() + text[1:]
     return text
@@ -73,8 +96,8 @@ def _apply_meta_leak_filter(text: str) -> str:
 
 def _apply_pre_tts_filter(text: str) -> str:
     """Reproduces the Pre-TTS-Filter from speak_response."""
-    text = _PRE_TTS_PATTERN.sub('', text).strip()
-    text = re.sub(r'\s{2,}', ' ', text).strip()
+    text = _PRE_TTS_PATTERN.sub("", text).strip()
+    text = re.sub(r"\s{2,}", " ", text).strip()
     if not text:
         text = "Erledigt."
     return text
@@ -83,6 +106,7 @@ def _apply_pre_tts_filter(text: str) -> str:
 # ============================================================
 # P06f: Meta-Leakage Filter Tests
 # ============================================================
+
 
 class TestMetaLeakageFilter:
     """P06f: _filter_response_inner entfernt interne Begriffe."""
@@ -126,9 +150,16 @@ class TestMetaLeakageFilter:
 
     def test_removes_get_functions(self):
         """All get_* functions should be removed."""
-        for fn in ["get_lights", "get_covers", "get_climate",
-                    "get_switches", "get_house_status", "get_weather",
-                    "get_entity_state", "get_entity_history"]:
+        for fn in [
+            "get_lights",
+            "get_covers",
+            "get_climate",
+            "get_switches",
+            "get_house_status",
+            "get_weather",
+            "get_entity_state",
+            "get_entity_history",
+        ]:
             result = _apply_meta_leak_filter(f"Ergebnis von {fn} ist gut")
             assert fn not in result, f"'{fn}' was not removed"
 
@@ -219,12 +250,14 @@ class TestMetaLeakageFilter:
 # P06f: Jarvis-Fallback Tests
 # ============================================================
 
+
 class TestJarvisFallback:
     """P06f: Wenn Text nach Filterung leer/zu kurz ist, kommt ein Fallback."""
 
     def test_empty_text_triggers_fallback(self):
         """Empty string should trigger fallback (brain.py line 5448)."""
         import random
+
         text = ""
         if not text or len(text.strip()) < 5:
             text = random.choice(_JARVIS_FALLBACKS)
@@ -233,6 +266,7 @@ class TestJarvisFallback:
     def test_short_text_triggers_fallback(self):
         """Text shorter than 5 chars triggers fallback."""
         import random
+
         text = "ok"
         if not text or len(text.strip()) < 5:
             text = random.choice(_JARVIS_FALLBACKS)
@@ -240,6 +274,7 @@ class TestJarvisFallback:
 
     def test_whitespace_only_triggers_fallback(self):
         import random
+
         text = "    "
         if not text or len(text.strip()) < 5:
             text = random.choice(_JARVIS_FALLBACKS)
@@ -249,6 +284,7 @@ class TestJarvisFallback:
         text = "Das Licht ist jetzt an."
         if not text or len(text.strip()) < 5:
             import random
+
             text = random.choice(_JARVIS_FALLBACKS)
         assert text == "Das Licht ist jetzt an."
 
@@ -265,11 +301,13 @@ class TestJarvisFallback:
 # P06e: Multi-Command Detection Tests
 # ============================================================
 
+
 class TestMultiCommandDetection:
     """P06e: _detect_multi_device_command erkennt zusammengesetzte Befehle."""
 
     def _call_detect(self, text, room=""):
         from assistant.brain import AssistantBrain
+
         return AssistantBrain._detect_multi_device_command(text, room=room)
 
     def test_licht_aus_und_rollladen_runter(self):
@@ -322,14 +360,18 @@ class TestMultiCommandDetection:
 # P06e: Intent-based Tool Selection Tests
 # ============================================================
 
+
 class TestIntentToolSelection:
     """P06e: _select_tools_for_intent waehlt Tools basierend auf Intent."""
 
     @pytest.fixture
     def brain(self):
         from assistant.brain import AssistantBrain
+
         brain = MagicMock(spec=AssistantBrain)
-        brain._select_tools_for_intent = AssistantBrain._select_tools_for_intent.__get__(brain)
+        brain._select_tools_for_intent = (
+            AssistantBrain._select_tools_for_intent.__get__(brain)
+        )
         return brain
 
     def _make_tools(self, names):
@@ -339,19 +381,40 @@ class TestIntentToolSelection:
         """Realistic set of tool names covering control, query, and other."""
         return [
             # Control tools (14 in _CONTROL_NAMES)
-            "set_light", "set_cover", "set_climate", "set_switch",
-            "set_media_player", "set_fan", "set_lock",
-            "get_entity_state", "call_ha_service", "run_scene",
-            "set_input_boolean", "set_input_number",
-            "set_light_all", "arm_security_system",
+            "set_light",
+            "set_cover",
+            "set_climate",
+            "set_switch",
+            "set_media_player",
+            "set_fan",
+            "set_lock",
+            "get_entity_state",
+            "call_ha_service",
+            "run_scene",
+            "set_input_boolean",
+            "set_input_number",
+            "set_light_all",
+            "arm_security_system",
             # Query tools (14 in _QUERY_NAMES)
-            "get_lights", "get_covers", "get_climate",
-            "get_switches", "get_media", "get_alarms", "get_house_status",
-            "get_weather", "get_calendar", "get_shopping_list",
-            "search_entities", "get_area_entities", "get_entity_history",
+            "get_lights",
+            "get_covers",
+            "get_climate",
+            "get_switches",
+            "get_media",
+            "get_alarms",
+            "get_house_status",
+            "get_weather",
+            "get_calendar",
+            "get_shopping_list",
+            "search_entities",
+            "get_area_entities",
+            "get_entity_history",
             # Other tools (not in either set)
-            "send_notification", "play_media", "set_timer",
-            "web_search", "create_reminder",
+            "send_notification",
+            "play_media",
+            "set_timer",
+            "web_search",
+            "create_reminder",
         ]
 
     def test_control_intent_returns_control_tools(self, brain):
@@ -427,6 +490,7 @@ class TestIntentToolSelection:
 # P06f: Pre-TTS-Filter Tests
 # ============================================================
 
+
 class TestPreTTSFilter:
     """P06f: SoundManager filtert Meta-Leakage vor TTS."""
 
@@ -453,7 +517,9 @@ class TestPreTTSFilter:
         assert "set_climate" not in _apply_pre_tts_filter("set_climate gesetzt")
 
     def test_filters_speak_response(self):
-        assert "speak_response" not in _apply_pre_tts_filter("speak_response ausgefuehrt")
+        assert "speak_response" not in _apply_pre_tts_filter(
+            "speak_response ausgefuehrt"
+        )
 
     def test_filters_emit_action(self):
         assert "emit_action" not in _apply_pre_tts_filter("emit_action jetzt")
@@ -471,11 +537,20 @@ class TestPreTTSFilter:
         assert "run_automation" not in _apply_pre_tts_filter("run_automation aktiviert")
 
     def test_filters_activate_scene(self):
-        assert "activate_scene" not in _apply_pre_tts_filter("activate_scene Gute Nacht")
+        assert "activate_scene" not in _apply_pre_tts_filter(
+            "activate_scene Gute Nacht"
+        )
 
     def test_filters_get_functions(self):
-        for fn in ["get_lights", "get_covers", "get_climate", "get_switches",
-                    "get_house_status", "get_weather", "get_entity_state"]:
+        for fn in [
+            "get_lights",
+            "get_covers",
+            "get_climate",
+            "get_switches",
+            "get_house_status",
+            "get_weather",
+            "get_entity_state",
+        ]:
             result = _apply_pre_tts_filter(f"Ergebnis von {fn} ist da")
             assert fn not in result, f"'{fn}' was not filtered in Pre-TTS"
 
@@ -502,6 +577,7 @@ class TestPreTTSFilter:
 # P06f: validate_notification Meta-Filter Tests
 # ============================================================
 
+
 class TestValidateNotificationMetaFilter:
     """P06f: ollama_client.validate_notification entfernt interne Begriffe."""
 
@@ -518,7 +594,9 @@ class TestValidateNotificationMetaFilter:
         assert " emit " not in f" {result.lower()} "
 
     def test_removes_tool_call(self):
-        result = validate_notification("Der tool_call wurde ausgefuehrt und ist erledigt")
+        result = validate_notification(
+            "Der tool_call wurde ausgefuehrt und ist erledigt"
+        )
         assert "tool_call" not in result
 
     def test_removes_function_call(self):
@@ -534,7 +612,9 @@ class TestValidateNotificationMetaFilter:
         assert "speak_response" not in result
 
     def test_removes_emit_action(self):
-        result = validate_notification("Die emit_action wurde gestartet und ist erledigt")
+        result = validate_notification(
+            "Die emit_action wurde gestartet und ist erledigt"
+        )
         assert "emit_action" not in result
 
     def test_removes_call_service(self):
@@ -542,15 +622,21 @@ class TestValidateNotificationMetaFilter:
         assert "call_service" not in result
 
     def test_removes_call_ha_service(self):
-        result = validate_notification("Ich rufe call_ha_service auf für die Lampe hier")
+        result = validate_notification(
+            "Ich rufe call_ha_service auf für die Lampe hier"
+        )
         assert "call_ha_service" not in result
 
     def test_removes_get_entity_state(self):
-        result = validate_notification("Ich frage get_entity_state ab und sage dir Bescheid")
+        result = validate_notification(
+            "Ich frage get_entity_state ab und sage dir Bescheid"
+        )
         assert "get_entity_state" not in result
 
     def test_removes_run_scene(self):
-        result = validate_notification("Ich starte run_scene jetzt für das Wohnzimmer hier")
+        result = validate_notification(
+            "Ich starte run_scene jetzt für das Wohnzimmer hier"
+        )
         assert "run_scene" not in result
 
     def test_preserves_clean_german_text(self):
@@ -568,7 +654,9 @@ class TestValidateNotificationMetaFilter:
         assert validate_notification(None) is None
 
     def test_strips_think_tags_before_meta_filter(self):
-        result = validate_notification("<think>internal reasoning</think>Die Waschmaschine ist fertig.")
+        result = validate_notification(
+            "<think>internal reasoning</think>Die Waschmaschine ist fertig."
+        )
         assert "<think>" not in result
         assert "Die Waschmaschine ist fertig." in result
 

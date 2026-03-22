@@ -10,6 +10,7 @@ from assistant.multi_room_audio import MultiRoomAudio, _KEY_GROUPS, _KEY_ACTIVE_
 
 # ── Fixtures ──────────────────────────────────────────────────
 
+
 @pytest.fixture
 def ha_client():
     ha = AsyncMock()
@@ -56,9 +57,17 @@ def redis_client():
 
 @pytest.fixture
 def mra(ha_client):
-    with patch("assistant.multi_room_audio.yaml_config", {
-        "multi_room_audio": {"enabled": True, "max_groups": 10, "default_volume": 40, "use_native_grouping": False},
-    }):
+    with patch(
+        "assistant.multi_room_audio.yaml_config",
+        {
+            "multi_room_audio": {
+                "enabled": True,
+                "max_groups": 10,
+                "default_volume": 40,
+                "use_native_grouping": False,
+            },
+        },
+    ):
         audio = MultiRoomAudio(ha_client)
     return audio
 
@@ -71,6 +80,7 @@ async def _make_ready(mra, redis_client):
 
 # ── initialize ────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_initialize(mra, redis_client):
     await mra.initialize(redis_client)
@@ -79,10 +89,13 @@ async def test_initialize(mra, redis_client):
 
 # ── create_group ──────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_create_group_success(mra, redis_client):
     await _make_ready(mra, redis_client)
-    result = await mra.create_group("Party", ["media_player.a", "media_player.b"], "Partygruppe")
+    result = await mra.create_group(
+        "Party", ["media_player.a", "media_player.b"], "Partygruppe"
+    )
     assert result["success"] is True
     assert "Party" in result["message"]
 
@@ -130,6 +143,7 @@ async def test_create_group_max_reached(mra, redis_client):
 
 # ── delete_group ──────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_delete_group_success(mra, redis_client):
     await _make_ready(mra, redis_client)
@@ -153,6 +167,7 @@ async def test_delete_group_empty_name(mra, redis_client):
 
 
 # ── modify_group ──────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_modify_group_add_speaker(mra, redis_client):
@@ -190,6 +205,7 @@ async def test_modify_group_not_found(mra, redis_client):
 
 # ── list_groups ───────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_list_groups_empty(mra, redis_client):
     await _make_ready(mra, redis_client)
@@ -218,6 +234,7 @@ async def test_list_groups_no_redis(mra):
 
 # ── play_to_group ─────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_play_to_group_success(mra, redis_client):
     await _make_ready(mra, redis_client)
@@ -243,6 +260,7 @@ async def test_play_to_group_no_content(mra, redis_client):
 
 
 # ── stop_group / pause_group ──────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_stop_group_success(mra, redis_client):
@@ -270,6 +288,7 @@ async def test_pause_group_success(mra, redis_client):
 
 
 # ── set_group_volume ──────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_set_group_volume_all(mra, redis_client):
@@ -307,11 +326,14 @@ async def test_set_group_volume_clamp(mra, redis_client):
 
 # ── get_group_status ──────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_get_group_status_specific(mra, redis_client):
     await _make_ready(mra, redis_client)
     await mra.create_group("Status", ["media_player.a"])
-    mra.ha.get_state = AsyncMock(return_value={"state": "playing", "attributes": {"friendly_name": "Speaker A"}})
+    mra.ha.get_state = AsyncMock(
+        return_value={"state": "playing", "attributes": {"friendly_name": "Speaker A"}}
+    )
     result = await mra.get_group_status("Status")
     assert result["success"] is True
     assert "Speaker A" in result["message"]
@@ -327,13 +349,24 @@ async def test_get_group_status_all_empty(mra, redis_client):
 
 # ── discover_speakers ────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_discover_speakers(mra):
-    mra.ha.get_states = AsyncMock(return_value=[
-        {"entity_id": "media_player.kitchen", "state": "idle", "attributes": {"friendly_name": "Kitchen"}},
-        {"entity_id": "media_player.living_room_tv", "state": "idle", "attributes": {}},
-        {"entity_id": "light.lamp", "state": "on", "attributes": {}},
-    ])
+    mra.ha.get_states = AsyncMock(
+        return_value=[
+            {
+                "entity_id": "media_player.kitchen",
+                "state": "idle",
+                "attributes": {"friendly_name": "Kitchen"},
+            },
+            {
+                "entity_id": "media_player.living_room_tv",
+                "state": "idle",
+                "attributes": {},
+            },
+            {"entity_id": "light.lamp", "state": "on", "attributes": {}},
+        ]
+    )
     speakers = await mra.discover_speakers()
     assert len(speakers) == 1
     assert speakers[0]["entity_id"] == "media_player.kitchen"
@@ -341,14 +374,21 @@ async def test_discover_speakers(mra):
 
 @pytest.mark.asyncio
 async def test_discover_speakers_excludes_device_class_tv(mra):
-    mra.ha.get_states = AsyncMock(return_value=[
-        {"entity_id": "media_player.generic", "state": "idle", "attributes": {"device_class": "tv"}},
-    ])
+    mra.ha.get_states = AsyncMock(
+        return_value=[
+            {
+                "entity_id": "media_player.generic",
+                "state": "idle",
+                "attributes": {"device_class": "tv"},
+            },
+        ]
+    )
     speakers = await mra.discover_speakers()
     assert len(speakers) == 0
 
 
 # ── health_status ─────────────────────────────────────────────
+
 
 def test_health_status(mra):
     status = mra.health_status()
@@ -360,17 +400,24 @@ def test_health_status(mra):
 
 # ── load_presets ──────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_load_presets(mra, redis_client):
     await _make_ready(mra, redis_client)
-    with patch("assistant.multi_room_audio.yaml_config", {
-        "multi_room_audio": {
-            "enabled": True,
-            "presets": {
-                "Ueberall": {"speakers": ["media_player.a", "media_player.b"], "description": "Alle Speaker"},
+    with patch(
+        "assistant.multi_room_audio.yaml_config",
+        {
+            "multi_room_audio": {
+                "enabled": True,
+                "presets": {
+                    "Ueberall": {
+                        "speakers": ["media_player.a", "media_player.b"],
+                        "description": "Alle Speaker",
+                    },
+                },
             },
         },
-    }):
+    ):
         await mra.load_presets()
     groups = await mra.list_groups()
     assert any(g["name"] == "Ueberall" for g in groups)
@@ -379,9 +426,12 @@ async def test_load_presets(mra, redis_client):
 @pytest.mark.asyncio
 async def test_load_presets_no_redis(mra):
     mra.redis = None
-    with patch("assistant.multi_room_audio.yaml_config", {
-        "multi_room_audio": {"presets": {"X": {"speakers": ["media_player.a"]}}},
-    }):
+    with patch(
+        "assistant.multi_room_audio.yaml_config",
+        {
+            "multi_room_audio": {"presets": {"X": {"speakers": ["media_player.a"]}}},
+        },
+    ):
         await mra.load_presets()  # should not raise
 
 
@@ -496,8 +546,14 @@ class TestListGroupsEdges:
     @pytest.mark.asyncio
     async def test_list_groups_bytes_values(self, mra, redis_client):
         await _make_ready(mra, redis_client)
-        group_data = json.dumps({"name": "Test", "speakers": ["media_player.a"],
-                                  "volume": 40, "speaker_volumes": {}})
+        group_data = json.dumps(
+            {
+                "name": "Test",
+                "speakers": ["media_player.a"],
+                "volume": 40,
+                "speaker_volumes": {},
+            }
+        )
         redis_client.hgetall = AsyncMock(return_value={"test": group_data.encode()})
         result = await mra.list_groups()
         assert len(result) == 1
@@ -523,7 +579,10 @@ class TestPlayToGroupEdges:
         await redis_client.hset(_KEY_GROUPS, "empty", json.dumps(group))
         result = await mra.play_to_group("Empty", query="Jazz")
         assert result["success"] is False
-        assert "keine Speaker" in result["message"].lower() or "keine Speaker" in result["message"]
+        assert (
+            "keine Speaker" in result["message"].lower()
+            or "keine Speaker" in result["message"]
+        )
 
     @pytest.mark.asyncio
     async def test_play_native_grouping(self, mra, redis_client, ha_client):
@@ -533,8 +592,9 @@ class TestPlayToGroupEdges:
         result = await mra.play_to_group("Native", query="Jazz")
         assert result["success"] is True
         # Should have called join
-        join_calls = [c for c in ha_client.call_service.call_args_list
-                      if c[0][1] == "join"]
+        join_calls = [
+            c for c in ha_client.call_service.call_args_list if c[0][1] == "join"
+        ]
         assert len(join_calls) >= 1
 
 
@@ -557,11 +617,16 @@ class TestPlayNativeGroupEdges:
 
         ha_client.call_service = AsyncMock(side_effect=mock_call_service)
 
-        group = {"name": "Test", "speakers": ["media_player.a", "media_player.b"],
-                 "volume": 40, "speaker_volumes": {"media_player.a": 40, "media_player.b": 40}}
+        group = {
+            "name": "Test",
+            "speakers": ["media_player.a", "media_player.b"],
+            "volume": 40,
+            "speaker_volumes": {"media_player.a": 40, "media_player.b": 40},
+        }
         # The fallback _play_parallel will also fail, but that's ok
         result = await mra._play_native_group(
-            ["media_player.a", "media_player.b"], "Jazz", "music", group)
+            ["media_player.a", "media_player.b"], "Jazz", "music", group
+        )
         # Should attempt fallback
 
 
@@ -580,21 +645,32 @@ class TestPlayParallelEdges:
             return True
 
         ha_client.call_service = AsyncMock(side_effect=mock_call_service)
-        group = {"name": "Test", "speakers": ["media_player.a", "media_player.b"],
-                 "volume": 40, "speaker_volumes": {"media_player.a": 40, "media_player.b": 40}}
+        group = {
+            "name": "Test",
+            "speakers": ["media_player.a", "media_player.b"],
+            "volume": 40,
+            "speaker_volumes": {"media_player.a": 40, "media_player.b": 40},
+        }
         result = await mra._play_parallel(
-            ["media_player.a", "media_player.b"], "Jazz", "music", group)
+            ["media_player.a", "media_player.b"], "Jazz", "music", group
+        )
         assert result["success"] is True
         assert "fehlgeschlagen" in result["message"]
 
     @pytest.mark.asyncio
     async def test_all_fail_exception(self, mra, redis_client, ha_client):
         await _make_ready(mra, redis_client)
-        group = {"name": "Test", "speakers": ["media_player.a"],
-                 "volume": 40, "speaker_volumes": {"media_player.a": 40}}
+        group = {
+            "name": "Test",
+            "speakers": ["media_player.a"],
+            "volume": 40,
+            "speaker_volumes": {"media_player.a": 40},
+        }
         # Patch gather to raise to hit except branch (lines 277-278)
         with patch("asyncio.gather", side_effect=Exception("All down")):
-            result = await mra._play_parallel(["media_player.a"], "Jazz", "music", group)
+            result = await mra._play_parallel(
+                ["media_player.a"], "Jazz", "music", group
+            )
         assert result["success"] is False
 
 
@@ -616,8 +692,11 @@ class TestStopGroupEdges:
         result = await mra.stop_group("NativeStop")
         assert result["success"] is True
         # Should have called unjoin
-        unjoin_calls = [c for c in ha_client.call_service.call_args_list
-                        if len(c[0]) > 1 and c[0][1] == "unjoin"]
+        unjoin_calls = [
+            c
+            for c in ha_client.call_service.call_args_list
+            if len(c[0]) > 1 and c[0][1] == "unjoin"
+        ]
         assert len(unjoin_calls) >= 1
 
     @pytest.mark.asyncio
@@ -742,13 +821,18 @@ class TestBuildGroupStatusEdges:
     @pytest.mark.asyncio
     async def test_description_shown(self, mra, redis_client, ha_client):
         await _make_ready(mra, redis_client)
-        group = {"name": "Test", "description": "Test description",
-                 "speakers": ["media_player.a"],
-                 "speaker_volumes": {"media_player.a": 40}}
-        ha_client.get_state = AsyncMock(return_value={
-            "state": "playing",
-            "attributes": {"friendly_name": "Speaker A", "media_title": "Song"},
-        })
+        group = {
+            "name": "Test",
+            "description": "Test description",
+            "speakers": ["media_player.a"],
+            "speaker_volumes": {"media_player.a": 40},
+        }
+        ha_client.get_state = AsyncMock(
+            return_value={
+                "state": "playing",
+                "attributes": {"friendly_name": "Speaker A", "media_title": "Song"},
+            }
+        )
         result = await mra._build_group_status(group)
         assert "Test description" in result["message"]
         assert "Song" in result["message"]
@@ -756,8 +840,11 @@ class TestBuildGroupStatusEdges:
     @pytest.mark.asyncio
     async def test_speaker_not_reachable(self, mra, redis_client, ha_client):
         await _make_ready(mra, redis_client)
-        group = {"name": "Test", "speakers": ["media_player.a"],
-                 "speaker_volumes": {"media_player.a": 40}}
+        group = {
+            "name": "Test",
+            "speakers": ["media_player.a"],
+            "speaker_volumes": {"media_player.a": 40},
+        }
         ha_client.get_state = AsyncMock(return_value=None)
         result = await mra._build_group_status(group)
         assert "nicht erreichbar" in result["message"]
@@ -765,8 +852,11 @@ class TestBuildGroupStatusEdges:
     @pytest.mark.asyncio
     async def test_speaker_state_exception(self, mra, redis_client, ha_client):
         await _make_ready(mra, redis_client)
-        group = {"name": "Test", "speakers": ["media_player.a"],
-                 "speaker_volumes": {"media_player.a": 40}}
+        group = {
+            "name": "Test",
+            "speakers": ["media_player.a"],
+            "speaker_volumes": {"media_player.a": 40},
+        }
         ha_client.get_state = AsyncMock(side_effect=Exception("HA error"))
         result = await mra._build_group_status(group)
         assert "Fehler" in result["message"]
@@ -778,14 +868,20 @@ class TestLoadPresetsEdges:
     @pytest.mark.asyncio
     async def test_preset_empty_speakers_skipped(self, mra, redis_client):
         await _make_ready(mra, redis_client)
-        with patch("assistant.multi_room_audio.yaml_config", {
-            "multi_room_audio": {
-                "presets": {
-                    "Empty": {"speakers": [], "description": "No speakers"},
-                    "Valid": {"speakers": ["media_player.a"], "description": "Has speakers"},
+        with patch(
+            "assistant.multi_room_audio.yaml_config",
+            {
+                "multi_room_audio": {
+                    "presets": {
+                        "Empty": {"speakers": [], "description": "No speakers"},
+                        "Valid": {
+                            "speakers": ["media_player.a"],
+                            "description": "Has speakers",
+                        },
+                    },
                 },
             },
-        }):
+        ):
             await mra.load_presets()
         groups = await mra.list_groups()
         names = [g["name"] for g in groups]
@@ -796,13 +892,19 @@ class TestLoadPresetsEdges:
     async def test_preset_existing_group_skipped(self, mra, redis_client):
         await _make_ready(mra, redis_client)
         await mra.create_group("Existing", ["media_player.a"])
-        with patch("assistant.multi_room_audio.yaml_config", {
-            "multi_room_audio": {
-                "presets": {
-                    "Existing": {"speakers": ["media_player.b"], "description": "New version"},
+        with patch(
+            "assistant.multi_room_audio.yaml_config",
+            {
+                "multi_room_audio": {
+                    "presets": {
+                        "Existing": {
+                            "speakers": ["media_player.b"],
+                            "description": "New version",
+                        },
+                    },
                 },
             },
-        }):
+        ):
             await mra.load_presets()
         # Group should still have original speaker
         group = await mra._get_group("Existing")
@@ -861,9 +963,11 @@ class TestGetSpeakerNamesEdges:
     @pytest.mark.asyncio
     async def test_state_with_friendly_name(self, mra, redis_client, ha_client):
         await _make_ready(mra, redis_client)
-        ha_client.get_state = AsyncMock(return_value={
-            "attributes": {"friendly_name": "Kitchen Speaker"},
-        })
+        ha_client.get_state = AsyncMock(
+            return_value={
+                "attributes": {"friendly_name": "Kitchen Speaker"},
+            }
+        )
         result = await mra._get_speaker_names(["media_player.kitchen"])
         assert result == ["Kitchen Speaker"]
 
@@ -879,9 +983,14 @@ class TestDiscoverSpeakersEdges:
 
     @pytest.mark.asyncio
     async def test_discover_excludes_receiver_device_class(self, mra, ha_client):
-        ha_client.get_states = AsyncMock(return_value=[
-            {"entity_id": "media_player.avr", "state": "on",
-             "attributes": {"device_class": "receiver"}},
-        ])
+        ha_client.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "media_player.avr",
+                    "state": "on",
+                    "attributes": {"device_class": "receiver"},
+                },
+            ]
+        )
         result = await mra.discover_speakers()
         assert len(result) == 0

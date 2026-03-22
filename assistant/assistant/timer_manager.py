@@ -35,16 +35,24 @@ def _now() -> datetime:
     """Timezone-aware datetime.now(timezone.utc) für Europe/Berlin."""
     return datetime.now(_TZ)
 
+
 logger = logging.getLogger(__name__)
 
 # F-003: Whitelist für erlaubte Timer-Aktionen bei Ablauf
 # Sicherheitsrelevante Aktionen (lock_door, arm_security_system, etc.) sind NICHT erlaubt
-TIMER_ACTION_WHITELIST = frozenset({
-    "set_light", "set_climate", "set_cover",
-    "play_media", "pause_media", "stop_media",
-    "send_message", "send_message_to_person",
-    "set_volume",
-})
+TIMER_ACTION_WHITELIST = frozenset(
+    {
+        "set_light",
+        "set_climate",
+        "set_cover",
+        "play_media",
+        "pause_media",
+        "stop_media",
+        "send_message",
+        "send_message_to_person",
+        "set_volume",
+    }
+)
 
 # Redis Keys
 KEY_TIMERS = "mha:timers:active"
@@ -56,6 +64,7 @@ KEY_SCHEDULED_ACTIONS = "mha:scheduled_actions"  # Phase 5A
 @dataclass
 class GeneralTimer:
     """Ein allgemeiner Software-Timer."""
+
     id: str
     label: str
     duration_seconds: int
@@ -63,7 +72,9 @@ class GeneralTimer:
     person: str = ""
     started_at: float = 0.0
     finished: bool = False
-    action_on_expire: Optional[dict] = None  # z.B. {"function": "set_light", "args": {"room": "kueche", "state": "off"}}
+    action_on_expire: Optional[dict] = (
+        None  # z.B. {"function": "set_light", "args": {"room": "kueche", "state": "off"}}
+    )
 
     def start(self):
         self.started_at = time.time()
@@ -149,7 +160,10 @@ class TimerManager:
             await self._restore_timers()
             await self._restore_reminders()
             await self._restore_alarms()
-        logger.info("TimerManager initialisiert (%d aktive Timer/Erinnerungen/Wecker)", len(self.timers))
+        logger.info(
+            "TimerManager initialisiert (%d aktive Timer/Erinnerungen/Wecker)",
+            len(self.timers),
+        )
 
     def set_notify_callback(self, callback):
         """Setzt den Callback für Timer-Benachrichtigungen."""
@@ -180,7 +194,10 @@ class TimerManager:
             Ergebnis-Dict mit success und message
         """
         if duration_minutes < 1 or duration_minutes > 1440:
-            return {"success": False, "message": "Timer muss zwischen 1 und 1440 Minuten (24h) liegen."}
+            return {
+                "success": False,
+                "message": "Timer muss zwischen 1 und 1440 Minuten (24h) liegen.",
+            }
 
         timer_id = str(uuid.uuid4())[:8]
         if not label:
@@ -282,7 +299,11 @@ class TimerManager:
             for t in done:
                 parts.append(f"  - {t.label}: abgelaufen")
 
-        return {"success": True, "message": "\n".join(parts), "active_count": len(active)}
+        return {
+            "success": True,
+            "message": "\n".join(parts),
+            "active_count": len(active),
+        }
 
     def get_context_hints(self) -> list[str]:
         """Liefert Timer-Hinweise für den System-Prompt Kontext."""
@@ -303,14 +324,18 @@ class TimerManager:
             logger.info("Timer abgelaufen: %s (ID: %s)", timer.label, timer.id)
 
             # Benachrichtigung senden
-            message = f"{get_person_title()}, der Timer für '{timer.label}' ist abgelaufen!"
+            message = (
+                f"{get_person_title()}, der Timer für '{timer.label}' ist abgelaufen!"
+            )
             if self._notify_callback:
-                await self._notify_callback({
-                    "message": message,
-                    "type": "timer_expired",
-                    "room": timer.room,
-                    "timer_id": timer.id,
-                })
+                await self._notify_callback(
+                    {
+                        "message": message,
+                        "type": "timer_expired",
+                        "room": timer.room,
+                        "timer_id": timer.id,
+                    }
+                )
 
             # Optionale Aktion ausführen
             if timer.action_on_expire and self._action_callback:
@@ -321,14 +346,18 @@ class TimerManager:
                 if func_name and func_name not in TIMER_ACTION_WHITELIST:
                     logger.warning(
                         "Timer-Aktion blockiert (nicht in Whitelist): %s(%s) — Timer: %s",
-                        func_name, func_args, timer.label,
+                        func_name,
+                        func_args,
+                        timer.label,
                     )
                     if self._notify_callback:
-                        await self._notify_callback({
-                            "message": f"Timer-Aktion '{func_name}' blockiert (nicht erlaubt).",
-                            "type": "timer_action_blocked",
-                            "room": timer.room,
-                        })
+                        await self._notify_callback(
+                            {
+                                "message": f"Timer-Aktion '{func_name}' blockiert (nicht erlaubt).",
+                                "type": "timer_action_blocked",
+                                "room": timer.room,
+                            }
+                        )
                 elif func_name:
                     logger.info("Timer-Aktion ausführen: %s(%s)", func_name, func_args)
                     try:
@@ -338,11 +367,13 @@ class TimerManager:
                         result = None
                     action_msg = f"Timer-Aktion '{func_name}' ausgeführt."
                     if self._notify_callback:
-                        await self._notify_callback({
-                            "message": action_msg,
-                            "type": "timer_action",
-                            "room": timer.room,
-                        })
+                        await self._notify_callback(
+                            {
+                                "message": action_msg,
+                                "type": "timer_action",
+                                "room": timer.room,
+                            }
+                        )
 
             # Aufraumen
             self._tasks.pop(timer.id, None)
@@ -396,10 +427,15 @@ class TimerManager:
                 if timer.remaining_seconds > 0.0 and not timer.finished:
                     self.timers[timer.id] = timer
                     task = asyncio.create_task(self._timer_watcher(timer))
-                    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+                    task.add_done_callback(
+                        lambda t: t.exception() if not t.cancelled() else None
+                    )
                     self._tasks[timer.id] = task
-                    logger.info("Timer wiederhergestellt: '%s' (noch %s)",
-                                timer.label, timer.format_remaining())
+                    logger.info(
+                        "Timer wiederhergestellt: '%s' (noch %s)",
+                        timer.label,
+                        timer.format_remaining(),
+                    )
                 else:
                     # Abgelaufener Timer entfernen
                     await self._remove_timer(timer.id)
@@ -436,7 +472,9 @@ class TimerManager:
             # Zielzeit parsen
             target_time = datetime.strptime(time_str, "%H:%M")
             if date_str:
-                target_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=_TZ)
+                target_date = datetime.strptime(date_str, "%Y-%m-%d").replace(
+                    tzinfo=_TZ
+                )
             else:
                 target_date = now
 
@@ -453,12 +491,21 @@ class TimerManager:
 
             seconds_until = (target - now).total_seconds()
             if seconds_until <= 0:
-                return {"success": False, "message": "Der Zeitpunkt liegt in der Vergangenheit."}
+                return {
+                    "success": False,
+                    "message": "Der Zeitpunkt liegt in der Vergangenheit.",
+                }
             if seconds_until > 7 * 86400:
-                return {"success": False, "message": "Erinnerungen koennen maximal 7 Tage in der Zukunft liegen."}
+                return {
+                    "success": False,
+                    "message": "Erinnerungen koennen maximal 7 Tage in der Zukunft liegen.",
+                }
 
         except ValueError:
-            return {"success": False, "message": f"Ungültige Uhrzeit: {time_str}. Format: HH:MM"}
+            return {
+                "success": False,
+                "message": f"Ungültige Uhrzeit: {time_str}. Format: HH:MM",
+            }
 
         reminder_id = str(uuid.uuid4())[:8]
         timer = GeneralTimer(
@@ -504,12 +551,14 @@ class TimerManager:
             logger.info("Erinnerung ausgelöst: %s (ID: %s)", timer.label, timer.id)
 
             if self._notify_callback:
-                await self._notify_callback({
-                    "message": f"{get_person_title()}, Erinnerung: {timer.label}",
-                    "type": "reminder",
-                    "room": timer.room,
-                    "timer_id": timer.id,
-                })
+                await self._notify_callback(
+                    {
+                        "message": f"{get_person_title()}, Erinnerung: {timer.label}",
+                        "type": "reminder",
+                        "room": timer.room,
+                        "timer_id": timer.id,
+                    }
+                )
 
             # Aufraumen
             self._tasks.pop(timer.id, None)
@@ -522,7 +571,9 @@ class TimerManager:
         except Exception as e:
             logger.error("Reminder-Watcher Fehler für '%s': %s", timer.label, e)
 
-    async def _persist_reminder(self, reminder_id: str, timer: GeneralTimer, target: datetime):
+    async def _persist_reminder(
+        self, reminder_id: str, timer: GeneralTimer, target: datetime
+    ):
         """Speichert Erinnerung in Redis."""
         if not self.redis:
             return
@@ -565,10 +616,15 @@ class TimerManager:
                     timer = GeneralTimer.from_dict(info)
                     self.timers[timer.id] = timer
                     task = asyncio.create_task(self._reminder_watcher(timer, target))
-                    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+                    task.add_done_callback(
+                        lambda t: t.exception() if not t.cancelled() else None
+                    )
                     self._tasks[timer.id] = task
-                    logger.info("Erinnerung wiederhergestellt: '%s' um %s",
-                                timer.label, target.strftime("%H:%M"))
+                    logger.info(
+                        "Erinnerung wiederhergestellt: '%s' um %s",
+                        timer.label,
+                        target.strftime("%H:%M"),
+                    )
                 else:
                     await self._remove_reminder(rid)
         except Exception as e:
@@ -631,10 +687,16 @@ class TimerManager:
 
             seconds_until = (target - now).total_seconds()
             if seconds_until <= 0:
-                return {"success": False, "message": "Zeitpunkt liegt in der Vergangenheit."}
+                return {
+                    "success": False,
+                    "message": "Zeitpunkt liegt in der Vergangenheit.",
+                }
 
         except ValueError:
-            return {"success": False, "message": f"Ungültige Uhrzeit: {time_str}. Format: HH:MM"}
+            return {
+                "success": False,
+                "message": f"Ungültige Uhrzeit: {time_str}. Format: HH:MM",
+            }
 
         alarm_id = str(uuid.uuid4())[:8]
         alarm_data = {
@@ -700,7 +762,9 @@ class TimerManager:
                         if isinstance(data, bytes):
                             data = data.decode()
                         info = json.loads(data)
-                        if label.lower() in info.get("label", "").lower() and info.get("active"):
+                        if label.lower() in info.get("label", "").lower() and info.get(
+                            "active"
+                        ):
                             target_id = aid
                             break
                 except Exception as e:
@@ -732,7 +796,10 @@ class TimerManager:
             if len(active_alarms) == 1:
                 target_id = active_alarms[0]
             elif len(active_alarms) > 1:
-                return {"success": False, "message": "Mehrere Wecker aktiv. Bitte angeben welcher gelöscht werden soll."}
+                return {
+                    "success": False,
+                    "message": "Mehrere Wecker aktiv. Bitte angeben welcher gelöscht werden soll.",
+                }
 
         if not target_id:
             return {"success": False, "message": "Wecker nicht gefunden."}
@@ -777,7 +844,9 @@ class TimerManager:
                         "weekdays": "Mo-Fr",
                         "weekends": "Sa-So",
                     }.get(info.get("repeat", ""), "einmalig")
-                    alarms.append(f"  - {info['label']}: {info['time']} Uhr ({repeat_text})")
+                    alarms.append(
+                        f"  - {info['label']}: {info['time']} Uhr ({repeat_text})"
+                    )
 
             if not alarms:
                 return {"success": True, "message": "Keine Wecker gesetzt."}
@@ -797,16 +866,20 @@ class TimerManager:
             if seconds_until > 0:
                 await asyncio.sleep(seconds_until)
 
-            logger.info("Wecker klingelt: %s um %s", alarm_data["label"], alarm_data["time"])
+            logger.info(
+                "Wecker klingelt: %s um %s", alarm_data["label"], alarm_data["time"]
+            )
 
             # Benachrichtigung senden
             if self._notify_callback:
-                await self._notify_callback({
-                    "message": f"Guten Morgen {get_person_title()}! Wecker: {alarm_data['label']} — es ist {alarm_data['time']} Uhr.",
-                    "type": "wakeup_alarm",
-                    "room": alarm_data.get("room", ""),
-                    "alarm_id": alarm_id,
-                })
+                await self._notify_callback(
+                    {
+                        "message": f"Guten Morgen {get_person_title()}! Wecker: {alarm_data['label']} — es ist {alarm_data['time']} Uhr.",
+                        "type": "wakeup_alarm",
+                        "room": alarm_data.get("room", ""),
+                        "alarm_id": alarm_id,
+                    }
+                )
 
             self._tasks.pop(alarm_id, None)
             self.timers.pop(alarm_id, None)
@@ -862,11 +935,16 @@ class TimerManager:
             )
             self.timers[alarm_id] = timer
             task = asyncio.create_task(self._alarm_watcher(alarm_id, alarm_data))
-            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+            task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
+            )
             self._tasks[alarm_id] = task
 
-            logger.info("Naechster Wecker: %s um %s", alarm_data["label"],
-                        next_target.strftime("%d.%m. %H:%M"))
+            logger.info(
+                "Naechster Wecker: %s um %s",
+                alarm_data["label"],
+                next_target.strftime("%d.%m. %H:%M"),
+            )
         except Exception as e:
             logger.error("Wecker-Wiederholung fehlgeschlagen: %s", e)
 
@@ -904,10 +982,15 @@ class TimerManager:
                     )
                     self.timers[aid] = timer
                     task = asyncio.create_task(self._alarm_watcher(aid, alarm_data))
-                    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+                    task.add_done_callback(
+                        lambda t: t.exception() if not t.cancelled() else None
+                    )
                     self._tasks[aid] = task
-                    logger.info("Wecker wiederhergestellt: '%s' um %s",
-                                alarm_data["label"], alarm_data["time"])
+                    logger.info(
+                        "Wecker wiederhergestellt: '%s' um %s",
+                        alarm_data["label"],
+                        alarm_data["time"],
+                    )
                 elif alarm_data.get("repeat"):
                     # Vergangener wiederkehrender Wecker → nächsten planen
                     await self._schedule_next_alarm(aid, alarm_data)
@@ -964,10 +1047,14 @@ class TimerManager:
         # Wiederholungstyp validieren
         valid_repeats = {"once", "daily", "weekdays", "weekends", "weekly"}
         if repeat not in valid_repeats:
-            return {"success": False, "message": f"Ungueltiger Wiederholungstyp: {repeat}"}
+            return {
+                "success": False,
+                "message": f"Ungueltiger Wiederholungstyp: {repeat}",
+            }
 
         if not target_date:
             from datetime import date
+
             target_date = date.today().isoformat()
 
         action_id = f"sched_{int(time.time())}_{random.randint(1000, 9999)}"
@@ -987,10 +1074,15 @@ class TimerManager:
         }
 
         try:
-            await self.redis.hset(KEY_SCHEDULED_ACTIONS, action_id, json.dumps(scheduled))
+            await self.redis.hset(
+                KEY_SCHEDULED_ACTIONS, action_id, json.dumps(scheduled)
+            )
             logger.info(
                 "Scheduled Action erstellt: %s um %s (%s) [%s]",
-                action, target_time, repeat, action_id,
+                action,
+                target_time,
+                repeat,
+                action_id,
             )
             return {
                 "success": True,
@@ -1024,7 +1116,9 @@ class TimerManager:
             actions = []
             for _id, data in raw.items():
                 try:
-                    entry = json.loads(data.decode() if isinstance(data, bytes) else data)
+                    entry = json.loads(
+                        data.decode() if isinstance(data, bytes) else data
+                    )
                     if entry.get("active", True):
                         actions.append(entry)
                 except (json.JSONDecodeError, TypeError):
@@ -1046,6 +1140,7 @@ class TimerManager:
 
         try:
             from datetime import date
+
             now = datetime.now(_TZ)
             today = now.date().isoformat()
             current_time = now.strftime("%H:%M")
@@ -1054,8 +1149,14 @@ class TimerManager:
             raw = await self.redis.hgetall(KEY_SCHEDULED_ACTIONS)
             for action_id_raw, data_raw in raw.items():
                 try:
-                    action_id = action_id_raw.decode() if isinstance(action_id_raw, bytes) else action_id_raw
-                    entry = json.loads(data_raw.decode() if isinstance(data_raw, bytes) else data_raw)
+                    action_id = (
+                        action_id_raw.decode()
+                        if isinstance(action_id_raw, bytes)
+                        else action_id_raw
+                    )
+                    entry = json.loads(
+                        data_raw.decode() if isinstance(data_raw, bytes) else data_raw
+                    )
 
                     if not entry.get("active", True):
                         continue
@@ -1077,8 +1178,11 @@ class TimerManager:
                     elif repeat == "weekly":
                         # Gleicher Wochentag wie Erstellung
                         from datetime import date as dateclass
+
                         try:
-                            created_date = dateclass.fromisoformat(entry.get("target_date", today))
+                            created_date = dateclass.fromisoformat(
+                                entry.get("target_date", today)
+                            )
                             if created_date.weekday() != weekday:
                                 continue
                         except (ValueError, TypeError):
@@ -1096,18 +1200,25 @@ class TimerManager:
                     if action in TIMER_ACTION_WHITELIST:
                         logger.info(
                             "Scheduled Action ausfuehren: %s(%s) [%s]",
-                            action, args, action_id,
+                            action,
+                            args,
+                            action_id,
                         )
                         try:
                             await self._action_callback(action, args)
                         except Exception as exec_err:
-                            logger.warning("Scheduled Action Ausfuehrung fehlgeschlagen: %s", exec_err)
+                            logger.warning(
+                                "Scheduled Action Ausfuehrung fehlgeschlagen: %s",
+                                exec_err,
+                            )
 
                     # Status aktualisieren
                     entry["last_executed"] = time.time()
                     if repeat == "once":
                         entry["active"] = False
-                    await self.redis.hset(KEY_SCHEDULED_ACTIONS, action_id, json.dumps(entry))
+                    await self.redis.hset(
+                        KEY_SCHEDULED_ACTIONS, action_id, json.dumps(entry)
+                    )
 
                 except (json.JSONDecodeError, TypeError, KeyError) as e:
                     logger.debug("Scheduled Action Parse-Fehler: %s", e)
@@ -1122,8 +1233,13 @@ class TimerManager:
             return ""
 
         from datetime import date
+
         today = date.today().isoformat()
-        today_actions = [a for a in actions if a.get("target_date") == today or a.get("repeat") != "once"]
+        today_actions = [
+            a
+            for a in actions
+            if a.get("target_date") == today or a.get("repeat") != "once"
+        ]
 
         if not today_actions:
             return ""

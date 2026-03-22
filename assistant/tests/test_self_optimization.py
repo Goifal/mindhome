@@ -42,7 +42,9 @@ YAML_CFG = {
 @pytest.fixture
 def ollama():
     m = AsyncMock()
-    m.generate = AsyncMock(return_value='[{"parameter": "sarcasm_level", "current": 5, "proposed": 6, "reason": "test", "confidence": 0.8}]')
+    m.generate = AsyncMock(
+        return_value='[{"parameter": "sarcasm_level", "current": 5, "proposed": 6, "reason": "test", "confidence": 0.8}]'
+    )
     return m
 
 
@@ -82,12 +84,16 @@ def opt(ollama, versioning, redis_m):
 
 # ── is_enabled ───────────────────────────────────────────
 
+
 class TestIsEnabled:
     def test_enabled(self, opt):
         assert opt.is_enabled()
 
     def test_disabled_when_off(self, ollama, versioning):
-        cfg = {**YAML_CFG, "self_optimization": {**YAML_CFG["self_optimization"], "enabled": False}}
+        cfg = {
+            **YAML_CFG,
+            "self_optimization": {**YAML_CFG["self_optimization"], "enabled": False},
+        }
         with patch("assistant.self_optimization.yaml_config", cfg):
             with patch("assistant.self_optimization.settings") as s:
                 s.model_deep = "x"
@@ -95,7 +101,13 @@ class TestIsEnabled:
         assert not so.is_enabled()
 
     def test_disabled_when_approval_off(self, ollama, versioning):
-        cfg = {**YAML_CFG, "self_optimization": {**YAML_CFG["self_optimization"], "approval_mode": "off"}}
+        cfg = {
+            **YAML_CFG,
+            "self_optimization": {
+                **YAML_CFG["self_optimization"],
+                "approval_mode": "off",
+            },
+        }
         with patch("assistant.self_optimization.yaml_config", cfg):
             with patch("assistant.self_optimization.settings") as s:
                 s.model_deep = "x"
@@ -104,6 +116,7 @@ class TestIsEnabled:
 
 
 # ── _validate_proposal ───────────────────────────────────
+
 
 class TestValidateProposal:
     def test_valid_proposal(self, opt):
@@ -146,6 +159,7 @@ class TestValidateProposal:
 
 # ── _get_current_values ──────────────────────────────────
 
+
 class TestGetCurrentValues:
     def test_reads_values(self, opt):
         with patch("assistant.self_optimization.yaml_config", YAML_CFG):
@@ -155,6 +169,7 @@ class TestGetCurrentValues:
 
 
 # ── get_pending_proposals ────────────────────────────────
+
 
 class TestGetPendingProposals:
     @pytest.mark.asyncio
@@ -179,6 +194,7 @@ class TestGetPendingProposals:
 
 # ── approve_proposal ─────────────────────────────────────
 
+
 class TestApproveProposal:
     @pytest.mark.asyncio
     async def test_approve_disabled(self, opt):
@@ -195,16 +211,28 @@ class TestApproveProposal:
     @pytest.mark.asyncio
     async def test_approve_valid(self, opt, redis_m, versioning):
         opt._pending_proposals = [
-            {"parameter": "sarcasm_level", "current": 5, "proposed": 6, "reason": "test", "confidence": 0.8},
+            {
+                "parameter": "sarcasm_level",
+                "current": 5,
+                "proposed": 6,
+                "reason": "test",
+                "confidence": 0.8,
+            },
         ]
-        with patch.object(opt, "_apply_parameter", new_callable=AsyncMock) as mock_apply:
-            mock_apply.return_value = {"success": True, "message": "sarcasm_level: 5 -> 6"}
+        with patch.object(
+            opt, "_apply_parameter", new_callable=AsyncMock
+        ) as mock_apply:
+            mock_apply.return_value = {
+                "success": True,
+                "message": "sarcasm_level: 5 -> 6",
+            }
             result = await opt.approve_proposal(0)
         assert result["success"]
         versioning.create_snapshot.assert_called_once()
 
 
 # ── reject_proposal ──────────────────────────────────────
+
 
 class TestRejectProposal:
     @pytest.mark.asyncio
@@ -216,7 +244,13 @@ class TestRejectProposal:
     @pytest.mark.asyncio
     async def test_reject_valid(self, opt, redis_m):
         opt._pending_proposals = [
-            {"parameter": "sarcasm_level", "current": 5, "proposed": 6, "reason": "test", "confidence": 0.8},
+            {
+                "parameter": "sarcasm_level",
+                "current": 5,
+                "proposed": 6,
+                "reason": "test",
+                "confidence": 0.8,
+            },
         ]
         result = await opt.reject_proposal(0)
         assert result["success"]
@@ -232,6 +266,7 @@ class TestRejectProposal:
 
 # ── format_proposals_for_chat ────────────────────────────
 
+
 class TestFormatProposals:
     def test_format_empty(self, opt):
         text = opt.format_proposals_for_chat([])
@@ -239,7 +274,13 @@ class TestFormatProposals:
 
     def test_format_with_proposals(self, opt):
         proposals = [
-            {"parameter": "sarcasm_level", "current": 5, "proposed": 6, "reason": "Mehr Humor", "confidence": 0.8},
+            {
+                "parameter": "sarcasm_level",
+                "current": 5,
+                "proposed": 6,
+                "reason": "Mehr Humor",
+                "confidence": 0.8,
+            },
         ]
         text = opt.format_proposals_for_chat(proposals)
         assert "sarcasm_level" in text
@@ -248,6 +289,7 @@ class TestFormatProposals:
 
 
 # ── Banned Phrases ───────────────────────────────────────
+
 
 class TestBannedPhrases:
     @pytest.mark.asyncio
@@ -299,6 +341,7 @@ class TestBannedPhrases:
 
 # ── Character Break Tracking ────────────────────────────
 
+
 class TestCharacterBreak:
     @pytest.mark.asyncio
     async def test_track_character_break(self, opt, redis_m):
@@ -319,6 +362,7 @@ class TestCharacterBreak:
 
 # ── Health Status ────────────────────────────────────────
 
+
 class TestHealthStatus:
     def test_health_status(self, opt):
         status = opt.health_status()
@@ -329,6 +373,7 @@ class TestHealthStatus:
 
 
 # ── Weekly Summary ───────────────────────────────────────
+
 
 class TestWeeklySummary:
     @pytest.mark.asyncio
@@ -347,6 +392,7 @@ class TestWeeklySummary:
 
 
 # ── Feedback / Corrections ───────────────────────────────
+
 
 class TestDataSources:
     @pytest.mark.asyncio
@@ -384,6 +430,7 @@ class TestDataSources:
 
 
 # ── Save Baseline ────────────────────────────────────────
+
 
 class TestBaseline:
     @pytest.mark.asyncio
@@ -441,7 +488,9 @@ class TestPhase1DFeatures:
         """Domain-Korrektur wird in Redis getrackt."""
         await opt_3day.track_domain_correction("climate")
         redis_m.hincrby.assert_called_once_with(
-            "mha:self_opt:domain_corrections", "climate", 1,
+            "mha:self_opt:domain_corrections",
+            "climate",
+            1,
         )
 
     @pytest.mark.asyncio
@@ -468,7 +517,9 @@ class TestPhase1DFeatures:
     async def test_proactive_insight_significant(self, opt_3day, redis_m):
         """Insight bei signifikanter Domain-Konzentration."""
         redis_m.hgetall.return_value = {
-            b"climate": b"8", b"light": b"2", b"media": b"1",
+            b"climate": b"8",
+            b"light": b"2",
+            b"media": b"1",
         }
         result = await opt_3day._generate_proactive_insight()
         assert result is not None
@@ -486,7 +537,10 @@ class TestPhase1DFeatures:
     async def test_proactive_insight_even_distribution(self, opt_3day, redis_m):
         """Gleichverteilte Korrekturen (alle <30%) → None."""
         redis_m.hgetall.return_value = {
-            b"climate": b"3", b"light": b"3", b"media": b"3", b"cover": b"3",
+            b"climate": b"3",
+            b"light": b"3",
+            b"media": b"3",
+            b"cover": b"3",
         }
         result = await opt_3day._generate_proactive_insight()
         assert result is None
@@ -509,19 +563,24 @@ class TestImmutableCoreProtection:
         so._redis = redis_m
         return so
 
-    @pytest.mark.parametrize("immutable_key", [
-        "trust_levels",
-        "security",
-        "autonomy",
-        "dashboard",
-        "models",
-    ])
+    @pytest.mark.parametrize(
+        "immutable_key",
+        [
+            "trust_levels",
+            "security",
+            "autonomy",
+            "dashboard",
+            "models",
+        ],
+    )
     def test_hardcoded_immutable_keys_rejected(self, opt, immutable_key):
         """Each hardcoded immutable key must be rejected regardless of config."""
         p = {"parameter": immutable_key, "proposed": 1}
         assert not opt._validate_proposal(p)
 
-    def test_immutable_set_cannot_be_overridden_by_config(self, ollama, versioning, redis_m):
+    def test_immutable_set_cannot_be_overridden_by_config(
+        self, ollama, versioning, redis_m
+    ):
         """Even if config tries to remove hardcoded immutable keys, they remain protected."""
         cfg = dict(YAML_CFG)
         cfg["self_optimization"] = dict(cfg["self_optimization"])
@@ -574,19 +633,25 @@ class TestSarcasmFormalityConsistency:
         Note: formality_start in config is stored as 0-100 scale (e.g. 80).
         The consistency check uses >75 threshold.
         """
-        with patch("assistant.self_optimization.yaml_config", {
-            **YAML_CFG,
-            "personality": {**YAML_CFG["personality"], "formality_start": 80},
-        }):
+        with patch(
+            "assistant.self_optimization.yaml_config",
+            {
+                **YAML_CFG,
+                "personality": {**YAML_CFG["personality"], "formality_start": 80},
+            },
+        ):
             p = {"parameter": "sarcasm_level", "proposed": 9}
             assert not opt._validate_proposal(p)
 
     def test_low_sarcasm_with_low_formality_rejected(self, opt):
         """Sarcasm <= 1 with formality_start < 30 is contradictory."""
-        with patch("assistant.self_optimization.yaml_config", {
-            **YAML_CFG,
-            "personality": {**YAML_CFG["personality"], "formality_start": 20},
-        }):
+        with patch(
+            "assistant.self_optimization.yaml_config",
+            {
+                **YAML_CFG,
+                "personality": {**YAML_CFG["personality"], "formality_start": 20},
+            },
+        ):
             p = {"parameter": "sarcasm_level", "proposed": 1}
             assert not opt._validate_proposal(p)
 
@@ -631,6 +696,7 @@ class TestRunAnalysis:
     async def test_run_analysis_too_recent(self, opt, redis_m):
         """Analysis skips if last run was too recent."""
         from datetime import datetime, timezone
+
         redis_m.get.return_value = datetime.now(timezone.utc).isoformat()
         result = await opt.run_analysis()
         assert result == []
@@ -643,7 +709,9 @@ class TestRunAnalysis:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_run_analysis_proceeds_with_feedback_stats(self, opt, redis_m, ollama):
+    async def test_run_analysis_proceeds_with_feedback_stats(
+        self, opt, redis_m, ollama
+    ):
         """Analysis proceeds when feedback stats exist even if corrections are empty.
 
         _get_feedback_stats returns a non-empty dict (with zero counts),
@@ -659,13 +727,33 @@ class TestRunAnalysis:
     @pytest.mark.asyncio
     async def test_run_analysis_validates_proposals(self, opt, redis_m, ollama):
         """Analysis filters out invalid proposals from LLM output."""
-        redis_m.get.side_effect = [None, "5", "2", "0", "0"]  # last_run=None, then feedback stats
+        redis_m.get.side_effect = [
+            None,
+            "5",
+            "2",
+            "0",
+            "0",
+        ]  # last_run=None, then feedback stats
         redis_m.lrange.return_value = [json.dumps({"text": "correction"})]
         # LLM returns one valid and one invalid proposal
-        ollama.generate.return_value = json.dumps([
-            {"parameter": "sarcasm_level", "current": 5, "proposed": 6, "reason": "ok", "confidence": 0.8},
-            {"parameter": "trust_levels", "current": 1, "proposed": 2, "reason": "hack", "confidence": 0.9},
-        ])
+        ollama.generate.return_value = json.dumps(
+            [
+                {
+                    "parameter": "sarcasm_level",
+                    "current": 5,
+                    "proposed": 6,
+                    "reason": "ok",
+                    "confidence": 0.8,
+                },
+                {
+                    "parameter": "trust_levels",
+                    "current": 1,
+                    "proposed": 2,
+                    "reason": "hack",
+                    "confidence": 0.9,
+                },
+            ]
+        )
         result = await opt.run_analysis()
         # Only the valid proposal should survive
         assert len(result) <= 1
@@ -679,7 +767,13 @@ class TestRunAnalysis:
         redis_m.lrange.return_value = [json.dumps({"text": "c"})]
         # Return more proposals than the limit
         proposals = [
-            {"parameter": "sarcasm_level", "current": 5, "proposed": 6, "reason": f"r{i}", "confidence": 0.8}
+            {
+                "parameter": "sarcasm_level",
+                "current": 5,
+                "proposed": 6,
+                "reason": f"r{i}",
+                "confidence": 0.8,
+            }
             for i in range(10)
         ]
         ollama.generate.return_value = json.dumps(proposals)
@@ -742,7 +836,9 @@ class TestGenerateProposals:
     @pytest.mark.asyncio
     async def test_parse_filters_entries_without_parameter(self, opt, ollama):
         """Entries without 'parameter' key are filtered out."""
-        ollama.generate.return_value = '[{"parameter": "sarcasm_level", "proposed": 6}, {"no_param": true}]'
+        ollama.generate.return_value = (
+            '[{"parameter": "sarcasm_level", "proposed": 6}, {"no_param": true}]'
+        )
         with patch("assistant.self_optimization.yaml_config", YAML_CFG):
             result = await opt._generate_proposals([], {"positive": 1})
         assert len(result) == 1
@@ -783,7 +879,9 @@ class TestValidationEdgeCases:
 
     def test_none_proposed_value(self, opt):
         """None proposed value is rejected (not numeric)."""
-        assert not opt._validate_proposal({"parameter": "sarcasm_level", "proposed": None})
+        assert not opt._validate_proposal(
+            {"parameter": "sarcasm_level", "proposed": None}
+        )
 
     def test_boolean_proposed_value_rejected(self, opt):
         """Boolean values should be rejected (even though bool is subclass of int in Python)."""
@@ -816,11 +914,15 @@ class TestValidationEdgeCases:
 
     def test_list_proposed_value_rejected(self, opt):
         """List values must be rejected."""
-        assert not opt._validate_proposal({"parameter": "sarcasm_level", "proposed": [5]})
+        assert not opt._validate_proposal(
+            {"parameter": "sarcasm_level", "proposed": [5]}
+        )
 
     def test_dict_proposed_value_rejected(self, opt):
         """Dict values must be rejected."""
-        assert not opt._validate_proposal({"parameter": "sarcasm_level", "proposed": {"value": 5}})
+        assert not opt._validate_proposal(
+            {"parameter": "sarcasm_level", "proposed": {"value": 5}}
+        )
 
 
 # ------------------------------------------------------------------
@@ -873,7 +975,10 @@ class TestApplyParameter:
         with patch("assistant.self_optimization.yaml_config", YAML_CFG):
             with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_thread:
                 mock_thread.return_value = None
-                with patch("assistant.self_optimization.load_yaml_config", return_value=YAML_CFG):
+                with patch(
+                    "assistant.self_optimization.load_yaml_config",
+                    return_value=YAML_CFG,
+                ):
                     with patch("assistant.self_optimization.cfg_module") as mock_cfg:
                         mock_cfg.yaml_config = dict(YAML_CFG)
                         result = await opt._apply_parameter("sarcasm_level", 6)
@@ -884,7 +989,11 @@ class TestApplyParameter:
     async def test_apply_parameter_exception(self, opt):
         """Exception during apply returns failure."""
         with patch("assistant.self_optimization.yaml_config", YAML_CFG):
-            with patch("asyncio.to_thread", new_callable=AsyncMock, side_effect=OSError("disk full")):
+            with patch(
+                "asyncio.to_thread",
+                new_callable=AsyncMock,
+                side_effect=OSError("disk full"),
+            ):
                 result = await opt._apply_parameter("sarcasm_level", 6)
         assert not result["success"]
         assert "fehlgeschlagen" in result["message"]
@@ -906,8 +1015,13 @@ class TestApproveProposalAdvanced:
     async def test_approve_negative_index(self, opt):
         """Negative index is rejected."""
         opt._pending_proposals = [
-            {"parameter": "sarcasm_level", "current": 5, "proposed": 6,
-             "reason": "test", "confidence": 0.8},
+            {
+                "parameter": "sarcasm_level",
+                "current": 5,
+                "proposed": 6,
+                "reason": "test",
+                "confidence": 0.8,
+            },
         ]
         result = await opt.approve_proposal(-1)
         assert not result["success"]
@@ -916,35 +1030,63 @@ class TestApproveProposalAdvanced:
     async def test_approve_validates_before_apply(self, opt, versioning):
         """Proposal that fails validation is rejected during approve."""
         opt._pending_proposals = [
-            {"parameter": "sarcasm_level", "current": 5, "proposed": "not_numeric",
-             "reason": "test", "confidence": 0.8},
+            {
+                "parameter": "sarcasm_level",
+                "current": 5,
+                "proposed": "not_numeric",
+                "reason": "test",
+                "confidence": 0.8,
+            },
         ]
         result = await opt.approve_proposal(0)
         assert not result["success"]
         assert "Grenzen" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_approve_clears_redis_when_last_proposal(self, opt, redis_m, versioning):
+    async def test_approve_clears_redis_when_last_proposal(
+        self, opt, redis_m, versioning
+    ):
         """When the last proposal is approved, pending key is deleted from Redis."""
         opt._pending_proposals = [
-            {"parameter": "sarcasm_level", "current": 5, "proposed": 6,
-             "reason": "test", "confidence": 0.8},
+            {
+                "parameter": "sarcasm_level",
+                "current": 5,
+                "proposed": 6,
+                "reason": "test",
+                "confidence": 0.8,
+            },
         ]
-        with patch.object(opt, "_apply_parameter", new_callable=AsyncMock) as mock_apply:
+        with patch.object(
+            opt, "_apply_parameter", new_callable=AsyncMock
+        ) as mock_apply:
             mock_apply.return_value = {"success": True, "message": "ok"}
             await opt.approve_proposal(0)
         redis_m.delete.assert_called_with("mha:self_opt:pending")
 
     @pytest.mark.asyncio
-    async def test_approve_updates_redis_when_more_proposals(self, opt, redis_m, versioning):
+    async def test_approve_updates_redis_when_more_proposals(
+        self, opt, redis_m, versioning
+    ):
         """When more proposals remain after approve, redis is updated (not deleted)."""
         opt._pending_proposals = [
-            {"parameter": "sarcasm_level", "current": 5, "proposed": 6,
-             "reason": "test", "confidence": 0.8},
-            {"parameter": "opinion_intensity", "current": 3, "proposed": 4,
-             "reason": "test2", "confidence": 0.7},
+            {
+                "parameter": "sarcasm_level",
+                "current": 5,
+                "proposed": 6,
+                "reason": "test",
+                "confidence": 0.8,
+            },
+            {
+                "parameter": "opinion_intensity",
+                "current": 3,
+                "proposed": 4,
+                "reason": "test2",
+                "confidence": 0.7,
+            },
         ]
-        with patch.object(opt, "_apply_parameter", new_callable=AsyncMock) as mock_apply:
+        with patch.object(
+            opt, "_apply_parameter", new_callable=AsyncMock
+        ) as mock_apply:
             mock_apply.return_value = {"success": True, "message": "ok"}
             await opt.approve_proposal(0)
         # Should call set (not delete) since 1 proposal remains
@@ -954,23 +1096,39 @@ class TestApproveProposalAdvanced:
     async def test_approve_records_history(self, opt, redis_m, versioning):
         """Approved proposal is pushed to history list in Redis."""
         opt._pending_proposals = [
-            {"parameter": "sarcasm_level", "current": 5, "proposed": 6,
-             "reason": "test", "confidence": 0.8},
+            {
+                "parameter": "sarcasm_level",
+                "current": 5,
+                "proposed": 6,
+                "reason": "test",
+                "confidence": 0.8,
+            },
         ]
-        with patch.object(opt, "_apply_parameter", new_callable=AsyncMock) as mock_apply:
+        with patch.object(
+            opt, "_apply_parameter", new_callable=AsyncMock
+        ) as mock_apply:
             mock_apply.return_value = {"success": True, "message": "ok"}
             await opt.approve_proposal(0)
         redis_m.lpush.assert_called()
         redis_m.ltrim.assert_called_with("mha:self_opt:history", 0, 49)
 
     @pytest.mark.asyncio
-    async def test_approve_failed_apply_does_not_update_proposals(self, opt, redis_m, versioning):
+    async def test_approve_failed_apply_does_not_update_proposals(
+        self, opt, redis_m, versioning
+    ):
         """When _apply_parameter fails, proposals list stays unchanged."""
         opt._pending_proposals = [
-            {"parameter": "sarcasm_level", "current": 5, "proposed": 6,
-             "reason": "test", "confidence": 0.8},
+            {
+                "parameter": "sarcasm_level",
+                "current": 5,
+                "proposed": 6,
+                "reason": "test",
+                "confidence": 0.8,
+            },
         ]
-        with patch.object(opt, "_apply_parameter", new_callable=AsyncMock) as mock_apply:
+        with patch.object(
+            opt, "_apply_parameter", new_callable=AsyncMock
+        ) as mock_apply:
             mock_apply.return_value = {"success": False, "message": "error"}
             result = await opt.approve_proposal(0)
         assert not result["success"]
@@ -1001,8 +1159,13 @@ class TestRejectProposalAdvanced:
     async def test_reject_records_in_redis(self, opt, redis_m):
         """Rejected proposals are stored in rejected list."""
         opt._pending_proposals = [
-            {"parameter": "sarcasm_level", "current": 5, "proposed": 6,
-             "reason": "test", "confidence": 0.8},
+            {
+                "parameter": "sarcasm_level",
+                "current": 5,
+                "proposed": 6,
+                "reason": "test",
+                "confidence": 0.8,
+            },
         ]
         await opt.reject_proposal(0)
         redis_m.lpush.assert_called()
@@ -1014,8 +1177,13 @@ class TestRejectProposalAdvanced:
     async def test_reject_clears_redis_when_last(self, opt, redis_m):
         """When last proposal is rejected, pending key is deleted."""
         opt._pending_proposals = [
-            {"parameter": "sarcasm_level", "current": 5, "proposed": 6,
-             "reason": "test", "confidence": 0.8},
+            {
+                "parameter": "sarcasm_level",
+                "current": 5,
+                "proposed": 6,
+                "reason": "test",
+                "confidence": 0.8,
+            },
         ]
         await opt.reject_proposal(0)
         redis_m.delete.assert_called_with("mha:self_opt:pending")
@@ -1024,10 +1192,20 @@ class TestRejectProposalAdvanced:
     async def test_reject_updates_redis_when_more_remain(self, opt, redis_m):
         """When proposals remain, redis is updated."""
         opt._pending_proposals = [
-            {"parameter": "sarcasm_level", "current": 5, "proposed": 6,
-             "reason": "test", "confidence": 0.8},
-            {"parameter": "opinion_intensity", "current": 3, "proposed": 4,
-             "reason": "test2", "confidence": 0.7},
+            {
+                "parameter": "sarcasm_level",
+                "current": 5,
+                "proposed": 6,
+                "reason": "test",
+                "confidence": 0.8,
+            },
+            {
+                "parameter": "opinion_intensity",
+                "current": 3,
+                "proposed": 4,
+                "reason": "test2",
+                "confidence": 0.7,
+            },
         ]
         await opt.reject_proposal(0)
         redis_m.set.assert_called()
@@ -1086,7 +1264,9 @@ class TestTrackUserPhraseCorrection:
         """Phrase is tracked via hincrby in Redis."""
         await opt.track_user_phrase_correction("sag das nicht")
         redis_m.hincrby.assert_called_once_with(
-            "mha:self_opt:phrase_corrections", "sag das nicht", 1,
+            "mha:self_opt:phrase_corrections",
+            "sag das nicht",
+            1,
         )
         redis_m.expire.assert_called()
 
@@ -1142,7 +1322,9 @@ class TestAddBannedPhrase:
         fake_config = {"response_filter": {"banned_phrases": []}}
         with patch("asyncio.to_thread") as mock_thread:
             mock_thread.side_effect = [fake_config, None]  # read, write
-            with patch("assistant.self_optimization.load_yaml_config", return_value=YAML_CFG):
+            with patch(
+                "assistant.self_optimization.load_yaml_config", return_value=YAML_CFG
+            ):
                 with patch("assistant.self_optimization.cfg_module") as mock_cfg:
                     mock_cfg.yaml_config = dict(YAML_CFG)
                     result = await opt.add_banned_phrase("Natuerlich gerne")
@@ -1174,7 +1356,9 @@ class TestAddBannedPhrase:
         fake_config = {"response_filter": {"banned_phrases": []}}
         with patch("asyncio.to_thread") as mock_thread:
             mock_thread.side_effect = [fake_config, None]
-            with patch("assistant.self_optimization.load_yaml_config", return_value=YAML_CFG):
+            with patch(
+                "assistant.self_optimization.load_yaml_config", return_value=YAML_CFG
+            ):
                 with patch("assistant.self_optimization.cfg_module") as mock_cfg:
                     mock_cfg.yaml_config = dict(YAML_CFG)
                     await opt.add_banned_phrase("bad phrase")
@@ -1199,8 +1383,14 @@ class TestWeeklySummaryAdvanced:
         """Summary includes recently applied changes."""
         opt._pending_proposals = []
         redis_m.lrange.return_value = [
-            json.dumps({"parameter": "sarcasm_level", "current": 5, "proposed": 6,
-                        "applied_at": "2026-03-20T12:00:00"}),
+            json.dumps(
+                {
+                    "parameter": "sarcasm_level",
+                    "current": 5,
+                    "proposed": 6,
+                    "applied_at": "2026-03-20T12:00:00",
+                }
+            ),
         ]
         redis_m.hgetall.side_effect = [{}, {}]  # filter counts, corrections
         summary = await opt.generate_weekly_summary()
@@ -1214,7 +1404,9 @@ class TestWeeklySummaryAdvanced:
         redis_m.lrange.return_value = []
         redis_m.hgetall.side_effect = [{}, {}]
         corr_mem = AsyncMock()
-        corr_mem.get_stats = AsyncMock(return_value={"total_corrections": 10, "active_rules": 3})
+        corr_mem.get_stats = AsyncMock(
+            return_value={"total_corrections": 10, "active_rules": 3}
+        )
         summary = await opt.generate_weekly_summary(correction_memory=corr_mem)
         assert "Korrekturen" in summary
         assert "10" in summary
@@ -1267,11 +1459,14 @@ class TestCheckEffectivenessAdvanced:
         }
         redis_m.get.return_value = json.dumps(baseline)
         outcome_tracker = AsyncMock()
-        outcome_tracker.get_stats = AsyncMock(return_value={
-            "lights": {"score": 0.8},
-        })
+        outcome_tracker.get_stats = AsyncMock(
+            return_value={
+                "lights": {"score": 0.8},
+            }
+        )
         result = await opt.check_effectiveness(
-            "sarcasm_level", outcome_tracker=outcome_tracker,
+            "sarcasm_level",
+            outcome_tracker=outcome_tracker,
         )
         assert result is not None
         assert result["parameter"] == "sarcasm_level"
@@ -1285,7 +1480,8 @@ class TestCheckEffectivenessAdvanced:
         quality = AsyncMock()
         quality.get_stats = AsyncMock(return_value={"avg_score": 0.9})
         result = await opt.check_effectiveness(
-            "sarcasm_level", response_quality=quality,
+            "sarcasm_level",
+            response_quality=quality,
         )
         assert result is not None
         quality.get_stats.assert_called_once()
@@ -1298,7 +1494,8 @@ class TestCheckEffectivenessAdvanced:
         outcome_tracker = AsyncMock()
         outcome_tracker.get_stats = AsyncMock(side_effect=RuntimeError("fail"))
         result = await opt.check_effectiveness(
-            "sarcasm_level", outcome_tracker=outcome_tracker,
+            "sarcasm_level",
+            outcome_tracker=outcome_tracker,
         )
         assert result is not None
         assert result["score_changes"] == {}
@@ -1593,6 +1790,7 @@ class TestCharacterBreakAdvanced:
         stats = await opt.get_character_break_stats(days=1)
         # Should have today's data
         from datetime import date
+
         today = date.today().isoformat()
         if today in stats:
             assert stats[today]["llm_voice"] == 5

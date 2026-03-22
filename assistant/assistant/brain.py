@@ -1172,6 +1172,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         )
         self.routines.set_executor(self.executor)
         self.routines.set_personality(self.personality)
+        self.routines.set_explainability(self.explainability)
         self.routines._semantic_memory = self.memory.semantic
         if "RoutineEngine" not in _degraded_modules:
             await _safe_init(
@@ -6105,6 +6106,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             response_text = planner_result.get("response", "")
             executed_actions = planner_result.get("actions", [])
             model = _deep_model
+            # Explainability: Komplexe Aktionen loggen
+            for _pa in executed_actions:
+                self._task_registry.create_task(
+                    self.explainability.log_decision(
+                        action=_pa.get("function", "action_plan"),
+                        reason=f"Komplexe Anfrage: {text[:100]}",
+                        trigger="user_command",
+                        person=person or "",
+                        domain=_pa.get("domain", ""),
+                    ),
+                    name="log_explainability_planner",
+                )
         elif intent_type == "knowledge":
             # Phase 8: Wissensfragen — Smart reicht fuer einfache Fakten,
             # Deep nur bei komplexen Erklaerungen (>15 Woerter oder Erklaer-Patterns).
@@ -6790,6 +6803,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     "args": final_args,
                                     "result": "pushback_confirmation_needed",
                                 }
+                            )
+                            # Explainability: Pushback-Entscheidung loggen
+                            self._task_registry.create_task(
+                                self.explainability.log_decision(
+                                    action=f"pushback:{func_name}",
+                                    reason=pushback["message"],
+                                    trigger="safety",
+                                    person=person or "",
+                                    domain=ACTION_DOMAIN_MAP.get(func_name, ""),
+                                    confidence=1.0,
+                                ),
+                                name="log_explainability_pushback",
                             )
                             continue
                         elif pushback["level"] == 1:
@@ -11695,6 +11720,19 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             result = await self.executor.execute(func_name, func_args)
             await self.memory.redis.delete(SECURITY_CONFIRM_KEY)
 
+            # Explainability: Sicherheitsbestaetigung loggen
+            self._task_registry.create_task(
+                self.explainability.log_decision(
+                    action=func_name,
+                    reason=f"Sicherheitsbestaetigung durch {person or 'Benutzer'}",
+                    trigger="user_command",
+                    person=person or "",
+                    domain=ACTION_DOMAIN_MAP.get(func_name, ""),
+                    confidence=1.0,
+                ),
+                name="log_explainability_security_confirm",
+            )
+
             # Pushback-Learning: Level 2 Pushback wurde ueberschrieben
             _pending_reason = pending.get("reason", "")
             if _pending_reason.startswith("pushback:"):
@@ -14666,6 +14704,17 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         )
                         executed_descs.append(_short_desc)
                         executed_actions.append({"function": action, "args": s_args})
+                        # Explainability: Antizipierte Aktionen loggen
+                        self._task_registry.create_task(
+                            self.explainability.log_decision(
+                                action=action,
+                                reason=f"Gelerntes Muster: {desc}",
+                                trigger="anticipation",
+                                person=person or "",
+                                confidence=s.get("confidence", 0.8),
+                            ),
+                            name="log_explainability_das_uebliche",
+                        )
                 except Exception as e:
                     logger.debug(
                         "Das Uebliche Aktion fehlgeschlagen: %s — %s", action, e
@@ -16649,6 +16698,19 @@ Regeln:
             )
             if _success:
                 text = f"{title}, {desc} — hab ich uebernommen. Wie jeden Tag um diese Zeit."
+                # Explainability: Butler-Instinkt-Aktionen loggen
+                self._task_registry.create_task(
+                    self.explainability.log_decision(
+                        action=action,
+                        reason=_reason,
+                        trigger="anticipation",
+                        person=suggestion.get("person", ""),
+                        domain=suggestion.get("domain", "")
+                        or ACTION_DOMAIN_MAP.get(action, ""),
+                        confidence=suggestion.get("confidence", 0.8),
+                    ),
+                    name="log_explainability_butler_instinct",
+                )
                 # Inner State: Stolz bei erfolgreicher Antizipation
                 if hasattr(self, "inner_state"):
                     self._task_registry.create_task(

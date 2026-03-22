@@ -61,7 +61,10 @@ class TestReportStructure:
         result = await report.generate_report()
         assert "summary" in result
         # Fallback should mention not enough data
-        assert "nicht genug Daten" in result["summary"].lower() or len(result["summary"]) > 0
+        assert (
+            "nicht genug Daten" in result["summary"].lower()
+            or len(result["summary"]) > 0
+        )
 
 
 # ── Redis persistence ────────────────────────────────────────
@@ -73,7 +76,9 @@ class TestRedisPersistence:
     @pytest.mark.asyncio
     async def test_report_stored_with_14_day_ttl(self, report):
         """Latest report is stored with 14-day TTL."""
-        report.ollama.generate = AsyncMock(return_value="Report content that is long enough.")
+        report.ollama.generate = AsyncMock(
+            return_value="Report content that is long enough."
+        )
         outcome = MagicMock()
         outcome.get_stats = AsyncMock(return_value={"a": {"score": 0.7, "total": 5}})
         outcome.get_weekly_trends = AsyncMock(return_value={})
@@ -89,7 +94,9 @@ class TestRedisPersistence:
     @pytest.mark.asyncio
     async def test_history_limited_to_12_entries(self, report):
         """History list is trimmed to 12 entries."""
-        report.ollama.generate = AsyncMock(return_value="History test report with enough content.")
+        report.ollama.generate = AsyncMock(
+            return_value="History test report with enough content."
+        )
         outcome = MagicMock()
         outcome.get_stats = AsyncMock(return_value={"b": {"score": 0.6, "total": 3}})
         outcome.get_weekly_trends = AsyncMock(return_value={})
@@ -101,7 +108,9 @@ class TestRedisPersistence:
     @pytest.mark.asyncio
     async def test_history_has_365_day_expiry(self, report):
         """History list expires after 365 days."""
-        report.ollama.generate = AsyncMock(return_value="Expiry test report content here ok.")
+        report.ollama.generate = AsyncMock(
+            return_value="Expiry test report content here ok."
+        )
         outcome = MagicMock()
         outcome.get_stats = AsyncMock(return_value={"c": {"score": 0.9, "total": 1}})
         outcome.get_weekly_trends = AsyncMock(return_value={})
@@ -113,15 +122,20 @@ class TestRedisPersistence:
     @pytest.mark.asyncio
     async def test_last_day_stored_in_redis(self, report):
         """The current day is stored in Redis for rate-limit recovery."""
-        report.ollama.generate = AsyncMock(return_value="Day cache test report with content ok.")
+        report.ollama.generate = AsyncMock(
+            return_value="Day cache test report with content ok."
+        )
         outcome = MagicMock()
         outcome.get_stats = AsyncMock(return_value={"d": {"score": 0.5, "total": 2}})
         outcome.get_weekly_trends = AsyncMock(return_value={})
 
         await report.generate_report(outcome_tracker=outcome)
 
-        day_calls = [c for c in report.redis.setex.call_args_list
-                     if c[0][0] == "mha:self_report:last_day"]
+        day_calls = [
+            c
+            for c in report.redis.setex.call_args_list
+            if c[0][0] == "mha:self_report:last_day"
+        ]
         assert len(day_calls) > 0
         assert day_calls[0][0][1] == 86400
 
@@ -139,7 +153,9 @@ class TestRedisPersistence:
             return await original_setex(key, ttl, value)
 
         report.redis.setex = AsyncMock(side_effect=conditional_setex)
-        report.ollama.generate = AsyncMock(return_value="Report despite Redis issue ok ok.")
+        report.ollama.generate = AsyncMock(
+            return_value="Report despite Redis issue ok ok."
+        )
         outcome = MagicMock()
         outcome.get_stats = AsyncMock(return_value={"e": {"score": 0.4, "total": 1}})
         outcome.get_weekly_trends = AsyncMock(return_value={})
@@ -157,7 +173,9 @@ class TestRateLimiting:
     @pytest.mark.asyncio
     async def test_same_day_returns_cached_report(self, report):
         """Calling generate_report twice on the same day returns cached."""
-        report.ollama.generate = AsyncMock(return_value="First report of the day with content.")
+        report.ollama.generate = AsyncMock(
+            return_value="First report of the day with content."
+        )
         outcome = MagicMock()
         outcome.get_stats = AsyncMock(return_value={"f": {"score": 0.8, "total": 10}})
         outcome.get_weekly_trends = AsyncMock(return_value={})
@@ -174,15 +192,21 @@ class TestRateLimiting:
     async def test_rate_limit_no_cache_generates_new(self, report):
         """When rate limit triggers but no cached report exists, generate new."""
         report._last_report_day = ""
-        report.redis.get = AsyncMock(side_effect=[
-            b"2099-01-01",  # Recovery: last day = today (fake future)
-            None,  # get_latest_report returns None
-        ])
-        report.ollama.generate = AsyncMock(return_value="New report generated despite rate limit.")
+        report.redis.get = AsyncMock(
+            side_effect=[
+                b"2099-01-01",  # Recovery: last day = today (fake future)
+                None,  # get_latest_report returns None
+            ]
+        )
+        report.ollama.generate = AsyncMock(
+            return_value="New report generated despite rate limit."
+        )
 
         with patch("assistant.self_report.datetime") as mock_dt:
             mock_dt.now.return_value.strftime.return_value = "2099-01-01"
-            mock_dt.now.return_value.isoformat.return_value = "2099-01-01T10:00:00+00:00"
+            mock_dt.now.return_value.isoformat.return_value = (
+                "2099-01-01T10:00:00+00:00"
+            )
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             result = await report.generate_report()
 
@@ -276,7 +300,9 @@ class TestSummaryPromptConstruction:
     @pytest.mark.asyncio
     async def test_prompt_includes_outcome_scores(self, report):
         """Outcome data appears in the LLM prompt."""
-        report.ollama.generate = AsyncMock(return_value="Summary with outcome scores and results.")
+        report.ollama.generate = AsyncMock(
+            return_value="Summary with outcome scores and results."
+        )
         data = {
             "outcomes": {
                 "set_light": {"score": 0.75, "total": 17},
@@ -292,7 +318,9 @@ class TestSummaryPromptConstruction:
     @pytest.mark.asyncio
     async def test_prompt_includes_feedback_high_and_low(self, report):
         """Feedback with high/low scores appears in the prompt."""
-        report.ollama.generate = AsyncMock(return_value="Feedback analysis in the summary report.")
+        report.ollama.generate = AsyncMock(
+            return_value="Feedback analysis in the summary report."
+        )
         data = {
             "feedback": {"weather": 0.9, "energy_tip": 0.1, "neutral_thing": 0.5},
         }
@@ -305,7 +333,9 @@ class TestSummaryPromptConstruction:
     @pytest.mark.asyncio
     async def test_prompt_uses_correct_temperature(self, report):
         """LLM is called with temperature 0.6."""
-        report.ollama.generate = AsyncMock(return_value="Temperature test report content ok ok.")
+        report.ollama.generate = AsyncMock(
+            return_value="Temperature test report content ok ok."
+        )
         data = {"outcomes": {"x": {"score": 0.5, "total": 1}}}
         await report._generate_summary(data)
         call_args = report.ollama.generate.call_args
@@ -314,7 +344,9 @@ class TestSummaryPromptConstruction:
     @pytest.mark.asyncio
     async def test_prompt_uses_max_500_tokens(self, report):
         """LLM is called with max_tokens=500."""
-        report.ollama.generate = AsyncMock(return_value="Token limit test report content ok ok.")
+        report.ollama.generate = AsyncMock(
+            return_value="Token limit test report content ok ok."
+        )
         data = {"outcomes": {"x": {"score": 0.5, "total": 1}}}
         await report._generate_summary(data)
         call_args = report.ollama.generate.call_args
@@ -332,9 +364,15 @@ class TestSummaryPromptConstruction:
     @pytest.mark.asyncio
     async def test_summary_with_non_numeric_feedback_values(self, report):
         """Feedback with non-numeric values should be filtered out."""
-        report.ollama.generate = AsyncMock(return_value="Summary despite weird feedback values ok.")
+        report.ollama.generate = AsyncMock(
+            return_value="Summary despite weird feedback values ok."
+        )
         data = {
-            "feedback": {"good_score": 0.9, "text_value": "not_a_number", "bad_score": 0.1},
+            "feedback": {
+                "good_score": 0.9,
+                "text_value": "not_a_number",
+                "bad_score": 0.1,
+            },
         }
         await report._generate_summary(data)
         call_args = report.ollama.generate.call_args
@@ -375,12 +413,18 @@ class TestMultiSubsystemCollection:
     async def test_all_subsystems_provide_data(self, report):
         """All subsystems contribute their data to the report."""
         outcome = MagicMock()
-        outcome.get_stats = AsyncMock(return_value={"light": {"score": 0.8, "total": 10}})
+        outcome.get_stats = AsyncMock(
+            return_value={"light": {"score": 0.8, "total": 10}}
+        )
         outcome.get_weekly_trends = AsyncMock(return_value={"trend": "up"})
 
         correction = MagicMock()
-        correction.get_stats = AsyncMock(return_value={"total_corrections": 3, "active_rules": 1})
-        correction.get_correction_patterns = AsyncMock(return_value=[{"pattern": "temp"}])
+        correction.get_stats = AsyncMock(
+            return_value={"total_corrections": 3, "active_rules": 1}
+        )
+        correction.get_correction_patterns = AsyncMock(
+            return_value=[{"pattern": "temp"}]
+        )
 
         feedback = MagicMock()
         feedback.get_all_scores = AsyncMock(return_value={"weather": 0.85})
@@ -397,7 +441,9 @@ class TestMultiSubsystemCollection:
         opt = MagicMock()
         opt.generate_weekly_summary = AsyncMock(return_value={"proposals": 1})
 
-        report.ollama.generate = AsyncMock(return_value="Full report with all subsystem data ok.")
+        report.ollama.generate = AsyncMock(
+            return_value="Full report with all subsystem data ok."
+        )
 
         result = await report.generate_report(
             outcome_tracker=outcome,
@@ -424,7 +470,9 @@ class TestMultiSubsystemCollection:
     async def test_learning_observer_without_method_skipped(self, report):
         """Learning observer without get_learning_report is skipped."""
         observer = MagicMock(spec=[])  # No methods at all
-        report.ollama.generate = AsyncMock(return_value="Report without learning data ok ok.")
+        report.ollama.generate = AsyncMock(
+            return_value="Report without learning data ok ok."
+        )
         result = await report.generate_report(learning_observer=observer)
         assert "learning" not in result.get("data", {})
 
@@ -433,6 +481,8 @@ class TestMultiSubsystemCollection:
         """Self-optimization returning None is not added to data."""
         opt = MagicMock()
         opt.generate_weekly_summary = AsyncMock(return_value=None)
-        report.ollama.generate = AsyncMock(return_value="Report without opt data content ok.")
+        report.ollama.generate = AsyncMock(
+            return_value="Report without opt data content ok."
+        )
         result = await report.generate_report(self_optimization=opt)
         assert "self_optimization" not in result.get("data", {})

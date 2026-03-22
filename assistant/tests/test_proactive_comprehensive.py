@@ -17,6 +17,7 @@ import pytest
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 
+
 def _make_brain_mock():
     """Creates a minimal Brain mock for ProactiveManager."""
     brain = MagicMock()
@@ -39,7 +40,9 @@ def _make_brain_mock():
     brain.memory.redis.delete = AsyncMock()
     brain.routines = MagicMock()
     brain.routines.get_absence_summary = AsyncMock(return_value="")
-    brain.routines.generate_morning_briefing = AsyncMock(return_value={"text": "", "actions": []})
+    brain.routines.generate_morning_briefing = AsyncMock(
+        return_value={"text": "", "actions": []}
+    )
     brain.learning_observer = MagicMock()
     brain.learning_observer.observe_state_change = AsyncMock()
     brain.activity = MagicMock()
@@ -62,26 +65,40 @@ def brain_mock():
 
 @pytest.fixture
 def pm(brain_mock):
-    with patch("assistant.proactive.yaml_config", {
-        "proactive": {"enabled": True, "cooldown_seconds": 60},
-        "ambient_presence": {"quiet_start": 22, "quiet_end": 7},
-        "routines": {"morning_briefing": {"enabled": True, "window_start_hour": 6, "window_end_hour": 10, "wakeup_sequence": {"enabled": False}}},
-        "appliance_monitor": {},
-        "seasonal_actions": {"enabled": False},
-        "observation_loop": {"enabled": False},
-        "vacuum": {"enabled": False},
-    }), patch("assistant.proactive.settings") as mock_settings:
+    with (
+        patch(
+            "assistant.proactive.yaml_config",
+            {
+                "proactive": {"enabled": True, "cooldown_seconds": 60},
+                "ambient_presence": {"quiet_start": 22, "quiet_end": 7},
+                "routines": {
+                    "morning_briefing": {
+                        "enabled": True,
+                        "window_start_hour": 6,
+                        "window_end_hour": 10,
+                        "wakeup_sequence": {"enabled": False},
+                    }
+                },
+                "appliance_monitor": {},
+                "seasonal_actions": {"enabled": False},
+                "observation_loop": {"enabled": False},
+                "vacuum": {"enabled": False},
+            },
+        ),
+        patch("assistant.proactive.settings") as mock_settings,
+    ):
         mock_settings.ha_url = "http://localhost:8123"
         mock_settings.ha_token = "test_token"
         from assistant.proactive import ProactiveManager
+
         manager = ProactiveManager(brain_mock)
     return manager
 
 
 # ── Init ──────────────────────────────────────────────────────────────
 
-class TestProactiveInit:
 
+class TestProactiveInit:
     def test_default_enabled(self, pm):
         assert pm.enabled is True
 
@@ -99,8 +116,8 @@ class TestProactiveInit:
 
 # ── Quiet Hours ───────────────────────────────────────────────────────
 
-class TestQuietHours:
 
+class TestQuietHours:
     def test_quiet_at_23(self, pm):
         with patch("assistant.proactive.datetime") as mock_dt:
             mock_dt.now.return_value.hour = 23
@@ -133,24 +150,36 @@ class TestQuietHours:
 
 # ── Handle Event ──────────────────────────────────────────────────────
 
-class TestHandleEvent:
 
+class TestHandleEvent:
     @pytest.mark.asyncio
     async def test_state_changed_dispatches(self, pm):
-        with patch.object(pm, "_handle_state_change", new_callable=AsyncMock) as mock_sc:
-            await pm._handle_event({
-                "event_type": "state_changed",
-                "data": {"entity_id": "light.test", "new_state": {"state": "on"}, "old_state": {"state": "off"}},
-            })
+        with patch.object(
+            pm, "_handle_state_change", new_callable=AsyncMock
+        ) as mock_sc:
+            await pm._handle_event(
+                {
+                    "event_type": "state_changed",
+                    "data": {
+                        "entity_id": "light.test",
+                        "new_state": {"state": "on"},
+                        "old_state": {"state": "off"},
+                    },
+                }
+            )
             mock_sc.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_mindhome_event_dispatches(self, pm):
-        with patch.object(pm, "_handle_mindhome_event", new_callable=AsyncMock) as mock_mh:
-            await pm._handle_event({
-                "event_type": "mindhome_event",
-                "data": {"type": "test"},
-            })
+        with patch.object(
+            pm, "_handle_mindhome_event", new_callable=AsyncMock
+        ) as mock_mh:
+            await pm._handle_event(
+                {
+                    "event_type": "mindhome_event",
+                    "data": {"type": "test"},
+                }
+            )
             mock_mh.assert_called_once()
 
     @pytest.mark.asyncio
@@ -161,134 +190,187 @@ class TestHandleEvent:
 
 # ── Handle State Change ──────────────────────────────────────────────
 
-class TestHandleStateChange:
 
+class TestHandleStateChange:
     @pytest.mark.asyncio
     async def test_alarm_triggered(self, pm):
-        with patch.object(pm, "_notify", new_callable=AsyncMock) as mock_notify, \
-             patch.object(pm, "_execute_emergency_protocol", new_callable=AsyncMock):
-            await pm._handle_state_change({
-                "entity_id": "alarm_control_panel.home",
-                "new_state": {"state": "triggered"},
-                "old_state": {"state": "armed_away"},
-            })
+        with (
+            patch.object(pm, "_notify", new_callable=AsyncMock) as mock_notify,
+            patch.object(pm, "_execute_emergency_protocol", new_callable=AsyncMock),
+        ):
+            await pm._handle_state_change(
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "new_state": {"state": "triggered"},
+                    "old_state": {"state": "armed_away"},
+                }
+            )
             mock_notify.assert_called()
             call_args = mock_notify.call_args_list[0]
             assert call_args[0][0] == "alarm_triggered"
 
     @pytest.mark.asyncio
     async def test_smoke_detected(self, pm):
-        with patch.object(pm, "_notify", new_callable=AsyncMock) as mock_notify, \
-             patch.object(pm, "_execute_emergency_protocol", new_callable=AsyncMock):
-            await pm._handle_state_change({
-                "entity_id": "binary_sensor.smoke_kitchen",
-                "new_state": {"state": "on"},
-                "old_state": {"state": "off"},
-            })
+        with (
+            patch.object(pm, "_notify", new_callable=AsyncMock) as mock_notify,
+            patch.object(pm, "_execute_emergency_protocol", new_callable=AsyncMock),
+        ):
+            await pm._handle_state_change(
+                {
+                    "entity_id": "binary_sensor.smoke_kitchen",
+                    "new_state": {"state": "on"},
+                    "old_state": {"state": "off"},
+                }
+            )
             mock_notify.assert_called()
             assert mock_notify.call_args_list[0][0][0] == "smoke_detected"
 
     @pytest.mark.asyncio
     async def test_water_leak(self, pm):
-        with patch.object(pm, "_notify", new_callable=AsyncMock) as mock_notify, \
-             patch.object(pm, "_execute_emergency_protocol", new_callable=AsyncMock):
-            await pm._handle_state_change({
-                "entity_id": "binary_sensor.water_leak_basement",
-                "new_state": {"state": "on"},
-                "old_state": {"state": "off"},
-            })
+        with (
+            patch.object(pm, "_notify", new_callable=AsyncMock) as mock_notify,
+            patch.object(pm, "_execute_emergency_protocol", new_callable=AsyncMock),
+        ):
+            await pm._handle_state_change(
+                {
+                    "entity_id": "binary_sensor.water_leak_basement",
+                    "new_state": {"state": "on"},
+                    "old_state": {"state": "off"},
+                }
+            )
             mock_notify.assert_called()
             assert mock_notify.call_args_list[0][0][0] == "water_leak"
 
     @pytest.mark.asyncio
     async def test_same_state_ignored(self, pm):
         with patch.object(pm, "_notify", new_callable=AsyncMock) as mock_notify:
-            await pm._handle_state_change({
-                "entity_id": "light.kitchen",
-                "new_state": {"state": "on"},
-                "old_state": {"state": "on"},
-            })
+            await pm._handle_state_change(
+                {
+                    "entity_id": "light.kitchen",
+                    "new_state": {"state": "on"},
+                    "old_state": {"state": "on"},
+                }
+            )
             mock_notify.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_no_new_state_ignored(self, pm):
         with patch.object(pm, "_notify", new_callable=AsyncMock) as mock_notify:
-            await pm._handle_state_change({
-                "entity_id": "light.kitchen",
-                "new_state": {},
-                "old_state": {"state": "off"},
-            })
+            await pm._handle_state_change(
+                {
+                    "entity_id": "light.kitchen",
+                    "new_state": {},
+                    "old_state": {"state": "off"},
+                }
+            )
             mock_notify.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_doorbell(self, pm, brain_mock):
-        brain_mock.camera_manager.describe_doorbell = AsyncMock(return_value="Person mit Paket")
+        brain_mock.camera_manager.describe_doorbell = AsyncMock(
+            return_value="Person mit Paket"
+        )
         with patch.object(pm, "_notify", new_callable=AsyncMock) as mock_notify:
             # Patch away visitor_manager
             brain_mock.visitor_manager = MagicMock()
             brain_mock.visitor_manager.enabled = False
-            await pm._handle_state_change({
-                "entity_id": "binary_sensor.doorbell",
-                "new_state": {"state": "on"},
-                "old_state": {"state": "off"},
-            })
+            await pm._handle_state_change(
+                {
+                    "entity_id": "binary_sensor.doorbell",
+                    "new_state": {"state": "on"},
+                    "old_state": {"state": "off"},
+                }
+            )
             mock_notify.assert_called()
             call_data = mock_notify.call_args_list[0][0][2]
             assert "camera_description" in call_data
 
     @pytest.mark.asyncio
     async def test_person_arrived(self, pm, brain_mock):
-        with patch.object(pm, "_notify", new_callable=AsyncMock) as mock_notify, \
-             patch.object(pm, "_build_arrival_status", new_callable=AsyncMock, return_value={"temp": 21}), \
-             patch("assistant.proactive.resolve_person_by_entity", return_value="Max"), \
-             patch("assistant.proactive.yaml_config", {
-                 "return_briefing": {"enabled": False},
-                 "proactive": {"departure_shopping_reminder": False},
-             }):
-            await pm._handle_state_change({
-                "entity_id": "person.max",
-                "new_state": {"state": "home", "attributes": {"friendly_name": "Max"}},
-                "old_state": {"state": "away"},
-            })
+        with (
+            patch.object(pm, "_notify", new_callable=AsyncMock) as mock_notify,
+            patch.object(
+                pm,
+                "_build_arrival_status",
+                new_callable=AsyncMock,
+                return_value={"temp": 21},
+            ),
+            patch("assistant.proactive.resolve_person_by_entity", return_value="Max"),
+            patch(
+                "assistant.proactive.yaml_config",
+                {
+                    "return_briefing": {"enabled": False},
+                    "proactive": {"departure_shopping_reminder": False},
+                },
+            ),
+        ):
+            await pm._handle_state_change(
+                {
+                    "entity_id": "person.max",
+                    "new_state": {
+                        "state": "home",
+                        "attributes": {"friendly_name": "Max"},
+                    },
+                    "old_state": {"state": "away"},
+                }
+            )
             mock_notify.assert_called()
             assert mock_notify.call_args_list[0][0][0] == "person_arrived"
 
     @pytest.mark.asyncio
     async def test_person_left(self, pm, brain_mock):
-        with patch.object(pm, "_notify", new_callable=AsyncMock) as mock_notify, \
-             patch("assistant.proactive.resolve_person_by_entity", return_value="Max"), \
-             patch("assistant.proactive.yaml_config", {
-                 "return_briefing": {"enabled": False},
-                 "proactive": {"departure_shopping_reminder": False},
-             }), \
-             patch.object(pm, "_get_open_shopping_items", new_callable=AsyncMock, return_value=[]):
-            await pm._handle_state_change({
-                "entity_id": "person.max",
-                "new_state": {"state": "away", "attributes": {"friendly_name": "Max"}},
-                "old_state": {"state": "home"},
-            })
+        with (
+            patch.object(pm, "_notify", new_callable=AsyncMock) as mock_notify,
+            patch("assistant.proactive.resolve_person_by_entity", return_value="Max"),
+            patch(
+                "assistant.proactive.yaml_config",
+                {
+                    "return_briefing": {"enabled": False},
+                    "proactive": {"departure_shopping_reminder": False},
+                },
+            ),
+            patch.object(
+                pm, "_get_open_shopping_items", new_callable=AsyncMock, return_value=[]
+            ),
+        ):
+            await pm._handle_state_change(
+                {
+                    "entity_id": "person.max",
+                    "new_state": {
+                        "state": "away",
+                        "attributes": {"friendly_name": "Max"},
+                    },
+                    "old_state": {"state": "home"},
+                }
+            )
             mock_notify.assert_called()
             assert mock_notify.call_args_list[0][0][0] == "person_left"
 
     @pytest.mark.asyncio
     async def test_sensor_no_old_state_defaults_to_zero(self, pm):
         """For sensors without old_state, should default to '0'."""
-        with patch.object(pm, "_notify", new_callable=AsyncMock), \
-             patch.object(pm, "_check_appliance_power", new_callable=AsyncMock) as mock_appliance, \
-             patch.object(pm, "_check_power_close", new_callable=AsyncMock):
-            await pm._handle_state_change({
-                "entity_id": "sensor.power",
-                "new_state": {"state": "100"},
-                "old_state": None,
-            })
+        with (
+            patch.object(pm, "_notify", new_callable=AsyncMock),
+            patch.object(
+                pm, "_check_appliance_power", new_callable=AsyncMock
+            ) as mock_appliance,
+            patch.object(pm, "_check_power_close", new_callable=AsyncMock),
+        ):
+            await pm._handle_state_change(
+                {
+                    "entity_id": "sensor.power",
+                    "new_state": {"state": "100"},
+                    "old_state": None,
+                }
+            )
             # Should have been called with old_val defaulted to "0"
             mock_appliance.assert_called()
 
 
 # ── Match Appliance ──────────────────────────────────────────────────
 
-class TestMatchAppliance:
 
+class TestMatchAppliance:
     def test_match_washer(self, pm):
         pm._appliance_patterns = {"washer": ["washer", "waschmaschine"]}
         assert pm._match_appliance("sensor.waschmaschine_power") == "washer"
@@ -304,8 +386,8 @@ class TestMatchAppliance:
 
 # ── Start / Stop ─────────────────────────────────────────────────────
 
-class TestStartStop:
 
+class TestStartStop:
     @pytest.mark.asyncio
     async def test_start_disabled(self, pm):
         pm.enabled = False
@@ -315,6 +397,7 @@ class TestStartStop:
     @pytest.mark.asyncio
     async def test_stop(self, pm):
         import asyncio
+
         pm._running = True
 
         async def noop():
@@ -333,28 +416,35 @@ class TestStartStop:
 
 # ── Delivery ─────────────────────────────────────────────────────────
 
-class TestDelivery:
 
+class TestDelivery:
     @pytest.mark.asyncio
     async def test_deliver_websocket_only(self, pm):
-        with patch("assistant.proactive.emit_proactive", new_callable=AsyncMock) as mock_emit:
+        with patch(
+            "assistant.proactive.emit_proactive", new_callable=AsyncMock
+        ) as mock_emit:
             await pm._deliver("Test message", "test_event", "medium")
-            mock_emit.assert_called_once_with("Test message", "test_event", "medium", "")
+            mock_emit.assert_called_once_with(
+                "Test message", "test_event", "medium", ""
+            )
 
     @pytest.mark.asyncio
     async def test_deliver_with_tts(self, pm, brain_mock):
         with patch("assistant.proactive.emit_proactive", new_callable=AsyncMock):
             await pm._deliver(
-                "Test message", "test_event", "medium",
-                delivery_method="tts_loud", room="wohnzimmer",
+                "Test message",
+                "test_event",
+                "medium",
+                delivery_method="tts_loud",
+                room="wohnzimmer",
             )
             brain_mock._task_registry.create_task.assert_called()
 
 
 # ── Morning Briefing Check ───────────────────────────────────────────
 
-class TestCheckMorningBriefing:
 
+class TestCheckMorningBriefing:
     @pytest.mark.asyncio
     async def test_disabled(self, pm):
         pm._mb_enabled = False
@@ -385,8 +475,8 @@ class TestCheckMorningBriefing:
 
 # ── Rate-Limiting ────────────────────────────────────────────────────
 
-class TestCoverRateLimiting:
 
+class TestCoverRateLimiting:
     @pytest.mark.asyncio
     async def test_rate_limit_not_reached(self, pm):
         redis = AsyncMock()
@@ -419,8 +509,8 @@ class TestCoverRateLimiting:
 
 # ── Reason-State ─────────────────────────────────────────────────────
 
-class TestCoverReasonState:
 
+class TestCoverReasonState:
     @pytest.mark.asyncio
     async def test_set_and_get_reason(self, pm):
         redis = AsyncMock()
@@ -439,23 +529,35 @@ class TestCoverReasonState:
 
 # ── Dry-Run Modus ────────────────────────────────────────────────────
 
-class TestDryRunMode:
 
+class TestDryRunMode:
     @pytest.mark.asyncio
     async def test_dry_run_flag_prevents_action(self, pm):
         """Dry-Run mode should log but not call HA service."""
-        pm.brain.ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "cover.test", "state": "open",
-             "attributes": {"current_position": 100, "device_class": "shutter"}},
-        ])
+        pm.brain.ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "cover.test",
+                    "state": "open",
+                    "attributes": {"current_position": 100, "device_class": "shutter"},
+                },
+            ]
+        )
         pm.brain.executor = MagicMock()
         pm.brain.executor._is_safe_cover = AsyncMock(return_value=True)
-        pm.brain.executor._translate_cover_position_from_ha = MagicMock(return_value=100)
+        pm.brain.executor._translate_cover_position_from_ha = MagicMock(
+            return_value=100
+        )
         pm.brain.autonomy = MagicMock()
         pm.brain.autonomy.level = 5
 
         result = await pm._auto_cover_action(
-            "cover.test", 0, "Test", 3, None, dry_run=True,
+            "cover.test",
+            0,
+            "Test",
+            3,
+            None,
+            dry_run=True,
         )
         assert result is False
         pm.brain.ha.call_service.assert_not_called()
@@ -463,8 +565,8 @@ class TestDryRunMode:
 
 # ── State-Machine ────────────────────────────────────────────────────
 
-class TestCoverStateMachine:
 
+class TestCoverStateMachine:
     def test_initial_state_is_idle(self, pm):
         cs = pm._get_cover_state("cover.test")
         assert cs.state == pm.CoverState.IDLE
@@ -497,28 +599,37 @@ class TestCoverStateMachine:
 
 # ── Room Matching ────────────────────────────────────────────────────
 
-class TestRoomMatching:
 
+class TestRoomMatching:
     def test_fallback_heuristic(self, pm):
         room = pm._get_room_for_cover("cover.wohnzimmer_links")
         assert room == "wohnzimmer"
 
     def test_config_mapping(self, pm):
-        with patch("assistant.proactive.yaml_config", {
-            "seasonal_actions": {
-                "cover_automation": {
-                    "room_mapping": {"cover.spezial_42": "buero"},
+        with (
+            patch(
+                "assistant.proactive.yaml_config",
+                {
+                    "seasonal_actions": {
+                        "cover_automation": {
+                            "room_mapping": {"cover.spezial_42": "buero"},
+                        },
+                    },
                 },
-            },
-        }), patch("assistant.proactive._get_room_profiles_cached", return_value={"cover_profiles": {"covers": []}}):
+            ),
+            patch(
+                "assistant.proactive._get_room_profiles_cached",
+                return_value={"cover_profiles": {"covers": []}},
+            ),
+        ):
             room = pm._get_room_for_cover("cover.spezial_42")
             assert room == "buero"
 
 
 # ── Cover Summary ────────────────────────────────────────────────────
 
-class TestCoverSummary:
 
+class TestCoverSummary:
     @pytest.mark.asyncio
     async def test_summary_empty(self, pm):
         pm.brain.ha.get_states = AsyncMock(return_value=[])
@@ -527,33 +638,59 @@ class TestCoverSummary:
 
     @pytest.mark.asyncio
     async def test_summary_with_covers(self, pm):
-        pm.brain.ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "cover.wz", "attributes": {"current_position": 100, "friendly_name": "Wohnzimmer"}},
-            {"entity_id": "cover.sz", "attributes": {"current_position": 0, "friendly_name": "Schlafzimmer"}},
-        ])
+        pm.brain.ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "cover.wz",
+                    "attributes": {
+                        "current_position": 100,
+                        "friendly_name": "Wohnzimmer",
+                    },
+                },
+                {
+                    "entity_id": "cover.sz",
+                    "attributes": {
+                        "current_position": 0,
+                        "friendly_name": "Schlafzimmer",
+                    },
+                },
+            ]
+        )
         pm.brain.executor = MagicMock()
-        pm.brain.executor._translate_cover_position_from_ha = MagicMock(side_effect=lambda eid, pos: pos)
+        pm.brain.executor._translate_cover_position_from_ha = MagicMock(
+            side_effect=lambda eid, pos: pos
+        )
         result = await pm.get_cover_summary()
         assert "offen" in result or "geschlossen" in result
 
 
 # ── Debug-Assistent ──────────────────────────────────────────────────
 
-class TestDebugAssistant:
 
+class TestDebugAssistant:
     @pytest.mark.asyncio
     async def test_debug_no_entity(self, pm):
-        pm.brain.ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "cover.test", "attributes": {"current_position": 50, "friendly_name": "Test"}},
-        ])
+        pm.brain.ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "cover.test",
+                    "attributes": {"current_position": 50, "friendly_name": "Test"},
+                },
+            ]
+        )
         result = await pm.debug_cover_state()
         assert "Cover-Status" in result
 
     @pytest.mark.asyncio
     async def test_debug_specific_entity(self, pm):
-        pm.brain.ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "cover.test", "attributes": {"current_position": 50, "friendly_name": "Test"}},
-        ])
+        pm.brain.ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "cover.test",
+                    "attributes": {"current_position": 50, "friendly_name": "Test"},
+                },
+            ]
+        )
         pm.brain.memory.redis.get = AsyncMock(return_value=None)
         result = await pm.debug_cover_state("cover.test")
         assert "Test" in result
@@ -568,22 +705,31 @@ class TestDebugAssistant:
 
 # ── Config-Assistent ─────────────────────────────────────────────────
 
-class TestConfigAssistant:
 
+class TestConfigAssistant:
     @pytest.mark.asyncio
     async def test_config_help(self, pm):
-        with patch("assistant.proactive.yaml_config", {
-            "seasonal_actions": {
-                "cover_automation": {
-                    "weather_protection": True,
-                    "heat_protection_temp": 26,
-                    "storm_wind_speed": 50,
+        with (
+            patch(
+                "assistant.proactive.yaml_config",
+                {
+                    "seasonal_actions": {
+                        "cover_automation": {
+                            "weather_protection": True,
+                            "heat_protection_temp": 26,
+                            "storm_wind_speed": 50,
+                        },
+                    },
                 },
-            },
-        }), patch("assistant.proactive._get_room_profiles_cached", return_value={
-            "cover_profiles": {"covers": []},
-            "markisen": {},
-        }):
+            ),
+            patch(
+                "assistant.proactive._get_room_profiles_cached",
+                return_value={
+                    "cover_profiles": {"covers": []},
+                    "markisen": {},
+                },
+            ),
+        ):
             result = await pm.get_cover_config_help()
             assert "Konfiguration" in result
             assert "26" in result
@@ -591,29 +737,39 @@ class TestConfigAssistant:
 
 # ── Weather Event Handler ────────────────────────────────────────────
 
-class TestWeatherEventHandler:
 
+class TestWeatherEventHandler:
     @pytest.mark.asyncio
     async def test_wind_spike_triggers_storm(self, pm):
         pm.brain.memory.redis.get = AsyncMock(return_value=None)
         pm.brain.memory.redis.set = AsyncMock()
-        with patch("assistant.proactive.yaml_config", {
-            "seasonal_actions": {"cover_automation": {"storm_wind_speed": 50}},
-        }), patch("assistant.cover_config.get_sensor_by_role", return_value="sensor.wind"):
+        with (
+            patch(
+                "assistant.proactive.yaml_config",
+                {
+                    "seasonal_actions": {"cover_automation": {"storm_wind_speed": 50}},
+                },
+            ),
+            patch(
+                "assistant.cover_config.get_sensor_by_role", return_value="sensor.wind"
+            ),
+        ):
             # This should log a warning about wind spike
             await pm._handle_weather_event("sensor.wind", "55", "20")
 
     @pytest.mark.asyncio
     async def test_non_weather_entity_ignored(self, pm):
-        with patch("assistant.cover_config.get_sensor_by_role", return_value="sensor.wind"):
+        with patch(
+            "assistant.cover_config.get_sensor_by_role", return_value="sensor.wind"
+        ):
             # Should not raise
             await pm._handle_weather_event("light.wohnzimmer", "on", "off")
 
 
 # ── Anomaly Detection ────────────────────────────────────────────────
 
-class TestAnomalyDetection:
 
+class TestAnomalyDetection:
     @pytest.mark.asyncio
     async def test_anomaly_tracking(self, pm):
         redis = AsyncMock()

@@ -53,7 +53,9 @@ def _load_model():
         _model_loading = False
 
 
-def extract_embedding(audio_b64: str, sample_rate: int = 16000) -> Optional[list[float]]:
+def extract_embedding(
+    audio_b64: str, sample_rate: int = 16000
+) -> Optional[list[float]]:
     """Extrahiert ein 192-dim Speaker-Embedding aus base64-kodierten PCM-Daten.
 
     Args:
@@ -76,12 +78,14 @@ def extract_embedding(audio_b64: str, sample_rate: int = 16000) -> Optional[list
 
         # I-4: Konsistent mit handler.py — 0.2s Minimum (3200 samples * 2 bytes = 6400)
         if len(pcm_bytes) < 6400:  # Weniger als 0.2s bei 16kHz/16-bit — zu kurz
-            logger.debug("Audio zu kurz fuer Embedding (%d bytes, min 6400)", len(pcm_bytes))
+            logger.debug(
+                "Audio zu kurz fuer Embedding (%d bytes, min 6400)", len(pcm_bytes)
+            )
             return None
 
         # PCM 16-bit signed → float tensor
         num_samples = len(pcm_bytes) // 2
-        samples = struct.unpack(f"<{num_samples}h", pcm_bytes[:num_samples * 2])
+        samples = struct.unpack(f"<{num_samples}h", pcm_bytes[: num_samples * 2])
         waveform = torch.tensor(samples, dtype=torch.float32) / 32768.0
         waveform = waveform.unsqueeze(0)  # [1, num_samples]
 
@@ -97,7 +101,9 @@ def extract_embedding(audio_b64: str, sample_rate: int = 16000) -> Optional[list
         if isinstance(embedding_list, float):
             embedding_list = [embedding_list]
 
-        logger.debug("Speaker-Embedding extrahiert (%d Dimensionen)", len(embedding_list))
+        logger.debug(
+            "Speaker-Embedding extrahiert (%d Dimensionen)", len(embedding_list)
+        )
         return embedding_list
 
     except Exception as e:
@@ -110,6 +116,7 @@ def is_available() -> bool:
     try:
         import speechbrain  # noqa: F401
         import torchaudio  # noqa: F401
+
         return True
     except (ImportError, AttributeError, Exception):
         return False

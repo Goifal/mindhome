@@ -35,11 +35,13 @@ def chroma():
     m.add = MagicMock()
     m.count = MagicMock(return_value=0)
     m.get = MagicMock(return_value={"ids": [], "metadatas": [], "documents": []})
-    m.query = MagicMock(return_value={
-        "documents": [[]],
-        "metadatas": [[]],
-        "distances": [[]],
-    })
+    m.query = MagicMock(
+        return_value={
+            "documents": [[]],
+            "metadatas": [[]],
+            "distances": [[]],
+        }
+    )
     m.delete = MagicMock()
     return m
 
@@ -54,6 +56,7 @@ def kb(chroma):
 
 
 # ── Text Splitting ───────────────────────────────────────
+
 
 class TestSplitText:
     def test_short_text_single_chunk(self):
@@ -81,7 +84,11 @@ class TestSplitText:
         assert len(result) >= 2
         # Check that overlap marker exists in subsequent chunks
         if len(result) > 1:
-            assert "..." in result[1] or result[1].startswith(result[0][-20:]) or len(result[1]) > 100
+            assert (
+                "..." in result[1]
+                or result[1].startswith(result[0][-20:])
+                or len(result[1]) > 100
+            )
 
     def test_long_paragraph_splits_at_sentences(self):
         text = "This is sentence one. This is sentence two. This is sentence three. This is sentence four. And another very long sentence here."
@@ -90,6 +97,7 @@ class TestSplitText:
 
 
 # ── Query Expansion ──────────────────────────────────────
+
 
 class TestExpandQuery:
     def test_expand_simple(self):
@@ -113,17 +121,24 @@ class TestExpandQuery:
 
 # ── Keyword Overlap Bonus ────────────────────────────────
 
+
 class TestKeywordOverlap:
     def test_full_overlap(self):
-        bonus = KnowledgeBase._keyword_overlap_bonus("ESP32 Sensor", "Der ESP32 Sensor misst Temperatur")
+        bonus = KnowledgeBase._keyword_overlap_bonus(
+            "ESP32 Sensor", "Der ESP32 Sensor misst Temperatur"
+        )
         assert bonus > 0.5
 
     def test_no_overlap(self):
-        bonus = KnowledgeBase._keyword_overlap_bonus("Raspberry Pi", "Arduino Nano Board")
+        bonus = KnowledgeBase._keyword_overlap_bonus(
+            "Raspberry Pi", "Arduino Nano Board"
+        )
         assert bonus == 0.0
 
     def test_partial_overlap(self):
-        bonus = KnowledgeBase._keyword_overlap_bonus("ESP32 Temperatur Sensor", "ESP32 misst Druck")
+        bonus = KnowledgeBase._keyword_overlap_bonus(
+            "ESP32 Temperatur Sensor", "ESP32 misst Druck"
+        )
         assert 0.0 < bonus < 1.0
 
     def test_short_words_ignored(self):
@@ -132,6 +147,7 @@ class TestKeywordOverlap:
 
 
 # ── Ingest Text ──────────────────────────────────────────
+
 
 class TestIngestText:
     @pytest.mark.asyncio
@@ -164,6 +180,7 @@ class TestIngestText:
 
 # ── Search ───────────────────────────────────────────────
 
+
 class TestSearch:
     @pytest.mark.asyncio
     async def test_search_no_collection(self):
@@ -175,7 +192,11 @@ class TestSearch:
 
     @pytest.mark.asyncio
     async def test_search_no_results(self, kb, chroma):
-        chroma.query.return_value = {"documents": [[]], "metadatas": [[]], "distances": [[]]}
+        chroma.query.return_value = {
+            "documents": [[]],
+            "metadatas": [[]],
+            "distances": [[]],
+        }
         result = await kb.search("nonexistent")
         assert result == []
 
@@ -204,7 +225,9 @@ class TestSearch:
     @pytest.mark.asyncio
     async def test_search_respects_limit(self, kb, chroma):
         docs = [f"Doc {i}" for i in range(10)]
-        metas = [{"source_file": f"f{i}.md", "content_hash": f"h{i}"} for i in range(10)]
+        metas = [
+            {"source_file": f"f{i}.md", "content_hash": f"h{i}"} for i in range(10)
+        ]
         dists = [0.1 + i * 0.05 for i in range(10)]
         chroma.query.return_value = {
             "documents": [docs],
@@ -216,6 +239,7 @@ class TestSearch:
 
 
 # ── Stats ────────────────────────────────────────────────
+
 
 class TestStats:
     @pytest.mark.asyncio
@@ -244,6 +268,7 @@ class TestStats:
 
 
 # ── Chunks CRUD ──────────────────────────────────────────
+
 
 class TestChunksCRUD:
     @pytest.mark.asyncio
@@ -283,6 +308,7 @@ class TestChunksCRUD:
 
 
 # ── Clear & Rebuild ──────────────────────────────────────
+
 
 class TestClearRebuild:
     @pytest.mark.asyncio

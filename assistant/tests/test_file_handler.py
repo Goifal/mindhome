@@ -111,8 +111,10 @@ class TestGetFileType:
     def test_audio_types(self, ext):
         assert get_file_type(f"file.{ext}") == "audio"
 
-    @pytest.mark.parametrize("ext", ["pdf", "txt", "csv", "json", "xml",
-                                      "doc", "docx", "xls", "xlsx", "pptx"])
+    @pytest.mark.parametrize(
+        "ext",
+        ["pdf", "txt", "csv", "json", "xml", "doc", "docx", "xls", "xlsx", "pptx"],
+    )
     def test_document_types(self, ext):
         assert get_file_type(f"file.{ext}") == "document"
 
@@ -161,7 +163,9 @@ class TestSaveUpload:
     @patch("assistant.file_handler._extract_text", return_value=None)
     @patch("assistant.file_handler.UPLOAD_DIR")
     @patch("assistant.file_handler.ensure_upload_dir")
-    def test_sanitizes_special_chars(self, mock_ensure, mock_dir, mock_extract, tmp_path):
+    def test_sanitizes_special_chars(
+        self, mock_ensure, mock_dir, mock_extract, tmp_path
+    ):
         mock_dir.__truediv__ = lambda self, name: tmp_path / name
 
         result = save_upload("mal<icious>.txt", b"data")
@@ -172,7 +176,9 @@ class TestSaveUpload:
     @patch("assistant.file_handler._extract_text", return_value=None)
     @patch("assistant.file_handler.UPLOAD_DIR")
     @patch("assistant.file_handler.ensure_upload_dir")
-    def test_fallback_name_for_empty(self, mock_ensure, mock_dir, mock_extract, tmp_path):
+    def test_fallback_name_for_empty(
+        self, mock_ensure, mock_dir, mock_extract, tmp_path
+    ):
         mock_dir.__truediv__ = lambda self, name: tmp_path / name
 
         result = save_upload("!!!", b"data")
@@ -181,7 +187,9 @@ class TestSaveUpload:
     @patch("assistant.file_handler._extract_text", return_value=None)
     @patch("assistant.file_handler.UPLOAD_DIR")
     @patch("assistant.file_handler.ensure_upload_dir")
-    def test_fallback_name_for_no_dot(self, mock_ensure, mock_dir, mock_extract, tmp_path):
+    def test_fallback_name_for_no_dot(
+        self, mock_ensure, mock_dir, mock_extract, tmp_path
+    ):
         mock_dir.__truediv__ = lambda self, name: tmp_path / name
 
         result = save_upload("nodotname", b"data")
@@ -190,7 +198,9 @@ class TestSaveUpload:
     @patch("assistant.file_handler._extract_text", return_value=None)
     @patch("assistant.file_handler.UPLOAD_DIR")
     @patch("assistant.file_handler.ensure_upload_dir")
-    def test_unique_name_contains_uuid_prefix(self, mock_ensure, mock_dir, mock_extract, tmp_path):
+    def test_unique_name_contains_uuid_prefix(
+        self, mock_ensure, mock_dir, mock_extract, tmp_path
+    ):
         mock_dir.__truediv__ = lambda self, name: tmp_path / name
 
         result = save_upload("photo.jpg", b"\x89PNG")
@@ -399,7 +409,9 @@ class TestExtractPdf:
 # ------------------------------------------------------------------ #
 class TestExtractOcr:
     def test_ocr_module_not_available(self):
-        with patch("assistant.file_handler._extract_ocr.__module__", "assistant.file_handler"):
+        with patch(
+            "assistant.file_handler._extract_ocr.__module__", "assistant.file_handler"
+        ):
             # Simulate ImportError from .ocr
             with patch.dict("sys.modules", {"assistant.ocr": None}):
                 # The function catches ImportError internally
@@ -408,13 +420,18 @@ class TestExtractOcr:
 
     def test_ocr_returns_text(self):
         mock_ocr = MagicMock(return_value="OCR extracted text")
-        with patch("assistant.file_handler.extract_text_from_image", mock_ocr, create=True):
+        with patch(
+            "assistant.file_handler.extract_text_from_image", mock_ocr, create=True
+        ):
             # Since it uses relative import, we need to patch differently
             mock_module = types.ModuleType("assistant.ocr")
             mock_module.extract_text_from_image = mock_ocr
-            with patch.dict("sys.modules", {
-                "assistant.ocr": mock_module,
-            }):
+            with patch.dict(
+                "sys.modules",
+                {
+                    "assistant.ocr": mock_module,
+                },
+            ):
                 # Re-trigger the import inside _extract_ocr
                 # Actually the function uses `from .ocr import ...`
                 # which translates to `from assistant.ocr import ...`
@@ -456,7 +473,9 @@ class TestExtractText:
 
     def test_dispatches_pdf(self, tmp_path):
         f = tmp_path / "doc.pdf"
-        with patch("assistant.file_handler._extract_pdf", return_value="pdf text") as mock:
+        with patch(
+            "assistant.file_handler._extract_pdf", return_value="pdf text"
+        ) as mock:
             result = _extract_text(f, "pdf")
             mock.assert_called_once_with(f)
             assert result == "pdf text"
@@ -475,7 +494,9 @@ class TestExtractText:
 
     def test_exception_returns_none(self, tmp_path):
         f = tmp_path / "bad.txt"
-        with patch("assistant.file_handler._read_text", side_effect=RuntimeError("boom")):
+        with patch(
+            "assistant.file_handler._read_text", side_effect=RuntimeError("boom")
+        ):
             result = _extract_text(f, "txt")
             assert result is None
 
@@ -492,12 +513,14 @@ class TestBuildFileContext:
         assert build_file_context(None) == ""
 
     def test_single_document_with_text(self):
-        files = [{
-            "name": "report.txt",
-            "type": "document",
-            "size": 2048,
-            "extracted_text": "Some content",
-        }]
+        files = [
+            {
+                "name": "report.txt",
+                "type": "document",
+                "size": 2048,
+                "extracted_text": "Some content",
+            }
+        ]
         result = build_file_context(files)
         assert "report.txt" in result
         assert "document" in result
@@ -506,53 +529,63 @@ class TestBuildFileContext:
         assert "Some content" in result
 
     def test_image_with_ocr_text(self):
-        files = [{
-            "name": "scan.png",
-            "type": "image",
-            "size": 500_000,
-            "extracted_text": "OCR result",
-        }]
+        files = [
+            {
+                "name": "scan.png",
+                "type": "image",
+                "size": 500_000,
+                "extracted_text": "OCR result",
+            }
+        ]
         result = build_file_context(files)
         assert "OCR-Text" in result
         assert "OCR result" in result
 
     def test_image_with_vision_description(self):
-        files = [{
-            "name": "photo.jpg",
-            "type": "image",
-            "size": 1_500_000,
-            "vision_description": "A beautiful sunset",
-        }]
+        files = [
+            {
+                "name": "photo.jpg",
+                "type": "image",
+                "size": 1_500_000,
+                "vision_description": "A beautiful sunset",
+            }
+        ]
         result = build_file_context(files)
         assert "Bild-Analyse" in result
         assert "A beautiful sunset" in result
         assert "1.4 MB" in result
 
     def test_image_no_text_no_vision(self):
-        files = [{
-            "name": "photo.jpg",
-            "type": "image",
-            "size": 1024,
-        }]
+        files = [
+            {
+                "name": "photo.jpg",
+                "type": "image",
+                "size": 1024,
+            }
+        ]
         result = build_file_context(files)
         assert "kein Text erkannt" in result
 
     def test_video_file(self):
-        files = [{
-            "name": "clip.mp4",
-            "type": "video",
-            "size": 10_000_000,
-        }]
+        files = [
+            {
+                "name": "clip.mp4",
+                "type": "video",
+                "size": 10_000_000,
+            }
+        ]
         result = build_file_context(files)
         assert "Video" in result
         assert "kein Text-Inhalt extrahierbar" in result
 
     def test_audio_file(self):
-        files = [{
-            "name": "song.mp3",
-            "type": "audio",
-            "size": 5_000_000,
-        }]
+        files = [
+            {
+                "name": "song.mp3",
+                "type": "audio",
+                "size": 5_000_000,
+            }
+        ]
         result = build_file_context(files)
         assert "Audio" in result
         assert "kein Text-Inhalt extrahierbar" in result
@@ -592,13 +625,15 @@ class TestBuildFileContext:
         assert "document" in result
 
     def test_image_with_both_ocr_and_vision(self):
-        files = [{
-            "name": "scan.jpg",
-            "type": "image",
-            "size": 1000,
-            "extracted_text": "OCR text",
-            "vision_description": "Vision desc",
-        }]
+        files = [
+            {
+                "name": "scan.jpg",
+                "type": "image",
+                "size": 1000,
+                "extracted_text": "OCR text",
+                "vision_description": "Vision desc",
+            }
+        ]
         result = build_file_context(files)
         assert "OCR-Text" in result
         assert "Bild-Analyse" in result
@@ -612,13 +647,17 @@ class TestBuildFileContext:
 # ------------------------------------------------------------------ #
 # Helper for pdfplumber import mock
 # ------------------------------------------------------------------ #
-_real_import = __builtins__.__import__ if hasattr(__builtins__, "__import__") else __import__
+_real_import = (
+    __builtins__.__import__ if hasattr(__builtins__, "__import__") else __import__
+)
 
 
 def _import_fail(module_name):
     """Return an __import__ replacement that fails for one module."""
+
     def _mock_import(name, *args, **kwargs):
         if name == module_name:
             raise ImportError(f"No module named '{module_name}'")
         return _real_import(name, *args, **kwargs)
+
     return _mock_import

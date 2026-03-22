@@ -24,32 +24,53 @@ logger = logging.getLogger(__name__)
 
 # Feedback-Typen und ihre Score-Deltas
 FEEDBACK_DELTAS = {
-    "ignored": -0.05,    # Keine Reaktion (Auto-Timeout)
+    "ignored": -0.05,  # Keine Reaktion (Auto-Timeout)
     "dismissed": -0.10,  # Aktiv weggeklickt
     "acknowledged": 0.05,  # Zur Kenntnis genommen
-    "engaged": 0.10,     # Drauf eingegangen
-    "praised": 0.15,     # Allgemeines Lob ("super", "toll", "perfekt")
-    "thanked": 0.20,     # Expliziter Dank ("danke", "vielen dank")
+    "engaged": 0.10,  # Drauf eingegangen
+    "praised": 0.15,  # Allgemeines Lob ("super", "toll", "perfekt")
+    "thanked": 0.20,  # Expliziter Dank ("danke", "vielen dank")
 }
 
 # Woerter zur Auto-Erkennung von positivem Feedback
-_THANK_WORDS = frozenset({
-    "danke", "dankeschön", "dankeschoen", "vielen dank", "thanks", "thank you",
-})
-_PRAISE_WORDS = frozenset({
-    "super", "toll", "genau richtig", "perfekt", "gut gemacht",
-    "klasse", "prima", "sehr gut", "top", "wunderbar", "großartig",
-    "grossartig", "spitze", "ausgezeichnet", "hervorragend",
-})
+_THANK_WORDS = frozenset(
+    {
+        "danke",
+        "dankeschön",
+        "dankeschoen",
+        "vielen dank",
+        "thanks",
+        "thank you",
+    }
+)
+_PRAISE_WORDS = frozenset(
+    {
+        "super",
+        "toll",
+        "genau richtig",
+        "perfekt",
+        "gut gemacht",
+        "klasse",
+        "prima",
+        "sehr gut",
+        "top",
+        "wunderbar",
+        "großartig",
+        "grossartig",
+        "spitze",
+        "ausgezeichnet",
+        "hervorragend",
+    }
+)
 
 # Standard-Score fuer neue Event-Typen
 DEFAULT_SCORE = 0.5
 
 # Score-Grenzen fuer Entscheidungen
-SCORE_SUPPRESS = 0.15     # Unter diesem Wert: nicht mehr senden
-SCORE_REDUCE = 0.30       # Unter diesem Wert: laengerer Cooldown
-SCORE_NORMAL = 0.50       # Normaler Cooldown
-SCORE_BOOST = 0.70        # Ueber diesem Wert: kuerzerer Cooldown
+SCORE_SUPPRESS = 0.15  # Unter diesem Wert: nicht mehr senden
+SCORE_REDUCE = 0.30  # Unter diesem Wert: laengerer Cooldown
+SCORE_NORMAL = 0.50  # Normaler Cooldown
+SCORE_BOOST = 0.70  # Ueber diesem Wert: kuerzerer Cooldown
 
 
 class FeedbackTracker:
@@ -77,7 +98,9 @@ class FeedbackTracker:
         self.redis = redis_client
         self._running = True
         self._timeout_task = asyncio.create_task(self._auto_timeout_loop())
-        self._timeout_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        self._timeout_task.add_done_callback(
+            lambda t: t.exception() if not t.cancelled() else None
+        )
         logger.info("FeedbackTracker initialisiert")
 
     async def stop(self):
@@ -103,9 +126,7 @@ class FeedbackTracker:
         # Gesamt-Zaehler erhoehen
         await self._increment_counter(event_type, "total_sent")
 
-        logger.debug(
-            "Notification tracked: %s (type: %s)", notification_id, event_type
-        )
+        logger.debug("Notification tracked: %s (type: %s)", notification_id, event_type)
 
     @staticmethod
     def detect_positive_feedback(text: str) -> Optional[str]:
@@ -170,7 +191,10 @@ class FeedbackTracker:
 
         logger.info(
             "Feedback [%s] fuer '%s': %+.2f -> Score: %.2f",
-            feedback_type, event_type, delta, new_score,
+            feedback_type,
+            event_type,
+            delta,
+            new_score,
         )
 
         return {
@@ -192,8 +216,9 @@ class FeedbackTracker:
             return float(score)
         return DEFAULT_SCORE
 
-    async def should_notify(self, event_type: str, urgency: str,
-                            person: str = "") -> dict:
+    async def should_notify(
+        self, event_type: str, urgency: str, person: str = ""
+    ) -> dict:
         """
         Entscheidet ob eine proaktive Meldung gesendet werden soll.
 
@@ -392,8 +417,9 @@ class FeedbackTracker:
         factor = max(0.0, min(1.0, factor))
         return (1.0 - factor) * old_score + factor * raw_new_score
 
-    async def _update_score(self, event_type: str, delta: float,
-                           person: str = "") -> float:
+    async def _update_score(
+        self, event_type: str, delta: float, person: str = ""
+    ) -> float:
         """Aktualisiert den Score und gibt den neuen Wert zurueck."""
         if not self.redis:
             return DEFAULT_SCORE
@@ -401,7 +427,9 @@ class FeedbackTracker:
         current = await self.get_score(event_type)
         raw_new = max(0.0, min(1.0, current + delta))
         new_score = max(0.0, min(1.0, self._apply_smoothing(current, raw_new)))
-        await self.redis.setex(f"mha:feedback:score:{event_type}", REDIS_FEEDBACK_SCORE_TTL, str(new_score))
+        await self.redis.setex(
+            f"mha:feedback:score:{event_type}", REDIS_FEEDBACK_SCORE_TTL, str(new_score)
+        )
 
         # Per-Person Score (Feature 6: Per-Person Learning)
         if person:
@@ -411,8 +439,12 @@ class FeedbackTracker:
                 person_current = person_current.decode()
             person_score = float(person_current) if person_current else DEFAULT_SCORE
             person_raw = max(0.0, min(1.0, person_score + delta))
-            person_new = max(0.0, min(1.0, self._apply_smoothing(person_score, person_raw)))
-            await self.redis.setex(person_key, REDIS_FEEDBACK_SCORE_TTL, str(person_new))
+            person_new = max(
+                0.0, min(1.0, self._apply_smoothing(person_score, person_raw))
+            )
+            await self.redis.setex(
+                person_key, REDIS_FEEDBACK_SCORE_TTL, str(person_new)
+            )
 
         return new_score
 
@@ -436,7 +468,9 @@ class FeedbackTracker:
                 f"mha:feedback:counters:{event_type}", counter_name, 1
             )
         except Exception as e:
-            logger.warning("Counter increment failed for %s/%s: %s", event_type, counter_name, e)
+            logger.warning(
+                "Counter increment failed for %s/%s: %s", event_type, counter_name, e
+            )
 
     async def _get_counters(self, event_type: str) -> dict:
         """Holt alle Zaehler fuer einen Event-Typ."""
@@ -444,8 +478,7 @@ class FeedbackTracker:
             return {}
         data = await self.redis.hgetall(f"mha:feedback:counters:{event_type}")
         return {
-            (k.decode() if isinstance(k, bytes) else k): int(v)
-            for k, v in data.items()
+            (k.decode() if isinstance(k, bytes) else k): int(v) for k, v in data.items()
         }
 
     async def _store_feedback_entry(
@@ -455,11 +488,13 @@ class FeedbackTracker:
         if not self.redis:
             return
 
-        entry = json.dumps({
-            "type": feedback_type,
-            "delta": delta,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        entry = json.dumps(
+            {
+                "type": feedback_type,
+                "delta": delta,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
         key = f"mha:feedback:history:{event_type}"
         await self.redis.lpush(key, entry)
@@ -467,9 +502,7 @@ class FeedbackTracker:
         await self.redis.ltrim(key, 0, 499)
         await self.redis.expire(key, REDIS_FEEDBACK_SCORE_TTL)
 
-    async def _get_recent_feedback(
-        self, event_type: str, limit: int = 5
-    ) -> list[dict]:
+    async def _get_recent_feedback(self, event_type: str, limit: int = 5) -> list[dict]:
         """Holt die letzten Feedback-Eintraege fuer einen Event-Typ."""
         if not self.redis:
             return []
@@ -526,9 +559,7 @@ class FeedbackTracker:
                 info["event_type"], "ignored", FEEDBACK_DELTAS["ignored"]
             )
             await self._increment_counter(info["event_type"], "ignored")
-            logger.debug(
-                "Auto-Timeout: '%s' als ignored markiert", info["event_type"]
-            )
+            logger.debug("Auto-Timeout: '%s' als ignored markiert", info["event_type"])
 
     def get_feedback_intensity(self, event_type: str, count: int) -> str:
         """Gibt die Feedback-Intensitaet basierend auf Wiederholungen zurueck.
@@ -545,10 +576,10 @@ class FeedbackTracker:
 
     _EVENT_COOLDOWNS: dict[str, int] = {
         "anticipation_suggestion": 1800,  # 30 min
-        "wellness_nudge": 3600,           # 1h
+        "wellness_nudge": 3600,  # 1h
         "spontaneous_observation": 5400,  # 90 min
-        "learning_suggestion": 7200,      # 2h
-        "insight": 3600,                  # 1h
+        "learning_suggestion": 7200,  # 2h
+        "insight": 3600,  # 1h
     }
 
     def get_event_cooldown(self, event_type: str) -> int:

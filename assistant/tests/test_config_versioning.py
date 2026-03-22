@@ -25,7 +25,19 @@ def mock_redis():
 
 @pytest.fixture
 def cv():
-    with patch("assistant.config_versioning.yaml_config", {"self_optimization": {"rollback": {"enabled": True, "max_snapshots": 5, "snapshot_on_every_edit": True, "max_disk_mb": 50}}}):
+    with patch(
+        "assistant.config_versioning.yaml_config",
+        {
+            "self_optimization": {
+                "rollback": {
+                    "enabled": True,
+                    "max_snapshots": 5,
+                    "snapshot_on_every_edit": True,
+                    "max_disk_mb": 50,
+                }
+            }
+        },
+    ):
         return ConfigVersioning()
 
 
@@ -102,7 +114,11 @@ async def test_create_snapshot_file_missing(cv, mock_redis):
 @pytest.mark.asyncio
 async def test_list_snapshots(cv, mock_redis):
     cv._redis = mock_redis
-    snap = {"id": "test_20250101_120000", "config_file": "test", "timestamp": "2025-01-01T12:00:00"}
+    snap = {
+        "id": "test_20250101_120000",
+        "config_file": "test",
+        "timestamp": "2025-01-01T12:00:00",
+    }
     mock_redis.lrange.return_value = [json.dumps(snap)]
     result = await cv.list_snapshots("test")
     assert len(result) == 1
@@ -171,13 +187,15 @@ async def test_rollback_success(cv, mock_redis, tmp_path):
     snapshot_file = tmp_path / "test_20250101_120000.yaml"
     snapshot_file.write_text("key: restored")
 
-    snap = json.dumps({
-        "id": "test_20250101_120000",
-        "config_file": "test",
-        "original_path": str(original),
-        "snapshot_path": str(snapshot_file),
-        "timestamp": "2025-01-01T12:00:00",
-    })
+    snap = json.dumps(
+        {
+            "id": "test_20250101_120000",
+            "config_file": "test",
+            "original_path": str(original),
+            "snapshot_path": str(snapshot_file),
+            "timestamp": "2025-01-01T12:00:00",
+        }
+    )
     mock_redis.lrange.return_value = [snap]
 
     with patch("assistant.config_versioning._SNAPSHOT_DIR", tmp_path):
@@ -190,13 +208,15 @@ async def test_rollback_success(cv, mock_redis, tmp_path):
 @pytest.mark.asyncio
 async def test_rollback_snapshot_file_missing(cv, mock_redis):
     cv._redis = mock_redis
-    snap = json.dumps({
-        "id": "test_20250101_120000",
-        "config_file": "test",
-        "original_path": "/tmp/orig.yaml",
-        "snapshot_path": "/tmp/nonexistent_snap.yaml",
-        "timestamp": "2025-01-01T12:00:00",
-    })
+    snap = json.dumps(
+        {
+            "id": "test_20250101_120000",
+            "config_file": "test",
+            "original_path": "/tmp/orig.yaml",
+            "snapshot_path": "/tmp/nonexistent_snap.yaml",
+            "timestamp": "2025-01-01T12:00:00",
+        }
+    )
     mock_redis.lrange.return_value = [snap]
     result = await cv.rollback("test_20250101_120000")
     assert result["success"] is False
@@ -215,10 +235,15 @@ async def test_reload_config_success(cv, mock_redis, tmp_path):
     config_file = tmp_path / "settings.yaml"
     config_file.write_text("key: value")
 
-    with patch("assistant.config_versioning._CONFIG_DIR", tmp_path), \
-         patch("assistant.config_versioning._SNAPSHOT_DIR", tmp_path / "snapshots"), \
-         patch("assistant.config_versioning.load_yaml_config", return_value={"new_key": "new_val"}), \
-         patch("assistant.config_versioning.yaml_config", {"old_key": "old_val"}):
+    with (
+        patch("assistant.config_versioning._CONFIG_DIR", tmp_path),
+        patch("assistant.config_versioning._SNAPSHOT_DIR", tmp_path / "snapshots"),
+        patch(
+            "assistant.config_versioning.load_yaml_config",
+            return_value={"new_key": "new_val"},
+        ),
+        patch("assistant.config_versioning.yaml_config", {"old_key": "old_val"}),
+    ):
         (tmp_path / "snapshots").mkdir(exist_ok=True)
         result = await cv.reload_config()
 
@@ -250,7 +275,9 @@ def test_health_status(cv, tmp_path):
 
 
 def test_health_status_no_dir(cv):
-    with patch("assistant.config_versioning._SNAPSHOT_DIR", Path("/nonexistent_path_xyz")):
+    with patch(
+        "assistant.config_versioning._SNAPSHOT_DIR", Path("/nonexistent_path_xyz")
+    ):
         status = cv.health_status()
     assert status["current_snapshots"] == 0
 
@@ -313,18 +340,25 @@ async def test_rollback_exception(cv, mock_redis, tmp_path):
     snapshot_file = tmp_path / "test_20250101_120000.yaml"
     snapshot_file.write_text("key: restored")
 
-    snap = json.dumps({
-        "id": "test_20250101_120000",
-        "config_file": "test",
-        "original_path": str(original),
-        "snapshot_path": str(snapshot_file),
-        "timestamp": "2025-01-01T12:00:00",
-    })
+    snap = json.dumps(
+        {
+            "id": "test_20250101_120000",
+            "config_file": "test",
+            "original_path": str(original),
+            "snapshot_path": str(snapshot_file),
+            "timestamp": "2025-01-01T12:00:00",
+        }
+    )
     mock_redis.lrange.return_value = [snap]
 
     # Make shutil.copy2 fail to trigger except block
-    with patch("assistant.config_versioning._SNAPSHOT_DIR", tmp_path), \
-         patch("assistant.config_versioning.shutil.copy2", side_effect=Exception("disk full")):
+    with (
+        patch("assistant.config_versioning._SNAPSHOT_DIR", tmp_path),
+        patch(
+            "assistant.config_versioning.shutil.copy2",
+            side_effect=Exception("disk full"),
+        ),
+    ):
         result = await cv.rollback("test_20250101_120000")
     assert result["success"] is False
     assert "Rollback-Fehler" in result["message"]
@@ -377,6 +411,7 @@ async def test_enforce_disk_quota_deletes_oldest(cv, tmp_path):
 
     # Create files with different timestamps
     import time
+
     f1 = tmp_path / "old.yaml"
     f1.write_text("a" * 100)
     time.sleep(0.05)
@@ -424,6 +459,7 @@ async def test_reload_config_update_exception_rollback(cv, mock_redis, tmp_path)
 
     class FailingDict(dict):
         """Dict that fails on the second update() call."""
+
         _call_count = 0
 
         def update(self, other):
@@ -434,10 +470,15 @@ async def test_reload_config_update_exception_rollback(cv, mock_redis, tmp_path)
 
     failing_config = FailingDict(original_config)
 
-    with patch("assistant.config_versioning._CONFIG_DIR", tmp_path), \
-         patch("assistant.config_versioning._SNAPSHOT_DIR", tmp_path / "snapshots"), \
-         patch("assistant.config_versioning.load_yaml_config", return_value={"new_key": "new_val"}), \
-         patch("assistant.config_versioning.yaml_config", failing_config):
+    with (
+        patch("assistant.config_versioning._CONFIG_DIR", tmp_path),
+        patch("assistant.config_versioning._SNAPSHOT_DIR", tmp_path / "snapshots"),
+        patch(
+            "assistant.config_versioning.load_yaml_config",
+            return_value={"new_key": "new_val"},
+        ),
+        patch("assistant.config_versioning.yaml_config", failing_config),
+    ):
         (tmp_path / "snapshots").mkdir(exist_ok=True)
         result = await cv.reload_config()
 
@@ -454,8 +495,13 @@ async def test_reload_config_general_exception(cv, mock_redis, tmp_path):
     """General exception during reload returns failure (lines 280-282)."""
     cv._redis = mock_redis
 
-    with patch("assistant.config_versioning._CONFIG_DIR", tmp_path), \
-         patch("assistant.config_versioning.load_yaml_config", side_effect=Exception("YAML broken")):
+    with (
+        patch("assistant.config_versioning._CONFIG_DIR", tmp_path),
+        patch(
+            "assistant.config_versioning.load_yaml_config",
+            side_effect=Exception("YAML broken"),
+        ),
+    ):
         config_file = tmp_path / "settings.yaml"
         config_file.write_text("key: value")
         result = await cv.reload_config()

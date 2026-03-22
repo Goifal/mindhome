@@ -33,6 +33,7 @@ def _ensure_dir():
 
 # ── Cover-Configs (per-entity Typ/enabled) ────────────────────────
 
+
 def load_cover_configs() -> dict:
     """Cover-Configs aus lokaler JSON-Datei laden."""
     try:
@@ -50,7 +51,9 @@ def save_cover_configs(configs: dict) -> None:
     try:
         _ensure_dir()
         if _COVER_CONFIG_FILE.exists():
-            shutil.copy2(_COVER_CONFIG_FILE, _COVER_CONFIG_FILE.with_suffix(".json.bak"))
+            shutil.copy2(
+                _COVER_CONFIG_FILE, _COVER_CONFIG_FILE.with_suffix(".json.bak")
+            )
         _COVER_CONFIG_FILE.write_text(json.dumps(configs, indent=2, ensure_ascii=False))
     except Exception as e:
         logger.error("Cover-Config speichern fehlgeschlagen: %s", e)
@@ -58,6 +61,7 @@ def save_cover_configs(configs: dict) -> None:
 
 
 # ── Generische Liste-mit-IDs Helfer ──────────────────────────────
+
 
 def _load_list(filepath: Path) -> list:
     try:
@@ -96,6 +100,7 @@ def _find_by_id(items: list, item_id: int) -> Optional[dict]:
 
 
 # ── Cover-Gruppen ────────────────────────────────────────────────
+
 
 def load_cover_groups() -> list:
     return _load_list(_COVER_GROUPS_FILE)
@@ -141,6 +146,7 @@ def delete_cover_group(group_id: int) -> bool:
 
 # ── Cover-Szenen ─────────────────────────────────────────────────
 
+
 def load_cover_scenes() -> list:
     return _load_list(_COVER_SCENES_FILE)
 
@@ -184,6 +190,7 @@ def delete_cover_scene(scene_id: int) -> bool:
 
 
 # ── Cover-Zeitplaene ─────────────────────────────────────────────
+
 
 def load_cover_schedules() -> list:
     return _load_list(_COVER_SCHEDULES_FILE)
@@ -239,6 +246,7 @@ def delete_cover_schedule(schedule_id: int) -> bool:
 
 # ── Cover-Sensor-Zuordnungen ────────────────────────────────────
 
+
 def load_cover_sensors() -> list:
     return _load_list(_COVER_SENSORS_FILE)
 
@@ -290,12 +298,15 @@ def log_cover_action(entity_id: str, position: int, reason: str) -> None:
     """Loggt eine automatische Cover-Aktion fuer das Dashboard."""
     try:
         entries = _load_list(_COVER_LOG_FILE)
-        entries.insert(0, {
-            "ts": time.time(),
-            "entity_id": entity_id,
-            "position": position,
-            "reason": reason,
-        })
+        entries.insert(
+            0,
+            {
+                "ts": time.time(),
+                "entity_id": entity_id,
+                "position": position,
+                "reason": reason,
+            },
+        )
         # Max Eintraege begrenzen
         if len(entries) > _MAX_LOG_ENTRIES:
             entries = entries[:_MAX_LOG_ENTRIES]
@@ -311,6 +322,7 @@ def load_cover_action_log(limit: int = 10) -> list:
 
 
 # ── Power-Close Regeln (Steckdosen-gesteuertes Schliessen) ──────
+
 
 def load_power_close_rules() -> list:
     """Laedt Power-Close-Regeln (Steckdose → Rollladen)."""
@@ -350,7 +362,13 @@ def update_power_close_rule(rule_id: int, data: dict) -> Optional[dict]:
     rule = _find_by_id(rules, rule_id)
     if not rule:
         return None
-    for key in ("power_sensor", "threshold", "cover_ids", "close_position", "is_active"):
+    for key in (
+        "power_sensor",
+        "threshold",
+        "cover_ids",
+        "close_position",
+        "is_active",
+    ):
         if key in data:
             rule[key] = data[key]
     save_power_close_rules(rules)

@@ -43,16 +43,19 @@ import pytest
 class TestEstimateTokens:
     def test_basic_estimate(self):
         from assistant.brain import _estimate_tokens
+
         result = _estimate_tokens("Hallo Welt")
         assert isinstance(result, int)
         assert result > 0
 
     def test_empty_string(self):
         from assistant.brain import _estimate_tokens
+
         assert _estimate_tokens("") == 0
 
     def test_german_text_more_tokens(self):
         from assistant.brain import _estimate_tokens
+
         # 1.8 chars per token (konservativ fuer deutschen BPE-Tokenizer)
         result = _estimate_tokens("Überraschend!")
         assert result == int(len("Überraschend!") / 1.8)
@@ -61,6 +64,7 @@ class TestEstimateTokens:
 class TestAuditLog:
     def test_audit_log_writes(self, tmp_path):
         from assistant.brain import _audit_log, _AUDIT_LOG_PATH
+
         with patch("assistant.brain._AUDIT_LOG_PATH", tmp_path / "audit.jsonl"):
             _audit_log("test_action", {"key": "value"})
             log_file = tmp_path / "audit.jsonl"
@@ -71,7 +75,11 @@ class TestAuditLog:
 
     def test_audit_log_handles_error(self):
         from assistant.brain import _audit_log
-        with patch("assistant.brain._AUDIT_LOG_PATH", MagicMock(parent=MagicMock(mkdir=MagicMock(side_effect=PermissionError)))):
+
+        with patch(
+            "assistant.brain._AUDIT_LOG_PATH",
+            MagicMock(parent=MagicMock(mkdir=MagicMock(side_effect=PermissionError))),
+        ):
             # Should not raise
             _audit_log("test", {})
 
@@ -79,6 +87,7 @@ class TestAuditLog:
 class TestBuildSceneIntelligencePrompt:
     def test_room_thermostat_mode(self):
         from assistant.brain import _build_scene_intelligence_prompt
+
         with patch("assistant.brain.cfg") as mock_cfg:
             mock_cfg.yaml_config = {"heating": {"mode": "room_thermostat"}}
             result = _build_scene_intelligence_prompt()
@@ -86,6 +95,7 @@ class TestBuildSceneIntelligencePrompt:
 
     def test_heating_curve_mode(self):
         from assistant.brain import _build_scene_intelligence_prompt
+
         with patch("assistant.brain.cfg") as mock_cfg:
             mock_cfg.yaml_config = {"heating": {"mode": "heating_curve"}}
             result = _build_scene_intelligence_prompt()
@@ -93,6 +103,7 @@ class TestBuildSceneIntelligencePrompt:
 
     def test_default_mode(self):
         from assistant.brain import _build_scene_intelligence_prompt
+
         with patch("assistant.brain.cfg") as mock_cfg:
             mock_cfg.yaml_config = {}
             result = _build_scene_intelligence_prompt()
@@ -106,27 +117,81 @@ class TestBuildSceneIntelligencePrompt:
 def brain():
     """Creates a Brain instance with all dependencies mocked."""
     from contextlib import ExitStack
+
     _BRAIN_PATCHES = [
-        "HomeAssistantClient", "OllamaClient", "ContextBuilder", "ModelRouter",
-        "PreClassifier", "PersonalityEngine", "FunctionExecutor", "FunctionValidator",
-        "MemoryManager", "AutonomyManager", "FeedbackTracker", "ActivityEngine",
-        "FollowMeEngine", "LightEngine", "ProactiveManager", "DailySummarizer",
-        "MoodDetector", "ActionPlanner", "TimeAwareness", "RoutineEngine",
-        "AnticipationEngine", "IntentTracker", "TTSEnhancer", "SoundManager",
-        "SpeakerRecognition", "DiagnosticsEngine", "OCREngine",
-        "AmbientAudioClassifier", "ConflictResolver", "HealthMonitor",
-        "InventoryManager", "SmartShopping", "ConversationMemory", "MultiRoomAudio",
-        "DeviceHealthMonitor", "InsightEngine", "SelfAutomation", "ConfigVersioning",
-        "SelfOptimization", "CookingAssistant", "RepairPlanner", "WorkshopGenerator",
-        "WorkshopLibrary", "KnowledgeBase", "RecipeStore", "TimerManager",
-        "CameraManager", "ConditionalCommands", "EnergyOptimizer", "WebSearch",
-        "ThreatAssessment", "LearningObserver", "WellnessAdvisor",
-        "ProactiveSequencePlanner", "SeasonalInsightEngine", "CalendarIntelligence",
-        "ExplainabilityEngine", "LearningTransfer", "DialogueStateManager",
-        "ClimateModel", "PredictiveMaintenance", "SituationModel", "ProtocolEngine",
-        "SpontaneousObserver", "MusicDJ", "VisitorManager", "OutcomeTracker",
-        "CorrectionMemory", "ResponseQualityTracker", "ErrorPatternTracker",
-        "SelfReport", "AdaptiveThresholds", "TaskRegistry",
+        "HomeAssistantClient",
+        "OllamaClient",
+        "ContextBuilder",
+        "ModelRouter",
+        "PreClassifier",
+        "PersonalityEngine",
+        "FunctionExecutor",
+        "FunctionValidator",
+        "MemoryManager",
+        "AutonomyManager",
+        "FeedbackTracker",
+        "ActivityEngine",
+        "FollowMeEngine",
+        "LightEngine",
+        "ProactiveManager",
+        "DailySummarizer",
+        "MoodDetector",
+        "ActionPlanner",
+        "TimeAwareness",
+        "RoutineEngine",
+        "AnticipationEngine",
+        "IntentTracker",
+        "TTSEnhancer",
+        "SoundManager",
+        "SpeakerRecognition",
+        "DiagnosticsEngine",
+        "OCREngine",
+        "AmbientAudioClassifier",
+        "ConflictResolver",
+        "HealthMonitor",
+        "InventoryManager",
+        "SmartShopping",
+        "ConversationMemory",
+        "MultiRoomAudio",
+        "DeviceHealthMonitor",
+        "InsightEngine",
+        "SelfAutomation",
+        "ConfigVersioning",
+        "SelfOptimization",
+        "CookingAssistant",
+        "RepairPlanner",
+        "WorkshopGenerator",
+        "WorkshopLibrary",
+        "KnowledgeBase",
+        "RecipeStore",
+        "TimerManager",
+        "CameraManager",
+        "ConditionalCommands",
+        "EnergyOptimizer",
+        "WebSearch",
+        "ThreatAssessment",
+        "LearningObserver",
+        "WellnessAdvisor",
+        "ProactiveSequencePlanner",
+        "SeasonalInsightEngine",
+        "CalendarIntelligence",
+        "ExplainabilityEngine",
+        "LearningTransfer",
+        "DialogueStateManager",
+        "ClimateModel",
+        "PredictiveMaintenance",
+        "SituationModel",
+        "ProtocolEngine",
+        "SpontaneousObserver",
+        "MusicDJ",
+        "VisitorManager",
+        "OutcomeTracker",
+        "CorrectionMemory",
+        "ResponseQualityTracker",
+        "ErrorPatternTracker",
+        "SelfReport",
+        "AdaptiveThresholds",
+        "TaskRegistry",
     ]
     with ExitStack() as stack:
         for name in _BRAIN_PATCHES:
@@ -134,6 +199,7 @@ def brain():
         mock_cfg = stack.enter_context(patch("assistant.brain.cfg"))
         mock_cfg.yaml_config = {}
         from assistant.brain import AssistantBrain
+
         b = AssistantBrain()
         # Set up essential mocks
         b._stt_word_corrections = {}
@@ -197,7 +263,12 @@ class TestDetectSarcasmFeedback:
         assert brain._detect_sarcasm_feedback("nicht witzig") is False
 
     def test_neutral_long_text(self, brain):
-        assert brain._detect_sarcasm_feedback("Ich denke da sollten wir nochmal drueber reden") is None
+        assert (
+            brain._detect_sarcasm_feedback(
+                "Ich denke da sollten wir nochmal drueber reden"
+            )
+            is None
+        )
 
     def test_short_positive_with_boundary(self, brain):
         # "gut" should match "gut" but not "guten"
@@ -238,6 +309,7 @@ class TestNormalizeSttText:
 
     def test_phrase_corrections(self, brain):
         import re
+
         brain._stt_phrase_compiled = [
             (re.compile(re.escape("ja weiß"), re.IGNORECASE), "Jarvis"),
         ]
@@ -295,24 +367,28 @@ class TestIsStatusQuery:
 class TestDeterministicToolCall:
     def test_get_lights(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._deterministic_tool_call("Welche Lichter sind an?")
         assert result is not None
         assert result["function"]["name"] == "get_lights"
 
     def test_get_covers(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._deterministic_tool_call("Rolllaeden status?")
         assert result is not None
         assert result["function"]["name"] == "get_covers"
 
     def test_get_climate(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._deterministic_tool_call("Wie ist die Temperatur?")
         assert result is not None
         assert result["function"]["name"] == "get_climate"
 
     def test_set_light_on(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._deterministic_tool_call("Licht an")
         assert result is not None
         assert result["function"]["name"] == "set_light"
@@ -320,6 +396,7 @@ class TestDeterministicToolCall:
 
     def test_set_light_off(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._deterministic_tool_call("Licht aus")
         assert result is not None
         assert result["function"]["name"] == "set_light"
@@ -327,12 +404,14 @@ class TestDeterministicToolCall:
 
     def test_set_light_brightness(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._deterministic_tool_call("Licht 50%")
         assert result is not None
         assert result["function"]["arguments"].get("brightness") == 50
 
     def test_cover_open(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._deterministic_tool_call("Rollladen auf")
         assert result is not None
         assert result["function"]["name"] == "set_cover"
@@ -340,35 +419,41 @@ class TestDeterministicToolCall:
 
     def test_cover_close(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._deterministic_tool_call("Rollladen zu")
         assert result is not None
         assert result["function"]["arguments"]["action"] == "close"
 
     def test_get_alarms(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._deterministic_tool_call("Welche Wecker sind aktiv?")
         assert result is not None
         assert result["function"]["name"] == "get_alarms"
 
     def test_house_status(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._deterministic_tool_call("Hausstatus?")
         assert result is not None
         assert result["function"]["name"] == "get_house_status"
 
     def test_no_match(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._deterministic_tool_call("Erzaehl mir einen Witz")
         assert result is None
 
     def test_room_extraction(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._deterministic_tool_call("Licht im Wohnzimmer an")
         assert result is not None
         assert result["function"]["arguments"].get("room") == "wohnzimmer"
 
     def test_alle_lichter_aus(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._deterministic_tool_call("alle Lichter aus")
         assert result is not None
         assert result["function"]["arguments"]["room"] == "all"
@@ -380,6 +465,7 @@ class TestDeterministicToolCall:
 class TestDetectAlarmCommand:
     def test_set_alarm_simple(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._detect_alarm_command("Wecker auf 7")
         assert result is not None
         assert result["action"] == "set"
@@ -387,47 +473,55 @@ class TestDetectAlarmCommand:
 
     def test_set_alarm_with_minutes(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._detect_alarm_command("Wecker auf 6:30")
         assert result is not None
         assert result["time"] == "06:30"
 
     def test_weck_mich(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._detect_alarm_command("Weck mich um 7")
         assert result is not None
         assert result["action"] == "set"
 
     def test_alarm_status(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._detect_alarm_command("Welche Wecker sind aktiv?")
         assert result is not None
         assert result["action"] == "status"
 
     def test_alarm_delete(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._detect_alarm_command("Wecker aus")
         assert result is not None
         assert result["action"] == "cancel"
 
     def test_daily_repeat(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._detect_alarm_command("Wecker auf 7 taeglich")
         assert result is not None
         assert result["repeat"] == "daily"
 
     def test_weekdays_repeat(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._detect_alarm_command("Wecker auf 7 wochentags")
         assert result is not None
         assert result["repeat"] == "weekdays"
 
     def test_no_match(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._detect_alarm_command("Mach das Licht an")
         assert result is None
 
     def test_invalid_hour(self):
         from assistant.brain import AssistantBrain
+
         result = AssistantBrain._detect_alarm_command("Wecker auf 25")
         assert result is None
 
@@ -456,7 +550,9 @@ class TestFilterResponse:
     def test_unclosed_think_tag(self, brain):
         with patch("assistant.brain.cfg") as mock_cfg:
             mock_cfg.yaml_config = {"response_filter": {"enabled": True}}
-            result = brain._filter_response("<think>reasoning here but no close tag Erledigt.")
+            result = brain._filter_response(
+                "<think>reasoning here but no close tag Erledigt."
+            )
             # Should handle gracefully
             assert isinstance(result, str)
 
@@ -480,10 +576,12 @@ class TestBuildMemoryContext:
         assert "Mag Kaffee" in result
 
     def test_with_both(self, brain):
-        result = brain._build_memory_context({
-            "relevant_facts": ["F1"],
-            "person_facts": ["P1"],
-        })
+        result = brain._build_memory_context(
+            {
+                "relevant_facts": ["F1"],
+                "person_facts": ["P1"],
+            }
+        )
         assert "GEDAECHTNIS" in result
         assert "RELEVANTE ERINNERUNGEN" in result
         assert "BEKANNTE FAKTEN" in result
@@ -495,26 +593,31 @@ class TestBuildMemoryContext:
 class TestFormatDaysAgo:
     def test_empty_string(self):
         from assistant.brain import AssistantBrain
+
         assert AssistantBrain._format_days_ago("") == ""
 
     def test_today(self):
         from assistant.brain import AssistantBrain
+
         now = datetime.now(timezone.utc).isoformat()
         assert AssistantBrain._format_days_ago(now) == "Heute"
 
     def test_yesterday(self):
         from assistant.brain import AssistantBrain
+
         yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
         assert AssistantBrain._format_days_ago(yesterday) == "Gestern"
 
     def test_last_week(self):
         from assistant.brain import AssistantBrain
+
         week_ago = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
         result = AssistantBrain._format_days_ago(week_ago)
         assert "Vor 10 Tagen" in result
 
     def test_invalid_string(self):
         from assistant.brain import AssistantBrain
+
         assert AssistantBrain._format_days_ago("not-a-date") == ""
 
 
@@ -524,18 +627,24 @@ class TestFormatDaysAgo:
 class TestBriefingDetection:
     def test_morning_briefing(self):
         from assistant.brain import AssistantBrain
-        assert AssistantBrain._is_morning_briefing_request("Morgenbriefing bitte") is True
+
+        assert (
+            AssistantBrain._is_morning_briefing_request("Morgenbriefing bitte") is True
+        )
 
     def test_evening_briefing(self):
         from assistant.brain import AssistantBrain
+
         assert AssistantBrain._is_evening_briefing_request("Abendbriefing") is True
 
     def test_house_status(self):
         from assistant.brain import AssistantBrain
+
         assert AssistantBrain._is_house_status_request("Hausstatus") is True
 
     def test_status_report(self):
         from assistant.brain import AssistantBrain
+
         assert AssistantBrain._is_status_report_request("Statusbericht") is True
 
 
@@ -545,14 +654,17 @@ class TestBriefingDetection:
 class TestIsCorrection:
     def test_nein_correction(self):
         from assistant.brain import AssistantBrain
+
         assert AssistantBrain._is_correction("Nein, nicht das") is True
 
     def test_falsch_correction(self):
         from assistant.brain import AssistantBrain
+
         assert AssistantBrain._is_correction("Falsch, ich meinte") is True
 
     def test_normal_text(self):
         from assistant.brain import AssistantBrain
+
         assert AssistantBrain._is_correction("Mach das Licht an") is False
 
 
@@ -569,7 +681,9 @@ class TestExtractToolCallsFromText:
             assert result[0]["function"]["name"] == "set_light"
 
     def test_tool_call_xml_tags(self, brain):
-        text = '<tool_call>{"name": "set_light", "arguments": {"state": "on"}}</tool_call>'
+        text = (
+            '<tool_call>{"name": "set_light", "arguments": {"state": "on"}}</tool_call>'
+        )
         with patch("assistant.brain.FunctionExecutor") as mock_fe:
             mock_fe._ALLOWED_FUNCTIONS = {"set_light"}
             result = brain._extract_tool_calls_from_text(text)
@@ -588,9 +702,9 @@ class TestLlmWithCascade:
     @pytest.mark.asyncio
     async def test_successful_call(self, brain):
         brain.ollama = AsyncMock()
-        brain.ollama.chat = AsyncMock(return_value={
-            "message": {"content": "Test answer", "role": "assistant"}
-        })
+        brain.ollama.chat = AsyncMock(
+            return_value={"message": {"content": "Test answer", "role": "assistant"}}
+        )
         brain.model_router = MagicMock()
         brain.model_router.get_fallback_model = MagicMock(return_value=None)
 
@@ -631,7 +745,9 @@ class TestLlmWithCascade:
         brain.ollama = AsyncMock()
         brain.ollama.chat = mock_chat
         brain.model_router = MagicMock()
-        brain.model_router.get_fallback_model = MagicMock(side_effect=["fallback-model", None])
+        brain.model_router.get_fallback_model = MagicMock(
+            side_effect=["fallback-model", None]
+        )
         brain.error_patterns = MagicMock()
         brain.error_patterns.record_error = AsyncMock()
 
@@ -721,7 +837,9 @@ class TestHealthCheck:
         brain.model_router = MagicMock()
         brain.model_router.get_model_info = MagicMock(return_value={})
         brain.autonomy = MagicMock()
-        brain.autonomy.get_level_info = MagicMock(return_value={"level": 2, "name": "Aktiv"})
+        brain.autonomy.get_level_info = MagicMock(
+            return_value={"level": 2, "name": "Aktiv"}
+        )
         brain.autonomy.get_trust_info = MagicMock(return_value={})
 
         result = await brain.health_check()
@@ -801,7 +919,9 @@ class TestHealthCheck:
         brain.model_router = MagicMock()
         brain.model_router.get_model_info = MagicMock(return_value={})
         brain.autonomy = MagicMock()
-        brain.autonomy.get_level_info = MagicMock(return_value={"level": 0, "name": "Passiv"})
+        brain.autonomy.get_level_info = MagicMock(
+            return_value={"level": 0, "name": "Passiv"}
+        )
         brain.autonomy.get_trust_info = MagicMock(return_value={})
 
         result = await brain.health_check()

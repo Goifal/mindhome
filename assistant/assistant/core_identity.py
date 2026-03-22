@@ -59,9 +59,7 @@ def build_identity_block() -> str:
     values_str = " | ".join(VALUES)
     boundaries_str = "\n".join(f"- {b}" for b in BOUNDARIES)
     relationship_str = "\n".join(f"- {r}" for r in RELATIONSHIP)
-    emotional_str = ", ".join(
-        e.split(" — ")[0] for e in EMOTIONAL_RANGE
-    )
+    emotional_str = ", ".join(e.split(" — ")[0] for e in EMOTIONAL_RANGE)
 
     return (
         f"KERN-IDENTITAET (unveraenderlich):\n"

@@ -26,6 +26,7 @@ from assistant.insight_engine import InsightEngine, _RAIN_CONDITIONS, _STORM_CON
 # Fixtures
 # ============================================================
 
+
 @pytest.fixture
 def ha_mock():
     mock = AsyncMock()
@@ -36,7 +37,10 @@ def ha_mock():
 
 @pytest.fixture
 def insight_engine(ha_mock):
-    with patch("assistant.insight_engine.yaml_config", {"insights": {"enabled": True}, "insight_checks": {}}):
+    with patch(
+        "assistant.insight_engine.yaml_config",
+        {"insights": {"enabled": True}, "insight_checks": {}},
+    ):
         engine = InsightEngine(ha=ha_mock)
     engine.redis = None
     return engine
@@ -52,15 +56,18 @@ def insight_with_redis(insight_engine, redis_mock):
 # Initialisierung
 # ============================================================
 
-class TestInsightEngineInit:
 
+class TestInsightEngineInit:
     def test_default_config(self, insight_engine):
         assert insight_engine.enabled is True
         assert insight_engine.check_weather_windows is True
         assert insight_engine.check_frost_heating is True
 
     def test_disabled_config(self, ha_mock):
-        with patch("assistant.insight_engine.yaml_config", {"insights": {"enabled": False}, "insight_checks": {}}):
+        with patch(
+            "assistant.insight_engine.yaml_config",
+            {"insights": {"enabled": False}, "insight_checks": {}},
+        ):
             engine = InsightEngine(ha=ha_mock)
         assert engine.enabled is False
 
@@ -73,9 +80,13 @@ class TestInsightEngineInit:
     @pytest.mark.asyncio
     async def test_stop(self, insight_engine):
         import asyncio
+
         insight_engine._running = True
+
         # Erstelle einen echten abgeschlossenen Task
-        async def noop(): pass
+        async def noop():
+            pass
+
         task = asyncio.ensure_future(noop())
         await task
         insight_engine._task = task
@@ -87,14 +98,27 @@ class TestInsightEngineInit:
 # Weather + Windows Check
 # ============================================================
 
-class TestWeatherWindowsCheck:
 
+class TestWeatherWindowsCheck:
     @pytest.mark.asyncio
     async def test_rain_forecast_with_open_windows(self, insight_engine):
         data = {
             "open_windows": ["Kueche Fenster"],
-            "forecast": [{"condition": "rainy", "datetime": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()}],
-            "states": [{"entity_id": "person.test", "state": "home", "attributes": {"friendly_name": "Test"}}],
+            "forecast": [
+                {
+                    "condition": "rainy",
+                    "datetime": (
+                        datetime.now(timezone.utc) + timedelta(hours=1)
+                    ).isoformat(),
+                }
+            ],
+            "states": [
+                {
+                    "entity_id": "person.test",
+                    "state": "home",
+                    "attributes": {"friendly_name": "Test"},
+                }
+            ],
         }
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
             result = await insight_engine._check_weather_windows(data)
@@ -107,7 +131,12 @@ class TestWeatherWindowsCheck:
     async def test_storm_is_high_urgency(self, insight_engine):
         data = {
             "open_windows": ["Fenster 1"],
-            "forecast": [{"condition": "lightning-rainy", "datetime": datetime.now(timezone.utc).isoformat()}],
+            "forecast": [
+                {
+                    "condition": "lightning-rainy",
+                    "datetime": datetime.now(timezone.utc).isoformat(),
+                }
+            ],
             "states": [],
         }
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
@@ -123,7 +152,11 @@ class TestWeatherWindowsCheck:
 
     @pytest.mark.asyncio
     async def test_no_rain_forecast(self, insight_engine):
-        data = {"open_windows": ["Fenster"], "forecast": [{"condition": "sunny"}], "states": []}
+        data = {
+            "open_windows": ["Fenster"],
+            "forecast": [{"condition": "sunny"}],
+            "states": [],
+        }
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
             result = await insight_engine._check_weather_windows(data)
         assert result is None
@@ -156,8 +189,8 @@ class TestWeatherWindowsCheck:
 # Frost + Heating Check
 # ============================================================
 
-class TestFrostHeatingCheck:
 
+class TestFrostHeatingCheck:
     @pytest.mark.asyncio
     async def test_frost_with_heating_off(self, insight_engine):
         data = {
@@ -208,12 +241,14 @@ class TestFrostHeatingCheck:
 # Calendar Travel Check
 # ============================================================
 
-class TestCalendarTravelCheck:
 
+class TestCalendarTravelCheck:
     @pytest.mark.asyncio
     async def test_travel_event_alarm_off(self, insight_engine):
         data = {
-            "calendar_events": [{"summary": "Flug nach Berlin", "start": "2025-06-01T08:00:00"}],
+            "calendar_events": [
+                {"summary": "Flug nach Berlin", "start": "2025-06-01T08:00:00"}
+            ],
             "alarm_state": "disarmed",
             "open_windows": [],
             "climate": [],
@@ -269,8 +304,8 @@ class TestCalendarTravelCheck:
 # Energy Anomaly Check
 # ============================================================
 
-class TestEnergyAnomalyCheck:
 
+class TestEnergyAnomalyCheck:
     @pytest.mark.asyncio
     async def test_high_consumption(self, insight_with_redis):
         engine = insight_with_redis
@@ -292,7 +327,9 @@ class TestEnergyAnomalyCheck:
 
         with patch.object(engine, "_get_title_for_home", return_value="Sir"):
             with patch("assistant.insight_engine.datetime") as mock_dt:
-                mock_dt.now.return_value = datetime(2025, 6, 15, 12, 0, tzinfo=timezone.utc)
+                mock_dt.now.return_value = datetime(
+                    2025, 6, 15, 12, 0, tzinfo=timezone.utc
+                )
                 mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
                 result = await engine._check_energy_anomaly({})
         # At noon, projected = 8000/12*24 = 16000, avg = 5000, increase = 220%
@@ -333,12 +370,14 @@ class TestEnergyAnomalyCheck:
 # Away Devices Check
 # ============================================================
 
-class TestAwayDevicesCheck:
 
+class TestAwayDevicesCheck:
     @pytest.mark.asyncio
     async def test_away_with_lights_on(self, insight_with_redis):
         engine = insight_with_redis
-        engine.redis.get = AsyncMock(return_value=(datetime.now(timezone.utc) - timedelta(hours=3)).isoformat())
+        engine.redis.get = AsyncMock(
+            return_value=(datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+        )
         engine.redis.exists = AsyncMock(return_value=0)
 
         data = {
@@ -370,8 +409,8 @@ class TestAwayDevicesCheck:
 # Run All Checks Integration
 # ============================================================
 
-class TestRunAllChecks:
 
+class TestRunAllChecks:
     @pytest.mark.asyncio
     async def test_no_states_returns_empty(self, insight_engine):
         insight_engine.ha.get_states = AsyncMock(return_value=[])
@@ -384,9 +423,15 @@ class TestRunAllChecks:
         # Simuliere dass ein Check auf Cooldown ist
         engine.redis.exists = AsyncMock(return_value=1)
 
-        engine.ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "weather.home", "state": "rainy", "attributes": {"forecast": [{"condition": "rainy"}]}},
-        ])
+        engine.ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "weather.home",
+                    "state": "rainy",
+                    "attributes": {"forecast": [{"condition": "rainy"}]},
+                },
+            ]
+        )
 
         result = await engine._run_all_checks()
         # Alle auf Cooldown → leer
@@ -397,19 +442,22 @@ class TestRunAllChecks:
 # Reload Config
 # ============================================================
 
-class TestReloadConfig:
 
+class TestReloadConfig:
     def test_reload_updates_values(self, insight_engine):
-        with patch("assistant.insight_engine.yaml_config", {
-            "insights": {
-                "enabled": False,
-                "check_interval_minutes": 60,
-                "cooldown_hours": 8,
-                "checks": {"weather_windows": False},
-                "thresholds": {"frost_temp_c": -5},
+        with patch(
+            "assistant.insight_engine.yaml_config",
+            {
+                "insights": {
+                    "enabled": False,
+                    "check_interval_minutes": 60,
+                    "cooldown_hours": 8,
+                    "checks": {"weather_windows": False},
+                    "thresholds": {"frost_temp_c": -5},
+                },
+                "insight_checks": {},
             },
-            "insight_checks": {},
-        }):
+        ):
             insight_engine.reload_config()
         assert insight_engine.enabled is False
         assert insight_engine.check_interval == 3600
@@ -422,14 +470,16 @@ class TestReloadConfig:
 # Calendar x Weather Cross-Reference
 # ============================================================
 
-class TestCalendarWeatherCross:
 
+class TestCalendarWeatherCross:
     @pytest.mark.asyncio
     async def test_event_plus_rain(self, insight_engine):
         now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=3)
         data = {
-            "calendar_events": [{"summary": "Meeting", "start": event_time.isoformat()}],
+            "calendar_events": [
+                {"summary": "Meeting", "start": event_time.isoformat()}
+            ],
             "forecast": [{"condition": "rainy"}],
         }
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
@@ -487,8 +537,8 @@ class TestCalendarWeatherCross:
 # Comfort Contradiction
 # ============================================================
 
-class TestComfortContradiction:
 
+class TestComfortContradiction:
     @pytest.mark.asyncio
     async def test_heating_plus_open_window(self, insight_engine):
         data = {
@@ -525,16 +575,22 @@ class TestComfortContradiction:
 # Phase 18: Guest Preparation (3D+)
 # ============================================================
 
-class TestGuestPreparation:
 
+class TestGuestPreparation:
     @pytest.mark.asyncio
     async def test_guest_event_alarm_armed(self, insight_engine):
         now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=2)
         data = {
-            "calendar_events": [{"summary": "Dinner Party", "start": event_time.isoformat()}],
+            "calendar_events": [
+                {"summary": "Dinner Party", "start": event_time.isoformat()}
+            ],
             "states": [
-                {"entity_id": "alarm_control_panel.home", "state": "armed_away", "attributes": {}},
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "state": "armed_away",
+                    "attributes": {},
+                },
             ],
         }
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
@@ -549,9 +605,15 @@ class TestGuestPreparation:
         now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=1)
         data = {
-            "calendar_events": [{"summary": "Gaeste zum Brunch", "start": event_time.isoformat()}],
+            "calendar_events": [
+                {"summary": "Gaeste zum Brunch", "start": event_time.isoformat()}
+            ],
             "states": [
-                {"entity_id": "alarm_control_panel.home", "state": "disarmed", "attributes": {}},
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "state": "disarmed",
+                    "attributes": {},
+                },
                 # Keine Lichter an
             ],
         }
@@ -565,7 +627,9 @@ class TestGuestPreparation:
         now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=2)
         data = {
-            "calendar_events": [{"summary": "Arzttermin", "start": event_time.isoformat()}],
+            "calendar_events": [
+                {"summary": "Arzttermin", "start": event_time.isoformat()}
+            ],
             "states": [],
         }
         result = await insight_engine._check_guest_preparation(data)
@@ -577,7 +641,13 @@ class TestGuestPreparation:
         event_time = now + timedelta(hours=6)
         data = {
             "calendar_events": [{"summary": "Dinner", "start": event_time.isoformat()}],
-            "states": [{"entity_id": "alarm_control_panel.home", "state": "armed_away", "attributes": {}}],
+            "states": [
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "state": "armed_away",
+                    "attributes": {},
+                }
+            ],
         }
         result = await insight_engine._check_guest_preparation(data)
         assert result is None
@@ -591,8 +661,16 @@ class TestGuestPreparation:
             "climate": [{"name": "WZ", "current_temp": 21}],
             "open_doors": [],
             "states": [
-                {"entity_id": "alarm_control_panel.home", "state": "disarmed", "attributes": {}},
-                {"entity_id": "light.wohnzimmer", "state": "on", "attributes": {"friendly_name": "WZ"}},
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "state": "disarmed",
+                    "attributes": {},
+                },
+                {
+                    "entity_id": "light.wohnzimmer",
+                    "state": "on",
+                    "attributes": {"friendly_name": "WZ"},
+                },
             ],
         }
         result = await insight_engine._check_guest_preparation(data)
@@ -604,12 +682,22 @@ class TestGuestPreparation:
         now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=2)
         data = {
-            "calendar_events": [{"summary": "Besuch kommt", "start": event_time.isoformat()}],
+            "calendar_events": [
+                {"summary": "Besuch kommt", "start": event_time.isoformat()}
+            ],
             "climate": [{"name": "Wohnzimmer", "current_temp": 16}],
             "open_doors": [],
             "states": [
-                {"entity_id": "alarm_control_panel.home", "state": "disarmed", "attributes": {}},
-                {"entity_id": "light.wz", "state": "on", "attributes": {"friendly_name": "WZ"}},
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "state": "disarmed",
+                    "attributes": {},
+                },
+                {
+                    "entity_id": "light.wz",
+                    "state": "on",
+                    "attributes": {"friendly_name": "WZ"},
+                },
             ],
         }
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
@@ -623,12 +711,22 @@ class TestGuestPreparation:
         now = datetime.now(timezone.utc)
         event_time = now + timedelta(hours=1)
         data = {
-            "calendar_events": [{"summary": "Einladung Abendessen", "start": event_time.isoformat()}],
+            "calendar_events": [
+                {"summary": "Einladung Abendessen", "start": event_time.isoformat()}
+            ],
             "climate": [],
             "open_doors": ["Haustuer"],
             "states": [
-                {"entity_id": "alarm_control_panel.home", "state": "disarmed", "attributes": {}},
-                {"entity_id": "light.wz", "state": "on", "attributes": {"friendly_name": "WZ"}},
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "state": "disarmed",
+                    "attributes": {},
+                },
+                {
+                    "entity_id": "light.wz",
+                    "state": "on",
+                    "attributes": {"friendly_name": "WZ"},
+                },
             ],
         }
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
@@ -641,15 +739,23 @@ class TestGuestPreparation:
 # Phase 18: Away Security Full (3D+)
 # ============================================================
 
-class TestAwaySecurityFull:
 
+class TestAwaySecurityFull:
     @pytest.mark.asyncio
     async def test_away_alarm_off_windows_open(self, insight_engine):
         data = {
             "open_windows": ["Kueche Fenster"],
             "states": [
-                {"entity_id": "person.max", "state": "not_home", "attributes": {"friendly_name": "Max"}},
-                {"entity_id": "alarm_control_panel.home", "state": "disarmed", "attributes": {}},
+                {
+                    "entity_id": "person.max",
+                    "state": "not_home",
+                    "attributes": {"friendly_name": "Max"},
+                },
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "state": "disarmed",
+                    "attributes": {},
+                },
                 {"entity_id": "binary_sensor.fenster", "state": "on", "attributes": {}},
             ],
         }
@@ -666,9 +772,21 @@ class TestAwaySecurityFull:
         data = {
             "open_windows": [],
             "states": [
-                {"entity_id": "person.max", "state": "not_home", "attributes": {"friendly_name": "Max"}},
-                {"entity_id": "alarm_control_panel.home", "state": "disarmed", "attributes": {}},
-                {"entity_id": "light.wz", "state": "on", "attributes": {"friendly_name": "Wohnzimmer"}},
+                {
+                    "entity_id": "person.max",
+                    "state": "not_home",
+                    "attributes": {"friendly_name": "Max"},
+                },
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "state": "disarmed",
+                    "attributes": {},
+                },
+                {
+                    "entity_id": "light.wz",
+                    "state": "on",
+                    "attributes": {"friendly_name": "Wohnzimmer"},
+                },
             ],
         }
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
@@ -681,8 +799,16 @@ class TestAwaySecurityFull:
         data = {
             "open_windows": ["Fenster"],
             "states": [
-                {"entity_id": "person.max", "state": "home", "attributes": {"friendly_name": "Max"}},
-                {"entity_id": "alarm_control_panel.home", "state": "disarmed", "attributes": {}},
+                {
+                    "entity_id": "person.max",
+                    "state": "home",
+                    "attributes": {"friendly_name": "Max"},
+                },
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "state": "disarmed",
+                    "attributes": {},
+                },
             ],
         }
         result = await insight_engine._check_away_security_full(data)
@@ -695,8 +821,16 @@ class TestAwaySecurityFull:
             "open_windows": [],
             "open_doors": [],
             "states": [
-                {"entity_id": "person.max", "state": "not_home", "attributes": {"friendly_name": "Max"}},
-                {"entity_id": "alarm_control_panel.home", "state": "disarmed", "attributes": {}},
+                {
+                    "entity_id": "person.max",
+                    "state": "not_home",
+                    "attributes": {"friendly_name": "Max"},
+                },
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "state": "disarmed",
+                    "attributes": {},
+                },
             ],
         }
         result = await insight_engine._check_away_security_full(data)
@@ -709,8 +843,16 @@ class TestAwaySecurityFull:
             "open_windows": [],
             "open_doors": ["Haustuer"],
             "states": [
-                {"entity_id": "person.max", "state": "not_home", "attributes": {"friendly_name": "Max"}},
-                {"entity_id": "alarm_control_panel.home", "state": "armed_away", "attributes": {}},
+                {
+                    "entity_id": "person.max",
+                    "state": "not_home",
+                    "attributes": {"friendly_name": "Max"},
+                },
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "state": "armed_away",
+                    "attributes": {},
+                },
             ],
         }
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
@@ -724,8 +866,16 @@ class TestAwaySecurityFull:
             "open_windows": [],
             "open_doors": ["Haustuer"],
             "states": [
-                {"entity_id": "person.max", "state": "not_home", "attributes": {"friendly_name": "Max"}},
-                {"entity_id": "alarm_control_panel.home", "state": "disarmed", "attributes": {}},
+                {
+                    "entity_id": "person.max",
+                    "state": "not_home",
+                    "attributes": {"friendly_name": "Max"},
+                },
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "state": "disarmed",
+                    "attributes": {},
+                },
             ],
         }
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
@@ -746,8 +896,16 @@ class TestAwaySecurityFull:
         data = {
             "open_windows": [],
             "states": [
-                {"entity_id": "person.max", "state": "not_home", "attributes": {"friendly_name": "Max"}},
-                {"entity_id": "alarm_control_panel.home", "state": "armed_away", "attributes": {}},
+                {
+                    "entity_id": "person.max",
+                    "state": "not_home",
+                    "attributes": {"friendly_name": "Max"},
+                },
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "state": "armed_away",
+                    "attributes": {},
+                },
             ],
         }
         result = await insight_engine._check_away_security_full(data)
@@ -758,8 +916,8 @@ class TestAwaySecurityFull:
 # Phase 18: Health Work Pattern (3D+)
 # ============================================================
 
-class TestHealthWorkPattern:
 
+class TestHealthWorkPattern:
     @pytest.mark.asyncio
     async def test_working_too_long(self, insight_engine):
         activity_mock = MagicMock()
@@ -768,8 +926,12 @@ class TestHealthWorkPattern:
         insight_engine.activity = activity_mock
 
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 20, 0, tzinfo=timezone.utc)  # 20 Uhr
-            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            mock_dt.now.return_value = datetime(
+                2025, 6, 15, 20, 0, tzinfo=timezone.utc
+            )  # 20 Uhr
+            with patch.object(
+                insight_engine, "_get_title_for_home", return_value="Sir"
+            ):
                 result = await insight_engine._check_health_work_pattern({})
 
         assert result is not None
@@ -793,7 +955,9 @@ class TestHealthWorkPattern:
 
         with patch("assistant.insight_engine.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 6, 15, 21, 0, tzinfo=timezone.utc)
-            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            with patch.object(
+                insight_engine, "_get_title_for_home", return_value="Sir"
+            ):
                 result = await insight_engine._check_health_work_pattern(data)
 
         assert result is not None
@@ -816,7 +980,9 @@ class TestHealthWorkPattern:
 
         with patch("assistant.insight_engine.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 6, 15, 21, 0, tzinfo=timezone.utc)
-            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            with patch.object(
+                insight_engine, "_get_title_for_home", return_value="Sir"
+            ):
                 result = await insight_engine._check_health_work_pattern(data)
 
         assert result is not None
@@ -831,7 +997,9 @@ class TestHealthWorkPattern:
         insight_engine.activity = activity_mock
 
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0, tzinfo=timezone.utc)  # 14 Uhr
+            mock_dt.now.return_value = datetime(
+                2025, 6, 15, 14, 0, tzinfo=timezone.utc
+            )  # 14 Uhr
             result = await insight_engine._check_health_work_pattern({})
 
         assert result is None
@@ -873,8 +1041,8 @@ class TestHealthWorkPattern:
 # Phase 18: Humidity Contradiction (3D+)
 # ============================================================
 
-class TestHumidityContradiction:
 
+class TestHumidityContradiction:
     @pytest.mark.asyncio
     async def test_dehumidifier_plus_rain_plus_windows(self, insight_engine):
         data = {
@@ -897,7 +1065,11 @@ class TestHumidityContradiction:
             "open_windows": ["Fenster"],
             "forecast": [{"condition": "pouring"}],
             "states": [
-                {"entity_id": "climate.wz", "state": "dry", "attributes": {"hvac_mode": "dry"}},
+                {
+                    "entity_id": "climate.wz",
+                    "state": "dry",
+                    "attributes": {"hvac_mode": "dry"},
+                },
             ],
         }
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
@@ -955,7 +1127,9 @@ class TestHumidityContradiction:
         data = {
             "open_windows": [],
             "forecast": [{"condition": "rainy"}],
-            "states": [{"entity_id": "switch.entfeuchter", "state": "on", "attributes": {}}],
+            "states": [
+                {"entity_id": "switch.entfeuchter", "state": "on", "attributes": {}}
+            ],
         }
         result = await insight_engine._check_humidity_contradiction(data)
         assert result is None
@@ -975,7 +1149,9 @@ class TestHumidityContradiction:
         data = {
             "open_windows": ["Fenster"],
             "forecast": [{"condition": "cloudy", "precipitation": 5}],
-            "states": [{"entity_id": "switch.dehumidifier", "state": "on", "attributes": {}}],
+            "states": [
+                {"entity_id": "switch.dehumidifier", "state": "on", "attributes": {}}
+            ],
         }
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
             result = await insight_engine._check_humidity_contradiction(data)
@@ -986,8 +1162,8 @@ class TestHumidityContradiction:
 # Night Security Check
 # ============================================================
 
-class TestNightSecurity:
 
+class TestNightSecurity:
     @pytest.mark.asyncio
     async def test_late_night_windows_open(self, insight_engine):
         """Nach 23 Uhr + Fenster offen + Person zuhause → Hinweis."""
@@ -1001,8 +1177,12 @@ class TestNightSecurity:
             "states": [],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 30, tzinfo=timezone.utc)
-            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            mock_dt.now.return_value = datetime(
+                2025, 6, 15, 23, 30, tzinfo=timezone.utc
+            )
+            with patch.object(
+                insight_engine, "_get_title_for_home", return_value="Sir"
+            ):
                 result = await insight_engine._check_night_security(data)
         assert result is not None
         assert result["check"] == "night_security"
@@ -1024,7 +1204,9 @@ class TestNightSecurity:
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 6, 15, 0, 15, tzinfo=timezone.utc)
-            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            with patch.object(
+                insight_engine, "_get_title_for_home", return_value="Sir"
+            ):
                 result = await insight_engine._check_night_security(data)
         assert result is not None
         assert result["urgency"] == "high"
@@ -1058,7 +1240,9 @@ class TestNightSecurity:
             "states": [],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 30, tzinfo=timezone.utc)
+            mock_dt.now.return_value = datetime(
+                2025, 6, 15, 23, 30, tzinfo=timezone.utc
+            )
             result = await insight_engine._check_night_security(data)
         assert result is None
 
@@ -1074,7 +1258,9 @@ class TestNightSecurity:
             "states": [],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 30, tzinfo=timezone.utc)
+            mock_dt.now.return_value = datetime(
+                2025, 6, 15, 23, 30, tzinfo=timezone.utc
+            )
             result = await insight_engine._check_night_security(data)
         assert result is None
 
@@ -1090,7 +1276,9 @@ class TestNightSecurity:
             "states": [],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 30, tzinfo=timezone.utc)
+            mock_dt.now.return_value = datetime(
+                2025, 6, 15, 23, 30, tzinfo=timezone.utc
+            )
             result = await insight_engine._check_night_security(data)
         assert result is None
 
@@ -1108,7 +1296,9 @@ class TestNightSecurity:
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 6, 15, 3, 0, tzinfo=timezone.utc)
-            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            with patch.object(
+                insight_engine, "_get_title_for_home", return_value="Sir"
+            ):
                 result = await insight_engine._check_night_security(data)
         assert result is not None
 
@@ -1125,8 +1315,12 @@ class TestNightSecurity:
             "states": [],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 45, tzinfo=timezone.utc)
-            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            mock_dt.now.return_value = datetime(
+                2025, 6, 15, 23, 45, tzinfo=timezone.utc
+            )
+            with patch.object(
+                insight_engine, "_get_title_for_home", return_value="Sir"
+            ):
                 result = await insight_engine._check_night_security(data)
         assert result is not None
         assert "Fenster" in result["message"]
@@ -1138,14 +1332,16 @@ class TestNightSecurity:
 # Heating vs Sun Check
 # ============================================================
 
-class TestHeatingVsSun:
 
+class TestHeatingVsSun:
     @pytest.mark.asyncio
     async def test_heating_plus_sunny_warm(self, insight_engine):
         """Heizung laeuft + sonnig + warm → Hinweis."""
         data = {
             "weather": {"condition": "sunny", "temperature": 22},
-            "climate": [{"name": "Wohnzimmer", "hvac_action": "heating", "state": "heat"}],
+            "climate": [
+                {"name": "Wohnzimmer", "hvac_action": "heating", "state": "heat"}
+            ],
             "states": [],
         }
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
@@ -1163,8 +1359,14 @@ class TestHeatingVsSun:
             "weather": {"condition": "sunny", "temperature": 20},
             "climate": [{"name": "WZ", "hvac_action": "heating", "state": "heat"}],
             "states": [
-                {"entity_id": "cover.wohnzimmer", "state": "closed",
-                 "attributes": {"friendly_name": "WZ Rollladen", "current_position": 0}},
+                {
+                    "entity_id": "cover.wohnzimmer",
+                    "state": "closed",
+                    "attributes": {
+                        "friendly_name": "WZ Rollladen",
+                        "current_position": 0,
+                    },
+                },
             ],
         }
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
@@ -1251,8 +1453,8 @@ class TestHeatingVsSun:
 # Forgotten Devices Check
 # ============================================================
 
-class TestForgottenDevices:
 
+class TestForgottenDevices:
     @pytest.mark.asyncio
     async def test_media_playing_all_away(self, insight_engine):
         """Media Player laeuft + alle weg → Hinweis."""
@@ -1260,13 +1462,21 @@ class TestForgottenDevices:
             "persons_home": [],
             "persons_away": ["Max"],
             "states": [
-                {"entity_id": "media_player.tv_wz", "state": "playing",
-                 "attributes": {"friendly_name": "Fernseher WZ", "media_title": "Netflix"}},
+                {
+                    "entity_id": "media_player.tv_wz",
+                    "state": "playing",
+                    "attributes": {
+                        "friendly_name": "Fernseher WZ",
+                        "media_title": "Netflix",
+                    },
+                },
             ],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0, tzinfo=timezone.utc)
-            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            with patch.object(
+                insight_engine, "_get_title_for_home", return_value="Sir"
+            ):
                 result = await insight_engine._check_forgotten_devices(data)
         assert result is not None
         assert result["check"] == "forgotten_devices"
@@ -1282,13 +1492,18 @@ class TestForgottenDevices:
             "persons_home": [],
             "persons_away": ["Max"],
             "states": [
-                {"entity_id": "media_player.tv", "state": "paused",
-                 "attributes": {"friendly_name": "TV"}},
+                {
+                    "entity_id": "media_player.tv",
+                    "state": "paused",
+                    "attributes": {"friendly_name": "TV"},
+                },
             ],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0, tzinfo=timezone.utc)
-            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            with patch.object(
+                insight_engine, "_get_title_for_home", return_value="Sir"
+            ):
                 result = await insight_engine._check_forgotten_devices(data)
         assert result is not None
 
@@ -1299,13 +1514,18 @@ class TestForgottenDevices:
             "persons_home": ["Max"],
             "persons_away": [],
             "states": [
-                {"entity_id": "media_player.tv", "state": "playing",
-                 "attributes": {"friendly_name": "Fernseher"}},
+                {
+                    "entity_id": "media_player.tv",
+                    "state": "playing",
+                    "attributes": {"friendly_name": "Fernseher"},
+                },
             ],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 6, 15, 2, 30, tzinfo=timezone.utc)
-            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            with patch.object(
+                insight_engine, "_get_title_for_home", return_value="Sir"
+            ):
                 result = await insight_engine._check_forgotten_devices(data)
         assert result is not None
         assert result["urgency"] == "low"
@@ -1318,8 +1538,11 @@ class TestForgottenDevices:
             "persons_home": ["Max"],
             "persons_away": [],
             "states": [
-                {"entity_id": "media_player.tv", "state": "playing",
-                 "attributes": {"friendly_name": "TV"}},
+                {
+                    "entity_id": "media_player.tv",
+                    "state": "playing",
+                    "attributes": {"friendly_name": "TV"},
+                },
             ],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
@@ -1349,8 +1572,11 @@ class TestForgottenDevices:
             "persons_home": [],
             "persons_away": [],
             "states": [
-                {"entity_id": "media_player.tv", "state": "playing",
-                 "attributes": {"friendly_name": "TV"}},
+                {
+                    "entity_id": "media_player.tv",
+                    "state": "playing",
+                    "attributes": {"friendly_name": "TV"},
+                },
             ],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
@@ -1365,15 +1591,23 @@ class TestForgottenDevices:
             "persons_home": [],
             "persons_away": ["Max"],
             "states": [
-                {"entity_id": "media_player.tv_wz", "state": "playing",
-                 "attributes": {"friendly_name": "Fernseher WZ"}},
-                {"entity_id": "media_player.sonos", "state": "playing",
-                 "attributes": {"friendly_name": "Sonos", "media_title": "Spotify"}},
+                {
+                    "entity_id": "media_player.tv_wz",
+                    "state": "playing",
+                    "attributes": {"friendly_name": "Fernseher WZ"},
+                },
+                {
+                    "entity_id": "media_player.sonos",
+                    "state": "playing",
+                    "attributes": {"friendly_name": "Sonos", "media_title": "Spotify"},
+                },
             ],
         }
         with patch("assistant.insight_engine.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0, tzinfo=timezone.utc)
-            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            with patch.object(
+                insight_engine, "_get_title_for_home", return_value="Sir"
+            ):
                 result = await insight_engine._check_forgotten_devices(data)
         assert result is not None
         assert "Fernseher WZ" in result["message"]

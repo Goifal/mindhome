@@ -11,12 +11,18 @@ import pytest
 # Standalone copies of the production logic under test
 # ---------------------------------------------------------------------------
 
-OWNER_ONLY_ACTIONS = frozenset({
-    "lock_door", "unlock_door",
-    "arm_security_system", "arm_alarm", "disarm_alarm",
-    "open_garage", "close_garage",
-    "open_cover",
-})
+OWNER_ONLY_ACTIONS = frozenset(
+    {
+        "lock_door",
+        "unlock_door",
+        "arm_security_system",
+        "arm_alarm",
+        "disarm_alarm",
+        "open_garage",
+        "close_garage",
+        "open_cover",
+    }
+)
 
 
 def check_trigger_match(cond, entity_id, new_state, old_state, attributes):
@@ -84,6 +90,7 @@ def check_trigger_match(cond, entity_id, new_state, old_state, attributes):
 # 1. state_change trigger tests
 # ---------------------------------------------------------------------------
 
+
 class TestStateChange:
     """Tests for trigger_type == 'state_change'."""
 
@@ -112,11 +119,14 @@ class TestStateChange:
         cond = {"trigger_type": "state_change", "trigger_value": "light.bedroom:on"}
         assert check_trigger_match(cond, "light.kitchen", "on", "off", {}) is False
 
-    @pytest.mark.parametrize("new,old,expected", [
-        ("on", "off", True),
-        ("off", "on", True),
-        ("unavailable", "on", True),
-    ])
+    @pytest.mark.parametrize(
+        "new,old,expected",
+        [
+            ("on", "off", True),
+            ("off", "on", True),
+            ("unavailable", "on", True),
+        ],
+    )
     def test_any_change_various_transitions(self, new, old, expected):
         cond = {"trigger_type": "state_change", "trigger_value": "switch.fan"}
         assert check_trigger_match(cond, "switch.fan", new, old, {}) is expected
@@ -125,6 +135,7 @@ class TestStateChange:
 # ---------------------------------------------------------------------------
 # 2. person_arrives trigger tests
 # ---------------------------------------------------------------------------
+
 
 class TestPersonArrives:
     """Tests for trigger_type == 'person_arrives'."""
@@ -135,7 +146,10 @@ class TestPersonArrives:
 
     def test_non_person_entity(self):
         cond = {"trigger_type": "person_arrives", "trigger_value": "alice"}
-        assert check_trigger_match(cond, "device_tracker.alice", "home", "away", {}) is False
+        assert (
+            check_trigger_match(cond, "device_tracker.alice", "home", "away", {})
+            is False
+        )
 
     def test_wrong_person(self):
         cond = {"trigger_type": "person_arrives", "trigger_value": "bob"}
@@ -158,6 +172,7 @@ class TestPersonArrives:
 # ---------------------------------------------------------------------------
 # 3. person_leaves trigger tests
 # ---------------------------------------------------------------------------
+
 
 class TestPersonLeaves:
     """Tests for trigger_type == 'person_leaves'."""
@@ -188,23 +203,29 @@ class TestPersonLeaves:
 # 4. state_attribute trigger tests
 # ---------------------------------------------------------------------------
 
+
 class TestStateAttribute:
     """Tests for trigger_type == 'state_attribute'."""
 
     # --- numeric comparisons ---
 
-    @pytest.mark.parametrize("operator,attr_val,target_val,expected", [
-        (">", "75", "50", True),
-        (">", "50", "50", False),
-        (">", "25", "50", False),
-        ("<", "25", "50", True),
-        ("<", "50", "50", False),
-        ("<", "75", "50", False),
-        ("=", "50", "50", True),
-        ("=", "50.0", "50", True),
-        ("=", "49", "50", False),
-    ])
-    def test_numeric_comparisons_colon_delim(self, operator, attr_val, target_val, expected):
+    @pytest.mark.parametrize(
+        "operator,attr_val,target_val,expected",
+        [
+            (">", "75", "50", True),
+            (">", "50", "50", False),
+            (">", "25", "50", False),
+            ("<", "25", "50", True),
+            ("<", "50", "50", False),
+            ("<", "75", "50", False),
+            ("=", "50", "50", True),
+            ("=", "50.0", "50", True),
+            ("=", "49", "50", False),
+        ],
+    )
+    def test_numeric_comparisons_colon_delim(
+        self, operator, attr_val, target_val, expected
+    ):
         cond = {
             "trigger_type": "state_attribute",
             "trigger_value": f"sensor.temp:temperature:{operator}:{target_val}",
@@ -212,18 +233,25 @@ class TestStateAttribute:
         attrs = {"temperature": attr_val}
         assert check_trigger_match(cond, "sensor.temp", "on", "off", attrs) is expected
 
-    @pytest.mark.parametrize("operator,attr_val,target_val,expected", [
-        (">", "80", "70", True),
-        ("<", "60", "70", True),
-        ("=", "70", "70", True),
-    ])
-    def test_numeric_comparisons_pipe_delim(self, operator, attr_val, target_val, expected):
+    @pytest.mark.parametrize(
+        "operator,attr_val,target_val,expected",
+        [
+            (">", "80", "70", True),
+            ("<", "60", "70", True),
+            ("=", "70", "70", True),
+        ],
+    )
+    def test_numeric_comparisons_pipe_delim(
+        self, operator, attr_val, target_val, expected
+    ):
         cond = {
             "trigger_type": "state_attribute",
             "trigger_value": f"sensor.humidity|humidity|{operator}|{target_val}",
         }
         attrs = {"humidity": attr_val}
-        assert check_trigger_match(cond, "sensor.humidity", "on", "off", attrs) is expected
+        assert (
+            check_trigger_match(cond, "sensor.humidity", "on", "off", attrs) is expected
+        )
 
     # --- string comparison ---
 
@@ -264,19 +292,26 @@ class TestStateAttribute:
 
     # --- insufficient parts ---
 
-    @pytest.mark.parametrize("trigger_value", [
-        "sensor.temp:temperature",
-        "sensor.temp:temperature:>",
-        "sensor.temp",
-    ])
+    @pytest.mark.parametrize(
+        "trigger_value",
+        [
+            "sensor.temp:temperature",
+            "sensor.temp:temperature:>",
+            "sensor.temp",
+        ],
+    )
     def test_insufficient_parts(self, trigger_value):
         cond = {"trigger_type": "state_attribute", "trigger_value": trigger_value}
-        assert check_trigger_match(cond, "sensor.temp", "on", "off", {"temperature": "75"}) is False
+        assert (
+            check_trigger_match(cond, "sensor.temp", "on", "off", {"temperature": "75"})
+            is False
+        )
 
 
 # ---------------------------------------------------------------------------
 # 5. Unknown trigger type
 # ---------------------------------------------------------------------------
+
 
 class TestUnknownTrigger:
     """Unknown or empty trigger types must return False."""
@@ -295,19 +330,23 @@ class TestUnknownTrigger:
 # 6. OWNER_ONLY_ACTIONS
 # ---------------------------------------------------------------------------
 
+
 class TestOwnerOnlyActions:
     """Verify the OWNER_ONLY_ACTIONS set contains expected security actions."""
 
-    @pytest.mark.parametrize("action", [
-        "lock_door",
-        "unlock_door",
-        "arm_security_system",
-        "arm_alarm",
-        "disarm_alarm",
-        "open_garage",
-        "close_garage",
-        "open_cover",
-    ])
+    @pytest.mark.parametrize(
+        "action",
+        [
+            "lock_door",
+            "unlock_door",
+            "arm_security_system",
+            "arm_alarm",
+            "disarm_alarm",
+            "open_garage",
+            "close_garage",
+            "open_cover",
+        ],
+    )
     def test_expected_action_present(self, action):
         assert action in OWNER_ONLY_ACTIONS
 
@@ -317,11 +356,14 @@ class TestOwnerOnlyActions:
     def test_exact_size(self):
         assert len(OWNER_ONLY_ACTIONS) == 8
 
-    @pytest.mark.parametrize("action", [
-        "turn_on",
-        "turn_off",
-        "toggle",
-        "set_temperature",
-    ])
+    @pytest.mark.parametrize(
+        "action",
+        [
+            "turn_on",
+            "turn_off",
+            "toggle",
+            "set_temperature",
+        ],
+    )
     def test_non_security_action_absent(self, action):
         assert action not in OWNER_ONLY_ACTIONS

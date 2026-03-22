@@ -42,9 +42,11 @@ def mock_settings():
 
 @pytest.fixture
 def summarizer(ollama_mock, mock_settings):
-    with patch("assistant.summarizer.yaml_config", SUMMARIZER_CONFIG), \
-         patch("assistant.summarizer.settings", mock_settings), \
-         patch("assistant.config.settings", mock_settings):
+    with (
+        patch("assistant.summarizer.yaml_config", SUMMARIZER_CONFIG),
+        patch("assistant.summarizer.settings", mock_settings),
+        patch("assistant.config.settings", mock_settings),
+    ):
         s = DailySummarizer(ollama_mock, memory=None)
     return s
 
@@ -66,12 +68,15 @@ def summarizer_full(summarizer, redis_mock, chroma_mock):
 # _generate_summary Tests
 # ============================================================
 
+
 class TestGenerateSummary:
     @pytest.mark.asyncio
     async def test_generates_summary_successfully(self, summarizer, ollama_mock):
-        ollama_mock.chat = AsyncMock(return_value={
-            "message": {"content": "  Die Zusammenfassung.  "},
-        })
+        ollama_mock.chat = AsyncMock(
+            return_value={
+                "message": {"content": "  Die Zusammenfassung.  "},
+            }
+        )
         result = await summarizer._generate_summary("Test prompt", 512)
         assert result == "Die Zusammenfassung."
         ollama_mock.chat.assert_called_once()
@@ -81,9 +86,11 @@ class TestGenerateSummary:
 
     @pytest.mark.asyncio
     async def test_returns_none_on_empty_response(self, summarizer, ollama_mock):
-        ollama_mock.chat = AsyncMock(return_value={
-            "message": {"content": ""},
-        })
+        ollama_mock.chat = AsyncMock(
+            return_value={
+                "message": {"content": ""},
+            }
+        )
         result = await summarizer._generate_summary("Prompt", 512)
         assert result is None
 
@@ -101,9 +108,11 @@ class TestGenerateSummary:
 
     @pytest.mark.asyncio
     async def test_uses_system_prompt(self, summarizer, ollama_mock):
-        ollama_mock.chat = AsyncMock(return_value={
-            "message": {"content": "Summary"},
-        })
+        ollama_mock.chat = AsyncMock(
+            return_value={
+                "message": {"content": "Summary"},
+            }
+        )
         await summarizer._generate_summary("User prompt", 256)
         messages = ollama_mock.chat.call_args[1]["messages"]
         assert messages[0]["role"] == "system"
@@ -116,16 +125,27 @@ class TestGenerateSummary:
 # _get_conversations_for_date Tests
 # ============================================================
 
+
 class TestGetConversationsForDate:
     @pytest.mark.asyncio
-    async def test_uses_memory_manager_first(self, summarizer, ollama_mock, mock_settings):
+    async def test_uses_memory_manager_first(
+        self, summarizer, ollama_mock, mock_settings
+    ):
         memory = MagicMock()
-        memory.get_conversations_for_date = AsyncMock(return_value=[
-            {"role": "user", "content": "Hello", "timestamp": "2025-06-15T10:00:00"},
-        ])
-        with patch("assistant.summarizer.yaml_config", SUMMARIZER_CONFIG), \
-             patch("assistant.summarizer.settings", mock_settings), \
-             patch("assistant.config.settings", mock_settings):
+        memory.get_conversations_for_date = AsyncMock(
+            return_value=[
+                {
+                    "role": "user",
+                    "content": "Hello",
+                    "timestamp": "2025-06-15T10:00:00",
+                },
+            ]
+        )
+        with (
+            patch("assistant.summarizer.yaml_config", SUMMARIZER_CONFIG),
+            patch("assistant.summarizer.settings", mock_settings),
+            patch("assistant.config.settings", mock_settings),
+        ):
             s = DailySummarizer(ollama_mock, memory=memory)
 
         result = await s._get_conversations_for_date("2025-06-15")
@@ -134,9 +154,19 @@ class TestGetConversationsForDate:
 
     @pytest.mark.asyncio
     async def test_fallback_to_redis(self, summarizer_with_redis, redis_mock):
-        conv1 = json.dumps({"role": "user", "content": "Hi", "timestamp": "2025-06-15T09:00:00"})
-        conv2 = json.dumps({"role": "assistant", "content": "Hello", "timestamp": "2025-06-15T09:01:00"})
-        conv_other = json.dumps({"role": "user", "content": "Bye", "timestamp": "2025-06-16T10:00:00"})
+        conv1 = json.dumps(
+            {"role": "user", "content": "Hi", "timestamp": "2025-06-15T09:00:00"}
+        )
+        conv2 = json.dumps(
+            {
+                "role": "assistant",
+                "content": "Hello",
+                "timestamp": "2025-06-15T09:01:00",
+            }
+        )
+        conv_other = json.dumps(
+            {"role": "user", "content": "Bye", "timestamp": "2025-06-16T10:00:00"}
+        )
         redis_mock.lrange = AsyncMock(return_value=[conv1, conv2, conv_other])
 
         result = await summarizer_with_redis._get_conversations_for_date("2025-06-15")
@@ -154,7 +184,9 @@ class TestGetConversationsForDate:
 
     @pytest.mark.asyncio
     async def test_handles_malformed_json(self, summarizer_with_redis, redis_mock):
-        valid = json.dumps({"role": "user", "content": "Valid", "timestamp": "2025-06-15T10:00:00"})
+        valid = json.dumps(
+            {"role": "user", "content": "Valid", "timestamp": "2025-06-15T10:00:00"}
+        )
         redis_mock.lrange = AsyncMock(return_value=[valid, b"not json", b"{broken"])
 
         result = await summarizer_with_redis._get_conversations_for_date("2025-06-15")
@@ -177,9 +209,12 @@ class TestGetConversationsForDate:
 # summarize_week Tests
 # ============================================================
 
+
 class TestSummarizeWeek:
     @pytest.mark.asyncio
-    async def test_returns_existing_weekly_summary(self, summarizer_with_redis, redis_mock):
+    async def test_returns_existing_weekly_summary(
+        self, summarizer_with_redis, redis_mock
+    ):
         """If weekly summary exists, return it without LLM call."""
         redis_mock.get = AsyncMock(return_value="Existing weekly summary")
 
@@ -187,7 +222,9 @@ class TestSummarizeWeek:
         assert result == "Existing weekly summary"
 
     @pytest.mark.asyncio
-    async def test_no_daily_summaries_returns_none(self, summarizer_with_redis, redis_mock):
+    async def test_no_daily_summaries_returns_none(
+        self, summarizer_with_redis, redis_mock
+    ):
         """If no daily summaries exist for the week, return None."""
         redis_mock.get = AsyncMock(return_value=None)
 
@@ -195,7 +232,9 @@ class TestSummarizeWeek:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_generates_weekly_from_dailies(self, summarizer_with_redis, redis_mock, ollama_mock):
+    async def test_generates_weekly_from_dailies(
+        self, summarizer_with_redis, redis_mock, ollama_mock
+    ):
         """Should generate weekly summary from daily summaries."""
         call_count = [0]
 
@@ -210,9 +249,11 @@ class TestSummarizeWeek:
             return None
 
         redis_mock.get = AsyncMock(side_effect=mock_get)
-        ollama_mock.chat = AsyncMock(return_value={
-            "message": {"content": "Weekly summary generated."},
-        })
+        ollama_mock.chat = AsyncMock(
+            return_value={
+                "message": {"content": "Weekly summary generated."},
+            }
+        )
 
         result = await summarizer_with_redis.summarize_week("2025-06-15")
         assert result == "Weekly summary generated."
@@ -231,9 +272,12 @@ class TestSummarizeWeek:
 # summarize_month Tests
 # ============================================================
 
+
 class TestSummarizeMonth:
     @pytest.mark.asyncio
-    async def test_returns_existing_monthly_summary(self, summarizer_with_redis, redis_mock):
+    async def test_returns_existing_monthly_summary(
+        self, summarizer_with_redis, redis_mock
+    ):
         redis_mock.get = AsyncMock(return_value="Existing monthly summary")
 
         result = await summarizer_with_redis.summarize_month("2025-06")
@@ -246,7 +290,9 @@ class TestSummarizeMonth:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_generates_monthly_from_dailies(self, summarizer_with_redis, redis_mock, ollama_mock):
+    async def test_generates_monthly_from_dailies(
+        self, summarizer_with_redis, redis_mock, ollama_mock
+    ):
         """Should collect daily summaries for the month and generate monthly summary."""
         call_count = [0]
 
@@ -261,16 +307,20 @@ class TestSummarizeMonth:
             return None
 
         redis_mock.get = AsyncMock(side_effect=mock_get)
-        ollama_mock.chat = AsyncMock(return_value={
-            "message": {"content": "Monthly summary: June was productive."},
-        })
+        ollama_mock.chat = AsyncMock(
+            return_value={
+                "message": {"content": "Monthly summary: June was productive."},
+            }
+        )
 
         result = await summarizer_with_redis.summarize_month("2025-06")
         assert result == "Monthly summary: June was productive."
         redis_mock.setex.assert_called()
 
     @pytest.mark.asyncio
-    async def test_month_defaults_to_last_month(self, summarizer_with_redis, redis_mock):
+    async def test_month_defaults_to_last_month(
+        self, summarizer_with_redis, redis_mock
+    ):
         """Without month param, should default to last month."""
         redis_mock.get = AsyncMock(return_value=None)
         result = await summarizer_with_redis.summarize_month()
@@ -287,6 +337,7 @@ class TestSummarizeMonth:
 # ============================================================
 # stop Tests
 # ============================================================
+
 
 class TestStop:
     @pytest.mark.asyncio
@@ -314,6 +365,7 @@ class TestStop:
 # set_notify_callback Tests
 # ============================================================
 
+
 class TestSetNotifyCallback:
     def test_sets_callback(self, summarizer):
         callback = AsyncMock()
@@ -332,6 +384,7 @@ class TestSetNotifyCallback:
 # _store_personality_snapshot Tests
 # ============================================================
 
+
 class TestStorePersonalitySnapshot:
     @pytest.mark.asyncio
     async def test_no_redis(self, summarizer):
@@ -341,12 +394,14 @@ class TestStorePersonalitySnapshot:
 
     @pytest.mark.asyncio
     async def test_stores_snapshot(self, summarizer_with_redis, redis_mock):
-        redis_mock.get = AsyncMock(side_effect=[
-            "100",   # total_interactions
-            "85",    # positive_reactions
-            "75",    # formality
-            None,    # get_summary check (for monthly summary integration)
-        ])
+        redis_mock.get = AsyncMock(
+            side_effect=[
+                "100",  # total_interactions
+                "85",  # positive_reactions
+                "75",  # formality
+                None,  # get_summary check (for monthly summary integration)
+            ]
+        )
         redis_mock.lrange = AsyncMock(return_value=["0.6", "0.7", "0.8"])
 
         await summarizer_with_redis._store_personality_snapshot()
@@ -373,15 +428,18 @@ class TestStorePersonalitySnapshot:
 
     @pytest.mark.asyncio
     async def test_appends_to_existing_monthly_summary(
-        self, summarizer_full, redis_mock, chroma_mock,
+        self,
+        summarizer_full,
+        redis_mock,
+        chroma_mock,
     ):
         """If monthly summary exists, snapshot data should be appended."""
         call_idx = [0]
         responses = [
-            "50",                           # total_interactions
-            "40",                           # positive_reactions
-            "80",                           # formality
-            "Existing monthly summary",     # existing monthly summary (_get_summary)
+            "50",  # total_interactions
+            "40",  # positive_reactions
+            "80",  # formality
+            "Existing monthly summary",  # existing monthly summary (_get_summary)
         ]
 
         async def mock_get(key):
@@ -402,7 +460,10 @@ class TestStorePersonalitySnapshot:
         found_updated = False
         for c in setex_calls:
             stored = str(c)
-            if "Personality-Evolution" in stored and "Existing monthly summary" in stored:
+            if (
+                "Personality-Evolution" in stored
+                and "Existing monthly summary" in stored
+            ):
                 found_updated = True
                 break
         assert found_updated
@@ -418,9 +479,12 @@ class TestStorePersonalitySnapshot:
 # _store_summary edge cases
 # ============================================================
 
+
 class TestStoreSummaryEdgeCases:
     @pytest.mark.asyncio
-    async def test_stores_weekly_type_correctly(self, summarizer_full, redis_mock, chroma_mock):
+    async def test_stores_weekly_type_correctly(
+        self, summarizer_full, redis_mock, chroma_mock
+    ):
         await summarizer_full._store_summary("2025-W25", WEEKLY, "Week summary")
         redis_mock.setex.assert_called_once_with(
             "mha:summary:weekly:2025-W25", 90 * 86400, "Week summary"
@@ -439,7 +503,9 @@ class TestStoreSummaryEdgeCases:
         )
 
     @pytest.mark.asyncio
-    async def test_chroma_error_does_not_affect_redis(self, summarizer_full, redis_mock, chroma_mock):
+    async def test_chroma_error_does_not_affect_redis(
+        self, summarizer_full, redis_mock, chroma_mock
+    ):
         """ChromaDB failure should not prevent Redis storage."""
         chroma_mock.upsert.side_effect = Exception("ChromaDB error")
         await summarizer_full._store_summary("2025-06-15", DAILY, "Content")
@@ -450,12 +516,17 @@ class TestStoreSummaryEdgeCases:
 # summarize_day edge cases
 # ============================================================
 
+
 class TestSummarizeDayEdgeCases:
     @pytest.mark.asyncio
-    async def test_llm_returns_none(self, summarizer_with_redis, redis_mock, ollama_mock):
+    async def test_llm_returns_none(
+        self, summarizer_with_redis, redis_mock, ollama_mock
+    ):
         """If LLM fails, summarize_day should return None."""
         redis_mock.get = AsyncMock(return_value=None)
-        conv = json.dumps({"role": "user", "content": "Test", "timestamp": "2025-06-15T10:00:00"})
+        conv = json.dumps(
+            {"role": "user", "content": "Test", "timestamp": "2025-06-15T10:00:00"}
+        )
         redis_mock.lrange = AsyncMock(return_value=[conv])
         ollama_mock.chat = AsyncMock(side_effect=Exception("LLM error"))
 
@@ -470,14 +541,24 @@ class TestSummarizeDayEdgeCases:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_single_message_conversation(self, summarizer_with_redis, redis_mock, ollama_mock):
+    async def test_single_message_conversation(
+        self, summarizer_with_redis, redis_mock, ollama_mock
+    ):
         """A single user message should still produce a summary."""
         redis_mock.get = AsyncMock(return_value=None)
-        conv = json.dumps({"role": "user", "content": "Guten Morgen!", "timestamp": "2025-06-15T08:00:00"})
+        conv = json.dumps(
+            {
+                "role": "user",
+                "content": "Guten Morgen!",
+                "timestamp": "2025-06-15T08:00:00",
+            }
+        )
         redis_mock.lrange = AsyncMock(return_value=[conv])
-        ollama_mock.chat = AsyncMock(return_value={
-            "message": {"content": "Kurze Begruessung am Morgen."},
-        })
+        ollama_mock.chat = AsyncMock(
+            return_value={
+                "message": {"content": "Kurze Begruessung am Morgen."},
+            }
+        )
 
         result = await summarizer_with_redis.summarize_day("2025-06-15")
         assert result == "Kurze Begruessung am Morgen."
@@ -486,6 +567,7 @@ class TestSummarizeDayEdgeCases:
 # ============================================================
 # _get_summary edge cases
 # ============================================================
+
 
 class TestGetSummaryEdgeCases:
     @pytest.mark.asyncio
@@ -496,7 +578,9 @@ class TestGetSummaryEdgeCases:
         assert result == "Bytes summary content"
 
     @pytest.mark.asyncio
-    async def test_returns_none_for_missing_key(self, summarizer_with_redis, redis_mock):
+    async def test_returns_none_for_missing_key(
+        self, summarizer_with_redis, redis_mock
+    ):
         redis_mock.get = AsyncMock(return_value=None)
         result = await summarizer_with_redis._get_summary("2099-01-01", DAILY)
         assert result is None
@@ -505,6 +589,7 @@ class TestGetSummaryEdgeCases:
 # ============================================================
 # Build prompt edge cases
 # ============================================================
+
 
 class TestBuildPromptEdgeCases:
     def test_daily_prompt_empty_conversations(self, summarizer):
@@ -534,7 +619,11 @@ class TestBuildPromptEdgeCases:
     def test_daily_prompt_many_conversations(self, summarizer):
         """Should handle a large number of conversations."""
         convs = [
-            {"role": "user", "content": f"Message {i}", "timestamp": f"2025-06-15T{10+i%12}:00:00"}
+            {
+                "role": "user",
+                "content": f"Message {i}",
+                "timestamp": f"2025-06-15T{10 + i % 12}:00:00",
+            }
             for i in range(50)
         ]
         prompt = summarizer._build_daily_prompt("2025-06-15", convs)

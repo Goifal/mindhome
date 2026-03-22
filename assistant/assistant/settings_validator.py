@@ -80,7 +80,11 @@ _SCHEMA = {
 # Household member schema
 _MEMBER_SCHEMA = {
     "name": {"type": str, "required": True},
-    "role": {"type": str, "required": True, "values": ["owner", "member", "child", "guest"]},
+    "role": {
+        "type": str,
+        "required": True,
+        "values": ["owner", "member", "child", "guest"],
+    },
 }
 
 
@@ -160,8 +164,14 @@ def validate_settings(config: dict) -> list[str]:
             for field_name, field_schema in _MEMBER_SCHEMA.items():
                 val = member.get(field_name)
                 if field_schema.get("required") and not val:
-                    warnings.append(f"household.members[{i}].{field_name}: Pflichtfeld fehlt")
-                if val and "values" in field_schema and val not in field_schema["values"]:
+                    warnings.append(
+                        f"household.members[{i}].{field_name}: Pflichtfeld fehlt"
+                    )
+                if (
+                    val
+                    and "values" in field_schema
+                    and val not in field_schema["values"]
+                ):
                     warnings.append(
                         f"household.members[{i}].{field_name}: '{val}' nicht in "
                         f"{field_schema['values']}"

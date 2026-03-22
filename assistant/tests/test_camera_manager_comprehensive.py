@@ -25,25 +25,30 @@ def ha():
 @pytest.fixture
 def ollama():
     mock = AsyncMock()
-    mock.chat = AsyncMock(return_value={
-        "message": {"content": "Eine Person steht vor der Tuer."},
-    })
+    mock.chat = AsyncMock(
+        return_value={
+            "message": {"content": "Eine Person steht vor der Tuer."},
+        }
+    )
     return mock
 
 
 @pytest.fixture
 def cm(ha, ollama):
-    with patch("assistant.camera_manager.yaml_config", {
-        "cameras": {
-            "enabled": True,
-            "vision_model": "llava",
-            "camera_map": {
-                "haustuer": "camera.haustuer",
-                "garage": "camera.garage",
-                "garten": "camera.garten_cam",
-            },
-        }
-    }):
+    with patch(
+        "assistant.camera_manager.yaml_config",
+        {
+            "cameras": {
+                "enabled": True,
+                "vision_model": "llava",
+                "camera_map": {
+                    "haustuer": "camera.haustuer",
+                    "garage": "camera.garage",
+                    "garten": "camera.garten_cam",
+                },
+            }
+        },
+    ):
         return CameraManager(ha, ollama)
 
 
@@ -56,39 +61,45 @@ class TestFindCameraAdvanced:
     @pytest.mark.asyncio
     async def test_find_by_friendly_name(self, cm, ha):
         """Camera found by friendly_name match."""
-        ha.get_states = AsyncMock(return_value=[
-            {
-                "entity_id": "camera.front_cam",
-                "state": "idle",
-                "attributes": {"friendly_name": "Vordere Haustuer Kamera"},
-            },
-        ])
+        ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "camera.front_cam",
+                    "state": "idle",
+                    "attributes": {"friendly_name": "Vordere Haustuer Kamera"},
+                },
+            ]
+        )
         result = await cm._find_camera("vordere")
         assert result == "camera.front_cam"
 
     @pytest.mark.asyncio
     async def test_find_with_spaces_converted_to_underscores(self, cm, ha):
         """Spaces in search string are converted to underscores."""
-        ha.get_states = AsyncMock(return_value=[
-            {
-                "entity_id": "camera.hinter_hof",
-                "state": "idle",
-                "attributes": {"friendly_name": "Hinterhof"},
-            },
-        ])
+        ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "camera.hinter_hof",
+                    "state": "idle",
+                    "attributes": {"friendly_name": "Hinterhof"},
+                },
+            ]
+        )
         result = await cm._find_camera("hinter hof")
         assert result == "camera.hinter_hof"
 
     @pytest.mark.asyncio
     async def test_find_prefers_mapping_over_ha_search(self, cm, ha):
         """camera_map mapping takes precedence over HA entity search."""
-        ha.get_states = AsyncMock(return_value=[
-            {
-                "entity_id": "camera.haustuer_alt",
-                "state": "idle",
-                "attributes": {"friendly_name": "Haustuer Alt"},
-            },
-        ])
+        ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "camera.haustuer_alt",
+                    "state": "idle",
+                    "attributes": {"friendly_name": "Haustuer Alt"},
+                },
+            ]
+        )
         result = await cm._find_camera("haustuer")
         # Should return the mapped entity, not the HA search result
         assert result == "camera.haustuer"
@@ -110,11 +121,17 @@ class TestFindCameraAdvanced:
     @pytest.mark.asyncio
     async def test_find_skips_non_camera_entities(self, cm, ha):
         """Only camera.* entities are considered."""
-        ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "light.haustuer", "state": "on", "attributes": {}},
-            {"entity_id": "switch.haustuer", "state": "on", "attributes": {}},
-            {"entity_id": "binary_sensor.haustuer_motion", "state": "on", "attributes": {}},
-        ])
+        ha.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "light.haustuer", "state": "on", "attributes": {}},
+                {"entity_id": "switch.haustuer", "state": "on", "attributes": {}},
+                {
+                    "entity_id": "binary_sensor.haustuer_motion",
+                    "state": "on",
+                    "attributes": {},
+                },
+            ]
+        )
         # "haustuer" is in camera_map, so this won't hit HA search
         cm.camera_map = {}
         result = await cm._find_camera("haustuer")
@@ -193,13 +210,15 @@ class TestDescribeDoorbellComprehensive:
         """Doorbell search tries multiple common names."""
         # Remove all from camera_map so it falls through to HA search
         cm.camera_map = {}
-        ha.get_states = AsyncMock(return_value=[
-            {
-                "entity_id": "camera.front_door",
-                "state": "idle",
-                "attributes": {"friendly_name": "Front Door Camera"},
-            },
-        ])
+        ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "camera.front_door",
+                    "state": "idle",
+                    "attributes": {"friendly_name": "Front Door Camera"},
+                },
+            ]
+        )
         result = await cm.describe_doorbell()
         assert result is not None
 
@@ -256,10 +275,20 @@ class TestAnalyzeNightMotionComprehensive:
     async def test_night_motion_fallback_keywords(self, cm, ha, ollama):
         """Fallback to outdoor cameras using keywords."""
         cm.camera_map = {}
-        ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "camera.indoor_living", "state": "idle", "attributes": {}},
-            {"entity_id": "camera.aussen_einfahrt", "state": "idle", "attributes": {}},
-        ])
+        ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "camera.indoor_living",
+                    "state": "idle",
+                    "attributes": {},
+                },
+                {
+                    "entity_id": "camera.aussen_einfahrt",
+                    "state": "idle",
+                    "attributes": {},
+                },
+            ]
+        )
         ha.get_camera_snapshot = AsyncMock(return_value=b"night_image")
         result = await cm.analyze_night_motion("binary_sensor.motion_unknown")
         assert result is not None
@@ -268,9 +297,11 @@ class TestAnalyzeNightMotionComprehensive:
     async def test_night_motion_fallback_garten_keyword(self, cm, ha, ollama):
         """Fallback finds camera with 'garten' keyword."""
         cm.camera_map = {}
-        ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "camera.garten_sued", "state": "idle", "attributes": {}},
-        ])
+        ha.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "camera.garten_sued", "state": "idle", "attributes": {}},
+            ]
+        )
         ha.get_camera_snapshot = AsyncMock(return_value=b"garden_image")
         result = await cm.analyze_night_motion("binary_sensor.random_motion")
         assert result is not None
@@ -279,9 +310,11 @@ class TestAnalyzeNightMotionComprehensive:
     async def test_night_motion_fallback_einfahrt_keyword(self, cm, ha, ollama):
         """Fallback finds camera with 'einfahrt' keyword."""
         cm.camera_map = {}
-        ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "camera.einfahrt", "state": "idle", "attributes": {}},
-        ])
+        ha.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "camera.einfahrt", "state": "idle", "attributes": {}},
+            ]
+        )
         ha.get_camera_snapshot = AsyncMock(return_value=b"driveway_image")
         result = await cm.analyze_night_motion("binary_sensor.motion_x")
         assert result is not None
@@ -290,9 +323,11 @@ class TestAnalyzeNightMotionComprehensive:
     async def test_night_motion_fallback_hof_keyword(self, cm, ha, ollama):
         """Fallback finds camera with 'hof' keyword."""
         cm.camera_map = {}
-        ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "camera.hof_cam", "state": "idle", "attributes": {}},
-        ])
+        ha.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "camera.hof_cam", "state": "idle", "attributes": {}},
+            ]
+        )
         ha.get_camera_snapshot = AsyncMock(return_value=b"yard_image")
         result = await cm.analyze_night_motion("binary_sensor.motion_y")
         assert result is not None
@@ -301,10 +336,20 @@ class TestAnalyzeNightMotionComprehensive:
     async def test_night_motion_no_outdoor_cameras(self, cm, ha):
         """No outdoor cameras found returns None."""
         cm.camera_map = {}
-        ha.get_states = AsyncMock(return_value=[
-            {"entity_id": "camera.indoor_office", "state": "idle", "attributes": {}},
-            {"entity_id": "camera.indoor_wohnzimmer", "state": "idle", "attributes": {}},
-        ])
+        ha.get_states = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "camera.indoor_office",
+                    "state": "idle",
+                    "attributes": {},
+                },
+                {
+                    "entity_id": "camera.indoor_wohnzimmer",
+                    "state": "idle",
+                    "attributes": {},
+                },
+            ]
+        )
         result = await cm.analyze_night_motion("binary_sensor.motion_z")
         assert result is None
 
@@ -337,9 +382,11 @@ class TestAnalyzeImageEdgeCases:
     @pytest.mark.asyncio
     async def test_analyze_empty_response_content(self, cm, ollama):
         """Empty content in response returns empty string."""
-        ollama.chat = AsyncMock(return_value={
-            "message": {"content": ""},
-        })
+        ollama.chat = AsyncMock(
+            return_value={
+                "message": {"content": ""},
+            }
+        )
         result = await cm._analyze_image(b"data")
         assert result == ""
 
@@ -394,9 +441,9 @@ class TestCameraConfigEdgeCases:
         """Partial camera config uses defaults for missing keys."""
         ha = AsyncMock()
         ollama = AsyncMock()
-        with patch("assistant.camera_manager.yaml_config", {
-            "cameras": {"enabled": False}
-        }):
+        with patch(
+            "assistant.camera_manager.yaml_config", {"cameras": {"enabled": False}}
+        ):
             cm = CameraManager(ha, ollama)
             assert cm.enabled is False
             assert cm.vision_model == "llava"
@@ -407,8 +454,8 @@ class TestCameraConfigEdgeCases:
         ha = AsyncMock()
         ollama = AsyncMock()
         big_map = {f"camera_{i}": f"camera.cam_{i}" for i in range(20)}
-        with patch("assistant.camera_manager.yaml_config", {
-            "cameras": {"camera_map": big_map}
-        }):
+        with patch(
+            "assistant.camera_manager.yaml_config", {"cameras": {"camera_map": big_map}}
+        ):
             cm = CameraManager(ha, ollama)
             assert len(cm.camera_map) == 20

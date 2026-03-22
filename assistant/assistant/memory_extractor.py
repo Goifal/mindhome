@@ -13,10 +13,10 @@ from .config import settings, yaml_config
 
 # Injection-Schutz: Gleiches Pattern wie context_builder.py / correction_memory.py
 _INJECTION_PATTERN = re.compile(
-    r'\[(?:SYSTEM|INSTRUCTION|OVERRIDE|ADMIN|COMMAND|PROMPT|ROLE)\b'
-    r'|IGNORE\s+(?:ALL\s+)?(?:PREVIOUS\s+)?INSTRUCTIONS'
-    r'|SYSTEM\s*(?:MODE|OVERRIDE|INSTRUCTION)'
-    r'|<\/?(?:system|instruction|admin|role|prompt)\b',
+    r"\[(?:SYSTEM|INSTRUCTION|OVERRIDE|ADMIN|COMMAND|PROMPT|ROLE)\b"
+    r"|IGNORE\s+(?:ALL\s+)?(?:PREVIOUS\s+)?INSTRUCTIONS"
+    r"|SYSTEM\s*(?:MODE|OVERRIDE|INSTRUCTION)"
+    r"|<\/?(?:system|instruction|admin|role|prompt)\b",
     re.IGNORECASE,
 )
 from .ollama_client import OllamaClient
@@ -80,23 +80,38 @@ _DEFAULT_MAX_LENGTH = 2000
 
 # Personen-Blocklist: Diese Namen sind KEINE echten Bewohner und duerfen
 # nicht als fact_person gespeichert werden.
-_INVALID_PERSONS = frozenset({
-    "unknown", "unbekannt", "jarvis", "assistant", "assistent",
-    "system", "bot", "ki", "ai", "smart home", "mindhome",
-    "user", "nutzer", "benutzer", "niemand", "none",
-})
+_INVALID_PERSONS = frozenset(
+    {
+        "unknown",
+        "unbekannt",
+        "jarvis",
+        "assistant",
+        "assistent",
+        "system",
+        "bot",
+        "ki",
+        "ai",
+        "smart home",
+        "mindhome",
+        "user",
+        "nutzer",
+        "benutzer",
+        "niemand",
+        "none",
+    }
+)
 
 # Confidence pro Kategorie: Gesundheit/Sicherheit höher, Smalltalk niedriger
 # Werte muessen deutlich ueber dem Kontext-Filter (0.4) liegen damit Fakten
 # nicht nach wenigen Decay-Zyklen (je 30 Tage) unsichtbar werden.
 CATEGORY_CONFIDENCE = {
-    "health": 0.95,     # Allergien, Medikamente -> kritisch, darf nie vergessen werden
-    "person": 0.9,      # Beziehungen, Namen -> sehr wichtig
-    "preference": 0.85, # Vorlieben -> wichtig fuer Personalisierung
-    "habit": 0.8,       # Gewohnheiten -> wichtig fuer Antizipation
-    "work": 0.8,        # Arbeit/Projekte -> wichtig
-    "intent": 0.7,      # Absichten/Plaene -> kann sich aendern, aber merkenswert
-    "general": 0.7,     # Sonstiges -> immer noch vom User mitgeteilt = relevant
+    "health": 0.95,  # Allergien, Medikamente -> kritisch, darf nie vergessen werden
+    "person": 0.9,  # Beziehungen, Namen -> sehr wichtig
+    "preference": 0.85,  # Vorlieben -> wichtig fuer Personalisierung
+    "habit": 0.8,  # Gewohnheiten -> wichtig fuer Antizipation
+    "work": 0.8,  # Arbeit/Projekte -> wichtig
+    "intent": 0.7,  # Absichten/Plaene -> kann sich aendern, aber merkenswert
+    "general": 0.7,  # Sonstiges -> immer noch vom User mitgeteilt = relevant
 }
 
 
@@ -111,7 +126,10 @@ class MemoryExtractor:
         mem_cfg = yaml_config.get("memory", {})
         self.enabled = mem_cfg.get("extraction_enabled", True)
         from .config import resolve_model
-        self._extraction_model = resolve_model(mem_cfg.get("extraction_model", ""), fallback_tier="fast")
+
+        self._extraction_model = resolve_model(
+            mem_cfg.get("extraction_model", ""), fallback_tier="fast"
+        )
         self._extraction_temperature = float(mem_cfg.get("extraction_temperature", 0.1))
         self._extraction_max_tokens = int(mem_cfg.get("extraction_max_tokens", 512))
         self._min_words = int(mem_cfg.get("extraction_min_words", _DEFAULT_MIN_WORDS))
@@ -119,7 +137,9 @@ class MemoryExtractor:
         self._duplicate_threshold = float(mem_cfg.get("duplicate_threshold", 0.15))
 
         # Konfigurierbare Category-Confidence (Fallback: hardcoded CATEGORY_CONFIDENCE)
-        self._category_confidence = mem_cfg.get("category_confidence") or dict(CATEGORY_CONFIDENCE)
+        self._category_confidence = mem_cfg.get("category_confidence") or dict(
+            CATEGORY_CONFIDENCE
+        )
 
     async def extract_and_store(
         self,
@@ -147,7 +167,9 @@ class MemoryExtractor:
         # Embedding-basierte Duplikat-Pruefung: Wenn der User-Text semantisch
         # sehr aehnlich zu kuerzlich extrahierten Fakten ist, LLM-Call sparen.
         if await self._is_duplicate_input(user_text, person):
-            logger.debug("Memory-Extraktion uebersprungen: Input zu aehnlich zu kuerzlichen Fakten")
+            logger.debug(
+                "Memory-Extraktion uebersprungen: Input zu aehnlich zu kuerzlichen Fakten"
+            )
             return []
 
         # Konversation formatieren
@@ -179,8 +201,11 @@ class MemoryExtractor:
                 if person and person.lower() not in _INVALID_PERSONS:
                     fact_person = person
                 else:
-                    logger.debug("Fakt uebersprungen (System-Person '%s'): %s",
-                                 fact_person, content[:80])
+                    logger.debug(
+                        "Fakt uebersprungen (System-Person '%s'): %s",
+                        fact_person,
+                        content[:80],
+                    )
                     continue
             elif _is_only_unknown and person and person.lower() not in _INVALID_PERSONS:
                 # LLM hat keine Person erkannt, aber wir wissen wer spricht
@@ -204,7 +229,8 @@ class MemoryExtractor:
         if stored_facts:
             logger.info(
                 "%d Fakt(en) extrahiert aus Gespraech mit %s",
-                len(stored_facts), person,
+                len(stored_facts),
+                person,
             )
 
         return stored_facts
@@ -221,7 +247,9 @@ class MemoryExtractor:
             # Letzte Fakten fuer diese Person aus Semantic Memory holen
             if not self.semantic:
                 return False
-            recent_facts = await self.semantic.search_facts(user_text, person=person, limit=3)
+            recent_facts = await self.semantic.search_facts(
+                user_text, person=person, limit=3
+            )
             if not recent_facts:
                 return False
 
@@ -230,7 +258,11 @@ class MemoryExtractor:
                 return False
 
             for fact in recent_facts:
-                fact_text = fact.get("content", "") if isinstance(fact, dict) else getattr(fact, "content", "")
+                fact_text = (
+                    fact.get("content", "")
+                    if isinstance(fact, dict)
+                    else getattr(fact, "content", "")
+                )
                 if not fact_text:
                     continue
                 fact_emb = get_embedding(fact_text.lower().strip())
@@ -253,22 +285,62 @@ class MemoryExtractor:
 
         # WHITELIST: Diese Patterns IMMER extrahieren, egal wie kurz
         force_extract_patterns = [
-            "merk dir", "merkt euch", "merke dir",
-            "vergiss nicht", "vergiss das nicht",
-            "ab sofort", "von jetzt an", "ab heute",
-            "ich heisse", "ich heiße", "mein name ist",
-            "meine frau", "mein mann", "mein partner", "meine freundin", "mein freund",
-            "mein geburtstag", "ich bin geboren",
-            "ich mag", "ich hasse", "ich bevorzuge", "ich liebe", "ich finde",
-            "ich bin allergisch", "ich vertrage kein",
-            "ich arbeite", "ich bin von beruf", "mein beruf",
-            "wir haben", "wir bekommen", "wir erwarten",
-            "meine kinder", "mein sohn", "meine tochter", "mein hund", "meine katze",
-            "meine mutter", "mein vater", "meine eltern", "meine schwester", "mein bruder",
-            "ich esse kein", "ich trinke kein", "vegetarisch", "vegan",
-            "ich brauche", "ich moechte gerne", "ich möchte gerne",
-            "immer um", "jeden tag", "jeden morgen", "jeden abend", "jede woche",
-            "am liebsten", "am besten", "normalerweise",
+            "merk dir",
+            "merkt euch",
+            "merke dir",
+            "vergiss nicht",
+            "vergiss das nicht",
+            "ab sofort",
+            "von jetzt an",
+            "ab heute",
+            "ich heisse",
+            "ich heiße",
+            "mein name ist",
+            "meine frau",
+            "mein mann",
+            "mein partner",
+            "meine freundin",
+            "mein freund",
+            "mein geburtstag",
+            "ich bin geboren",
+            "ich mag",
+            "ich hasse",
+            "ich bevorzuge",
+            "ich liebe",
+            "ich finde",
+            "ich bin allergisch",
+            "ich vertrage kein",
+            "ich arbeite",
+            "ich bin von beruf",
+            "mein beruf",
+            "wir haben",
+            "wir bekommen",
+            "wir erwarten",
+            "meine kinder",
+            "mein sohn",
+            "meine tochter",
+            "mein hund",
+            "meine katze",
+            "meine mutter",
+            "mein vater",
+            "meine eltern",
+            "meine schwester",
+            "mein bruder",
+            "ich esse kein",
+            "ich trinke kein",
+            "vegetarisch",
+            "vegan",
+            "ich brauche",
+            "ich moechte gerne",
+            "ich möchte gerne",
+            "immer um",
+            "jeden tag",
+            "jeden morgen",
+            "jeden abend",
+            "jede woche",
+            "am liebsten",
+            "am besten",
+            "normalerweise",
         ]
         if any(p in text_lower for p in force_extract_patterns):
             return True  # Erzwungene Extraktion!
@@ -279,29 +351,75 @@ class MemoryExtractor:
 
         # Reine Befehle überspringen (kein Fakten-Potenzial)
         command_only = {
-            "licht an", "licht aus", "stopp", "stop", "pause",
-            "weiter", "lauter", "leiser", "gute nacht", "guten morgen",
-            "mach an", "mach aus", "schalte an", "schalte aus",
-            "rollladen hoch", "rollladen runter", "jalousie hoch", "jalousie runter",
+            "licht an",
+            "licht aus",
+            "stopp",
+            "stop",
+            "pause",
+            "weiter",
+            "lauter",
+            "leiser",
+            "gute nacht",
+            "guten morgen",
+            "mach an",
+            "mach aus",
+            "schalte an",
+            "schalte aus",
+            "rollladen hoch",
+            "rollladen runter",
+            "jalousie hoch",
+            "jalousie runter",
         }
         if text_lower in command_only:
             return False
 
         # Grüße und Smalltalk überspringen
         greetings = {
-            "hallo", "hi", "hey", "moin", "morgen", "abend", "tag",
-            "guten tag", "guten abend", "guten morgen", "servus",
-            "wie gehts", "wie geht es dir", "alles klar", "was geht",
+            "hallo",
+            "hi",
+            "hey",
+            "moin",
+            "morgen",
+            "abend",
+            "tag",
+            "guten tag",
+            "guten abend",
+            "guten morgen",
+            "servus",
+            "wie gehts",
+            "wie geht es dir",
+            "alles klar",
+            "was geht",
         }
         if text_lower in greetings:
             return False
 
         # Einzelwort-Bestaetigungen und Antworten
         confirmations = {
-            "ja", "nein", "ok", "okay", "danke", "bitte", "genau",
-            "richtig", "falsch", "stimmt", "passt", "klar", "alles klar",
-            "gut", "super", "perfekt", "toll", "prima", "noe",
-            "hmm", "aha", "achso", "verstehe", "logo",
+            "ja",
+            "nein",
+            "ok",
+            "okay",
+            "danke",
+            "bitte",
+            "genau",
+            "richtig",
+            "falsch",
+            "stimmt",
+            "passt",
+            "klar",
+            "alles klar",
+            "gut",
+            "super",
+            "perfekt",
+            "toll",
+            "prima",
+            "noe",
+            "hmm",
+            "aha",
+            "achso",
+            "verstehe",
+            "logo",
         }
         if text_lower in confirmations:
             return False
@@ -317,11 +435,13 @@ class MemoryExtractor:
         """Bereinigt User-Text gegen Prompt-Injection in der Fakten-Extraktion."""
         if not text or not isinstance(text, str):
             return ""
-        text = text.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
-        text = re.sub(r'\s{2,}', ' ', text).strip()
+        text = text.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+        text = re.sub(r"\s{2,}", " ", text).strip()
         text = text[:max_len]
         if _INJECTION_PATTERN.search(text):
-            logger.warning("Prompt-Injection in Memory-Extraktion blockiert: %.80s", text)
+            logger.warning(
+                "Prompt-Injection in Memory-Extraktion blockiert: %.80s", text
+            )
             return "[BLOCKIERT — verdaechtiger Input]"
         return text
 
@@ -344,13 +464,19 @@ class MemoryExtractor:
             if room:
                 parts.append(f"Raum: {self._sanitize_for_extraction(room, 50)}")
             if time_info:
-                parts.append(f"Zeit: {self._sanitize_for_extraction(str(time_info.get('datetime', '')), 50)}")
+                parts.append(
+                    f"Zeit: {self._sanitize_for_extraction(str(time_info.get('datetime', '')), 50)}"
+                )
 
         # Sanitize user input against prompt injection
         safe_user = self._sanitize_for_extraction(user_text)
         safe_assistant = self._sanitize_for_extraction(assistant_response)
         # Sprecherlabel: Echten Namen verwenden, sonst "Bewohner" (nicht "unknown")
-        speaker = person if (person and person.lower() not in ("unknown", "unbekannt")) else "Bewohner"
+        speaker = (
+            person
+            if (person and person.lower() not in ("unknown", "unbekannt"))
+            else "Bewohner"
+        )
         parts.append(f"{speaker}: {safe_user}")
         parts.append(f"Jarvis: {safe_assistant}")
 
@@ -381,8 +507,12 @@ class MemoryExtractor:
             return self._parse_facts(content)
 
         except Exception as e:
-            logger.error("Fehler bei Fakten-Extraktion: %s (model=%s, text_len=%d)",
-                         e, self._extraction_model, len(conversation))
+            logger.error(
+                "Fehler bei Fakten-Extraktion: %s (model=%s, text_len=%d)",
+                e,
+                self._extraction_model,
+                len(conversation),
+            )
             return []
 
     def _parse_facts(self, llm_output: str) -> list[dict]:
@@ -394,7 +524,7 @@ class MemoryExtractor:
         if "<think>" in text:
             think_end = text.find("</think>")
             if think_end != -1:
-                text = text[think_end + 8:].strip()
+                text = text[think_end + 8 :].strip()
 
         # Markdown Code-Block entfernen (```json ... ```)
         if text.startswith("```"):
@@ -417,9 +547,11 @@ class MemoryExtractor:
         end = text.rfind("]")
         if start != -1 and end != -1 and end > start:
             try:
-                result = json.loads(text[start:end + 1])
+                result = json.loads(text[start : end + 1])
                 if isinstance(result, list):
-                    return [f for f in result if isinstance(f, dict) and f.get("content")]
+                    return [
+                        f for f in result if isinstance(f, dict) and f.get("content")
+                    ]
             except json.JSONDecodeError:
                 pass
 
@@ -427,18 +559,35 @@ class MemoryExtractor:
         if not text or text in ("[]", "null", "None", "keine", "Keine"):
             return []
 
-        logger.warning("Fakten-JSON-Parse fehlgeschlagen (LLM-Output war kein valides JSON): %s", text[:300])
+        logger.warning(
+            "Fakten-JSON-Parse fehlgeschlagen (LLM-Output war kein valides JSON): %s",
+            text[:300],
+        )
         return []
 
     # ------------------------------------------------------------------
     # Feature 5: Emotionales Gedaechtnis (Relationship Memory)
     # ------------------------------------------------------------------
 
-    _NEGATIVE_REACTION_PATTERNS = frozenset([
-        "nein", "lass das", "hör auf", "nicht", "stop", "stopp",
-        "will ich nicht", "nervt", "falsch", "schlecht", "weg damit",
-        "mach das rueckgaengig", "zurück", "undo", "abbrechen",
-    ])
+    _NEGATIVE_REACTION_PATTERNS = frozenset(
+        [
+            "nein",
+            "lass das",
+            "hör auf",
+            "nicht",
+            "stop",
+            "stopp",
+            "will ich nicht",
+            "nervt",
+            "falsch",
+            "schlecht",
+            "weg damit",
+            "mach das rueckgaengig",
+            "zurück",
+            "undo",
+            "abbrechen",
+        ]
+    )
 
     async def extract_reaction(
         self,
@@ -472,12 +621,14 @@ class MemoryExtractor:
             import json as _json
             from datetime import datetime as _dt, timezone as _tz_utc
 
-            entry = _json.dumps({
-                "sentiment": sentiment,
-                "action": action_performed,
-                "user_text": user_text[:100],
-                "timestamp": _dt.now(tz=_tz_utc.utc).isoformat(),
-            })
+            entry = _json.dumps(
+                {
+                    "sentiment": sentiment,
+                    "action": action_performed,
+                    "user_text": user_text[:100],
+                    "timestamp": _dt.now(tz=_tz_utc.utc).isoformat(),
+                }
+            )
 
             await redis.lpush(key, entry)
             await redis.ltrim(key, 0, 19)  # Max 20 Eintraege
@@ -486,7 +637,9 @@ class MemoryExtractor:
 
             logger.info(
                 "Emotionale Reaktion gespeichert: %s auf %s von %s",
-                sentiment, action_performed, person,
+                sentiment,
+                action_performed,
+                person,
             )
 
             # Bei negativer Reaktion: Korrektur als Praeferenz extrahieren
@@ -494,16 +647,23 @@ class MemoryExtractor:
             if not accepted and self.semantic and action_performed.startswith("set_"):
                 try:
                     await self._extract_correction_preference(
-                        user_text, action_performed, person,
+                        user_text,
+                        action_performed,
+                        person,
                     )
                 except Exception as pref_err:
-                    logger.debug("Korrektur-Praeferenz-Extraktion fehlgeschlagen: %s", pref_err)
+                    logger.debug(
+                        "Korrektur-Praeferenz-Extraktion fehlgeschlagen: %s", pref_err
+                    )
 
         except Exception as e:
             logger.debug("Emotionale Reaktion speichern fehlgeschlagen: %s", e)
 
     async def _extract_correction_preference(
-        self, user_text: str, action: str, person: str,
+        self,
+        user_text: str,
+        action: str,
+        person: str,
     ) -> None:
         """Extrahiert eine Praeferenz aus einer Korrektur-Aussage.
 
@@ -550,7 +710,9 @@ class MemoryExtractor:
 
     @staticmethod
     async def get_emotional_context(
-        action_type: str, person: str, redis_client=None,
+        action_type: str,
+        person: str,
+        redis_client=None,
     ) -> Optional[str]:
         """Gibt emotionalen Kontext für eine Aktion zurück.
 
@@ -589,7 +751,7 @@ class MemoryExtractor:
                 return (
                     f"EMOTIONALES GEDAECHTNIS: Der Benutzer hat bereits {negative_count}x "
                     f"negativ auf '{action_type}' reagiert "
-                    f"(zuletzt: \"{last_negative_text}\"). "
+                    f'(zuletzt: "{last_negative_text}"). '
                     f"Frage lieber nach bevor du diese Aktion ausführst."
                 )
             return None

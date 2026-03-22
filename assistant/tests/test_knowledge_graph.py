@@ -31,8 +31,8 @@ def kg(redis_mock):
 # Initialisierung
 # ============================================================
 
-class TestKnowledgeGraphInit:
 
+class TestKnowledgeGraphInit:
     def test_default_config(self):
         with patch("assistant.knowledge_graph.yaml_config", {}):
             kg = KnowledgeGraph()
@@ -41,9 +41,12 @@ class TestKnowledgeGraphInit:
         assert kg.redis is None
 
     def test_custom_config(self):
-        with patch("assistant.knowledge_graph.yaml_config", {
-            "knowledge_graph": {"enabled": False, "max_nodes": 500},
-        }):
+        with patch(
+            "assistant.knowledge_graph.yaml_config",
+            {
+                "knowledge_graph": {"enabled": False, "max_nodes": 500},
+            },
+        ):
             kg = KnowledgeGraph()
         assert kg.enabled is False
         assert kg.max_nodes == 500
@@ -60,8 +63,8 @@ class TestKnowledgeGraphInit:
 # Node Operations
 # ============================================================
 
-class TestNodes:
 
+class TestNodes:
     @pytest.mark.asyncio
     async def test_add_node(self, kg, redis_mock):
         redis_mock.scard = AsyncMock(return_value=5)
@@ -96,12 +99,14 @@ class TestNodes:
     async def test_get_node_search_all_types(self, kg, redis_mock):
         """Ohne Typ werden alle Typen durchsucht."""
         call_count = 0
+
         async def fake_hget(key, node_id):
             nonlocal call_count
             call_count += 1
             if "nodes:device" in key:
                 return json.dumps({"type": "device", "name": "Licht"})
             return None
+
         redis_mock.hget = fake_hget
         result = await kg.get_node("device:licht")
         assert result is not None
@@ -121,8 +126,8 @@ class TestNodes:
 # Edge Operations
 # ============================================================
 
-class TestEdges:
 
+class TestEdges:
     @pytest.mark.asyncio
     async def test_add_edge(self, kg, redis_mock):
         await kg.add_edge("person:max", "prefers", "device:licht_wz", weight=0.8)
@@ -161,8 +166,8 @@ class TestEdges:
 # Query Operations
 # ============================================================
 
-class TestQueries:
 
+class TestQueries:
     @pytest.mark.asyncio
     async def test_get_related_out(self, kg, redis_mock):
         redis_mock.smembers = AsyncMock(return_value={"device:licht", "device:heizung"})
@@ -190,6 +195,7 @@ class TestQueries:
             if "out:has_preference:room:wz" in key:
                 return {"pref:warm"}
             return set()
+
         redis_mock.smembers = mock_smembers
         result = await kg.query_2hop("person:max", "located_in", "has_preference")
         assert "pref:warm" in result
@@ -197,12 +203,14 @@ class TestQueries:
     @pytest.mark.asyncio
     async def test_query_2hop_deduplicates(self, kg, redis_mock):
         """Gleiche Ergebnisse ueber verschiedene Pfade werden dedupliziert."""
+
         async def mock_smembers(key):
             if "out:rel1:start" in key:
                 return {"mid1", "mid2"}
             if "out:rel2:" in key:
                 return {"target"}
             return set()
+
         redis_mock.smembers = mock_smembers
         result = await kg.query_2hop("start", "rel1", "rel2")
         assert result == ["target"]
@@ -221,19 +229,21 @@ class TestQueries:
 # Pruning
 # ============================================================
 
-class TestPruning:
 
+class TestPruning:
     @pytest.mark.asyncio
     async def test_prune_weak_edges(self, kg, redis_mock):
         weak = json.dumps({"weight": 0.05, "relation": "prefers"})
         # hgetall wird fuer 4 Relationen aufgerufen — nur bei "prefers" Daten liefern
         call_count = 0
+
         async def mock_hgetall(key):
             nonlocal call_count
             call_count += 1
             if "prefers" in key:
                 return {"person:max>device:licht": weak}
             return {}
+
         redis_mock.hgetall = mock_hgetall
         removed = await kg.prune_weak_edges(min_weight=0.1)
         assert removed == 1
@@ -241,10 +251,12 @@ class TestPruning:
     @pytest.mark.asyncio
     async def test_prune_keeps_strong(self, kg, redis_mock):
         strong = json.dumps({"weight": 0.9, "relation": "prefers"})
+
         async def mock_hgetall(key):
             if "prefers" in key:
                 return {"person:max>device:licht": strong}
             return {}
+
         redis_mock.hgetall = mock_hgetall
         removed = await kg.prune_weak_edges(min_weight=0.1)
         assert removed == 0
@@ -260,8 +272,8 @@ class TestPruning:
 # Stats
 # ============================================================
 
-class TestStats:
 
+class TestStats:
     @pytest.mark.asyncio
     async def test_stats_with_redis(self, kg, redis_mock):
         redis_mock.scard = AsyncMock(return_value=10)
@@ -282,12 +294,14 @@ class TestStats:
 # Query Context
 # ============================================================
 
+
 class TestQueryContext:
     """Tests fuer query_context() — Multi-Attribut-Kontextabfrage."""
 
     @pytest.mark.asyncio
     async def test_query_context_basic(self, kg, redis_mock):
         """Grundlegende query_context liefert Praeferenzen und Geraete-Nutzung."""
+
         async def mock_smembers(key):
             if "out:prefers:person:max" in key:
                 return {"pref:warm"}
@@ -296,9 +310,14 @@ class TestQueryContext:
             return set()
 
         redis_mock.smembers = mock_smembers
-        redis_mock.hget = AsyncMock(return_value=json.dumps({
-            "weight": 0.8, "relation": "prefers",
-        }))
+        redis_mock.hget = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "weight": 0.8,
+                    "relation": "prefers",
+                }
+            )
+        )
 
         results = await kg.query_context("max")
         assert len(results) >= 2
@@ -309,15 +328,22 @@ class TestQueryContext:
     @pytest.mark.asyncio
     async def test_query_context_room_filter(self, kg, redis_mock):
         """Ergebnisse mit anderem Raum werden herausgefiltert."""
+
         async def mock_smembers(key):
             if "out:prefers:person:max" in key:
                 return {"pref:warm"}
             return set()
 
         redis_mock.smembers = mock_smembers
-        redis_mock.hget = AsyncMock(return_value=json.dumps({
-            "weight": 0.8, "relation": "prefers", "room": "kueche",
-        }))
+        redis_mock.hget = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "weight": 0.8,
+                    "relation": "prefers",
+                    "room": "kueche",
+                }
+            )
+        )
 
         results = await kg.query_context("max", room="wohnzimmer")
         assert len(results) == 0
@@ -325,15 +351,22 @@ class TestQueryContext:
     @pytest.mark.asyncio
     async def test_query_context_time_filter(self, kg, redis_mock):
         """Ergebnisse mit anderem time_slot werden herausgefiltert."""
+
         async def mock_smembers(key):
             if "out:prefers:person:max" in key:
                 return {"pref:warm"}
             return set()
 
         redis_mock.smembers = mock_smembers
-        redis_mock.hget = AsyncMock(return_value=json.dumps({
-            "weight": 0.8, "relation": "prefers", "time_slot": "morning",
-        }))
+        redis_mock.hget = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "weight": 0.8,
+                    "relation": "prefers",
+                    "time_slot": "morning",
+                }
+            )
+        )
 
         results = await kg.query_context("max", time_slot="evening")
         assert len(results) == 0
@@ -349,12 +382,17 @@ class TestQueryContext:
     @pytest.mark.asyncio
     async def test_query_context_sorted_by_weight(self, kg, redis_mock):
         """Ergebnisse sind nach Gewicht absteigend sortiert."""
+
         async def mock_smembers(key):
             if "out:prefers:person:max" in key:
                 return {"pref:a", "pref:b", "pref:c"}
             return set()
 
-        weights = {"person:max>pref:a": 0.3, "person:max>pref:b": 0.9, "person:max>pref:c": 0.5}
+        weights = {
+            "person:max>pref:a": 0.3,
+            "person:max>pref:b": 0.9,
+            "person:max>pref:c": 0.5,
+        }
 
         async def mock_hget(key, edge_key):
             w = weights.get(edge_key, 0.5)
@@ -383,9 +421,14 @@ class TestQueryContext:
             return set()
 
         redis_mock.smembers = mock_smembers
-        redis_mock.hget = AsyncMock(return_value=json.dumps({
-            "weight": 0.5, "relation": "prefers",
-        }))
+        redis_mock.hget = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "weight": 0.5,
+                    "relation": "prefers",
+                }
+            )
+        )
 
         results = await kg.query_context("max")
         assert len(results) <= 20
@@ -394,6 +437,7 @@ class TestQueryContext:
 # ============================================================
 # Knowledge Graph Edge Cases
 # ============================================================
+
 
 class TestKnowledgeGraphEdgeCases:
     """Edge-Case-Tests fuer KnowledgeGraph."""
@@ -411,8 +455,11 @@ class TestKnowledgeGraphEdgeCases:
     async def test_add_edge_with_metadata(self, kg, redis_mock):
         """add_edge mit metadata Dict — Metadaten werden gespeichert."""
         await kg.add_edge(
-            "person:max", "prefers", "device:licht",
-            weight=0.7, metadata={"room": "wohnzimmer", "time_slot": "evening"},
+            "person:max",
+            "prefers",
+            "device:licht",
+            weight=0.7,
+            metadata={"room": "wohnzimmer", "time_slot": "evening"},
         )
         pipe = redis_mock._pipeline
         pipe.hset.assert_called()

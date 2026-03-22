@@ -22,6 +22,7 @@ from .config import yaml_config, get_person_title
 
 logger = logging.getLogger(__name__)
 from zoneinfo import ZoneInfo
+
 _LOCAL_TZ = ZoneInfo(yaml_config.get("timezone", "Europe/Berlin"))
 
 # Redis-Key-Prefix
@@ -52,7 +53,10 @@ class ProactiveSequencePlanner:
             logger.info("ProactiveSequencePlanner initialisiert")
 
     async def plan_from_context_change(
-        self, trigger: str, context: dict, autonomy_level: int = 2,
+        self,
+        trigger: str,
+        context: dict,
+        autonomy_level: int = 2,
     ) -> Optional[dict]:
         """Erstellt einen Aktionsplan bei Kontext-Aenderung.
 
@@ -97,7 +101,9 @@ class ProactiveSequencePlanner:
         if self.anticipation and plan:
             try:
                 learned_actions = await self._enrich_plan_from_patterns(
-                    plan, trigger, context,
+                    plan,
+                    trigger,
+                    context,
                 )
                 if learned_actions:
                     plan["actions"].extend(learned_actions)
@@ -128,7 +134,9 @@ class ProactiveSequencePlanner:
         plan["needs_confirmation"] = not auto_execute
         return plan
 
-    async def _plan_arrival_sequence(self, person: str, context: dict) -> Optional[dict]:
+    async def _plan_arrival_sequence(
+        self, person: str, context: dict
+    ) -> Optional[dict]:
         """Person kommt nach Hause: Licht → Klima → Willkommen."""
         title = get_person_title(person)
         hour = datetime.now(_LOCAL_TZ).hour
@@ -137,25 +145,30 @@ class ProactiveSequencePlanner:
 
         # Licht einschalten (wenn dunkel)
         if hour >= 17 or hour < 7:
-            actions.append({
-                "type": "set_light",
-                "args": {"state": "on", "brightness": 70},
-                "description": "Willkommens-Beleuchtung",
-            })
+            actions.append(
+                {
+                    "type": "set_light",
+                    "args": {"state": "on", "brightness": 70},
+                    "description": "Willkommens-Beleuchtung",
+                }
+            )
 
         # Klima anpassen (wenn Eco-Modus aktiv)
         house = context.get("house", {})
         climate = house.get("climate", [])
         eco_active = any(
             c.get("preset_mode") == "eco" or c.get("hvac_mode") == "off"
-            for c in climate if isinstance(c, dict)
+            for c in climate
+            if isinstance(c, dict)
         )
         if eco_active:
-            actions.append({
-                "type": "set_climate",
-                "args": {"preset_mode": "home"},
-                "description": "Heizung auf Home-Modus",
-            })
+            actions.append(
+                {
+                    "type": "set_climate",
+                    "args": {"preset_mode": "home"},
+                    "description": "Heizung auf Home-Modus",
+                }
+            )
 
         if not actions:
             return None
@@ -182,19 +195,25 @@ class ProactiveSequencePlanner:
         # Regen/Sturm + Fenster offen
         rain_conditions = {"rainy", "pouring", "lightning-rainy", "lightning", "hail"}
         if condition in rain_conditions and open_windows:
-            actions.append({
-                "type": "notify",
-                "args": {"message": f"Fenster {', '.join(open_windows[:3])} bei {condition} offen"},
-                "description": f"Fenster-Warnung ({condition})",
-            })
+            actions.append(
+                {
+                    "type": "notify",
+                    "args": {
+                        "message": f"Fenster {', '.join(open_windows[:3])} bei {condition} offen"
+                    },
+                    "description": f"Fenster-Warnung ({condition})",
+                }
+            )
 
         # Starker Regen → Rollladen-Schutz vorschlagen
         if condition in ("pouring", "hail", "lightning-rainy"):
-            actions.append({
-                "type": "set_cover",
-                "args": {"position": 0},
-                "description": "Rollladen als Schutz runterfahren",
-            })
+            actions.append(
+                {
+                    "type": "set_cover",
+                    "args": {"position": 0},
+                    "description": "Rollladen als Schutz runterfahren",
+                }
+            )
 
         if not actions:
             return None
@@ -216,18 +235,22 @@ class ProactiveSequencePlanner:
 
         # Angenehme Beleuchtung
         if hour >= 16 or hour < 8:
-            actions.append({
-                "type": "set_light",
-                "args": {"brightness": 80, "color_temp": "warm"},
-                "description": "Angenehme Beleuchtung",
-            })
+            actions.append(
+                {
+                    "type": "set_light",
+                    "args": {"brightness": 80, "color_temp": "warm"},
+                    "description": "Angenehme Beleuchtung",
+                }
+            )
 
         # Hintergrundmusik (immer bei Gaeste-Event)
-        actions.append({
-            "type": "play_media",
-            "args": {"content_type": "ambient"},
-            "description": "Hintergrundmusik",
-        })
+        actions.append(
+            {
+                "type": "play_media",
+                "args": {"content_type": "ambient"},
+                "description": "Hintergrundmusik",
+            }
+        )
 
         if not actions:
             return None
@@ -248,36 +271,46 @@ class ProactiveSequencePlanner:
         # Lichter ausschalten
         lights = house.get("lights_on", [])
         if lights:
-            actions.append({
-                "type": "set_light",
-                "args": {"state": "off"},
-                "description": "Alle Lichter ausschalten",
-            })
+            actions.append(
+                {
+                    "type": "set_light",
+                    "args": {"state": "off"},
+                    "description": "Alle Lichter ausschalten",
+                }
+            )
 
         # Offene Fenster schliessen
         open_windows = house.get("open_windows", [])
         if open_windows:
-            actions.append({
-                "type": "notify",
-                "args": {"message": f"Noch offene Fenster: {', '.join(open_windows[:3])}"},
-                "description": f"Fenster-Warnung ({len(open_windows)} offen)",
-            })
+            actions.append(
+                {
+                    "type": "notify",
+                    "args": {
+                        "message": f"Noch offene Fenster: {', '.join(open_windows[:3])}"
+                    },
+                    "description": f"Fenster-Warnung ({len(open_windows)} offen)",
+                }
+            )
 
         # Medien stoppen
         active_media = house.get("media_playing", [])
         if active_media:
-            actions.append({
-                "type": "media_stop",
-                "args": {},
-                "description": "Laufende Medien stoppen",
-            })
+            actions.append(
+                {
+                    "type": "media_stop",
+                    "args": {},
+                    "description": "Laufende Medien stoppen",
+                }
+            )
 
         # Klima auf Eco
-        actions.append({
-            "type": "set_climate",
-            "args": {"preset_mode": "eco"},
-            "description": "Heizung auf Eco-Modus",
-        })
+        actions.append(
+            {
+                "type": "set_climate",
+                "args": {"preset_mode": "eco"},
+                "description": "Heizung auf Eco-Modus",
+            }
+        )
 
         if not actions:
             return None
@@ -300,19 +333,25 @@ class ProactiveSequencePlanner:
 
         actions = []
         if price < energy.get("low_threshold", 0.15):
-            actions.append({
-                "type": "notify",
-                "args": {"message": f"Strom guenstig ({price:.1f} ct/kWh)"},
-                "description": "Guenstiger Strom — energieintensive Geraete starten",
-            })
+            actions.append(
+                {
+                    "type": "notify",
+                    "args": {"message": f"Strom guenstig ({price:.1f} ct/kWh)"},
+                    "description": "Guenstiger Strom — energieintensive Geraete starten",
+                }
+            )
 
         elif price > energy.get("high_threshold", 0.35):
             # Teurer Strom — verschiebbare Lasten pausieren
-            actions.append({
-                "type": "notify",
-                "args": {"message": f"Strom teuer ({price:.2f} EUR/kWh) — verschiebbare Geraete pausieren empfohlen"},
-                "description": "Strompreis-Warnung — Lasten verschieben",
-            })
+            actions.append(
+                {
+                    "type": "notify",
+                    "args": {
+                        "message": f"Strom teuer ({price:.2f} EUR/kWh) — verschiebbare Geraete pausieren empfohlen"
+                    },
+                    "description": "Strompreis-Warnung — Lasten verschieben",
+                }
+            )
 
         if not actions:
             return None
@@ -328,38 +367,50 @@ class ProactiveSequencePlanner:
         """Schlafenszeit naht: Lichter dimmen → Medien stoppen → Tuer pruefen."""
         actions = []
 
-        actions.append({
-            "type": "set_light",
-            "args": {"brightness": 20, "color_temp": "warmest"},
-            "description": "Lichter dimmen",
-        })
+        actions.append(
+            {
+                "type": "set_light",
+                "args": {"brightness": 20, "color_temp": "warmest"},
+                "description": "Lichter dimmen",
+            }
+        )
 
         house = context.get("house", {})
         open_doors = house.get("open_doors", [])
         if open_doors:
-            actions.append({
-                "type": "notify",
-                "args": {"message": f"Noch offene Tueren: {', '.join(open_doors[:3])}"},
-                "description": "Offene Tueren melden",
-            })
+            actions.append(
+                {
+                    "type": "notify",
+                    "args": {
+                        "message": f"Noch offene Tueren: {', '.join(open_doors[:3])}"
+                    },
+                    "description": "Offene Tueren melden",
+                }
+            )
 
         # Offene Fenster melden
         open_windows = house.get("open_windows", [])
         if open_windows:
-            actions.append({
-                "type": "notify",
-                "args": {"message": f"Noch offene Fenster: {', '.join(open_windows[:3])}"},
-                "description": "Offene Fenster vor dem Schlafengehen",
-            })
+            actions.append(
+                {
+                    "type": "notify",
+                    "args": {
+                        "message": f"Noch offene Fenster: {', '.join(open_windows[:3])}"
+                    },
+                    "description": "Offene Fenster vor dem Schlafengehen",
+                }
+            )
 
         # Medien stoppen
         active_media = house.get("media_playing", [])
         if active_media:
-            actions.append({
-                "type": "media_stop",
-                "args": {},
-                "description": "Laufende Medien stoppen",
-            })
+            actions.append(
+                {
+                    "type": "media_stop",
+                    "args": {},
+                    "description": "Laufende Medien stoppen",
+                }
+            )
 
         title = get_person_title()
         actions_desc = ", ".join(a["description"] for a in actions)
@@ -385,7 +436,9 @@ class ProactiveSequencePlanner:
         "lock": "sichere die Schloeser",
     }
 
-    def _build_narrative(self, actions: list[dict], person: str = "", trigger: str = "") -> str:
+    def _build_narrative(
+        self, actions: list[dict], person: str = "", trigger: str = ""
+    ) -> str:
         """Baut eine natuerliche deutsche Narration fuer eine Multi-Step Sequenz.
 
         Verwandelt eine Liste von Aktionen in einen flüssigen Satz den
@@ -479,14 +532,17 @@ class ProactiveSequencePlanner:
         return narrative
 
     async def _enrich_plan_from_patterns(
-        self, plan: dict, trigger: str, context: dict,
+        self,
+        plan: dict,
+        trigger: str,
+        context: dict,
     ) -> list[dict]:
         """Reichert einen Plan mit gelernten Mustern aus anticipation.py an.
 
         Sucht passende Causal Chains die zum Trigger und Kontext passen
         und fuegt sie als zusaetzliche Aktionen hinzu.
         """
-        if not self.anticipation or not hasattr(self.anticipation, 'detect_patterns'):
+        if not self.anticipation or not hasattr(self.anticipation, "detect_patterns"):
             return []
 
         person = context.get("person", {}).get("name", "")
@@ -507,12 +563,14 @@ class ProactiveSequencePlanner:
             for chain_action in chain_actions:
                 func_name = chain_action.get("action", "")
                 if func_name and func_name not in existing_functions:
-                    learned_actions.append({
-                        "function": func_name,
-                        "args": chain_action.get("args", {}),
-                        "type": "learned_pattern",
-                        "confidence": pattern["confidence"],
-                    })
+                    learned_actions.append(
+                        {
+                            "function": func_name,
+                            "args": chain_action.get("args", {}),
+                            "type": "learned_pattern",
+                            "confidence": pattern["confidence"],
+                        }
+                    )
                     existing_functions.add(func_name)
 
         return learned_actions[:5]  # Max 5 zusaetzliche Aktionen
@@ -530,7 +588,9 @@ class ProactiveSequencePlanner:
                 active_cooldowns = 0
                 while True:
                     cursor, keys = await self.redis.scan(
-                        cursor, match=f"{_PREFIX}:cooldown:*", count=50,
+                        cursor,
+                        match=f"{_PREFIX}:cooldown:*",
+                        count=50,
                     )
                     active_cooldowns += len(keys)
                     if cursor == 0:
