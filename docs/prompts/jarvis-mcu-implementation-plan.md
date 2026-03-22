@@ -1,6 +1,6 @@
 # J.A.R.V.I.S. MCU-Level Implementation Plan
-> Erstellt am 2026-03-22 | Letzter Durchlauf: Durchlauf #2 — Session 1 am 2026-03-22
-> Aktueller Stand: 86.6% (ALLE 12 Kategorien re-analysiert nach Sprint-Implementierungen)
+> Erstellt am 2026-03-22 | Letzter Durchlauf: Durchlauf #3 — Session 1 am 2026-03-22
+> Aktueller Stand: 89.3% (Kategorien 1-4 re-analysiert nach Sprint 6/7 Implementierungen)
 > Dieses Dokument ist die Single Source of Truth für alle MCU-Level Verbesserungen.
 
 ## Status-Legende
@@ -18,6 +18,7 @@
 | 3       | 2026-03-22 | 10-12 (×1) | 8 |
 | 4       | 2026-03-22 | Roadmap & Sprints | 43 (5 Sprints) |
 | 5       | 2026-03-22 | Gegenprüfung | 2 Korrekturen |
+| 1 (D#3) | 2026-03-22 | 1-4 Re-Analyse (Sprint 6/7) | 7 erledigt, 1 teilweise, 3 neu |
 
 ## Schutzliste — Besser als MCU (NICHT beschädigen!)
 
@@ -44,7 +45,7 @@
 ### MCU-Jarvis Benchmark
 MCU-Jarvis versteht Kontext über lange Gespräche, ironische Bemerkungen, implizite Anweisungen ("mach mal alles fertig"), Unterbrechungen, und antwortet in flüssigem, natürlichem Englisch mit perfekter Prosodie. Er löst Referenzen mühelos auf ("das Ding da", "mach es aus"), versteht Multi-Turn-Dialoge und kann mit vagen, elliptischen Befehlen umgehen.
 
-### MindHome-Jarvis Status: 82% 🔄 (vorher: 72% — Durchlauf #1)
+### MindHome-Jarvis Status: 84% 🔄 (vorher: 82% — Durchlauf #2)
 
 ### Code-Verifizierung
 
@@ -106,7 +107,7 @@ MCU-Jarvis versteht Kontext über lange Gespräche, ironische Bemerkungen, impli
 ### Was fehlt zum MCU-Level
 
 1. **Interrupt-Handling während laufender Antwort** — MCU-Jarvis kann mitten im Satz unterbrochen werden und nahtlos auf das neue Thema wechseln. Topic-Switch-Detection erkennt Themenwechsel ZWISCHEN Turns, aber nicht WÄHREND einer Antwort. `[WÖCHENTLICH]`
-2. **Elliptische Befehle deterministisch** — "Auch im Büro" (= wiederhole letzte Aktion im Büro). Die Referenzauflösung gibt Kontext ans LLM, aber keine deterministische Action-Replay-Logik. `[WÖCHENTLICH]`
+2. **Elliptische Befehle mit Raum-Mutation** — "nochmal"/"das gleiche" ist jetzt deterministisch ✅, aber "Auch im Büro" (= letzte Aktion im anderen Raum) fehlt noch — erfordert Raum-Extraktion + Argument-Mutation. `[WÖCHENTLICH]`
 3. **Konversations-Zusammenfassung bei langen Dialogen** — MCU-Jarvis behält den roten Faden über lange Sessions. Bei 50+ Turns gehen Kontextdetails verloren (Redis Memory-Fenster). `[SELTEN]`
 
 ### Konkrete Verbesserungsvorschläge
@@ -129,8 +130,10 @@ MCU-Jarvis versteht Kontext über lange Gespräche, ironische Bemerkungen, impli
 6. 🆕 **`[ ]` Interrupt-Handler für laufende Antworten** — Bei STT-Input während TTS-Ausgabe: TTS stoppen, neuen Intent verarbeiten, vorherigen Kontext als "unterbrochen" markieren.
    - Aufwand: Groß | Impact: +3% | Alltag: `[WÖCHENTLICH]`
 
-7. 🆕 **`[ ]` Deterministische Action-Replay für elliptische Befehle** — "Auch im Büro" → letzte Aktion aus Redis holen, Raum ersetzen, direkt ausführen ohne LLM.
-   - Aufwand: Mittel | Impact: +2% | Alltag: `[WÖCHENTLICH]`
+7. **`[x]` Deterministische Action-Replay für elliptische Befehle** ✅ Erledigt am 2026-03-22 — Durchlauf #3
+   - brain.py:3369-3387: Regex-Match für "nochmal"/"das gleiche"/"wiederhol das" etc. (8+ Varianten), Replay via `_get_last_action()` mit 5min TTL, Per-Person-Scoping, Security-Validation auch bei Replay
+   - `[VERBESSERBAR]` Nur exakte Wiederholung, keine Raum-Mutation ("Auch im Büro" → Raum ersetzen fehlt noch)
+   - `[VERBESSERBAR]` Nur für Shortcut-Pfade (2 Stellen), nicht für LLM-generierte Actions
 
 8. 🆕 **`[ ]` Long-Session Kontext-Zusammenfassung** — Bei >20 Turns: automatische LLM-Zusammenfassung der bisherigen Konversation als Kontext-Kompression.
    - Aufwand: Mittel | Impact: +2% | Alltag: `[SELTEN]`
@@ -143,14 +146,14 @@ MCU-Jarvis versteht Kontext über lange Gespräche, ironische Bemerkungen, impli
 - [x] "Wie immer" / "Das Übliche" funktioniert zuverlässig (Confidence ≥0.8 nach 5+ Beobachtungen) ✅ Multi-Action Support
 - [x] Cross-Session-Referenzen ("wie gestern") lösen korrekt auf ✅ Bereits seit Durchlauf #1
 - [ ] Unterbrechung während laufender Antwort wird nahtlos behandelt
-- [ ] Elliptische Befehle ("Auch im Büro") werden deterministisch ausgeführt
+- [~] Elliptische Befehle: "nochmal"/"das gleiche" funktioniert deterministisch ✅, aber Raum-Mutation ("Auch im Büro") fehlt noch
 
 ## 2. Persönlichkeit, Sarkasmus & Humor (×3)
 
 ### MCU-Jarvis Benchmark
 MCU-Jarvis hat trockenen britischen Humor, der nie aufdringlich ist. "I do apologize, Sir, but I'm not certain what you're asking me to do." — 90% sachlich, 10% Humor. Situationsabhängig: Schweigt bei Gefahr, mehr Humor wenn Tony entspannt ist. Konsistente Persönlichkeit über alle Filme hinweg. Eigene Meinung, aber respektvoll. Charakter-Entwicklung: wird vertrauter, aber nie respektlos.
 
-### MindHome-Jarvis Status: 85% 🔄 (vorher: 78% — Durchlauf #1)
+### MindHome-Jarvis Status: 89% 🔄 (vorher: 85% — Durchlauf #2)
 
 ### Code-Verifizierung
 
@@ -215,18 +218,21 @@ MCU-Jarvis hat trockenen britischen Humor, der nie aufdringlich ist. "I do apolo
 - `[OK]` Test-Coverage: 581 Zeilen test_personality.py, 1140 Zeilen test_inner_state.py — solide
 - `[OK]` Sarkasmus-Level als Prompt-Instruktion + Humor Quality Gate als Post-Filter = doppelte Absicherung ✅
 - `[OK]` Formality-Decay wird automatisch ausgeführt — nicht mehr "STUB/UNFERTIG" wie im vorherigen Durchlauf
-- `[VERBESSERBAR]` Running Gag Evolution basiert nur auf Count, nicht auf Erfolg (keine Humor-Score-Metrik)
+- ✅ `[OK]` Running Gag Evolution basiert jetzt auf gewichtetem Humor-Score (count*0.3 + success_rate*0.7) statt nur Count. *Erledigt in Sprint 6 — Durchlauf #3*
 - `[VERBESSERBAR]` Crisis Mode ist 2-stufig (elevated/critical), aber MCU-Jarvis hätte subtilere Abstufung — z.B. "trockene Bemerkung erlaubt" bei elevated
-- `[VERBESSERBAR]` Cross-Session Humor-Konsistenz: Sarcasm-Streak ist per-Session, kein Redis-Backup über Sessions hinweg
-- `[VERBESSERBAR]` Meinungs-Engine hat Rules + Learned Opinions, aber kein Auto-Learning aus Geräte-Feedback-History
+- ✅ `[OK]` Cross-Session Humor-Konsistenz: Sarcasm-Streak wird jetzt in Redis gesichert (4h TTL, SCAN beim Start). *Erledigt in Sprint 6 — Durchlauf #3*
+- ✅ `[OK]` Auto-Opinion-Learning: OutcomeTracker bildet automatisch Meinungen bei ≥5 Fehlern oder ≥20 Erfolgen pro Gerät. *Erledigt in Sprint 6 — Durchlauf #3*
+- `[VERBESSERBAR]` Running Gag `user_reaction` muss manuell von brain.py übergeben werden — keine automatische Lacher-Erkennung aus Follow-up-Turns
+- `[VERBESSERBAR]` Sprint 6 Persönlichkeits-Features haben keine dedizierten Tests (Humor-Score, Sarcasm-Redis, Auto-Opinion)
 - `[OK]` except-Blöcke in personality.py haben mindestens logger.debug() — kein `except: pass`
 
 ### Was fehlt zum MCU-Level
 
-1. **Running Gag Humor-Score** — Gags werden nach Häufigkeit gewichtet, nicht nach Erfolg. MCU-Jarvis würde den erfolgreichsten Gag wählen, nicht den häufigsten. `[WÖCHENTLICH]`
-2. **Auto-Learning für Meinungen** — Wenn ein Gerät 5× Probleme macht, sollte Jarvis automatisch eine Meinung bilden. Aktuell nur manuelle `store_learned_opinion()`. `[WÖCHENTLICH]`
-3. **Cross-Session Sarcasm-Konsistenz** — Wenn User Montag witzig war, sollte Dienstag noch eine Tendenz spürbar sein. Aktuell per-Session-Only. `[SELTEN]`
+1. ~~**Running Gag Humor-Score**~~ ✅ Erledigt — Gags werden jetzt nach gewichtetem Score (success_rate × 0.7 + count × 0.3) selektiert.
+2. ~~**Auto-Learning für Meinungen**~~ ✅ Erledigt — OutcomeTracker bildet automatisch Meinungen bei wiederholten Erfolgen/Fehlern.
+3. ~~**Cross-Session Sarcasm-Konsistenz**~~ ✅ Erledigt — Redis-Persistenz mit 4h TTL.
 4. **Meta-Humor über eigene Fehler** — MCU-Jarvis kommentiert seine Grenzen subtil ("I'm not entirely sure..."). SELBST-BEWUSSTSEIN Prompt existiert, aber keine konkreten Beispiel-Patterns. `[SELTEN]`
+5. 🆕 **Fehlende Tests für Sprint 6 Persönlichkeits-Features** — `_get_gag_score()`, `load_sarcasm_streaks_from_redis()`, `_update_auto_opinion()` haben keine dedizierten Tests. Regressionsgefahr. `[SELTEN]` *Hinzugefügt in Durchlauf #3*
 
 ### Konkrete Verbesserungsvorschläge
 
@@ -242,14 +248,18 @@ MCU-Jarvis hat trockenen britischen Humor, der nie aufdringlich ist. "I do apolo
 4. **`[x]` Meinungs-Engine mit Fact-Base** ✅ Erledigt am 2026-03-22 — Durchlauf #2
    - `_load_opinion_rules()`, `check_opinion()`, `_check_learned_opinion()`, SemanticMemory + Redis
 
-5. 🆕 **`[ ]` Running Gag Humor-Score** — `track_running_gag()` um `weighted_score` erweitern: Berücksichtige User-Reaktion (Lacher/Ignoriert) statt nur Count. Bestes Gag = höchster Score.
-   - Aufwand: Klein | Impact: +2% | Alltag: `[WÖCHENTLICH]`
+5. **`[x]` Running Gag Humor-Score** ✅ Erledigt am 2026-03-22 — Durchlauf #3
+   - personality.py:5470-5485: `_get_gag_score()` — Score = count_norm * 0.3 + success_rate * 0.7. `track_running_gag(user_reaction=)` trackt positive/negative Reaktionen. `get_active_running_gag()` selektiert nach Score statt Count. Overflow-Eviction nach Score.
+   - `[VERBESSERBAR]` Kein Test für `_get_gag_score()` — Score-Berechnung unvalidiert
+   - `[VERBESSERBAR]` `user_reaction` muss von brain.py explizit übergeben werden — Automatische Erkennung (z.B. Lacher im nächsten Turn) fehlt
 
-6. 🆕 **`[ ]` Auto-Opinion-Learning aus Geräte-Feedback** — Wenn ein Gerät ≥5 Fehler in 30 Tagen: automatisch `store_learned_opinion()` mit negativer Meinung. Positiv: ≥20 erfolgreiche Aktionen ohne Fehler.
-   - Aufwand: Mittel | Impact: +2% | Alltag: `[WÖCHENTLICH]`
+6. **`[x]` Auto-Opinion-Learning aus Geräte-Feedback** ✅ Erledigt am 2026-03-22 — Durchlauf #3
+   - outcome_tracker.py:860-947: `_update_auto_opinion()` — Redis-Zähler pro Gerät+Raum. ≥5 Fehler/30 Tage → negative Meinung, ≥20 Erfolge ohne Fehler → positive. `set_personality()` Bridge in brain.py:1539. Cooldown: 1 Meinung/Gerät/30 Tage.
+   - `[VERBESSERBAR]` Kein Test für die Kern-Logik (nur `set_personality()` getestet)
 
-7. 🆕 **`[ ]` Cross-Session Sarcasm-State in Redis** — `_sarcasm_streak` in Redis sichern mit 4h TTL. Nach 4h Pause: Reset auf 0. Verhindert Humor-Overload über Sessions hinweg.
-   - Aufwand: Klein | Impact: +1% | Alltag: `[SELTEN]`
+7. **`[x]` Cross-Session Sarcasm-State in Redis** ✅ Erledigt am 2026-03-22 — Durchlauf #3
+   - personality.py:2638-2723: `_save_sarcasm_streak_to_redis()` fire-and-forget nach jeder Streak-Änderung. `load_sarcasm_streaks_from_redis()` beim Start via SCAN. 4h TTL. Aufgerufen in brain.py:1103.
+   - `[VERBESSERBAR]` Kein Test für Redis-Persistenz der Sarcasm-Streaks
 
 ### Akzeptanzkriterien — Wann ist dieses Feature "MCU-Level"?
 - [x] Humor ist in >90% der Fälle situationsangemessen (kein Humor bei Krisen, mehr bei guter Stimmung) ✅ Crisis Mode + Mood-Styles
@@ -258,15 +268,15 @@ MCU-Jarvis hat trockenen britischen Humor, der nie aufdringlich ist. "I do apolo
 - [x] Formality-Evolution ist fühlbar: Woche 1 formeller als Monat 3 ✅ Auto-Decay aktiv
 - [x] Mindestens 1 Running Gag entwickelt sich über Wochen natürlich ✅ Running Gag Tracker
 - [x] Jarvis hat zu mindestens 5 Haus-Themen eine eigene, begründete Meinung ✅ Opinion Engine
-- [ ] Running Gag wählt den *erfolgreichsten* Gag (nicht nur den häufigsten)
-- [ ] Meinungen bilden sich automatisch aus Geräte-Feedback-History
+- [x] Running Gag wählt den *erfolgreichsten* Gag (nicht nur den häufigsten) ✅ `_get_gag_score()` mit weighted Score
+- [x] Meinungen bilden sich automatisch aus Geräte-Feedback-History ✅ `_update_auto_opinion()` in OutcomeTracker
 
 ## 3. Proaktives Handeln & Antizipation (×2.5)
 
 ### MCU-Jarvis Benchmark
 MCU-Jarvis warnt Tony vor Vereisung beim Flug (Iron Man 1), rettet ihn im freien Fall ohne Befehl ("I got you, Sir" — Iron Man 3), verwaltet das Haus autonom während der Party (Iron Man 2), und bereitet Dinge vor die Tony brauchen wird bevor er fragt. Sein Timing ist perfekt: er unterbricht NUR bei Gefahr.
 
-### MindHome-Jarvis Status: 84% 🔄 (vorher: 76% — Durchlauf #1)
+### MindHome-Jarvis Status: 89% 🔄 (vorher: 84% — Durchlauf #2)
 
 ### Code-Verifizierung
 
@@ -333,15 +343,19 @@ MCU-Jarvis warnt Tony vor Vereisung beim Flug (Iron Man 1), rettet ihn im freien
 - `[OK]` Critical Escalation nutzt HA-Services (light.turn_on mit flash) für physische Eskalation
 - `[VERBESSERBAR]` InsightEngine und SeasonalInsight existieren separat, aber die direkte Einspeisung als LOW-Priority Notifications in den ProactiveManager fehlt weiterhin
 - `[VERBESSERBAR]` Arrival Greeting führt AnticipationEngine-Suggestions aus, aber kein "Was ist passiert während du weg warst"-Zusammenfassung (Events-Log)
-- `[VERBESSERBAR]` Calendar-Trigger sendet generische "Vorbereitung?"-Nachricht, aber keine domain-spezifische Vorbereitung (Meeting → Webcam-Licht, Sport → Wecker)
+- ✅ `[OK]` Calendar-Trigger sendet jetzt domain-spezifische Vorbereitungen: 18 Keyword-Mappings + settings.yaml-Override. *Erledigt in Sprint 6 — Durchlauf #3*
+- ✅ `[OK]` Weather Forecast Warning: Warnt vor Regen/Sturm in 2h, Duplikat-frei mit Window-Check. *Erledigt in Sprint 6 — Durchlauf #3*
+- `[VERBESSERBAR]` Context-Clustering nur 2D (Wochentag+Wetter), fehlt 3. Dimension (Zeit-Cluster) und 4. Dimension (Anwesenheit)
+- `[VERBESSERBAR]` Sprint 6/7 Proaktiv-Features haben keine dedizierten Tests
 
 ### Was fehlt zum MCU-Level
 
 1. **Insight-to-Proactive Bridge** — InsightEngine-Erkenntnisse (Energie-Anomalie, Wetter-Kontrast) direkt als LOW-Priority ProactiveManager-Events einspeisen statt nur passiv abrufbar zu sein. `[WÖCHENTLICH]`
 2. **Ankunfts-Event-Zusammenfassung** — "Während du weg warst: Die Waschmaschine ist fertig, der Paketdienst war da, und im Bad sind es 19 Grad." StateChangeLog + ProactiveManager verbinden. `[TÄGLICH]`
-3. **Domain-spezifische Kalender-Vorbereitungen** — Meeting → Büro-Licht auf, Sport → Wecker, Gäste → Gäste-Modus. Aktuell generische Vorschläge. `[WÖCHENTLICH]`
-4. 🆕 **Proaktive Wetter-Vorhersage-Warnungen** — Forecast-Daten werden bereits genutzt (insight_engine.py:2283-2326, anticipation.py:1149+1887, energy_optimizer.py:1277), aber nur reaktiv. MCU-Jarvis würde vorausschauend handeln: "In 2 Stunden regnet es — Fenster jetzt schließen?" `[VERBESSERBAR]` `[WÖCHENTLICH]` *Korrigiert in Durchlauf #2 Session 5: war FEHLT KOMPLETT, ist VERBESSERBAR*
-5. 🆕 **Kontextuelle Routine-Varianten** — "Das Übliche" ist global, aber MCU-Jarvis würde Kontext berücksichtigen: Montag-Morgen ≠ Sonntag-Morgen, Regen ≠ Sonne. Patterns müssten nach (Wochentag + Wetter + Anwesenheit) clustern. `[FEHLT KOMPLETT]` `[WÖCHENTLICH]` *Hinzugefügt in Durchlauf #2*
+3. ~~**Domain-spezifische Kalender-Vorbereitungen**~~ ✅ Erledigt — 18 Keyword-Mappings + settings.yaml-Override.
+4. ~~**Proaktive Wetter-Vorhersage-Warnungen**~~ ✅ Erledigt — InsightEngine warnt vor Regen/Sturm in 2h.
+5. **Kontextuelle Routine-Varianten — Verbleibende Lücken** — Grundstruktur (Wochentag+Wetter) ist da, aber Zeit-Cluster-Scoring und Anwesenheits-Kontext fehlen noch. `[VERBESSERBAR]` `[WÖCHENTLICH]` 🔄 *Teilweise erledigt in Sprint 7 — Durchlauf #3*
+6. 🆕 **Fehlende Tests für Sprint 6/7 Proaktiv-Features** — `_check_weather_forecast_warning()`, `_get_calendar_preparation()`, `_apply_context_scoring()`, `track_context_for_action()` sind ungetestet. `[SELTEN]` *Hinzugefügt in Durchlauf #3*
 
 ### Konkrete Verbesserungsvorschläge
 
@@ -363,14 +377,25 @@ MCU-Jarvis warnt Tony vor Vereisung beim Flug (Iron Man 1), rettet ihn im freien
 6. 🆕 **`[ ]` Ankunfts-Event-Log-Zusammenfassung** — Bei Arrival Greeting: StateChangeLog nach relevanten Events seit Abwesenheit filtern, in Narration integrieren: "Während du weg warst: [Events]."
    - Aufwand: Mittel | Impact: +3% | Alltag: `[TÄGLICH]`
 
-7. 🆕 **`[ ]` Domain-spezifische Kalender-Vorbereitung** — Kalender-Event-Typ zu Domain-Aktionen mappen: "Meeting" → office_light, "Sport" → reminder_timer, "Gäste" → guest_mode. Config in settings.yaml.
-   - Aufwand: Mittel | Impact: +2% | Alltag: `[WÖCHENTLICH]`
+7. **`[x]` Domain-spezifische Kalender-Vorbereitung** ✅ Erledigt am 2026-03-22 — Durchlauf #3
+   - proactive.py:9863-9923: `_get_calendar_preparation()` mit 18 Default-Keyword-Mappings (meeting→Büro-Licht, sport→Wecker, gäste→Gäste-Modus, etc.) + settings.yaml-Overrides (`calendar_preparations`). Priorisiert User-Config vor Defaults.
+   - `[VERBESSERBAR]` Kein Test für `_get_calendar_preparation()`
+   - `[VERBESSERBAR]` Nur Keyword-Match auf Event-Summary, kein Kalender-Kategorie-Support
 
-8. 🆕 **`[ ]` Wetter-Vorhersage-Integration** — HA weather.*-Entities haben Forecast-Daten (forecast-Service). `anticipation.py` und `insight_engine.py` um Forecast-Checks erweitern: "Regen in 2h → Fenster-Warnung jetzt", "Frost morgen → Heizung vorheizen".
-   - Aufwand: Mittel | Impact: +3% | Alltag: `[WÖCHENTLICH]`
+8. **`[x]` Wetter-Vorhersage-Integration** ✅ Erledigt am 2026-03-22 — Durchlauf #3
+   - insight_engine.py:1001-1066: `_check_weather_forecast_warning()` — Warnt vor Regen/Sturm in den nächsten 2h. Duplikat-Vermeidung: Feuert NUR wenn keine Fenster offen (sonst greift `_check_weather_windows`). Connected via InsightEngine→brain._handle_insight()→TTS+Dashboard.
+   - `[OK]` Config-Flag: `check_weather_windows` steuert beide Wetter-Checks
+   - `[VERBESSERBAR]` Kein dedizierter Test (TestWeatherForecastWarning fehlt)
 
-9. 🆕 **`[ ]` Kontextuelle Routine-Clustering** — In `anticipation.py`: Patterns nach Feature-Vektor (Wochentag, Wetter, Anwesenheit) clustern. "Das Übliche" liefert kontextabhängige Ergebnisse: Montag-Morgen ≠ Sonntag-Morgen.
-   - Aufwand: Groß | Impact: +3% | Alltag: `[WÖCHENTLICH]`
+9. **`[~]` Kontextuelle Routine-Clustering** — Teilweise erledigt am 2026-03-22 — Durchlauf #3
+   - anticipation.py:1134-1262: `_apply_context_scoring()` bewertet Suggestions nach Kontext-Vektor. `track_context_for_action()` trackt Kontext nach jeder Aktion (2 Stellen in brain.py). Redis-Key `mha:anticipation:ctx:{action}:{person}` mit 90-Tage-TTL.
+   - ✅ Werktag/Wochenende-Scoring: 3-stufig (+0.10/+0.05/-0.15), Min 3 Beobachtungen
+   - ✅ Wetter-Scoring: +0.05 bei Match, -0.10 bei Gegenteil (4 Opposites-Paare)
+   - `[FEHLT]` Zeit-Cluster-Scoring (Morgen/Abend) — Muster werden erkannt aber nicht in Scoring genutzt
+   - `[FEHLT]` Anwesenheits-Scoring (Allein vs. Gäste) — nicht implementiert
+   - `[FEHLT]` `track_context_for_action()` nur für 2 Shortcut-Pfade, nicht für LLM-generierte Actions
+   - `[FEHLT]` Keine Tests für `_apply_context_scoring()` oder `track_context_for_action()`
+   - Aufwand verbleibend: Mittel | Impact verbleibend: +1.5% | Alltag: `[WÖCHENTLICH]`
 
 ### Akzeptanzkriterien — Wann ist dieses Feature "MCU-Level"?
 - [x] Kalender-basierte Vorbereitungsvorschläge erscheinen 10-30min vor Events ✅ Calendar-Trigger-Loop
@@ -381,15 +406,15 @@ MCU-Jarvis warnt Tony vor Vereisung beim Flug (Iron Man 1), rettet ihn im freien
 - [x] AnticipationEngine erkennt >80% der wiederkehrenden Muster nach 7 Tagen ✅ Bereits seit Durchlauf #1
 - [ ] Arrival Greeting enthält Event-Log-Zusammenfassung der Abwesenheitszeit
 - [ ] InsightEngine-Erkenntnisse werden als proaktive Notifications ausgespielt
-- [ ] Wetter-Vorhersage wird für proaktive Cover/Fenster-Warnungen genutzt
-- [ ] "Das Übliche" liefert kontextabhängige Ergebnisse (Wochentag/Wetter-sensitiv)
+- [x] Wetter-Vorhersage wird für proaktive Cover/Fenster-Warnungen genutzt ✅ `_check_weather_forecast_warning()`
+- [~] "Das Übliche" liefert kontextabhängige Ergebnisse — Wochentag+Wetter ✅, Zeit-Cluster+Anwesenheit fehlen noch
 
 ## 4. Butler-Qualitäten & Servicementalität (×2.5)
 
 ### MCU-Jarvis Benchmark
 MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet Hilfe an ohne aufdringlich zu sein, weiß wann er schweigen soll. Er kennt Tonys Routinen, bereitet das Haus vor, verwaltet alles autonom wenn nötig, und hat eine klare Dienstleistungsmentalität — ohne unterwürfig zu sein. Boot-Sequenz: "All systems online, Sir."
 
-### MindHome-Jarvis Status: 88% 🔄 (vorher: 80% — Durchlauf #1)
+### MindHome-Jarvis Status: 89% 🔄 (vorher: 88% — Durchlauf #2)
 
 ### Code-Verifizierung
 
@@ -463,14 +488,14 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 - `[OK]` "Das Übliche" führt Multi-Actions aus ✅
 - `[OK]` Guest-Mode unterdrückt persönliche Fakten ✅
 - `[OK]` Vacation-Auto-Detection schlägt nach >48h vor ✅
-- `[VERBESSERBAR]` Guest-Discretion-Mode blockiert persönliche Fakten im Prompt, aber ProactiveManager-Einschränkung auf HIGH/CRITICAL bei Gästen ist nicht explizit sichtbar
+- ✅ `[OK]` Guest-Mode jetzt vollständig: Prompt-Level-Diskretion (personality.py) + Notification-Level-Filter (proactive.py). LOW/MEDIUM gebatcht, nach Gäste-Ende als Zusammenfassung zugestellt. *Erledigt in Sprint 6 — Durchlauf #3*
 - `[VERBESSERBAR]` Arrival Greeting mit "Was ist passiert"-Zusammenfassung fehlt noch — nur AnticipationEngine-Suggestions, kein Event-Log
 - `[VERBESSERBAR]` Vacation-Simulation ist manuell — Vacation-Auto-Detection schlägt vor, aber die Simulation selbst (Licht-Simulation, Post-Warnung) muss vom User bestätigt und konfiguriert werden
 
 ### Was fehlt zum MCU-Level
 
 1. **Ankunfts-Event-Zusammenfassung** — "Während du weg warst: Die Waschmaschine ist fertig, der Paketdienst war da." StateChangeLog-Daten in Arrival Greeting integrieren. `[TÄGLICH]`
-2. **Guest-Mode ProactiveManager-Einschränkung** — Bei GUESTS nur HIGH/CRITICAL Notifications. Aktuell nur Prompt-Level-Diskretion, nicht Notification-Level. `[WÖCHENTLICH]`
+2. ~~**Guest-Mode ProactiveManager-Einschränkung**~~ ✅ Erledigt — LOW/MEDIUM gebatcht bei Gästen, Flush nach Gäste-Ende.
 3. **Intelligente Vacation-Simulation** — Automatische Licht-Simulation basierend auf gelernten Patterns, nicht nur manuell. `[SELTEN]`
 
 ### Konkrete Verbesserungsvorschläge
@@ -493,8 +518,10 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 6. 🆕 **`[ ]` Ankunfts-Event-Log in Arrival Greeting** — StateChangeLog nach relevanten Events seit Abwesenheit filtern (Geräte-Completions, Alarme, Besucher), in Narration integrieren.
    - Aufwand: Mittel | Impact: +3% | Alltag: `[TÄGLICH]`
 
-7. 🆕 **`[ ]` Guest-Mode Notification-Filter** — ProactiveManager: wenn `activity.current_state == GUESTS`, nur HIGH/CRITICAL Notifications zulassen. LOW/MEDIUM sammeln und nach Gäste-Ende batchen.
-   - Aufwand: Klein | Impact: +1% | Alltag: `[WÖCHENTLICH]`
+7. **`[x]` Guest-Mode Notification-Filter** ✅ Erledigt am 2026-03-22 — Durchlauf #3
+   - proactive.py:577-649: `_is_guest_mode_active()` (Redis-Check), `_flush_guest_batched_events()` (Batch-Zusammenfassung nach Gäste-Ende), `_check_guest_mode_transition()` im 10min-Loop. LOW/MEDIUM bei Gästen gebatcht (max 50 Events), HIGH/CRITICAL weiterhin zugestellt. Flush mit Zusammenfassung: "Während die Gäste da waren, gab es X Meldungen: ..."
+   - `[OK]` Unbounded-Growth-Schutz: Cap bei 50 Events
+   - `[VERBESSERBAR]` Kein dedizierter Test für ProactiveManager Guest-Filter (nur RoutineEngine Guest-Mode getestet)
 
 8. 🆕 **`[ ]` Intelligente Vacation-Licht-Simulation** — Wenn Vacation-Modus aktiv: AnticipationEngine-Patterns für Licht nutzen, um natürliche Anwesenheit zu simulieren. Tägliche Variation ±30min.
    - Aufwand: Groß | Impact: +1% | Alltag: `[SELTEN]`
@@ -506,28 +533,46 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 - [~] Ankunfts-Begrüßung nach >4h Abwesenheit — Aktionen ja ✅, Event-Zusammenfassung fehlt noch
 - [x] Pushback-Learning funktioniert: nach 3× Override wird Pushback für 30 Tage unterdrückt ✅ Bereits seit Durchlauf #1
 - [x] Autonomie-Level spürbar: Level 3 führt Routine-Aktionen eigenständig aus ✅ Bereits seit Durchlauf #1
-- [ ] Guest-Mode filtert auch ProactiveManager-Notifications
+- [x] Guest-Mode filtert auch ProactiveManager-Notifications ✅ LOW/MEDIUM gebatcht, Flush nach Ende
 - [ ] Vacation-Simulation nutzt gelernte Patterns für realistische Licht-Simulation
 
 ---
 
-## Zwischenergebnis Session 1 (aktualisiert Durchlauf #2)
+## Zwischenergebnis Session 1 (aktualisiert Durchlauf #3)
 
-| Kategorie | Gewicht | Durchlauf #1 | Durchlauf #2 | Δ |
-|-----------|---------|-------------|-------------|---|
-| 1. Natürliche Konversation | ×3 | 72% | **82%** | +10% |
-| 2. Persönlichkeit & Humor | ×3 | 78% | **85%** | +7% |
-| 3. Proaktives Handeln | ×2.5 | 76% | **84%** | +8% |
-| 4. Butler-Qualitäten | ×2.5 | 80% | **88%** | +8% |
+| Kategorie | Gewicht | Durchlauf #1 | Durchlauf #2 | Durchlauf #3 | Δ (#2→#3) |
+|-----------|---------|-------------|-------------|-------------|-----------|
+| 1. Natürliche Konversation | ×3 | 72% | 82% | **84%** | +2% |
+| 2. Persönlichkeit & Humor | ×3 | 78% | 85% | **89%** | +4% |
+| 3. Proaktives Handeln | ×2.5 | 76% | 84% | **89%** | +5% |
+| 4. Butler-Qualitäten | ×2.5 | 80% | 88% | **89%** | +1% |
 
-**Session 1 gewichteter Durchschnitt: 84.6%** (vorher: 76.4%)
-**Gesamt-Score (alle 12 Kategorien): 83.9%** (vorher: 78.0%)
+**Session 1 gewichteter Durchschnitt: 87.7%** (vorher: 84.6%)
+**Gesamt-Score (alle 12 Kategorien, geschätzt): 89.3%** (vorher: 86.6%)
 
-**Verbesserung durch Sprints:** +5.9 Prozentpunkte insgesamt. Die 5 MCU-Sprints haben 19 von 19 Aufgaben aus Durchlauf #1 umgesetzt. 11 neue Aufgaben identifiziert für Durchlauf #2.
+**Verbesserung durch Sprint 6/7:** +3.1 Prozentpunkte in Session 1. 7 von 8 offenen Aufgaben aus Durchlauf #2 umgesetzt (1 teilweise). 3 neue Verbesserungspunkte identifiziert (fehlende Tests, Context-Clustering-Lücken, Action-Replay Raum-Mutation).
+
+**Verbleibende Hauptlücken:**
+- Cat 1: Interrupt-Handler (Groß), Long-Session Zusammenfassung (Mittel), Raum-Mutation bei Replay (Klein)
+- Cat 2: Meta-Humor Patterns (Klein), fehlende Tests für Sprint 6 Features
+- Cat 3: Insight-to-Proactive Bridge (Klein), Ankunfts-Event-Log (Mittel), Context-Clustering Dimensionen (Mittel)
+- Cat 4: Ankunfts-Event-Log (Mittel), Vacation-Licht-Simulation (Groß)
 
 ---
 
 ## Changelog
+
+### Durchlauf #3 — Session 1 — 2026-03-22
+- 7 Aufgaben als erledigt markiert (Cat 1: 1, Cat 2: 3, Cat 3: 2, Cat 4: 1)
+- 1 Aufgabe als teilweise erledigt markiert (Cat 3: Kontextuelle Routine-Clustering ~50%)
+- 3 neue Verbesserungspunkte hinzugefügt (fehlende Tests ×2, Raum-Mutation)
+- Kategorien 1-4 Score: **84.6% → 87.7%** (+3.1%)
+- Gesamt-Score: **86.6% → 89.3%** (+2.7%)
+- Sprint 6 Implementierungen verifiziert: Action-Replay, Humor-Score, Auto-Opinion, Sarcasm-Redis, Calendar-Prep, Weather-Forecast, Guest-Filter
+- Sprint 7 Implementierung verifiziert: Context-Clustering (teilweise — Wochentag+Wetter ok, Zeit-Cluster+Anwesenheit fehlen)
+- V2-Tiefenanalyse: Durchgängig fehlende Tests für Sprint 6/7 Features identifiziert (Regressionsgefahr)
+- V2-Tiefenanalyse: `track_context_for_action()` nur in 2 von 5+ Execution-Pfaden aufgerufen
+- Besonders stark verbessert: Kat 3 Proaktives Handeln (+5%) durch Calendar-Prep + Weather-Forecast + Context-Clustering
 
 ### Durchlauf #2 — Session 5 (Gegenprüfung) — 2026-03-22
 - 1 Erkenntnis als [KORRIGIERT] markiert: Wetter-Vorhersage war FEHLT KOMPLETT → ist VERBESSERBAR (insight_engine.py:2283, anticipation.py:1149, energy_optimizer.py:1277 nutzen Forecast-Daten)
