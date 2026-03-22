@@ -44,6 +44,8 @@ def _make_brain_mock():
     brain.learning_observer.observe_state_change = AsyncMock()
     brain.activity = MagicMock()
     brain.activity.set_manual_override = MagicMock()
+    brain.activity.is_in_flow_state = MagicMock(return_value=False)
+    brain.activity.get_focused_duration_minutes = MagicMock(return_value=0)
     brain._current_person = ""
     # Diagnostics / threat disabled by default
     brain.diagnostics = MagicMock()

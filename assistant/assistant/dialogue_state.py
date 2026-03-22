@@ -240,9 +240,26 @@ class DialogueStateManager:
                 "gleich",
                 "selbe",
             }
+            _acknowledgments = {
+                "ok",
+                "okay",
+                "ja",
+                "nein",
+                "gut",
+                "danke",
+                "alles klar",
+                "passt",
+                "mhm",
+                "jep",
+                "nö",
+                "klar",
+            }
             current_words = set(text.lower().split()) - _reference_words
             prev_words = state._last_turn_words
-            if current_words and prev_words:
+            # Skip topic-switch for short utterances (acknowledgments, greetings, 1-word turns)
+            _is_ack = text.lower().strip() in _acknowledgments or len(current_words) <= 1
+            _prev_too_short = len(prev_words) <= 1
+            if current_words and prev_words and not _is_ack and not _prev_too_short:
                 intersection = current_words & prev_words
                 union = current_words | prev_words
                 jaccard = len(intersection) / len(union) if union else 0

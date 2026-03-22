@@ -315,12 +315,22 @@ class TestCheckValueAnomaly:
 
     @pytest.mark.asyncio
     async def test_insufficient_samples_returns_none(self, ha_mock, redis_mock, patch_deps):
+        """With < 3 samples, returns None. With 3-9 samples, uses relaxed thresholds."""
         mon = _make_monitor(ha_mock, patch_deps)
         await mon.initialize(redis_mock)
-        mon._get_baseline = AsyncMock(return_value={"mean": 20.0, "stddev": 2.0, "samples": 5})
+        # < 3 samples: always None
+        mon._get_baseline = AsyncMock(return_value={"mean": 20.0, "stddev": 2.0, "samples": 2})
         mon._add_sample = AsyncMock()
         result = await mon._check_value_anomaly("sensor.t", 50.0, {})
         assert result is None
+        # 5 samples with extreme deviation: detected with relaxed threshold (3.0σ)
+        mon._get_baseline = AsyncMock(return_value={"mean": 20.0, "stddev": 2.0, "samples": 5})
+        result2 = await mon._check_value_anomaly("sensor.t", 50.0, {})
+        assert result2 is not None  # deviation=15σ > relaxed 3.0σ
+        # 5 samples with mild deviation: NOT detected (within relaxed threshold)
+        mon._get_baseline = AsyncMock(return_value={"mean": 20.0, "stddev": 2.0, "samples": 5})
+        result3 = await mon._check_value_anomaly("sensor.t", 24.0, {})
+        assert result3 is None  # deviation=2σ < relaxed 3.0σ
 
     @pytest.mark.asyncio
     async def test_low_stddev_returns_none(self, ha_mock, redis_mock, patch_deps):
