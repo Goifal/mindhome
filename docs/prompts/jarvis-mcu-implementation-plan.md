@@ -1,6 +1,6 @@
 # J.A.R.V.I.S. MCU-Level Implementation Plan
-> Erstellt am 2026-03-22 | Letzter Durchlauf: Session 2 am 2026-03-22
-> Aktueller Stand: 78.0% (Teilergebnis — 9 von 12 Kategorien analysiert)
+> Erstellt am 2026-03-22 | Letzter Durchlauf: Session 3 am 2026-03-22
+> Aktueller Stand: 78.0% (FINAL — alle 12 Kategorien analysiert)
 > Dieses Dokument ist die Single Source of Truth für alle MCU-Level Verbesserungen.
 
 ## Status-Legende
@@ -15,6 +15,7 @@
 |---------|-------|------------|----------|
 | 1       | 2026-03-22 | 1-4 (×3/×2.5) | 19 |
 | 2       | 2026-03-22 | 5-9 (×2/×1.5) | 16 |
+| 3       | 2026-03-22 | 10-12 (×1) | 8 |
 
 ## Schutzliste — Besser als MCU (NICHT beschädigen!)
 
@@ -31,6 +32,8 @@
 11. **Systematische Graceful Degradation** (`brain.py`, `_safe_init()`) — Pro-Modul Failure-Tracking mit strukturiertem Degraded Mode. MCU-Jarvis degradiert intuitiv.
 12. **Systematische Fakten-Contradiction-Detection** (`semantic_memory.py`, Zeile 391+) — 2-Pass Widerspruchserkennung mit LLM-Validation. MCU-Jarvis merkt sich implizit.
 13. **Adaptive Sarkasmus-Learning** (`personality.py`) — Feedback-Loop alle 20 Interaktionen, 90-Tage Redis-Persistenz. MCU-Jarvis' Humor ist statisch.
+14. **50+ Function-Calling-Functions** (`function_calling.py`, 10037 Zeilen) — Systematische HA-Steuerung mit Safety-Caps und Validation. MCU-Jarvis hat keine sichtbare Funktionsarchitektur.
+15. **213 Device-Dependency-Rules** (`state_change_log.py`, 9927 Zeilen) — Strukturierte Konflikterkennung mit Source-Attribution. MCU-Jarvis protokolliert keine Änderungen strukturiert.
 
 ## 1. Natürliche Konversation & Sprachverständnis (×3)
 
@@ -470,6 +473,17 @@ MCU-Jarvis ist der perfekte Butler: diskret, loyal, merkt sich Vorlieben, bietet
 - Besonders stark: Sicherheit (85%) — 154 Injection-Patterns, 7-Layer SSRF, Immutable Core
 - Besonders schwach: Sprecherkennung (74%) — default deaktiviert, kein Auto-Enrollment
 - 6 neue Features als `[BESSER ALS MCU]` identifiziert (Schutzliste #8-#13)
+
+### Durchlauf #3 — Session 3 — 2026-03-22
+- 0 Aufgaben als erledigt markiert
+- 8 neue Aufgaben hinzugefügt (Kategorien 10-12)
+- 0 Zeilenreferenzen aktualisiert
+- Kategorien 10-12 Score: Cat10=73%, Cat11=84%, Cat12=77%
+- **FINAL Gesamt-Score: 78.0%** (alle 12 Kategorien analysiert)
+- Besonders stark: Energiemanagement (84%) — 50+ Functions, 213 Dependency-Rules, Solar+Preis-Awareness
+- Besonders schwach: Multi-Room (73%) — Follow-Me default deaktiviert, kein Audio-Crossfade
+- 2 neue Features als `[BESSER ALS MCU]` identifiziert (Schutzliste #14-#15)
+- **Gesamtbilanz:** 15 Features "Besser als MCU", 43 Verbesserungsaufgaben, alle 12 Kategorien vollständig analysiert
 
 ## 5. Situationsbewusstsein & Kontextverständnis (×2)
 
@@ -912,9 +926,9 @@ Bei Angriffen auf das Haus (Iron Man 3) koordiniert Jarvis die Verteidigung, pri
 
 ---
 
-## Zwischenergebnis Session 1+2
+## Gesamtergebnis — Alle 12 Kategorien
 
-### Scores (9 von 12 Kategorien)
+### Scores (FINAL)
 
 | # | Kategorie | Gewicht | Score | Gewichtet |
 |---|-----------|---------|-------|-----------|
@@ -927,10 +941,11 @@ Bei Angriffen auf das Haus (Iron Man 3) koordiniert Jarvis die Verteidigung, pri
 | 7 | Sprecherkennung & Personalisierung | ×1.5 | 74% | 111 |
 | 8 | Krisenmanagement & Notfallreaktionen | ×1.5 | 78% | 117 |
 | 9 | Sicherheit & Bedrohungserkennung | ×1.5 | 85% | 127.5 |
-| | **Teilsumme (Kat. 1-9)** | **19.5** | | **1521.5** |
-| | **Teildurchschnitt** | | **78.0%** | |
-
-*Hinweis: Endgültiger Gesamt-Score erst nach Session 5 (alle 12 Kategorien).*
+| 10 | Multi-Room-Awareness & Follow-Me | ×1 | 73% | 73 |
+| 11 | Energiemanagement & Haussteuerung | ×1 | 84% | 84 |
+| 12 | Erklärbarkeit & Transparenz | ×1 | 77% | 77 |
+| | **Gesamtsumme** | **22.5** | | **1755.5** |
+| | **GESAMT-SCORE** | | **78.0%** | |
 
 ### Aufgaben-Zusammenfassung
 
@@ -945,4 +960,187 @@ Bei Angriffen auf das Haus (Iron Man 3) koordiniert Jarvis die Verteidigung, pri
 | 7. Sprecherkennung | 3 | 0 | 0 | 3 |
 | 8. Krisenmanagement | 4 | 0 | 0 | 4 |
 | 9. Sicherheit | 3 | 0 | 0 | 3 |
-| **Gesamt** | **35** | **0** | **0** | **35** |
+| 10. Multi-Room | 3 | 0 | 0 | 3 |
+| 11. Energie & Steuerung | 2 | 0 | 0 | 2 |
+| 12. Erklärbarkeit | 3 | 0 | 0 | 3 |
+| **Gesamt** | **43** | **0** | **0** | **43** |
+
+## 10. Multi-Room-Awareness & Follow-Me (×1)
+
+### MCU-Jarvis Benchmark
+MCU-Jarvis ist überall im Haus präsent, folgt Tony von Raum zu Raum, passt Lautstärke und Kontext an den aktuellen Raum an. Er ist in jedem Raum sofort verfügbar, ohne Unterbrechung.
+
+### MindHome-Jarvis Status: 73%
+
+### Code-Verifizierung
+
+**[V1] Analyse:**
+
+1. **FollowMeEngine** (`assistant/assistant/follow_me.py`, 412 Zeilen)
+   - `[OK]` Raumwechsel-Erkennung via Motion-Events, Person-Tracking mit Cooldown (60s)
+   - `[OK]` Transfer-Optionen: Musik, Licht, Klima — jeweils einzeln aktivierbar
+   - `[OK]` Per-Person Follow-Me Profile (konfigurierbar)
+   - `[OK]` Hot-Reload der Konfiguration bei jedem Motion-Event
+   - `[VERBESSERBAR]` Default: `enabled: false` — muss manuell aktiviert werden
+
+2. **MultiRoomAudio** (`assistant/assistant/multi_room_audio.py`, 663 Zeilen)
+   - `[OK]` Speaker-Gruppen: Erstellen, Verwalten, Löschen (z.B. "Erdgeschoss", "Party")
+   - `[OK]` Native Gruppierung (Sonos/Cast) ODER paralleles play_media
+   - `[OK]` Default-Volume konfigurierbar, Max-Gruppen-Limit
+   - `[OK]` Redis-Persistenz für Gruppen
+
+3. **SoundManager** (`assistant/assistant/sound_manager.py`, 768 Zeilen)
+   - `[OK]` TTS + Sound-Effekte Mixing
+   - `[OK]` Room-targeted TTS via Speaker-Entity-Suche
+   - `[OK]` Volume-Anpassung basierend auf Activity + Urgency
+
+4. **Room Presence** (context_builder.py `_build_room_presence()`)
+   - `[OK]` Multi-Sensor-Ansatz: Occupancy → Motion → Fallback
+   - `[VERBESSERBAR]` Alle Personen dem "primären Raum" zugewiesen — kein individuelles Per-Person-Room-Tracking
+
+**[V2 entfällt — Gewicht ×1]**
+
+### Was fehlt zum MCU-Level
+
+1. **Follow-Me default deaktiviert** — MCU-Jarvis folgt immer. Hier muss es manuell aktiviert werden. `[TÄGLICH]`
+2. **Kein nahtloser Audio-Handoff** — Beim Raumwechsel wird Audio transferiert, aber kein Crossfade oder nahtloser Übergang. `[WÖCHENTLICH]`
+3. **Einfaches Per-Person Room Tracking** — System weiß nicht zuverlässig, wer in welchem Raum ist (nur primärer Raum). `[WÖCHENTLICH]`
+
+### Konkrete Verbesserungsvorschläge
+
+1. **`[ ]` Follow-Me default aktivieren** — Zumindest Musik-Transfer sollte default `enabled: true` sein, da keine externe Hardware nötig.
+   - Aufwand: Klein | Impact: +5% | Alltag: `[TÄGLICH]`
+
+2. **`[ ]` Audio Crossfade bei Raumwechsel** — 2s Crossfade: altes Gerät fade-out, neues fade-in. Verhindert abruptes Abbrechen.
+   - Aufwand: Mittel | Impact: +4% | Alltag: `[WÖCHENTLICH]`
+
+3. **`[ ]` Konversations-Kontext bei Raumwechsel erhalten** — Wenn User mid-conversation den Raum wechselt, Kontext nahtlos übertragen und im neuen Raum fortsetzen.
+   - Aufwand: Mittel | Impact: +3% | Alltag: `[WÖCHENTLICH]`
+
+### Akzeptanzkriterien
+- [ ] Audio folgt dem User innerhalb von 5s nach Raumwechsel
+- [ ] Follow-Me funktioniert ohne manuelle Konfiguration (default on)
+- [ ] Konversationskontext überlebt Raumwechsel
+- [ ] Speaker-Gruppen können per Sprache erstellt werden ("Musik überall")
+
+## 11. Energiemanagement & Haussteuerung (×1)
+
+### MCU-Jarvis Benchmark
+MCU-Jarvis steuert das gesamte Stark Tower effizient — Licht, Klima, Sicherheit — alles integriert und optimiert. Er scannt das Energiesystem (Avengers 1), erkennt Anomalien, und optimiert automatisch. 50+ Gerätetypen unter einer einheitlichen Steuerung.
+
+### MindHome-Jarvis Status: 84%
+
+### Code-Verifizierung
+
+**[V1] Analyse:**
+
+1. **FunctionCalling** (`assistant/assistant/function_calling.py`, 10037 Zeilen)
+   - `[OK]` 50+ Steuerungsfunktionen: Licht (inkl. Floor/All), Klima (Room/Curve), Cover (inkl. Markisen/Floor/All), Media (Play/Transfer), Security (Lock/Arm), Vacuum, Calendar, Shopping, Notifications
+   - `[OK]` Parallel-Execution: `execute_parallel()` für Batch-Befehle
+   - `[OK]` Consequence-Check: `_check_consequences()` prüft vor Ausführung (Fenster offen? Leerer Raum?)
+   - `[OK]` Entity-Suche: `_find_entity()` mit Domain-Hint, Person-Kontext, Fuzzy-Matching
+   - `[BESSER ALS MCU]` 50+ Functions mit systematischer Validation und Safety-Caps — MCU-Jarvis hat keine sichtbare Funktionsarchitektur
+
+2. **EnergyOptimizer** (`assistant/assistant/energy_optimizer.py`, 1301 Zeilen)
+   - `[OK]` Strompreis-Monitoring (EUR/MWh oder ct/kWh, auto-normalisiert)
+   - `[OK]` Solar-Production, Grid-Export, Consumption-Tracking
+   - `[OK]` Flexible Lastverschiebung: Waschmaschine, Trockner, Spülmaschine, EV-Charger
+   - `[OK]` Essential-Entities: Kühlschrank, Server, NAS — nie abschalten
+   - `[OK]` Daily Baseline-Tracking, Anomalie-Erkennung (>30% vs. Baseline)
+   - `[OK]` Narrative Energy-Report für Morning-Briefing
+
+3. **StateChangeLog** (`assistant/assistant/state_change_log.py`, 9927 Zeilen)
+   - `[BESSER ALS MCU]` 213 unique Dependency-Rules (1121 Referenzen): Wer hat was geändert (Jarvis/User/Automation/Unknown), 80+ Abhängigkeitsregeln (Fenster↔Heizung, Tür↔Alarm, etc.). MCU-Jarvis hat keine sichtbare Änderungsprotokollierung.
+   - `[OK]` Source-Detection: Unterscheidet Jarvis-Aktionen, User-Aktionen, Automationen, unbekannte Quellen
+   - `[OK]` `check_action_dependencies()`: Prüft aktive Konflikte vor Ausführung
+
+4. **PredictiveMaintenance** (`assistant/assistant/predictive_maintenance.py`, 499 Zeilen)
+   - `[OK]` Geräte-Lebensdauer-Schätzung, Wartungsplanung
+   - `[OK]` Proaktive Wartungserinnerungen
+
+5. **SelfAutomation** (`assistant/assistant/self_automation.py`)
+   - `[OK]` Erstellt neue Automatisierungen aus gelernten Mustern
+   - `[OK]` Template-basiert + LLM-Fallback, Whitelist-Only (keine shell_commands)
+   - `[OK]` Preview + User-Approval vor Aktivierung
+
+**[V2 entfällt — Gewicht ×1]**
+
+### Was fehlt zum MCU-Level
+
+1. **Keine intelligente Lastpriorisierung** — Bei Engpässen wird nicht priorisiert welches Gerät zuerst abgeschaltet wird. MCU-Jarvis würde non-essential zuerst abschalten. `[SELTEN]`
+2. **Kein Batterie-/USV-Management** — Keine Integration mit USV-Systemen oder Batteriespeichern für Lastspitzen-Abfederung. `[SELTEN]`
+
+### Konkrete Verbesserungsvorschläge
+
+1. **`[ ]` Intelligente Last-Priorisierung** — Bei hohem Strompreis oder Engpass: Priorisierungsliste (Essential > Comfort > Entertainment) für automatisches Load-Shedding.
+   - Aufwand: Mittel | Impact: +3% | Alltag: `[SELTEN]`
+
+2. **`[ ]` Batterie-/USV-Integration** — Batteriespeicher-Status in Energy-Report einbeziehen. Bei günstigem Strom laden, bei teuerem entladen.
+   - Aufwand: Groß | Impact: +3% | Alltag: `[SELTEN]`
+
+### Akzeptanzkriterien
+- [ ] 50+ Gerätefunktionen arbeiten zuverlässig mit Safety-Caps
+- [ ] Dependency-Rules erkennen >95% der Konflikte (Fenster+Heizung, Tür+Alarm)
+- [ ] Energie-Anomalien >30% werden innerhalb von 30 Minuten erkannt
+- [ ] Flexible Lasten werden bei niedrigem Strompreis automatisch verschoben
+
+## 12. Erklärbarkeit & Transparenz (×1)
+
+### MCU-Jarvis Benchmark
+"Sir, may I remind you that you've been awake for 72 hours?" — MCU-Jarvis erklärt seine Empfehlungen, nennt Gründe, und ist transparent über seine Entscheidungen. Er sagt warum er etwas tut oder vorschlägt.
+
+### MindHome-Jarvis Status: 77%
+
+### Code-Verifizierung
+
+**[V1] Analyse:**
+
+1. **ExplainabilityEngine** (`assistant/assistant/explainability.py`, 785 Zeilen)
+   - `[OK]` Decision-Logging: In-Memory FIFO (50 Einträge) + Redis-Persistenz
+   - `[OK]` `log_decision()`: Aktion, Entscheidung, Reasoning-Dict, Domain, Kontext, Confidence
+   - `[OK]` Query-Methoden: `explain_last(n)`, `explain_by_domain()`, `explain_by_action()`
+   - `[OK]` Counterfactual-Explanations: "Ohne Eingreifen: Heizkosten X€/h verschwendet", "Tür wäre über Nacht unverschlossen geblieben"
+   - `[OK]` Reasoning Chains: `build_why_chain(depth=2)` — verknüpft verwandte Entscheidungen
+   - `[OK]` 3 Explanation-Styles: template (schnell), llm (natürlich), auto (adaptiv)
+   - `[OK]` Detail-Level: minimal, normal, verbose (konfigurierbar)
+   - `[OK]` Confidence-Display Option (default: false)
+   - `[OK]` Hot-Reload via `reload_config()`
+
+2. **StateChangeLog** (`assistant/assistant/state_change_log.py`, 9927 Zeilen)
+   - `[OK]` Wer hat was geändert: Jarvis-Marker (`mark_jarvis_action()`), User-Detection, Automation-Attribution
+   - `[OK]` Source-Detection: `_detect_source()` unterscheidet Jarvis/User/Automation/Unknown
+   - `[BESSER ALS MCU]` 213 Dependency-Rules mit Attributions-Tracking. MCU-Jarvis erklärt sich verbal, hat aber keine sichtbare strukturierte Entscheidungsprotokollierung.
+
+3. **Proactive Explanations** (proactive.py)
+   - `[OK]` Proaktive Meldungen enthalten immer Kontext: "Fenster offen bei Regen", "Verbrauch 30% über Baseline"
+   - `[OK]` LLM-Rewrite für natürliche Sprache (optional)
+   - `[OK]` Personality-Filter sorgt für Jarvis-Stil-Erklärungen
+
+4. **Pushback als Erklärung** (function_validator.py)
+   - `[OK]` Pushback-Messages erklären warum eine Aktion problematisch ist: "Fenster offen — Heizenergie geht verloren"
+   - `[OK]` Kontext-spezifisch: Open-Window, Empty-Room, Daylight, Peak-Tariff
+
+**[V2 entfällt — Gewicht ×1]**
+
+### Was fehlt zum MCU-Level
+
+1. **"Warum hast du das gemacht?" nicht gut integriert** — ExplainabilityEngine existiert, aber die Integration in den Konversationsfluss (User fragt "Warum?") ist nicht offensichtlich als dedizierter Intent. `[WÖCHENTLICH]`
+2. **Keine Transparenz über Degraded Mode** — Wenn Module ausfallen, weiß der User nicht welche Funktionen fehlen. MCU-Jarvis meldet aktiv eingeschränkte Funktionalität. `[SELTEN]`
+3. **Confidence-Display default off** — User sieht nicht wie sicher sich Jarvis bei Entscheidungen ist. `[WÖCHENTLICH]`
+
+### Konkrete Verbesserungsvorschläge
+
+1. **`[ ]` "Warum?"-Intent im PreClassifier** — Wenn User "Warum hast du das gemacht?" fragt, direkt ExplainabilityEngine abfragen statt ans LLM weiterzuleiten. Schneller und präziser.
+   - Aufwand: Klein | Impact: +4% | Alltag: `[WÖCHENTLICH]`
+
+2. **`[ ]` Degraded-Mode-Notification** — Bei Boot oder bei Service-Ausfall: "Hinweis: Semantisches Gedächtnis ist gerade nicht verfügbar. Ich arbeite mit eingeschränkter Erinnerung."
+   - Aufwand: Klein | Impact: +3% | Alltag: `[SELTEN]`
+
+3. **`[ ]` Confidence-Hints in Antworten** — Bei Confidence <0.7: "Ich bin mir nicht ganz sicher, aber..." als natürlicher Prefix. Kein technisches "75% Confidence".
+   - Aufwand: Klein | Impact: +3% | Alltag: `[WÖCHENTLICH]`
+
+### Akzeptanzkriterien
+- [ ] "Warum?" wird in >90% der Fälle mit der tatsächlichen Entscheidungs-Logik beantwortet
+- [ ] Degraded-Mode wird dem User proaktiv mitgeteilt (bei Boot und bei Runtime-Failure)
+- [ ] Counterfactual-Explanations sind für die Top-5 Domains verfügbar
+- [ ] StateChangeLog-Attribution ist korrekt in >95% der Fälle (Jarvis vs. User vs. Automation)
