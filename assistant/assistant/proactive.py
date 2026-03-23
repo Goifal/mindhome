@@ -6226,8 +6226,8 @@ class ProactiveManager:
                     entity_id, position
                 )
                 # Feature 2: Markierung setzen BEVOR HA-Call, damit der State-Change als Jarvis-ausgeloest erkannt wird
+                acting_key = f"mha:cover:jarvis_acting:{entity_id}"
                 if redis_client:
-                    acting_key = f"mha:cover:jarvis_acting:{entity_id}"
                     await redis_client.set(acting_key, "1", ex=300)
                 try:
                     await self.brain.ha.call_service(
