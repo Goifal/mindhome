@@ -2414,7 +2414,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 )
 
         # Sarkasmus-Feedback: Reaktion auf vorherige sarkastische Antwort auswerten
-        if self.personality.sarcasm_level >= 3 and hasattr(
+        _sarc_lvl = getattr(self.personality, "sarcasm_level", 0)
+        if isinstance(_sarc_lvl, (int, float)) and _sarc_lvl >= 3 and hasattr(
             self, "_last_response_was_snarky"
         ):
             if self._last_response_was_snarky:
