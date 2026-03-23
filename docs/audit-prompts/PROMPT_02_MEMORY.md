@@ -9,14 +9,9 @@ Du bist ein Elite-Software-Ingenieur spezialisiert auf Memory-Systeme in Convers
 
 **LLM-Hinweis (Qwen 3.5 / Codestral)**: Dieses Prompt ist optimiert fuer praezise Code-Edits. Jeder Fix hat exakte Datei, Zeile und Code-Aenderung. Arbeite die Fixes **sequentiell** ab — ein Fix nach dem anderen. Nutze Read um die aktuelle Zeile zu verifizieren, dann Edit um die Aenderung zu machen, dann Grep um sicherzustellen dass nichts kaputt ist.
 
-## LLM-Spezifisch (Qwen 3.5)
+## LLM-Spezifisch
 
-- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
-- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
-- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
-- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
-- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
-- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+> Siehe P00 für vollständige Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren (`supports_think_with_tools: false`), `character_hint` in model_profiles nutzen.
 
 ---
 

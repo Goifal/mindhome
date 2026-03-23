@@ -4,14 +4,9 @@
 
 Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. In 6a hast du stabilisiert, in 6b die Architektur aufgeräumt. Jetzt machst du Jarvis zu **einem** Charakter.
 
-## LLM-Spezifisch (Qwen 3.5)
+## LLM-Spezifisch
 
-- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
-- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
-- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
-- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
-- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
-- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+> Siehe P00 für vollständige Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren (`supports_think_with_tools: false`), `character_hint` in model_profiles nutzen.
 
 ---
 
