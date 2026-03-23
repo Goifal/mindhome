@@ -7889,10 +7889,10 @@ class ProactiveManager:
                         if isinstance(was_switched, str)
                         else was_switched.decode()
                     )
-                    await _redis.delete("mha:vacuum:alarm_switched")
+                    # Key wird ERST nach erfolgreichem Restore geloescht (siehe unten)
                 except Exception as e:
                     logger.warning(
-                        "Vacuum-Alarm: Redis-Flag lesen/loeschen fehlgeschlagen: %s — schalte trotzdem zurueck",
+                        "Vacuum-Alarm: Redis-Flag lesen fehlgeschlagen: %s — schalte trotzdem zurueck",
                         e,
                     )
             else:
@@ -7913,16 +7913,26 @@ class ProactiveManager:
                 success = await self.brain.ha.call_service(
                     "alarm_control_panel", restore_service, {"entity_id": alarm_entity}
                 )
-                if not success:
+                if success:
+                    # Erst NACH erfolgreichem Restore den Redis-Key loeschen
+                    if _redis:
+                        try:
+                            await _redis.delete("mha:vacuum:alarm_switched")
+                        except Exception as e:
+                            logger.warning(
+                                "Vacuum-Alarm: Redis-Flag loeschen fehlgeschlagen: %s",
+                                e,
+                            )
+                else:
                     logger.error(
-                        "Vacuum-Alarm: Zurueckschalten auf %s fehlgeschlagen fuer %s",
+                        "Vacuum-Alarm: Zurueckschalten auf %s fehlgeschlagen fuer %s — Redis-Key bleibt fuer Retry",
                         restore_service,
                         alarm_entity,
                     )
                 return success
             except Exception as e:
                 logger.error(
-                    "Vacuum-Alarm: Service-Aufruf %s fehlgeschlagen: %s",
+                    "Vacuum-Alarm: Service-Aufruf %s fehlgeschlagen: %s — Redis-Key bleibt fuer Retry",
                     restore_service,
                     e,
                 )
@@ -8266,6 +8276,11 @@ class ProactiveManager:
                                 "Staubsauger-Fortsetzungs-Protokollierung fehlgeschlagen: %s",
                                 e,
                             )
+                        # Wichtig: Nach Resume NICHT Fall 3 im selben Durchlauf ausfuehren!
+                        # all_docked/cleaning_robots sind veraltet (vor dem Resume berechnet).
+                        # Naechste Iteration hat frische HA-States.
+                        await asyncio.sleep(30)
+                        continue
 
                 # Fall 3: Alle Vacuums fertig (docked) → Alarm zurueckschalten
                 if all_docked and not cleaning_robots:
