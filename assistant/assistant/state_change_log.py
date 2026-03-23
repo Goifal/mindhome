@@ -3797,6 +3797,7 @@ DEVICE_DEPENDENCIES = [
         "severity": "info",
     },
     # Licht an → Blinds (Kunstlicht bei offenen Jalousien nachts = Einsehbarkeit)
+    # Bug 2 Fix: time_range begrenzt auf Abend/Nacht (16-06 Uhr)
     {
         "role": "light",
         "state": "on",
@@ -3805,6 +3806,7 @@ DEVICE_DEPENDENCIES = [
         "effect": "Licht an nachts + Jalousien offen → Raum einsehbar",
         "hint": "Licht an abends → Jalousien schliessen fuer Privatsphaere",
         "severity": "info",
+        "time_range": (16, 6),  # Nur zwischen 16:00 und 06:00
     },
     {
         "role": "light",
@@ -3814,6 +3816,7 @@ DEVICE_DEPENDENCIES = [
         "effect": "Licht an nachts + Rollladen offen → Raum einsehbar",
         "hint": "Licht an abends → Rollladen runter fuer Privatsphaere",
         "severity": "info",
+        "time_range": (16, 6),
     },
     {
         "role": "light",
@@ -3823,6 +3826,7 @@ DEVICE_DEPENDENCIES = [
         "effect": "Licht an nachts + Vorhaenge offen → Raum einsehbar",
         "hint": "Licht an abends → Vorhaenge zuziehen fuer Privatsphaere",
         "severity": "info",
+        "time_range": (16, 6),
     },
     # =================================================================
     # WETTER → GERAETE — weitere Szenarien
@@ -3996,6 +4000,7 @@ DEVICE_DEPENDENCIES = [
     # BETT-SZENARIEN — erweitert
     # =================================================================
     # Im Bett → Shutter runter
+    # Bug 2 Fix: Nur abends/nachts relevant (20-10 Uhr)
     {
         "role": "bed_occupancy",
         "state": "on",
@@ -4004,6 +4009,7 @@ DEVICE_DEPENDENCIES = [
         "effect": "Im Bett → Rollladen schliessen fuer Dunkelheit",
         "hint": "Schlafenszeit → Rollladen runter, Raum abdunkeln",
         "severity": "info",
+        "time_range": (20, 10),  # Nur zwischen 20:00 und 10:00
     },
     # Im Bett → Thermostat Nacht-Temperatur
     {
@@ -11224,11 +11230,34 @@ class StateChangeLog:
             entity_roles[eid] = self._get_entity_role(eid)
             entity_rooms[eid] = self._get_entity_room(eid)
 
+        # Bug 2 Fix: Aktuelle Stunde fuer time_range Filter
+        try:
+            from helpers import local_now as _local_now
+
+            _current_hour = _local_now().hour
+        except Exception:
+            from datetime import datetime as _dt, timezone as _tz
+
+            _current_hour = _dt.now(_tz.utc).hour
+
         conflicts = []
         for dep in DEVICE_DEPENDENCIES:
             cond_role = dep["role"]
             cond_state = dep["state"]
             same_room = dep.get("same_room", False)
+
+            # Bug 2 Fix: time_range pruefen (z.B. (16, 6) = 16:00-06:00)
+            time_range = dep.get("time_range")
+            if time_range:
+                start_h, end_h = time_range
+                if start_h > end_h:
+                    # Ueber Mitternacht: 16-06 → hour >= 16 OR hour < 6
+                    if not (_current_hour >= start_h or _current_hour < end_h):
+                        continue
+                else:
+                    # Normal: 8-20 → hour >= 8 AND hour < 20
+                    if not (start_h <= _current_hour < end_h):
+                        continue
 
             # Finde alle Entities die diese Rolle + State haben
             matching = [

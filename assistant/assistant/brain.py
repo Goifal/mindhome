@@ -14748,14 +14748,61 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if len(parts) < 2:
             return None
 
+        # Bug 1 Fix: Verb und Aktion aus dem ersten Part fuer Folge-Parts vererben.
+        # "Fahre die Rolläden im Wohnzimmer und der Küche runter" →
+        #   Part 1: "Fahre die Rolläden im Wohnzimmer" (hat Verb + Raum)
+        #   Part 2: "der Küche runter" (kein Verb, Raum braucht Kontext)
+        # Fuer Part 2 ergaenzen wir den Verb-Kontext des ersten Parts.
+        first_part = parts[0].strip()
+        # Verb am Anfang extrahieren (z.B. "Fahre", "Mach", "Schalt")
+        _verb_match = _re.match(
+            r"((?:fahr|mach|schalt|schalte|stell|setz|dreh|oeffne|schliess|aktiviere)\w*"
+            r"(?:\s+(?:die|das|den|dem|der|alle|meine?)\s+\w+)?)",
+            first_part,
+            _re.IGNORECASE,
+        )
+        verb_prefix = _verb_match.group(1) if _verb_match else ""
+
         cmds = []
-        for part in parts:
+        for i, part in enumerate(parts):
             part = part.strip()
             if not part:
                 continue
+
+            # Erster Part: direkt versuchen
+            if i == 0:
+                cmd = cls._detect_device_command(part, room=room)
+                if cmd:
+                    cmds.append(cmd)
+                continue
+
+            # Folge-Parts: erst direkt versuchen
             cmd = cls._detect_device_command(part, room=room)
             if cmd:
                 cmds.append(cmd)
+                continue
+
+            # Fallback 1: Raum aus lockerer Extraktion ("der Küche" → "Küche")
+            room_match = _re.search(
+                r"(?:der|dem|des|die|das|im|in|ins|vom|am)\s+"
+                r"([A-ZÄÖÜa-zäöüß][A-ZÄÖÜa-zäöüß\-]+)",
+                part,
+                _re.IGNORECASE,
+            )
+            if room_match and verb_prefix:
+                # Verb-Kontext + Raum-Präposition ergaenzen
+                enriched = f"{verb_prefix} im {room_match.group(1)}"
+                # Aktions-Wort aus dem Teil anhängen (z.B. "runter", "hoch", "aus")
+                action_words = _re.findall(
+                    r"\b(runter|rauf|hoch|auf|zu|an|aus|ein|ab)\b",
+                    part,
+                    _re.IGNORECASE,
+                )
+                if action_words:
+                    enriched += " " + " ".join(action_words)
+                cmd = cls._detect_device_command(enriched, room=room)
+                if cmd:
+                    cmds.append(cmd)
 
         if len(cmds) < 2:
             # Weniger als 2 erkannte Kommandos → kein Multi-Command

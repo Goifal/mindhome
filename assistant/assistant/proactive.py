@@ -1625,31 +1625,67 @@ class ProactiveManager:
                     getattr(self.brain, "memory", None), "redis", None
                 )
                 if redis_client:
-                    acting_key = f"mha:cover:jarvis_acting:{entity_id}"
-                    jarvis_triggered = await redis_client.get(acting_key)
-                    if not jarvis_triggered:
-                        override_hours = (
-                            yaml_config.get("seasonal_actions", {})
-                            .get("cover_automation", {})
-                            .get("manual_override_hours", 2)
+                    # Bug 6 Fix: Deaktivierte Covers nicht tracken
+                    if not await self._is_cover_enabled_for_automation(entity_id):
+                        logger.debug(
+                            "Cover Override ignoriert: %s ist deaktiviert", entity_id
                         )
-                        override_ttl = int(override_hours * 3600)
-                        override_key = f"mha:cover:manual_override:{entity_id}"
-                        await redis_client.set(override_key, "1", ex=override_ttl)
-                        logger.info(
-                            "Cover Manual Override: %s manuell bedient (%s -> %s), Automatik pausiert für %dh",
-                            entity_id,
-                            old_val,
-                            new_val,
-                            override_hours,
+                    # Bug 3 Fix: HA-Gruppen-Entities filtern — Gruppen-State-Changes
+                    # werden durch Einzel-Cover-Bewegungen ausgeloest und sind keine
+                    # echten manuellen Aktionen. Gruppen erkennen wir an ihren
+                    # entity_id Attributes (HA fuellt diese fuer Gruppen).
+                    elif await self._is_ha_group_cover(entity_id):
+                        logger.debug(
+                            "Cover Override ignoriert: %s ist eine HA-Gruppe", entity_id
                         )
                     else:
-                        logger.debug(
-                            "Cover state change %s (%s -> %s) — jarvis_acting gesetzt, kein Override",
-                            entity_id,
-                            old_val,
-                            new_val,
-                        )
+                        # Pruefen ob Jarvis die Aktion ausgeloest hat
+                        acting_key = f"mha:cover:jarvis_acting:{entity_id}"
+                        jarvis_triggered = await redis_client.get(acting_key)
+                        if not jarvis_triggered:
+                            # Auch pruefen ob ein Einzel-Cover in dieser Gruppe
+                            # gerade von Jarvis gesteuert wird (Bug 3 Zusatzschutz)
+                            jarvis_sibling = await self._any_sibling_jarvis_acting(
+                                entity_id, redis_client
+                            )
+                            if jarvis_sibling:
+                                logger.debug(
+                                    "Cover Override ignoriert: %s — Sibling %s hat jarvis_acting",
+                                    entity_id,
+                                    jarvis_sibling,
+                                )
+                            else:
+                                override_hours = (
+                                    yaml_config.get("seasonal_actions", {})
+                                    .get("cover_automation", {})
+                                    .get("manual_override_hours", 2)
+                                )
+                                override_ttl = int(override_hours * 3600)
+                                # Bug 4 Fix: Override auch auf alle Einzel-Covers
+                                # im gleichen Raum setzen, damit die Solar-Automatik
+                                # (die Einzel-Entities steuert) den Override sieht
+                                override_entities = await self._get_override_targets(
+                                    entity_id
+                                )
+                                for oid in override_entities:
+                                    okey = f"mha:cover:manual_override:{oid}"
+                                    await redis_client.set(okey, "1", ex=override_ttl)
+                                logger.info(
+                                    "Cover Manual Override: %s manuell bedient (%s -> %s), "
+                                    "Automatik pausiert für %dh (%d Covers)",
+                                    entity_id,
+                                    old_val,
+                                    new_val,
+                                    override_hours,
+                                    len(override_entities),
+                                )
+                        else:
+                            logger.debug(
+                                "Cover state change %s (%s -> %s) — jarvis_acting gesetzt, kein Override",
+                                entity_id,
+                                old_val,
+                                new_val,
+                            )
             except Exception as e:
                 logger.debug("Cover Manual Override Detection Fehler: %s", e)
 
@@ -2206,6 +2242,14 @@ class ProactiveManager:
                 closed_count = 0
                 for cid in cover_ids:
                     redis_key = f"mha:cover:power_close:{cid}"
+                    # Bug 5 Fix: Lock IMMER setzen wenn Schwelle ueberschritten,
+                    # auch wenn Cover bereits auf Zielposition steht.
+                    # Ohne Lock kann die Solar-Automatik das Cover wieder oeffnen.
+                    if redis_client:
+                        try:
+                            await redis_client.set(redis_key, "1", ex=86400)
+                        except Exception as e:
+                            logger.warning("Unhandled: %s", e)
                     acted = await self._auto_cover_action(
                         cid,
                         close_pos,
@@ -2216,11 +2260,6 @@ class ProactiveManager:
                     )
                     if acted:
                         closed_count += 1
-                        if redis_client:
-                            try:
-                                await redis_client.set(redis_key, "1", ex=86400)
-                            except Exception as e:
-                                logger.warning("Unhandled: %s", e)
                 logger.info(
                     "Power-Close: %s über Schwelle (%s W >= %s W) → %d/%d Covers geschlossen",
                     entity_id,
@@ -5750,6 +5789,106 @@ class ProactiveManager:
                     if s.get("entity_id") == sensor_eid and s.get("state") == "on":
                         return True
         return False
+
+    async def _is_cover_enabled_for_automation(self, entity_id: str) -> bool:
+        """Prueft ob ein Cover in der Config als aktiviert markiert ist (Bug 6 Fix).
+
+        Deaktivierte Covers sollen weder automatisiert noch als Manual Override getrackt werden.
+        """
+        try:
+            from .cover_config import load_cover_configs
+
+            configs = load_cover_configs()
+            if configs and isinstance(configs, dict):
+                conf = configs.get(entity_id, {})
+                if conf.get("enabled") is False:
+                    return False
+        except Exception as e:
+            logger.debug("Cover enabled-Check Fehler fuer %s: %s", entity_id, e)
+        return True
+
+    async def _is_ha_group_cover(self, entity_id: str) -> bool:
+        """Prueft ob eine Cover-Entity eine HA-Gruppe ist (Bug 3 Fix).
+
+        HA-Gruppen haben 'entity_id' in ihren Attributes (Liste der Member-Entities).
+        Zusaetzlich pruefen wir ob die Entity in keinem Cover-Profil als Einzel-Cover definiert ist.
+        """
+        try:
+            state = await self.brain.ha.get_state(entity_id)
+            if state and isinstance(state, dict):
+                attrs = state.get("attributes", {})
+                # HA-Gruppen haben 'entity_id' als Liste von Member-Entities
+                member_ids = attrs.get("entity_id")
+                if isinstance(member_ids, list) and len(member_ids) > 0:
+                    return True
+        except Exception as e:
+            logger.debug("HA-Gruppen-Check Fehler fuer %s: %s", entity_id, e)
+        return False
+
+    async def _any_sibling_jarvis_acting(
+        self, entity_id: str, redis_client
+    ) -> str:
+        """Prueft ob ein verwandtes Cover gerade von Jarvis gesteuert wird (Bug 3 Zusatzschutz).
+
+        Wenn z.B. cover.rollladen_wohnzimmer_2 ein jarvis_acting Flag hat,
+        und cover.rollladen (Gruppe) sich aendert, ist das kein manueller Override.
+        """
+        try:
+            # Raum des Covers ermitteln
+            room = self._get_room_for_cover(entity_id)
+            if not room:
+                return ""
+            # Alle Cover-Profiles durchsuchen
+            profiles = self._load_cover_profiles()
+            for p in profiles:
+                pid = p.get("entity_id", "")
+                if pid == entity_id:
+                    continue
+                p_room = p.get("room", "").lower()
+                # Gleiches Raum-Praefix oder explizit gleicher Raum
+                if p_room == room or room in pid.lower():
+                    key = f"mha:cover:jarvis_acting:{pid}"
+                    acting = await redis_client.get(key)
+                    if acting:
+                        return pid
+        except Exception as e:
+            logger.debug("Sibling jarvis_acting Check Fehler: %s", e)
+        return ""
+
+    async def _get_override_targets(self, entity_id: str) -> list:
+        """Ermittelt alle Entity-IDs die bei einem Manual Override gesperrt werden sollen (Bug 4 Fix).
+
+        Wenn ein Einzel-Cover manuell bedient wird: nur dieses Cover sperren.
+        Wenn der User per HA-Gruppe oder alle Covers eines Raums bedient:
+        auch die Einzel-Covers im gleichen Raum sperren.
+        """
+        targets = [entity_id]
+        try:
+            # Pruefen ob es eine HA-Gruppe ist
+            state = await self.brain.ha.get_state(entity_id)
+            if state and isinstance(state, dict):
+                attrs = state.get("attributes", {})
+                member_ids = attrs.get("entity_id")
+                if isinstance(member_ids, list):
+                    for mid in member_ids:
+                        if mid.startswith("cover.") and mid not in targets:
+                            targets.append(mid)
+                    return targets
+
+            # Fallback: Cover-Profiles nach gleichem Raum durchsuchen
+            room = self._get_room_for_cover(entity_id)
+            if room:
+                profiles = self._load_cover_profiles()
+                for p in profiles:
+                    pid = p.get("entity_id", "")
+                    if pid == entity_id or pid in targets:
+                        continue
+                    p_room = p.get("room", "").lower()
+                    if p_room == room:
+                        targets.append(pid)
+        except Exception as e:
+            logger.debug("Override-Targets Fehler fuer %s: %s", entity_id, e)
+        return targets
 
     async def _startup_reconciliation(self, redis_client):
         """Startup-Reconciliation: Prüft ob Covers nach Neustart im erwarteten Zustand sind.
