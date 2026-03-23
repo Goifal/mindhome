@@ -38,7 +38,8 @@ Dazu: 103 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen, 2 Front
 | 7a | `PROMPT_07a_TESTING.md` | Tests + Coverage + **Security-Endpoint-Tests** | Verifiziert Fixes aus #6a–6f |
 | 7b | `PROMPT_07b_DEPLOYMENT.md` | Docker + Deployment + **Resilience** + **Performance** | Nutzt Test-Ergebnisse aus #7a |
 | 7c | `PROMPT_07c_INTEGRATION_TESTS.md` | **Integration-Tests**: End-to-End Flows (Chat, Memory, Proaktiv, Resilience, Security) | Nach #7b |
-| 8a | `PROMPT_08a_CODEQUALITAET.md` | **Docs** + **Dependencies** + **CI/CD** + Lokalisierung | Nach #7c |
+| 7d | `PROMPT_07d_ADDON_INTEGRATION_TESTS.md` | **Addon-Integration-Tests**: Routes, Domains, Engines, Event-Bus, DB | Nach #7c |
+| 8a | `PROMPT_08a_CODEQUALITAET.md` | **Docs** + **Dependencies** + **CI/CD** + Lokalisierung | Nach #7d |
 | 8b | `PROMPT_08b_BETRIEB.md` | **Multi-User** + **Frontend** + **Monitoring** + Persistenz | Nach #8a |
 | 9a | `PROMPT_09a_FIX_CODEQUALITAET.md` | **Fix: alle P08a Findings** — Docs, Deps, CI/CD, Scripts | Nutzt Findings aus #8a |
 | 9b | `PROMPT_09b_FIX_BETRIEB.md` | **Fix: alle P08b Findings** — Concurrency, Logging, Health | Nutzt Findings aus #8b |
@@ -166,34 +167,40 @@ Wenn ein Bug in P04a-P04c gefunden wird, muss er dem richtigen Fix-Prompt zugeor
 
 ## Was jeder Prompt abdeckt
 
-| Aspekt | P1 | P2 | P3a | P3b | P4a | P4b | P4c | P5 | P6a | P6b | P6c | P6d | P6e | P6f | P7a | P7b | P8a | P8b | P9a | P9b | P10 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Assistant-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Addon-Module | ✅ | ✅ | - | ✅ | - | - | ✅ | ✅ | - | - | - | ✅ | - | - | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Shared-Module (API-Verträge) | ✅ | - | ✅ | ✅ | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | ✅ | - | ✅ | - | ✅ |
-| Speech-Service | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
-| Architektur | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | - |
-| Memory (12 Module) | - | ✅ | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - | ✅ |
-| Flows (13 Pfade) | - | - | ✅ | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - |
-| Bug-Jagd (13 Klassen) | - | - | - | - | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | - | - | - | - | - | - | - | - | ✅ |
-| **Gerätesteuerung/Tool-Calling** | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | ✅ |
-| **TTS/Meta-Leakage** | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ |
-| **Performance & Latenz** | - | - | - | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
-| Security | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | ✅ | - | - | ✅ | - | ✅ | ✅ |
-| Resilience | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
-| Persönlichkeit / MCU | ✅ | - | ✅ | - | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - | - | - | - | - | - |
-| Config / YAML | - | - | - | - | - | - | - | ✅ | - | - | ✅ | - | ✅ | ✅ | - | - | ✅ | - | ✅ | - | - |
-| Tests (103 Dateien) | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | ✅ |
-| Docker / Deployment | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
-| Frontend (app.jsx, app.js) | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
-| Dependencies (requirements.txt) | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | ✅ | - | ✅ | - | ✅ |
-| Translations / Manifests | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | - |
-| **Dokumentation (README)** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | ✅ |
-| **CI/CD Pipeline** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | - |
-| **Multi-User / Concurrency** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | ✅ |
-| **Logging / Monitoring** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | ✅ |
-| **Daten-Persistenz / Backup** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | ✅ |
-| **Shell-Scripts** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | - |
+| Aspekt | P1 | P2 | P3a | P3b | P4a | P4b | P4c | P5 | P6a | P6b | P6c | P6d | P6e | P6f | P7a | P7b | P7c | P7d | P8a | P8b | P9a | P9b | P10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Assistant-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Addon-Module | ✅ | ✅ | - | ✅ | - | - | ✅ | ✅ | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Shared-Module (API-Verträge) | ✅ | - | ✅ | ✅ | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | ✅ | - | ✅ | - | ✅ |
+| Speech-Service | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | ✅ |
+| Architektur | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | - | - | - |
+| Memory (12 Module) | - | ✅ | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | ✅ | - | ✅ | - | - | - | - | - | ✅ |
+| Flows (13 Pfade) | - | - | ✅ | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - | ✅ | ✅ | - | - | - | - | - | - |
+| Bug-Jagd (13 Klassen) | - | - | - | - | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - | ✅ |
+| **Gerätesteuerung/Tool-Calling** | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | ✅ | - | - | - | - | - | ✅ |
+| **TTS/Meta-Leakage** | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - | ✅ |
+| **Performance & Latenz** | - | - | - | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | ✅ |
+| Security | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | ✅ | - | ✅ | ✅ | - | ✅ | - | ✅ | ✅ |
+| Resilience | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | - | ✅ | ✅ | - | - | ✅ | - | ✅ | ✅ |
+| Persönlichkeit / MCU | ✅ | - | ✅ | - | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - | - |
+| Config / YAML | - | - | - | - | - | - | - | ✅ | - | - | ✅ | - | ✅ | ✅ | - | - | - | - | ✅ | - | ✅ | - | - |
+| Tests (103+ Dateien) | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | ✅ | - | - | - | - | ✅ |
+| Docker / Deployment | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | ✅ |
+| Frontend (app.jsx, app.js) | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | ✅ |
+| Dependencies (requirements.txt) | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | ✅ | - | ✅ | - | ✅ |
+| Translations / Manifests | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | - |
+| **Dokumentation (README)** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | ✅ |
+| **CI/CD Pipeline** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | - |
+| **Multi-User / Concurrency** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | ✅ |
+| **Logging / Monitoring** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | ✅ |
+| **Daten-Persistenz / Backup** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
+| **Shell-Scripts** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | - |
+| **Addon-Routes (18 Blueprints)** | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **Domain-Plugins (23)** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **Engines (16)** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **Event-Bus** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **Pattern Engine** | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **Automation Engine** | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
 
 ## Wichtige Rahmenbedingungen
 
