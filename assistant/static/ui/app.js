@@ -150,6 +150,12 @@ const _searchIndex = [
   {tab:'tab-house-status', title:'Humidor', keywords:'humidor feuchtigkeit zigarren sensor', icon:'&#127793;'},
   {tab:'tab-house-status', title:'Wellness', keywords:'wellness trinken pause mahlzeit stress pc break reminder', icon:'&#129505;'},
   {tab:'tab-house-status', title:'Wetterwarnungen', keywords:'wetter warnung temperatur wind sturm hitze kälte', icon:'&#127752;'},
+  // Persoenlicher Assistent (tab-personal)
+  {tab:'tab-personal', title:'Aufgaben / Todo', keywords:'aufgabe todo task liste erledigen wiederkehrend familie person', icon:'&#9745;'},
+  {tab:'tab-personal', title:'Notizen', keywords:'notiz memo merken note suche kategorie idee', icon:'&#128221;'},
+  {tab:'tab-personal', title:'Familie', keywords:'familie mitglied profil beziehung kind partner gruppe nachricht', icon:'&#128106;'},
+  {tab:'tab-personal', title:'Essensplanung', keywords:'essen mahlzeit wochenplan kochen vorrat inventar rezept vorschlag', icon:'&#127869;'},
+  {tab:'tab-personal', title:'Geburtstage & Jahrestage', keywords:'geburtstag jahrestag erinnerung briefing personal date termin', icon:'&#127874;'},
   // Koch-Assistent (tab-cooking)
   {tab:'tab-cooking', title:'Koch-Assistent', keywords:'kochen rezept timer portionen schritte', icon:'&#127859;'},
   // Werkstatt (tab-workshop)
@@ -178,6 +184,7 @@ const _tabLabels = {
   'tab-covers':'Rollläden','tab-vacuum':'Saugroboter','tab-remote':'Fernbedienung',
   'tab-scenes':'Szenen','tab-routines':'Routinen',
   'tab-proactive':'Proaktiv','tab-notifications':'Benachrichtigungen',
+  'tab-personal':'Persönlicher Assistent',
   'tab-cooking':'Koch-Assistent','tab-followme':'Follow-Me',
   'tab-jarvis':'Jarvis-Features','tab-intelligence':'Intelligenz',
   'tab-declarative-tools':'Analyse-Tools','tab-eastereggs':'Easter Eggs',
@@ -750,6 +757,7 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
       'tab-scenes':'Szenen','tab-routines':'Routinen',
       'tab-proactive':'Proaktiv & Vorausdenken',
       'tab-notifications':'Benachrichtigungen',
+      'tab-personal':'Persönlicher Assistent',
       'tab-cooking':'Koch-Assistent','tab-followme':'Follow-Me',
       'tab-jarvis':'Jarvis-Features','tab-intelligence':'Intelligenz — Quick Wins','tab-declarative-tools':'Analyse-Tools',
       'tab-eastereggs':'Easter Eggs',
@@ -1189,6 +1197,7 @@ function renderCurrentTab() {
       case 'tab-routines': c.innerHTML = renderRoutines(); break;
       case 'tab-proactive': c.innerHTML = renderProactive(); break;
       case 'tab-notifications': c.innerHTML = renderNotifications(); loadNotifyChannels(); break;
+      case 'tab-personal': c.innerHTML = renderPersonalAssistant(); loadPersonalTasks(); loadPersonalNotes(); loadFamilyMembers(); loadMealPlan(); break;
       case 'tab-cooking': c.innerHTML = renderCooking(); break;
       case 'tab-workshop': c.innerHTML = renderWorkshop(); break;
       case 'tab-house-status': c.innerHTML = renderHouseStatus(); break;
@@ -5747,6 +5756,282 @@ function renderJarvisFeatures() {
     fSubheading('JSON-Modus für Tools') +
     fToggle('json_mode_tools.enabled', 'JSON-Modus aktiv', 'JSON-Output bei Ollama Tool-Calls für zuverlässigere Gerätesteuerung. Standard: an')
   );
+}
+
+// ---- Persoenlicher Assistent ----
+function renderPersonalAssistant() {
+  return sectionWrap('&#9745;', 'Aufgaben / Todo',
+    fInfo('Aufgabenverwaltung ueber Home Assistants Todo-Listen. Persoenliche und geteilte Familien-Aufgaben, auch wiederkehrend.') +
+    fToggle('task_manager.enabled', 'Aufgaben-Manager aktiv') +
+    fText('task_manager.default_list', 'Persoenliche Todo-Liste (HA Entity)', 'z.B. todo.einkaufsliste') +
+    fText('task_manager.family_list', 'Familien-Todo-Liste (HA Entity)', 'z.B. todo.familie') +
+    fRange('task_manager.recurring_check_minutes', 'Wiederkehrende Tasks pruefen', 15, 240, 15, {15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'}) +
+    fSubheading('Aktuelle Aufgaben') +
+    '<div id="paTaskList" style="margin-bottom:8px;"><div style="color:var(--text-muted);font-size:13px;">Wird geladen...</div></div>' +
+    '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">' +
+      '<div style="flex:1;min-width:200px;"><label style="font-size:11px;color:var(--text-muted);">Neue Aufgabe</label>' +
+        '<input type="text" id="paTaskTitle" class="form-input" placeholder="z.B. Milch kaufen" style="font-size:13px;"></div>' +
+      '<div style="min-width:100px;"><label style="font-size:11px;color:var(--text-muted);">Person (opt.)</label>' +
+        '<input type="text" id="paTaskPerson" class="form-input" placeholder="z.B. Lisa" style="font-size:13px;"></div>' +
+      '<div style="min-width:120px;"><label style="font-size:11px;color:var(--text-muted);">Faellig (opt.)</label>' +
+        '<input type="date" id="paTaskDue" class="form-input" style="font-size:13px;"></div>' +
+      '<button class="btn" onclick="addPersonalTask()" style="height:36px;white-space:nowrap;">&#10010; Hinzufuegen</button>' +
+    '</div>' +
+    fSubheading('Wiederkehrende Aufgaben') +
+    '<div id="paRecurringList" style="margin-bottom:8px;"><div style="color:var(--text-muted);font-size:13px;">Wird geladen...</div></div>'
+  ) +
+  sectionWrap('&#128221;', 'Notizen',
+    fInfo('Schnelle Notizen per Sprache oder hier. Kategorisiert und durchsuchbar.') +
+    fToggle('notes.enabled', 'Notiz-System aktiv') +
+    fRange('notes.max_notes', 'Max. Notizen', 100, 2000, 100) +
+    fRange('notes.archive_after_days', 'Archivieren nach Tagen', 30, 365, 30, {30:'1 Monat',60:'2 Monate',90:'3 Monate',180:'6 Monate',365:'1 Jahr'}) +
+    fSubheading('Notizen') +
+    '<div id="paNotesList" style="margin-bottom:8px;"><div style="color:var(--text-muted);font-size:13px;">Wird geladen...</div></div>' +
+    '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">' +
+      '<div style="flex:2;min-width:200px;"><label style="font-size:11px;color:var(--text-muted);">Neue Notiz</label>' +
+        '<input type="text" id="paNoteContent" class="form-input" placeholder="z.B. Schluesseldienst: 0800-123456" style="font-size:13px;"></div>' +
+      '<div style="min-width:120px;"><label style="font-size:11px;color:var(--text-muted);">Kategorie</label>' +
+        '<select id="paNoteCategory" class="form-input" style="font-size:13px;">' +
+          '<option value="sonstiges">Sonstiges</option><option value="haushalt">Haushalt</option>' +
+          '<option value="arbeit">Arbeit</option><option value="ideen">Ideen</option>' +
+          '<option value="gesundheit">Gesundheit</option><option value="technik">Technik</option>' +
+          '<option value="finanzen">Finanzen</option><option value="familie">Familie</option>' +
+          '<option value="rezept">Rezept</option><option value="einkauf">Einkauf</option>' +
+        '</select></div>' +
+      '<button class="btn" onclick="addPersonalNote()" style="height:36px;white-space:nowrap;">&#10010; Speichern</button>' +
+    '</div>'
+  ) +
+  sectionWrap('&#128106;', 'Familie',
+    fInfo('Familien-Profile fuer personalisierte Kommunikation. Jarvis passt Sprache und Briefing an Alter und Beziehung an.') +
+    '<div id="paFamilyList" style="margin-bottom:8px;"><div style="color:var(--text-muted);font-size:13px;">Wird geladen...</div></div>' +
+    fSubheading('Mitglied hinzufuegen') +
+    '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">' +
+      '<div style="flex:1;min-width:120px;"><label style="font-size:11px;color:var(--text-muted);">Name</label>' +
+        '<input type="text" id="paFamilyName" class="form-input" placeholder="z.B. Lisa" style="font-size:13px;"></div>' +
+      '<div style="min-width:130px;"><label style="font-size:11px;color:var(--text-muted);">Beziehung</label>' +
+        '<select id="paFamilyRelation" class="form-input" style="font-size:13px;">' +
+          '<option value="partner">Partner/in</option><option value="spouse">Ehepartner/in</option>' +
+          '<option value="child">Kind</option><option value="parent">Elternteil</option>' +
+          '<option value="sibling">Geschwister</option><option value="grandparent">Grosseltern</option>' +
+          '<option value="roommate">Mitbewohner/in</option><option value="friend">Freund/in</option>' +
+          '<option value="other">Andere</option>' +
+        '</select></div>' +
+      '<div style="min-width:90px;"><label style="font-size:11px;color:var(--text-muted);">Geburtsjahr</label>' +
+        '<input type="number" id="paFamilyYear" class="form-input" min="1920" max="2025" placeholder="1990" style="font-size:13px;"></div>' +
+      '<div style="flex:1;min-width:140px;"><label style="font-size:11px;color:var(--text-muted);">Interessen</label>' +
+        '<input type="text" id="paFamilyInterests" class="form-input" placeholder="z.B. Yoga, Kochen" style="font-size:13px;"></div>' +
+      '<button class="btn" onclick="addFamilyMember()" style="height:36px;white-space:nowrap;">&#10010; Hinzufuegen</button>' +
+    '</div>'
+  ) +
+  sectionWrap('&#127869;', 'Essensplanung',
+    fInfo('Wochenplaene, Vorschlaege aus Vorraeten und Mahlzeiten-Historie. Verbindet Koch-Assistent, Einkaufsliste und Inventar.') +
+    fToggle('meal_planner.enabled', 'Essensplanung aktiv') +
+    fRange('meal_planner.default_portions', 'Standard-Portionen', 1, 12, 1) +
+    fRange('meal_planner.history_max_entries', 'Max. Mahlzeiten-Historie', 50, 500, 50) +
+    fSubheading('Aktueller Wochenplan') +
+    '<div id="paMealPlan" style="margin-bottom:8px;"><div style="color:var(--text-muted);font-size:13px;">Wird geladen...</div></div>' +
+    '<button class="btn" onclick="createMealPlan()" style="margin-top:4px;">&#128196; Neuen Wochenplan erstellen</button>' +
+    fSubheading('Letzte Mahlzeiten') +
+    '<div id="paMealHistory" style="margin-bottom:8px;"><div style="color:var(--text-muted);font-size:13px;">Wird geladen...</div></div>'
+  ) +
+  sectionWrap('&#127874;', 'Geburtstage & Jahrestage — Einstellungen',
+    fInfo('Proaktive Erinnerungen an Geburtstage und Jahrestage. Die Daten selbst verwaltest du unter Gedaechtnis → Persoenliche Daten.') +
+    fToggle('personal_dates.enabled', 'Erinnerungen aktiv') +
+    fRange('personal_dates.check_interval_hours', 'Pruef-Intervall', 1, 24, 1, {1:'Stuendlich',3:'3 Std',6:'6 Std (Standard)',12:'12 Std',24:'Taeglich'}) +
+    fRange('personal_dates.briefing_lookahead_days', 'Vorschau im Morgen-Briefing', 1, 30, 1, {1:'1 Tag',3:'3 Tage',7:'1 Woche (Standard)',14:'2 Wochen',30:'1 Monat'})
+  );
+}
+
+// ---- Personal Assistant: Loader-Funktionen ----
+
+async function loadPersonalTasks() {
+  try {
+    const d = await api('/api/ui/tasks');
+    const el = document.getElementById('paTaskList');
+    if (!el) return;
+    if (!d.success || !d.message || d.message.includes('Keine offenen')) {
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Keine offenen Aufgaben — alles erledigt! &#127881;</div>';
+    } else {
+      const lines = d.message.split('\n').filter(l => l.trim());
+      const header = lines[0];
+      const items = lines.slice(1);
+      el.innerHTML = items.map(item => {
+        const text = item.replace(/^\d+\.\s*\[.\]\s*/, '').trim();
+        const isDone = item.includes('[x]');
+        return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">' +
+          '<span style="flex:1;font-size:13px;' + (isDone ? 'text-decoration:line-through;color:var(--text-muted);' : '') + '">' + esc(text) + '</span>' +
+          (!isDone ? '<button class="btn btn-sm" onclick="completePersonalTask(\'' + esc(text.replace(/'/g, "\\'")) + '\')" title="Erledigt" style="font-size:11px;padding:2px 8px;">&#10004;</button>' : '') +
+          '<button class="btn btn-sm btn-danger" onclick="removePersonalTask(\'' + esc(text.replace(/'/g, "\\'")) + '\')" title="Entfernen" style="font-size:11px;padding:2px 8px;">&#10006;</button>' +
+        '</div>';
+      }).join('');
+    }
+    // Wiederkehrende
+    const rd = await api('/api/ui/tasks/recurring');
+    const rel = document.getElementById('paRecurringList');
+    if (!rel) return;
+    if (!rd.success || !rd.message || rd.message.includes('Keine')) {
+      rel.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Keine wiederkehrenden Aufgaben</div>';
+    } else {
+      const lines = rd.message.split('\n').filter(l => l.startsWith('-'));
+      rel.innerHTML = lines.map(l => '<div style="padding:4px 0;font-size:13px;border-bottom:1px solid var(--border);">' + esc(l.replace(/^-\s*/, '')) + '</div>').join('');
+    }
+  } catch(e) { console.error('Tasks load fail:', e); }
+}
+
+async function addPersonalTask() {
+  const title = (document.getElementById('paTaskTitle')?.value || '').trim();
+  const person = (document.getElementById('paTaskPerson')?.value || '').trim();
+  const due = (document.getElementById('paTaskDue')?.value || '').trim();
+  if (!title) { toast('Aufgabe eingeben', 'error'); return; }
+  try {
+    const d = await api('/api/ui/tasks', 'POST', {title, person, due_date: due, priority: 'medium'});
+    if (d.success) {
+      toast(d.message || 'Hinzugefuegt');
+      document.getElementById('paTaskTitle').value = '';
+      document.getElementById('paTaskPerson').value = '';
+      document.getElementById('paTaskDue').value = '';
+      loadPersonalTasks();
+    } else { toast(d.message || 'Fehler', 'error'); }
+  } catch(e) { toast('Fehler beim Hinzufuegen', 'error'); }
+}
+
+async function completePersonalTask(title) {
+  try {
+    const d = await api('/api/ui/tasks/complete', 'POST', {title});
+    if (d.success) { toast(d.message || 'Erledigt'); loadPersonalTasks(); }
+    else { toast(d.message || 'Fehler', 'error'); }
+  } catch(e) { toast('Fehler', 'error'); }
+}
+
+async function removePersonalTask(title) {
+  if (!confirm('Aufgabe "' + title + '" wirklich entfernen?')) return;
+  try {
+    const d = await api('/api/ui/tasks', 'DELETE', {title});
+    if (d.success) { toast('Entfernt'); loadPersonalTasks(); }
+    else { toast(d.message || 'Fehler', 'error'); }
+  } catch(e) { toast('Fehler', 'error'); }
+}
+
+async function loadPersonalNotes() {
+  try {
+    const d = await api('/api/ui/notes?limit=15');
+    const el = document.getElementById('paNotesList');
+    if (!el) return;
+    if (!d.success || !d.message || d.message.includes('Keine')) {
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Noch keine Notizen vorhanden</div>';
+    } else {
+      const lines = d.message.split('\n').filter(l => l.startsWith('-'));
+      el.innerHTML = lines.map(l => {
+        const text = l.replace(/^-\s*/, '');
+        return '<div style="padding:5px 0;font-size:13px;border-bottom:1px solid var(--border);">' + esc(text) + '</div>';
+      }).join('');
+    }
+  } catch(e) { console.error('Notes load fail:', e); }
+}
+
+async function addPersonalNote() {
+  const content = (document.getElementById('paNoteContent')?.value || '').trim();
+  const category = document.getElementById('paNoteCategory')?.value || 'sonstiges';
+  if (!content) { toast('Notiz eingeben', 'error'); return; }
+  try {
+    const d = await api('/api/ui/notes', 'POST', {content, category});
+    if (d.success) {
+      toast(d.message || 'Gespeichert');
+      document.getElementById('paNoteContent').value = '';
+      loadPersonalNotes();
+    } else { toast(d.message || 'Fehler', 'error'); }
+  } catch(e) { toast('Fehler beim Speichern', 'error'); }
+}
+
+async function loadFamilyMembers() {
+  try {
+    const d = await api('/api/ui/family');
+    const el = document.getElementById('paFamilyList');
+    if (!el) return;
+    const members = d.members || [];
+    if (members.length === 0) {
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Noch keine Familienmitglieder eingetragen</div>';
+    } else {
+      const relLabels = {partner:'Partner/in',spouse:'Ehepartner/in',child:'Kind',parent:'Elternteil',sibling:'Geschwister',grandparent:'Grosseltern',roommate:'Mitbewohner/in',friend:'Freund/in',other:'Andere'};
+      el.innerHTML = members.map(m => {
+        const name = (m.name || '?');
+        const rel = relLabels[m.relationship] || m.relationship || '';
+        const interests = m.interests || '';
+        const year = m.birth_year || '';
+        return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);">' +
+          '<div style="flex:1;">' +
+            '<div style="font-size:14px;font-weight:600;">' + esc(name) + (rel ? ' <span style="font-size:11px;color:var(--text-muted);font-weight:400;">(' + esc(rel) + ')</span>' : '') + '</div>' +
+            (interests ? '<div style="font-size:12px;color:var(--text-secondary);">Interessen: ' + esc(interests) + '</div>' : '') +
+            (year ? '<div style="font-size:11px;color:var(--text-muted);">Geb. ' + esc(year) + '</div>' : '') +
+          '</div>' +
+          '<button class="btn btn-sm btn-danger" onclick="removeFamilyMember(\'' + esc(name.replace(/'/g, "\\'")) + '\')" title="Entfernen" style="font-size:11px;padding:2px 8px;">&#10006;</button>' +
+        '</div>';
+      }).join('');
+    }
+  } catch(e) { console.error('Family load fail:', e); }
+}
+
+async function addFamilyMember() {
+  const name = (document.getElementById('paFamilyName')?.value || '').trim();
+  const relationship = document.getElementById('paFamilyRelation')?.value || 'other';
+  const birth_year = parseInt(document.getElementById('paFamilyYear')?.value || '0') || 0;
+  const interests = (document.getElementById('paFamilyInterests')?.value || '').trim();
+  if (!name) { toast('Name eingeben', 'error'); return; }
+  try {
+    const d = await api('/api/ui/family', 'POST', {name, relationship, birth_year, interests});
+    if (d.success) {
+      toast(d.message || 'Hinzugefuegt');
+      document.getElementById('paFamilyName').value = '';
+      document.getElementById('paFamilyYear').value = '';
+      document.getElementById('paFamilyInterests').value = '';
+      loadFamilyMembers();
+    } else { toast(d.message || 'Fehler', 'error'); }
+  } catch(e) { toast('Fehler', 'error'); }
+}
+
+async function removeFamilyMember(name) {
+  if (!confirm(name + ' wirklich aus der Familie entfernen?')) return;
+  try {
+    const d = await api('/api/ui/family/' + encodeURIComponent(name), 'DELETE');
+    if (d.success) { toast('Entfernt'); loadFamilyMembers(); }
+    else { toast(d.message || 'Fehler', 'error'); }
+  } catch(e) { toast('Fehler', 'error'); }
+}
+
+async function loadMealPlan() {
+  try {
+    const d = await api('/api/ui/meals/plan');
+    const el = document.getElementById('paMealPlan');
+    if (!el) return;
+    if (!d.success || !d.message || d.message.includes('Kein Wochenplan')) {
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Kein Wochenplan vorhanden — klicke unten um einen zu erstellen.</div>';
+    } else {
+      el.innerHTML = '<div style="font-size:13px;white-space:pre-wrap;line-height:1.6;padding:8px;background:var(--bg-input);border-radius:var(--radius-sm);border:1px solid var(--border);">' + esc(d.message) + '</div>';
+    }
+
+    // Mahlzeiten-Historie
+    const hd = await api('/api/ui/meals/history?days=7');
+    const hel = document.getElementById('paMealHistory');
+    if (!hel) return;
+    if (!hd.success || !hd.message || hd.message.includes('Keine Mahlzeiten')) {
+      hel.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Noch keine Mahlzeiten protokolliert</div>';
+    } else {
+      hel.innerHTML = '<div style="font-size:13px;white-space:pre-wrap;line-height:1.5;">' + esc(hd.message) + '</div>';
+    }
+  } catch(e) { console.error('Meal plan load fail:', e); }
+}
+
+async function createMealPlan() {
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Wird erstellt...'; }
+  try {
+    const d = await api('/api/ui/meals/plan', 'POST', {preferences: '', portions: 0});
+    if (d.success) {
+      toast('Wochenplan erstellt!');
+      loadMealPlan();
+    } else { toast(d.message || 'Fehler', 'error'); }
+  } catch(e) { toast('Fehler beim Erstellen', 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '\u{1F4C4} Neuen Wochenplan erstellen'; } }
 }
 
 // ---- Koch-Assistent (aus Routinen ausgelagert) ----
