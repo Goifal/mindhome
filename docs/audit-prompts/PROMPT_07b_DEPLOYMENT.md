@@ -361,6 +361,14 @@ Wenn du nach Prompt 7b einen **neuen Audit-Durchlauf** starten willst (z.B. um F
 2. Der Reset sichert die Ergebnisse dieses Durchlaufs als Vergleichsbasis
 3. Starte dann frisch mit Prompt 1 — alle Dateien neu lesen, alle Bugs neu suchen
 
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_07b_DEPLOYMENT.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
+
 ## Output
 
 Am Ende dieses Prompts erstelle folgenden Block:

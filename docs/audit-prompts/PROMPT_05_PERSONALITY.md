@@ -485,6 +485,16 @@ elif mood in ("stressed", "frustrated"):
 
 ---
 
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_05_PERSONALITY.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
+
+---
+
 ## Uebergabe an Prompt 6a
 
 ```

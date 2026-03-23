@@ -288,6 +288,16 @@ Gesamt: X Bugs in Priorität 1–4 (🔴 X, 🟠 X, 🟡 X, 🟢 X)
 
 ---
 
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_04a_BUGS_CORE.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
+
+---
+
 ## Output
 
 Am Ende dieses Prompts erstelle folgenden Block:

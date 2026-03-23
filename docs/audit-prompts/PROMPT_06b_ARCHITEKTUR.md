@@ -343,6 +343,14 @@ SELF-CHECK P06b:
 [Was noch fehlt]
 ```
 
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_06b_ARCHITEKTUR.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
+
 ## Output
 
 Am Ende dieses Prompts erstelle folgenden Block:

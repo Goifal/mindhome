@@ -558,6 +558,14 @@ SELF-CHECK P06d:
 
 **Wenn du Prompt 7a in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1–6d) automatisch ein.
 
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_06d_HAERTUNG.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
+
 ## Output
 
 Am Ende dieses Prompts erstelle folgenden Block:

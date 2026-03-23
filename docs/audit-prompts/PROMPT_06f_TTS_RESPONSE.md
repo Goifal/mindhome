@@ -388,6 +388,16 @@ TEST 3: Komplexer Befehl
 
 ---
 
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_06f_TTS_RESPONSE.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
+
+---
+
 ## OUTPUT
 
 Am Ende dieses Prompts erstelle folgenden Block:

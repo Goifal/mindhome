@@ -832,6 +832,16 @@ Formatiere am Ende einen kompakten **Kontext-Block**:
 
 ---
 
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_06e_GERAETESTEUERUNG.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
+
+---
+
 ## OUTPUT
 
 Am Ende dieses Prompts erstelle folgenden Block:

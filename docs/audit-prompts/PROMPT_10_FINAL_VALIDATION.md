@@ -248,6 +248,16 @@ Wenn alle Checks bestanden:
 
 ---
 
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_10_FINAL_VALIDATION.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
+
+---
+
 ## Output
 
 Am Ende erstelle folgenden Block:

@@ -339,6 +339,14 @@ Neue Tests geschrieben: [Liste]
 
 **Wenn du Prompt 7b in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke automatisch ein.
 
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_07a_TESTING.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
+
 ## Output
 
 Am Ende dieses Prompts erstelle folgenden Block:

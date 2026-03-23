@@ -340,6 +340,14 @@ Formatiere am Ende einen kompakten **Kontext-Block**:
 [X Tests bestanden, Y fehlgeschlagen]
 ```
 
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_06a_STABILISIERUNG.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
+
 ## Output
 
 Am Ende dieses Prompts erstelle folgenden Block:
