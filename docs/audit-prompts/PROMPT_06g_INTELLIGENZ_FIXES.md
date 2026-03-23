@@ -12,13 +12,16 @@ Du bist ein KI-Systemarchitekt der Jarvis' kognitive Qualität verbessert. Du fi
 
 ## Kontext aus vorherigen Prompts
 
-> **Automatisch**: Lies die Ergebnisse des Qualitätsaudits:
+> **Automatisch**: Lies die Ergebnisse aller relevanten Audits:
 
 ```
 Read: docs/audit-results/RESULT_05b_INTELLIGENZ_QUALITAET.md
+Read: docs/audit-results/RESULT_03c_SYSTEM_PROMPT.md
+Read: docs/audit-results/RESULT_04d_SPEECH_PIPELINE.md
+Read: docs/audit-results/RESULT_05c_CONFIG_VALIDATION.md
 ```
 
-> Falls die Datei nicht existiert → starte zuerst mit Prompt 05b.
+> Falls eine Datei nicht existiert → überspringe sie. Mindestens RESULT_05b muss existieren.
 
 ---
 
@@ -230,7 +233,103 @@ if not is_person_in_room(person_a, room_id):
     return person_b_preference
 ```
 
-#### Fix 3.2: Response Quality — Follow-Up-Erkennung verbessern
+#### Fix 3.2: Dialogue State — Referenz-Auflösung verbessern (P05b Teil 8)
+
+```
+Read: assistant/assistant/dialogue_state.py
+```
+
+**Problem**: "Mach DAS Licht an" → welches Licht? "Dort" → welcher Raum? Referenz-Auflösung kann falsch liegen.
+
+**Prüfe und fixe**:
+- Wird "das" auf das zuletzt besprochene Gerät aufgelöst?
+- Wird "dort" auf den zuletzt erwähnten Raum aufgelöst?
+- Was wenn kein Kontext existiert? Fallback auf aktuellen Raum des Users?
+- Cross-Session-Referenzen: Funktioniert "Was hatten wir besprochen?" über Sessions hinweg?
+
+#### Fix 3.3: Activity Detection — Silence Matrix validieren (P05b Teil 9)
+
+```
+Read: assistant/assistant/activity.py
+```
+
+**Problem**: Falsche Aktivitäts-Erkennung → Jarvis weckt schlafenden User oder ignoriert wachen User.
+
+**Prüfe und fixe**:
+- Schlaf-Erkennung: Nur Licht-aus + keine Bewegung + Nachtzeit? Oder auch Bett-Sensor?
+- Kann "sleeping" fälschlich erkannt werden wenn User im Dunkeln fernsieht?
+- Sind die 7 × 3 Matrix-Werte (Aktivität × Dringlichkeit) sinnvoll kalibriert?
+
+#### Fix 3.4: Routine Engine — Briefing-Variation (P05b Teil 10)
+
+```
+Read: assistant/assistant/routine_engine.py
+```
+
+**Problem**: Morgen-Briefing könnte jeden Tag gleich klingen.
+
+**Prüfe und fixe**:
+- Wird die Struktur des Briefings variiert? (Nicht immer: Wetter → Termine → Geräte)
+- Werden nur RELEVANTE Infos geliefert? (Kein "Keine Termine" wenn Kalender leer)
+- Ist die Begrüßung persönlich? (Tageszeitabhängig, stimmungsabhängig)
+
+#### Fix 3.5: Autonomy Boundaries — Domain-spezifische Grenzen (P05b Teil 11)
+
+```
+Read: assistant/assistant/autonomy.py
+Read: assistant/assistant/self_automation.py
+```
+
+**Problem**: Kann Jarvis bei hoher Konfidenz unsichere Automatisierungen erstellen?
+
+**Prüfe und fixe**:
+- Sicherheits-Domains (Schlösser, Alarmanlagen) → IMMER fragen, auch bei Level 5?
+- Werden vom User erstellte Automatisierungen vor Aktivierung gezeigt?
+- Gibt es ein Rollback wenn eine Auto-Automatisierung Probleme verursacht?
+
+#### Fix 3.6: STT Wortkorrekturen — Kyrillische Zeichen fixen (P04d)
+
+```
+Grep: "muде\|geratе\|mullеimer\|kuhlеr\|aussеn" in assistant/assistant/brain.py
+```
+
+**Problem**: 6+ Einträge in `_STT_WORD_CORRECTIONS` enthalten kyrillisches 'е' (U+0435) statt lateinisches 'e' (U+0065). Diese Korrekturen matchen NIE.
+
+**Fix**: Ersetze alle kyrillischen Zeichen durch lateinische:
+```python
+# VORHER (kyrillisch е, U+0435 — FALSCH):
+"muде": "müde"
+# NACHHER (lateinisch e, U+0065 — KORREKT):
+"mude": "müde"
+```
+
+> **Suche systematisch**: Alle Einträge in `_STT_WORD_CORRECTIONS` und `_STT_PHRASE_CORRECTIONS` auf nicht-lateinische Zeichen prüfen.
+
+#### Fix 3.7: Config — Unsichere Dict-Zugriffe fixen (P05c)
+
+```
+Grep: "yaml_config\[" in assistant/assistant/
+```
+
+**Problem**: `yaml_config["key"]` statt `yaml_config.get("key", default)` → KeyError wenn Key fehlt.
+
+**Fix**: Alle Stellen auf `.get()` mit sinnvollem Default umstellen.
+
+#### Fix 3.8: System-Prompt — Token-Budget optimieren (P03c)
+
+```
+Read: docs/audit-results/RESULT_03c_SYSTEM_PROMPT.md
+```
+
+**Basierend auf P03c-Findings**: Fixe die wichtigsten Prompt-Qualitäts-Issues:
+- Redundante Anweisungen im Template entfernen (Token sparen)
+- Sektions-Trennung verbessern (klare Delimiter zwischen Kontext-Blöcken)
+- Character-Lock am Prompt-Ende verstärken wenn nötig
+- Verbotene-Phrasen-Liste ergänzen wenn lückenhaft
+
+> **Verifiziere**: Lies das RESULT aus P03c. Fixe nur was dort als 🔴/🟠 markiert ist.
+
+#### Fix 3.9: Response Quality — Follow-Up-Erkennung verbessern
 
 ```
 Read: assistant/assistant/response_quality.py

@@ -166,6 +166,9 @@ Wenn ein Bug in P04a-P04c gefunden wird, muss er dem richtigen Fix-Prompt zugeor
 | **Tool-Calling** (Gerät reagiert nicht, falsche Entity) | **P06e** | Tool-Call fehlgeschlagen, entity_id falsch, kein Fallback |
 | **TTS/Sprache** ("speak" in Ausgabe, Meta-Leakage) | **P06f** | "speak:", Markdown in TTS, Funktionsnamen hörbar |
 | **Intelligenz-Qualität** (falsche Schwellwerte, False Positives, Feedback-Loops) | **P06g** | Konfidenz zu hoch, Keyword-Matching zu breit, Death Spiral |
+| **System-Prompt-Qualität** (Token-Budget, Redundanz, Character-Lock) | **P06g** | Template-Optimierung, Sektions-Trennung |
+| **STT-Bugs** (Kyrillische Zeichen, fehlende Wörter) | **P06g** | Word-Corrections fixen |
+| **Config-Bugs** (unsichere Zugriffe, Orphans) | **P06g** | yaml_config["key"] → .get() |
 | **Fehlende awaits** | **P06a** (🔴) oder **P06b** (🟠) | Je nach Schweregrad |
 | **Stille Fehler** (except: pass) | **P06a** (🔴) oder **P06d** | Je nach Sicherheitsrelevanz |
 
