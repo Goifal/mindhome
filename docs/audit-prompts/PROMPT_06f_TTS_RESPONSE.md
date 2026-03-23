@@ -13,9 +13,16 @@ Jarvis darf NIEMALS interne Begriffe wie "speak", "tts", "emit", Funktionsnamen,
 - Kann interne Begriffe wie "speak", "tts", "emit" in den Antwort-Text leaken
 - character_hint in settings.yaml model_profiles nutzen für Anti-Leakage
 
-## KONTEXT AUS VORHERIGEM PROMPT
+## Kontext aus vorherigen Prompts
 
-[Hier den Output-Block aus PROMPT_06e einfuegen]
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_06a_STABILISIERUNG.md
+Read: docs/audit-results/RESULT_06e_GERAETESTEUERUNG.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 
 ## ARCHITEKTUR
 

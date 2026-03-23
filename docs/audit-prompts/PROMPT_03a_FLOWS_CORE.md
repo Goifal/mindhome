@@ -79,6 +79,16 @@ Fuer jede Bruchstelle: Datei:Zeile, Impact (HOCH/MITTEL/NIEDRIG), Eskalation (AR
 
 ---
 
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_03a_FLOWS_CORE.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
+
+---
+
 ## Output-Format
 
 ### Flow-Status-Uebersicht

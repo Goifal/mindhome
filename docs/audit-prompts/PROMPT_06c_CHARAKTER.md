@@ -12,12 +12,15 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. In 6a
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–6b bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch.
->
-> **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke ein:
-> - Prompt 5: Persönlichkeits-Audit & Config-Analyse (MCU-Score, Inkonsistenzen, Config-Probleme)
-> - Prompt 4 gesamt (4a + 4b + 4c): Bug-Report — die 🟡 MITTLEREN Bugs
-> - Prompt 6b: Architektur-Ergebnisse (gelöste Konflikte, reparierte Flows)
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_05_PERSOENLICHKEIT.md
+Read: docs/audit-results/RESULT_06a_STABILISIERUNG.md
+Read: docs/audit-results/RESULT_06b_ARCHITEKTUR.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 
 ---
 

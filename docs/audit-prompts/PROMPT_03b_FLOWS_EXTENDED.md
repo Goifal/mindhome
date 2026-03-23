@@ -1,13 +1,68 @@
-# Audit P03b: Extended-Flows (8-13) + Kollisionen + Service-Interaktion
+# Prompt 3b: Extended-Flows (8-13) + Kollisionen + Service-Interaktion
 
-> **Hinweis**: Diese Datei enthält sowohl die **Analyse-Anweisungen** als auch **Referenz-Ergebnisse** aus Durchlauf #1. Bei einem neuen Durchlauf: Nutze die Struktur als Vorlage, aber **verifiziere ALLE Zeilennummern und Code-Referenzen neu** — der Code hat sich geändert. Severity-Labels für Feature-Gaps wurden hinzugefügt.
+## Rolle
 
-**Datum**: 2026-03-13
-**Auditor**: Claude Opus 4.6 (P03b)
-**Scope**: Flows 8-13, Flow-Kollisionen, Service-Interaktionsanalyse
-**Kontext**: Aufbauend auf P03a Core-Flows (1-7)
+Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Du analysierst die erweiterten Flows und deren Kollisionen.
+
+## LLM-Spezifisch
+
+> Siehe P00 für Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren, character_hint nutzen.
+
+## Kontext aus vorherigen Prompts
+
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse:
+
+```
+Read: docs/audit-results/RESULT_03a_FLOWS_CORE.md
+```
+
+> Falls die Datei nicht existiert → nutze Kontext-Blöcke aus der Konversation.
 
 ---
+
+## Aufgabe
+
+Analysiere die Extended-Flows 8-13, deren Kollisionen untereinander und mit Core-Flows, sowie die Service-Interaktion zwischen Assistant und Addon.
+
+### Schritt 1: Flows 8-13 analysieren
+Für JEDEN der 6 Extended-Flows:
+
+1. **Flow 8: Addon-Automation** — Wie steuert der Addon HA-Entities eigenständig? Koordination mit Assistant?
+2. **Flow 9: Domain-Assistenten** — Cooking, Workshop etc. — umgehen sie die Personality-Pipeline?
+3. **Flow 10: Workshop-System** — 84 Endpoints, eigene LLM-Prompts, Hardware-Steuerung
+4. **Flow 11: Boot-Sequenz** — Startreihenfolge, Boot-Announcement
+5. **Flow 12: File-Upload & OCR** — Sicherheit, Pfad-Validierung, MIME-Type
+6. **Flow 13: WebSocket-Streaming** — Events, Reconnection, Backpressure
+
+Für JEDEN Flow dokumentiere:
+- **Ablauf**: Schritt für Schritt mit Datei:Zeile
+- **Bruchstellen**: Wo kann es schiefgehen?
+- **Fehler-Pfade**: Was passiert bei Fehler?
+- **Kollisionen**: Kann dieser Flow mit anderen gleichzeitig laufen?
+
+### Schritt 2: Flow-Kollisions-Tabelle erstellen
+Erstelle eine Matrix: Welche Flows können gleichzeitig laufen und was passiert?
+
+### Schritt 3: Service-Interaktions-Analyse
+- Wie kommunizieren Assistant und Addon?
+- Welche Kommunikationslücken gibt es?
+- Gibt es doppelte Steuerung gleicher HA-Entities?
+
+### Schritt 4: Feature-Gaps identifizieren
+Liste fehlende Features mit Severity (🔴/🟠/🟡/🟢).
+
+## Output-Format
+1. Flow-Dokumentation (Flows 8-13) mit Ablauf, Bruchstellen, Fehler-Pfaden
+2. Flow-Kollisions-Tabelle
+3. Service-Interaktions-Diagramm + Kommunikationslücken
+4. Feature-Gaps mit Severity
+5. Kontext-Block für nächsten Prompt (max 30 Zeilen)
+
+---
+
+## Referenz-Ergebnisse aus Durchlauf #1
+
+> Die folgenden Ergebnisse dienen als **Vergleichsbasis**. Verifiziere ALLE Zeilennummern neu — der Code hat sich geändert.
 
 ## 1. Flow-Dokumentation (Flows 8-13)
 
@@ -303,6 +358,16 @@
 | **Upload Virus-Scan** | FEHLT | 🟡 MITTEL | Hochgeladene Dateien werden ohne Malware-Check gespeichert |
 | **Domain-Assistant-Discovery** | FEHLT | 🟡 MITTEL | Kein automatisches Routing zu Domain-Assistenten — abhaengig von LLM Function-Call-Faehigkeit |
 | **Workshop-Code-Validierung** | FEHLT | 🟢 NIEDRIG | LLM-generierter Code (Arduino, Python) wird nicht validiert/kompiliert vor Ausgabe |
+
+---
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_03b_FLOWS_EXTENDED.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ---
 

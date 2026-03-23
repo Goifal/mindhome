@@ -18,14 +18,14 @@ Jarvis steuert Geraete ueber LLM-Tool-Calls. Das LLM (Qwen 3.5, 4B Parameter) ge
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–6d bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Bloecke) automatisch.
->
-> **Wenn dies eine neue Konversation ist**: Fuege hier ein:
-> - Kontext-Block aus Prompt 1 (Konflikt-Karte, besonders brain.py-Architektur)
-> - Kontext-Block aus Prompt 4a (Bug-Report, besonders Tool-Calling Bugs)
-> - Kontext-Block aus Prompt 6a-6d (Stabilisierungs-/Architektur-/Charakter-/Haertungs-Ergebnisse)
->
-> **Ohne diese Kontext-Bloecke** fehlt dir das Verstaendnis wie brain.py die Tool-Calls orchestriert und wie der System-Prompt aufgebaut wird.
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_06a_STABILISIERUNG.md
+Read: docs/audit-results/RESULT_06d_HAERTUNG.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 
 ---
 
