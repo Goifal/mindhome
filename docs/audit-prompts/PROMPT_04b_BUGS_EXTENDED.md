@@ -139,6 +139,27 @@ Prüfe die **Extended-Module** (Priorität 5–9, 63 Module) systematisch auf di
 78. `task_registry.py`
 79. `timer_manager.py` — Timer-Verwaltung
 
+### Priorität 9b — Fehlende Module (PFLICHT — wurden in früheren Versionen übersehen!)
+
+> **ACHTUNG**: Diese 16 Module waren in keinem Bug-Prompt gelistet. Sie MÜSSEN geprüft werden!
+
+80. `state_change_log.py` — **379KB!** Attribution: WER hat WAS geändert (Jarvis/Automation/User/Unbekannt), 80+ Abhängigkeitsregeln. Größtes Modul nach brain.py — KRITISCH!
+81. `brain_humanizers.py` — Anti-Bot-Features: Antwortstruktur variieren, natürliche Pausen, Denkpausen
+82. `core_identity.py` — Unveränderlicher Identitätsblock: Werte (Loyalität, Ehrlichkeit, Diskretion), Emotionsspektrum
+83. `inner_state.py` — Jarvis' eigene Emotionen: 7 Stimmungen (neutral, zufrieden, amüsiert, besorgt, stolz, neugierig, gereizt)
+84. `notification_dedup.py` — Duplikat-Benachrichtigungen unterdrücken (Cooldown, Batching)
+85. `family_manager.py` — Multi-User Familienverwaltung, Personen-Profile
+86. `settings_validator.py` — Config-Validation für settings.yaml
+87. `knowledge_graph.py` — Wissensgraph für Fakten-Verknüpfungen
+88. `llm_enhancer.py` — LLM-Prompt-Optimierung, Prompt-Engineering
+89. `latency_tracker.py` — Response-Time-Tracking, Optimierungsziele
+90. `response_cache.py` — Cache häufiger Antworten, TTL-basiert
+91. `person_preferences.py` — Persönliche Präferenzen pro Benutzer
+92. `personal_dates.py` — Geburtstage, Jahrestage, wichtige Termine
+93. `meal_planner.py` — Mahlzeitenplanung, Ernährungsprofile
+94. `note_manager.py` — Notizen-Verwaltung
+95. `task_manager.py` — Aufgaben-/Todo-Verwaltung
+
 ---
 
 ## Spezifische Problemzonen
@@ -165,13 +186,15 @@ Prüfe die **Extended-Module** (Priorität 5–9, 63 Module) systematisch auf di
 > - **Batch 11** (Priorität 9 — Domain): `calendar_intelligence.py`, `inventory.py`, `web_search.py`, `knowledge_base.py`, `summarizer.py`, `ocr.py`, `file_handler.py`
 > - **Batch 12** (Priorität 9 — Monitoring): `workshop_library.py`, `workshop_generator.py`, `health_monitor.py`, `device_health.py`, `energy_optimizer.py`, `predictive_maintenance.py`, `repair_planner.py`
 > - **Batch 13** (Priorität 9 — Rest): `visitor_manager.py`, `follow_me.py`, `wellness_advisor.py`, `activity.py`, `seasonal_insight.py`, `explainability.py`, `diagnostics.py`, `task_registry.py`, `timer_manager.py`
+> - **Batch 14** (Priorität 9b — KRITISCH): `state_change_log.py` (**379KB — in Abschnitten lesen!**), `brain_humanizers.py`, `core_identity.py`, `inner_state.py`, `notification_dedup.py`, `family_manager.py`
+> - **Batch 15** (Priorität 9b — Rest): `settings_validator.py`, `knowledge_graph.py`, `llm_enhancer.py`, `latency_tracker.py`, `response_cache.py`, `person_preferences.py`, `personal_dates.py`, `meal_planner.py`, `note_manager.py`, `task_manager.py`
 
 ### Fortschritts-Tracking (Pflicht!)
 
 Dokumentiere nach JEDEM Batch deinen Fortschritt:
 
 ```
-=== CHECKPOINT Batch X/9 ===
+=== CHECKPOINT Batch X/11 ===
 Geprüfte Module: [Liste]
 Bugs gefunden: 🔴 X, 🟠 X, 🟡 X, 🟢 X
 Verbleibende Batches: [Liste]
