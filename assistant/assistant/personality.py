@@ -2677,7 +2677,7 @@ class PersonalityEngine:
                 self._redis.set(redis_key, str(streak), ex=self._SARCASM_STREAK_TTL)
             )
             task.add_done_callback(
-                lambda t: t.exception() if not t.cancelled() else None
+                lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
             )
         except RuntimeError:
             pass  # No running event loop
@@ -5587,7 +5587,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
                 )
             )
             task.add_done_callback(
-                lambda t: t.exception() if not t.cancelled() else None
+                lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
             )
         except RuntimeError:
             pass  # No running event loop

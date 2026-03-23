@@ -2184,7 +2184,7 @@ class RoutineEngine:
         await self.redis.setex(KEY_VACATION_SIM, 30 * 86400, "active")
         self._vacation_task = asyncio.create_task(self._run_vacation_simulation())
         self._vacation_task.add_done_callback(
-            lambda t: t.exception() if not t.cancelled() else None
+            lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
         )
         logger.info("Abwesenheits-Simulation gestartet")
         return f"Das Haus wird bewohnt wirken, {get_person_title()}. Alles Weitere übernehme ich."

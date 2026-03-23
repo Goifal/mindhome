@@ -2325,19 +2325,22 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 "actions": [],
                 "model_used": "timeout_fallback",
             }
-        self._active_persons.add(_person_key)
-        self._last_interaction_ts = time.time()  # B4: Idle-Timer zuruecksetzen
-        self._idle_reasoning_pending = False  # B4: Idle-Analyse abbrechen
 
-        # Concurrent-safe Person-Kontext setzen (fuer Trust-Checks in function_calling.py)
-        from .request_context import set_current_person
-
-        set_current_person(person or "")
-
-        # S2: Prompt Injection Protection — Sanitize User-Input
-        text, _injection_suspect = self._sanitize_user_input(text)
-
+        # Alles nach acquire() MUSS im try/finally stehen, damit der Lock
+        # bei jeder Exception zuverlaessig freigegeben wird.
         try:
+            self._active_persons.add(_person_key)
+            self._last_interaction_ts = time.time()  # B4: Idle-Timer zuruecksetzen
+            self._idle_reasoning_pending = False  # B4: Idle-Analyse abbrechen
+
+            # Concurrent-safe Person-Kontext setzen (fuer Trust-Checks in function_calling.py)
+            from .request_context import set_current_person
+
+            set_current_person(person or "")
+
+            # S2: Prompt Injection Protection — Sanitize User-Input
+            text, _injection_suspect = self._sanitize_user_input(text)
+
             return await self._process_inner(
                 text, person, room, files, stream_callback, voice_metadata, device_id
             )
@@ -4753,7 +4756,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     self._speak_and_emit(_ack_text, room=room, tts_data=_ack_tts)
                 )
                 _ack_task.add_done_callback(
-                    lambda t: t.exception() if not t.cancelled() else None
+                    lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
                 )
                 logger.debug("Streaming-Feedback: '%s' gesendet", _ack_text)
             except Exception as e:

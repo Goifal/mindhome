@@ -77,7 +77,7 @@ class DailySummarizer:
         self._running = True
         self._task = asyncio.create_task(self._nightly_loop())
         self._task.add_done_callback(
-            lambda t: t.exception() if not t.cancelled() else None
+            lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
         )
         logger.info(
             "DailySummarizer initialisiert (Nachtlauf: %02d:%02d)",

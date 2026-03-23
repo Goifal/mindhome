@@ -455,7 +455,7 @@ async def lifespan(app: FastAPI):
     # Periodischer Token-Cleanup (alle 15 Min)
     cleanup_task = asyncio.create_task(_periodic_token_cleanup())
     cleanup_task.add_done_callback(
-        lambda t: t.exception() if not t.cancelled() else None
+        lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
     )
 
     yield
@@ -2303,7 +2303,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     keepalive_task = asyncio.create_task(_ws_keepalive())
     keepalive_task.add_done_callback(
-        lambda t: t.exception() if not t.cancelled() else None
+        lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
     )
 
     # F-063: WebSocket Rate-Limiting (max 30 Nachrichten pro 10 Sekunden)
@@ -4146,7 +4146,7 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
                             pro._run_vacuum_power_trigger()
                         )
                         pro._vacuum_power_task.add_done_callback(
-                            lambda t: t.exception() if not t.cancelled() else None
+                            lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
                         )
                         logger.info("Vacuum Power-Trigger Task (neu) gestartet")
                 # Scene-Trigger Task starten falls nicht laufend
@@ -4157,7 +4157,7 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
                             pro._run_vacuum_scene_trigger()
                         )
                         pro._vacuum_scene_task.add_done_callback(
-                            lambda t: t.exception() if not t.cancelled() else None
+                            lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
                         )
                         logger.info("Vacuum Scene-Trigger Task (neu) gestartet")
             logger.info("Vacuum Settings aktualisiert")
@@ -5160,7 +5160,7 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
                 _restart_speech_containers(old_speech, new_speech)
             )
             _speech_restart_task.add_done_callback(
-                lambda t: t.exception() if not t.cancelled() else None
+                lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
             )
             logger.info("Speech-Container Restart im Hintergrund gestartet")
 
@@ -10532,7 +10532,7 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
 
             task = asyncio.ensure_future(_deferred_compose_up())
             task.add_done_callback(
-                lambda t: t.exception() if not t.cancelled() else None
+                lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
             )
         else:
             # 5. Quick: Restart via Docker Engine API (Code als Volume = sofort aktiv)

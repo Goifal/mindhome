@@ -182,7 +182,15 @@ class OutcomeTracker:
         else:
             task = asyncio.ensure_future(self._delayed_check(obs_id, pending))
             self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
+
+            def _on_task_done(t):
+                self._background_tasks.discard(t)
+                if not t.cancelled():
+                    exc = t.exception()
+                    if exc:
+                        logger.warning("OutcomeTracker delayed check fehlgeschlagen: %s", exc)
+
+            task.add_done_callback(_on_task_done)
 
     async def record_verbal_feedback(
         self, feedback_type: str, action_type: str = "", person: str = ""
@@ -547,11 +555,11 @@ class OutcomeTracker:
             try:
                 current_state = await self.ha.get_state(entity_id)
                 if not current_state:
-                    self._pending_count = max(0, self._pending_count - 1)
+                    # Kein Decrement hier — finally-Block uebernimmt das
                     return
             except Exception as e:
                 logger.debug("Geraetestatus-Abfrage fehlgeschlagen: %s", e)
-                self._pending_count = max(0, self._pending_count - 1)
+                # Kein Decrement hier — finally-Block uebernimmt das
                 return
 
             state_now = _extract_state_key(current_state)

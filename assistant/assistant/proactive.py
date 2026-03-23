@@ -599,12 +599,12 @@ class ProactiveManager:
         Wird aufgerufen wenn Guest-Mode endet. Fasst die Events zusammen
         statt sie einzeln nachzuliefern.
         """
-        if not self._guest_batched_events:
-            return
-
-        events = list(self._guest_batched_events)
-        self._guest_batched_events.clear()
-        self._guest_mode_was_active = False
+        async with self._state_lock:
+            if not self._guest_batched_events:
+                return
+            events = list(self._guest_batched_events)
+            self._guest_batched_events.clear()
+            self._guest_mode_was_active = False
 
         count = len(events)
         if count == 0:
@@ -693,23 +693,25 @@ class ProactiveManager:
             try:
                 _guest_active = await self._is_guest_mode_active()
                 if _guest_active:
-                    self._guest_batched_events.append(
-                        {
-                            "text": text,
-                            "event_type": event_type,
-                            "urgency": urgency,
-                            "notification_id": notification_id,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        }
-                    )
-                    # Cap at 50 to prevent unbounded growth
-                    if len(self._guest_batched_events) > 50:
-                        self._guest_batched_events = self._guest_batched_events[-50:]
+                    async with self._state_lock:
+                        self._guest_batched_events.append(
+                            {
+                                "text": text,
+                                "event_type": event_type,
+                                "urgency": urgency,
+                                "notification_id": notification_id,
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            }
+                        )
+                        # Cap at 50 to prevent unbounded growth
+                        if len(self._guest_batched_events) > 50:
+                            self._guest_batched_events = self._guest_batched_events[-50:]
+                        _guest_count = len(self._guest_batched_events)
                     logger.info(
                         "Guest-Mode: %s gebatcht (%s, %d Events gespeichert)",
                         event_type,
                         urgency,
-                        len(self._guest_batched_events),
+                        _guest_count,
                     )
                     self._guest_mode_was_active = True
                     return
@@ -3315,7 +3317,7 @@ class ProactiveManager:
                         )
                     )
                     task.add_done_callback(
-                        lambda t: t.exception() if not t.cancelled() else None
+                        lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
                     )
                     setattr(self, timer_key, task)
                 else:
@@ -3574,7 +3576,7 @@ class ProactiveManager:
                             mood, data.get("person", ""), data.get("room", "")
                         )
                     ).add_done_callback(
-                        lambda t: t.exception() if not t.cancelled() else None
+                        lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
                     )
                     return
             except Exception as e:
@@ -10663,7 +10665,7 @@ class ProactiveManager:
                                 confidence=0.7,
                             )
                         ).add_done_callback(
-                            lambda t: t.exception() if not t.cancelled() else None
+                            lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
                         )
                 except Exception as e:
                     logger.debug("Mood comfort action Fehler: %s", e)

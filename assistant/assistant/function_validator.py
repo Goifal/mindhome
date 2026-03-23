@@ -227,7 +227,7 @@ class FunctionValidator:
             loop = asyncio.get_running_loop()
             task = loop.create_task(self._async_audit_log(entry))
             task.add_done_callback(
-                lambda t: t.exception() if not t.cancelled() else None
+                lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
             )
         except RuntimeError:
             pass  # No event loop

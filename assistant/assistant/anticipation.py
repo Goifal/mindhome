@@ -72,7 +72,7 @@ class AnticipationEngine:
             self._running = True
             self._task = asyncio.create_task(self._check_loop())
             self._task.add_done_callback(
-                lambda t: t.exception() if not t.cancelled() else None
+                lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
             )
             logger.info(
                 "AnticipationEngine initialisiert (History: %d Tage)", self.history_days

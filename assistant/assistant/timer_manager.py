@@ -218,7 +218,7 @@ class TimerManager:
 
         # Hintergrund-Task für Benachrichtigung
         task = asyncio.create_task(self._timer_watcher(timer))
-        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        task.add_done_callback(lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None)
         self._tasks[timer_id] = task
 
         # Zeitformatierung
@@ -428,7 +428,7 @@ class TimerManager:
                     self.timers[timer.id] = timer
                     task = asyncio.create_task(self._timer_watcher(timer))
                     task.add_done_callback(
-                        lambda t: t.exception() if not t.cancelled() else None
+                        lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
                     )
                     self._tasks[timer.id] = task
                     logger.info(
@@ -522,7 +522,7 @@ class TimerManager:
 
         # Watcher-Task starten
         task = asyncio.create_task(self._reminder_watcher(timer, target))
-        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        task.add_done_callback(lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None)
         self._tasks[reminder_id] = task
 
         # Menschenlesbare Zeitangabe
@@ -617,7 +617,7 @@ class TimerManager:
                     self.timers[timer.id] = timer
                     task = asyncio.create_task(self._reminder_watcher(timer, target))
                     task.add_done_callback(
-                        lambda t: t.exception() if not t.cancelled() else None
+                        lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
                     )
                     self._tasks[timer.id] = task
                     logger.info(
@@ -727,7 +727,7 @@ class TimerManager:
         )
         self.timers[alarm_id] = timer
         task = asyncio.create_task(self._alarm_watcher(alarm_id, alarm_data))
-        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        task.add_done_callback(lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None)
         self._tasks[alarm_id] = task
 
         repeat_text = {
@@ -936,7 +936,7 @@ class TimerManager:
             self.timers[alarm_id] = timer
             task = asyncio.create_task(self._alarm_watcher(alarm_id, alarm_data))
             task.add_done_callback(
-                lambda t: t.exception() if not t.cancelled() else None
+                lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
             )
             self._tasks[alarm_id] = task
 
@@ -983,7 +983,7 @@ class TimerManager:
                     self.timers[aid] = timer
                     task = asyncio.create_task(self._alarm_watcher(aid, alarm_data))
                     task.add_done_callback(
-                        lambda t: t.exception() if not t.cancelled() else None
+                        lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
                     )
                     self._tasks[aid] = task
                     logger.info(

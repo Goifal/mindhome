@@ -241,6 +241,7 @@ class CorrectionMemory:
             try:
                 rule = json.loads(val)
             except json.JSONDecodeError:
+                logger.warning("Korrupte Korrektur-Regel in Redis (key=%s), wird uebersprungen", key)
                 continue
 
             # Confidence-Decay anwenden
@@ -351,6 +352,7 @@ class CorrectionMemory:
             try:
                 entries.append(json.loads(item))
             except json.JSONDecodeError:
+                logger.warning("Korrupter Korrektur-Eintrag in Redis, wird uebersprungen")
                 continue
         return entries
 
@@ -841,7 +843,7 @@ class CorrectionMemory:
 
         # Usage-Counter erhoehen (fire-and-forget mit Error-Callback)
         task = asyncio.create_task(self.increment_teaching_usage(matched_phrase))
-        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        task.add_done_callback(lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None)
 
         return teaching.get("meaning")
 

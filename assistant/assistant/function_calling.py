@@ -6442,7 +6442,7 @@ class FunctionExecutor:
                             observer.observe_scene_activation(mood_key, person=_person)
                         )
                         task.add_done_callback(
-                            lambda t: t.exception() if not t.cancelled() else None
+                            lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
                         )
             except Exception as e:
                 logger.debug("Auto-Learning Szenen-Beobachtung fehlgeschlagen: %s", e)

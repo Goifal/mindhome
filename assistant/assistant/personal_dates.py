@@ -48,7 +48,7 @@ class PersonalDatesManager:
         if _ENABLED and self.redis:
             self._check_task = asyncio.create_task(self._check_loop())
             self._check_task.add_done_callback(
-                lambda t: t.exception() if not t.cancelled() else None
+                lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
             )
         logger.info("PersonalDatesManager initialisiert")
 

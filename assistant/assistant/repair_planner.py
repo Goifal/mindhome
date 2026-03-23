@@ -1728,7 +1728,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         task = asyncio.create_task(_timer_callback())
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
-        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        task.add_done_callback(lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None)
         return {
             "status": "ok",
             "timer_id": timer_id,

@@ -77,7 +77,7 @@ class TaskManager:
         if self.redis:
             self._recurring_task = asyncio.create_task(self._recurring_loop())
             self._recurring_task.add_done_callback(
-                lambda t: t.exception() if not t.cancelled() else None
+                lambda t: logger.warning("Fire-and-forget Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
             )
         logger.info("TaskManager initialisiert")
 

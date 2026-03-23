@@ -172,7 +172,7 @@ class InsightEngine:
             self._running = True
             self._task = asyncio.create_task(self._insight_loop())
             self._task.add_done_callback(
-                lambda t: t.exception() if not t.cancelled() else None
+                lambda t: logger.warning("InsightEngine Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
             )
             logger.info(
                 "InsightEngine initialisiert (Intervall: %d Min, Cooldown: %d Std)",
@@ -386,7 +386,7 @@ class InsightEngine:
             self._running = True
             self._task = asyncio.create_task(self._insight_loop())
             self._task.add_done_callback(
-                lambda t: t.exception() if not t.cancelled() else None
+                lambda t: logger.warning("InsightEngine Task fehlgeschlagen: %s", t.exception()) if not t.cancelled() and t.exception() else None
             )
             logger.info("InsightEngine via Hot-Reload gestartet")
 
@@ -402,7 +402,13 @@ class InsightEngine:
         while self._running:
             try:
                 if self.enabled:
-                    insights = await self._run_all_checks()
+                    try:
+                        insights = await asyncio.wait_for(
+                            self._run_all_checks(), timeout=60.0
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning("InsightEngine _run_all_checks Timeout (60s)")
+                        insights = []
                     for insight in insights:
                         # LLM-Rewrite: Insight-Text natuerlicher formulieren
                         insight = await self._rewrite_insight(insight)
