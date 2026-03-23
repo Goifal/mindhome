@@ -8512,9 +8512,16 @@ class ProactiveManager:
             for rname, seg_id in rooms_map.items():
                 if rname.lower() == room_lower:
                     return r, seg_id
-        # Fallback: ersten Roboter ohne Segment
-        if robots:
-            return next(iter(robots.values())), None
+        # Kein Fallback auf Komplett-Clean — nur exakte Raum-Zuordnung
+        logger.warning(
+            "Vacuum: Raum '%s' nicht in robots-Config gefunden (verfuegbar: %s)",
+            room,
+            [
+                rname
+                for r in robots.values()
+                for rname in r.get("rooms", {})
+            ],
+        )
         return None, None
 
     async def _start_vacuum_room(self, robot: dict, segment_id, room: str, reason: str):
@@ -8647,7 +8654,7 @@ class ProactiveManager:
 
                 # Cleanup: Entfernte Entities aus Tracking-Dict loeschen
                 active_entities = {
-                    t.get("power_entity") for t in triggers if t.get("power_entity")
+                    t.get("entity") for t in triggers if t.get("entity")
                 }
                 for old_key in list(was_above.keys()):
                     if old_key not in active_entities:
