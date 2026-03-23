@@ -90,8 +90,20 @@ Verbleibende Batches: [Liste]
 
 ## Teil 2: Speech-Server (Priorität 11)
 
-86. `speech/server.py`
-87. `speech/handler.py`
+86. `speech/server.py` — Wyoming-Server, Whisper-Config, initial_prompt
+87. `speech/handler.py` — WhisperEmbeddingHandler, ECAPA-TDNN Voice Embedding
+
+**Prüfe für den Speech-Server:**
+
+| # | Check | Was prüfen |
+|---|---|---|
+| 1 | **Audio-Input-Validierung** | Werden Audio-Daten validiert? Maximale Größe? Format-Check? |
+| 2 | **Embedding-Sicherheit** | Werden Voice-Embeddings sicher in Redis gespeichert? TTL gesetzt? |
+| 3 | **Whisper-Timeout** | Gibt es ein Timeout für die STT-Verarbeitung? Was bei hängendem Whisper? |
+| 4 | **Redis-Abhängigkeit** | Was passiert wenn Redis nicht erreichbar ist? Crash oder Fallback? |
+| 5 | **Concurrent Audio** | Können mehrere Audio-Streams gleichzeitig verarbeitet werden? Race Conditions? |
+| 6 | **Memory-Leak** | Wachsen Audio-Buffer unbegrenzt? Werden temporäre Dateien aufgeräumt? |
+| 7 | **initial_prompt** | Enthält der Whisper-initial_prompt sensible Daten? Ist er aktuell? |
 
 ---
 
