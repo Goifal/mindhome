@@ -5784,7 +5784,13 @@ class ProactiveManager:
             sensor_room = ""
             if isinstance(sensor_cfg, dict):
                 sensor_room = sensor_cfg.get("room", "").lower()
-            if (cover_room and cover_room in sensor_lower) or (
+            # Word-Boundary Matching: "wohnzimmer" matcht
+            # "fenster_wohnzimmer" aber nicht "wohnzimmerschrank"
+            _room_in_sensor = cover_room and (
+                f"_{cover_room}" in f"_{sensor_lower}"
+                or f"{cover_room}_" in f"{sensor_lower}_"
+            )
+            if _room_in_sensor or (
                 sensor_room and sensor_room == cover_room
             ):
                 for s in states or []:
