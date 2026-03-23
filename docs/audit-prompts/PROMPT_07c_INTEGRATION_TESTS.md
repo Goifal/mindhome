@@ -317,7 +317,143 @@ class TestBootIntegration:
         pass
 ```
 
-### Schritt 8: Tests ausführen und fixen
+### Schritt 8: Persönlicher Assistent — Integration-Tests
+
+> **Jarvis ist nicht nur Smart-Home-Controller, sondern persönlicher Assistent.** Diese Tests prüfen ob die Assistenz-Features End-to-End funktionieren UND die Jarvis-Persönlichkeit behalten.
+
+```python
+# Datei: assistant/tests/test_integration_personal_assistant.py
+
+"""Integration-Tests fuer Persoenlicher-Assistent-Features."""
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+
+class TestCookingAssistantIntegration:
+    """Teste Kochen + Persoenlichkeit + Cross-Modul."""
+
+    @pytest.mark.asyncio
+    async def test_cooking_intent_detected(self, brain_mock):
+        """'Was soll ich heute kochen?' → cooking_assistant wird aktiviert."""
+        # Verifiziere: cooking_assistant.is_cooking_intent() == True
+        # Verifiziere: Antwort enthält ein Rezept oder eine Rückfrage
+        pass
+
+    @pytest.mark.asyncio
+    async def test_cooking_response_has_personality(self, brain_mock):
+        """Koch-Antwort klingt wie MCU-Jarvis, nicht generisch."""
+        # Teste: response enthält KEINE generischen Phrasen
+        # Teste: response enthält Butler-Ton ("Sir", höfliche Formulierung)
+        # KRITISCH: P03b zeigt dass cooking die Personality-Pipeline umgeht!
+        pass
+
+    @pytest.mark.asyncio
+    async def test_cooking_considers_preferences(self, brain_mock):
+        """Kochempfehlung berücksichtigt gespeicherte Vorlieben."""
+        # 1. Fakt speichern: "Ich bin Vegetarier"
+        # 2. "Was soll ich kochen?" → Kein Fleischrezept
+        pass
+
+    @pytest.mark.asyncio
+    async def test_cooking_sets_timer(self, brain_mock):
+        """'Das muss 20 Minuten koecheln' → Timer wird gesetzt."""
+        # Verifiziere: timer_manager wird aufgerufen
+        pass
+
+
+class TestShoppingIntegration:
+    """Teste Einkaufsliste + natuerliche Sprache."""
+
+    @pytest.mark.asyncio
+    async def test_natural_shopping_add(self, brain_mock):
+        """'Wir brauchen Milch' → Milch auf Einkaufsliste."""
+        # Kein expliziter Befehl noetig ("fuege hinzu")
+        pass
+
+    @pytest.mark.asyncio
+    async def test_shopping_list_query(self, brain_mock):
+        """'Was steht auf der Einkaufsliste?' → Liste wird vorgelesen."""
+        pass
+
+
+class TestCalendarIntegration:
+    """Teste Kalender + proaktive Erinnerungen."""
+
+    @pytest.mark.asyncio
+    async def test_calendar_query_tomorrow(self, brain_mock):
+        """'Was steht morgen an?' → Termine werden aufgelistet."""
+        pass
+
+    @pytest.mark.asyncio
+    async def test_calendar_conflict_detection(self, brain_mock):
+        """Zwei überlappende Termine → Jarvis warnt proaktiv."""
+        pass
+
+
+class TestWellnessIntegration:
+    """Teste Wellness ohne zu nerven."""
+
+    @pytest.mark.asyncio
+    async def test_pc_break_reminder_timing(self, brain_mock):
+        """Nach 2h PC-Nutzung → dezenter Pausenhinweis."""
+        # Verifiziere: Hinweis ist Butler-Ton, nicht Alarm
+        pass
+
+    @pytest.mark.asyncio
+    async def test_wellness_respects_quiet_hours(self, brain_mock):
+        """Kein Wellness-Hinweis während Quiet Hours."""
+        pass
+
+
+class TestNotesAndDatesIntegration:
+    """Teste Notizen + Geburtstage + Todos."""
+
+    @pytest.mark.asyncio
+    async def test_natural_note_storage(self, brain_mock):
+        """'Merk dir, der Garagenschluessel liegt im Buero' → gespeichert."""
+        pass
+
+    @pytest.mark.asyncio
+    async def test_natural_note_retrieval(self, brain_mock):
+        """'Wo liegt der Garagenschluessel?' → 'Im Büro, Sir.'"""
+        pass
+
+    @pytest.mark.asyncio
+    async def test_birthday_proactive_reminder(self, brain_mock):
+        """Gespeicherter Geburtstag → Erinnerung am Vorabend/Morgen."""
+        pass
+
+
+class TestCrossModuleIntegration:
+    """DER ULTIMATIVE TEST: Module arbeiten zusammen."""
+
+    @pytest.mark.asyncio
+    async def test_vacation_triggers_multiple_modules(self, brain_mock):
+        """'Ich fahre morgen in den Urlaub' → Heizung, Alarm, Simulation."""
+        # Erwartung: Mehrere Module werden konsultiert:
+        # - Heizung runterfahren vorschlagen
+        # - Urlaubssimulation anbieten
+        # - Offene Fenster prüfen
+        # - Alarmanlage erwähnen
+        pass
+
+    @pytest.mark.asyncio
+    async def test_busy_day_affects_cooking(self, brain_mock):
+        """Voller Kalender + 'Was soll ich kochen?' → schnelles Rezept."""
+        # Cross-Modul: calendar_intelligence + cooking_assistant
+        pass
+
+    @pytest.mark.asyncio
+    async def test_health_complaint_multi_response(self, brain_mock):
+        """'Mein Ruecken tut weh' → Empathie + Wellness-Tipps + Arzt-Vorschlag."""
+        # Cross-Modul: wellness_advisor + calendar (Arzttermin) + memory
+        pass
+```
+
+**Implementiere JEDEN Test.** Lies die jeweiligen Module um die korrekte Signatur zu verstehen. Prüfe insbesondere ob Cooking und Workshop die Persönlichkeits-Pipeline umgehen — wenn ja, dokumentiere das als Bug.
+
+### Schritt 9: Alle Tests ausführen und fixen
 
 ```bash
 # Alle Integration-Tests ausführen

@@ -481,7 +481,131 @@ Prüfe:
 
 **Output**: Halluzinations-Guard-Score (1-5) + kritische Schwächen.
 
-### Teil 13: Gesamtbewertung & Verbesserungsplan
+### Teil 13: Persönlicher Assistent-IQ
+
+> **Jarvis ist nicht nur Smart-Home-Controller — er ist ein persönlicher Assistent.**
+> Hier wird geprüft ob die Assistenz-Features QUALITATIV gut sind, nicht nur ob sie keine Bugs haben.
+
+#### 13.1: Kochen & Ernährung
+
+```
+Read: assistant/assistant/cooking_assistant.py (Abschnitte: Intent-Erkennung, Rezept-Flow, Persönlichkeit)
+Read: assistant/assistant/meal_planner.py
+```
+
+Prüfe:
+1. **Persönlichkeit**: Klingt Jarvis beim Kochen wie MCU-Jarvis? ("Die Zwiebeln sind bereit, Sir. Ich empfehle glasig, nicht verbrannt.") Oder ist es generisch? P03b zeigt: Cooking umgeht die Persönlichkeits-Pipeline!
+2. **Schritt-für-Schritt**: Wartet Jarvis auf "weiter" bevor er den nächsten Schritt erklärt?
+3. **Anpassung**: Kennt er Allergien/Vorlieben aus dem Gedächtnis? ("Sir, das Rezept enthält Nüsse. Soll ich eine Alternative vorschlagen?")
+4. **Zeitmanagement**: "Das muss 20 Minuten köcheln" → Setzt er automatisch einen Timer?
+5. **Cross-Modul**: Wird der Einkaufszettel (`smart_shopping`) aktualisiert wenn Zutaten fehlen?
+
+#### 13.2: Einkauf & Vorräte
+
+```
+Read: assistant/assistant/smart_shopping.py
+```
+
+Prüfe:
+1. **Natürliche Interaktion**: "Wir brauchen Milch" → Wird das auf die Einkaufsliste gesetzt ohne dass der User "füge Milch zur Einkaufsliste hinzu" sagen muss?
+2. **Kontext-Awareness**: Weiß Jarvis was schon da ist? (Vorratsverwaltung)
+3. **Proaktivität**: "Sir, die Milch müsste langsam aufgebraucht sein. Soll ich sie auf die Liste setzen?"
+4. **Gedächtnis**: Lernt er welche Marke/Menge der User bevorzugt?
+
+#### 13.3: Kalender & Termine
+
+```
+Read: assistant/assistant/calendar_intelligence.py
+```
+
+Prüfe:
+1. **Aktive Abfrage**: "Was steht morgen an?" → Bekommt der User eine sinnvolle Antwort?
+2. **Proaktive Erinnerungen**: Erinnert Jarvis VOR dem Termin? Mit Pendelzeit-Puffer?
+3. **Konflikterkennung**: "Sir, der Zahnarzt überlappt mit dem Meeting. Soll ich einen umbuchen?"
+4. **Gewohnheiten**: Erkennt er regelmäßige Termine die nicht im Kalender stehen? ("Dienstags gehen Sie immer joggen.")
+5. **Cross-Modul**: Beeinflusst ein voller Kalender die Kochempfehlung? (Schnelles Rezept an stressigen Tagen)
+
+#### 13.4: Wellness & Gesundheit
+
+```
+Read: assistant/assistant/wellness_advisor.py
+Read: assistant/assistant/health_monitor.py
+```
+
+Prüfe:
+1. **PC-Pausen**: Erkennt er lange PC-Sessions und erinnert an Pausen? Wie? Nervt er oder ist er dezent?
+2. **Stressintervention**: "Sir, Sie arbeiten seit 4 Stunden ohne Pause. Darf ich einen Tee vorschlagen?"
+3. **Nachtruhe**: "Es ist 2 Uhr nachts, Sir. Morgen steht ein Meeting um 8 an." — aber NICHT jeden Abend!
+4. **Dosierung**: Wie oft darf Wellness-Advisor eingreifen? Zu oft = nervt, zu selten = nutzlos
+5. **CO2/Luft**: Werden die health_monitor Alerts (CO2 >1000ppm) als Butler-Hinweis formuliert?
+
+#### 13.5: Workshop, Reparatur & DIY
+
+```
+Read: assistant/assistant/workshop_generator.py
+Read: assistant/assistant/repair_planner.py
+```
+
+Prüfe:
+1. **Persönlichkeit**: P03b zeigt: Workshop hat EIGENE LLM-Prompts die die Persönlichkeit UMGEHEN. Klingt generierter Code/3D-Modell-Code wie von Jarvis kommentiert?
+2. **Reparatur-Diagnose**: Ist die Diagnose hilfreich oder generisch? ("Das könnte X oder Y sein" vs. konkreter Ablauf)
+3. **Sicherheitswarnungen**: "Sir, Arbeiten an der Elektrik ohne Abschaltung wäre... unklug." — Butler-Ton, nicht Warnschild
+4. **Kostenabschätzung**: Realistisch oder geschätzt? Woher kommen die Preise?
+
+#### 13.6: Notizen, Todos & Geburtstage
+
+```
+Read: assistant/assistant/note_manager.py
+Read: assistant/assistant/task_manager.py
+Read: assistant/assistant/personal_dates.py
+```
+
+Prüfe:
+1. **Natürliche Notizen**: "Merk dir mal, der Schlüssel für die Garage liegt im Büro" → wird das zuverlässig gespeichert UND wiedergefunden?
+2. **Proaktive Erinnerungen**: "Sir, morgen ist Marias Geburtstag." — am Vorabend oder am Morgen?
+3. **Todo-Kontext**: "Ich muss den Rasen mähen" → Wird das mit Wetter verknüpft? ("Sir, heute regnet es. Vielleicht morgen?")
+4. **Abruf**: "Was hatte ich mir letzte Woche gemerkt?" → Funktioniert die Suche?
+
+#### 13.7: Web-Suche & Wissen
+
+```
+Read: assistant/assistant/web_search.py
+Read: assistant/assistant/knowledge_base.py
+```
+
+Prüfe:
+1. **Wann sucht Jarvis?**: Wenn er die Antwort nicht weiß → sucht er automatisch? Oder erst auf Nachfrage?
+2. **Quellenangabe**: Nennt Jarvis woher er die Info hat? ("Laut SearXNG..." vs. als eigenes Wissen darstellen)
+3. **SSRF-Schutz**: 7-Schichten → kurzer Check ob alle aktiv sind
+4. **Fallback**: SearXNG down → DuckDuckGo? DuckDuckGo down → Was dann?
+
+#### 13.8: Cross-Modul-Integration (DER ULTIMATIVE TEST)
+
+> **Ein guter persönlicher Assistent verbindet Informationen aus ALLEN Modulen.**
+
+Prüfe diese Szenarien mental durch den Code-Flow:
+
+**Szenario A: "Jarvis, was soll ich heute kochen?"**
+→ Checkt: Kalender (stressiger Tag? → schnelles Rezept), Vorräte (was ist da?), Vorlieben (Semantic Memory), Gesundheit (Diät?), Wetter (heißer Tag → kaltes Gericht?)
+→ **Wird das ALLES berücksichtigt oder nur ein Rezept aus der DB geholt?**
+
+**Szenario B: "Jarvis, ich fahre morgen in den Urlaub"**
+→ Checkt: Kalender (Termine absagen?), Geräte (Urlaubssimulation starten), Pflanzen (Bewässerung), Sicherheit (Fenster zu? Alarmanlage?), Heizung (runter), Nachbarn (Briefkasten?)
+→ **Wie viele dieser Module werden automatisch angesprochen?**
+
+**Szenario C: "Jarvis, mein Rücken tut weh"**
+→ Checkt: Wellness (Haltungstipps, Pause empfehlen), Kalender (Arzttermin vorschlagen?), Gedächtnis (hatte der User das schon mal erwähnt?), Heizung (Wärme hilft?)
+→ **Oder antwortet Jarvis nur "Das tut mir leid, Sir"?**
+
+**Szenario D: "Jarvis, Marias Geburtstag ist in 3 Tagen"**
+→ Checkt: Personal Dates (speichern), Kalender (Termin erstellen?), Einkauf (Geschenk besorgen?), Proaktiv (Erinnerung am Tag)
+→ **Werden alle Module getriggert?**
+
+Für jedes Szenario: Trace den Code-Flow und dokumentiere wo die Kette BRICHT.
+
+**Output**: Persönlicher-Assistent-IQ-Score (1-5) + Cross-Modul-Bruchstellen.
+
+### Teil 14: Gesamtbewertung & Verbesserungsplan
 
 Erstelle eine **Qualitäts-Scorecard**:
 
@@ -499,6 +623,7 @@ Erstelle eine **Qualitäts-Scorecard**:
 | Wissens-IQ | X/5 | ... | ... | S/M/L |
 | Autonomie-IQ | X/5 | ... | ... | S/M/L |
 | Anti-Halluzination | X/5 | ... | ... | S/M/L |
+| Persönlicher Assistent | X/5 | ... | ... | S/M/L |
 | **Gesamt** | **X/5** | | | |
 
 Und einen priorisierten **Verbesserungsplan**:

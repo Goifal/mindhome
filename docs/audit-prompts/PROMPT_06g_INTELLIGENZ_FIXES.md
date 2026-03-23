@@ -444,7 +444,41 @@ Read: docs/audit-results/RESULT_03c_SYSTEM_PROMPT.md
 
 > **Verifiziere**: Lies das RESULT aus P03c. Fixe nur was dort als 🔴/🟠 markiert ist.
 
-#### Fix 3.9: Response Quality — Follow-Up-Erkennung verbessern
+#### Fix 3.9: Persönlicher Assistent — Personality-Pipeline-Bypass fixen
+
+```
+Read: assistant/assistant/cooking_assistant.py
+Grep: "CODE_GEN_PROMPT\|OPENSCAD_PROMPT\|_cooking_prompt\|_recipe_prompt" in assistant/assistant/
+```
+
+**Problem (aus P03b + P05b Teil 13)**: Cooking und Workshop haben EIGENE LLM-Prompts die die zentrale Personality-Pipeline UMGEHEN. Jarvis klingt dort nicht wie MCU-Jarvis, sondern generisch.
+
+**Prüfe**:
+1. Hat `cooking_assistant.py` einen eigenen System-Prompt? → Enthält er Jarvis-Persönlichkeit?
+2. Hat `workshop_generator.py` einen `CODE_GEN_PROMPT`? → Klingt generierter Code-Kommentar wie Jarvis?
+3. Werden Responses aus diesen Modulen durch `_filter_response()` in brain.py geschleust?
+4. Werden sie durch den Personality-Layer (`personality.py`) angereichert?
+
+**Fix-Strategie** (wähle die beste):
+- **Option A**: Eigene Prompts mit Jarvis-Persönlichkeits-Block erweitern ("Du bist Jarvis, Butler von...")
+- **Option B**: Responses nachträglich durch Personality-Pipeline schleusen
+- **Option C**: Zentrale Prompt-Baustein-Funktion die JEDES Modul nutzen MUSS
+
+> Option A ist am einfachsten und sichersten. Eigene Prompts MÜSSEN den Character-Lock-Block enthalten.
+
+#### Fix 3.10: Cross-Modul-Verknüpfungen stärken
+
+**Basierend auf P05b Teil 13.8 (Cross-Modul)**: Prüfe ob die wichtigsten Cross-Modul-Verknüpfungen funktionieren:
+
+1. **Kochen → Timer**: `cooking_assistant` setzt automatisch Timer über `timer_manager`?
+2. **Kochen → Einkauf**: Fehlende Zutaten → `smart_shopping` aktualisieren?
+3. **Kalender → Kochen**: Voller Tag → schnelles Rezept empfehlen?
+4. **Geburtstage → Proaktiv**: `personal_dates` → `proactive.py` Erinnerung?
+5. **Wellness → Activity**: `wellness_advisor` prüft `activity.py` vor Hinweis?
+
+> Für jede fehlende Verknüpfung: Dokumentiere als OFFEN wenn der Aufwand > S ist.
+
+#### Fix 3.11: Response Quality — Follow-Up-Erkennung verbessern
 
 ```
 Read: assistant/assistant/response_quality.py
