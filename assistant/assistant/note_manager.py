@@ -387,6 +387,10 @@ class NoteManager:
         """Cleanup."""
         pass
 
+    async def stop(self):
+        """Alias fuer shutdown (Brain-Kompatibilitaet)."""
+        await self.shutdown()
+
 
 def _decode_hash(data: dict) -> dict:
     """Dekodiert Redis-Hash bytes zu strings."""

@@ -107,7 +107,7 @@ class TaskManager:
         target_list = list_entity or (_FAMILY_LIST if not person else _DEFAULT_LIST)
 
         # HA todo.add_item Service aufrufen
-        service_data = {"item": title}
+        service_data = {"entity_id": target_list, "item": title}
         if due_date:
             service_data["due_date"] = due_date
         if description:
@@ -117,7 +117,6 @@ class TaskManager:
             "todo",
             "add_item",
             service_data,
-            target={"entity_id": target_list},
         )
 
         if not success:
@@ -215,8 +214,7 @@ class TaskManager:
         success = await self.ha.call_service(
             "todo",
             "update_item",
-            {"item": title, "status": "completed"},
-            target={"entity_id": target_list},
+            {"entity_id": target_list, "item": title, "status": "completed"},
         )
 
         if not success:
@@ -237,8 +235,7 @@ class TaskManager:
         success = await self.ha.call_service(
             "todo",
             "remove_item",
-            {"item": title},
-            target={"entity_id": target_list},
+            {"entity_id": target_list, "item": title},
         )
 
         if not success:
@@ -479,12 +476,11 @@ class TaskManager:
                 title = decoded.get("title", "")
                 list_entity = decoded.get("list_entity", _FAMILY_LIST)
 
-                service_data = {"item": title}
+                service_data = {"entity_id": list_entity, "item": title}
                 success = await self.ha.call_service(
                     "todo",
                     "add_item",
                     service_data,
-                    target={"entity_id": list_entity},
                 )
 
                 if success:
@@ -507,3 +503,7 @@ class TaskManager:
                 await self._recurring_task
             except asyncio.CancelledError:
                 pass
+
+    async def stop(self):
+        """Alias fuer shutdown (Brain-Kompatibilitaet)."""
+        await self.shutdown()

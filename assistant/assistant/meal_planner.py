@@ -127,7 +127,7 @@ class MealPlanner:
         try:
             response = await self.ollama.generate(
                 prompt=prompt,
-                model_tier="smart",
+                model=self._get_model("smart"),
                 max_tokens=800,
             )
             return {
@@ -164,7 +164,7 @@ class MealPlanner:
         try:
             response = await self.ollama.generate(
                 prompt=prompt,
-                model_tier="deep",  # Komplexere Aufgabe
+                model=self._get_model("deep"),
                 max_tokens=1500,
             )
 
@@ -386,6 +386,18 @@ class MealPlanner:
     # Interne Helfer
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _get_model(tier: str) -> str:
+        """Holt das konfigurierte Modell fuer eine Tier-Stufe."""
+        from .config import settings
+
+        tier_map = {
+            "fast": settings.model_fast,
+            "smart": settings.model_smart,
+            "deep": settings.model_deep,
+        }
+        return tier_map.get(tier, settings.model_smart)
+
     async def _get_dietary_info(self) -> str:
         """Laedt Ernaehrungsinfos aus Semantic Memory."""
         if not self.semantic_memory:
@@ -543,6 +555,10 @@ class MealPlanner:
     async def shutdown(self):
         """Cleanup."""
         pass
+
+    async def stop(self):
+        """Alias fuer shutdown (Brain-Kompatibilitaet)."""
+        await self.shutdown()
 
 
 def _decode_hash(data: dict) -> dict:

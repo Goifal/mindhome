@@ -1359,7 +1359,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.personal_dates.set_semantic_memory(
             getattr(self, "semantic_memory", None)
         )
-        self.personal_dates.set_notify_callback(self._handle_proactive_message)
+        self.personal_dates.set_notify_callback(self._handle_personal_date_reminder)
         self.meal_planner.inventory = self.inventory
         self.meal_planner.smart_shopping = self.smart_shopping
         self.meal_planner.semantic_memory = getattr(self, "semantic_memory", None)
@@ -5648,6 +5648,26 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 f"- {h}" for h in timer_hints
             )
             sections.append(("timers", timer_text, 2))
+
+        # Personal Assistant Module Context Hints
+        pa_hints = []
+        for pa_mod in [
+            self.task_manager,
+            self.note_manager,
+            self.family_manager,
+            self.meal_planner,
+        ]:
+            try:
+                hints = pa_mod.get_context_hints()
+                if hints:
+                    pa_hints.extend(hints)
+            except Exception:
+                pass
+        if pa_hints:
+            pa_text = "\n\nPERSOENLICHER ASSISTENT:\n" + "\n".join(
+                f"- {h}" for h in pa_hints
+            )
+            sections.append(("personal_assistant", pa_text, 1))
 
         if guest_mode_active:
             sections.append(
@@ -11888,6 +11908,24 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Proaktive Meldung in Working Memory speichern für Konversations-Kontext
         self._remember_exchange("[proaktiv: Zeiterkennung]", formatted)
         logger.info("TimeAwareness [%s] -> Meldung: %s", urgency, formatted)
+
+    async def _handle_personal_date_reminder(self, message: str = "", priority: str = "medium", **kwargs):
+        """Callback fuer PersonalDatesManager — Geburtstags-/Jahrestags-Erinnerungen."""
+        if not message:
+            return
+        urgency = "high" if priority == "high" else "medium"
+        if not await self._callback_should_speak(
+            urgency, source="PersonalDates"
+        ):
+            return
+        formatted = await self._format_callback_with_escalation(
+            message,
+            urgency,
+            "personal_date",
+        )
+        await self._speak_and_emit(formatted)
+        self._remember_exchange("[proaktiv: Persoenlicher Termin]", formatted)
+        logger.info("Personal Date Reminder [%s]: %s", priority, formatted)
 
     async def _handle_health_alert(self, alert_type: str, urgency: str, message: str):
         """Callback für Health Monitor — leitet an proaktive Meldung weiter."""
@@ -19105,6 +19143,11 @@ Regeln:
             self.autonomy,
             self.routines,
             self.action_planner,
+            self.task_manager,
+            self.personal_dates,
+            self.family_manager,
+            self.note_manager,
+            self.meal_planner,
         ]:
             try:
                 await component.stop()

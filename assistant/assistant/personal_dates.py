@@ -330,6 +330,10 @@ class PersonalDatesManager:
             except asyncio.CancelledError:
                 pass
 
+    async def stop(self):
+        """Alias fuer shutdown (Brain-Kompatibilitaet)."""
+        await self.shutdown()
+
 
 # ------------------------------------------------------------------
 # Hilfsfunktionen
