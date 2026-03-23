@@ -515,6 +515,19 @@ Wenn ein Bug NICHT gefixt werden kann, dokumentiere ihn im OFFEN-Block mit:
 □ cd /home/user/mindhome/assistant && python -m pytest tests/ -x --tb=short -q
 ```
 
+### Self-Check (Pflicht — vor Übergabe ausfüllen!)
+
+```
+SELF-CHECK P06d:
+□ Kontext-Block ≤ 30 Zeilen: [Ja/Nein]
+□ pytest nach letztem Fix: [X passed, Y failed]
+□ Alle Security-Checks (1-15) geprüft: [Ja/Nein]
+□ Resilience-Szenarien (1-14) geprüft: [Ja/Nein]
+□ CircuitBreaker in externen Service-Modulen integriert: [Ja/Nein]
+□ Addon-Dopplungen haben klare Zuständigkeit: [Ja/Nein]
+□ Keine eval()/exec()/os.system() im Code: [Ja/Nein]
+```
+
 ## ⚡ Übergabe an Prompt 6e
 
 > **Nach P06d folgen P06e (Geraetesteuerung) und P06f (TTS/Response)** bevor es zu P07a (Testing) geht. Diese adressieren die zwei groessten User-Pain-Points: Geraete reagieren nicht + "speak" in Sprachausgabe.

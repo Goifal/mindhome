@@ -191,6 +191,19 @@ Jeder Fund → sofort fixen oder als sicher belegen.
 | 9 | Alle Docker-Container buildbar | □ |
 | 10 | README aktuell | □ |
 
+### Self-Check (Pflicht — vor Declaration ausfüllen!)
+
+```
+SELF-CHECK P10:
+□ Alle OFFEN-Bugs aus P01-P09b gesammelt: [X Bugs total]
+□ Jeder Bug verifiziert (existiert noch?): [Ja/Nein]
+□ Alle 🔴/🟠 gefixt oder FALSE_POSITIVE: [Ja/Nein]
+□ pytest nach allen Fixes: [X passed, Y failed]
+□ Security Quick-Scan durchgeführt: [Ja/Nein]
+□ Keine neuen Bugs durch Fixes eingeführt: [Ja/Nein]
+□ OPEN_BUGS.md Inhalt vorbereitet (falls Bugs offen): [Ja/Nein/Nicht nötig]
+```
+
 ### Zero-Bug Declaration
 
 Wenn alle Checks bestanden:

@@ -306,6 +306,18 @@ Bevor du zu 6c übergehst:
 □ grep "priority" assistant/assistant/brain.py | head -10 → Priority-System konsistent
 ```
 
+### Self-Check (Pflicht — vor Übergabe ausfüllen!)
+
+```
+SELF-CHECK P06b:
+□ Kontext-Block ≤ 30 Zeilen: [Ja/Nein]
+□ pytest Baseline dokumentiert: [X passed am Start]
+□ pytest nach letztem Fix: [X passed, Y failed]
+□ Keine Regression gegenüber P06a-Baseline: [Ja/Nein]
+□ Architektur-Entscheidung getroffen und begründet: [Ja/Nein]
+□ Addon-Kompatibilität geprüft: [Ja/Nein]
+```
+
 ## ⚡ Übergabe an Prompt 6c
 
 ```

@@ -301,6 +301,18 @@ Bevor du zu 6b übergehst:
 □ grep "_safe_init" assistant/assistant/brain.py → alle Module in _safe_init gewrapped
 ```
 
+### Self-Check (Pflicht — vor Übergabe ausfüllen!)
+
+```
+SELF-CHECK P06a:
+□ Kontext-Block ≤ 30 Zeilen: [Ja/Nein]
+□ Alle Datei:Zeile Referenzen verifiziert: [Ja/Nein]
+□ pytest nach letztem Fix: [X passed, Y failed]
+□ Alle 🔴 Bugs gefixt oder eskaliert: [X/Y gefixt, Z eskaliert]
+□ Bug-Zuordnungstabelle erstellt: [Ja/Nein]
+□ Keine neuen except:pass eingeführt: [Ja/Nein]
+```
+
 ## ⚡ Übergabe an Prompt 6b
 
 Formatiere am Ende einen kompakten **Kontext-Block**:
