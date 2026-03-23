@@ -5965,8 +5965,9 @@ class ProactiveManager:
             return False
         try:
             rate_key = f"mha:cover:rate_limit:{entity_id}"
-            count = await redis_client.get(rate_key)
-            if count and int(count) >= self._COVER_RATE_LIMIT_MAX:
+            count_raw = await redis_client.get(rate_key)
+            count = int(count_raw.decode() if isinstance(count_raw, bytes) else count_raw) if count_raw else 0
+            if count >= self._COVER_RATE_LIMIT_MAX:
                 logger.warning(
                     "Cover Rate-Limit: %s hat %s Aktionen/h erreicht — blockiert",
                     entity_id,
@@ -6227,11 +6228,26 @@ class ProactiveManager:
                 if redis_client:
                     acting_key = f"mha:cover:jarvis_acting:{entity_id}"
                     await redis_client.set(acting_key, "1", ex=300)
-                await self.brain.ha.call_service(
-                    "cover",
-                    "set_cover_position",
-                    {"entity_id": entity_id, "position": ha_pos},
-                )
+                try:
+                    await self.brain.ha.call_service(
+                        "cover",
+                        "set_cover_position",
+                        {"entity_id": entity_id, "position": ha_pos},
+                    )
+                except Exception as ha_err:
+                    # HA-Call fehlgeschlagen → jarvis_acting Flag aufräumen
+                    # damit Manual Override Detection nicht blockiert wird
+                    if redis_client:
+                        try:
+                            await redis_client.delete(acting_key)
+                        except Exception:
+                            pass
+                    logger.error(
+                        "Cover-Auto: HA call_service fehlgeschlagen für %s: %s",
+                        entity_id,
+                        ha_err,
+                    )
+                    return False
                 logger.info(
                     "Cover-Auto: %s -> %d%% (HA: %d%%) (%s)",
                     entity_id,
@@ -6572,9 +6588,12 @@ class ProactiveManager:
             effective_temp = temp
             if indoor_sensor:
                 indoor_temp = self._get_indoor_temp(states, indoor_sensor)
-                if indoor_temp != 0.0 or any(
+                # indoor_temp pruefen: Nur verwenden wenn Sensor tatsaechlich
+                # vorhanden ist (nicht nur != 0.0, da 0°C ein valider Wert ist)
+                _has_indoor_sensor = any(
                     s.get("entity_id") == indoor_sensor for s in (states or [])
-                ):
+                )
+                if _has_indoor_sensor:
                     effective_temp = max(temp, indoor_temp)
 
             # Feature 14: Sitzsensor — Blendschutz unabhängig von Temperatur
@@ -7181,13 +7200,15 @@ class ProactiveManager:
                                     "cover."
                                 ) and await self.brain.executor._is_safe_cover(eid, cs):
                                     if not self.brain.executor._is_markise(eid, cs):
-                                        await self._auto_cover_action(
+                                        acted = await self._auto_cover_action(
                                             eid,
                                             100,
                                             "Urlaubssimulation (morgens)",
                                             auto_level,
                                             redis_client,
                                         )
+                                        if acted and cycle_acted is not None:
+                                            cycle_acted.add(eid)
                             last_schedule_action = "open"
 
                     # Abends teilweise schliessen (mit Variation)
@@ -7198,13 +7219,15 @@ class ProactiveManager:
                                 "cover."
                             ) and await self.brain.executor._is_safe_cover(eid, cs):
                                 if not self.brain.executor._is_markise(eid, cs):
-                                    await self._auto_cover_action(
+                                    acted = await self._auto_cover_action(
                                         eid,
                                         30,
                                         "Urlaubssimulation (abends, Sichtschutz)",
                                         auto_level,
                                         redis_client,
                                     )
+                                    if acted and cycle_acted is not None:
+                                        cycle_acted.add(eid)
                         last_schedule_action = "close"
 
                     # Nachts komplett zu
@@ -7215,13 +7238,15 @@ class ProactiveManager:
                                 "cover."
                             ) and await self.brain.executor._is_safe_cover(eid, cs):
                                 if not self.brain.executor._is_markise(eid, cs):
-                                    await self._auto_cover_action(
+                                    acted = await self._auto_cover_action(
                                         eid,
                                         0,
                                         "Urlaubssimulation (Nacht)",
                                         auto_level,
                                         redis_client,
                                     )
+                                    if acted and cycle_acted is not None:
+                                        cycle_acted.add(eid)
                         last_schedule_action = "close"
 
         return last_schedule_action
@@ -7626,7 +7651,7 @@ class ProactiveManager:
         if elevation > 0:
             return  # Nur nach Sonnenuntergang
 
-        current_hour = _dt.now(timezone.utc).hour
+        current_hour = _dt.now(_LOCAL_TZ).hour
         cover_cfg = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
         global_close_hour = cover_cfg.get("privacy_close_hour", None)
 

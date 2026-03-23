@@ -4322,11 +4322,32 @@ class FunctionExecutor:
         self._config_versioning = versioning
 
     async def _mark_cover_jarvis_acting(self, entity_id: str):
-        """Setzt jarvis_acting Flag damit proactive.py keinen Manual Override erkennt."""
+        """Setzt jarvis_acting Flag UND manual_override fuer Voice-Befehle.
+
+        jarvis_acting: Verhindert dass proactive.py den State-Change
+        als externen Manual Override erkennt (z.B. von HA UI/Button).
+        manual_override: Blockiert die automatische Cover-Steuerung
+        (Solar, Zeitplan etc.) fuer die konfigurierte Override-Dauer.
+        Beide Flags sind noetig weil Voice-Befehle vom User kommen
+        (→ Automatik soll pausieren) aber ueber Jarvis ausgefuehrt
+        werden (→ kein falscher Override-Alarm).
+        """
         redis = getattr(self, "_redis", None)
         if redis:
             try:
                 await redis.set(f"mha:cover:jarvis_acting:{entity_id}", "1", ex=300)
+                # Voice-Befehl = User-Intention → Automatik pausieren
+                from .config import yaml_config
+
+                override_hours = (
+                    yaml_config.get("seasonal_actions", {})
+                    .get("cover_automation", {})
+                    .get("manual_override_hours", 2)
+                )
+                override_ttl = int(override_hours * 3600)
+                await redis.set(
+                    f"mha:cover:manual_override:{entity_id}", "1", ex=override_ttl
+                )
             except Exception as e:
                 logger.debug("Redis Cover-Jarvis-Acting Flag fehlgeschlagen: %s", e)
 
