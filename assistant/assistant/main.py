@@ -591,19 +591,25 @@ async def api_anomaly_middleware(request: Request, call_next):
             except Exception:
                 pass  # Non-critical
 
-    # Log unusual access times (2-5 AM)
-    if response.status_code == 200 and request.url.path.startswith("/api/assistant"):
+    # Log unusual access times (2-5 AM) — Health-Checks von localhost ausschliessen
+    _req_path = request.url.path
+    if response.status_code == 200 and _req_path.startswith("/api/assistant"):
         from datetime import datetime, timezone
 
         hour = datetime.now(timezone.utc).hour
         if 2 <= hour <= 5:
             client_ip = request.client.host if request.client else "unknown"
-            logger.info(
-                "API access at unusual hour %d from %s: %s",
-                hour,
-                client_ip,
-                request.url.path,
+            _is_local_health = (
+                _req_path.rstrip("/") == "/api/assistant/health"
+                and client_ip in ("127.0.0.1", "::1", "localhost")
             )
+            if not _is_local_health:
+                logger.info(
+                    "API access at unusual hour %d from %s: %s",
+                    hour,
+                    client_ip,
+                    _req_path,
+                )
 
     return response
 
