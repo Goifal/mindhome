@@ -1103,8 +1103,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Phase 6: Redis für Personality Engine (Formality Score, Counter)
         self.personality.set_redis(self.memory.redis)
         # MCU Sprint 2: SemanticMemory für Meinungs-Engine
-        if hasattr(self, "semantic_memory"):
-            self.personality.set_semantic_memory(self.semantic_memory)
+        if self.memory and self.memory.semantic:
+            self.personality.set_semantic_memory(self.memory.semantic)
 
         # C5: Redis fuer cross-session Intent-Referenzierung
         self.dialogue_state.set_redis(self.memory.redis)
