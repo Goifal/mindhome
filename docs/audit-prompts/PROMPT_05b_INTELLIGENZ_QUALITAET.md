@@ -384,7 +384,60 @@ Read: assistant/assistant/seasonal_insight.py
 
 **Output**: Autonomie-IQ-Score (1-5) + Schwächen.
 
-### Teil 12: Gesamtbewertung & Verbesserungsplan
+### Teil 12: Anti-Halluzinations-Guard (3 Schichten)
+
+> **Dies ist eine der kritischsten Intelligenz-Komponenten: Sie bestimmt ob Jarvis die Wahrheit sagt.**
+
+```
+Read: assistant/assistant/brain.py offset=8100 limit=500
+Grep: "_generate_contextual_error" in assistant/assistant/brain.py
+Grep: "_verify_device_state" in assistant/assistant/brain.py
+```
+
+**Schicht 1: Action-Claims-Guard** — Erkennt falsche Handlungsbehauptungen
+
+Prüfe:
+1. **Erkennung**: Wenn LLM sagt "Ich habe das Licht eingeschaltet" aber 0 Aktionen ausgeführt wurden → wird das erkannt?
+2. **Pattern-Abdeckung**: Werden ALLE deutschen Formulierungen abgedeckt? ("eingeschaltet", "aktiviert", "angemacht", "hochgefahren", "gestartet", etc.)
+3. **False Positives**: "Ich WÜRDE einschalten" (Konjunktiv) ist keine Behauptung → wird das korrekt unterschieden?
+4. **Teilweise Ausführung**: 3 von 5 Geräten geschaltet → werden die 2 fehlgeschlagenen korrekt gemeldet oder wird alles als Erfolg dargestellt?
+
+**Schicht 2: Quantitative Guard** — Erkennt erfundene Zahlen/Messwerte
+
+Prüfe:
+1. **Zahlen-Extraktion**: Werden ALLE Zahlen im Response gegen den Kontext geprüft?
+2. **Toleranz**: "20.3°C" im Kontext, LLM sagt "etwa 20 Grad" → wird das als Halluzination erkannt? (Sollte es NICHT, Rundung ist OK)
+3. **Zeitangaben**: "Es ist 14:30" → wird das gegen die echte Uhrzeit geprüft?
+4. **Prozentangaben**: Batterie "87%" im Kontext, LLM sagt "87%" → OK. Aber "90%"? → Halluzination
+5. **Kontext-Vollständigkeit**: Wenn eine Zahl NICHT im Kontext steht (weil der Kontext abgeschnitten wurde), wird sie fälschlicherweise als Halluzination markiert?
+
+**Schicht 3: Qualitative Guard** — Erkennt erfundene Geräte
+
+Prüfe:
+1. **Entity-Katalog**: Woher kommt die Liste bekannter Geräte? Ist sie aktuell?
+2. **Synonyme**: "Wohnzimmerlampe" vs. "light.wohnzimmer" → erkennt der Guard beide?
+3. **Neue Geräte**: Wenn ein Gerät gerade erst hinzugefügt wurde → wird es fälschlich als "erfunden" markiert?
+4. **Nur device-Kategorien**: Guard ist nur aktiv bei `device_command` und `device_query` → was ist mit `analysis`-Kategorie die Geräte erwähnt?
+
+**Fallback: `_generate_contextual_error()`**
+
+Prüfe:
+1. Was passiert wenn ALLE 3 Schichten den gesamten Response entfernen?
+2. Ist der Fallback-Text natürlich oder robotisch? ("Ich konnte nicht..." vs. "Error 500")
+3. Wird der Fallback als Character-Break geloggt?
+4. Gibt es einen Eskalationsmechanismus wenn der Fallback häufig ausgelöst wird?
+
+**Post-Verification: `_verify_device_state()`**
+
+Prüfe:
+1. **Timing**: 1.5s Wartezeit → reicht das für langsame Geräte (Rollläden, Heizung)?
+2. **Korrektur-Nachricht**: Wenn Gerät nicht reagiert hat → was sagt Jarvis dem User?
+3. **Retry**: Wird ein erneuter Versuch gestartet oder nur gemeldet?
+4. **Background-Task**: Läuft als `asyncio.create_task()` → hat es einen `add_done_callback`?
+
+**Output**: Halluzinations-Guard-Score (1-5) + kritische Schwächen.
+
+### Teil 13: Gesamtbewertung & Verbesserungsplan
 
 Erstelle eine **Qualitäts-Scorecard**:
 
@@ -401,6 +454,7 @@ Erstelle eine **Qualitäts-Scorecard**:
 | Umgebungs-IQ | X/5 | ... | ... | S/M/L |
 | Wissens-IQ | X/5 | ... | ... | S/M/L |
 | Autonomie-IQ | X/5 | ... | ... | S/M/L |
+| Anti-Halluzination | X/5 | ... | ... | S/M/L |
 | **Gesamt** | **X/5** | | | |
 
 Und einen priorisierten **Verbesserungsplan**:

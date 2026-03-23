@@ -39,7 +39,91 @@ Notiere die Baseline: `X Tests bestanden, Y fehlgeschlagen, Z Errors`. **ALLE Te
 
 ## Aufgabe
 
-Fixe die Qualitäts-Findings aus P05b, priorisiert nach Impact:
+Fixe die Qualitäts-Findings aus P05b (inkl. Teil 12: Anti-Halluzination), priorisiert nach Impact:
+
+### Priorität 0: Anti-Halluzinations-Guard (P05b Teil 12) — Wahrheitsgarantie
+
+> **Kritischste Fixes**: Wenn der Halluzinations-Guard versagt, LÜGT Jarvis.
+
+```
+Read: assistant/assistant/brain.py offset=8100 limit=500
+```
+
+#### Fix 0.1: Action-Claims-Guard — Deutsche Formulierungen vervollständigen
+
+**Prüfe**: Welche Verben/Phrasen erkennt der Guard als "Handlungsbehauptung"?
+
+**Mögliche fehlende Patterns** (prüfe ob abgedeckt):
+```python
+# Typische LLM-Behauptungen die erkannt werden MÜSSEN:
+_action_claim_patterns = [
+    "habe ich eingeschaltet",
+    "habe ich aktiviert",
+    "wurde eingeschaltet",
+    "ist jetzt an",
+    "habe ich angemacht",
+    "habe ich ausgemacht",
+    "habe ich auf .* gestellt",
+    "habe ich geöffnet",
+    "habe ich geschlossen",
+    "habe ich heruntergefahren",
+    "habe ich hochgefahren",
+    "läuft jetzt",
+]
+```
+
+> **Verifiziere**: Lies den bestehenden Guard-Code. Welche Patterns fehlen?
+
+#### Fix 0.2: Quantitative Guard — Rundungstoleranz einbauen
+
+**Problem**: "20.3°C" im Kontext, LLM sagt "etwa 20 Grad" → wird fälschlich als Halluzination erkannt.
+
+**Fix**: Toleranz-basierter Vergleich:
+```python
+# VORHER: Exakter String-Match
+if number_str not in context_text:
+    # Halluzination!
+
+# NACHHER: Numerischer Vergleich mit Toleranz
+def _is_number_in_context(value: float, context_numbers: list[float]) -> bool:
+    for ctx_num in context_numbers:
+        if abs(value - ctx_num) / max(abs(ctx_num), 1) < 0.1:  # 10% Toleranz
+            return True
+    return False
+```
+
+> **Verifiziere**: Wie wird aktuell verglichen? String-Match oder numerisch?
+
+#### Fix 0.3: _verify_device_state() — Domain-spezifisches Timing
+
+**Problem**: 1.5s Wartezeit reicht für Licht, aber NICHT für Rollläden (20s) oder Heizung (Minuten).
+
+**Fix**: Domain-abhängige Wartezeit:
+```python
+_VERIFY_DELAYS = {
+    "light": 1.5,
+    "switch": 1.5,
+    "cover": 25.0,    # Rollläden brauchen bis zu 20s
+    "climate": 60.0,  # Heizung braucht Minuten
+    "lock": 5.0,      # Schlösser 2-5s
+}
+```
+
+> **Verifiziere**: Gibt es schon domain-spezifische Delays? Lies `_verify_device_state()`.
+
+#### Fix 0.4: _verify_device_state() — add_done_callback prüfen
+
+```
+Grep: "_verify_device_state" in assistant/assistant/brain.py
+Grep: "add_done_callback" near "_verify_device_state" in assistant/assistant/brain.py
+```
+
+**Prüfe**: Wird der Task mit `add_done_callback` erstellt? Wenn nicht → Fehler gehen still verloren:
+```python
+# PFLICHT (aus CLAUDE.md):
+task = asyncio.create_task(self._verify_device_state(...))
+task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+```
 
 ### Priorität 1: Quick Wins (kleine Änderungen, großer Impact)
 
