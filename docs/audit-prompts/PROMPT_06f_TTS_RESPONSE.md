@@ -229,6 +229,33 @@ Grep: "meta_leak_patterns\|Meta-Leakage" in brain.py → mindestens 1 Treffer
 Read: brain.py um die neue Stelle → Code-Syntax korrekt?
 ```
 
+### FIX 1b: Markdown + Entity-ID + Timestamp Filter (Ergänzung P04d)
+
+> **Dieses Fix ergänzt FIX 1.** P04d (Speech Pipeline) hat zusätzliche Leakage-Typen identifiziert die in FIX 1 fehlen.
+
+**Datei:** `assistant/assistant/brain.py` — DIREKT NACH dem Meta-Leakage-Block aus FIX 1
+
+```python
+# 0f. Markdown entfernen (wird sonst von TTS vorgelesen)
+text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # **fett** → fett
+text = re.sub(r'\*([^*]+)\*', r'\1', text)       # *kursiv* → kursiv
+text = re.sub(r'`([^`]+)`', r'\1', text)         # `code` → code
+text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)  # # Überschrift → Überschrift
+text = re.sub(r'^\s*[-*]\s+', '', text, flags=re.MULTILINE)  # - Liste → Liste
+
+# 0g. Entity-IDs durch natürliche Namen ersetzen
+# "light.wohnzimmer_decke" → "Wohnzimmer Decke" (falls im Response)
+text = re.sub(
+    r'\b(light|switch|cover|climate|sensor|lock|media_player)\.\w+',
+    lambda m: m.group(0).split('.')[-1].replace('_', ' ').title(),
+    text
+)
+
+# 0h. Timestamps und Debug-Info entfernen
+text = re.sub(r'\[\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]]*\]', '', text)
+text = re.sub(r'\b(DEBUG|INFO|WARNING|ERROR|CRITICAL):?\s*', '', text)
+```
+
 ### FIX 2: Pre-TTS-Filter in sound_manager.py
 
 **Datei:** `assistant/assistant/sound_manager.py`
