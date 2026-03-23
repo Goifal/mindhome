@@ -773,7 +773,7 @@ class AutonomyManager:
 
         next_level = self.level + 1
         if next_level > max_level or next_level > 4:
-            return None  # Level 5 nur manuell
+            return None  # Level 5 nur manuell (Sicherheitsgrenze)
 
         criteria = self._evolution_criteria.get(next_level)
         if not criteria:
