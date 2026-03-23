@@ -7403,15 +7403,52 @@ class ProactiveManager:
                     if _cover_bs:
                         _bed_sensors = [_cover_bs]
                     else:
-                        cover_room = cover.get("room", "")
-                        if cover_room:
-                            _rp = _get_room_profiles_cached()
-                            _room_cfg = (_rp.get("rooms") or {}).get(
-                                cover_room, {}
-                            )
-                            from .config import get_room_bed_sensors
+                        from .config import get_room_bed_sensors
 
+                        cover_room = cover.get("room", "")
+                        if not cover_room:
+                            # Fallback: Room-Matching ueber Config + Heuristik
+                            cover_room = self._get_room_for_cover(entity_id)
+                        _rp = _get_room_profiles_cached()
+                        _rooms = _rp.get("rooms") or {}
+                        if cover_room:
+                            _room_cfg = _rooms.get(cover_room, {})
+                            # Fuzzy: Raeume pruefen die im Entity-Namen vorkommen
+                            if not _room_cfg:
+                                _eid_parts = entity_id.lower().replace(
+                                    "cover.", ""
+                                ).split("_")
+                                for _rname, _rcfg in _rooms.items():
+                                    if _rname.lower() in _eid_parts:
+                                        _room_cfg = _rcfg
+                                        cover_room = _rname
+                                        break
                             _bed_sensors = get_room_bed_sensors(_room_cfg)
+
+                        # Wenn kein Bettsensor im eigenen Raum gefunden:
+                        # Fuer Nebenraeume (Ankleide, Flur OG etc.) auch
+                        # Bettsensoren auf dem gleichen Stockwerk pruefen.
+                        # Typ "dressing" gehoert fast immer zum Schlafzimmer.
+                        if not _bed_sensors:
+                            _room_cfg_own = _rooms.get(cover_room, {})
+                            _cover_floor = (
+                                _room_cfg_own.get("floor", "")
+                                or cover.get("floor", "")
+                            )
+                            _cover_type = _room_cfg_own.get("type", "")
+                            _ADJACENT_TYPES = {"dressing", "hallway"}
+                            if _cover_floor and (
+                                _cover_type in _ADJACENT_TYPES
+                                or not _room_cfg_own  # Raum nicht in Profilen
+                            ):
+                                for _rname, _rcfg in _rooms.items():
+                                    if (
+                                        _rcfg.get("type") == "bedroom"
+                                        and _rcfg.get("floor") == _cover_floor
+                                    ):
+                                        _floor_bed = get_room_bed_sensors(_rcfg)
+                                        if _floor_bed:
+                                            _bed_sensors.extend(_floor_bed)
                     _bed_occupied = False
                     for s in states or []:
                         if (
