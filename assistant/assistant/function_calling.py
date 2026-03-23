@@ -5013,7 +5013,6 @@ class FunctionExecutor:
         return curve[-1][key]
 
     @staticmethod
-    @staticmethod
     def _parse_brightness(args: dict) -> int | None:
         """Parst und validiert den Brightness-Parameter (1-100%). Gibt None zurueck bei Fehler."""
         try:
