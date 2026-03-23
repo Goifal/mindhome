@@ -121,7 +121,7 @@ Liste fehlende Features mit Severity (🔴/🟠/🟡/🟢).
 **Bruchstellen**:
 - **brain.py:1431,1443**: Cooking-Shortcut gibt `model="cooking_assistant"` zurueck — UMGEHT die volle Personality-Pipeline (kein System-Prompt, kein Character-Lock). Der Cooking-LLM-Call nutzt `model_router.get_best_available()` aber baut eigenen Prompt.
 - **brain.py:1451**: Workshop-Shortcut ebenfalls — `model="workshop_activation"`, eigene Logik
-- **smart_shopping, music_dj**: Erreichbar NUR wenn das LLM den richtigen Function Call generiert — kein deterministischer Shortcut. Bei kleinem Modell (qwen3.5:4b) koennte der FC fehlschlagen.
+- **smart_shopping, music_dj**: Erreichbar NUR wenn das LLM den richtigen Function Call generiert — kein deterministischer Shortcut. Bei kleinem Modell (qwen3.5:9b) koennte der FC fehlschlagen.
 - **calendar_intelligence**: Nur passiv als Context-Hint im System-Prompt. Kein eigener Endpunkt, kein Intent-Shortcut.
 
 **Memory-Zugriff**:

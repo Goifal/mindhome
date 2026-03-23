@@ -17,7 +17,7 @@ Du kennst **J.A.R.V.I.S. aus dem MCU** in- und auswendig und nutzt ihn als Golds
 
 ## LLM-Spezifisch (Qwen 3.5)
 
-- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Modell: qwen3.5:9b (fast, ctx 32k), qwen3.5:35b-moe (smart, ctx 32k), qwen3.5:35b-moe (deep, ctx 64k)
 - Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
 - Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
 - Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})

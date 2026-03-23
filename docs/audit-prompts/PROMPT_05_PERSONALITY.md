@@ -25,7 +25,7 @@ Analysiere das gesamte Persönlichkeits-System von Jarvis auf MCU-Authentizität
 ### Schritt 1: System-Prompt analysieren
 - Lies `personality.py` — SYSTEM_PROMPT_TEMPLATE und `build_system_prompt()`
 - Schätze die Token-Größe (Wort-zu-Token-Ratio ~1.3 für Deutsch)
-- Prüfe: Ist der Prompt für Qwen 4b zu groß? Gibt es Widersprüche?
+- Prüfe: Ist der Prompt für Qwen 9b (fast-Modell) zu groß? Gibt es Widersprüche?
 
 ### Schritt 2: Sarkasmus & Humor-System prüfen
 - Lies die HUMOR_TEMPLATES (Level 1-5) — sind sie differenziert?
@@ -94,9 +94,9 @@ Bewerte auf einer Skala 1-10:
 - `character_hint` in model_profiles (settings.yaml:484-502) liefert Modell-spezifische Anti-Floskel-Anker fuer Qwen
 
 **Schwaechen:**
-1. **Token-Effizienz:** Der Basis-Prompt (SYSTEM_PROMPT_TEMPLATE allein) hat ca. 350-400 Woerter (~500-600 Tokens). Mit allen dynamischen Sektionen (Humor, Formality, Empathie, Urgency, Self-Awareness, Conversation-Callbacks, Weather, Memory, Next-Step, Character-Lock, Workshop) kann der System-Prompt auf 800-1200+ Tokens anwachsen. Bei Qwen 4b mit kleinem Kontextfenster draengt das relevanten Kontext raus.
+1. **Token-Effizienz:** Der Basis-Prompt (SYSTEM_PROMPT_TEMPLATE allein) hat ca. 350-400 Woerter (~500-600 Tokens). Mit allen dynamischen Sektionen (Humor, Formality, Empathie, Urgency, Self-Awareness, Conversation-Callbacks, Weather, Memory, Next-Step, Character-Lock, Workshop) kann der System-Prompt auf 800-1200+ Tokens anwachsen. Bei Qwen 9b (fast-Modell) mit kleinem Kontextfenster draengt das relevanten Kontext raus.
 2. **Widerspruch: Humor bei Stress.** `MOOD_STYLES["stressed"]` sagt "Trockener Humor erlaubt — gerade jetzt" aber `_build_empathy_section` fuer "stressed" sagt "NIEMALS: 'Ich verstehe', 'Pass auf dich auf'" (was ok ist), und `_build_humor_section` laesst bei stressed den vollen base_level durch (Zeile 1433-1434). Die Mood-Section sagt aber auch "Extrem knapp antworten". Das LLM bekommt also gleichzeitig "extrem knapp" und "Sarkasmus erlaubt" — ein Spannungsfeld, das bei Level 3+ zu Inkonsistenz fuehrt.
-3. **Overloading-Risiko:** Der Prompt versucht sehr viel gleichzeitig: Persoenlichkeit + Sicherheitsregeln + Formatierung + Mood-Adaptation + Empathie + Proaktives Denken + Diagnose + Self-Awareness + Weather + Memory + Next-Step + Workshop. Bei Qwen 4b koennte das den Fokus auf Tool-Calls verschlechtern.
+3. **Overloading-Risiko:** Der Prompt versucht sehr viel gleichzeitig: Persoenlichkeit + Sicherheitsregeln + Formatierung + Mood-Adaptation + Empathie + Proaktives Denken + Diagnose + Self-Awareness + Weather + Memory + Next-Step + Workshop. Bei Qwen 9b (fast-Modell) koennte das den Fokus auf Tool-Calls verschlechtern.
 4. **Doppelte Kontext-Injection:** Wetter erscheint sowohl in `weather_awareness_section` als auch in `_format_context` unter "Wetter DRAUSSEN". Das sind redundante Tokens.
 
 ### build_system_prompt() (personality.py:2233-2515)
@@ -139,7 +139,7 @@ Kompakt (~100 Tokens), gut fuer Fast-Path Wissensfragen. Enthaelt Kern-Identitae
 | **GESAMT (typisch)** | **~1100-1700** |
 | **GESAMT (Maximum, alle Features aktiv)** | **~1800-2200** |
 
-**Bewertung:** Fuer Qwen 9b/35b akzeptabel. Fuer Qwen 4b grenzwertig — der Kontext-Block allein kann 500+ Tokens fressen, was bei 4096-Token-Kontextfenster den User-Text und die Antwort einschraenkt.
+**Bewertung:** Fuer Qwen 9b/35b akzeptabel. Fuer Qwen 9b (fast-Modell) grenzwertig — der Kontext-Block allein kann 500+ Tokens fressen, was bei 32k-Token-Kontextfenster den User-Text und die Antwort einschraenkt.
 
 ---
 
@@ -421,10 +421,10 @@ elif mood in ("stressed", "frustrated"):
 
 **Vorschlag:** In `_format_context` den Wetter-Block nur ausgeben wenn `weather_awareness_section` leer ist, oder die Section-Logik in `build_system_prompt` so aendern, dass Wetter nur einmal erscheint.
 
-### Verbesserung 3: Token-Sparen fuer Qwen 4b
+### Verbesserung 3: Token-Sparen fuer Qwen 9b (fast-Modell)
 
 **Vorschlag:** Einen `token_budget` Parameter einfuehren der anhand des aktiven Modells optionale Sektionen ausblendet:
-- Qwen 4b: Self-Awareness, Conversation-Callbacks, Memory-Callbacks, Workshop-Mode weglassen
+- Qwen 9b (fast-Modell): Self-Awareness, Conversation-Callbacks, Memory-Callbacks, Workshop-Mode weglassen
 - Qwen 9b+: Alles aktiv
 
 ### Verbesserung 4: personality.style nutzen oder entfernen
@@ -517,7 +517,7 @@ GESAMT: 8.4/10
 - Notifications default mood: "neutral" statt aktueller Mood | personality.py:2915-2916 | Mood aus Redis lesen
 
 ### System-Prompt-Verbesserungen
-- Token-Budget: ~1100-1700 Tokens typisch, ~2200 max — grenzwertig fuer Qwen 4b
+- Token-Budget: ~1100-1700 Tokens typisch, ~2200 max — grenzwertig fuer Qwen 9b (fast-Modell)
 - Wetter-Duplikation entfernen (weather_awareness + context block)
 - Humor bei Stress auf max Level 2 begrenzen statt Hinweis
 - personality.style Config-Wert nutzen oder entfernen

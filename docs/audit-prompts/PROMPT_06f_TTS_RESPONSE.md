@@ -4,14 +4,10 @@
 
 Jarvis darf NIEMALS interne Begriffe wie "speak", "tts", "emit", Funktionsnamen, JSON-Fragmente oder Meta-Text in seiner Antwort haben. Aktuell sagt Jarvis bei Sprachausgabe (TTS) manchmal "speak" — das kommt vom LLM, das interne Begriffe in den Antwort-Text leakt.
 
-## LLM-SPEZIFISCH (Qwen 3.5)
+## LLM-Spezifisch
 
-- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
-- Neigt zu höflichen Floskeln ("Natürlich!", "Gerne!")
-- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
-- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
-- Kann interne Begriffe wie "speak", "tts", "emit" in den Antwort-Text leaken
-- character_hint in settings.yaml model_profiles nutzen für Anti-Leakage
+> Siehe P00 für vollständige Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren (`supports_think_with_tools: false`), `character_hint` in model_profiles nutzen.
+> **TTS-spezifisch**: Qwen kann interne Begriffe wie "speak", "tts", "emit" in den Antwort-Text leaken.
 
 ## Kontext aus vorherigen Prompts
 
