@@ -33,6 +33,21 @@ Read: docs/audit-results/RESULT_04a_BUGS_CORE.md
 
 > **Zentrale Frage**: Wenn der Code fehlerfrei läuft — macht Jarvis dann trotzdem das Richtige?
 
+### ⚠️ KONTEXT-WARNUNG: Dieses Prompt hat 14 Teile
+
+Dieses Prompt ist LANG. Um Kontext-Erschöpfung zu vermeiden:
+- **Arbeite Teil für Teil** — schließe jeden Teil ab bevor du den nächsten beginnst
+- **Speichere Zwischen-Ergebnisse** nach jedem Teil im Output-Format (=== TEIL X ===)
+- **Lies Code sparsam** — nur die relevanten Stellen, nicht ganze Dateien
+- **Wenn der Kontext knapp wird**: Teile 12-14 (Anti-Halluzination, Persönlicher Assistent, Gesamtbewertung) können als separater Durchlauf gemacht werden
+
+### ⚠️ Hinweis zu Read-Instruktionen
+
+Dieses Prompt verwendet `Read: datei.py (Abschnitte: X, Y)` als Kurzschreibweise. Das bedeutet:
+1. **Erst Grep** um die genannten Abschnitte/Funktionen zu finden: `Grep: "X\|Y" in datei.py`
+2. **Dann Read mit offset/limit** basierend auf den Grep-Ergebnissen: `Read: datei.py offset=[Zeile] limit=150`
+3. **NIEMALS** große Dateien (>100KB) komplett lesen! Siehe P00 für die Liste großer Dateien.
+
 ---
 
 ## Aufgabe

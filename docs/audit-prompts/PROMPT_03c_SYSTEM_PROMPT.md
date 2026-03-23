@@ -36,8 +36,9 @@ Read: docs/audit-results/RESULT_05_PERSONALITY.md
 ### Teil 1: System-Prompt-Template analysieren
 
 ```
-Read: assistant/assistant/personality.py
 Grep: "SYSTEM_PROMPT_TEMPLATE" in assistant/assistant/personality.py
+# → Ergebnis liefert Zeilennummer. Dann:
+Read: assistant/assistant/personality.py offset=[Ergebnis] limit=200
 ```
 
 Lies das SYSTEM_PROMPT_TEMPLATE. Prüfe:
@@ -55,8 +56,9 @@ Lies das SYSTEM_PROMPT_TEMPLATE. Prüfe:
 ### Teil 2: Kontext-Sektionen & Token-Budget
 
 ```
-Read: assistant/assistant/brain.py
-Grep: "priority" in assistant/assistant/brain.py | Grep: "section" in assistant/assistant/brain.py
+Grep: "def.*build_context\|priority.*section\|CONTEXT_SECTIONS\|P1.*IMMER\|context_priority" in assistant/assistant/brain.py
+# → Zeilennummern aus Grep verwenden:
+Read: assistant/assistant/brain.py offset=[Ergebnis] limit=200
 ```
 
 Finde wo die 40+ Kontext-Sektionen gebaut werden. Prüfe:
@@ -101,8 +103,8 @@ Prüfe den unveränderlichen Identitätsblock:
 ### Teil 4: Dynamische Persönlichkeits-Anpassung
 
 ```
-Read: assistant/assistant/personality.py
-Grep: "build_system_prompt" in assistant/assistant/personality.py
+Grep: "build_system_prompt\|def.*system_prompt\|tageszeit\|mood_matrix\|sarcasm_level" in assistant/assistant/personality.py
+Read: assistant/assistant/personality.py offset=[Ergebnis] limit=200
 ```
 
 Prüfe wie der Prompt dynamisch angepasst wird:
@@ -119,7 +121,8 @@ Prüfe wie der Prompt dynamisch angepasst wird:
 ### Teil 5: Anti-Halluzination & Prompt-Injection
 
 ```
-Read: assistant/assistant/context_builder.py (Abschnitt: Injection-Patterns)
+Grep: "_sanitize_for_prompt\|INJECTION_PATTERNS\|_INJ_" in assistant/assistant/context_builder.py
+Read: assistant/assistant/context_builder.py offset=[Ergebnis] limit=200
 ```
 
 Prüfe:
@@ -135,7 +138,8 @@ Prüfe:
 ### Teil 6: Tool-Calling-Prompt
 
 ```
-Read: assistant/assistant/function_calling.py (Abschnitt: Tool-Definitionen)
+Grep: "TOOL_DEFINITIONS\|def.*get_tools\|tool_description\|\"name\".*\"description\"" in assistant/assistant/function_calling.py
+Read: assistant/assistant/function_calling.py offset=[Ergebnis] limit=200
 Grep: "tool" in assistant/assistant/personality.py
 ```
 

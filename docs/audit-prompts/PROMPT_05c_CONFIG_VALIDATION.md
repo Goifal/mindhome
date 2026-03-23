@@ -103,7 +103,8 @@ Finde alle Stellen wo auf yaml_config mit `[]` statt `.get()` zugegriffen wird:
 ### Teil 5: Model-Profile Konsistenz
 
 ```
-Read: assistant/config/settings.yaml.example (Abschnitt: models + model_profiles)
+Grep: "models:\|model_profiles:\|model_fast\|model_smart\|model_deep" in assistant/config/settings.yaml.example
+Read: assistant/config/settings.yaml.example offset=[Ergebnis] limit=100
 Grep: "model_fast\|model_smart\|model_deep\|extraction_model" in assistant/assistant/
 ```
 

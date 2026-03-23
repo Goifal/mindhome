@@ -44,9 +44,9 @@ Grep: pattern="def _filter_response" path="assistant/assistant/brain.py" output_
 
 Dann den Filter lesen:
 ```
-Read: assistant/assistant/brain.py
-Offset: [Ergebnis aus Grep], Limit: 200
-Funktion: _filter_response_inner()
+# Nutze die Zeilennummer aus dem Grep oben:
+Read: assistant/assistant/brain.py offset=[Ergebnis aus Grep] limit=200
+# Funktion: _filter_response_inner()
 
 Prüfe:
 □ Werden Meta-Begriffe wie "speak", "tts", "emit" gefiltert?

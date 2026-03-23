@@ -316,7 +316,8 @@ rule.validation_needed = True
 #### Fix 2.4: Notification Cascade Suppression verhindern
 
 ```
-Read: assistant/assistant/proactive.py
+Grep: "salience\|fatigue\|dismiss\|cascade\|min_score\|floor" in assistant/assistant/proactive.py
+Read: assistant/assistant/proactive.py offset=[Ergebnis] limit=100
 ```
 
 **Problem**: Wenn fatigue × dismiss × activity zusammen < 0.1 → User hört stundenlang nichts.

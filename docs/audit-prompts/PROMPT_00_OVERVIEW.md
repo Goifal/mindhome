@@ -153,6 +153,95 @@ Wenn ein Prompt sagt "Implementiere den Fix":
 - **Nutze Edit**: Ändere die Datei direkt mit dem Edit-Tool
 - **Nicht**: Zeige nur einen Diff oder Code-Vorschlag
 
+### ⚠️ KRITISCH: Große Dateien — NIEMALS komplett lesen!
+
+Diese Dateien sind zu groß für einen einzelnen Read-Aufruf. **IMMER zuerst mit Grep die relevante Stelle finden, dann gezielt mit Read + offset/limit lesen:**
+
+| Datei | Größe | Zeilen | Strategie |
+|---|---|---|---|
+| `assistant/assistant/brain.py` | 629KB | ~10.231 | **Grep → Read offset/limit** |
+| `assistant/assistant/function_calling.py` | 419KB | ~12.695 | **Grep → Read offset/limit** |
+| `assistant/assistant/state_change_log.py` | 379KB | ~11.882 | **Grep → Read offset/limit** |
+| `assistant/assistant/proactive.py` | 378KB | ~10.684 | **Grep → Read offset/limit** |
+| `assistant/assistant/main.py` | 359KB | ~10.870 | **Grep → Read offset/limit** |
+| `assistant/assistant/personality.py` | 179KB | ~5.637 | **Grep → Read offset/limit** |
+| `assistant/assistant/pattern_engine.py` | 106KB | ~3.200 | **Grep → Read offset/limit** |
+| `assistant/assistant/automation_engine.py` | 118KB | ~3.500 | **Grep → Read offset/limit** |
+
+**Richtig:**
+```
+# 1. Erst Grep um die Zeile zu finden:
+Grep: pattern="class HallucinationGuard\|def _check_hallucin" path="assistant/assistant/brain.py"
+# 2. Dann gezielt lesen:
+Read: assistant/assistant/brain.py offset=8100 limit=200
+```
+
+**Falsch:**
+```
+# NIEMALS! Frisst den gesamten Kontext auf:
+Read: assistant/assistant/brain.py
+# NIEMALS! "Abschnitt" ist kein Tool-Parameter:
+Read: assistant/assistant/brain.py (Abschnitt: Halluzinations-Guard)
+```
+
+### ⚠️ Pseudo-Befehle in Prompts richtig interpretieren
+
+Die Prompts verwenden `Read:`, `Grep:`, `Glob:` als **Anweisungen an dich, die entsprechenden Claude-Code-Tools zu benutzen**. Beispiel:
+
+```
+# Das hier in einem Prompt...
+Read: assistant/assistant/anticipation.py (Abschnitte: Confidence-Berechnung, Schwellwerte)
+
+# ...bedeutet: Benutze ZUERST Grep um die Abschnitte zu finden, DANN Read mit offset/limit:
+Grep: pattern="confidence\|Confidence\|def.*calc" path="assistant/assistant/anticipation.py"
+Read: assistant/assistant/anticipation.py offset=[Ergebnis] limit=100
+```
+
+Wenn ein Prompt sagt `Read: verzeichnis/ (alle Dateien)`:
+```
+# NICHT: Read auf ein Verzeichnis (funktioniert nicht!)
+# STATTDESSEN: Glob → dann jede Datei einzeln lesen
+Glob: pattern="verzeichnis/**/*.py"
+# Dann für jede gefundene Datei:
+Read: verzeichnis/datei1.py
+Read: verzeichnis/datei2.py
+```
+
+### Kontext-Budget beachten
+
+Jeder Prompt verbraucht Kontext für:
+1. **Prompt-Text selbst** (~500-900 Zeilen = 2.000-4.000 Tokens)
+2. **Code-Reads** (jede gelesene Datei = 500-10.000 Tokens)
+3. **Grep-Ergebnisse** (~50-500 Tokens pro Suche)
+4. **Dein Output** (Analyse + Ergebnis-Datei = 2.000-5.000 Tokens)
+
+**Faustregel:** Lies pro Prompt nicht mehr als **5.000 Zeilen Code total**. Bei großen Dateien: Nur die relevanten Stellen lesen (Grep → Read offset/limit).
+
+### Bewertungskriterien — Konkrete Maßstäbe
+
+Wenn ein Prompt sagt "Prüfe ob X gut ist" oder "Bewerte die Qualität", nutze diese konkreten Kriterien:
+
+| Vage Formulierung | Konkrete Messung |
+|---|---|
+| "MCU-Jarvis-authentisch" | Enthält Butler-Anrede ("Sir"), trockenen Humor, keine generischen Floskeln ("Natürlich!", "Gerne!"), proaktive Hinweise, Respekt ohne Unterwürfigkeit |
+| "Sinnvolle Schwellwerte" | Wert hat Kommentar WARUM, ist nicht willkürlich (0.5 statt 0.4999), passt zur Domain (Licht=Sekunden, Klima=Minuten) |
+| "Funktioniert es?" | 1. Kein Crash bei Normal-Input. 2. Kein Crash bei Edge-Cases. 3. Wird tatsächlich von brain.py aufgerufen. 4. Output wird weiterverarbeitet |
+| "Gute Code-Qualität" | Kein `except: pass`, kein `eval()`, Type Hints vorhanden, Funktionen <50 Zeilen, keine Magic Numbers ohne Kommentar |
+| "Token-effizient" | Keine redundanten Wiederholungen im Prompt, keine langen Beispiele wenn 1 reicht, wichtigstes steht am Anfang |
+| "Robust" | Graceful Degradation wenn Abhängigkeit fehlt, Timeout bei externen Calls, Retry mit Backoff bei transienten Fehlern |
+
+### Score-Rubrik (1-5)
+
+Wenn ein Prompt eine Bewertung auf Skala 1-5 verlangt:
+
+| Score | Bedeutung | Kriterium |
+|---|---|---|
+| **1** | Kaputt | Funktioniert nicht, Crashes, kritische Bugs |
+| **2** | Mangelhaft | Funktioniert meistens, aber bekannte Edge-Cases brechen |
+| **3** | Akzeptabel | Funktioniert, aber mit Schwächen die den User stören könnten |
+| **4** | Gut | Funktioniert zuverlässig, kleinere Verbesserungen möglich |
+| **5** | Exzellent | Produktionsreif, robust, gut getestet, keine bekannten Schwächen |
+
 ## Bug-Typ → Fix-Prompt Zuordnung
 
 Wenn ein Bug in P04a-P04c gefunden wird, muss er dem richtigen Fix-Prompt zugeordnet werden:

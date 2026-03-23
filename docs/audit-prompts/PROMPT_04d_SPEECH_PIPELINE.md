@@ -69,7 +69,8 @@ Grep: "_STT_PHRASE_CORRECTIONS" in assistant/assistant/brain.py
 
 ```
 Read: assistant/assistant/tts_enhancer.py
-Read: assistant/assistant/sound_manager.py (Abschnitte: TTS, Umlaut, Phonetik)
+Grep: "tts\|umlaut\|phonet\|speak_text\|def.*speak" in assistant/assistant/sound_manager.py
+Read: assistant/assistant/sound_manager.py offset=[Ergebnis] limit=200
 ```
 
 **Prüfe**:
@@ -122,7 +123,11 @@ Read: assistant/assistant/speaker_recognition.py (erste 100 Zeilen)
 ### Teil 6: ESPHome Voice Satellites
 
 ```
-Read: esphome/ (alle Dateien)
+Glob: pattern="esphome/**/*.yaml"
+Glob: pattern="esphome/**/*.py"
+# Dann jede gefundene Datei einzeln lesen:
+Read: esphome/[gefundene_datei_1]
+Read: esphome/[gefundene_datei_2]
 ```
 
 **Prüfe**:
