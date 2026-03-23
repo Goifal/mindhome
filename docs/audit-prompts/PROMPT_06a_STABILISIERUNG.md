@@ -12,11 +12,18 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Du ha
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–5 bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_02_MEMORY.md
+Read: docs/audit-results/RESULT_04a_BUGS_CORE.md
+Read: docs/audit-results/RESULT_04b_BUGS_EXTENDED.md
+Read: docs/audit-results/RESULT_04c_BUGS_ADDON_SECURITY.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 >
-> **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke ein:
-> - Prompt 2: Memory-Diagnose & Root Cause (inkl. alle 12 Memory-Module)
-> - Prompt 4 gesamt (4a + 4b + 4c): Bug-Report — **nur die 🔴 KRITISCHEN Bugs**
+> **⚠️ OHNE die Bug-Reports (P04a–P04c) fehlt dir die Liste der kritischen Bugs für die Stabilisierung!**
 
 ---
 

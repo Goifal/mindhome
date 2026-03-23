@@ -12,12 +12,17 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte mit Fo
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–6c bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch.
->
-> **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke ein:
-> - Prompt 1: Konflikt-Karte — **Konflikt F** (Assistant ↔ Addon Interaktion)
-> - Prompt 4c: Bug-Report — **Security-Report** und **Resilience-Report**
-> - Prompt 6a–6c: Stabilisierungs-/Architektur-/Charakter-Ergebnisse
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_01_ARCHITEKTUR.md
+Read: docs/audit-results/RESULT_04c_BUGS_ADDON_SECURITY.md
+Read: docs/audit-results/RESULT_06a_STABILISIERUNG.md
+Read: docs/audit-results/RESULT_06b_ARCHITEKTUR.md
+Read: docs/audit-results/RESULT_06c_CHARAKTER.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 
 ---
 

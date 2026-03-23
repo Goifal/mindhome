@@ -194,7 +194,7 @@ NAECHSTER SCHRITT: Prompt 3b — Extended-Flows 8-13 + Flow-Kollisionen + Cross-
 
 ### 2. Der rekonstruierte System-Prompt
 
-### REKONSTRUIERTER SYSTEM-PROMPT (Struktur):
+#### REKONSTRUIERTER SYSTEM-PROMPT (Struktur):
 
 ```
 === BEGINN SYSTEM-PROMPT ===
@@ -304,7 +304,7 @@ tools = get_assistant_tools()  // dynamisch, vacuum-Tools kontextabhaengig gefil
 === ENDE LLM-INPUT ===
 ```
 
-### HERKUNFT:
+#### HERKUNFT:
 - Block 1-2: personality.py → SYSTEM_PROMPT_TEMPLATE (Zeile 242-286) + build_system_prompt() (Zeile 2233-2515)
 - Block 3: personality.py:2473-2476 → _format_context() (Daten aus context_builder.py:159-306)
 - Block 4: personality.py:2478-2494 → Character-Lock
@@ -313,7 +313,7 @@ tools = get_assistant_tools()  // dynamisch, vacuum-Tools kontextabhaengig gefil
 - Block 7: function_calling.py → get_assistant_tools()
 - Zusammenbau: personality.py baut Base-Prompt, brain.py fuegt Sektionen + History + Tools hinzu
 
-### TOKEN-BUDGET:
+#### TOKEN-BUDGET:
 - Basis (SYSTEM_PROMPT_TEMPLATE + format_map): ~1500-2000 Tokens
 - Kontext (_format_context): ~500-1500 Tokens (je nach Hausstatus)
 - P1-Sektionen (scene_intelligence + memory + ...): ~500-1500 Tokens
@@ -328,7 +328,7 @@ tools = get_assistant_tools()  // dynamisch, vacuum-Tools kontextabhaengig gefil
 
 ### 3. Flow-Dokumentation (Flows 1-7)
 
-### Flow 1: Sprach-Input -> Antwort (Hauptpfad)
+#### Flow 1: Sprach-Input -> Antwort (Hauptpfad)
 **Status**: Teilweise funktional — extrem komplex, schwer wartbar
 
 **Ablauf**:
@@ -405,7 +405,7 @@ tools = get_assistant_tools()  // dynamisch, vacuum-Tools kontextabhaengig gefil
 
 ---
 
-### Flow 2: Proaktive Benachrichtigung
+#### Flow 2: Proaktive Benachrichtigung
 **Status**: Funktioniert
 
 **Ablauf**:
@@ -437,7 +437,7 @@ tools = get_assistant_tools()  // dynamisch, vacuum-Tools kontextabhaengig gefil
 
 ---
 
-### Flow 3: Morgen-Briefing / Routinen
+#### Flow 3: Morgen-Briefing / Routinen
 **Status**: Funktioniert
 
 **Ablauf**:
@@ -469,7 +469,7 @@ tools = get_assistant_tools()  // dynamisch, vacuum-Tools kontextabhaengig gefil
 
 ---
 
-### Flow 4: Autonome Aktion
+#### Flow 4: Autonome Aktion
 **Status**: Teilweise — Framework vorhanden, aber nie direkt getriggert
 
 **Ablauf**:
@@ -500,7 +500,7 @@ tools = get_assistant_tools()  // dynamisch, vacuum-Tools kontextabhaengig gefil
 
 ---
 
-### Flow 5: Persoenlichkeits-Pipeline
+#### Flow 5: Persoenlichkeits-Pipeline
 **Status**: Funktioniert — gut integriert, aber komplex
 
 **Ablauf**:
@@ -540,7 +540,7 @@ NACH dem LLM:
 
 ---
 
-### Flow 6: Memory-Abruf (Erinnerung)
+#### Flow 6: Memory-Abruf (Erinnerung)
 **Status**: Teilweise — spezieller Pfad existiert, aber nur fuer explizite Befehle
 
 **Ablauf**:
@@ -580,7 +580,7 @@ Pfad C: Passive Memory im Kontext (context_builder.py:291-344)
 
 ---
 
-### Flow 7: Speech-Pipeline
+#### Flow 7: Speech-Pipeline
 **Status**: Funktioniert — saubere Architektur mit Wyoming Protocol
 
 **Ablauf**:
@@ -619,7 +619,7 @@ Pfad C: Passive Memory im Kontext (context_builder.py:291-344)
 
 ### 4. Kritische Findings
 
-### Top-5 kritische Bruchstellen (sortiert nach Impact):
+#### Top-5 kritische Bruchstellen (sortiert nach Impact):
 
 **1. GOD-OBJECT brain.py mit 1200-Zeilen Shortcut-Kaskade**
 - **Datei:Zeile**: brain.py:1349-2300
@@ -648,7 +648,7 @@ Pfad C: Passive Memory im Kontext (context_builder.py:291-344)
 
 ---
 
-## KONTEXT AUS PROMPT 3a: Flow-Analyse (Core-Flows)
+### KONTEXT AUS PROMPT 3a: Flow-Analyse (Core-Flows)
 
 ### Init-Sequenz
 ```

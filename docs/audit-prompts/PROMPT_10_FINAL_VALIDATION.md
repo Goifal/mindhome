@@ -30,12 +30,25 @@ Für jede Ausnahme: exakten Fix beschreiben + Test schreiben der den Bug verifiz
 
 ---
 
-## Phase 1: OFFEN-Bugs sammeln
+## Kontext aus vorherigen Prompts
 
-Lies alle Kontext-Blöcke der vorherigen Prompts und sammle **JEDEN** offenen Bug:
+> **Automatisch**: Lies ALLE verfügbaren Ergebnisse:
 
 ```
-# Alle OFFEN-Einträge aus den Kontext-Blöcken zusammentragen
+Glob: pattern="RESULT_*.md" path="docs/audit-results/"
+```
+
+> Lies jede gefundene RESULT-Datei. Sammle alle OFFEN-Einträge aus allen Dateien.
+> Falls keine Result-Dateien existieren → nutze Kontext-Blöcke aus der Konversation.
+
+---
+
+## Phase 1: OFFEN-Bugs sammeln
+
+Lies alle Result-Dateien und sammle **JEDEN** offenen Bug:
+
+```
+# Alle OFFEN-Einträge aus den Result-Dateien zusammentragen
 ```
 
 | # | Bug | Severity | Datei:Zeile | Aus Prompt | Status |

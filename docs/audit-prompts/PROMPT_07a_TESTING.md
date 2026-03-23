@@ -16,18 +16,18 @@ Du bist ein Elite-QA-Engineer mit tiefem Wissen in:
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–6d bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch.
->
-> **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke aus allen vorherigen Prompts ein:
-> - Prompt 1: Konflikt-Karte & Architektur-Bewertung
-> - Prompt 2: Memory-Diagnose & Root Cause
-> - Prompt 3a + 3b: Flow-Analyse mit Bruchstellen (13 Flows)
-> - Prompt 4a + 4b + 4c: Bug-Report mit allen Bugs + Security + Resilience + Performance
-> - Prompt 5: Persönlichkeits-Audit & Config
-> - Prompt 6a: Stabilisierung (Kritische Bugs + Memory)
-> - Prompt 6b: Architektur (Konflikte + Flows + Performance)
-> - Prompt 6c: Charakter (Persönlichkeit + Config + Dead Code)
-> - Prompt 6d: Härtung (Security + Resilience + Addon-Koordination)
+> **Automatisch**: Lies die Ergebnisse der Fix-Prompts 6a–6f:
+
+```
+Read: docs/audit-results/RESULT_06a_STABILISIERUNG.md
+Read: docs/audit-results/RESULT_06b_ARCHITEKTUR.md
+Read: docs/audit-results/RESULT_06c_CHARAKTER.md
+Read: docs/audit-results/RESULT_06d_HAERTUNG.md
+Read: docs/audit-results/RESULT_06e_GERAETESTEUERUNG.md
+Read: docs/audit-results/RESULT_06f_TTS_RESPONSE.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 
 ---
 

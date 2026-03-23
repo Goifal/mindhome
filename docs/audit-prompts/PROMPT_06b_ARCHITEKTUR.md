@@ -12,12 +12,16 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. In Pr
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–6a bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch.
->
-> **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke ein:
-> - Prompt 1: Konflikt-Karte & Architektur-Bewertung (Konflikte A–F)
-> - Prompt 3a + 3b: Flow-Analyse mit Bruchstellen & Kollisionen (13 Flows)
-> - Prompt 6a: Stabilisierungs-Ergebnisse (gefixte Bugs, Memory-Status)
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_01_ARCHITEKTUR.md
+Read: docs/audit-results/RESULT_03a_FLOWS_CORE.md
+Read: docs/audit-results/RESULT_03b_FLOWS_EXTENDED.md
+Read: docs/audit-results/RESULT_06a_STABILISIERUNG.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 
 ---
 

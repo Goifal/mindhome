@@ -20,14 +20,17 @@ Du arbeitest mit dem Quellcode, nicht mit einem laufenden System. Prüfe auch wi
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–3b bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_01_ARCHITEKTUR.md
+Read: docs/audit-results/RESULT_02_MEMORY.md
+Read: docs/audit-results/RESULT_03a_FLOWS_CORE.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 >
-> **Wenn dies eine neue Konversation ist**: Füge hier ein:
-> - Kontext-Block aus Prompt 1 (Konflikt-Karte)
-> - Kontext-Block aus Prompt 2 (Memory-Analyse)
-> - Kontext-Block aus Prompt 3a + 3b (Flow-Analyse, besonders Bruchstellen und Kollisionen)
->
-> **⚠️ OHNE diese Kontext-Blöcke fehlt dir das Architektur-Verständnis für die Bug-Analyse!** Besonders die Konflikt-Karte (P1) und Flow-Bruchstellen (P3a/3b) sind essentiell um Bugs im Kontext zu verstehen. Wenn du die Blöcke nicht hast, starte zuerst mit Prompt 1.
+> **⚠️ OHNE Architektur-Verständnis (P01) und Flow-Bruchstellen (P03a) fehlt dir der Kontext für die Bug-Analyse!**
 
 ---
 

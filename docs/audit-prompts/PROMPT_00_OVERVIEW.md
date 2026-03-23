@@ -97,6 +97,15 @@ Assistant ←HTTP→ Addon (:5000), Assistant ←WS→ HA, Addon ←WS→ HA (ei
 
 > **Vorteil**: Frischer Context Window für jeden Prompt. Maximale Gründlichkeit pro Prompt.
 
+### Result-Dateien als Kontextquelle
+
+Ab Durchlauf #2+ können Prompts ihre Vorgänger-Ergebnisse direkt aus `docs/audit-results/RESULT_*.md` lesen. Das ist zuverlässiger als Konversations-Kontext, da:
+- Keine Kompression durch Claude Code
+- Exakte Ergebnisse statt zusammengefasste Kontext-Blöcke
+- Funktioniert auch in neuen Sessions ohne manuelles Kopieren
+
+**Voraussetzung**: Die Result-Dateien müssen nach jedem Prompt-Durchlauf in `docs/audit-results/` gespeichert werden.
+
 ---
 
 ## Claude Code — Tool-Strategie
