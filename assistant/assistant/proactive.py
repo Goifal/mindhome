@@ -5822,7 +5822,12 @@ class ProactiveManager:
                 # HA-Gruppen haben 'entity_id' als Liste von Member-Entities
                 member_ids = attrs.get("entity_id")
                 if isinstance(member_ids, list) and len(member_ids) > 0:
-                    return True
+                    # Nur als Cover-Gruppe erkennen wenn mindestens ein Member
+                    # ein Cover ist (gemischte Gruppen ignorieren)
+                    if any(
+                        m.startswith("cover.") for m in member_ids if isinstance(m, str)
+                    ):
+                        return True
         except Exception as e:
             logger.debug("HA-Gruppen-Check Fehler fuer %s: %s", entity_id, e)
         return False
@@ -5848,7 +5853,12 @@ class ProactiveManager:
                     continue
                 p_room = p.get("room", "").lower()
                 # Gleiches Raum-Praefix oder explizit gleicher Raum
-                if p_room == room or room in pid.lower():
+                # Word-Boundary Matching: "wohn" darf nicht "wohnzimmerschrank" matchen
+                pid_lower = pid.lower()
+                _room_in_pid = (
+                    f"_{room}" in f"_{pid_lower}" or f"{room}_" in f"{pid_lower}_"
+                )
+                if p_room == room or _room_in_pid:
                     key = f"mha:cover:jarvis_acting:{pid}"
                     acting = await redis_client.get(key)
                     if acting:
