@@ -5546,7 +5546,8 @@ class ProactiveManager:
                 )
 
                 # 7. HEIZUNGS-INTEGRATION (Feature 8)
-                if cover_cfg.get("heating_integration", False):
+                # sun muss vorhanden sein — ohne Sonnendaten keine Solar-Entscheidungen
+                if cover_cfg.get("heating_integration", False) and sun:
                     await self._cover_heating_integration(
                         states,
                         sun,
@@ -7345,6 +7346,42 @@ class ProactiveManager:
                     entity_id = cover.get("entity_id")
                     if not entity_id or not cover.get("allow_auto"):
                         continue
+
+                    # Per-Cover Bettsensor-Check: Schlafzimmer-Rollladen
+                    # NICHT oeffnen wenn Bett im gleichen Raum belegt ist.
+                    # (Globaler _is_sleeping Check oben reicht nicht — der
+                    # erkennt nur ob JEMAND schlaeft, nicht OB dieser Raum
+                    # ein Schlafzimmer mit belegtem Bett ist.)
+                    _bed_sensors = []
+                    _cover_bs = cover.get("bed_sensor", "")
+                    if _cover_bs:
+                        _bed_sensors = [_cover_bs]
+                    else:
+                        cover_room = cover.get("room", "")
+                        if cover_room:
+                            _rp = _get_room_profiles_cached()
+                            _room_cfg = (_rp.get("rooms") or {}).get(
+                                cover_room, {}
+                            )
+                            from .config import get_room_bed_sensors
+
+                            _bed_sensors = get_room_bed_sensors(_room_cfg)
+                    _bed_occupied = False
+                    for s in states or []:
+                        if (
+                            s.get("entity_id") in _bed_sensors
+                            and s.get("state") == "on"
+                        ):
+                            _bed_occupied = True
+                            break
+                    if _bed_occupied:
+                        logger.info(
+                            "Passive Solarwärme: %s übersprungen — "
+                            "Bettsensor im Raum aktiv",
+                            entity_id,
+                        )
+                        continue
+
                     start = cover.get("sun_exposure_start", 0)
                     end = cover.get("sun_exposure_end", 360)
                     if start <= end:
