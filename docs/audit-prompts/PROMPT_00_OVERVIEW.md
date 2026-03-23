@@ -62,7 +62,7 @@ Die Prompts sind für **Claude Code** (Anthropics CLI-Tool) optimiert. Übergib 
 2. Kopiere den Inhalt von Prompt 1 als Nachricht
 3. Claude Code führt die Analyse durch — liest Dateien, sucht mit Grep, führt Befehle aus
 4. Kopiere dann Prompt 2 als Nachricht — Claude Code nutzt seine Ergebnisse automatisch
-5. Wiederhole bis Prompt 7b
+5. Wiederhole bis Prompt 11 (oder bis PROMPT_RESET für einen neuen Durchlauf)
 
 > **Context-Window-Strategie**: Claude Code komprimiert die Konversation automatisch. Die Kontext-Blöcke am Ende jedes Prompts (`## KONTEXT AUS PROMPT X`) sichern die wichtigsten Ergebnisse gegen Kompression. Bei 276 Python-Dateien wird typischerweise ab Prompt 3–4 komprimiert.
 
@@ -100,7 +100,7 @@ Assistant ←HTTP→ Addon (:5000), Assistant ←WS→ HA, Addon ←WS→ HA (ei
 2. Am Ende jeder Analyse erstellt Claude Code einen kompakten **Kontext-Block** (markiert mit `## KONTEXT AUS PROMPT X`)
 3. Kopiere diesen Block in den `## Kontext aus vorherigen Prompts`-Abschnitt des nächsten Prompts
 4. Starte eine neue Session und übergib den nächsten Prompt mit dem eingefügten Kontext
-5. Wiederhole bis Prompt 7b
+5. Wiederhole bis Prompt 11 (oder bis PROMPT_RESET für einen neuen Durchlauf)
 
 > **Vorteil**: Frischer Context Window für jeden Prompt. Maximale Gründlichkeit pro Prompt.
 
