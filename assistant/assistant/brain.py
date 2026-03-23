@@ -40,8 +40,13 @@ from .feedback import FeedbackTracker
 from .function_calling import get_assistant_tools, FunctionExecutor
 from .function_validator import FunctionValidator
 from .ha_client import HomeAssistantClient
+from .family_manager import FamilyManager
 from .inventory import InventoryManager
+from .meal_planner import MealPlanner
+from .note_manager import NoteManager
+from .personal_dates import PersonalDatesManager
 from .smart_shopping import SmartShopping
+from .task_manager import TaskManager
 from .conversation_memory import ConversationMemory
 from .multi_room_audio import MultiRoomAudio
 from .knowledge_base import KnowledgeBase
@@ -504,6 +509,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Wellness Advisor (Caring Loops)
         self.wellness_advisor = WellnessAdvisor(self.ha, self.activity, self.mood)
+
+        # Personal Assistant Module
+        self.task_manager = TaskManager(self.ha)
+        self.personal_dates = PersonalDatesManager()
+        self.family_manager = FamilyManager(self.ha)
+        self.note_manager = NoteManager()
+        self.meal_planner = MealPlanner(self.ollama)
 
         # Phase 18: MCU-Upgrade — Proactive Planner + Seasonal Insight
         self.proactive_planner = ProactiveSequencePlanner(self.ha, self.anticipation)
@@ -1299,6 +1311,26 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 "WorkshopGenerator",
                 self.workshop_generator.initialize(redis_client=self.memory.redis),
             ),
+            _safe_init(
+                "TaskManager",
+                self.task_manager.initialize(redis_client=self.memory.redis),
+            ),
+            _safe_init(
+                "PersonalDates",
+                self.personal_dates.initialize(redis_client=self.memory.redis),
+            ),
+            _safe_init(
+                "FamilyManager",
+                self.family_manager.initialize(redis_client=self.memory.redis),
+            ),
+            _safe_init(
+                "NoteManager",
+                self.note_manager.initialize(redis_client=self.memory.redis),
+            ),
+            _safe_init(
+                "MealPlanner",
+                self.meal_planner.initialize(redis_client=self.memory.redis),
+            ),
         )
 
         # Post-init wiring (Callbacks, Cross-References, Start-Calls)
@@ -1317,6 +1349,22 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.conditional_commands.set_action_callback(
             lambda func, args: self.executor.execute(func, args)
         )
+
+        # Personal Assistant Module wiring
+        self.executor._task_manager = self.task_manager
+        self.executor._note_manager = self.note_manager
+        self.executor._family_manager = self.family_manager
+        self.executor._meal_planner = self.meal_planner
+        self.executor._personal_dates = self.personal_dates
+        self.personal_dates.set_semantic_memory(
+            getattr(self, "semantic_memory", None)
+        )
+        self.personal_dates.set_notify_callback(self._handle_personal_date_reminder)
+        self.meal_planner.inventory = self.inventory
+        self.meal_planner.smart_shopping = self.smart_shopping
+        self.meal_planner.semantic_memory = getattr(self, "semantic_memory", None)
+        self.meal_planner.ha = self.ha
+        self.meal_planner.set_model_router(self.model_router)
 
         if "MultiRoomAudio" not in _degraded_modules:
             await _safe_init(
@@ -5601,6 +5649,26 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 f"- {h}" for h in timer_hints
             )
             sections.append(("timers", timer_text, 2))
+
+        # Personal Assistant Module Context Hints
+        pa_hints = []
+        for pa_mod in [
+            self.task_manager,
+            self.note_manager,
+            self.family_manager,
+            self.meal_planner,
+        ]:
+            try:
+                hints = pa_mod.get_context_hints()
+                if hints:
+                    pa_hints.extend(hints)
+            except Exception:
+                pass
+        if pa_hints:
+            pa_text = "\n\nPERSOENLICHER ASSISTENT:\n" + "\n".join(
+                f"- {h}" for h in pa_hints
+            )
+            sections.append(("personal_assistant", pa_text, 1))
 
         if guest_mode_active:
             sections.append(
@@ -11842,6 +11910,24 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self._remember_exchange("[proaktiv: Zeiterkennung]", formatted)
         logger.info("TimeAwareness [%s] -> Meldung: %s", urgency, formatted)
 
+    async def _handle_personal_date_reminder(self, message: str = "", priority: str = "medium", **kwargs):
+        """Callback fuer PersonalDatesManager — Geburtstags-/Jahrestags-Erinnerungen."""
+        if not message:
+            return
+        urgency = "high" if priority == "high" else "medium"
+        if not await self._callback_should_speak(
+            urgency, source="PersonalDates"
+        ):
+            return
+        formatted = await self._format_callback_with_escalation(
+            message,
+            urgency,
+            "personal_date",
+        )
+        await self._speak_and_emit(formatted)
+        self._remember_exchange("[proaktiv: Persoenlicher Termin]", formatted)
+        logger.info("Personal Date Reminder [%s]: %s", priority, formatted)
+
     async def _handle_health_alert(self, alert_type: str, urgency: str, message: str):
         """Callback für Health Monitor — leitet an proaktive Meldung weiter."""
         if not message:
@@ -14662,14 +14748,61 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if len(parts) < 2:
             return None
 
+        # Bug 1 Fix: Verb und Aktion aus dem ersten Part fuer Folge-Parts vererben.
+        # "Fahre die Rolläden im Wohnzimmer und der Küche runter" →
+        #   Part 1: "Fahre die Rolläden im Wohnzimmer" (hat Verb + Raum)
+        #   Part 2: "der Küche runter" (kein Verb, Raum braucht Kontext)
+        # Fuer Part 2 ergaenzen wir den Verb-Kontext des ersten Parts.
+        first_part = parts[0].strip()
+        # Verb am Anfang extrahieren (z.B. "Fahre", "Mach", "Schalt")
+        _verb_match = _re.match(
+            r"((?:fahr|mach|schalt|schalte|stell|setz|dreh|oeffne|schliess|aktiviere)\w*"
+            r"(?:\s+(?:die|das|den|dem|der|alle|meine?)\s+\w+)?)",
+            first_part,
+            _re.IGNORECASE,
+        )
+        verb_prefix = _verb_match.group(1) if _verb_match else ""
+
         cmds = []
-        for part in parts:
+        for i, part in enumerate(parts):
             part = part.strip()
             if not part:
                 continue
+
+            # Erster Part: direkt versuchen
+            if i == 0:
+                cmd = cls._detect_device_command(part, room=room)
+                if cmd:
+                    cmds.append(cmd)
+                continue
+
+            # Folge-Parts: erst direkt versuchen
             cmd = cls._detect_device_command(part, room=room)
             if cmd:
                 cmds.append(cmd)
+                continue
+
+            # Fallback 1: Raum aus lockerer Extraktion ("der Küche" → "Küche")
+            room_match = _re.search(
+                r"(?:der|dem|des|die|das|im|in|ins|vom|am)\s+"
+                r"([A-ZÄÖÜa-zäöüß][A-ZÄÖÜa-zäöüß\-]+)",
+                part,
+                _re.IGNORECASE,
+            )
+            if room_match and verb_prefix:
+                # Verb-Kontext + Raum-Präposition ergaenzen
+                enriched = f"{verb_prefix} im {room_match.group(1)}"
+                # Aktions-Wort aus dem Teil anhängen (z.B. "runter", "hoch", "aus")
+                action_words = _re.findall(
+                    r"\b(runter|rauf|hoch|auf|zu|an|aus|ein|ab)\b",
+                    part,
+                    _re.IGNORECASE,
+                )
+                if action_words:
+                    enriched += " " + " ".join(action_words)
+                cmd = cls._detect_device_command(enriched, room=room)
+                if cmd:
+                    cmds.append(cmd)
 
         if len(cmds) < 2:
             # Weniger als 2 erkannte Kommandos → kein Multi-Command
@@ -19058,6 +19191,11 @@ Regeln:
             self.autonomy,
             self.routines,
             self.action_planner,
+            self.task_manager,
+            self.personal_dates,
+            self.family_manager,
+            self.note_manager,
+            self.meal_planner,
         ]:
             try:
                 await component.stop()

@@ -1619,37 +1619,74 @@ class ProactiveManager:
             and old_val not in _non_physical
             and new_val not in _non_physical
             and old_val not in _transitional
+            and new_val not in _transitional
         ):
             try:
                 redis_client = getattr(
                     getattr(self.brain, "memory", None), "redis", None
                 )
                 if redis_client:
-                    acting_key = f"mha:cover:jarvis_acting:{entity_id}"
-                    jarvis_triggered = await redis_client.get(acting_key)
-                    if not jarvis_triggered:
-                        override_hours = (
-                            yaml_config.get("seasonal_actions", {})
-                            .get("cover_automation", {})
-                            .get("manual_override_hours", 2)
+                    # Bug 6 Fix: Deaktivierte Covers nicht tracken
+                    if not await self._is_cover_enabled_for_automation(entity_id):
+                        logger.debug(
+                            "Cover Override ignoriert: %s ist deaktiviert", entity_id
                         )
-                        override_ttl = int(override_hours * 3600)
-                        override_key = f"mha:cover:manual_override:{entity_id}"
-                        await redis_client.set(override_key, "1", ex=override_ttl)
-                        logger.info(
-                            "Cover Manual Override: %s manuell bedient (%s -> %s), Automatik pausiert für %dh",
-                            entity_id,
-                            old_val,
-                            new_val,
-                            override_hours,
+                    # Bug 3 Fix: HA-Gruppen-Entities filtern — Gruppen-State-Changes
+                    # werden durch Einzel-Cover-Bewegungen ausgeloest und sind keine
+                    # echten manuellen Aktionen. Gruppen erkennen wir an ihren
+                    # entity_id Attributes (HA fuellt diese fuer Gruppen).
+                    elif await self._is_ha_group_cover(entity_id):
+                        logger.debug(
+                            "Cover Override ignoriert: %s ist eine HA-Gruppe", entity_id
                         )
                     else:
-                        logger.debug(
-                            "Cover state change %s (%s -> %s) — jarvis_acting gesetzt, kein Override",
-                            entity_id,
-                            old_val,
-                            new_val,
-                        )
+                        # Pruefen ob Jarvis die Aktion ausgeloest hat
+                        acting_key = f"mha:cover:jarvis_acting:{entity_id}"
+                        jarvis_triggered = await redis_client.get(acting_key)
+                        if not jarvis_triggered:
+                            # Auch pruefen ob ein Einzel-Cover in dieser Gruppe
+                            # gerade von Jarvis gesteuert wird (Bug 3 Zusatzschutz)
+                            jarvis_sibling = await self._any_sibling_jarvis_acting(
+                                entity_id, redis_client
+                            )
+                            if jarvis_sibling:
+                                logger.debug(
+                                    "Cover Override ignoriert: %s — Sibling %s hat jarvis_acting",
+                                    entity_id,
+                                    jarvis_sibling,
+                                )
+                            else:
+                                override_hours = (
+                                    yaml_config.get("seasonal_actions", {})
+                                    .get("cover_automation", {})
+                                    .get("manual_override_hours", 2)
+                                )
+                                override_ttl = int(override_hours * 3600)
+                                # Bug 4 Fix: Override auch auf alle Einzel-Covers
+                                # im gleichen Raum setzen, damit die Solar-Automatik
+                                # (die Einzel-Entities steuert) den Override sieht
+                                override_entities = await self._get_override_targets(
+                                    entity_id
+                                )
+                                for oid in override_entities:
+                                    okey = f"mha:cover:manual_override:{oid}"
+                                    await redis_client.set(okey, "1", ex=override_ttl)
+                                logger.info(
+                                    "Cover Manual Override: %s manuell bedient (%s -> %s), "
+                                    "Automatik pausiert für %dh (%d Covers)",
+                                    entity_id,
+                                    old_val,
+                                    new_val,
+                                    override_hours,
+                                    len(override_entities),
+                                )
+                        else:
+                            logger.debug(
+                                "Cover state change %s (%s -> %s) — jarvis_acting gesetzt, kein Override",
+                                entity_id,
+                                old_val,
+                                new_val,
+                            )
             except Exception as e:
                 logger.debug("Cover Manual Override Detection Fehler: %s", e)
 
@@ -2206,6 +2243,14 @@ class ProactiveManager:
                 closed_count = 0
                 for cid in cover_ids:
                     redis_key = f"mha:cover:power_close:{cid}"
+                    # Bug 5 Fix: Lock IMMER setzen wenn Schwelle ueberschritten,
+                    # auch wenn Cover bereits auf Zielposition steht.
+                    # Ohne Lock kann die Solar-Automatik das Cover wieder oeffnen.
+                    if redis_client:
+                        try:
+                            await redis_client.set(redis_key, "1", ex=86400)
+                        except Exception as e:
+                            logger.warning("Unhandled: %s", e)
                     acted = await self._auto_cover_action(
                         cid,
                         close_pos,
@@ -2216,11 +2261,6 @@ class ProactiveManager:
                     )
                     if acted:
                         closed_count += 1
-                        if redis_client:
-                            try:
-                                await redis_client.set(redis_key, "1", ex=86400)
-                            except Exception as e:
-                                logger.warning("Unhandled: %s", e)
                 logger.info(
                     "Power-Close: %s über Schwelle (%s W >= %s W) → %d/%d Covers geschlossen",
                     entity_id,
@@ -5507,7 +5547,8 @@ class ProactiveManager:
                 )
 
                 # 7. HEIZUNGS-INTEGRATION (Feature 8)
-                if cover_cfg.get("heating_integration", False):
+                # sun muss vorhanden sein — ohne Sonnendaten keine Solar-Entscheidungen
+                if cover_cfg.get("heating_integration", False) and sun:
                     await self._cover_heating_integration(
                         states,
                         sun,
@@ -5743,13 +5784,129 @@ class ProactiveManager:
             sensor_room = ""
             if isinstance(sensor_cfg, dict):
                 sensor_room = sensor_cfg.get("room", "").lower()
-            if (cover_room and cover_room in sensor_lower) or (
+            # Word-Boundary Matching: "wohnzimmer" matcht
+            # "fenster_wohnzimmer" aber nicht "wohnzimmerschrank"
+            _room_in_sensor = cover_room and (
+                f"_{cover_room}" in f"_{sensor_lower}"
+                or f"{cover_room}_" in f"{sensor_lower}_"
+            )
+            if _room_in_sensor or (
                 sensor_room and sensor_room == cover_room
             ):
                 for s in states or []:
                     if s.get("entity_id") == sensor_eid and s.get("state") == "on":
                         return True
         return False
+
+    async def _is_cover_enabled_for_automation(self, entity_id: str) -> bool:
+        """Prueft ob ein Cover in der Config als aktiviert markiert ist (Bug 6 Fix).
+
+        Deaktivierte Covers sollen weder automatisiert noch als Manual Override getrackt werden.
+        """
+        try:
+            from .cover_config import load_cover_configs
+
+            configs = load_cover_configs()
+            if configs and isinstance(configs, dict):
+                conf = configs.get(entity_id, {})
+                if conf.get("enabled") is False:
+                    return False
+        except Exception as e:
+            logger.debug("Cover enabled-Check Fehler fuer %s: %s", entity_id, e)
+        return True
+
+    async def _is_ha_group_cover(self, entity_id: str) -> bool:
+        """Prueft ob eine Cover-Entity eine HA-Gruppe ist (Bug 3 Fix).
+
+        HA-Gruppen haben 'entity_id' in ihren Attributes (Liste der Member-Entities).
+        Zusaetzlich pruefen wir ob die Entity in keinem Cover-Profil als Einzel-Cover definiert ist.
+        """
+        try:
+            state = await self.brain.ha.get_state(entity_id)
+            if state and isinstance(state, dict):
+                attrs = state.get("attributes", {})
+                # HA-Gruppen haben 'entity_id' als Liste von Member-Entities
+                member_ids = attrs.get("entity_id")
+                if isinstance(member_ids, list) and len(member_ids) > 0:
+                    # Nur als Cover-Gruppe erkennen wenn mindestens ein Member
+                    # ein Cover ist (gemischte Gruppen ignorieren)
+                    if any(
+                        m.startswith("cover.") for m in member_ids if isinstance(m, str)
+                    ):
+                        return True
+        except Exception as e:
+            logger.debug("HA-Gruppen-Check Fehler fuer %s: %s", entity_id, e)
+        return False
+
+    async def _any_sibling_jarvis_acting(
+        self, entity_id: str, redis_client
+    ) -> str:
+        """Prueft ob ein verwandtes Cover gerade von Jarvis gesteuert wird (Bug 3 Zusatzschutz).
+
+        Wenn z.B. cover.rollladen_wohnzimmer_2 ein jarvis_acting Flag hat,
+        und cover.rollladen (Gruppe) sich aendert, ist das kein manueller Override.
+        """
+        try:
+            # Raum des Covers ermitteln
+            room = self._get_room_for_cover(entity_id)
+            if not room:
+                return ""
+            # Alle Cover-Profiles durchsuchen
+            profiles = self._load_cover_profiles()
+            for p in profiles:
+                pid = p.get("entity_id", "")
+                if pid == entity_id:
+                    continue
+                p_room = p.get("room", "").lower()
+                # Gleiches Raum-Praefix oder explizit gleicher Raum
+                # Word-Boundary Matching: "wohn" darf nicht "wohnzimmerschrank" matchen
+                pid_lower = pid.lower()
+                _room_in_pid = (
+                    f"_{room}" in f"_{pid_lower}" or f"{room}_" in f"{pid_lower}_"
+                )
+                if p_room == room or _room_in_pid:
+                    key = f"mha:cover:jarvis_acting:{pid}"
+                    acting = await redis_client.get(key)
+                    if acting:
+                        return pid
+        except Exception as e:
+            logger.debug("Sibling jarvis_acting Check Fehler: %s", e)
+        return ""
+
+    async def _get_override_targets(self, entity_id: str) -> list:
+        """Ermittelt alle Entity-IDs die bei einem Manual Override gesperrt werden sollen (Bug 4 Fix).
+
+        Wenn ein Einzel-Cover manuell bedient wird: nur dieses Cover sperren.
+        Wenn der User per HA-Gruppe oder alle Covers eines Raums bedient:
+        auch die Einzel-Covers im gleichen Raum sperren.
+        """
+        targets = [entity_id]
+        try:
+            # Pruefen ob es eine HA-Gruppe ist
+            state = await self.brain.ha.get_state(entity_id)
+            if state and isinstance(state, dict):
+                attrs = state.get("attributes", {})
+                member_ids = attrs.get("entity_id")
+                if isinstance(member_ids, list):
+                    for mid in member_ids:
+                        if mid.startswith("cover.") and mid not in targets:
+                            targets.append(mid)
+                    return targets
+
+            # Fallback: Cover-Profiles nach gleichem Raum durchsuchen
+            room = self._get_room_for_cover(entity_id)
+            if room:
+                profiles = self._load_cover_profiles()
+                for p in profiles:
+                    pid = p.get("entity_id", "")
+                    if pid == entity_id or pid in targets:
+                        continue
+                    p_room = p.get("room", "").lower()
+                    if p_room == room:
+                        targets.append(pid)
+        except Exception as e:
+            logger.debug("Override-Targets Fehler fuer %s: %s", entity_id, e)
+        return targets
 
     async def _startup_reconciliation(self, redis_client):
         """Startup-Reconciliation: Prüft ob Covers nach Neustart im erwarteten Zustand sind.
@@ -5803,7 +5960,7 @@ class ProactiveManager:
                             reason_data.get("reason", "?"),
                         )
                         reconciled += 1
-                except (ValueError, TypeError):
+                except (ValueError, TypeError, AttributeError):
                     pass
             if reconciled > 0:
                 logger.info(
@@ -5825,8 +5982,9 @@ class ProactiveManager:
             return False
         try:
             rate_key = f"mha:cover:rate_limit:{entity_id}"
-            count = await redis_client.get(rate_key)
-            if count and int(count) >= self._COVER_RATE_LIMIT_MAX:
+            count_raw = await redis_client.get(rate_key)
+            count = int(count_raw.decode() if isinstance(count_raw, bytes) else count_raw) if count_raw else 0
+            if count >= self._COVER_RATE_LIMIT_MAX:
                 logger.warning(
                     "Cover Rate-Limit: %s hat %s Aktionen/h erreicht — blockiert",
                     entity_id,
@@ -5926,29 +6084,33 @@ class ProactiveManager:
         )
 
     async def _track_cover_anomaly(self, entity_id: str, redis_client):
-        """Trackt Anomalien (Ping-Pong-Erkennung): Wenn >4 Anomalien in 2h → Warnung."""
+        """Trackt Anomalien (Ping-Pong-Erkennung): Wenn >=4 Anomalien in 2h → Warnung."""
         if not redis_client:
             return
         try:
             anomaly_key = f"mha:cover:anomaly:{entity_id}"
+            notify_cooldown_key = f"mha:cover:anomaly_notified:{entity_id}"
             count = await redis_client.incr(anomaly_key)
             if count == 1:
                 await redis_client.expire(anomaly_key, 7200)  # 2h Fenster
             if count >= 4:
-                logger.warning(
-                    "Cover Anomalie: %s hat %d unerwartete Positionsänderungen in 2h (Ping-Pong?)",
-                    entity_id,
-                    count,
-                )
-                await self._notify(
-                    "cover_anomaly",
-                    MEDIUM,
-                    {
-                        "message": f"Rollladen {entity_id} zeigt ungewöhnliches Verhalten ({count} Anomalien in 2h) — möglicherweise Ping-Pong",
-                        "entity": entity_id,
-                    },
-                )
-                await redis_client.delete(anomaly_key)  # Reset nach Warnung
+                # Notification-Cooldown: Nur 1x pro Stunde warnen (nicht Counter resetten)
+                already_notified = await redis_client.get(notify_cooldown_key)
+                if not already_notified:
+                    logger.warning(
+                        "Cover Anomalie: %s hat %d unerwartete Positionsänderungen in 2h (Ping-Pong?)",
+                        entity_id,
+                        count,
+                    )
+                    await self._notify(
+                        "cover_anomaly",
+                        MEDIUM,
+                        {
+                            "message": f"Rollladen {entity_id} zeigt ungewöhnliches Verhalten ({count} Anomalien in 2h) — möglicherweise Ping-Pong",
+                            "entity": entity_id,
+                        },
+                    )
+                    await redis_client.set(notify_cooldown_key, "1", ex=3600)  # 1h Cooldown
         except Exception as e:
             logger.warning("Unhandled: %s", e)
 
@@ -6084,14 +6246,29 @@ class ProactiveManager:
                     entity_id, position
                 )
                 # Feature 2: Markierung setzen BEVOR HA-Call, damit der State-Change als Jarvis-ausgeloest erkannt wird
+                acting_key = f"mha:cover:jarvis_acting:{entity_id}"
                 if redis_client:
-                    acting_key = f"mha:cover:jarvis_acting:{entity_id}"
                     await redis_client.set(acting_key, "1", ex=300)
-                await self.brain.ha.call_service(
-                    "cover",
-                    "set_cover_position",
-                    {"entity_id": entity_id, "position": ha_pos},
-                )
+                try:
+                    await self.brain.ha.call_service(
+                        "cover",
+                        "set_cover_position",
+                        {"entity_id": entity_id, "position": ha_pos},
+                    )
+                except Exception as ha_err:
+                    # HA-Call fehlgeschlagen → jarvis_acting Flag aufräumen
+                    # damit Manual Override Detection nicht blockiert wird
+                    if redis_client:
+                        try:
+                            await redis_client.delete(acting_key)
+                        except Exception:
+                            pass
+                    logger.error(
+                        "Cover-Auto: HA call_service fehlgeschlagen für %s: %s",
+                        entity_id,
+                        ha_err,
+                    )
+                    return False
                 logger.info(
                     "Cover-Auto: %s -> %d%% (HA: %d%%) (%s)",
                     entity_id,
@@ -6432,9 +6609,12 @@ class ProactiveManager:
             effective_temp = temp
             if indoor_sensor:
                 indoor_temp = self._get_indoor_temp(states, indoor_sensor)
-                if indoor_temp != 0.0 or any(
+                # indoor_temp pruefen: Nur verwenden wenn Sensor tatsaechlich
+                # vorhanden ist (nicht nur != 0.0, da 0°C ein valider Wert ist)
+                _has_indoor_sensor = any(
                     s.get("entity_id") == indoor_sensor for s in (states or [])
-                ):
+                )
+                if _has_indoor_sensor:
                     effective_temp = max(temp, indoor_temp)
 
             # Feature 14: Sitzsensor — Blendschutz unabhängig von Temperatur
@@ -7041,13 +7221,15 @@ class ProactiveManager:
                                     "cover."
                                 ) and await self.brain.executor._is_safe_cover(eid, cs):
                                     if not self.brain.executor._is_markise(eid, cs):
-                                        await self._auto_cover_action(
+                                        acted = await self._auto_cover_action(
                                             eid,
                                             100,
                                             "Urlaubssimulation (morgens)",
                                             auto_level,
                                             redis_client,
                                         )
+                                        if acted and cycle_acted is not None:
+                                            cycle_acted.add(eid)
                             last_schedule_action = "open"
 
                     # Abends teilweise schliessen (mit Variation)
@@ -7058,13 +7240,15 @@ class ProactiveManager:
                                 "cover."
                             ) and await self.brain.executor._is_safe_cover(eid, cs):
                                 if not self.brain.executor._is_markise(eid, cs):
-                                    await self._auto_cover_action(
+                                    acted = await self._auto_cover_action(
                                         eid,
                                         30,
                                         "Urlaubssimulation (abends, Sichtschutz)",
                                         auto_level,
                                         redis_client,
                                     )
+                                    if acted and cycle_acted is not None:
+                                        cycle_acted.add(eid)
                         last_schedule_action = "close"
 
                     # Nachts komplett zu
@@ -7075,13 +7259,15 @@ class ProactiveManager:
                                 "cover."
                             ) and await self.brain.executor._is_safe_cover(eid, cs):
                                 if not self.brain.executor._is_markise(eid, cs):
-                                    await self._auto_cover_action(
+                                    acted = await self._auto_cover_action(
                                         eid,
                                         0,
                                         "Urlaubssimulation (Nacht)",
                                         auto_level,
                                         redis_client,
                                     )
+                                    if acted and cycle_acted is not None:
+                                        cycle_acted.add(eid)
                         last_schedule_action = "close"
 
         return last_schedule_action
@@ -7206,6 +7392,42 @@ class ProactiveManager:
                     entity_id = cover.get("entity_id")
                     if not entity_id or not cover.get("allow_auto"):
                         continue
+
+                    # Per-Cover Bettsensor-Check: Schlafzimmer-Rollladen
+                    # NICHT oeffnen wenn Bett im gleichen Raum belegt ist.
+                    # (Globaler _is_sleeping Check oben reicht nicht — der
+                    # erkennt nur ob JEMAND schlaeft, nicht OB dieser Raum
+                    # ein Schlafzimmer mit belegtem Bett ist.)
+                    _bed_sensors = []
+                    _cover_bs = cover.get("bed_sensor", "")
+                    if _cover_bs:
+                        _bed_sensors = [_cover_bs]
+                    else:
+                        cover_room = cover.get("room", "")
+                        if cover_room:
+                            _rp = _get_room_profiles_cached()
+                            _room_cfg = (_rp.get("rooms") or {}).get(
+                                cover_room, {}
+                            )
+                            from .config import get_room_bed_sensors
+
+                            _bed_sensors = get_room_bed_sensors(_room_cfg)
+                    _bed_occupied = False
+                    for s in states or []:
+                        if (
+                            s.get("entity_id") in _bed_sensors
+                            and s.get("state") == "on"
+                        ):
+                            _bed_occupied = True
+                            break
+                    if _bed_occupied:
+                        logger.info(
+                            "Passive Solarwärme: %s übersprungen — "
+                            "Bettsensor im Raum aktiv",
+                            entity_id,
+                        )
+                        continue
+
                     start = cover.get("sun_exposure_start", 0)
                     end = cover.get("sun_exposure_end", 360)
                     if start <= end:
@@ -7450,7 +7672,7 @@ class ProactiveManager:
         if elevation > 0:
             return  # Nur nach Sonnenuntergang
 
-        current_hour = _dt.now(timezone.utc).hour
+        current_hour = _dt.now(_LOCAL_TZ).hour
         cover_cfg = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
         global_close_hour = cover_cfg.get("privacy_close_hour", None)
 
@@ -9444,6 +9666,23 @@ class ProactiveManager:
                         wind,
                         storm_speed,
                     )
+                    # Sofort-Aktion: Markisen einfahren bei Sturm
+                    auto_level = cover_cfg.get("auto_execute_level", 3)
+                    try:
+                        states = await self.brain.ha.get_states()
+                        for s in states or []:
+                            eid = s.get("entity_id", "")
+                            if eid.startswith("cover.") and self.brain.executor._is_markise(eid, s):
+                                if await self.brain.executor._is_safe_cover(eid, s):
+                                    await self._auto_cover_action(
+                                        eid, 0,
+                                        f"Sofort-Sturmschutz ({wind:.0f} km/h)",
+                                        auto_level, _redis,
+                                        skip_power_lock=True,
+                                        dedup_ttl=300,
+                                    )
+                    except Exception as _storm_err:
+                        logger.error("Sofort-Sturmschutz Fehler: %s", _storm_err)
             except (ValueError, TypeError):
                 pass
 
@@ -9462,6 +9701,26 @@ class ProactiveManager:
             logger.info(
                 "Wetter-Event: Regeneinbruch erkannt — Markisen sofort einfahren"
             )
+            # Sofort-Aktion: Markisen einfahren bei Regen
+            cover_cfg = yaml_config.get("seasonal_actions", {}).get(
+                "cover_automation", {}
+            )
+            auto_level = cover_cfg.get("auto_execute_level", 3)
+            try:
+                states = await self.brain.ha.get_states()
+                for s in states or []:
+                    eid = s.get("entity_id", "")
+                    if eid.startswith("cover.") and self.brain.executor._is_markise(eid, s):
+                        if await self.brain.executor._is_safe_cover(eid, s):
+                            await self._auto_cover_action(
+                                eid, 0,
+                                "Sofort-Regenschutz (Markise einfahren)",
+                                auto_level, _redis,
+                                skip_power_lock=True,
+                                dedup_ttl=300,
+                            )
+            except Exception as _rain_err:
+                logger.error("Sofort-Regenschutz Fehler: %s", _rain_err)
 
     # ------------------------------------------------------------------
     # State-Machine pro Cover
@@ -10350,9 +10609,7 @@ class ProactiveManager:
                 except Exception as e:
                     logger.debug("Mood comfort action Fehler: %s", e)
         elif mood == "tired":
-            now_hour = datetime.now(timezone.utc).hour
-            # Einfache Zeitzonen-Korrektur (CET = UTC+1/2)
-            local_hour = (now_hour + 1) % 24
+            local_hour = datetime.now(_LOCAL_TZ).hour
             if local_hour >= 21:
                 suggestion = "Du wirkst muede — Zeit fuer die Gute-Nacht-Routine?"
 

@@ -315,6 +315,8 @@ class RoutineEngine:
                 return await self._get_device_conflicts_briefing()
             elif module == "night_decisions":
                 return await self._get_night_decisions_briefing()
+            elif module == "personal_dates":
+                return await self._get_personal_dates_briefing()
         except Exception as e:
             logger.debug("Briefing-Modul '%s' fehlgeschlagen: %s", module, e)
         return ""
@@ -390,6 +392,12 @@ class RoutineEngine:
         # Night decisions — informational, after house_status
         if module == "night_decisions":
             return 3
+
+        # Personal dates (birthdays today = high priority)
+        if module == "personal_dates":
+            if "HEUTE" in content.upper() or "heute" in content:
+                return 7
+            return 4
 
         # Personal memory / greeting — informational
         if module == "personal_memory":
@@ -484,6 +492,20 @@ class RoutineEngine:
         except Exception as e:
             logger.debug("Night-Decisions Briefing Fehler: %s", e)
             return ""
+
+    async def _get_personal_dates_briefing(self) -> str:
+        """Liefert anstehende Geburtstage/Jahrestage fuer das Briefing."""
+        try:
+            import assistant.main as main_module
+
+            brain = main_module.brain
+            if hasattr(brain, "personal_dates"):
+                section = await brain.personal_dates.get_briefing_section()
+                if section:
+                    return section
+        except Exception as e:
+            logger.debug("Personal-Dates Briefing Fehler: %s", e)
+        return ""
 
     async def _get_personal_memory_briefing(self, person: str) -> str:
         """Liefert relevante Erinnerungen und anstehende Daten fuer das Briefing."""

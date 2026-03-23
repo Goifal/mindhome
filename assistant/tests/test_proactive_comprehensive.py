@@ -782,7 +782,8 @@ class TestAnomalyDetection:
     async def test_anomaly_triggers_notification_at_4(self, pm):
         redis = AsyncMock()
         redis.incr = AsyncMock(return_value=4)
-        redis.delete = AsyncMock()
+        redis.get = AsyncMock(return_value=None)  # Kein Notification-Cooldown aktiv
+        redis.set = AsyncMock()
         with patch.object(pm, "_notify", new_callable=AsyncMock) as mock_notify:
             await pm._track_cover_anomaly("cover.test", redis)
             mock_notify.assert_called_once()

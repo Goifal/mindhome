@@ -7699,6 +7699,315 @@ async def ui_delete_personal_date(fact_id: str, token: str = ""):
         raise HTTPException(status_code=500, detail="Interner Fehler")
 
 
+# ==================================================================
+# Personal Assistant UI Endpoints
+# ==================================================================
+
+
+@app.get("/api/ui/tasks")
+async def ui_get_tasks(
+    token: str = "", person: str = "", status: str = "needs_action"
+):
+    """Aufgaben auflisten."""
+    await _check_token(token)
+    try:
+        return await brain.task_manager.list_tasks(person=person, status=status)
+    except Exception as e:
+        logger.error("Tasks API Fehler: %s", e)
+        return {"success": False, "message": "Task Manager nicht verfuegbar."}
+
+
+@app.post("/api/ui/tasks")
+async def ui_add_task(request: Request, token: str = ""):
+    """Neue Aufgabe hinzufuegen."""
+    await _check_token(token)
+    body = await request.json()
+    try:
+        return await brain.task_manager.add_task(
+            title=body.get("title", ""),
+            person=body.get("person", ""),
+            due_date=body.get("due_date", ""),
+            priority=body.get("priority", "medium"),
+            description=body.get("description", ""),
+        )
+    except Exception as e:
+        logger.error("Task add Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Interner Fehler")
+
+
+@app.post("/api/ui/tasks/complete")
+async def ui_complete_task(request: Request, token: str = ""):
+    """Aufgabe als erledigt markieren."""
+    await _check_token(token)
+    body = await request.json()
+    try:
+        return await brain.task_manager.complete_task(title=body.get("title", ""))
+    except Exception as e:
+        logger.error("Task complete Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Interner Fehler")
+
+
+@app.delete("/api/ui/tasks")
+async def ui_remove_task(request: Request, token: str = ""):
+    """Aufgabe entfernen."""
+    await _check_token(token)
+    body = await request.json()
+    try:
+        return await brain.task_manager.remove_task(title=body.get("title", ""))
+    except Exception as e:
+        logger.error("Task remove Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Interner Fehler")
+
+
+@app.get("/api/ui/tasks/recurring")
+async def ui_get_recurring_tasks(token: str = ""):
+    """Wiederkehrende Aufgaben auflisten."""
+    await _check_token(token)
+    try:
+        return await brain.task_manager.list_recurring_tasks()
+    except Exception as e:
+        logger.error("Recurring tasks Fehler: %s", e)
+        return {"success": False, "message": "Task Manager nicht verfuegbar."}
+
+
+@app.post("/api/ui/tasks/recurring")
+async def ui_add_recurring_task(request: Request, token: str = ""):
+    """Wiederkehrende Aufgabe erstellen."""
+    await _check_token(token)
+    body = await request.json()
+    try:
+        return await brain.task_manager.add_recurring_task(
+            title=body.get("title", ""),
+            recurrence=body.get("recurrence", ""),
+            weekday=body.get("weekday", ""),
+            person=body.get("person", ""),
+        )
+    except Exception as e:
+        logger.error("Recurring task add Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Interner Fehler")
+
+
+@app.delete("/api/ui/tasks/recurring")
+async def ui_delete_recurring_task(request: Request, token: str = ""):
+    """Wiederkehrende Aufgabe loeschen."""
+    await _check_token(token)
+    body = await request.json()
+    try:
+        return await brain.task_manager.delete_recurring_task(
+            title=body.get("title", "")
+        )
+    except Exception as e:
+        logger.error("Recurring task delete Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Interner Fehler")
+
+
+# --- Notizen ---
+
+
+@app.get("/api/ui/notes")
+async def ui_get_notes(
+    token: str = "",
+    category: str = "",
+    person: str = "",
+    limit: int = 20,
+):
+    """Notizen auflisten."""
+    await _check_token(token)
+    try:
+        return await brain.note_manager.list_notes(
+            category=category, person=person, limit=min(limit, 100)
+        )
+    except Exception as e:
+        logger.error("Notes API Fehler: %s", e)
+        return {"success": False, "message": "Notiz-System nicht verfuegbar."}
+
+
+@app.post("/api/ui/notes")
+async def ui_add_note(request: Request, token: str = ""):
+    """Neue Notiz erstellen."""
+    await _check_token(token)
+    body = await request.json()
+    try:
+        return await brain.note_manager.add_note(
+            content=body.get("content", ""),
+            category=body.get("category", "sonstiges"),
+            person=body.get("person", ""),
+            tags=body.get("tags", ""),
+        )
+    except Exception as e:
+        logger.error("Note add Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Interner Fehler")
+
+
+@app.get("/api/ui/notes/search")
+async def ui_search_notes(token: str = "", query: str = "", limit: int = 10):
+    """Notizen durchsuchen."""
+    await _check_token(token)
+    try:
+        return await brain.note_manager.search_notes(
+            query=query, limit=min(limit, 50)
+        )
+    except Exception as e:
+        logger.error("Notes search Fehler: %s", e)
+        return {"success": False, "message": "Suche fehlgeschlagen."}
+
+
+@app.delete("/api/ui/notes/{note_id}")
+async def ui_delete_note(note_id: str, token: str = ""):
+    """Notiz loeschen."""
+    await _check_token(token)
+    try:
+        return await brain.note_manager.delete_note(note_id=note_id)
+    except Exception as e:
+        logger.error("Note delete Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Interner Fehler")
+
+
+@app.get("/api/ui/notes/categories")
+async def ui_note_categories(token: str = ""):
+    """Notiz-Kategorien mit Anzahl."""
+    await _check_token(token)
+    try:
+        return await brain.note_manager.get_note_categories()
+    except Exception as e:
+        logger.error("Note categories Fehler: %s", e)
+        return {"success": False, "message": "Fehler."}
+
+
+# --- Familie ---
+
+
+@app.get("/api/ui/family")
+async def ui_get_family(token: str = ""):
+    """Alle Familienmitglieder auflisten."""
+    await _check_token(token)
+    try:
+        members = await brain.family_manager.get_all_members()
+        return {"success": True, "members": members}
+    except Exception as e:
+        logger.error("Family API Fehler: %s", e)
+        return {"success": False, "members": []}
+
+
+@app.post("/api/ui/family")
+async def ui_add_family_member(request: Request, token: str = ""):
+    """Familienmitglied hinzufuegen."""
+    await _check_token(token)
+    body = await request.json()
+    try:
+        result = await brain.family_manager.add_member(
+            name=body.get("name", ""),
+            relationship=body.get("relationship", "other"),
+            birth_year=body.get("birth_year", 0),
+            interests=body.get("interests", ""),
+            ha_person_entity=body.get("ha_person_entity", ""),
+            notification_target=body.get("notification_target", ""),
+        )
+        if result.get("success"):
+            _audit_log("family_member_add", {"name": body.get("name", "")})
+        return result
+    except Exception as e:
+        logger.error("Family add Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Interner Fehler")
+
+
+@app.put("/api/ui/family/{name}")
+async def ui_update_family_member(name: str, request: Request, token: str = ""):
+    """Familienmitglied aktualisieren."""
+    await _check_token(token)
+    body = await request.json()
+    try:
+        return await brain.family_manager.update_member(name=name, **body)
+    except Exception as e:
+        logger.error("Family update Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Interner Fehler")
+
+
+@app.delete("/api/ui/family/{name}")
+async def ui_delete_family_member(name: str, token: str = ""):
+    """Familienmitglied entfernen."""
+    await _check_token(token)
+    try:
+        result = await brain.family_manager.remove_member(name=name)
+        if result.get("success"):
+            _audit_log("family_member_remove", {"name": name})
+        return result
+    except Exception as e:
+        logger.error("Family delete Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Interner Fehler")
+
+
+# --- Essensplanung ---
+
+
+@app.get("/api/ui/meals/plan")
+async def ui_get_meal_plan(token: str = ""):
+    """Aktuellen Wochenplan abrufen."""
+    await _check_token(token)
+    try:
+        return await brain.meal_planner.get_current_plan()
+    except Exception as e:
+        logger.error("Meal plan Fehler: %s", e)
+        return {"success": False, "message": "Essensplanung nicht verfuegbar."}
+
+
+@app.post("/api/ui/meals/plan")
+async def ui_create_meal_plan(request: Request, token: str = ""):
+    """Neuen Wochenplan erstellen."""
+    await _check_token(token)
+    body = await request.json()
+    try:
+        return await brain.meal_planner.create_weekly_plan(
+            preferences=body.get("preferences", ""),
+            portions=body.get("portions", 0),
+        )
+    except Exception as e:
+        logger.error("Meal plan create Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Interner Fehler")
+
+
+@app.get("/api/ui/meals/history")
+async def ui_get_meal_history(token: str = "", days: int = 7):
+    """Mahlzeiten-Historie abrufen."""
+    await _check_token(token)
+    try:
+        return await brain.meal_planner.get_meal_history(days=min(days, 90))
+    except Exception as e:
+        logger.error("Meal history Fehler: %s", e)
+        return {"success": False, "message": "Fehler."}
+
+
+@app.post("/api/ui/meals/log")
+async def ui_log_meal(request: Request, token: str = ""):
+    """Mahlzeit protokollieren."""
+    await _check_token(token)
+    body = await request.json()
+    try:
+        return await brain.meal_planner.log_meal(
+            meal=body.get("meal", ""),
+            meal_type=body.get("meal_type", "abendessen"),
+            portions=body.get("portions", 0),
+            rating=body.get("rating", 0),
+        )
+    except Exception as e:
+        logger.error("Meal log Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Interner Fehler")
+
+
+@app.post("/api/ui/meals/suggest")
+async def ui_suggest_meals(request: Request, token: str = ""):
+    """Gerichte aus Vorraeten vorschlagen."""
+    await _check_token(token)
+    body = await request.json()
+    try:
+        return await brain.meal_planner.suggest_from_inventory(
+            portions=body.get("portions", 0),
+        )
+    except Exception as e:
+        logger.error("Meal suggest Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Interner Fehler")
+
+
 @app.get("/api/ui/logs")
 async def ui_get_logs(token: str = "", limit: int = 50):
     """Letzte Konversationen aus dem Working Memory."""

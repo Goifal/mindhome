@@ -166,7 +166,8 @@ class CoverControlManager:
                     state = self.ha.get_state(a.entity_id) if self.ha else None
                     attrs = state.get("attributes", {}) if state else {}
                     cover_conf = all_configs.get(a.entity_id, {})
-                    override = self._manual_overrides.get(a.entity_id)
+                    with self._lock:
+                        override = self._manual_overrides.get(a.entity_id)
                     covers.append({
                         "entity_id": a.entity_id,
                         "state": state.get("state", "unknown") if state else "unknown",
@@ -593,11 +594,14 @@ class CoverControlManager:
             local = now
 
         # Deferred wake-open: Rolladen oeffnen sobald Sonne hoch genug
-        if self._wake_pending_open:
+        with self._lock:
+            _wake_pending = self._wake_pending_open
+        if _wake_pending:
             min_elevation = config.get("wakeup_min_sun_elevation_deg", -6.0)
             if sun_data.get("elevation", 0) >= min_elevation:
                 if not self._is_bed_occupied():
-                    self._wake_pending_open = False
+                    with self._lock:
+                        self._wake_pending_open = False
                     for cover in covers:
                         if not self._is_overridden(cover["entity_id"]):
                             self.set_position(cover["entity_id"], 100, source="wakeup_deferred")
@@ -651,7 +655,9 @@ class CoverControlManager:
                 today = local.date()
                 for s in schedules:
                     # Dedup: Jedes Schedule nur einmal pro Tag ausfuehren
-                    if self._executed_schedules.get(s.id) == today:
+                    with self._lock:
+                        _already_run = self._executed_schedules.get(s.id) == today
+                    if _already_run:
                         continue
                     days = s.days or [0, 1, 2, 3, 4, 5, 6]
                     if current_day not in days:
@@ -659,7 +665,8 @@ class CoverControlManager:
                     if s.presence_mode and s.presence_mode != presence_mode:
                         continue
 
-                    self._executed_schedules[s.id] = today
+                    with self._lock:
+                        self._executed_schedules[s.id] = today
                     if s.entity_id and not self._is_overridden(s.entity_id):
                         self.set_position(s.entity_id, s.position, source="schedule")
                         if s.tilt is not None:
@@ -711,7 +718,8 @@ class CoverControlManager:
         covers = self.get_covers()
         for cover in covers:
             eid = cover["entity_id"]
-            last = self._last_simulation.get(eid)
+            with self._lock:
+                last = self._last_simulation.get(eid)
             actual_interval = interval + random.randint(-variance, variance)
             if last and (now - last).total_seconds() < actual_interval * 60:
                 continue
@@ -719,7 +727,8 @@ class CoverControlManager:
             # Randomly open or close
             new_pos = random.choice([0, 30, 70, 100])
             self.set_position(eid, new_pos, source="simulation")
-            self._last_simulation[eid] = now
+            with self._lock:
+                self._last_simulation[eid] = now
             logger.info(f"Presence simulation: {eid} → {new_pos}%")
 
     # ── Rule Evaluation ─────────────────────────────────────
@@ -866,9 +875,10 @@ class CoverControlManager:
         if context.get("user_id"):
             config = self.get_config()
             duration = config.get("manual_override_duration_min", 120)
-            self._manual_overrides[entity_id] = (
-                datetime.now(timezone.utc) + timedelta(minutes=duration)
-            )
+            with self._lock:
+                self._manual_overrides[entity_id] = (
+                    datetime.now(timezone.utc) + timedelta(minutes=duration)
+                )
             logger.info(f"Manual override detected for {entity_id} ({duration}min)")
 
             # Learning: log manual action for pattern detection
@@ -886,7 +896,8 @@ class CoverControlManager:
             return
         if not config.get("sleep_close_enabled"):
             return
-        self._wake_pending_open = False  # Reset deferred wake-open
+        with self._lock:
+            self._wake_pending_open = False  # Reset deferred wake-open
         covers = self.get_covers()
         for cover in covers:
             if not self._is_overridden(cover["entity_id"]):
@@ -911,7 +922,8 @@ class CoverControlManager:
         sun_data = self._get_sun_data()
         min_elevation = config.get("wakeup_min_sun_elevation_deg", -6.0)
         if sun_data.get("elevation", 0) < min_elevation:
-            self._wake_pending_open = True
+            with self._lock:
+                self._wake_pending_open = True
             logger.info(
                 "Wake detected but too dark (sun elevation %.1f° < %.1f°) "
                 "— deferring cover open until sunrise",
@@ -919,7 +931,8 @@ class CoverControlManager:
             )
             return
 
-        self._wake_pending_open = False
+        with self._lock:
+            self._wake_pending_open = False
         covers = self.get_covers()
         for cover in covers:
             if not self._is_overridden(cover["entity_id"]):
