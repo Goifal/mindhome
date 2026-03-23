@@ -111,7 +111,38 @@ _VERIFY_DELAYS = {
 
 > **Verifiziere**: Gibt es schon domain-spezifische Delays? Lies `_verify_device_state()`.
 
-#### Fix 0.4: _verify_device_state() — add_done_callback prüfen
+#### Fix 0.4: Few-Shot-Beispiele Qualitätssicherung (P05b Teil 3.5)
+
+```
+Grep: "few.shot\|few_shot\|example_select\|shot_example" in assistant/assistant/
+```
+
+**Problem**: Few-Shot-Beispiele sind DER stärkste Hebel für Antwortqualität. Wenn sie schlecht, veraltet oder nicht MCU-Jarvis-konform sind → Jarvis klingt generisch.
+
+**Prüfe und fixe**:
+1. Falls Beispiele manuell kuratiert: Sind sie aktuell? Klingen sie wie MCU-Jarvis?
+2. Falls automatisch generiert: Gibt es einen Quality-Gate? (Nur Antworten mit Score ≥ X)
+3. Falls keine Few-Shot-Beispiele existieren: Das ist ein MASSIVES Problem. Empfehle Implementation.
+4. Token-Budget: Wenn Few-Shots > 500 Tokens verbrauchen → auf die besten 3-5 reduzieren
+
+#### Fix 0.5: Sampling-Parameter optimieren (P05b Teil 1)
+
+```
+Grep: "temperature\|top_p\|top_k" in assistant/config/settings.yaml
+Grep: "temperature\|top_p\|top_k" in assistant/assistant/model_router.py
+Grep: "temperature\|top_p\|top_k" in assistant/assistant/ollama_client.py
+```
+
+**Basierend auf P05b-Findings**: Prüfe ob Sampling-Parameter pro Tier sinnvoll sind:
+
+| Parameter | device_command | smalltalk | analysis | Empfehlung |
+|---|---|---|---|---|
+| temperature | 0.1-0.3 | 0.6-0.8 | 0.3-0.5 | Faktisch=niedrig, Kreativ=höher |
+| top_p | 0.8-0.9 | 0.9-0.95 | 0.85-0.9 | Leicht einschränken für Konsistenz |
+
+> **Verifiziere**: Welche Werte stehen aktuell? Werden top_p/top_k überhaupt gesetzt?
+
+#### Fix 0.6: _verify_device_state() — add_done_callback prüfen
 
 ```
 Grep: "_verify_device_state" in assistant/assistant/brain.py

@@ -49,7 +49,13 @@ Read: assistant/assistant/model_router.py
 
 1. **Wortanzahl-Schwelle**: Der Router nutzt 15+ Wörter als Trigger für Deep-Modell. Ist das sinnvoll für Deutsche Sätze (Komposita, lange Wörter)?
 2. **Keyword-Matching**: Werden Keywords wie "an"/"aus" korrekt als Wortgrenzen behandelt? Oder matcht "Anleitung" als "an"?
-3. **Temperatur-Routing**: Sind die 6 Task-Typen mit korrekten Temperaturen versehen? Werden alle tatsächlich genutzt?
+3. **Sampling-Parameter** (temperature, top_p, top_k):
+   - Sind die 6 Task-Typen mit korrekten Temperaturen versehen? Werden alle tatsächlich genutzt?
+   - **top_p** (Nucleus Sampling): Wird es gesetzt? Welcher Wert? (Zu hoch = halluziniert, zu niedrig = repetitiv)
+   - **top_k**: Wird es gesetzt? Interagiert es sinnvoll mit top_p?
+   - **Pro Modell-Tier**: Haben Fast/Smart/Deep UNTERSCHIEDLICHE Sampling-Werte? (Sollten sie — Fast braucht konservativere Werte)
+   - **Persönlichkeits-Impact**: Niedrige Temperature = robotisch klingender Jarvis. Hohe Temperature = inkonsistenter Charakter. Wo ist der Sweet Spot für MCU-Jarvis?
+   - **Prüfe in settings.yaml**: `Grep: "temperature\|top_p\|top_k" in assistant/config/settings.yaml`
 4. **Latenz-Degradation**: Verwendet der Router Median oder Durchschnitt? Werden Ausreißer gefiltert?
 5. **Tier-Recovery**: Wie oft wird geprüft ob ein degradierter Tier wieder verfügbar ist?
 
@@ -115,9 +121,23 @@ Read: assistant/assistant/adaptive_thresholds.py
 4. **Response Quality**:
    - EMA mit α=0.1 — bedeutet 7-10 Interaktionen bis eine Änderung spürbar ist. Zu langsam? Zu schnell?
    - "Follow-up innerhalb 60s = schlecht" — was wenn User eine legitime Anschlussfrage hat?
-   - Werden gute Antworten als Few-Shot-Beispiele gespeichert? Wie alt dürfen sie sein?
 
-5. **Self-Optimization**:
+5. **Few-Shot-Beispiele** (KRITISCH für Antwortqualität):
+
+   ```
+   Grep: "few.shot\|few_shot\|example_select\|shot_example\|good_response\|best_response" in assistant/assistant/
+   ```
+
+   Prüfe:
+   - **Quelle**: Woher kommen die Few-Shot-Beispiele? Manuell kuratiert oder automatisch aus guten Antworten?
+   - **Qualitätskontrolle**: Wird geprüft ob ein Beispiel WIRKLICH gut ist? (Score ≥ X, User-Feedback positiv?)
+   - **Aktualität**: Wie alt dürfen Beispiele sein? Alte Beispiele mit veralteten Gerätenamen = Verwirrung
+   - **Kategorie-Abdeckung**: Gibt es Beispiele für ALLE Kategorien? (device_command, smalltalk, analysis, knowledge, cooking, etc.)
+   - **Persönlichkeits-Konsistenz**: Klingen die Beispiele wie MCU-Jarvis? Oder sind sie generisch?
+   - **Token-Budget**: Wie viele Tokens verbrauchen die Few-Shot-Beispiele? Verdrängen sie wichtigeren Kontext?
+   - **Negativ-Beispiele**: Gibt es auch "so NICHT"-Beispiele? (Hilft dem LLM schlechte Muster zu vermeiden)
+
+6. **Self-Optimization**:
    - Welche Parameter sind optimierbar? Welche sind immutable? Ist die Grenze sinnvoll?
    - Werden Vorschläge validiert bevor sie dem User gezeigt werden?
    - Max 3 Vorschläge pro Zyklus — ist das zu wenig/viel?
