@@ -964,8 +964,12 @@ class TestGetStatesCached:
 class TestProcess:
     @pytest.mark.asyncio
     async def test_process_lock_timeout(self, brain):
-        brain._process_lock = asyncio.Lock()
-        await brain._process_lock.acquire()  # Lock is held
+        # The code uses per-person locks (_person_locks dict), not a global
+        # _process_lock.  For person=None the key is "_anonymous".
+        brain._person_locks_guard = asyncio.Lock()
+        anon_lock = asyncio.Lock()
+        await anon_lock.acquire()  # Hold the lock so process() times out
+        brain._person_locks = {"_anonymous": anon_lock}
 
         # Should return timeout message
         result = await asyncio.wait_for(
@@ -973,4 +977,4 @@ class TestProcess:
             timeout=35.0,
         )
         assert "beschaeftigt" in result["response"] or "Moment" in result["response"]
-        brain._process_lock.release()
+        anon_lock.release()
