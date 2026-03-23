@@ -302,6 +302,17 @@ Checkliste:
 □ Health-Endpoints in allen Services
 □ Daten-Persistenz gesichert (Redis, ChromaDB, SQLite)
 □ Kombinierte Ausfälle getestet
+□ Backup-Strategie dokumentiert (Redis RDB/AOF, ChromaDB Snapshots, SQLite-Kopie)
+□ Restore-Prozedur getestet (Backup einspielen → System funktioniert)
+□ Datenaufbewahrung/GDPR: Löschfristen definiert, User-Daten exportierbar, Recht auf Vergessen
+□ Log-Rotation konfiguriert (keine unbegrenzten Logs auf Produktivsystem)
+□ Sensitive Daten in Logs gefiltert (API-Keys, Tokens, Passwörter)
+□ Health-Endpoints explizit getestet (/health, /ready, /health/deep in allen 3 Services)
+□ Graceful Shutdown (SIGTERM → laufende Requests abschließen → sauber beenden)
+□ Frontend Accessibility (Screenreader, Tastatur-Navigation, Kontrast — WCAG 2.1 AA)
+□ Frontend Mobile-Responsiveness (Breakpoints 768px, 480px funktionieren)
+□ Memory-Deduplication (ChromaDB: keine doppelten Fakten gespeichert)
+□ Secrets-Management (keine Secrets in Code/Config, nur in .env oder HA Secrets)
 ```
 
 ---

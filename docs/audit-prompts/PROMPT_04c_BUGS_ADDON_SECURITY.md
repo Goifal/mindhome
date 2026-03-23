@@ -113,8 +113,12 @@ Verbleibende Batches: [Liste]
 89. `shared/schemas/chat_request.py` — Wird `ChatRequest` überall verwendet wo Requests gesendet werden?
 90. `shared/schemas/chat_response.py` — Wird `ChatResponse` überall verwendet wo Responses erzeugt werden?
 91. `shared/schemas/events.py` — Werden die Event-Typen konsistent genutzt?
-92. `ha_integration/.../config_flow.py` — Validierung, Error Handling
-93. `ha_integration/.../__init__.py` — Setup/Teardown korrekt?
+92. `ha_integration/.../config_flow.py` — Validierung, Error Handling, XSS bei API-Key-Eingabe
+93. `ha_integration/.../__init__.py` — Setup/Teardown korrekt? Entry Unload? Cleanup?
+94. `ha_integration/.../conversation.py` — HA Voice Pipeline Bridge: STT/TTS Service-Registrierung, Timeout/Retry, Intent-Weiterleitung
+95. `ha_integration/.../manifest.json` — Pflichtfelder vollständig? Version korrekt? Dependencies?
+96. `ha_integration/.../strings.json` — Übersetzungen vollständig?
+97. `ha_integration/.../www/jarvis-chat-card.js` — Lovelace-Card: XSS-Schutz, WebSocket-Reconnect, Error-Handling
 
 ### Shared Schema Verification (Pflicht!)
 

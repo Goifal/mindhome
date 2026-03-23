@@ -285,6 +285,12 @@ Checkliste:
 □ CI/CD dokumentiert oder erstellt
 □ Shell-Scripts safe (set -euo pipefail)
 □ Übersetzungen vollständig
+□ Dead Code entfernt (definierte aber nie aufgerufene Funktionen/Klassen)
+□ Import Cycles aufgelöst (Grep: zirkuläre Imports zwischen Modulen)
+□ Zusätzliche Configs geprüft (humor_triggers.yaml, entity_roles_defaults.yaml, jarvis_capabilities.txt)
+□ Zweites Frontend geprüft (assistant/static/chat/, assistant/static/ui/, assistant/static/workshop/)
+□ Alle Shell-Scripts geprüft (install.sh, update.sh, nvidia-watchdog.sh, addon/run.sh)
+□ Alle requirements.txt synchron (addon/ vs assistant/ vs speech/ — keine Versionskonflikte)
 ```
 
 ---
