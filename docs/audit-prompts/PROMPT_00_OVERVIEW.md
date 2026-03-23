@@ -29,13 +29,15 @@ Dazu: 103 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen, 2 Front
 | 4b | `PROMPT_04b_BUGS_EXTENDED.md` | Bug-Jagd: **Extended-Module** (Prio 5–9, 63 Module) | Nutzt Patterns aus #4a |
 | 4c | `PROMPT_04c_BUGS_ADDON_SECURITY.md` | Bug-Jagd: **Addon + Security + Performance** (Prio 10–12) | Nutzt Findings aus #4a + #4b |
 | 5 | `PROMPT_05_PERSONALITY.md` | Persönlichkeit, Config, MCU-Authentizität | Nutzt Bug-Liste aus #4a–4c |
+| 5b | `PROMPT_05b_INTELLIGENZ_QUALITAET.md` | **Intelligenz-Qualität**: LLM-Routing, Antizipation, Lernen, Proaktivität, Intent, Konsistenz | Nach #5 |
 | 6a | `PROMPT_06a_STABILISIERUNG.md` | **Kritische Bugs fixen** + **Memory reparieren** | 🔴 Bugs aus #4a–4c + Memory-Fix aus #2 |
 | 6b | `PROMPT_06b_ARCHITEKTUR.md` | **Architektur-Entscheidungen** + Konflikte + Flows + **Performance** | Konflikte aus #1 + Flows aus #3a/3b |
 | 6c | `PROMPT_06c_CHARAKTER.md` | **Persönlichkeit harmonisieren** + Config + 🟡 Bugs + Dead Code | Personality aus #5 + Bugs aus #4a–4c |
 | 6d | `PROMPT_06d_HAERTUNG.md` | **Security** + **Resilience** + **Addon-Koordination** | Security aus #4c + Konflikt F aus #1 |
 | 6e | `PROMPT_06e_GERAETESTEUERUNG.md` | **Tool-Calling** + **System-Prompt** + Gerätesteuerung | Pain-Point: Geräte reagieren nicht |
 | 6f | `PROMPT_06f_TTS_RESPONSE.md` | **speak-Filter** + **Meta-Leakage** + TTS-Pipeline | Pain-Point: "speak" in Sprachausgabe |
-| 7a | `PROMPT_07a_TESTING.md` | Tests + Coverage + **Security-Endpoint-Tests** | Verifiziert Fixes aus #6a–6f |
+| 6g | `PROMPT_06g_INTELLIGENZ_FIXES.md` | **Intelligenz-Qualität fixen**: Schwellwerte, Konfidenz, False Positives, Feedback-Loops | Qualitäts-Findings aus #5b |
+| 7a | `PROMPT_07a_TESTING.md` | Tests + Coverage + **Security-Endpoint-Tests** | Verifiziert Fixes aus #6a–6g |
 | 7b | `PROMPT_07b_DEPLOYMENT.md` | Docker + Deployment + **Resilience** + **Performance** | Nutzt Test-Ergebnisse aus #7a |
 | 7c | `PROMPT_07c_INTEGRATION_TESTS.md` | **Integration-Tests**: End-to-End Flows (Chat, Memory, Proaktiv, Resilience, Security) | Nach #7b |
 | 7d | `PROMPT_07d_ADDON_INTEGRATION_TESTS.md` | **Addon-Integration-Tests**: Routes, Domains, Engines, Event-Bus, DB | Nach #7c |
@@ -160,6 +162,7 @@ Wenn ein Bug in P04a-P04c gefunden wird, muss er dem richtigen Fix-Prompt zugeor
 | **Security** (Injection, Auth, Race Conditions) | **P06d** | User-Input unescaped, fehlende Locks, kein Timeout |
 | **Tool-Calling** (Gerät reagiert nicht, falsche Entity) | **P06e** | Tool-Call fehlgeschlagen, entity_id falsch, kein Fallback |
 | **TTS/Sprache** ("speak" in Ausgabe, Meta-Leakage) | **P06f** | "speak:", Markdown in TTS, Funktionsnamen hörbar |
+| **Intelligenz-Qualität** (falsche Schwellwerte, False Positives, Feedback-Loops) | **P06g** | Konfidenz zu hoch, Keyword-Matching zu breit, Death Spiral |
 | **Fehlende awaits** | **P06a** (🔴) oder **P06b** (🟠) | Je nach Schweregrad |
 | **Stille Fehler** (except: pass) | **P06a** (🔴) oder **P06d** | Je nach Sicherheitsrelevanz |
 
@@ -167,10 +170,10 @@ Wenn ein Bug in P04a-P04c gefunden wird, muss er dem richtigen Fix-Prompt zugeor
 
 ## Was jeder Prompt abdeckt
 
-| Aspekt | P1 | P2 | P3a | P3b | P4a | P4b | P4c | P5 | P6a | P6b | P6c | P6d | P6e | P6f | P7a | P7b | P7c | P7d | P8a | P8b | P9a | P9b | P10 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Assistant-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Addon-Module | ✅ | ✅ | - | ✅ | - | - | ✅ | ✅ | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Aspekt | P1 | P2 | P3a | P3b | P4a | P4b | P4c | P5 | P5b | P6a | P6b | P6c | P6d | P6e | P6f | P6g | P7a | P7b | P7c | P7d | P8a | P8b | P9a | P9b | P10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Assistant-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Addon-Module | ✅ | ✅ | - | ✅ | - | - | ✅ | ✅ | - | - | - | - | ✅ | - | - | - | - | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Shared-Module (API-Verträge) | ✅ | - | ✅ | ✅ | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | ✅ | - | ✅ | - | ✅ |
 | Speech-Service | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | ✅ |
 | Architektur | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | - | - | - |
@@ -200,7 +203,15 @@ Wenn ein Bug in P04a-P04c gefunden wird, muss er dem richtigen Fix-Prompt zugeor
 | **Engines (16)** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
 | **Event-Bus** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
 | **Pattern Engine** | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
-| **Automation Engine** | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **Automation Engine** | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **LLM-Routing-Qualität** | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - |
+| **Kausales Denken / Antizipation** | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - |
+| **Lernfähigkeit / Feedback-Loops** | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - |
+| **Proaktivitäts-Qualität** | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - |
+| **Intent-Erkennung / Kontext** | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - |
+| **Persönlichkeits-Konsistenz** | - | - | - | - | - | - | - | ✅ | ✅ | - | - | ✅ | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - | - |
+| **Multi-User-Fairness** | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - | ✅ | - | ✅ | ✅ |
+| **Schwellwert-Korrektheit** | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - |
 
 ## Wichtige Rahmenbedingungen
 
@@ -264,12 +275,14 @@ Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ing
 4b. **Extended-Bug-Report** — Bugs in proaktiven Systemen, HA, audio, intelligence
 4c. **Addon/Security/Performance** — Addon-Bugs, Security-Audit, Latenz-Analyse
 5. **Persönlichkeits-Audit** — MCU-Score + Inkonsistenzen + Config-Probleme
+5b. **Intelligenz-Qualitätsaudit** — Scorecard für LLM-Routing, Antizipation, Lernen, Proaktivität, Intent, Konsistenz, Fairness
 6a. **Stabilisierte Codebase** — Kritische Bugs gefixt, Memory repariert
 6b. **Optimierte Architektur** — Konflikte aufgelöst, Flows repariert, **Latenz optimiert**
 6c. **Harmonisierter Charakter** — Eine Stimme, saubere Config, Dead Code entfernt
 6d. **Gehärtetes System** — Security geschlossen, Resilience implementiert, Addon koordiniert
 6e. **Funktionierende Gerätesteuerung** — Tool-Calling zuverlässig, System-Prompt optimiert, deterministic Fallback erweitert
 6f. **Saubere Sprachausgabe** — Kein "speak"/Meta-Leakage in TTS, Response-Filter gehärtet
+6g. **Intelligenter Jarvis** — Schwellwerte korrigiert, Konfidenz realistisch, False Positives reduziert, Feedback-Loops repariert
 7a. **Test-Report** — Tests bestehen, Coverage-Lücken geschlossen, Security-Endpoints verifiziert
 7b. **Deployment-Report** — Docker läuft, **Performance gemessen**, Resilience getestet
 8a. **Code-Qualitäts-Report** — README aktuell, Dependencies sauber, CI/CD bewertet, Lokalisierung geprüft
