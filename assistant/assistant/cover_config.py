@@ -68,7 +68,15 @@ def _load_list(filepath: Path) -> list:
         if filepath.exists():
             data = json.loads(filepath.read_text())
             if isinstance(data, list):
-                return data
+                # Nur Dict-Items behalten (schützt gegen korrupte JSON-Dateien)
+                valid = [item for item in data if isinstance(item, dict)]
+                if len(valid) != len(data):
+                    logger.warning(
+                        "%s enthält %d ungültige Einträge (keine Dicts) — ignoriert",
+                        filepath.name,
+                        len(data) - len(valid),
+                    )
+                return valid
     except Exception as e:
         logger.warning("Laden von %s fehlgeschlagen: %s", filepath.name, e)
     return []

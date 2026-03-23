@@ -5960,7 +5960,7 @@ class ProactiveManager:
                             reason_data.get("reason", "?"),
                         )
                         reconciled += 1
-                except (ValueError, TypeError):
+                except (ValueError, TypeError, AttributeError):
                     pass
             if reconciled > 0:
                 logger.info(
@@ -6084,29 +6084,33 @@ class ProactiveManager:
         )
 
     async def _track_cover_anomaly(self, entity_id: str, redis_client):
-        """Trackt Anomalien (Ping-Pong-Erkennung): Wenn >4 Anomalien in 2h → Warnung."""
+        """Trackt Anomalien (Ping-Pong-Erkennung): Wenn >=4 Anomalien in 2h → Warnung."""
         if not redis_client:
             return
         try:
             anomaly_key = f"mha:cover:anomaly:{entity_id}"
+            notify_cooldown_key = f"mha:cover:anomaly_notified:{entity_id}"
             count = await redis_client.incr(anomaly_key)
             if count == 1:
                 await redis_client.expire(anomaly_key, 7200)  # 2h Fenster
             if count >= 4:
-                logger.warning(
-                    "Cover Anomalie: %s hat %d unerwartete Positionsänderungen in 2h (Ping-Pong?)",
-                    entity_id,
-                    count,
-                )
-                await self._notify(
-                    "cover_anomaly",
-                    MEDIUM,
-                    {
-                        "message": f"Rollladen {entity_id} zeigt ungewöhnliches Verhalten ({count} Anomalien in 2h) — möglicherweise Ping-Pong",
-                        "entity": entity_id,
-                    },
-                )
-                await redis_client.delete(anomaly_key)  # Reset nach Warnung
+                # Notification-Cooldown: Nur 1x pro Stunde warnen (nicht Counter resetten)
+                already_notified = await redis_client.get(notify_cooldown_key)
+                if not already_notified:
+                    logger.warning(
+                        "Cover Anomalie: %s hat %d unerwartete Positionsänderungen in 2h (Ping-Pong?)",
+                        entity_id,
+                        count,
+                    )
+                    await self._notify(
+                        "cover_anomaly",
+                        MEDIUM,
+                        {
+                            "message": f"Rollladen {entity_id} zeigt ungewöhnliches Verhalten ({count} Anomalien in 2h) — möglicherweise Ping-Pong",
+                            "entity": entity_id,
+                        },
+                    )
+                    await redis_client.set(notify_cooldown_key, "1", ex=3600)  # 1h Cooldown
         except Exception as e:
             logger.warning("Unhandled: %s", e)
 
@@ -9662,6 +9666,23 @@ class ProactiveManager:
                         wind,
                         storm_speed,
                     )
+                    # Sofort-Aktion: Markisen einfahren bei Sturm
+                    auto_level = cover_cfg.get("auto_execute_level", 3)
+                    try:
+                        states = await self.brain.ha.get_states()
+                        for s in states or []:
+                            eid = s.get("entity_id", "")
+                            if eid.startswith("cover.") and self.brain.executor._is_markise(eid, s):
+                                if await self.brain.executor._is_safe_cover(eid, s):
+                                    await self._auto_cover_action(
+                                        eid, 0,
+                                        f"Sofort-Sturmschutz ({wind:.0f} km/h)",
+                                        auto_level, _redis,
+                                        skip_power_lock=True,
+                                        dedup_ttl=300,
+                                    )
+                    except Exception as _storm_err:
+                        logger.error("Sofort-Sturmschutz Fehler: %s", _storm_err)
             except (ValueError, TypeError):
                 pass
 
@@ -9680,6 +9701,26 @@ class ProactiveManager:
             logger.info(
                 "Wetter-Event: Regeneinbruch erkannt — Markisen sofort einfahren"
             )
+            # Sofort-Aktion: Markisen einfahren bei Regen
+            cover_cfg = yaml_config.get("seasonal_actions", {}).get(
+                "cover_automation", {}
+            )
+            auto_level = cover_cfg.get("auto_execute_level", 3)
+            try:
+                states = await self.brain.ha.get_states()
+                for s in states or []:
+                    eid = s.get("entity_id", "")
+                    if eid.startswith("cover.") and self.brain.executor._is_markise(eid, s):
+                        if await self.brain.executor._is_safe_cover(eid, s):
+                            await self._auto_cover_action(
+                                eid, 0,
+                                "Sofort-Regenschutz (Markise einfahren)",
+                                auto_level, _redis,
+                                skip_power_lock=True,
+                                dedup_ttl=300,
+                            )
+            except Exception as _rain_err:
+                logger.error("Sofort-Regenschutz Fehler: %s", _rain_err)
 
     # ------------------------------------------------------------------
     # State-Machine pro Cover
