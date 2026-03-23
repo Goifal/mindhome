@@ -791,6 +791,7 @@ routines:
     - greeting
     - weather
     - calendar
+    - personal_dates
     - energy
     - house_status
     weekday_style: kurz
@@ -1465,3 +1466,40 @@ web_search:
   searxng_url: http://localhost:8888
   max_results: 5
   timeout_seconds: 10
+
+# ==============================================================
+# Personal Assistant Module
+# ==============================================================
+
+# --- Aufgaben-/Todo-Verwaltung ---
+task_manager:
+  enabled: true
+  default_list: todo.einkaufsliste           # HA todo-Entity fuer persoenliche Aufgaben
+  family_list: todo.familie                   # HA todo-Entity fuer geteilte Familien-Aufgaben
+  recurring_check_minutes: 60                 # Intervall fuer wiederkehrende Aufgaben-Check
+
+# --- Geburtstage & Jahrestage ---
+personal_dates:
+  enabled: true
+  remind_days_before: [3, 1, 0]              # Erinnerung X Tage vorher (0 = am Tag selbst)
+  check_interval_hours: 6                    # Pruefintervall fuer Erinnerungen
+  briefing_lookahead_days: 7                 # Vorschau im Morgen-Briefing
+
+# --- Familien-Profile ---
+family:
+  enabled: true
+  # Initiale Profile (werden beim ersten Start in Redis geladen)
+  # Weitere Profile koennen per Sprache/Chat hinzugefuegt werden
+
+# --- Notiz-System ---
+notes:
+  enabled: true
+  max_notes: 500                             # Maximale Anzahl Notizen
+  archive_after_days: 90                     # Archivierung nach X Tagen
+
+# --- Essensplanung ---
+meal_planner:
+  enabled: true
+  default_portions: 2                        # Standard-Portionenzahl
+  history_max_entries: 100                   # Maximale Mahlzeiten-Historie
+  plan_ttl_days: 14                          # Wie lange Wochenplaene gespeichert werden

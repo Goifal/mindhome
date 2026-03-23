@@ -3984,6 +3984,259 @@ def _get_assistant_tools_static() -> list:
                 },
             },
         },
+        # ==============================================================
+        # Personal Assistant Tools
+        # ==============================================================
+        {
+            "type": "function",
+            "function": {
+                "name": "manage_tasks",
+                "description": "Aufgaben/Todo-Listen verwalten. Aufgaben hinzufuegen, auflisten, erledigen, entfernen. Auch wiederkehrende Aufgaben (taeglich, woechentlich, monatlich).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": [
+                                "add",
+                                "list",
+                                "complete",
+                                "remove",
+                                "add_recurring",
+                                "list_recurring",
+                                "delete_recurring",
+                            ],
+                            "description": "Aktion: hinzufuegen, auflisten, erledigen, entfernen, wiederkehrende erstellen/auflisten/loeschen",
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Aufgabentext (fuer add, complete, remove, add_recurring, delete_recurring)",
+                        },
+                        "person": {
+                            "type": "string",
+                            "description": "Person der die Aufgabe zugewiesen wird (optional)",
+                        },
+                        "due_date": {
+                            "type": "string",
+                            "description": "Faelligkeitsdatum YYYY-MM-DD (optional)",
+                        },
+                        "priority": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high", "urgent"],
+                            "description": "Prioritaet (default: medium)",
+                        },
+                        "recurrence": {
+                            "type": "string",
+                            "enum": ["daily", "weekly", "monthly", "weekday"],
+                            "description": "Wiederholungstyp (fuer add_recurring)",
+                        },
+                        "weekday": {
+                            "type": "string",
+                            "description": "Wochentag fuer woechentliche Aufgaben (z.B. 'montag')",
+                        },
+                    },
+                    "required": ["action"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "manage_notes",
+                "description": "Notizen erstellen, durchsuchen, auflisten und loeschen. Fuer schnelle Memos, Ideen, Informationen die man sich merken will.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["add", "list", "search", "delete", "categories"],
+                            "description": "Aktion: hinzufuegen, auflisten, suchen, loeschen, Kategorien anzeigen",
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Notiztext (fuer add) oder Suchbegriff (fuer search)",
+                        },
+                        "category": {
+                            "type": "string",
+                            "enum": [
+                                "haushalt",
+                                "arbeit",
+                                "ideen",
+                                "einkauf",
+                                "gesundheit",
+                                "technik",
+                                "finanzen",
+                                "familie",
+                                "rezept",
+                                "sonstiges",
+                            ],
+                            "description": "Kategorie (optional, default: sonstiges)",
+                        },
+                        "person": {
+                            "type": "string",
+                            "description": "Person der die Notiz zugeordnet wird (optional)",
+                        },
+                        "note_id": {
+                            "type": "string",
+                            "description": "Notiz-ID (fuer delete)",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximale Anzahl Ergebnisse (default: 10)",
+                        },
+                    },
+                    "required": ["action"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "manage_family",
+                "description": "Familien-Profile verwalten: Mitglieder hinzufuegen, auflisten, aktualisieren. Gruppen-Nachrichten senden.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": [
+                                "add_member",
+                                "list_members",
+                                "get_member",
+                                "update_member",
+                                "remove_member",
+                                "send_family_message",
+                                "create_group",
+                            ],
+                            "description": "Aktion auf der Familien-Verwaltung",
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "Name der Person",
+                        },
+                        "relationship": {
+                            "type": "string",
+                            "enum": [
+                                "partner",
+                                "spouse",
+                                "child",
+                                "parent",
+                                "sibling",
+                                "grandparent",
+                                "grandchild",
+                                "roommate",
+                                "friend",
+                                "other",
+                            ],
+                            "description": "Beziehungstyp (fuer add_member)",
+                        },
+                        "birth_year": {
+                            "type": "integer",
+                            "description": "Geburtsjahr (fuer add_member, optional)",
+                        },
+                        "interests": {
+                            "type": "string",
+                            "description": "Interessen/Hobbys kommagetrennt (optional)",
+                        },
+                        "message": {
+                            "type": "string",
+                            "description": "Nachricht (fuer send_family_message)",
+                        },
+                        "group": {
+                            "type": "string",
+                            "description": "Gruppenname (fuer send_family_message oder create_group, default: all)",
+                        },
+                        "members": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Mitglieder-Namen (fuer create_group)",
+                        },
+                    },
+                    "required": ["action"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_personal_dates",
+                "description": "Anstehende Geburtstage, Jahrestage und persoenliche Termine abfragen.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days_ahead": {
+                            "type": "integer",
+                            "description": "Wie viele Tage vorausschauen (default: 30)",
+                        },
+                        "person": {
+                            "type": "string",
+                            "description": "Termine nur fuer eine bestimmte Person (optional)",
+                        },
+                    },
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "manage_meals",
+                "description": "Essensplanung: Gerichte aus Vorraeten vorschlagen, Wochenplan erstellen, Mahlzeiten protokollieren, Zutaten pruefen.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": [
+                                "suggest",
+                                "weekly_plan",
+                                "log_meal",
+                                "history",
+                                "check_ingredients",
+                                "current_plan",
+                            ],
+                            "description": "suggest: Was kochen mit Vorraeten. weekly_plan: Wochenplan erstellen. log_meal: Mahlzeit protokollieren. history: Essenshistorie. check_ingredients: Fehlende Zutaten zur Einkaufsliste. current_plan: Aktuellen Wochenplan anzeigen.",
+                        },
+                        "meal": {
+                            "type": "string",
+                            "description": "Gerichtsname (fuer log_meal)",
+                        },
+                        "meal_type": {
+                            "type": "string",
+                            "enum": [
+                                "fruehstueck",
+                                "mittagessen",
+                                "abendessen",
+                                "snack",
+                            ],
+                            "description": "Mahlzeitentyp (default: abendessen)",
+                        },
+                        "portions": {
+                            "type": "integer",
+                            "description": "Anzahl Portionen (optional)",
+                        },
+                        "rating": {
+                            "type": "integer",
+                            "description": "Bewertung 1-5 (fuer log_meal, optional)",
+                        },
+                        "preferences": {
+                            "type": "string",
+                            "description": "Wuensche fuer den Wochenplan (z.B. 'viel Gemuese', 'keine Pasta')",
+                        },
+                        "ingredients": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Zutatenliste (fuer check_ingredients)",
+                        },
+                        "days": {
+                            "type": "integer",
+                            "description": "Anzahl Tage fuer History (default: 7)",
+                        },
+                    },
+                    "required": ["action"],
+                },
+            },
+        },
     ]
     return _ASSISTANT_TOOLS_STATIC
 
@@ -4171,6 +4424,11 @@ class FunctionExecutor:
             "retrieve_memory",
             "retrieve_history",
             "verify_device_state",
+            "manage_tasks",
+            "manage_notes",
+            "manage_family",
+            "get_personal_dates",
+            "manage_meals",
         }
     )
 
@@ -12194,3 +12452,223 @@ class FunctionExecutor:
         except Exception as e:
             logger.error("verify_device_state fehlgeschlagen: %s", e)
             return {"success": False, "message": f"State-Abfrage fehlgeschlagen: {e}"}
+
+    # ==================================================================
+    # Personal Assistant Tools
+    # ==================================================================
+
+    async def _exec_manage_tasks(self, args: dict) -> dict:
+        """Aufgaben/Todo-Listen verwalten."""
+        import assistant.main as main_module
+
+        brain = main_module.brain
+        try:
+            tm = brain.task_manager
+        except AttributeError:
+            return {"success": False, "message": "Task Manager nicht verfuegbar."}
+
+        action = args.get("action", "")
+
+        if action == "add":
+            return await tm.add_task(
+                title=args.get("title", ""),
+                person=args.get("person", ""),
+                due_date=args.get("due_date", ""),
+                priority=args.get("priority", "medium"),
+            )
+        elif action == "list":
+            return await tm.list_tasks(
+                person=args.get("person", ""),
+            )
+        elif action == "complete":
+            return await tm.complete_task(title=args.get("title", ""))
+        elif action == "remove":
+            return await tm.remove_task(title=args.get("title", ""))
+        elif action == "add_recurring":
+            return await tm.add_recurring_task(
+                title=args.get("title", ""),
+                recurrence=args.get("recurrence", ""),
+                weekday=args.get("weekday", ""),
+                person=args.get("person", ""),
+            )
+        elif action == "list_recurring":
+            return await tm.list_recurring_tasks()
+        elif action == "delete_recurring":
+            return await tm.delete_recurring_task(title=args.get("title", ""))
+
+        return {"success": False, "message": f"Unbekannte Aktion: {action}"}
+
+    async def _exec_manage_notes(self, args: dict) -> dict:
+        """Notizen verwalten."""
+        nm = getattr(self, "_note_manager", None)
+        if not nm:
+            return {"success": False, "message": "Notiz-System nicht verfuegbar."}
+
+        action = args.get("action", "")
+
+        if action == "add":
+            return await nm.add_note(
+                content=args.get("content", ""),
+                category=args.get("category", "sonstiges"),
+                person=args.get("person", ""),
+            )
+        elif action == "list":
+            return await nm.list_notes(
+                category=args.get("category", ""),
+                person=args.get("person", ""),
+                limit=args.get("limit", 10),
+            )
+        elif action == "search":
+            return await nm.search_notes(
+                query=args.get("content", ""),
+                limit=args.get("limit", 5),
+            )
+        elif action == "delete":
+            return await nm.delete_note(note_id=args.get("note_id", ""))
+        elif action == "categories":
+            return await nm.get_note_categories()
+
+        return {"success": False, "message": f"Unbekannte Aktion: {action}"}
+
+    async def _exec_manage_family(self, args: dict) -> dict:
+        """Familien-Profile verwalten."""
+        fm = getattr(self, "_family_manager", None)
+        if not fm:
+            return {"success": False, "message": "Family Manager nicht verfuegbar."}
+
+        action = args.get("action", "")
+
+        if action == "add_member":
+            return await fm.add_member(
+                name=args.get("name", ""),
+                relationship=args.get("relationship", "other"),
+                birth_year=args.get("birth_year", 0),
+                interests=args.get("interests", ""),
+            )
+        elif action == "list_members":
+            members = await fm.get_all_members()
+            if not members:
+                return {"success": True, "message": "Noch keine Familienmitglieder eingetragen."}
+            lines = []
+            for m in members:
+                name = m.get("name", "?").title()
+                rel = m.get("relationship", "")
+                interests = m.get("interests", "")
+                rel_hint = f" ({rel})" if rel and rel != "other" else ""
+                int_hint = f" - Interessen: {interests}" if interests else ""
+                lines.append(f"- {name}{rel_hint}{int_hint}")
+            return {"success": True, "message": "Familie:\n" + "\n".join(lines)}
+        elif action == "get_member":
+            member = await fm.get_member(args.get("name", ""))
+            if not member:
+                return {"success": False, "message": f"{args.get('name', '?')} nicht gefunden."}
+            lines = [f"{k}: {v}" for k, v in member.items() if v and k != "name_key"]
+            return {"success": True, "message": "\n".join(lines)}
+        elif action == "update_member":
+            kwargs = {}
+            for field in ("relationship", "birth_year", "interests"):
+                if field in args:
+                    kwargs[field] = args[field]
+            return await fm.update_member(name=args.get("name", ""), **kwargs)
+        elif action == "remove_member":
+            return await fm.remove_member(name=args.get("name", ""))
+        elif action == "send_family_message":
+            return await fm.send_family_message(
+                message=args.get("message", ""),
+                group=args.get("group", "all"),
+            )
+        elif action == "create_group":
+            return await fm.create_group(
+                group_name=args.get("group", ""),
+                members=args.get("members", []),
+            )
+
+        return {"success": False, "message": f"Unbekannte Aktion: {action}"}
+
+    async def _exec_get_personal_dates(self, args: dict) -> dict:
+        """Anstehende persoenliche Termine abfragen."""
+        pd = getattr(self, "_personal_dates", None)
+        if not pd:
+            return {"success": False, "message": "Personal Dates nicht verfuegbar."}
+
+        person = args.get("person", "")
+        days_ahead = args.get("days_ahead", 30)
+
+        if person:
+            dates = await pd.get_person_dates(person)
+            if not dates:
+                return {
+                    "success": True,
+                    "message": f"Keine gespeicherten Termine fuer {person}.",
+                }
+        else:
+            dates = await pd.get_upcoming_dates(days_ahead)
+            if not dates:
+                return {
+                    "success": True,
+                    "message": f"Keine persoenlichen Termine in den naechsten {days_ahead} Tagen.",
+                }
+
+        lines = []
+        for d in dates:
+            person_name = d.get("person", "?").title()
+            date_type = d.get("date_type", "")
+            label = d.get("label", "")
+            date_mm_dd = d.get("date_mm_dd", "")
+            days_until = d.get("days_until")
+
+            type_text = label or {
+                "birthday": "Geburtstag",
+                "anniversary": "Jahrestag",
+                "wedding": "Hochzeitstag",
+            }.get(date_type, date_type or "Termin")
+
+            time_hint = ""
+            if days_until is not None:
+                if days_until == 0:
+                    time_hint = " (HEUTE!)"
+                elif days_until == 1:
+                    time_hint = " (morgen)"
+                elif days_until <= 7:
+                    time_hint = f" (in {days_until} Tagen)"
+
+            lines.append(f"- {person_name}: {type_text} am {date_mm_dd}{time_hint}")
+
+        return {"success": True, "message": "Persoenliche Termine:\n" + "\n".join(lines)}
+
+    async def _exec_manage_meals(self, args: dict) -> dict:
+        """Essensplanung verwalten."""
+        mp = getattr(self, "_meal_planner", None)
+        if not mp:
+            return {"success": False, "message": "Essensplanung nicht verfuegbar."}
+
+        action = args.get("action", "")
+
+        if action == "suggest":
+            return await mp.suggest_from_inventory(
+                portions=args.get("portions", 0),
+            )
+        elif action == "weekly_plan":
+            return await mp.create_weekly_plan(
+                preferences=args.get("preferences", ""),
+                portions=args.get("portions", 0),
+            )
+        elif action == "log_meal":
+            return await mp.log_meal(
+                meal=args.get("meal", ""),
+                meal_type=args.get("meal_type", "abendessen"),
+                portions=args.get("portions", 0),
+                rating=args.get("rating", 0),
+            )
+        elif action == "history":
+            return await mp.get_meal_history(
+                days=args.get("days", 7),
+            )
+        elif action == "check_ingredients":
+            return await mp.add_missing_to_shopping(
+                recipe_ingredients=args.get("ingredients", []),
+            )
+        elif action == "current_plan":
+            return await mp.get_current_plan()
+
+        return {"success": False, "message": f"Unbekannte Aktion: {action}"}

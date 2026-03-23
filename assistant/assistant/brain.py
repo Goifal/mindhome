@@ -40,8 +40,13 @@ from .feedback import FeedbackTracker
 from .function_calling import get_assistant_tools, FunctionExecutor
 from .function_validator import FunctionValidator
 from .ha_client import HomeAssistantClient
+from .family_manager import FamilyManager
 from .inventory import InventoryManager
+from .meal_planner import MealPlanner
+from .note_manager import NoteManager
+from .personal_dates import PersonalDatesManager
 from .smart_shopping import SmartShopping
+from .task_manager import TaskManager
 from .conversation_memory import ConversationMemory
 from .multi_room_audio import MultiRoomAudio
 from .knowledge_base import KnowledgeBase
@@ -504,6 +509,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Wellness Advisor (Caring Loops)
         self.wellness_advisor = WellnessAdvisor(self.ha, self.activity, self.mood)
+
+        # Personal Assistant Module
+        self.task_manager = TaskManager(self.ha)
+        self.personal_dates = PersonalDatesManager()
+        self.family_manager = FamilyManager(self.ha)
+        self.note_manager = NoteManager()
+        self.meal_planner = MealPlanner(self.ollama)
 
         # Phase 18: MCU-Upgrade — Proactive Planner + Seasonal Insight
         self.proactive_planner = ProactiveSequencePlanner(self.ha, self.anticipation)
@@ -1299,6 +1311,26 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 "WorkshopGenerator",
                 self.workshop_generator.initialize(redis_client=self.memory.redis),
             ),
+            _safe_init(
+                "TaskManager",
+                self.task_manager.initialize(redis_client=self.memory.redis),
+            ),
+            _safe_init(
+                "PersonalDates",
+                self.personal_dates.initialize(redis_client=self.memory.redis),
+            ),
+            _safe_init(
+                "FamilyManager",
+                self.family_manager.initialize(redis_client=self.memory.redis),
+            ),
+            _safe_init(
+                "NoteManager",
+                self.note_manager.initialize(redis_client=self.memory.redis),
+            ),
+            _safe_init(
+                "MealPlanner",
+                self.meal_planner.initialize(redis_client=self.memory.redis),
+            ),
         )
 
         # Post-init wiring (Callbacks, Cross-References, Start-Calls)
@@ -1317,6 +1349,21 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.conditional_commands.set_action_callback(
             lambda func, args: self.executor.execute(func, args)
         )
+
+        # Personal Assistant Module wiring
+        self.executor._task_manager = self.task_manager
+        self.executor._note_manager = self.note_manager
+        self.executor._family_manager = self.family_manager
+        self.executor._meal_planner = self.meal_planner
+        self.executor._personal_dates = self.personal_dates
+        self.personal_dates.set_semantic_memory(
+            getattr(self, "semantic_memory", None)
+        )
+        self.personal_dates.set_notify_callback(self._handle_proactive_message)
+        self.meal_planner.inventory = self.inventory
+        self.meal_planner.smart_shopping = self.smart_shopping
+        self.meal_planner.semantic_memory = getattr(self, "semantic_memory", None)
+        self.meal_planner.ha = self.ha
 
         if "MultiRoomAudio" not in _degraded_modules:
             await _safe_init(
