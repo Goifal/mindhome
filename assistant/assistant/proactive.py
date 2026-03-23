@@ -1619,6 +1619,7 @@ class ProactiveManager:
             and old_val not in _non_physical
             and new_val not in _non_physical
             and old_val not in _transitional
+            and new_val not in _transitional
         ):
             try:
                 redis_client = getattr(
@@ -10551,9 +10552,7 @@ class ProactiveManager:
                 except Exception as e:
                     logger.debug("Mood comfort action Fehler: %s", e)
         elif mood == "tired":
-            now_hour = datetime.now(timezone.utc).hour
-            # Einfache Zeitzonen-Korrektur (CET = UTC+1/2)
-            local_hour = (now_hour + 1) % 24
+            local_hour = datetime.now(_LOCAL_TZ).hour
             if local_hour >= 21:
                 suggestion = "Du wirkst muede — Zeit fuer die Gute-Nacht-Routine?"
 
