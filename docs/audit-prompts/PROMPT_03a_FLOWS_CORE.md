@@ -1,5 +1,7 @@
 # Prompt 3a: End-to-End Flow-Analyse — Core-Flows (1-7)
 
+> **Hinweis**: Diese Datei enthält sowohl die **Analyse-Anweisungen** als auch **Referenz-Ergebnisse** aus Durchlauf #1. Bei einem neuen Durchlauf: Nutze die Struktur als Vorlage, aber **verifiziere ALLE Zeilennummern und Code-Referenzen neu** — der Code hat sich geändert.
+
 **Datum**: 2026-03-13
 **Analysiertes Projekt**: MindHome/Jarvis in `/home/user/mindhome`
 **Kontext**: Aufbauend auf P01 (Architektur/Konflikte) und P02 (Memory-Analyse)

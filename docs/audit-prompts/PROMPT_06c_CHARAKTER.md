@@ -112,7 +112,7 @@ Prüfe ob `addon/config.yaml` und `assistant/config/settings.yaml` sich widerspr
 
 ### Schritt 4: 🟡 Mittlere Bugs fixen (aus Prompt 4)
 
-Logik-Fehler, fehlende Integrationen, Inkonsistenzen. Arbeite die 🟡-Bug-Liste ab.
+Logik-Fehler, fehlende Integrationen, Inkonsistenzen. Arbeite die 🟡-Bug-Liste ab (aus dem Bug-Zuordnungs-Tabelle in P06a Kontext-Block).
 
 ### Schritt 5: Sarkasmus-System (5 Stufen) verifizieren & fixen
 

@@ -111,11 +111,18 @@ Simuliere (gedanklich oder per Code) diese Ausfallszenarien:
 - Gibt es Fallback-Verhalten?
 - Wird der User informiert oder stirbt Jarvis still?
 
+**Compound-Failure-Szenarien** (zusätzlich prüfen):
+- Ollama + Redis gleichzeitig down → Was passiert? Crash oder graceful?
+- HA nicht erreichbar + proaktive Events aktiv → Endlosschleife?
+- ChromaDB voll + neue Fakten-Speicherung → Datenverlust oder Fallback?
+
 ---
 
 ### Teil E: Performance & Latenz-Verifikation
 
 > **Jarvis muss schnell antworten.** Ziel: < 3 Sekunden für einfache Befehle ("Licht an").
+
+> **Performance kann nur aus dem Code geschätzt werden** (Anzahl sequentieller await-Ketten, LLM-Calls pro Request, Netzwerk-Roundtrips). Exakte Zeitmessungen erfordern ein laufendes System und sind hier nicht möglich. Dokumentiere stattdessen die Anzahl der I/O-Operationen pro Flow.
 
 **Schritt 1** — Latenz-relevante Code-Pfade prüfen:
 

@@ -234,6 +234,9 @@ Wenn Health-Endpoints fehlen oder unvollständig:
 
 ```python
 # In jedem Service (FastAPI/Flask):
+import time
+START_TIME = time.time()  # Am Modul-Top-Level definieren (beim Import/Start)
+
 @app.get("/health")
 async def health():
     checks = {}

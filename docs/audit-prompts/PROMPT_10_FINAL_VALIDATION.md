@@ -14,12 +14,19 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Deine
 
 ## Grundregel
 
-**Am Ende dieses Prompts darf KEIN EINZIGER Bug offen sein.**
+**Am Ende dieses Prompts darf KEIN 🔴/🟠 Bug offen sein.**
 
-- Kein "das machen wir im nächsten Durchlauf"
-- Kein "Empfehlung für später"
+- Kein "das machen wir im nächsten Durchlauf" für KRITISCHE oder HOHE Bugs
+- Kein "Empfehlung für später" — FIXEN oder als FALSE_POSITIVE mit BEWEIS markieren
 - Kein "MENSCH-Eskalation" ohne dass DU zuerst den besten Fix versucht hast
-- Jedes Finding wird entweder GEFIXT oder mit BEWEIS als FALSE_POSITIVE markiert
+- Jedes Finding wird entweder GEFIXT, als FALSE_POSITIVE markiert, oder als NICHT_FIXBAR dokumentiert
+
+**Ausnahmen** (nur für 🟡 MITTLERE und 🟢 NIEDRIGE Bugs):
+- **Hardware-abhängig** — Bug kann nur mit laufendem Redis/ChromaDB/Ollama verifiziert werden
+- **External API** — Bug in Drittanbieter-Paket
+- **Architektur-Limitation** — Fix würde >500 Zeilen ändern und hat hohes Regressions-Risiko
+
+Für jede Ausnahme: exakten Fix beschreiben + Test schreiben der den Bug verifiziert.
 
 ---
 
@@ -116,8 +123,8 @@ ruff check assistant/ addon/ speech/ shared/ 2>/dev/null || echo "ruff nicht ins
 **Akzeptanzkriterien:**
 - □ Alle Tests bestehen (0 failures)
 - □ Keine neuen Failures durch Fixes
-- □ Coverage ≥ 60% gesamt
-- □ Kein kritisches Modul unter 50%
+- □ Coverage nicht verschlechtert gegenüber P07a-Baseline
+- □ Sicherheitskritische Module (function_validator, autonomy) haben Tests für alle öffentlichen Methoden
 
 ---
 
@@ -206,19 +213,12 @@ Wenn alle Checks bestanden:
 
 ---
 
-## Wenn Bugs WIRKLICH nicht fixbar sind
+## Nicht-fixbare Bugs
 
-Nur in diesen Ausnahmen darf ein Bug offen bleiben:
-
-1. **Hardware-abhängig** — Bug tritt nur mit laufendem Redis/ChromaDB/Ollama auf und kann nicht aus Code allein verifiziert werden
-2. **External API** — Bug in Drittanbieter-Paket (z.B. Ollama-Client Bug)
-3. **Architektur-Limitation** — Fix würde >500 Zeilen Code ändern und hat hohes Regressions-Risiko
-
-In jedem Fall:
-- Dokumentiere den Bug mit **maximaler Präzision**
-- Gib den **exakten Fix** an (was geändert werden muss)
-- Erkläre warum du es **jetzt nicht tun kannst**
-- Erstelle einen **Test** der den Bug verifiziert (damit er beim nächsten Durchlauf sofort gefunden wird)
+> Die Ausnahme-Regeln stehen in der Grundregel oben. Für jeden nicht-fixbaren Bug:
+> - Dokumentiere mit **maximaler Präzision** (Datei:Zeile, exakter Fix-Vorschlag)
+> - Erstelle einen **Test** der den Bug verifiziert (damit er im nächsten Durchlauf sofort gefunden wird)
+> - Trage ihn in die `OPEN_BUGS.md` ein (wird in P11 erstellt)
 
 ---
 

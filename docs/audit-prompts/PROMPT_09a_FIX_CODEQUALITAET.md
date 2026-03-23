@@ -23,7 +23,7 @@ Für jedes Finding aus P08a:
 4. Wenn du **nicht genug Kontext** hast → Lies mehr Code (Grep, Read) bis du genug weißt
 5. Wenn der Fix **Architektur-Änderungen** braucht → Triff die beste Entscheidung selbst, dokumentiere WARUM
 
-> **Kein Finding wird übersprungen.** Wenn ein Fix nicht möglich ist, muss der GRUND dokumentiert und eskaliert werden.
+> **Kein Finding wird übersprungen.** Falls ein Fix andere Findings bricht: (1) Fix reverten, (2) Abhängigkeit dokumentieren, (3) beide Findings zusammen lösen. Wenn ein Fix nicht möglich ist, muss der GRUND dokumentiert und eskaliert werden.
 
 ---
 

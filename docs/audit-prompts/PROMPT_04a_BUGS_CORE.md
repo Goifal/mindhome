@@ -81,9 +81,9 @@ Wenn du ein Modul prüfst, prüfe auch die **Schnittstellen zu anderen Modulen**
 ## Modul-Priorität (nur dieses Prompt!)
 
 ### Priorität 1 — Kern (MUSS komplett geprüft werden)
-1. `brain.py` — Orchestrator, höchster Impact (**⚠️ 10.000+ Zeilen! Read in 2000-Zeilen-Abschnitten: offset=1/2001/4001/6001/8001/10001**)
+1. `brain.py` — Orchestrator, höchster Impact (**⚠️ 10.000+ Zeilen! Nutze Grep um relevante Abschnitte zu finden, dann Read gezielt mit offset/limit. NICHT sequentiell alles durchlesen.**)
 2. `brain_callbacks.py` — Event Hooks
-3. `main.py` — FastAPI-Server, Endpoints (**⚠️ 8000+ Zeilen! Read in 2000-Zeilen-Abschnitten: offset=1/2001/4001/6001/8001**)
+3. `main.py` — FastAPI-Server, Endpoints (**⚠️ 8000+ Zeilen! Grep-first-Strategie wie brain.py — Endpoints mit Grep finden, dann gezielt lesen.**)
 4. `websocket.py` — WebSocket-Server
 
 ### Priorität 2 — Memory-Kette
@@ -250,7 +250,7 @@ Am stärksten betroffenes Modul: [Name] (X Bugs)
 
 - Alle Module gelesen, Bugs nach 13 Fehlerklassen kategorisiert, Datei:Zeile Referenzen
 - Jeder Bug hat: Datei:Zeile, Fehlerklasse, Severity, konkreten Fix-Vorschlag
-- Mindestens 20 Bugs in den Core-Modulen (brain.py, main.py, memory.py, personality.py, function_calling.py) gefunden
+- Alle Core-Module (Prio 1-4) vollständig geprüft — jeder Bug hat Datei:Zeile, Fehlerklasse, Severity und Fix-Vorschlag
 
 ### Erfolgs-Check (Schnellpruefung)
 

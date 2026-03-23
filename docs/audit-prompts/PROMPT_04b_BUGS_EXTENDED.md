@@ -199,7 +199,7 @@ Gesamt: X Bugs (Priorität 5–9)
 - **Jeder Bug mit Code-Referenz** (Datei:Zeile)
 - **Keine false positives** — nur echte Bugs
 - **Nicht fixen** — nur finden und dokumentieren
-- **Priorität 5–7 gründlich**, Priorität 8–9 mindestens auf Top-6 Fehlerklassen (Async, Stille Fehler, Race Conditions, None, Init, Performance)
+- **Priorität 5–7 gründlich** (alle 13 Fehlerklassen), Priorität 8–9 mindestens Fehlerklassen 1-6 (Async, Stille Fehler, Race Conditions, None, Init, API). Bei Zeitmangel: Prio 5-6 sind Pflicht, Prio 7-9 nach Möglichkeit.
 
 ---
 
@@ -207,7 +207,7 @@ Gesamt: X Bugs (Priorität 5–9)
 
 - Alle Extended-Module (Prio 5-9) gelesen, Bugs nach 13 Fehlerklassen kategorisiert
 - Jeder Bug hat: Datei:Zeile, Fehlerklasse, Severity, konkreten Fix-Vorschlag
-- Mindestens 30 Bugs in den Extended-Modulen gefunden
+- Alle Extended-Module (Prio 5-9) geprüft — jeder Bug hat Datei:Zeile, Fehlerklasse, Severity und Fix-Vorschlag
 
 ### Erfolgs-Check (Schnellpruefung)
 

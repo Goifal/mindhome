@@ -206,7 +206,7 @@ _meta_patterns = [
     r'\bspeak\b', r'\btts\b', r'\bemit\b',
     r'\btool_call\b', r'\bfunction_call\b',
     r'\bset_light\b', r'\bset_cover\b', r'\bset_climate\b',
-    r'\bset_switch\b', r'\bget_\w+\b',
+    r'\bset_switch\b', r'\bget_\w+\b',  # ACHTUNG: Pattern matcht auch natürliche Wörter wie 'get'. Nur auf LLM-Output anwenden, nicht auf User-Input.
     r'\bemit_speaking\b', r'\bemit_action\b',
     r'\bspeak_response\b', r'\bcall_service\b',
     r'<tool_call>.*?</tool_call>',
@@ -241,7 +241,7 @@ Read: brain.py um die neue Stelle → Code-Syntax korrekt?
 import re as _re
 text = _re.sub(
     r'\b(?:speak|tts|emit|tool_call|function_call|call_service'
-    r'|set_light|set_cover|set_climate|set_switch|get_\w+)\b',
+    r'|set_light|set_cover|set_climate|set_switch|get_\w+)\b',  # ACHTUNG: Pattern matcht auch natürliche Wörter wie 'get'. Nur auf LLM-Output anwenden, nicht auf User-Input.
     '', text, flags=_re.IGNORECASE,
 ).strip()
 if not text:

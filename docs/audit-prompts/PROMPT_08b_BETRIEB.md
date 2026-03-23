@@ -36,7 +36,7 @@ Grep: pattern="session|user_id|client_id|request_id" path="assistant/assistant/"
 
 | Check | Methode | ✅ PASS | ❌ FAIL |
 |---|---|---|---|
-| **Request-Isolation** | Jeder Request hat eigenen State | User A sieht nicht User B's Kontext | Shared State zwischen Requests |
+| **Request-Isolation** | Prüfe mit Grep ob globale Variablen oder Modul-Level-State zwischen Requests geteilt wird: `Grep: pattern='global |_instance|_singleton' path='assistant/assistant/' output_mode='content'` | User A sieht nicht User B's Kontext | Shared mutable State zwischen Requests (z.B. `self.current_context` ohne Lock) |
 | **Brain Singleton Safety** | brain.py als Singleton — Thread-Safe? | Lock-geschützt oder Request-scoped | Shared mutable State ohne Lock |
 | **Memory Isolation** | conversation_memory trennt User | Jeder User hat eigene Conversation-History | Alle User teilen eine History |
 | **Redis Key-Isolation** | Redis-Keys enthalten User-ID | `jarvis:user:123:memory` | `jarvis:memory` (global) |

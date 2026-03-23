@@ -20,8 +20,8 @@ Frischer Start fuer einen neuen Audit-Durchlauf (P01-P07). Vorherige Ergebnisse 
 
 ## WANN VERWENDEN
 
-- **Nach PROMPT_07** eines Durchlaufs
-- **Nach groesseren Code-Aenderungen** zwischen Audit-Runden
+- **Nach PROMPT_11** (Cleanup) eines vollständigen Durchlaufs
+- **Nach größeren Code-Änderungen** zwischen Audit-Runden
 - **Neue Claude-Code-Session** (Context Window voll)
 
 ### Claude Code Hinweis
@@ -37,15 +37,16 @@ Frischer Start fuer einen neuen Audit-Durchlauf (P01-P07). Vorherige Ergebnisse 
 
 > **Du startest einen NEUEN, FRISCHEN Audit-Durchlauf.**
 >
-> 1. **VERGISS** alle bisherigen Kontext-Bloecke (P01-P07). Sie sind veraltet.
-> 2. **VERGISS** alle bisherigen Bewertungen.
-> 3. **Lies JEDE Datei NEU** — der Code hat sich geaendert.
-> 4. **Keine Annahmen** aus dem vorherigen Durchlauf uebernehmen.
+> 1. **Kontext-Blöcke verwerfen** — die Detail-Ergebnisse aus P01-P10 sind nach Code-Änderungen veraltet.
+> 2. **Code NEU lesen** — der Code hat sich geändert. Keine Annahmen aus dem vorherigen Durchlauf.
+> 3. **OFFEN-Liste übernehmen** — unfixte Bugs aus dem vorherigen Durchlauf als Checkliste (Schritt 2 unten).
 >
-> **BEHALTE:**
-> - Wissen ueber die Architektur (3 Services, brain.py als Zentrale)
-> - Die Prompt-Struktur (P01-P07)
-> - Die Gruendlichkeits-Pflicht
+> **Was du mitbringst (kein Reset nötig):**
+> - Grundwissen über die Architektur (3 Services, brain.py als Zentrale)
+> - Die Prompt-Struktur (P01-P11)
+> - Die Gründlichkeits-Pflicht
+>
+> **Kein Widerspruch:** Du "vergisst" nicht das Architektur-Wissen — du verwirfst nur die Detail-Kontext-Blöcke (Code-Referenzen, Zeilennummern) die nach Code-Änderungen falsch sein könnten.
 
 ---
 

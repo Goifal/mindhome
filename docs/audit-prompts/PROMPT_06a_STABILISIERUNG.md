@@ -264,15 +264,15 @@ Aufrufer geprueft: [Grep-Ergebnis: X Stellen, alle kompatibel]
 
 - **Nur 🔴 Bugs und Memory** — keine 🟠/🟡 Bugs, keine Persönlichkeit, keine Config
 - **Einfach > Komplex** — Wenn ein simpler Fix reicht, kein Refactoring
-- **Tests nicht brechen** — Nach jedem Fix `pytest` ausführen
+- **Tests nach JEDEM Fix** — `cd assistant && python -m pytest --tb=short -q` nach jedem einzelnen Fix, nicht erst am Ende. Bei Fehlschlag: Fix sofort reverten.
 - **Jede Änderung committen** — `git commit -m "Fix: Beschreibung"`
 - **Wenn ein Fix Tests bricht**: (a) Fix rückgängig machen (`git checkout -- datei.py`), (b) Ursache analysieren — ist der Test falsch oder der Fix?, (c) Fix anpassen und erneut versuchen
 - **Abhängigkeitsreihenfolge beachten**: Wenn Bug A in `memory.py` liegt und Bug B in `brain.py` `memory.py` aufruft → fixe zuerst A, dann B
 
 ### Scope-Begrenzung
-Pro Durchlauf: MAX 20 Bugs fixen. Strikt nach Priorität:
-KRITISCH → HOCH → MITTEL → NIEDRIG.
+Strikt nach Priorität: KRITISCH → HOCH → MITTEL → NIEDRIG.
 NIEMALS einen MITTEL Bug vor allen HOCH Bugs fixen.
+Falls mehr als 20 🔴 Bugs existieren: Fixe alle 🔴, dokumentiere im OFFEN-Block welche 🟠 auf P06b verschoben werden.
 
 ### Checkpoint
 Nach jedem 5. Fix: Zusammenfassung:

@@ -47,9 +47,9 @@ Bevor du irgendetwas aenderst:
 2. **Dieses Ergebnis ist die Baseline** — nach jeder Aenderung in 6b muessen diese Tests weiterhin gruen sein
 3. Falls Tests schon fehlschlagen → zurueck zu 6a, dort zuerst fixen
 
-> **Phase Gate Baseline erklaert**: Der "Baseline" ist der Test-Zustand am ENDE von Prompt 6a.
-> Beispiel: Wenn nach 6a 142 Tests gruen und 3 Tests rot (xfail) sind, dann ist die 6b-Baseline: mindestens 142 gruen.
-> Wenn nach einer Aenderung in 6b nur noch 140 gruen sind = **REGRESSION** → Fix zuruecknehmen!
+> **Phase Gate Baseline**: Führe `cd assistant && python -m pytest --tb=short -q` aus und notiere exakt: X passed, Y failed, Z errors.
+> Das ist deine Baseline. Nach JEDER Änderung: gleichen Befehl ausführen. Wenn passed sinkt oder failed/errors steigt = **REGRESSION** → Fix zurücknehmen!
+> Dokumentiere die Baseline-Zahlen am Anfang deines Outputs.
 
 ### Schritt 1: Architektur-Entscheidung — brain.py
 

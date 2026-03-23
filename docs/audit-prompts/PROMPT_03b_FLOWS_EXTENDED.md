@@ -1,5 +1,7 @@
 # Audit P03b: Extended-Flows (8-13) + Kollisionen + Service-Interaktion
 
+> **Hinweis**: Diese Datei enthält sowohl die **Analyse-Anweisungen** als auch **Referenz-Ergebnisse** aus Durchlauf #1. Bei einem neuen Durchlauf: Nutze die Struktur als Vorlage, aber **verifiziere ALLE Zeilennummern und Code-Referenzen neu** — der Code hat sich geändert. Severity-Labels für Feature-Gaps wurden hinzugefügt.
+
 **Datum**: 2026-03-13
 **Auditor**: Claude Opus 4.6 (P03b)
 **Scope**: Flows 8-13, Flow-Kollisionen, Service-Interaktionsanalyse
@@ -291,16 +293,16 @@
 
 ## 5. Feature-Gaps
 
-| Feature | Status | Beschreibung |
-|---|---|---|
-| **Cross-System Entity Lock** | FEHLT | Kein Mechanismus um zu verhindern dass Addon und Assistant gleichzeitig die gleiche Entity steuern |
-| **Addon → Assistant Event-Kanal** | FEHLT | Addon kann nicht melden "Ich habe X getan" — Assistant ist blind gegenueber Addon-Aktionen |
-| **Shared Schemas/Constants** | FEHLT | Kein shared/ Verzeichnis. Jeder Service definiert eigene Datenstrukturen |
-| **TTS-Lock** | FEHLT | Kein Mechanismus der verhindert dass proaktive TTS und User-Antwort-TTS gleichzeitig sprechen |
-| **WebSocket Event-Recovery** | FEHLT | Kein Replay bei Verbindungsabbruch |
-| **Upload Virus-Scan** | FEHLT | Hochgeladene Dateien werden ohne Malware-Check gespeichert |
-| **Domain-Assistant-Discovery** | FEHLT | Kein automatisches Routing zu Domain-Assistenten — abhaengig von LLM Function-Call-Faehigkeit |
-| **Workshop-Code-Validierung** | FEHLT | LLM-generierter Code (Arduino, Python) wird nicht validiert/kompiliert vor Ausgabe |
+| Feature | Status | Severity | Beschreibung |
+|---|---|---|---|
+| **Cross-System Entity Lock** | FEHLT | 🔴 KRITISCH | Kein Mechanismus um zu verhindern dass Addon und Assistant gleichzeitig die gleiche Entity steuern |
+| **Addon → Assistant Event-Kanal** | FEHLT | 🔴 KRITISCH | Addon kann nicht melden "Ich habe X getan" — Assistant ist blind gegenueber Addon-Aktionen |
+| **Shared Schemas/Constants** | FEHLT | 🟠 HOCH | Kein shared/ Verzeichnis. Jeder Service definiert eigene Datenstrukturen |
+| **TTS-Lock** | FEHLT | 🟠 HOCH | Kein Mechanismus der verhindert dass proaktive TTS und User-Antwort-TTS gleichzeitig sprechen |
+| **WebSocket Event-Recovery** | FEHLT | 🟡 MITTEL | Kein Replay bei Verbindungsabbruch |
+| **Upload Virus-Scan** | FEHLT | 🟡 MITTEL | Hochgeladene Dateien werden ohne Malware-Check gespeichert |
+| **Domain-Assistant-Discovery** | FEHLT | 🟡 MITTEL | Kein automatisches Routing zu Domain-Assistenten — abhaengig von LLM Function-Call-Faehigkeit |
+| **Workshop-Code-Validierung** | FEHLT | 🟢 NIEDRIG | LLM-generierter Code (Arduino, Python) wird nicht validiert/kompiliert vor Ausgabe |
 
 ---
 

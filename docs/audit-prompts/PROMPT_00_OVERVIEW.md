@@ -42,7 +42,8 @@ Dazu: 103 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen, 2 Front
 | 9a | `PROMPT_09a_FIX_CODEQUALITAET.md` | **Fix: alle P08a Findings** — Docs, Deps, CI/CD, Scripts | Nutzt Findings aus #8a |
 | 9b | `PROMPT_09b_FIX_BETRIEB.md` | **Fix: alle P08b Findings** — Concurrency, Logging, Health | Nutzt Findings aus #8b |
 | 10 | `PROMPT_10_FINAL_VALIDATION.md` | **Zero-Bug Abschluss** — ALLE offenen Bugs fixen, Regression-Test | Nutzt ALLE Kontext-Blöcke |
-| ↻ | `PROMPT_RESET.md` | **Reset für neuen Durchlauf** | Nach #10, vor erneutem #1 |
+| 11 | `PROMPT_11_CLEANUP.md` | **Cleanup**: Result-Dateien löschen, nur `OPEN_BUGS.md` behalten | Nach #10 |
+| ↻ | `PROMPT_RESET.md` | **Reset für neuen Durchlauf** | Nach #11, vor erneutem #1 |
 
 ## Wie verwenden
 
@@ -56,24 +57,30 @@ Die Prompts sind für **Claude Code** (Anthropics CLI-Tool) optimiert. Übergib 
 4. Kopiere dann Prompt 2 als Nachricht — Claude Code nutzt seine Ergebnisse automatisch
 5. Wiederhole bis Prompt 7b
 
-> **Context-Window-Strategie**: Claude Code komprimiert die Konversation automatisch. Bei einem Projekt dieser Größe (276 Python-Dateien) wird der Kontext ab ca. Prompt 3–4 komprimiert. Die Kontext-Blöcke am Ende jedes Prompts (`## KONTEXT AUS PROMPT X`) sichern die wichtigsten Ergebnisse gegen Kompression.
+> **Context-Window-Strategie**: Claude Code komprimiert die Konversation automatisch. Die Kontext-Blöcke am Ende jedes Prompts (`## KONTEXT AUS PROMPT X`) sichern die wichtigsten Ergebnisse gegen Kompression. Bei 276 Python-Dateien wird typischerweise ab Prompt 3–4 komprimiert.
 
 **Wenn der Kontext zu knapp wird**: Starte eine neue Session und füge die Kontext-Blöcke aus den vorherigen Prompts manuell ein (siehe Abschnitt in jedem Prompt).
+
+**Kontext-Block-Regeln:**
+- **Max. 30 Zeilen pro Block** — nur Findings, keine Erklärungen
+- **Format**: `Datei:Zeile — Kurzbeschreibung` (eine Zeile pro Finding)
+- **Nur 🔴/🟠 Bugs** im Block — 🟡/🟢 nur als Zähler (`🟡: 12 Findings`)
+- **Keine Prosa** — Listen statt Absätze
 
 **Beispiel eines Kontext-Blocks** (so sieht der Output am Ende jedes Prompts aus):
 ```
 ## KONTEXT AUS PROMPT 1: Architektur-Analyse
 
 ### Konflikt-Karte
-- A (WER SAGT): personality.py + context_builder.py + mood_detector.py → kein Koordinator, personality.py:242 ueberschreibt mood
-- B (WER TUT): function_calling.py:3143 + action_planner.py:89 → kein Mutex, parallele Aufrufe moeglich
-- F (ASSISTANT↔ADDON): Beide steuern HA-Entities, kein Locking, Addon hat eigenen event_bus.py
+- A (WER SAGT): personality.py:242 + context_builder.py + mood_detector.py → kein Koordinator
+- B (WER TUT): function_calling.py:3143 + action_planner.py:89 → kein Mutex
+- F (ASSISTANT↔ADDON): Beide steuern HA-Entities, kein Locking
 
 ### Service-Interaktion
-Assistant ←HTTP→ Addon (Port 5000), Assistant ←WS→ HA, Addon ←WS→ HA (eigene Connection)
+Assistant ←HTTP→ Addon (:5000), Assistant ←WS→ HA, Addon ←WS→ HA (eigene Connection)
 
 ### Top-5 Architektur-Probleme
-1. 🔴 brain.py God-Object (10.231 Zeilen, alle Flows)
+1. 🔴 brain.py God-Object (10.231 Zeilen)
 2. 🔴 Addon+Assistant steuern gleiche Entities ohne Koordination
 3. 🟠 12 Memory-Silos ohne Integration
 4. 🟠 main.py zweites God-Object (8.037 Zeilen, 200+ Endpoints)
@@ -145,7 +152,7 @@ Wenn ein Bug in P04a-P04c gefunden wird, muss er dem richtigen Fix-Prompt zugeor
 | **Fehlende awaits** | **P06a** (🔴) oder **P06b** (🟠) | Je nach Schweregrad |
 | **Stille Fehler** (except: pass) | **P06a** (🔴) oder **P06d** | Je nach Sicherheitsrelevanz |
 
-> **Regel**: 🔴 Bugs → P06a (Stabilisierung zuerst). 🟠 Bugs → P06b-P06d (je nach Typ). 🟡 Bugs → P06c (Charakter/Cleanup). Wenn unklar → P06a.
+> **Regel**: 🔴 Bugs (Crash/Datenverlust) → P06a. 🔴 Bugs (Security) → P06d. 🟠 Bugs → P06b-P06f je nach Typ. 🟡 Bugs → P06c. Wenn unklar → P06a.
 
 ## Was jeder Prompt abdeckt
 
@@ -188,14 +195,19 @@ Das System läuft auf: **AMD Ryzen 7 3700X**, **64GB DDR4**, **RTX 3090 (24GB VR
 
 ### Kontext-Block-Größe & Akkumulation
 
-Jeder Prompt generiert am Ende einen **Kontext-Block** für den nächsten Prompt. Damit die Blöcke bei Prompt 7b (der alle ~13 vorherigen Blöcke braucht) nicht den Kontext sprengen:
+Jeder Prompt generiert am Ende einen **Kontext-Block** für den nächsten Prompt.
 
-- **Max. 30–50 Zeilen pro Kontext-Block** — Zusammenfassung, nicht vollständiges Ergebnis
-- **Nur kritische Findings** in den Block — Details bleiben im ausführlichen Output
+- **Max. 30 Zeilen pro Kontext-Block** — kompakte Listen, keine Prosa
+- **Nur 🔴/🟠 Findings** im Block — 🟡/🟢 nur als Zähler
 - **Code-Referenzen kompakt**: `brain.py:123` statt langer Erklärungen
-- Bei Bug-Listen: Nur 🔴 und 🟠 Bugs im Kontext-Block, 🟡/🟢 nur als Zähler
 
-> **⚠️ Akkumulation**: Bei 21 Kontext-Blöcken á 30–50 Zeilen können das ~600 Zeilen (~4.500 Tokens) nur für Kontext sein. Dank der Aufteilung in kleinere Prompts bleibt aber Platz für die eigentliche Arbeit. **Ab Prompt 6a–6d wird es eng** — erwäge dann separate Sessions (Option B) oder kürze ältere Kontext-Blöcke auf das absolute Minimum. **Ab P09a** nur noch die OFFEN-Liste der vorherigen Prompts mitgeben, nicht alle Kontext-Blöcke.
+> **Akkumulations-Strategie nach Phase:**
+> - **P01–P05 (Analyse)**: Vollständige Kontext-Blöcke mitgeben (max. 30 Zeilen pro Block)
+> - **P06a–P06f (Fixes)**: Nur die OFFEN-Liste und Bug-Zuordnungstabelle mitgeben, nicht alle Analyse-Blöcke
+> - **P07a–P09b**: Nur die OFFEN-Liste der verbleibenden Bugs
+> - **P10 (Final)**: Nur die OFFEN-Liste — alles was hier steht MUSS gefixt werden
+>
+> **Falls der Kontext trotzdem eng wird**: Starte eine neue Session (Option B) und gib nur die OFFEN-Liste mit.
 
 ### Bewusste Redundanzen
 Einige Elemente wiederholen sich in mehreren Prompts (Phase-Gate, 13 Fehlerklassen, Rolle). Das ist **gewollt** — jeder Prompt muss standalone funktionieren, falls er in einer separaten Session genutzt wird. Referenz-Definitionen:
@@ -251,17 +263,21 @@ Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ing
 
 ## Erfolgsmetriken
 
-- Alle Module gelesen mit Datei:Zeile Referenzen
-- Jeder Prompt liefert einen vollstaendigen Kontext-Block fuer den naechsten Prompt
+**Analyse-Phase (P01–P05):**
+- Alle Module mit Datei:Zeile Referenzen geprüft
+- Jeder Prompt liefert einen Kontext-Block (max. 30 Zeilen) für den nächsten Prompt
 - Alle 13 Flows dokumentiert mit Status und Bruchstellen
-- Alle 6 Konfliktkarten ausgefuellt mit Code-Referenzen
-- **Dependencies gepinnt**, keine unused/missing, keine CVEs
-- **CI/CD Pipeline** vorhanden (GitHub Actions oder aequivalent)
-- **Multi-User sicher** — Request-Isolation, LLM-Concurrency, Redis-Key-Isolation
-- **Logging strukturiert** — kein print(), keine Secrets in Logs, Request-ID Tracking
-- **Health-Endpoints** in allen Services mit Dependency-Checks
-- **Daten-Persistenz** gesichert (Redis AOF, Volume-Mounts)
-- **Zero-Bug Declaration** am Ende von P10 — kein einziger offener Bug
+- Alle 6 Konfliktkarten ausgefüllt mit Code-Referenzen
+
+**Fix-Phase (P06a–P09b):**
+- `cd assistant && python -m pytest --tb=short -q` grün nach jeder Fix-Phase
+- `python -m py_compile` erfolgreich für alle geänderten Dateien
+- Jeder Fix committet mit beschreibender Nachricht
+
+**Abschluss (P10–P11):**
+- OFFEN-Liste enthält keine 🔴/🟠 Bugs mehr (nur 🟡 mit Begründung erlaubt)
+- Alle Result-Dateien gelöscht, nur `OPEN_BUGS.md` verbleibt (falls Bugs offen)
+- `cd assistant && python -m pytest --tb=short -q` grün
 
 ## Eskalations-Schema fuer offene Bugs
 

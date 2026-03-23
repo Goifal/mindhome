@@ -1,4 +1,7 @@
-# Prompt 2: Memory-System — Gezielte Reparatur der 6 bekannten Bugs
+# Prompt 2: Memory-System — Gezielte Reparatur der bekannten Memory-Bugs
+
+> **Bug-Struktur**: Dieser Prompt definiert 6 Kern-Bugs (BUG 1-6) die als 5 konkrete Fixes (FIX 1-5) implementiert werden. BUG 7-11 sind zusätzliche Findings die im Kontext geprüft werden sollten.
+> **Fix-Reihenfolge**: BUG 6 (Doppelter Wort-Filter) MUSS vor BUG 2 (Fakten laden) gefixt werden — sonst werden Fakten geladen die nie extrahiert wurden.
 
 ## Rolle
 

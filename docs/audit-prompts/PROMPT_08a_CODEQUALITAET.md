@@ -202,7 +202,7 @@ jobs:
       - run: docker build -t mindhome-addon ./addon
 ```
 
-> **WICHTIG:** CI/CD erstellen, NICHT nur empfehlen. Wenn `.github/workflows/` nicht existiert, erstelle die minimale Pipeline. Der Audit fixiert — er empfiehlt nicht nur.
+> **WICHTIG:** CI/CD erstellen, NICHT nur empfehlen. Aber NUR wenn `.github/workflows/` noch nicht existiert oder unvollständig ist. Wenn `.github/workflows/` nicht existiert, erstelle die minimale Pipeline. Der Audit fixiert — er empfiehlt nicht nur.
 
 ---
 
@@ -245,7 +245,7 @@ Glob: pattern="**/{de,en}.json" path="/home/user/mindhome/"
 | Aufgabe | Tool | Befehl |
 |---|---|---|
 | README lesen | **Read** | `Read: /home/user/mindhome/README.md` |
-| Version finden | **Grep** | `pattern="version" glob="*.py"` |
+| Version finden | **Grep** | `pattern="version" path="/home/user/mindhome/" glob="*.py"` |
 | TODOs finden | **Grep** | `pattern="TODO\|FIXME" path="."` |
 | Requirements lesen | **Read** | Alle `requirements.txt` |
 | GitHub Actions prüfen | **Glob** | `pattern=".github/**/*"` |

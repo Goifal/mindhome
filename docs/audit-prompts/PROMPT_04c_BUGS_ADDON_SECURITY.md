@@ -293,8 +293,8 @@ Performance-Probleme: X
 ## Erfolgskriterien
 
 - Alle Addon-Module gelesen, Bugs nach 13 Fehlerklassen kategorisiert
-- Security-Audit: Mindestens 5 Security-relevante Findings
-- Performance/Latenz: Mindestens 3 Performance-Findings mit Messvorschlaegen
+- Security-Audit: Alle 18 Security-Checks (Teil 4) durchgeführt und dokumentiert
+- Performance/Latenz: Alle 12 Performance-Checks (Teil 6) durchgeführt. Latenz-Schätzungen basieren auf Code-Analyse (Anzahl await-Ketten, LLM-Calls pro Request), nicht auf Laufzeitmessungen.
 - Addon ↔ Assistant Interaktion geprueft
 
 ### Erfolgs-Check (Schnellpruefung)

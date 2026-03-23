@@ -145,7 +145,7 @@ async def call_external_service(self, ...):
 **Schritt 4: Verifizieren:**
 ```
 Grep: pattern="circuit_breaker|CircuitBreaker" path="assistant/assistant/" output_mode="count"
-→ Mindestens 5 Dateien müssen CircuitBreaker importieren
+→ Alle Module die externe Services aufrufen (Ollama, Redis, ChromaDB, HA) SOLLTEN CircuitBreaker nutzen. Prüfe mit Grep welche Module externe Calls machen und welche davon CircuitBreaker importieren.
 ```
 
 ### Schritt 3: Addon-Koordination fixen (Konflikt F aus Prompt 1)

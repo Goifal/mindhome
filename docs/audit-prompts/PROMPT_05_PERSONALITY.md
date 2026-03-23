@@ -40,6 +40,8 @@ Kompakt (~100 Tokens), gut fuer Fast-Path Wissensfragen. Enthaelt Kern-Identitae
 
 ### Token-Schaetzung
 
+> **Hinweis**: Diese Werte sind **Schätzungen basierend auf Wort-zu-Token-Ratio (~1.3 Tokens/Wort für Deutsch)**. Für exakte Zahlen müsste der Qwen-Tokenizer verwendet werden. Die Schätzungen dienen als Orientierung für Token-Budget-Optimierung.
+
 | Komponente | Geschaetzte Tokens |
 |---|---|
 | SYSTEM_PROMPT_TEMPLATE Basis | ~550 |

@@ -37,7 +37,7 @@ Jarvis steuert Geraete ueber LLM-Tool-Calls. Das LLM (Qwen 3.5, 4B Parameter) ge
 > - **Token-Budget ist knapp** — alles ueber ~2000 Token im System-Prompt reduziert die Tool-Calling-Zuverlaessigkeit dramatisch
 > - **Tool-Beschreibungen muessen kurz und praezise sein** — lange Docstrings verwirren das Modell
 > - **Thinking-Modus (`<think>...</think>`) konkurriert mit Tool-Calls** — das Modell "denkt" statt zu handeln
-> - **Weniger Tools = bessere Trefferquote** — bei 15 Tools ist die Trefferquote ~80%, bei 45+ sinkt sie auf ~30%
+> - **Weniger Tools = bessere Trefferquote** — bei 15 Tools ist die Trefferquote ~80%, bei 45+ sinkt sie auf ~30% (Erfahrungswerte aus Tests — exakte Zahlen variieren je nach Modell-Version und Prompt-Länge)
 > - **Die ersten 10 Zeilen des System-Prompts haben 5x mehr Gewicht** als spaetere Zeilen — Tool-Regeln muessen OBEN stehen
 > - **Explizite Beispiele im System-Prompt erhoehen die Trefferquote um ~40%** — "Licht an → set_light(state='on')"
 
