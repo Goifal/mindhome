@@ -138,6 +138,24 @@ Wenn du ein Modul prüfst, prüfe auch die **Schnittstellen zu anderen Modulen**
 >
 > **Wichtig**: Nutze die Grep-Bulk-Suche (Fehlerklassen 1–13) **vor** den Batches um die verdächtigsten Stellen zu identifizieren. Dann lies die Module in Batch-Reihenfolge und achte besonders auf die Grep-Treffer.
 
+### Fortschritts-Tracking (Pflicht!)
+
+Dokumentiere nach JEDEM Batch deinen Fortschritt:
+
+```
+=== CHECKPOINT Batch X/4 ===
+Geprüfte Module: [Liste]
+Bugs gefunden: 🔴 X, 🟠 X, 🟡 X, 🟢 X
+Verbleibende Batches: [Liste]
+=============================
+```
+
+**Falls der Kontext knapp wird** (Claude Code komprimiert):
+1. Speichere den bisherigen Output sofort: `Write: docs/audit-results/RESULT_04a_BUGS_CORE.md`
+2. Starte eine neue Session
+3. Lies den gespeicherten Output: `Read: docs/audit-results/RESULT_04a_BUGS_CORE.md`
+4. Mache mit dem nächsten Batch weiter
+
 ---
 
 ## Grep für systematische Bug-Suche

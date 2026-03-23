@@ -63,6 +63,24 @@ Prüfe die **Addon-Module, Speech, Shared-Module** (Priorität 10–12) und füh
 > - **Batch 14b** (Addon-Domains+Engines): Alle `domains/*.py` + `engines/*.py`
 > - **Batch 14c** (Addon-Routes): Alle `routes/*.py` — API-Endpoints prüfen (Auth, Validierung, Error Handling)
 
+### Fortschritts-Tracking (Pflicht!)
+
+Dokumentiere nach JEDEM Batch deinen Fortschritt:
+
+```
+=== CHECKPOINT Batch X/3 ===
+Geprüfte Module: [Liste]
+Bugs gefunden: 🔴 X, 🟠 X, 🟡 X, 🟢 X
+Verbleibende Batches: [Liste]
+=============================
+```
+
+**Falls der Kontext knapp wird** (Claude Code komprimiert):
+1. Speichere den bisherigen Output sofort: `Write: docs/audit-results/RESULT_04c_BUGS_ADDON_SECURITY.md`
+2. Starte eine neue Session
+3. Lies den gespeicherten Output: `Read: docs/audit-results/RESULT_04c_BUGS_ADDON_SECURITY.md`
+4. Mache mit dem nächsten Batch weiter
+
 **Prüfe für jedes Addon-Modul alle 13 Fehlerklassen**, besonders:
 - Nutzt der Addon die **Shared Schemas** (`shared/schemas/`) oder eigene Definitionen?
 - Nutzt der Addon die **Shared Constants** (`shared/constants.py`) für Ports?

@@ -76,7 +76,10 @@ Bewerte auf einer Skala 1-10:
 
 ## Referenz-Ergebnisse aus Durchlauf #1
 
-> Die folgenden Ergebnisse dienen als **Vergleichsbasis**. Verifiziere ALLE Zeilennummern neu — der Code hat sich geändert.
+> **⚠️ ACHTUNG**: Die folgenden Ergebnisse stammen aus einem früheren Durchlauf.
+> **ALLE Zeilennummern sind veraltet** und dürfen NICHT direkt verwendet werden!
+> Nutze sie nur als Orientierung WAS zu prüfen ist, nicht WO im Code.
+> Für jede Referenz: Suche mit Grep nach dem Funktions-/Variablennamen, nicht nach der Zeilennummer.
 
 ## Teil A: System-Prompt Analyse
 

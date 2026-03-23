@@ -166,6 +166,24 @@ Prüfe die **Extended-Module** (Priorität 5–9, 63 Module) systematisch auf di
 > - **Batch 12** (Priorität 9 — Monitoring): `workshop_library.py`, `workshop_generator.py`, `health_monitor.py`, `device_health.py`, `energy_optimizer.py`, `predictive_maintenance.py`, `repair_planner.py`
 > - **Batch 13** (Priorität 9 — Rest): `visitor_manager.py`, `follow_me.py`, `wellness_advisor.py`, `activity.py`, `seasonal_insight.py`, `explainability.py`, `diagnostics.py`, `task_registry.py`, `timer_manager.py`
 
+### Fortschritts-Tracking (Pflicht!)
+
+Dokumentiere nach JEDEM Batch deinen Fortschritt:
+
+```
+=== CHECKPOINT Batch X/9 ===
+Geprüfte Module: [Liste]
+Bugs gefunden: 🔴 X, 🟠 X, 🟡 X, 🟢 X
+Verbleibende Batches: [Liste]
+=============================
+```
+
+**Falls der Kontext knapp wird** (Claude Code komprimiert):
+1. Speichere den bisherigen Output sofort: `Write: docs/audit-results/RESULT_04b_BUGS_EXTENDED.md`
+2. Starte eine neue Session
+3. Lies den gespeicherten Output: `Read: docs/audit-results/RESULT_04b_BUGS_EXTENDED.md`
+4. Mache mit dem nächsten Batch weiter
+
 ---
 
 ## Output-Format

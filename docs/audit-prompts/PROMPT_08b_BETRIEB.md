@@ -96,6 +96,25 @@ Grep: pattern="Semaphore|max_concurrent|queue|_llm_lock" path="assistant/assista
 
 ## Teil 2: Frontend-Analyse
 
+### Frontend-Analyse (app.jsx — 13.000+ Zeilen)
+
+> ⚠️ `app.jsx` ist das gesamte Frontend in einer Datei. Nutze Grep-first-Strategie.
+
+**Security-Checks:**
+```
+Grep: pattern="innerHTML|dangerouslySetInnerHTML|eval\(|document\.write" path="addon/rootfs/opt/mindhome/static/frontend/" output_mode="content"
+Grep: pattern="fetch\(|XMLHttpRequest|axios" path="addon/rootfs/opt/mindhome/static/frontend/" output_mode="content"
+```
+
+| # | Check | Was prüfen |
+|---|---|---|
+| 1 | **XSS** | Wird User-Input escaped bevor er ins DOM kommt? `textContent` statt `innerHTML`? |
+| 2 | **API-Calls** | Werden API-Responses validiert bevor sie angezeigt werden? |
+| 3 | **Auth-Token** | Wird der API-Key sicher gespeichert? Nicht in localStorage ohne Verschlüsselung? |
+| 4 | **CSRF** | Werden State-ändernde Requests mit Token geschützt? |
+| 5 | **Error Handling** | Werden API-Fehler dem User angezeigt oder verschluckt? |
+| 6 | **Sensitive Data** | Werden Passwörter/PINs/Keys im Frontend angezeigt oder maskiert? |
+
 ### Schritt 1 — Frontend-Dateien inventarisieren
 
 ```

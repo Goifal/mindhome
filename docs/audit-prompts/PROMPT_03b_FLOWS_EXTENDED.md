@@ -62,7 +62,10 @@ Liste fehlende Features mit Severity (🔴/🟠/🟡/🟢).
 
 ## Referenz-Ergebnisse aus Durchlauf #1
 
-> Die folgenden Ergebnisse dienen als **Vergleichsbasis**. Verifiziere ALLE Zeilennummern neu — der Code hat sich geändert.
+> **⚠️ ACHTUNG**: Die folgenden Ergebnisse stammen aus einem früheren Durchlauf.
+> **ALLE Zeilennummern sind veraltet** und dürfen NICHT direkt verwendet werden!
+> Nutze sie nur als Orientierung WAS zu prüfen ist, nicht WO im Code.
+> Für jede Referenz: Suche mit Grep nach dem Funktions-/Variablennamen, nicht nach der Zeilennummer.
 
 ## 1. Flow-Dokumentation (Flows 8-13)
 
