@@ -37,7 +37,8 @@ Dazu: 103 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen, 2 Front
 | 6f | `PROMPT_06f_TTS_RESPONSE.md` | **speak-Filter** + **Meta-Leakage** + TTS-Pipeline | Pain-Point: "speak" in Sprachausgabe |
 | 7a | `PROMPT_07a_TESTING.md` | Tests + Coverage + **Security-Endpoint-Tests** | Verifiziert Fixes aus #6a–6f |
 | 7b | `PROMPT_07b_DEPLOYMENT.md` | Docker + Deployment + **Resilience** + **Performance** | Nutzt Test-Ergebnisse aus #7a |
-| 8a | `PROMPT_08a_CODEQUALITAET.md` | **Docs** + **Dependencies** + **CI/CD** + Lokalisierung | Nach #7b |
+| 7c | `PROMPT_07c_INTEGRATION_TESTS.md` | **Integration-Tests**: End-to-End Flows (Chat, Memory, Proaktiv, Resilience, Security) | Nach #7b |
+| 8a | `PROMPT_08a_CODEQUALITAET.md` | **Docs** + **Dependencies** + **CI/CD** + Lokalisierung | Nach #7c |
 | 8b | `PROMPT_08b_BETRIEB.md` | **Multi-User** + **Frontend** + **Monitoring** + Persistenz | Nach #8a |
 | 9a | `PROMPT_09a_FIX_CODEQUALITAET.md` | **Fix: alle P08a Findings** — Docs, Deps, CI/CD, Scripts | Nutzt Findings aus #8a |
 | 9b | `PROMPT_09b_FIX_BETRIEB.md` | **Fix: alle P08b Findings** — Concurrency, Logging, Health | Nutzt Findings aus #8b |
