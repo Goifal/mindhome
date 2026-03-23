@@ -444,7 +444,43 @@ Read: docs/audit-results/RESULT_03c_SYSTEM_PROMPT.md
 
 > **Verifiziere**: Lies das RESULT aus P03c. Fixe nur was dort als 🔴/🟠 markiert ist.
 
-#### Fix 3.9: Persönlicher Assistent — Personality-Pipeline-Bypass fixen
+#### Fix 3.9: Multi-Person Lücken in PA-Modulen schließen (P05b Teil 7.5)
+
+```
+Grep: "person" in assistant/assistant/smart_shopping.py
+Grep: "person" in assistant/assistant/calendar_intelligence.py
+```
+
+**Problem A**: `smart_shopping.py` hat KEINE Person-Filterung. Alle Bewohner sehen alle Listen.
+
+**Fix**: Person-Parameter hinzufügen:
+```python
+# Prüfe ob es schon Methoden mit person-Parameter gibt
+# Falls nicht → person-Parameter zu create/get/delete Methoden hinzufügen
+# Minimum: "Wer hat den Eintrag erstellt?" tracking
+```
+
+**Problem B**: `calendar_intelligence.py` hat KEINE Multi-Person-Unterstützung.
+
+**Fix**: Prüfe wie Kalender-Daten von HA kommen:
+```python
+# HA liefert calendar.* entities → gibt es pro Person einen Kalender?
+# Falls ja: Person → calendar entity Mapping
+# Falls nein: Alle Termine für alle → aber bei Abruf filtern
+```
+
+**Problem C**: `cooking_assistant.py` nutzt person-Feld in CookingSession, aber Diät-Vorlieben werden nicht aus SemanticMemory geladen.
+
+**Fix**: Vor Rezeptvorschlag:
+```python
+# 1. person = get_current_person()
+# 2. dietary_facts = semantic_memory.search_facts(person=person, category="health")
+# 3. Allergien/Vorlieben in Rezeptfilter einbeziehen
+```
+
+> **Aufwand-Check**: Falls ein Fix > Size M ist → als OFFEN dokumentieren, nicht selbst implementieren.
+
+#### Fix 3.10: Persönlicher Assistent — Personality-Pipeline-Bypass fixen
 
 ```
 Read: assistant/assistant/cooking_assistant.py

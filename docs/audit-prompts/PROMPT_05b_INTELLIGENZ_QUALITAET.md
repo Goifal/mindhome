@@ -225,24 +225,129 @@ Read: assistant/assistant/brain_humanizers.py
 
 **Output**: MCU-Jarvis-Score (1-10) für jeden Aspekt mit Beispielen.
 
-### Teil 7: Multi-User-Fairness
+### Teil 7: Multi-Person — Persönlicher Assistent für JEDEN Bewohner
 
-**Ziel**: Prüfe ob Jarvis alle Bewohner fair behandelt.
+> **Jarvis ist nicht EIN Assistent für ALLE — er ist der PERSÖNLICHE Assistent von JEDEM.**
+> Jeder Bewohner hat eigene Vorlieben, Erinnerungen, Routinen, Termine, Notizen.
+> Jarvis muss wissen WER spricht und den Kontext DIESER Person laden.
 
 ```
 Read: assistant/assistant/family_manager.py
 Read: assistant/assistant/person_preferences.py
+Read: assistant/assistant/speaker_recognition.py (Abschnitte: identify_speaker, Confidence-Levels)
 Read: assistant/assistant/conflict_resolver.py (Abschnitte: Mediation, Trust-Level)
+Read: assistant/assistant/semantic_memory.py (Abschnitte: search_facts person-Filter)
 ```
 
-**Prüfe**:
+#### 7.1: Sprecher-Erkennung als Fundament
 
+Prüfe:
+1. **Genauigkeit**: 7-stufiges System (Device → DoA → Room → Presence → Voice → Features → Cache) — sind die Konfidenz-Schwellen realistisch?
+2. **Fallback-Kette**: Was passiert bei Konfidenz < 0.5? Fragt Jarvis "Wer spricht?" oder rät er?
+3. **Neuer Bewohner**: Wie schnell lernt das System eine neue Stimme? Wie viele Samples braucht ECAPA-TDNN?
+4. **Verwechslung**: Ähnliche Stimmen (Geschwister, Eltern/Kind) — wie wird das gehandhabt?
+5. **Gast-Erkennung**: Unbekannte Stimme → Gast-Modus mit eingeschränkten Rechten?
+
+#### 7.2: Per-Person Gedächtnis & Privatsphäre
+
+Prüfe:
+1. **Fakt-Isolation**: "Ich habe eine Nussallergie" (Max) → Wird das NUR bei Max gespeichert?
+2. **Abruf-Isolation**: Kann Lisa fragen "Hat Max eine Allergie?" → Darf Jarvis das verraten?
+3. **Privatsphäre-Regeln**: Gibt es eine Konfiguration was geteilt wird und was privat ist?
+   - Gesundheitsdaten → IMMER privat?
+   - Termine → teilbar?
+   - Vorlieben → teilbar?
+4. **Shared Memory**: Haushalts-Fakten ("Die Waschmaschine ist kaputt") → Für ALLE gespeichert?
+5. **Cross-Person-Leakage**: Prüfe ob `search_facts(person="Max")` WIRKLICH nur Max-Fakten zurückgibt
+
+```
+Grep: "person.*filter\|person.*search\|person.*query" in assistant/assistant/semantic_memory.py
+```
+
+#### 7.3: Per-Person Präferenzen & Kommunikationsstil
+
+Prüfe:
+1. **Altersgerechte Kommunikation**: Kind (0-12) → einfach, Emojis, "Hey". Teenager → casual. Erwachsener → Butler-Stil. Funktioniert das?
+2. **Sarkasmus pro Person**: Mag Lisa Humor Level 4, Max nur Level 2 → wird das personalisiert?
+3. **Sprach-Tempo**: Kinder → langsamer, einfacher. Erwachsene → normal. Wird TTS angepasst?
+4. **Begrüßung**: "Guten Morgen, Sir" (Max) vs. "Morgen, Lisa!" vs. "Hey, Tim!" → per Person konfiguriert?
+
+#### 7.4: Per-Person Routinen & Proaktivität
+
+Prüfe:
+1. **Morgen-Briefing**: Hat JEDER sein eigenes? (Max steht um 6 auf, Lisa um 8 → zwei verschiedene Briefings?)
+2. **Gute-Nacht-Routine**: Pro Person? (Kind geht um 20 Uhr ins Bett, Erwachsene um 23 Uhr)
+3. **Proaktive Hinweise**: Werden Hinweise an die RICHTIGE Person geliefert? ("Max, dein Meeting in 30 Minuten" → nicht an Lisa sagen)
+4. **Ankunfts-Begrüßung**: Personalisiert? ("Willkommen zurück, Sir. Die Heizung läuft bereits." vs. "Hey Tim, Mama hat Essen gemacht!")
+5. **Quiet Hours pro Person**: Max schläft bis 10 am Wochenende, Lisa steht um 7 auf → KEINE Benachrichtigungen an Max vor 10?
+
+```
+Grep: "person\|per_person\|person_name" in assistant/assistant/routine_engine.py
+Grep: "person\|target_person\|delivery.*person" in assistant/assistant/proactive.py
+```
+
+#### 7.5: Persönliche Assistenz-Features pro Person
+
+Prüfe ob diese Module wissen WER fragt:
+
+1. **Kochen** (`cooking_assistant.py`):
+   - "Was soll ICH kochen?" → Berücksichtigt Max' Allergie, nicht Lisas
+   - "Was sollen WIR kochen?" → Berücksichtigt ALLE Allergien/Vorlieben
+   - Session-Tracking: Wer kocht gerade? (Person-Feld existiert, wird es genutzt?)
+
+2. **Einkauf** (`smart_shopping.py`):
+   ```
+   Grep: "person" in assistant/assistant/smart_shopping.py
+   ```
+   - Gibt es persönliche vs. Haushalts-Listen? ("Max' Wunschliste" vs. "Einkaufsliste")
+   - ⚠️ **Bekanntes Defizit**: Keine Person-Filterung gefunden. Alle sehen alles.
+
+3. **Kalender** (`calendar_intelligence.py`):
+   ```
+   Grep: "person" in assistant/assistant/calendar_intelligence.py
+   ```
+   - "Was steht MORGEN an?" → Wessen Termine? Nur meine? Alle?
+   - ⚠️ **Bekanntes Defizit**: Keine explizite Multi-Person-Unterstützung gefunden.
+
+4. **Notizen** (`note_manager.py`): ✅ Per Person implementiert — prüfe ob Abruf korrekt filtert
+5. **Todos** (`task_manager.py`): ✅ Per Person implementiert — prüfe ob Zuweisung funktioniert
+6. **Wellness** (`wellness_advisor.py`): Weiß der Advisor WER zu lange am PC sitzt?
+
+#### 7.6: Konfliktmediation & Fairness
+
+Prüfe:
 1. **Trust-Level-Fairness**: Verliert ein Gast IMMER gegen ein Familienmitglied? Auch wenn der Gast zuerst gefragt hat?
-2. **Konfidenz-Separation**: Werden Lernmuster pro Person getrennt? Oder verschmutzen sich Profile?
-3. **Konflikt-Mediation**: Ist die 300s Konflikt-Fenster zu breit? (Person A stellt Heizung ein → Person A geht → Person B kommt 4min später → Konflikt?)
-4. **Sprachstil pro Person**: Bekommt jeder den gleichen Sarkasmus? Oder wird personalisiert?
+2. **Konflikt-Mediation**: 300s Konflikt-Fenster — zu breit? (Person A stellt Heizung ein → geht → Person B kommt 4min später → Konflikt?)
+3. **Gleichzeitige Requests**: Max und Lisa sagen gleichzeitig "Licht an" in verschiedenen Räumen → per-Person Locks korrekt?
+4. **Shared Spaces**: Wohnzimmer — Max will 22°C, Lisa will 20°C → wie wird mediiert?
+5. **Raum-Restriktionen**: Schlafzimmer nur für bestimmte Personen → funktioniert `room_restrictions`?
 
-**Output**: Fairness-Assessment mit Schwachstellen.
+#### 7.7: Multi-Person End-to-End Szenarien
+
+Trace diese Szenarien mental durch den Code:
+
+**Szenario A: Familien-Abend**
+→ Max: "Jarvis, mach Filmabend" → Licht dimmen, TV an, Persönliche Filmvorlieben laden
+→ Lisa (5 min später): "Jarvis, es ist zu kalt" → Heizung hoch, OHNE Filmabend zu stören
+→ Kind Tim: "Jarvis, ich will auch einen Film!" → Altersgerechte Antwort, ggf. Kinderschutz
+
+**Szenario B: Getrennte Routinen**
+→ 06:00 Max steht auf → Sein Briefing (seine Termine, sein Pendelweg)
+→ 08:00 Lisa steht auf → Ihr Briefing (ihre Termine, ihr Pendelweg)
+→ Jarvis verwechselt NICHTS zwischen beiden Briefings
+
+**Szenario C: Privatsphäre**
+→ Max: "Merk dir, ich plane eine Überraschungsparty für Lisa"
+→ Lisa: "Was hat Max dir heute erzählt?"
+→ Jarvis DARF DAS NICHT VERRATEN
+
+**Szenario D: Gast im Haus**
+→ Unbekannte Stimme: "Jarvis, öffne die Haustür"
+→ Jarvis: Gast-Modus → Security-Action → NICHT ausführen, Bewohner informieren
+
+Für jedes Szenario: Wo bricht die Kette?
+
+**Output**: Multi-Person-IQ-Score (1-5) + Privatsphäre-Risiken + Cross-Module-Lücken.
 
 ### Teil 8: Konversations-Intelligenz
 

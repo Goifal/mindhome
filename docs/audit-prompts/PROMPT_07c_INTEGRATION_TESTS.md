@@ -451,6 +451,121 @@ class TestCrossModuleIntegration:
         pass
 ```
 
+```python
+# Datei: assistant/tests/test_integration_multi_person.py
+
+"""Integration-Tests fuer Multi-Person persoenlichen Assistenten."""
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+
+class TestSpeakerIdentification:
+    """Teste ob Jarvis weiss WER spricht."""
+
+    @pytest.mark.asyncio
+    async def test_known_speaker_loads_person_context(self, brain_mock):
+        """Erkannter Sprecher → person-spezifische Fakten im Kontext."""
+        # 1. Fakt speichern: person="Max", "Ich mag 22 Grad"
+        # 2. Request mit person="Max" → Kontext enthält "22 Grad"
+        # 3. Request mit person="Lisa" → Kontext enthält NICHT "22 Grad"
+        pass
+
+    @pytest.mark.asyncio
+    async def test_unknown_speaker_guest_mode(self, brain_mock):
+        """Unbekannte Stimme → Gast-Modus, eingeschränkte Rechte."""
+        # Verifiziere: Security-Actions (Schloss, Alarm) NICHT verfügbar
+        pass
+
+    @pytest.mark.asyncio
+    async def test_low_confidence_asks_who(self, brain_mock):
+        """Sprecher-Konfidenz < Schwelle → Jarvis fragt 'Wer spricht?'"""
+        pass
+
+
+class TestPerPersonMemory:
+    """Teste Gedaechtnis-Isolation zwischen Personen."""
+
+    @pytest.mark.asyncio
+    async def test_fact_stored_per_person(self, brain_mock):
+        """Max: 'Ich habe Nussallergie' → nur bei Max gespeichert."""
+        # Verifiziere: semantic.store_fact(person="Max", ...)
+        # Verifiziere: semantic.search_facts(person="Lisa") → KEIN Ergebnis
+        pass
+
+    @pytest.mark.asyncio
+    async def test_privacy_no_cross_person_leakage(self, brain_mock):
+        """Lisa fragt 'Was hat Max erzaehlt?' → Jarvis verrät nichts Privates."""
+        # 1. Max: "Merk dir, ich plane eine Überraschungsparty"
+        # 2. Lisa: "Was hat Max dir erzählt?"
+        # 3. Antwort enthält NICHT "Überraschungsparty"
+        pass
+
+    @pytest.mark.asyncio
+    async def test_shared_household_facts(self, brain_mock):
+        """'Die Waschmaschine ist kaputt' → fuer ALLE gespeichert."""
+        # Haushaltsfakten sind nicht personengebunden
+        pass
+
+
+class TestPerPersonRoutines:
+    """Teste personalisierte Routinen."""
+
+    @pytest.mark.asyncio
+    async def test_different_briefings_different_persons(self, brain_mock):
+        """Max bekommt SEIN Briefing, Lisa bekommt IHRES."""
+        # Verifiziere: Briefing-Inhalt unterscheidet sich
+        pass
+
+    @pytest.mark.asyncio
+    async def test_arrival_greeting_personalized(self, brain_mock):
+        """Max kommt heim → 'Willkommen, Sir.' Lisa → 'Hallo, Lisa!'"""
+        pass
+
+    @pytest.mark.asyncio
+    async def test_child_age_appropriate_communication(self, brain_mock):
+        """Kind Tim → einfache Sprache, Emojis, informeller Ton."""
+        pass
+
+
+class TestPerPersonAssistant:
+    """Teste ob PA-Features wissen WER fragt."""
+
+    @pytest.mark.asyncio
+    async def test_cooking_respects_person_allergy(self, brain_mock):
+        """Max hat Nussallergie → Kochvorschlag OHNE Nuesse."""
+        # Cross-Modul: semantic_memory(person=Max) + cooking_assistant
+        pass
+
+    @pytest.mark.asyncio
+    async def test_notes_isolated_per_person(self, brain_mock):
+        """Max' Notizen sind NICHT fuer Lisa sichtbar."""
+        # 1. Max: "Merk dir: Schlüssel im Büro"
+        # 2. Lisa: "Wo ist der Schlüssel?" → Kein Ergebnis (Max' Notiz)
+        # 3. Max: "Wo ist der Schlüssel?" → "Im Büro, Sir."
+        pass
+
+    @pytest.mark.asyncio
+    async def test_concurrent_different_persons(self, brain_mock):
+        """Max und Lisa sprechen gleichzeitig → kein Kontextvermischung."""
+        # Per-Person Locks verhindern Cross-Leakage
+        pass
+
+
+class TestMultiPersonConflicts:
+    """Teste Konflikte zwischen Bewohnern."""
+
+    @pytest.mark.asyncio
+    async def test_temperature_conflict_mediation(self, brain_mock):
+        """Max: 22 Grad, Lisa: 20 Grad → Jarvis mediiert."""
+        pass
+
+    @pytest.mark.asyncio
+    async def test_guest_cannot_unlock_door(self, brain_mock):
+        """Gast: 'Oeffne die Haustuer' → Abgelehnt, Bewohner informiert."""
+        pass
+```
+
 **Implementiere JEDEN Test.** Lies die jeweiligen Module um die korrekte Signatur zu verstehen. Prüfe insbesondere ob Cooking und Workshop die Persönlichkeits-Pipeline umgehen — wenn ja, dokumentiere das als Bug.
 
 ### Schritt 9: Alle Tests ausführen und fixen
