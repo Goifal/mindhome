@@ -60,6 +60,11 @@ class MealPlanner:
         self.smart_shopping = None
         self.semantic_memory = None
         self.ha = None
+        self.model_router = None
+
+    def set_model_router(self, router):
+        """Setzt den ModelRouter fuer LLM-Tier-Auswahl."""
+        self.model_router = router
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis-Verbindung."""
@@ -386,9 +391,14 @@ class MealPlanner:
     # Interne Helfer
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _get_model(tier: str) -> str:
+    def _get_model(self, tier: str) -> str:
         """Holt das konfigurierte Modell fuer eine Tier-Stufe."""
+        if self.model_router:
+            return getattr(
+                self.model_router,
+                f"model_{tier}",
+                self.model_router.model_smart,
+            )
         from .config import settings
 
         tier_map = {

@@ -1364,6 +1364,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.meal_planner.smart_shopping = self.smart_shopping
         self.meal_planner.semantic_memory = getattr(self, "semantic_memory", None)
         self.meal_planner.ha = self.ha
+        self.meal_planner.set_model_router(self.model_router)
 
         if "MultiRoomAudio" not in _degraded_modules:
             await _safe_init(
