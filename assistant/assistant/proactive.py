@@ -7403,15 +7403,52 @@ class ProactiveManager:
                     if _cover_bs:
                         _bed_sensors = [_cover_bs]
                     else:
-                        cover_room = cover.get("room", "")
-                        if cover_room:
-                            _rp = _get_room_profiles_cached()
-                            _room_cfg = (_rp.get("rooms") or {}).get(
-                                cover_room, {}
-                            )
-                            from .config import get_room_bed_sensors
+                        from .config import get_room_bed_sensors
 
+                        cover_room = cover.get("room", "")
+                        if not cover_room:
+                            # Fallback: Room-Matching ueber Config + Heuristik
+                            cover_room = self._get_room_for_cover(entity_id)
+                        _rp = _get_room_profiles_cached()
+                        _rooms = _rp.get("rooms") or {}
+                        if cover_room:
+                            _room_cfg = _rooms.get(cover_room, {})
+                            # Fuzzy: Raeume pruefen die im Entity-Namen vorkommen
+                            if not _room_cfg:
+                                _eid_parts = entity_id.lower().replace(
+                                    "cover.", ""
+                                ).split("_")
+                                for _rname, _rcfg in _rooms.items():
+                                    if _rname.lower() in _eid_parts:
+                                        _room_cfg = _rcfg
+                                        cover_room = _rname
+                                        break
                             _bed_sensors = get_room_bed_sensors(_room_cfg)
+
+                        # Wenn kein Bettsensor im eigenen Raum gefunden:
+                        # Fuer Nebenraeume (Ankleide, Flur OG etc.) auch
+                        # Bettsensoren auf dem gleichen Stockwerk pruefen.
+                        # Typ "dressing" gehoert fast immer zum Schlafzimmer.
+                        if not _bed_sensors:
+                            _room_cfg_own = _rooms.get(cover_room, {})
+                            _cover_floor = (
+                                _room_cfg_own.get("floor", "")
+                                or cover.get("floor", "")
+                            )
+                            _cover_type = _room_cfg_own.get("type", "")
+                            _ADJACENT_TYPES = {"dressing", "hallway"}
+                            if _cover_floor and (
+                                _cover_type in _ADJACENT_TYPES
+                                or not _room_cfg_own  # Raum nicht in Profilen
+                            ):
+                                for _rname, _rcfg in _rooms.items():
+                                    if (
+                                        _rcfg.get("type") == "bedroom"
+                                        and _rcfg.get("floor") == _cover_floor
+                                    ):
+                                        _floor_bed = get_room_bed_sensors(_rcfg)
+                                        if _floor_bed:
+                                            _bed_sensors.extend(_floor_bed)
                     _bed_occupied = False
                     for s in states or []:
                         if (
@@ -7889,10 +7926,10 @@ class ProactiveManager:
                         if isinstance(was_switched, str)
                         else was_switched.decode()
                     )
-                    await _redis.delete("mha:vacuum:alarm_switched")
+                    # Key wird ERST nach erfolgreichem Restore geloescht (siehe unten)
                 except Exception as e:
                     logger.warning(
-                        "Vacuum-Alarm: Redis-Flag lesen/loeschen fehlgeschlagen: %s — schalte trotzdem zurueck",
+                        "Vacuum-Alarm: Redis-Flag lesen fehlgeschlagen: %s — schalte trotzdem zurueck",
                         e,
                     )
             else:
@@ -7913,16 +7950,26 @@ class ProactiveManager:
                 success = await self.brain.ha.call_service(
                     "alarm_control_panel", restore_service, {"entity_id": alarm_entity}
                 )
-                if not success:
+                if success:
+                    # Erst NACH erfolgreichem Restore den Redis-Key loeschen
+                    if _redis:
+                        try:
+                            await _redis.delete("mha:vacuum:alarm_switched")
+                        except Exception as e:
+                            logger.warning(
+                                "Vacuum-Alarm: Redis-Flag loeschen fehlgeschlagen: %s",
+                                e,
+                            )
+                else:
                     logger.error(
-                        "Vacuum-Alarm: Zurueckschalten auf %s fehlgeschlagen fuer %s",
+                        "Vacuum-Alarm: Zurueckschalten auf %s fehlgeschlagen fuer %s — Redis-Key bleibt fuer Retry",
                         restore_service,
                         alarm_entity,
                     )
                 return success
             except Exception as e:
                 logger.error(
-                    "Vacuum-Alarm: Service-Aufruf %s fehlgeschlagen: %s",
+                    "Vacuum-Alarm: Service-Aufruf %s fehlgeschlagen: %s — Redis-Key bleibt fuer Retry",
                     restore_service,
                     e,
                 )
@@ -8266,6 +8313,11 @@ class ProactiveManager:
                                 "Staubsauger-Fortsetzungs-Protokollierung fehlgeschlagen: %s",
                                 e,
                             )
+                        # Wichtig: Nach Resume NICHT Fall 3 im selben Durchlauf ausfuehren!
+                        # all_docked/cleaning_robots sind veraltet (vor dem Resume berechnet).
+                        # Naechste Iteration hat frische HA-States.
+                        await asyncio.sleep(30)
+                        continue
 
                 # Fall 3: Alle Vacuums fertig (docked) → Alarm zurueckschalten
                 if all_docked and not cleaning_robots:
@@ -8512,9 +8564,16 @@ class ProactiveManager:
             for rname, seg_id in rooms_map.items():
                 if rname.lower() == room_lower:
                     return r, seg_id
-        # Fallback: ersten Roboter ohne Segment
-        if robots:
-            return next(iter(robots.values())), None
+        # Kein Fallback auf Komplett-Clean — nur exakte Raum-Zuordnung
+        logger.warning(
+            "Vacuum: Raum '%s' nicht in robots-Config gefunden (verfuegbar: %s)",
+            room,
+            [
+                rname
+                for r in robots.values()
+                for rname in r.get("rooms", {})
+            ],
+        )
         return None, None
 
     async def _start_vacuum_room(self, robot: dict, segment_id, room: str, reason: str):
@@ -8647,7 +8706,7 @@ class ProactiveManager:
 
                 # Cleanup: Entfernte Entities aus Tracking-Dict loeschen
                 active_entities = {
-                    t.get("power_entity") for t in triggers if t.get("power_entity")
+                    t.get("entity") for t in triggers if t.get("entity")
                 }
                 for old_key in list(was_above.keys()):
                     if old_key not in active_entities:
