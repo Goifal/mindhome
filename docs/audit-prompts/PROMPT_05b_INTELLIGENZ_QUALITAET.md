@@ -435,6 +435,30 @@ Prüfe:
 3. **Retry**: Wird ein erneuter Versuch gestartet oder nur gemeldet?
 4. **Background-Task**: Läuft als `asyncio.create_task()` → hat es einen `add_done_callback`?
 
+**Response-Cache als Halluzinations-Vektor:**
+
+```
+Read: assistant/assistant/response_cache.py
+```
+
+Prüfe:
+1. **TTL**: Wie lange werden Antworten gecacht? Wenn >5min → Zustand kann sich geändert haben
+2. **Invalidierung**: Wird der Cache geleert wenn sich der HA-State ändert? (Licht an → "Licht ist aus" aus Cache = FALSCH)
+3. **Personalisierung**: Werden gecachte Antworten für User A auch an User B ausgegeben?
+4. **Kontext-Hash**: Wird der Kontext (Raum, Tageszeit, Gerätezustand) im Cache-Key berücksichtigt?
+
+**State-Change-Attribution als Lern-Gift:**
+
+```
+Grep: "attribution\|AttributionResult\|_determine_cause" in assistant/assistant/state_change_log.py limit=30
+```
+
+Prüfe:
+1. **Korrekte Attribution**: Wenn User manuell das Licht schaltet → erkennt das System "User" und nicht "Automation"?
+2. **Timing-Fenster**: Wie groß ist das Fenster für die Zuordnung? Zu klein → User-Aktionen werden als "Unbekannt" geloggt. Zu groß → Zufälle werden als kausal verknüpft.
+3. **Lern-Impact**: Falsche Attribution → Anticipation lernt falsche Muster → Jarvis schlägt falsche Aktionen vor
+4. **80+ Abhängigkeitsregeln**: Sind die Regeln vollständig? Fehlen neue Gerätetypen?
+
 **Output**: Halluzinations-Guard-Score (1-5) + kritische Schwächen.
 
 ### Teil 13: Gesamtbewertung & Verbesserungsplan
