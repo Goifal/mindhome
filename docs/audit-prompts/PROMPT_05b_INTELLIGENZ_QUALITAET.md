@@ -224,7 +224,167 @@ Read: assistant/assistant/conflict_resolver.py (Abschnitte: Mediation, Trust-Lev
 
 **Output**: Fairness-Assessment mit Schwachstellen.
 
-### Teil 8: Gesamtbewertung & Verbesserungsplan
+### Teil 8: Konversations-Intelligenz
+
+**Ziel**: Prüfe ob Jarvis Gespräche korrekt verfolgt und Referenzen auflöst.
+
+```
+Read: assistant/assistant/dialogue_state.py
+Read: assistant/assistant/action_planner.py (Abschnitte: Planung, Narration)
+Read: assistant/assistant/time_awareness.py
+```
+
+**Prüfe**:
+
+1. **Referenz-Auflösung** (`dialogue_state.py`):
+   - "Mach DAS Licht an" → Welches Licht? Das zuletzt besprochene? Das im aktuellen Raum?
+   - "Dort" → Welcher Raum? Der zuletzt erwähnte?
+   - "Nochmal" / "Das gleiche" → Wird die letzte Aktion korrekt wiederholt?
+   - Cross-Session: "Was hatten wir gestern besprochen?" → Funktioniert das?
+   - **Szenarien testen**: "Mach das Licht im Wohnzimmer an. Und dort auch die Heizung." → "dort" = Wohnzimmer?
+
+2. **Multi-Step-Planung** (`action_planner.py`):
+   - "Mach alles fertig für die Nacht" → Wie viele Schritte? In welcher Reihenfolge?
+   - Ist die Narration natürlich? ("Ich dimme das Licht... schließe die Rollläden... stelle die Heizung runter.")
+   - Was wenn ein Schritt fehlschlägt? Wird der Rest abgebrochen oder fortgesetzt?
+   - Sind die Schritte LOGISCH? (Erst Licht aus, dann Rollläden → oder andersherum?)
+
+3. **Zeit-Verständnis** (`time_awareness.py`):
+   - "Morgen früh" → Welche Uhrzeit? 6:00? 7:00? Abhängig vom User-Profil?
+   - "Nächste Woche" → Montag oder gleicher Wochentag?
+   - "In einer Stunde" → Wird ein Timer gesetzt oder eine Erinnerung?
+   - Saisonale Unterschiede: "Abends" im Sommer (21:00) vs. Winter (17:00)?
+
+**Output**: Konversations-IQ-Score (1-5) + Schwächen.
+
+### Teil 9: Umgebungs-Intelligenz
+
+**Ziel**: Prüfe ob Jarvis seine Umgebung korrekt versteht und darauf reagiert.
+
+```
+Read: assistant/assistant/activity.py (Abschnitte: Silence Matrix, Aktivitätszustände)
+Read: assistant/assistant/climate_model.py (Abschnitte: Vorhersage, Vorheizen)
+Read: assistant/assistant/threat_assessment.py
+Read: assistant/assistant/mood_detector.py (Abschnitte: Stimmungserkennung, Schwellwerte)
+Read: assistant/assistant/device_health.py (Abschnitte: Anomalie-Erkennung)
+```
+
+**Prüfe**:
+
+1. **Aktivitäts-Erkennung** (`activity.py`):
+   - Silence Matrix: 7 Zustände × 3 Dringlichkeiten → Ist die Matrix korrekt?
+   - "sleeping" → Wie wird Schlaf erkannt? (Licht aus + keine Bewegung + Nachtzeit?)
+   - "focused" → Wie wird Konzentration erkannt? (PC aktiv + keine Interaktion?)
+   - **Kritisch**: Kann Jarvis fälschlich "sleeping" erkennen und wichtige Meldungen unterdrücken?
+
+2. **Klima-Vorhersage** (`climate_model.py`):
+   - Vorheizen: "Morgen um 7:00 soll es 22°C sein" → Wann muss die Heizung starten?
+   - Berücksichtigt das Modell Außentemperatur, Isolierung, Sonneneinstrahlung?
+   - Wie genau ist die Vorhersage? Gibt es eine Feedback-Schleife?
+
+3. **Bedrohungs-Erkennung** (`threat_assessment.py`):
+   - Rauchmelder → Emergency. Aber was bei Fehlalarm (Kochen)?
+   - Wassermelder → Ventil schließen. Aber was wenn Sensor defekt?
+   - Offenes Fenster bei Sturm → Warnung. Aber was wenn User absichtlich lüftet?
+   - **False-Positive-Rate**: Wie oft warnt Jarvis unnötig?
+
+4. **Stimmungs-Erkennung** (`mood_detector.py`):
+   - Wird "Stress" korrekt von "Eile" unterschieden? (Beide haben kurze Sätze)
+   - Wird "Müde" korrekt von "Gelangweilt" unterschieden?
+   - Sprach-Metadaten (Geschwindigkeit, Lautstärke): Werden sie tatsächlich genutzt?
+   - **Qualitäts-Frage**: Verbessert die Stimmungserkennung die Antworten wirklich?
+
+5. **Geräte-Anomalie** (`device_health.py`):
+   - 30-Tage-Baseline → Was beim ersten Monat? (Keine Baseline)
+   - Saisonale Schwankungen: Heizungsverbrauch im Winter ≠ Sommer
+   - Batterieschwache Sensoren: Werden sie rechtzeitig erkannt?
+
+**Output**: Umgebungs-IQ-Score (1-5) + Schwächen.
+
+### Teil 10: Wissens- & Erklär-Intelligenz
+
+**Ziel**: Prüfe ob Jarvis Wissen korrekt abruft und Entscheidungen erklären kann.
+
+```
+Read: assistant/assistant/knowledge_base.py
+Read: assistant/assistant/knowledge_graph.py (Abschnitte: Nodes, Edges, Queries)
+Read: assistant/assistant/explainability.py
+Read: assistant/assistant/energy_optimizer.py (Abschnitte: Optimierungslogik)
+Read: assistant/assistant/routine_engine.py (Abschnitte: Morgen-Briefing, Gute-Nacht)
+```
+
+**Prüfe**:
+
+1. **RAG-Retrieval** (`knowledge_base.py`):
+   - Relevanz-Schwelle: dynamisch nach Query-Länge. Sind die Werte sinnvoll?
+   - Top-K Retrieval: Wie viele Dokumente werden geholt? Zu viele = Token-Verschwendung, zu wenige = Wissenslücke
+   - Werden veraltete Dokumente entfernt? Gibt es TTL?
+
+2. **Wissensgraph** (`knowledge_graph.py`):
+   - Max 1000 Nodes → Was wenn erreicht? Werden alte entfernt?
+   - 2-Hop-Queries: "Person → Raum → Gerät" → Funktioniert das?
+   - Edge-TTL 180 Tage → Veralten Verbindungen korrekt?
+
+3. **Erklärbarkeit** (`explainability.py`):
+   - "Warum hast du die Heizung aufgedreht?" → Bekommt der User eine verständliche Antwort?
+   - Werden ALLE Entscheidungsfaktoren genannt? (Temperatur, Wetter, Zeitplan, Gewohnheit)
+   - Ist die Erklärung natürlich formuliert oder technisch?
+
+4. **Energie-Intelligenz** (`energy_optimizer.py`):
+   - Strompreis-Monitoring: Werden flexible Verbraucher korrekt verschoben?
+   - Solar-Awareness: Wird Überschuss erkannt und genutzt?
+   - Empfehlungs-Qualität: Sind die Tipps hilfreich oder generisch?
+
+5. **Routinen-Qualität** (`routine_engine.py`):
+   - Morgen-Briefing: Ist es knapp und relevant? (Wetter + Termine + Highlights)
+   - Gute-Nacht: Werden alle Sicherheits-Checks durchlaufen?
+   - Ankunfts-Begrüßung: Ist sie natürlich und informativ?
+   - **Qualitäts-Frage**: Hört sich das Briefing jeden Tag gleich an? Oder variiert es?
+
+**Output**: Wissens-IQ-Score (1-5) + Schwächen.
+
+### Teil 11: Autonomie-Intelligenz
+
+**Ziel**: Prüfe ob Jarvis korrekt entscheidet WANN er selbst handeln darf und WANN er fragen muss.
+
+```
+Read: assistant/assistant/autonomy.py
+Read: assistant/assistant/self_automation.py
+Read: assistant/assistant/proactive_planner.py
+Read: assistant/assistant/conditional_commands.py
+Read: assistant/assistant/seasonal_insight.py
+```
+
+**Prüfe**:
+
+1. **Autonomie-Level** (`autonomy.py`):
+   - Level 1 (Assistent) → Fragt immer. Level 5 (Autopilot) → Handelt immer.
+   - Sind die Grenzen pro Domain sinnvoll? (Sicherheit: immer fragen. Licht: ab Level 3 auto.)
+   - Kann ein Bug oder eine falsche Konfidenz das Autonomie-Level umgehen?
+
+2. **Auto-Automatisierung** (`self_automation.py`):
+   - Erstellt Jarvis korrekte Automatisierungen aus Mustern?
+   - Sicherheitsvalidierung: Kann er gefährliche Automatisierungen erstellen? (z.B. Türschloss nachts offen)
+   - Werden erstellte Automatisierungen dem User gezeigt bevor sie aktiv werden?
+
+3. **Proaktive Mehrstufige Sequenzen** (`proactive_planner.py`):
+   - Timing korrekt? (Schritt 1 um 18:00, Schritt 2 um 18:05, etc.)
+   - Narration natürlich? ("Ich bereite jetzt alles vor...")
+   - Rollback wenn ein Schritt fehlschlägt?
+
+4. **Bedingte Befehle** (`conditional_commands.py`):
+   - "Wenn es regnet, mach die Fenster zu" → Wird das korrekt evaluiert?
+   - Werden Bedingungen regelmäßig geprüft oder nur einmalig?
+   - Timeout: Wie lange gilt die Bedingung?
+
+5. **Saisonale Empfehlungen** (`seasonal_insight.py`):
+   - Sind die Empfehlungen zeitlich korrekt? (Heizstrategie ab Oktober, nicht Juli)
+   - Werden sie oft genug / nicht zu oft ausgegeben?
+   - Sind sie hilfreich oder generisch?
+
+**Output**: Autonomie-IQ-Score (1-5) + Schwächen.
+
+### Teil 12: Gesamtbewertung & Verbesserungsplan
 
 Erstelle eine **Qualitäts-Scorecard**:
 
@@ -237,6 +397,10 @@ Erstelle eine **Qualitäts-Scorecard**:
 | Intent-Erkennung | X/5 | ... | ... | S/M/L |
 | Persönlichkeit | X/5 | ... | ... | S/M/L |
 | Multi-User | X/5 | ... | ... | S/M/L |
+| Konversations-IQ | X/5 | ... | ... | S/M/L |
+| Umgebungs-IQ | X/5 | ... | ... | S/M/L |
+| Wissens-IQ | X/5 | ... | ... | S/M/L |
+| Autonomie-IQ | X/5 | ... | ... | S/M/L |
 | **Gesamt** | **X/5** | | | |
 
 Und einen priorisierten **Verbesserungsplan**:
@@ -278,7 +442,7 @@ Verbesserungen:
 Dokumentiere nach JEDEM Teil:
 
 ```
-=== CHECKPOINT Teil X/8 ===
+=== CHECKPOINT Teil X/12 ===
 Geprüfte Module: [Anzahl]
 Qualitäts-Issues gefunden: [Anzahl]
 Verbleibend: [Liste]
@@ -310,6 +474,10 @@ QUALITAETS-SCORECARD:
 - Intent-Erkennung: X/5 — [Hauptproblem]
 - Persönlichkeit: X/5 — [Hauptproblem]
 - Multi-User: X/5 — [Hauptproblem]
+- Konversations-IQ: X/5 — [Hauptproblem]
+- Umgebungs-IQ: X/5 — [Hauptproblem]
+- Wissens-IQ: X/5 — [Hauptproblem]
+- Autonomie-IQ: X/5 — [Hauptproblem]
 QUICK WINS: [Liste der einfachen Verbesserungen mit Datei:Zeile]
 ARCHITEKTUR-ISSUES: [Größere Probleme die Umbau brauchen]
 OFFEN:
