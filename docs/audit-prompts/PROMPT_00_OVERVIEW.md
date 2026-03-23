@@ -25,11 +25,14 @@ Dazu: 103 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen, 2 Front
 | 2 | `PROMPT_02_MEMORY.md` | Memory-System End-to-End (**alle 12 Module**) | Nutzt Konflikt-Karte aus #1 |
 | 3a | `PROMPT_03a_FLOWS_CORE.md` | Init-Sequenz, System-Prompt, **Core-Flows 1–7** | Nutzt Ergebnisse aus #1 + #2 |
 | 3b | `PROMPT_03b_FLOWS_EXTENDED.md` | **Extended-Flows 8–13** + Flow-Kollisionen | Nutzt Ergebnisse aus #3a |
-| 4a | `PROMPT_04a_BUGS_CORE.md` | Bug-Jagd: **Core-Module** (Prio 1–4, ~26 Module) | Nutzt Architektur aus #1–#3b |
+| 3c | `PROMPT_03c_SYSTEM_PROMPT.md` | **System-Prompt-Qualität**: Template, Token-Budget, MCU-Authentizität, Anti-Halluzination | Nach #3b |
+| 4a | `PROMPT_04a_BUGS_CORE.md` | Bug-Jagd: **Core-Module** (Prio 1–4, ~26 Module) | Nutzt Architektur aus #1–#3c |
 | 4b | `PROMPT_04b_BUGS_EXTENDED.md` | Bug-Jagd: **Extended-Module** (Prio 5–9, 63 Module) | Nutzt Patterns aus #4a |
 | 4c | `PROMPT_04c_BUGS_ADDON_SECURITY.md` | Bug-Jagd: **Addon + Security + Performance** (Prio 10–12) | Nutzt Findings aus #4a + #4b |
-| 5 | `PROMPT_05_PERSONALITY.md` | Persönlichkeit, Config, MCU-Authentizität | Nutzt Bug-Liste aus #4a–4c |
+| 4d | `PROMPT_04d_SPEECH_PIPELINE.md` | **STT/TTS Pipeline**: Whisper, Piper, Wortkorrekturen, Meta-Leakage, ESPHome | Nach #4c |
+| 5 | `PROMPT_05_PERSONALITY.md` | Persönlichkeit, Config, MCU-Authentizität | Nutzt Bug-Liste aus #4a–4d |
 | 5b | `PROMPT_05b_INTELLIGENZ_QUALITAET.md` | **Intelligenz-Qualität**: LLM-Routing, Antizipation, Lernen, Proaktivität, Intent, Konsistenz | Nach #5 |
+| 5c | `PROMPT_05c_CONFIG_VALIDATION.md` | **Config-Validation**: settings.yaml vs. Code, Orphans, Hardcoded Values, Feature-Flags | Nach #5b |
 | 6a | `PROMPT_06a_STABILISIERUNG.md` | **Kritische Bugs fixen** + **Memory reparieren** | 🔴 Bugs aus #4a–4c + Memory-Fix aus #2 |
 | 6b | `PROMPT_06b_ARCHITEKTUR.md` | **Architektur-Entscheidungen** + Konflikte + Flows + **Performance** | Konflikte aus #1 + Flows aus #3a/3b |
 | 6c | `PROMPT_06c_CHARAKTER.md` | **Persönlichkeit harmonisieren** + Config + 🟡 Bugs + Dead Code | Personality aus #5 + Bugs aus #4a–4c |
@@ -271,11 +274,14 @@ Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ing
 2. **Memory-Diagnose** — Warum Jarvis vergisst + Fix
 3a. **Core-Flows** — Flows 1–7 mit Init-Sequenz und System-Prompt
 3b. **Extended-Flows** — Flows 8–13 mit Kollisionen
+3c. **System-Prompt-Audit** — Template-Qualität, Token-Budget, MCU-Authentizität, Injection-Schutz
 4a. **Core-Bug-Report** — Bugs in brain.py, main.py, memory, context, actions
 4b. **Extended-Bug-Report** — Bugs in proaktiven Systemen, HA, audio, intelligence
 4c. **Addon/Security/Performance** — Addon-Bugs, Security-Audit, Latenz-Analyse
+4d. **Sprach-Pipeline-Audit** — STT/TTS Qualität, Wortkorrekturen, Meta-Leakage, ESPHome Hardware
 5. **Persönlichkeits-Audit** — MCU-Score + Inkonsistenzen + Config-Probleme
 5b. **Intelligenz-Qualitätsaudit** — Scorecard für LLM-Routing, Antizipation, Lernen, Proaktivität, Intent, Konsistenz, Fairness
+5c. **Config-Validation** — settings.yaml Gesundheitscheck: Orphans, Hardcoded Values, unsichere Zugriffe, Feature-Flags
 6a. **Stabilisierte Codebase** — Kritische Bugs gefixt, Memory repariert
 6b. **Optimierte Architektur** — Konflikte aufgelöst, Flows repariert, **Latenz optimiert**
 6c. **Harmonisierter Charakter** — Eine Stimme, saubere Config, Dead Code entfernt
