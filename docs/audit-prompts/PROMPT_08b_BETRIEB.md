@@ -12,6 +12,18 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Du an
 
 ---
 
+## Kontext aus vorherigen Prompts
+
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_08a_CODEQUALITAET.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
+
+---
+
 ## Kontext
 
 MindHome ist ein lokal betriebener KI-Home-Assistant mit 3 Services:
@@ -36,7 +48,7 @@ Grep: pattern="session|user_id|client_id|request_id" path="assistant/assistant/"
 
 | Check | Methode | ✅ PASS | ❌ FAIL |
 |---|---|---|---|
-| **Request-Isolation** | Jeder Request hat eigenen State | User A sieht nicht User B's Kontext | Shared State zwischen Requests |
+| **Request-Isolation** | Prüfe mit Grep ob globale Variablen oder Modul-Level-State zwischen Requests geteilt wird: `Grep: pattern='global |_instance|_singleton' path='assistant/assistant/' output_mode='content'` | User A sieht nicht User B's Kontext | Shared mutable State zwischen Requests (z.B. `self.current_context` ohne Lock) |
 | **Brain Singleton Safety** | brain.py als Singleton — Thread-Safe? | Lock-geschützt oder Request-scoped | Shared mutable State ohne Lock |
 | **Memory Isolation** | conversation_memory trennt User | Jeder User hat eigene Conversation-History | Alle User teilen eine History |
 | **Redis Key-Isolation** | Redis-Keys enthalten User-ID | `jarvis:user:123:memory` | `jarvis:memory` (global) |
@@ -83,6 +95,25 @@ Grep: pattern="Semaphore|max_concurrent|queue|_llm_lock" path="assistant/assista
 ---
 
 ## Teil 2: Frontend-Analyse
+
+### Frontend-Analyse (app.jsx — 13.000+ Zeilen)
+
+> ⚠️ `app.jsx` ist das gesamte Frontend in einer Datei. Nutze Grep-first-Strategie.
+
+**Security-Checks:**
+```
+Grep: pattern="innerHTML|dangerouslySetInnerHTML|eval\(|document\.write" path="addon/rootfs/opt/mindhome/static/frontend/" output_mode="content"
+Grep: pattern="fetch\(|XMLHttpRequest|axios" path="addon/rootfs/opt/mindhome/static/frontend/" output_mode="content"
+```
+
+| # | Check | Was prüfen |
+|---|---|---|
+| 1 | **XSS** | Wird User-Input escaped bevor er ins DOM kommt? `textContent` statt `innerHTML`? |
+| 2 | **API-Calls** | Werden API-Responses validiert bevor sie angezeigt werden? |
+| 3 | **Auth-Token** | Wird der API-Key sicher gespeichert? Nicht in localStorage ohne Verschlüsselung? |
+| 4 | **CSRF** | Werden State-ändernde Requests mit Token geschützt? |
+| 5 | **Error Handling** | Werden API-Fehler dem User angezeigt oder verschluckt? |
+| 6 | **Sensitive Data** | Werden Passwörter/PINs/Keys im Frontend angezeigt oder maskiert? |
 
 ### Schritt 1 — Frontend-Dateien inventarisieren
 
@@ -271,7 +302,28 @@ Checkliste:
 □ Health-Endpoints in allen Services
 □ Daten-Persistenz gesichert (Redis, ChromaDB, SQLite)
 □ Kombinierte Ausfälle getestet
+□ Backup-Strategie dokumentiert (Redis RDB/AOF, ChromaDB Snapshots, SQLite-Kopie)
+□ Restore-Prozedur getestet (Backup einspielen → System funktioniert)
+□ Datenaufbewahrung/GDPR: Löschfristen definiert, User-Daten exportierbar, Recht auf Vergessen
+□ Log-Rotation konfiguriert (keine unbegrenzten Logs auf Produktivsystem)
+□ Sensitive Daten in Logs gefiltert (API-Keys, Tokens, Passwörter)
+□ Health-Endpoints explizit getestet (/health, /ready, /health/deep in allen 3 Services)
+□ Graceful Shutdown (SIGTERM → laufende Requests abschließen → sauber beenden)
+□ Frontend Accessibility (Screenreader, Tastatur-Navigation, Kontrast — WCAG 2.1 AA)
+□ Frontend Mobile-Responsiveness (Breakpoints 768px, 480px funktionieren)
+□ Memory-Deduplication (ChromaDB: keine doppelten Fakten gespeichert)
+□ Secrets-Management (keine Secrets in Code/Config, nur in .env oder HA Secrets)
 ```
+
+---
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_08b_BETRIEB.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ---
 

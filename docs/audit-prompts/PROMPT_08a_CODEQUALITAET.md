@@ -12,6 +12,18 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Du an
 
 ---
 
+## Kontext aus vorherigen Prompts
+
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_07b_DEPLOYMENT.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
+
+---
+
 ## Kontext
 
 MindHome ist ein lokal betriebener KI-Home-Assistant mit 3 Services:
@@ -202,7 +214,7 @@ jobs:
       - run: docker build -t mindhome-addon ./addon
 ```
 
-> **WICHTIG:** CI/CD erstellen, NICHT nur empfehlen. Wenn `.github/workflows/` nicht existiert, erstelle die minimale Pipeline. Der Audit fixiert — er empfiehlt nicht nur.
+> **WICHTIG:** CI/CD erstellen, NICHT nur empfehlen. Aber NUR wenn `.github/workflows/` noch nicht existiert oder unvollständig ist. Wenn `.github/workflows/` nicht existiert, erstelle die minimale Pipeline. Der Audit fixiert — er empfiehlt nicht nur.
 
 ---
 
@@ -245,7 +257,7 @@ Glob: pattern="**/{de,en}.json" path="/home/user/mindhome/"
 | Aufgabe | Tool | Befehl |
 |---|---|---|
 | README lesen | **Read** | `Read: /home/user/mindhome/README.md` |
-| Version finden | **Grep** | `pattern="version" glob="*.py"` |
+| Version finden | **Grep** | `pattern="version" path="/home/user/mindhome/" glob="*.py"` |
 | TODOs finden | **Grep** | `pattern="TODO\|FIXME" path="."` |
 | Requirements lesen | **Read** | Alle `requirements.txt` |
 | GitHub Actions prüfen | **Glob** | `pattern=".github/**/*"` |
@@ -273,7 +285,23 @@ Checkliste:
 □ CI/CD dokumentiert oder erstellt
 □ Shell-Scripts safe (set -euo pipefail)
 □ Übersetzungen vollständig
+□ Dead Code entfernt (definierte aber nie aufgerufene Funktionen/Klassen)
+□ Import Cycles aufgelöst (Grep: zirkuläre Imports zwischen Modulen)
+□ Zusätzliche Configs geprüft (humor_triggers.yaml, entity_roles_defaults.yaml, jarvis_capabilities.txt)
+□ Zweites Frontend geprüft (assistant/static/chat/, assistant/static/ui/, assistant/static/workshop/)
+□ Alle Shell-Scripts geprüft (install.sh, update.sh, nvidia-watchdog.sh, addon/run.sh)
+□ Alle requirements.txt synchron (addon/ vs assistant/ vs speech/ — keine Versionskonflikte)
 ```
+
+---
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_08a_CODEQUALITAET.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ---
 

@@ -6,14 +6,9 @@ Du bist ein Elite-Debugging-Experte für Python, AsyncIO, FastAPI, Redis, Chroma
 
 ---
 
-## LLM-Spezifisch (Qwen 3.5)
+## LLM-Spezifisch
 
-- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
-- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
-- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
-- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
-- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
-- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+> Siehe P00 für vollständige Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren (`supports_think_with_tools: false`), `character_hint` in model_profiles nutzen.
 
 ---
 
@@ -25,14 +20,17 @@ Du arbeitest mit dem Quellcode, nicht mit einem laufenden System. Prüfe auch wi
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–3b bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_01_ARCHITEKTUR.md
+Read: docs/audit-results/RESULT_02_MEMORY.md
+Read: docs/audit-results/RESULT_03a_FLOWS_CORE.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 >
-> **Wenn dies eine neue Konversation ist**: Füge hier ein:
-> - Kontext-Block aus Prompt 1 (Konflikt-Karte)
-> - Kontext-Block aus Prompt 2 (Memory-Analyse)
-> - Kontext-Block aus Prompt 3a + 3b (Flow-Analyse, besonders Bruchstellen und Kollisionen)
->
-> **⚠️ OHNE diese Kontext-Blöcke fehlt dir das Architektur-Verständnis für die Bug-Analyse!** Besonders die Konflikt-Karte (P1) und Flow-Bruchstellen (P3a/3b) sind essentiell um Bugs im Kontext zu verstehen. Wenn du die Blöcke nicht hast, starte zuerst mit Prompt 1.
+> **⚠️ OHNE Architektur-Verständnis (P01) und Flow-Bruchstellen (P03a) fehlt dir der Kontext für die Bug-Analyse!**
 
 ---
 
@@ -81,9 +79,9 @@ Wenn du ein Modul prüfst, prüfe auch die **Schnittstellen zu anderen Modulen**
 ## Modul-Priorität (nur dieses Prompt!)
 
 ### Priorität 1 — Kern (MUSS komplett geprüft werden)
-1. `brain.py` — Orchestrator, höchster Impact (**⚠️ 10.000+ Zeilen! Read in 2000-Zeilen-Abschnitten: offset=1/2001/4001/6001/8001/10001**)
+1. `brain.py` — Orchestrator, höchster Impact (**⚠️ 10.000+ Zeilen! Nutze Grep um relevante Abschnitte zu finden, dann Read gezielt mit offset/limit. NICHT sequentiell alles durchlesen.**)
 2. `brain_callbacks.py` — Event Hooks
-3. `main.py` — FastAPI-Server, Endpoints (**⚠️ 8000+ Zeilen! Read in 2000-Zeilen-Abschnitten: offset=1/2001/4001/6001/8001**)
+3. `main.py` — FastAPI-Server, Endpoints (**⚠️ 8000+ Zeilen! Grep-first-Strategie wie brain.py — Endpoints mit Grep finden, dann gezielt lesen.**)
 4. `websocket.py` — WebSocket-Server
 
 ### Priorität 2 — Memory-Kette
@@ -139,6 +137,24 @@ Wenn du ein Modul prüfst, prüfe auch die **Schnittstellen zu anderen Modulen**
 > - **Batch 4** (Priorität 4 — Aktionen): `function_calling.py`, `function_validator.py`, `declarative_tools.py`, `action_planner.py`, `ollama_client.py`, `model_router.py`, `pre_classifier.py`, `request_context.py`
 >
 > **Wichtig**: Nutze die Grep-Bulk-Suche (Fehlerklassen 1–13) **vor** den Batches um die verdächtigsten Stellen zu identifizieren. Dann lies die Module in Batch-Reihenfolge und achte besonders auf die Grep-Treffer.
+
+### Fortschritts-Tracking (Pflicht!)
+
+Dokumentiere nach JEDEM Batch deinen Fortschritt:
+
+```
+=== CHECKPOINT Batch X/4 ===
+Geprüfte Module: [Liste]
+Bugs gefunden: 🔴 X, 🟠 X, 🟡 X, 🟢 X
+Verbleibende Batches: [Liste]
+=============================
+```
+
+**Falls der Kontext knapp wird** (Claude Code komprimiert):
+1. Speichere den bisherigen Output sofort: `Write: docs/audit-results/RESULT_04a_BUGS_CORE.md`
+2. Starte eine neue Session
+3. Lies den gespeicherten Output: `Read: docs/audit-results/RESULT_04a_BUGS_CORE.md`
+4. Mache mit dem nächsten Batch weiter
 
 ---
 
@@ -250,7 +266,7 @@ Am stärksten betroffenes Modul: [Name] (X Bugs)
 
 - Alle Module gelesen, Bugs nach 13 Fehlerklassen kategorisiert, Datei:Zeile Referenzen
 - Jeder Bug hat: Datei:Zeile, Fehlerklasse, Severity, konkreten Fix-Vorschlag
-- Mindestens 20 Bugs in den Core-Modulen (brain.py, main.py, memory.py, personality.py, function_calling.py) gefunden
+- Alle Core-Module (Prio 1-4) vollständig geprüft — jeder Bug hat Datei:Zeile, Fehlerklasse, Severity und Fix-Vorschlag
 
 ### Erfolgs-Check (Schnellpruefung)
 
@@ -287,6 +303,16 @@ Gesamt: X Bugs in Priorität 1–4 (🔴 X, 🟠 X, 🟡 X, 🟢 X)
 ```
 
 **Wenn du Prompt 4b in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke automatisch ein.
+
+---
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_04a_BUGS_CORE.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ---
 

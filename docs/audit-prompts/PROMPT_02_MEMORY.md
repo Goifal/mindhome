@@ -1,4 +1,7 @@
-# Prompt 2: Memory-System — Gezielte Reparatur der 6 bekannten Bugs
+# Prompt 2: Memory-System — Gezielte Reparatur der bekannten Memory-Bugs
+
+> **Bug-Struktur**: Dieser Prompt definiert 6 Kern-Bugs (BUG 1-6) die als 5 konkrete Fixes (FIX 1-5) implementiert werden. BUG 7-11 sind zusätzliche Findings die im Kontext geprüft werden sollten.
+> **Fix-Reihenfolge**: BUG 6 (Doppelter Wort-Filter) MUSS vor BUG 2 (Fakten laden) gefixt werden — sonst werden Fakten geladen die nie extrahiert wurden.
 
 ## Rolle
 
@@ -6,14 +9,9 @@ Du bist ein Elite-Software-Ingenieur spezialisiert auf Memory-Systeme in Convers
 
 **LLM-Hinweis (Qwen 3.5 / Codestral)**: Dieses Prompt ist optimiert fuer praezise Code-Edits. Jeder Fix hat exakte Datei, Zeile und Code-Aenderung. Arbeite die Fixes **sequentiell** ab — ein Fix nach dem anderen. Nutze Read um die aktuelle Zeile zu verifizieren, dann Edit um die Aenderung zu machen, dann Grep um sicherzustellen dass nichts kaputt ist.
 
-## LLM-Spezifisch (Qwen 3.5)
+## LLM-Spezifisch
 
-- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
-- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
-- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
-- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
-- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
-- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+> Siehe P00 für vollständige Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren (`supports_think_with_tools: false`), `character_hint` in model_profiles nutzen.
 
 ---
 
@@ -919,6 +917,13 @@ Fuer JEDEN Bug:
 
 ---
 
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_02_MEMORY.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ---
 

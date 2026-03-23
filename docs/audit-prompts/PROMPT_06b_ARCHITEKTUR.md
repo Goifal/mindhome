@@ -4,25 +4,24 @@
 
 Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. In Prompt 6a hast du das System stabilisiert. Jetzt räumst du die Architektur auf.
 
-## LLM-Spezifisch (Qwen 3.5)
+## LLM-Spezifisch
 
-- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
-- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
-- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
-- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
-- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
-- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+> Siehe P00 für vollständige Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren (`supports_think_with_tools: false`), `character_hint` in model_profiles nutzen.
 
 ---
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–6a bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch.
->
-> **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke ein:
-> - Prompt 1: Konflikt-Karte & Architektur-Bewertung (Konflikte A–F)
-> - Prompt 3a + 3b: Flow-Analyse mit Bruchstellen & Kollisionen (13 Flows)
-> - Prompt 6a: Stabilisierungs-Ergebnisse (gefixte Bugs, Memory-Status)
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_01_ARCHITEKTUR.md
+Read: docs/audit-results/RESULT_03a_FLOWS_CORE.md
+Read: docs/audit-results/RESULT_03b_FLOWS_EXTENDED.md
+Read: docs/audit-results/RESULT_06a_STABILISIERUNG.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 
 ---
 
@@ -47,9 +46,9 @@ Bevor du irgendetwas aenderst:
 2. **Dieses Ergebnis ist die Baseline** — nach jeder Aenderung in 6b muessen diese Tests weiterhin gruen sein
 3. Falls Tests schon fehlschlagen → zurueck zu 6a, dort zuerst fixen
 
-> **Phase Gate Baseline erklaert**: Der "Baseline" ist der Test-Zustand am ENDE von Prompt 6a.
-> Beispiel: Wenn nach 6a 142 Tests gruen und 3 Tests rot (xfail) sind, dann ist die 6b-Baseline: mindestens 142 gruen.
-> Wenn nach einer Aenderung in 6b nur noch 140 gruen sind = **REGRESSION** → Fix zuruecknehmen!
+> **Phase Gate Baseline**: Führe `cd assistant && python -m pytest --tb=short -q` aus und notiere exakt: X passed, Y failed, Z errors.
+> Das ist deine Baseline. Nach JEDER Änderung: gleichen Befehl ausführen. Wenn passed sinkt oder failed/errors steigt = **REGRESSION** → Fix zurücknehmen!
+> Dokumentiere die Baseline-Zahlen am Anfang deines Outputs.
 
 ### Schritt 1: Architektur-Entscheidung — brain.py
 
@@ -311,6 +310,18 @@ Bevor du zu 6c übergehst:
 □ grep "priority" assistant/assistant/brain.py | head -10 → Priority-System konsistent
 ```
 
+### Self-Check (Pflicht — vor Übergabe ausfüllen!)
+
+```
+SELF-CHECK P06b:
+□ Kontext-Block ≤ 30 Zeilen: [Ja/Nein]
+□ pytest Baseline dokumentiert: [X passed am Start]
+□ pytest nach letztem Fix: [X passed, Y failed]
+□ Keine Regression gegenüber P06a-Baseline: [Ja/Nein]
+□ Architektur-Entscheidung getroffen und begründet: [Ja/Nein]
+□ Addon-Kompatibilität geprüft: [Ja/Nein]
+```
+
 ## ⚡ Übergabe an Prompt 6c
 
 ```
@@ -331,6 +342,14 @@ Bevor du zu 6c übergehst:
 ### Offene Punkte für 6c/6d
 [Was noch fehlt]
 ```
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_06b_ARCHITEKTUR.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ## Output
 

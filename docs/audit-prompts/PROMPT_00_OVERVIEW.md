@@ -25,24 +25,32 @@ Dazu: 103 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen, 2 Front
 | 2 | `PROMPT_02_MEMORY.md` | Memory-System End-to-End (**alle 12 Module**) | Nutzt Konflikt-Karte aus #1 |
 | 3a | `PROMPT_03a_FLOWS_CORE.md` | Init-Sequenz, System-Prompt, **Core-Flows 1–7** | Nutzt Ergebnisse aus #1 + #2 |
 | 3b | `PROMPT_03b_FLOWS_EXTENDED.md` | **Extended-Flows 8–13** + Flow-Kollisionen | Nutzt Ergebnisse aus #3a |
-| 4a | `PROMPT_04a_BUGS_CORE.md` | Bug-Jagd: **Core-Module** (Prio 1–4, ~26 Module) | Nutzt Architektur aus #1–#3b |
+| 3c | `PROMPT_03c_SYSTEM_PROMPT.md` | **System-Prompt-Qualität**: Template, Token-Budget, MCU-Authentizität, Anti-Halluzination | Nach #3b |
+| 4a | `PROMPT_04a_BUGS_CORE.md` | Bug-Jagd: **Core-Module** (Prio 1–4, ~26 Module) | Nutzt Architektur aus #1–#3c |
 | 4b | `PROMPT_04b_BUGS_EXTENDED.md` | Bug-Jagd: **Extended-Module** (Prio 5–9, 63 Module) | Nutzt Patterns aus #4a |
 | 4c | `PROMPT_04c_BUGS_ADDON_SECURITY.md` | Bug-Jagd: **Addon + Security + Performance** (Prio 10–12) | Nutzt Findings aus #4a + #4b |
-| 5 | `PROMPT_05_PERSONALITY.md` | Persönlichkeit, Config, MCU-Authentizität | Nutzt Bug-Liste aus #4a–4c |
+| 4d | `PROMPT_04d_SPEECH_PIPELINE.md` | **STT/TTS Pipeline**: Whisper, Piper, Wortkorrekturen, Meta-Leakage, ESPHome | Nach #4c |
+| 5 | `PROMPT_05_PERSONALITY.md` | Persönlichkeit, Config, MCU-Authentizität | Nutzt Bug-Liste aus #4a–4d |
+| 5b | `PROMPT_05b_INTELLIGENZ_QUALITAET.md` | **Intelligenz-Qualität**: LLM-Routing, Antizipation, Lernen, Proaktivität, Intent, Konsistenz | Nach #5 |
+| 5c | `PROMPT_05c_CONFIG_VALIDATION.md` | **Config-Validation**: settings.yaml vs. Code, Orphans, Hardcoded Values, Feature-Flags | Nach #5b |
 | 6a | `PROMPT_06a_STABILISIERUNG.md` | **Kritische Bugs fixen** + **Memory reparieren** | 🔴 Bugs aus #4a–4c + Memory-Fix aus #2 |
 | 6b | `PROMPT_06b_ARCHITEKTUR.md` | **Architektur-Entscheidungen** + Konflikte + Flows + **Performance** | Konflikte aus #1 + Flows aus #3a/3b |
 | 6c | `PROMPT_06c_CHARAKTER.md` | **Persönlichkeit harmonisieren** + Config + 🟡 Bugs + Dead Code | Personality aus #5 + Bugs aus #4a–4c |
 | 6d | `PROMPT_06d_HAERTUNG.md` | **Security** + **Resilience** + **Addon-Koordination** | Security aus #4c + Konflikt F aus #1 |
 | 6e | `PROMPT_06e_GERAETESTEUERUNG.md` | **Tool-Calling** + **System-Prompt** + Gerätesteuerung | Pain-Point: Geräte reagieren nicht |
 | 6f | `PROMPT_06f_TTS_RESPONSE.md` | **speak-Filter** + **Meta-Leakage** + TTS-Pipeline | Pain-Point: "speak" in Sprachausgabe |
-| 7a | `PROMPT_07a_TESTING.md` | Tests + Coverage + **Security-Endpoint-Tests** | Verifiziert Fixes aus #6a–6f |
+| 6g | `PROMPT_06g_INTELLIGENZ_FIXES.md` | **Intelligenz-Qualität fixen**: Schwellwerte, Konfidenz, False Positives, Feedback-Loops | Qualitäts-Findings aus #5b |
+| 7a | `PROMPT_07a_TESTING.md` | Tests + Coverage + **Security-Endpoint-Tests** | Verifiziert Fixes aus #6a–6g |
 | 7b | `PROMPT_07b_DEPLOYMENT.md` | Docker + Deployment + **Resilience** + **Performance** | Nutzt Test-Ergebnisse aus #7a |
-| 8a | `PROMPT_08a_CODEQUALITAET.md` | **Docs** + **Dependencies** + **CI/CD** + Lokalisierung | Nach #7b |
+| 7c | `PROMPT_07c_INTEGRATION_TESTS.md` | **Integration-Tests**: End-to-End Flows (Chat, Memory, Proaktiv, Resilience, Security) | Nach #7b |
+| 7d | `PROMPT_07d_ADDON_INTEGRATION_TESTS.md` | **Addon-Integration-Tests**: Routes, Domains, Engines, Event-Bus, DB | Nach #7c |
+| 8a | `PROMPT_08a_CODEQUALITAET.md` | **Docs** + **Dependencies** + **CI/CD** + Lokalisierung | Nach #7d |
 | 8b | `PROMPT_08b_BETRIEB.md` | **Multi-User** + **Frontend** + **Monitoring** + Persistenz | Nach #8a |
 | 9a | `PROMPT_09a_FIX_CODEQUALITAET.md` | **Fix: alle P08a Findings** — Docs, Deps, CI/CD, Scripts | Nutzt Findings aus #8a |
 | 9b | `PROMPT_09b_FIX_BETRIEB.md` | **Fix: alle P08b Findings** — Concurrency, Logging, Health | Nutzt Findings aus #8b |
 | 10 | `PROMPT_10_FINAL_VALIDATION.md` | **Zero-Bug Abschluss** — ALLE offenen Bugs fixen, Regression-Test | Nutzt ALLE Kontext-Blöcke |
-| ↻ | `PROMPT_RESET.md` | **Reset für neuen Durchlauf** | Nach #10, vor erneutem #1 |
+| 11 | `PROMPT_11_CLEANUP.md` | **Cleanup**: Result-Dateien löschen, nur `OPEN_BUGS.md` behalten | Nach #10 |
+| ↻ | `PROMPT_RESET.md` | **Reset für neuen Durchlauf** | Nach #11, vor erneutem #1 |
 
 ## Wie verwenden
 
@@ -54,26 +62,32 @@ Die Prompts sind für **Claude Code** (Anthropics CLI-Tool) optimiert. Übergib 
 2. Kopiere den Inhalt von Prompt 1 als Nachricht
 3. Claude Code führt die Analyse durch — liest Dateien, sucht mit Grep, führt Befehle aus
 4. Kopiere dann Prompt 2 als Nachricht — Claude Code nutzt seine Ergebnisse automatisch
-5. Wiederhole bis Prompt 7b
+5. Wiederhole bis Prompt 11 (oder bis PROMPT_RESET für einen neuen Durchlauf)
 
-> **Context-Window-Strategie**: Claude Code komprimiert die Konversation automatisch. Bei einem Projekt dieser Größe (276 Python-Dateien) wird der Kontext ab ca. Prompt 3–4 komprimiert. Die Kontext-Blöcke am Ende jedes Prompts (`## KONTEXT AUS PROMPT X`) sichern die wichtigsten Ergebnisse gegen Kompression.
+> **Context-Window-Strategie**: Claude Code komprimiert die Konversation automatisch. Die Kontext-Blöcke am Ende jedes Prompts (`## KONTEXT AUS PROMPT X`) sichern die wichtigsten Ergebnisse gegen Kompression. Bei 276 Python-Dateien wird typischerweise ab Prompt 3–4 komprimiert.
 
 **Wenn der Kontext zu knapp wird**: Starte eine neue Session und füge die Kontext-Blöcke aus den vorherigen Prompts manuell ein (siehe Abschnitt in jedem Prompt).
+
+**Kontext-Block-Regeln:**
+- **Max. 30 Zeilen pro Block** — nur Findings, keine Erklärungen
+- **Format**: `Datei:Zeile — Kurzbeschreibung` (eine Zeile pro Finding)
+- **Nur 🔴/🟠 Bugs** im Block — 🟡/🟢 nur als Zähler (`🟡: 12 Findings`)
+- **Keine Prosa** — Listen statt Absätze
 
 **Beispiel eines Kontext-Blocks** (so sieht der Output am Ende jedes Prompts aus):
 ```
 ## KONTEXT AUS PROMPT 1: Architektur-Analyse
 
 ### Konflikt-Karte
-- A (WER SAGT): personality.py + context_builder.py + mood_detector.py → kein Koordinator, personality.py:242 ueberschreibt mood
-- B (WER TUT): function_calling.py:3143 + action_planner.py:89 → kein Mutex, parallele Aufrufe moeglich
-- F (ASSISTANT↔ADDON): Beide steuern HA-Entities, kein Locking, Addon hat eigenen event_bus.py
+- A (WER SAGT): personality.py:242 + context_builder.py + mood_detector.py → kein Koordinator
+- B (WER TUT): function_calling.py:3143 + action_planner.py:89 → kein Mutex
+- F (ASSISTANT↔ADDON): Beide steuern HA-Entities, kein Locking
 
 ### Service-Interaktion
-Assistant ←HTTP→ Addon (Port 5000), Assistant ←WS→ HA, Addon ←WS→ HA (eigene Connection)
+Assistant ←HTTP→ Addon (:5000), Assistant ←WS→ HA, Addon ←WS→ HA (eigene Connection)
 
 ### Top-5 Architektur-Probleme
-1. 🔴 brain.py God-Object (10.231 Zeilen, alle Flows)
+1. 🔴 brain.py God-Object (10.231 Zeilen)
 2. 🔴 Addon+Assistant steuern gleiche Entities ohne Koordination
 3. 🟠 12 Memory-Silos ohne Integration
 4. 🟠 main.py zweites God-Object (8.037 Zeilen, 200+ Endpoints)
@@ -86,9 +100,18 @@ Assistant ←HTTP→ Addon (Port 5000), Assistant ←WS→ HA, Addon ←WS→ HA
 2. Am Ende jeder Analyse erstellt Claude Code einen kompakten **Kontext-Block** (markiert mit `## KONTEXT AUS PROMPT X`)
 3. Kopiere diesen Block in den `## Kontext aus vorherigen Prompts`-Abschnitt des nächsten Prompts
 4. Starte eine neue Session und übergib den nächsten Prompt mit dem eingefügten Kontext
-5. Wiederhole bis Prompt 7b
+5. Wiederhole bis Prompt 11 (oder bis PROMPT_RESET für einen neuen Durchlauf)
 
 > **Vorteil**: Frischer Context Window für jeden Prompt. Maximale Gründlichkeit pro Prompt.
+
+### Result-Dateien als Kontextquelle
+
+Ab Durchlauf #2+ können Prompts ihre Vorgänger-Ergebnisse direkt aus `docs/audit-results/RESULT_*.md` lesen. Das ist zuverlässiger als Konversations-Kontext, da:
+- Keine Kompression durch Claude Code
+- Exakte Ergebnisse statt zusammengefasste Kontext-Blöcke
+- Funktioniert auch in neuen Sessions ohne manuelles Kopieren
+
+**Voraussetzung**: Die Result-Dateien müssen nach jedem Prompt-Durchlauf in `docs/audit-results/` gespeichert werden.
 
 ---
 
@@ -130,6 +153,95 @@ Wenn ein Prompt sagt "Implementiere den Fix":
 - **Nutze Edit**: Ändere die Datei direkt mit dem Edit-Tool
 - **Nicht**: Zeige nur einen Diff oder Code-Vorschlag
 
+### ⚠️ KRITISCH: Große Dateien — NIEMALS komplett lesen!
+
+Diese Dateien sind zu groß für einen einzelnen Read-Aufruf. **IMMER zuerst mit Grep die relevante Stelle finden, dann gezielt mit Read + offset/limit lesen:**
+
+| Datei | Größe | Zeilen | Strategie |
+|---|---|---|---|
+| `assistant/assistant/brain.py` | 629KB | ~10.231 | **Grep → Read offset/limit** |
+| `assistant/assistant/function_calling.py` | 419KB | ~12.695 | **Grep → Read offset/limit** |
+| `assistant/assistant/state_change_log.py` | 379KB | ~11.882 | **Grep → Read offset/limit** |
+| `assistant/assistant/proactive.py` | 378KB | ~10.684 | **Grep → Read offset/limit** |
+| `assistant/assistant/main.py` | 359KB | ~10.870 | **Grep → Read offset/limit** |
+| `assistant/assistant/personality.py` | 179KB | ~5.637 | **Grep → Read offset/limit** |
+| `assistant/assistant/pattern_engine.py` | 106KB | ~3.200 | **Grep → Read offset/limit** |
+| `assistant/assistant/automation_engine.py` | 118KB | ~3.500 | **Grep → Read offset/limit** |
+
+**Richtig:**
+```
+# 1. Erst Grep um die Zeile zu finden:
+Grep: pattern="class HallucinationGuard\|def _check_hallucin" path="assistant/assistant/brain.py"
+# 2. Dann gezielt lesen:
+Read: assistant/assistant/brain.py offset=8100 limit=200
+```
+
+**Falsch:**
+```
+# NIEMALS! Frisst den gesamten Kontext auf:
+Read: assistant/assistant/brain.py
+# NIEMALS! "Abschnitt" ist kein Tool-Parameter:
+Read: assistant/assistant/brain.py (Abschnitt: Halluzinations-Guard)
+```
+
+### ⚠️ Pseudo-Befehle in Prompts richtig interpretieren
+
+Die Prompts verwenden `Read:`, `Grep:`, `Glob:` als **Anweisungen an dich, die entsprechenden Claude-Code-Tools zu benutzen**. Beispiel:
+
+```
+# Das hier in einem Prompt...
+Read: assistant/assistant/anticipation.py (Abschnitte: Confidence-Berechnung, Schwellwerte)
+
+# ...bedeutet: Benutze ZUERST Grep um die Abschnitte zu finden, DANN Read mit offset/limit:
+Grep: pattern="confidence\|Confidence\|def.*calc" path="assistant/assistant/anticipation.py"
+Read: assistant/assistant/anticipation.py offset=[Ergebnis] limit=100
+```
+
+Wenn ein Prompt sagt `Read: verzeichnis/ (alle Dateien)`:
+```
+# NICHT: Read auf ein Verzeichnis (funktioniert nicht!)
+# STATTDESSEN: Glob → dann jede Datei einzeln lesen
+Glob: pattern="verzeichnis/**/*.py"
+# Dann für jede gefundene Datei:
+Read: verzeichnis/datei1.py
+Read: verzeichnis/datei2.py
+```
+
+### Kontext-Budget beachten
+
+Jeder Prompt verbraucht Kontext für:
+1. **Prompt-Text selbst** (~500-900 Zeilen = 2.000-4.000 Tokens)
+2. **Code-Reads** (jede gelesene Datei = 500-10.000 Tokens)
+3. **Grep-Ergebnisse** (~50-500 Tokens pro Suche)
+4. **Dein Output** (Analyse + Ergebnis-Datei = 2.000-5.000 Tokens)
+
+**Faustregel:** Lies pro Prompt nicht mehr als **5.000 Zeilen Code total**. Bei großen Dateien: Nur die relevanten Stellen lesen (Grep → Read offset/limit).
+
+### Bewertungskriterien — Konkrete Maßstäbe
+
+Wenn ein Prompt sagt "Prüfe ob X gut ist" oder "Bewerte die Qualität", nutze diese konkreten Kriterien:
+
+| Vage Formulierung | Konkrete Messung |
+|---|---|
+| "MCU-Jarvis-authentisch" | Enthält Butler-Anrede ("Sir"), trockenen Humor, keine generischen Floskeln ("Natürlich!", "Gerne!"), proaktive Hinweise, Respekt ohne Unterwürfigkeit |
+| "Sinnvolle Schwellwerte" | Wert hat Kommentar WARUM, ist nicht willkürlich (0.5 statt 0.4999), passt zur Domain (Licht=Sekunden, Klima=Minuten) |
+| "Funktioniert es?" | 1. Kein Crash bei Normal-Input. 2. Kein Crash bei Edge-Cases. 3. Wird tatsächlich von brain.py aufgerufen. 4. Output wird weiterverarbeitet |
+| "Gute Code-Qualität" | Kein `except: pass`, kein `eval()`, Type Hints vorhanden, Funktionen <50 Zeilen, keine Magic Numbers ohne Kommentar |
+| "Token-effizient" | Keine redundanten Wiederholungen im Prompt, keine langen Beispiele wenn 1 reicht, wichtigstes steht am Anfang |
+| "Robust" | Graceful Degradation wenn Abhängigkeit fehlt, Timeout bei externen Calls, Retry mit Backoff bei transienten Fehlern |
+
+### Score-Rubrik (1-5)
+
+Wenn ein Prompt eine Bewertung auf Skala 1-5 verlangt:
+
+| Score | Bedeutung | Kriterium |
+|---|---|---|
+| **1** | Kaputt | Funktioniert nicht, Crashes, kritische Bugs |
+| **2** | Mangelhaft | Funktioniert meistens, aber bekannte Edge-Cases brechen |
+| **3** | Akzeptabel | Funktioniert, aber mit Schwächen die den User stören könnten |
+| **4** | Gut | Funktioniert zuverlässig, kleinere Verbesserungen möglich |
+| **5** | Exzellent | Produktionsreif, robust, gut getestet, keine bekannten Schwächen |
+
 ## Bug-Typ → Fix-Prompt Zuordnung
 
 Wenn ein Bug in P04a-P04c gefunden wird, muss er dem richtigen Fix-Prompt zugeordnet werden:
@@ -142,41 +254,59 @@ Wenn ein Bug in P04a-P04c gefunden wird, muss er dem richtigen Fix-Prompt zugeor
 | **Security** (Injection, Auth, Race Conditions) | **P06d** | User-Input unescaped, fehlende Locks, kein Timeout |
 | **Tool-Calling** (Gerät reagiert nicht, falsche Entity) | **P06e** | Tool-Call fehlgeschlagen, entity_id falsch, kein Fallback |
 | **TTS/Sprache** ("speak" in Ausgabe, Meta-Leakage) | **P06f** | "speak:", Markdown in TTS, Funktionsnamen hörbar |
+| **Intelligenz-Qualität** (falsche Schwellwerte, False Positives, Feedback-Loops) | **P06g** | Konfidenz zu hoch, Keyword-Matching zu breit, Death Spiral |
+| **System-Prompt-Qualität** (Token-Budget, Redundanz, Character-Lock) | **P06g** | Template-Optimierung, Sektions-Trennung |
+| **STT-Bugs** (Kyrillische Zeichen, fehlende Wörter) | **P06g** | Word-Corrections fixen |
+| **Config-Bugs** (unsichere Zugriffe, Orphans) | **P06g** | yaml_config["key"] → .get() |
 | **Fehlende awaits** | **P06a** (🔴) oder **P06b** (🟠) | Je nach Schweregrad |
 | **Stille Fehler** (except: pass) | **P06a** (🔴) oder **P06d** | Je nach Sicherheitsrelevanz |
 
-> **Regel**: 🔴 Bugs → P06a (Stabilisierung zuerst). 🟠 Bugs → P06b-P06d (je nach Typ). 🟡 Bugs → P06c (Charakter/Cleanup). Wenn unklar → P06a.
+> **Regel**: 🔴 Bugs (Crash/Datenverlust) → P06a. 🔴 Bugs (Security) → P06d. 🟠 Bugs → P06b-P06f je nach Typ. 🟡 Bugs → P06c. Wenn unklar → P06a.
 
 ## Was jeder Prompt abdeckt
 
-| Aspekt | P1 | P2 | P3a | P3b | P4a | P4b | P4c | P5 | P6a | P6b | P6c | P6d | P6e | P6f | P7a | P7b | P8a | P8b | P9a | P9b | P10 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Assistant-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Addon-Module | ✅ | ✅ | - | ✅ | - | - | ✅ | ✅ | - | - | - | ✅ | - | - | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Shared-Module (API-Verträge) | ✅ | - | ✅ | ✅ | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | ✅ | - | ✅ | - | ✅ |
-| Speech-Service | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
-| Architektur | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | - |
-| Memory (12 Module) | - | ✅ | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - | ✅ |
-| Flows (13 Pfade) | - | - | ✅ | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - |
-| Bug-Jagd (13 Klassen) | - | - | - | - | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | - | - | - | - | - | - | - | - | ✅ |
-| **Gerätesteuerung/Tool-Calling** | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | ✅ |
-| **TTS/Meta-Leakage** | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ |
-| **Performance & Latenz** | - | - | - | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
-| Security | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | ✅ | - | - | ✅ | - | ✅ | ✅ |
-| Resilience | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
-| Persönlichkeit / MCU | ✅ | - | ✅ | - | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - | - | - | - | - | - |
-| Config / YAML | - | - | - | - | - | - | - | ✅ | - | - | ✅ | - | ✅ | ✅ | - | - | ✅ | - | ✅ | - | - |
-| Tests (103 Dateien) | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | ✅ |
-| Docker / Deployment | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
-| Frontend (app.jsx, app.js) | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
-| Dependencies (requirements.txt) | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | ✅ | - | ✅ | - | ✅ |
-| Translations / Manifests | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | - |
-| **Dokumentation (README)** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | ✅ |
-| **CI/CD Pipeline** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | - |
-| **Multi-User / Concurrency** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | ✅ |
-| **Logging / Monitoring** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | ✅ |
-| **Daten-Persistenz / Backup** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | ✅ |
-| **Shell-Scripts** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | - |
+| Aspekt | P1 | P2 | P3a | P3b | P4a | P4b | P4c | P5 | P5b | P6a | P6b | P6c | P6d | P6e | P6f | P6g | P7a | P7b | P7c | P7d | P8a | P8b | P9a | P9b | P10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Assistant-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Addon-Module | ✅ | ✅ | - | ✅ | - | - | ✅ | ✅ | - | - | - | - | ✅ | - | - | - | - | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Shared-Module (API-Verträge) | ✅ | - | ✅ | ✅ | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | ✅ | - | ✅ | - | ✅ |
+| Speech-Service | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | ✅ |
+| Architektur | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | - | - | - |
+| Memory (12 Module) | - | ✅ | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | ✅ | - | ✅ | - | - | - | - | - | ✅ |
+| Flows (13 Pfade) | - | - | ✅ | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - | ✅ | ✅ | - | - | - | - | - | - |
+| Bug-Jagd (13 Klassen) | - | - | - | - | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - | ✅ |
+| **Gerätesteuerung/Tool-Calling** | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | ✅ | - | - | - | - | - | ✅ |
+| **TTS/Meta-Leakage** | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - | ✅ |
+| **Performance & Latenz** | - | - | - | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | ✅ |
+| Security | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | ✅ | - | ✅ | ✅ | - | ✅ | - | ✅ | ✅ |
+| Resilience | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | - | ✅ | ✅ | - | - | ✅ | - | ✅ | ✅ |
+| Persönlichkeit / MCU | ✅ | - | ✅ | - | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - | - |
+| Config / YAML | - | - | - | - | - | - | - | ✅ | - | - | ✅ | - | ✅ | ✅ | - | - | - | - | ✅ | - | ✅ | - | - |
+| Tests (103+ Dateien) | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | ✅ | - | - | - | - | ✅ |
+| Docker / Deployment | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | ✅ |
+| Frontend (app.jsx, app.js) | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | ✅ |
+| Dependencies (requirements.txt) | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | ✅ | - | ✅ | - | ✅ |
+| Translations / Manifests | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | - |
+| **Dokumentation (README)** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | ✅ |
+| **CI/CD Pipeline** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | - |
+| **Multi-User / Concurrency** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | ✅ |
+| **Logging / Monitoring** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | ✅ |
+| **Daten-Persistenz / Backup** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
+| **Shell-Scripts** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | - |
+| **Addon-Routes (18 Blueprints)** | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **Domain-Plugins (23)** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **Engines (16)** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **Event-Bus** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **Pattern Engine** | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **Automation Engine** | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **LLM-Routing-Qualität** | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - |
+| **Kausales Denken / Antizipation** | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - |
+| **Lernfähigkeit / Feedback-Loops** | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - |
+| **Proaktivitäts-Qualität** | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - |
+| **Intent-Erkennung / Kontext** | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - |
+| **Persönlichkeits-Konsistenz** | - | - | - | - | - | - | - | ✅ | ✅ | - | - | ✅ | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - | - |
+| **Multi-User-Fairness** | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - | ✅ | - | ✅ | ✅ |
+| **Schwellwert-Korrektheit** | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - |
 
 ## Wichtige Rahmenbedingungen
 
@@ -188,14 +318,19 @@ Das System läuft auf: **AMD Ryzen 7 3700X**, **64GB DDR4**, **RTX 3090 (24GB VR
 
 ### Kontext-Block-Größe & Akkumulation
 
-Jeder Prompt generiert am Ende einen **Kontext-Block** für den nächsten Prompt. Damit die Blöcke bei Prompt 7b (der alle ~13 vorherigen Blöcke braucht) nicht den Kontext sprengen:
+Jeder Prompt generiert am Ende einen **Kontext-Block** für den nächsten Prompt.
 
-- **Max. 30–50 Zeilen pro Kontext-Block** — Zusammenfassung, nicht vollständiges Ergebnis
-- **Nur kritische Findings** in den Block — Details bleiben im ausführlichen Output
+- **Max. 30 Zeilen pro Kontext-Block** — kompakte Listen, keine Prosa
+- **Nur 🔴/🟠 Findings** im Block — 🟡/🟢 nur als Zähler
 - **Code-Referenzen kompakt**: `brain.py:123` statt langer Erklärungen
-- Bei Bug-Listen: Nur 🔴 und 🟠 Bugs im Kontext-Block, 🟡/🟢 nur als Zähler
 
-> **⚠️ Akkumulation**: Bei 21 Kontext-Blöcken á 30–50 Zeilen können das ~600 Zeilen (~4.500 Tokens) nur für Kontext sein. Dank der Aufteilung in kleinere Prompts bleibt aber Platz für die eigentliche Arbeit. **Ab Prompt 6a–6d wird es eng** — erwäge dann separate Sessions (Option B) oder kürze ältere Kontext-Blöcke auf das absolute Minimum. **Ab P09a** nur noch die OFFEN-Liste der vorherigen Prompts mitgeben, nicht alle Kontext-Blöcke.
+> **Akkumulations-Strategie nach Phase:**
+> - **P01–P05 (Analyse)**: Vollständige Kontext-Blöcke mitgeben (max. 30 Zeilen pro Block)
+> - **P06a–P06f (Fixes)**: Nur die OFFEN-Liste und Bug-Zuordnungstabelle mitgeben, nicht alle Analyse-Blöcke
+> - **P07a–P09b**: Nur die OFFEN-Liste der verbleibenden Bugs
+> - **P10 (Final)**: Nur die OFFEN-Liste — alles was hier steht MUSS gefixt werden
+>
+> **Falls der Kontext trotzdem eng wird**: Starte eine neue Session (Option B) und gib nur die OFFEN-Liste mit.
 
 ### Bewusste Redundanzen
 Einige Elemente wiederholen sich in mehreren Prompts (Phase-Gate, 13 Fehlerklassen, Rolle). Das ist **gewollt** — jeder Prompt muss standalone funktionieren, falls er in einer separaten Session genutzt wird. Referenz-Definitionen:
@@ -218,7 +353,7 @@ Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ing
 
 ## LLM-Spezifisch (Qwen 3.5)
 
-- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Modell: qwen3.5:9b (fast, ctx 32k), qwen3.5:35b-moe (smart, ctx 32k), qwen3.5:35b-moe (deep, ctx 64k)
 - Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
 - Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
 - Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
@@ -231,16 +366,21 @@ Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ing
 2. **Memory-Diagnose** — Warum Jarvis vergisst + Fix
 3a. **Core-Flows** — Flows 1–7 mit Init-Sequenz und System-Prompt
 3b. **Extended-Flows** — Flows 8–13 mit Kollisionen
+3c. **System-Prompt-Audit** — Template-Qualität, Token-Budget, MCU-Authentizität, Injection-Schutz
 4a. **Core-Bug-Report** — Bugs in brain.py, main.py, memory, context, actions
 4b. **Extended-Bug-Report** — Bugs in proaktiven Systemen, HA, audio, intelligence
 4c. **Addon/Security/Performance** — Addon-Bugs, Security-Audit, Latenz-Analyse
+4d. **Sprach-Pipeline-Audit** — STT/TTS Qualität, Wortkorrekturen, Meta-Leakage, ESPHome Hardware
 5. **Persönlichkeits-Audit** — MCU-Score + Inkonsistenzen + Config-Probleme
+5b. **Intelligenz-Qualitätsaudit** — Scorecard für LLM-Routing, Antizipation, Lernen, Proaktivität, Intent, Konsistenz, Fairness
+5c. **Config-Validation** — settings.yaml Gesundheitscheck: Orphans, Hardcoded Values, unsichere Zugriffe, Feature-Flags
 6a. **Stabilisierte Codebase** — Kritische Bugs gefixt, Memory repariert
 6b. **Optimierte Architektur** — Konflikte aufgelöst, Flows repariert, **Latenz optimiert**
 6c. **Harmonisierter Charakter** — Eine Stimme, saubere Config, Dead Code entfernt
 6d. **Gehärtetes System** — Security geschlossen, Resilience implementiert, Addon koordiniert
 6e. **Funktionierende Gerätesteuerung** — Tool-Calling zuverlässig, System-Prompt optimiert, deterministic Fallback erweitert
 6f. **Saubere Sprachausgabe** — Kein "speak"/Meta-Leakage in TTS, Response-Filter gehärtet
+6g. **Intelligenter Jarvis** — Schwellwerte korrigiert, Konfidenz realistisch, False Positives reduziert, Feedback-Loops repariert
 7a. **Test-Report** — Tests bestehen, Coverage-Lücken geschlossen, Security-Endpoints verifiziert
 7b. **Deployment-Report** — Docker läuft, **Performance gemessen**, Resilience getestet
 8a. **Code-Qualitäts-Report** — README aktuell, Dependencies sauber, CI/CD bewertet, Lokalisierung geprüft
@@ -251,17 +391,21 @@ Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ing
 
 ## Erfolgsmetriken
 
-- Alle Module gelesen mit Datei:Zeile Referenzen
-- Jeder Prompt liefert einen vollstaendigen Kontext-Block fuer den naechsten Prompt
+**Analyse-Phase (P01–P05):**
+- Alle Module mit Datei:Zeile Referenzen geprüft
+- Jeder Prompt liefert einen Kontext-Block (max. 30 Zeilen) für den nächsten Prompt
 - Alle 13 Flows dokumentiert mit Status und Bruchstellen
-- Alle 6 Konfliktkarten ausgefuellt mit Code-Referenzen
-- **Dependencies gepinnt**, keine unused/missing, keine CVEs
-- **CI/CD Pipeline** vorhanden (GitHub Actions oder aequivalent)
-- **Multi-User sicher** — Request-Isolation, LLM-Concurrency, Redis-Key-Isolation
-- **Logging strukturiert** — kein print(), keine Secrets in Logs, Request-ID Tracking
-- **Health-Endpoints** in allen Services mit Dependency-Checks
-- **Daten-Persistenz** gesichert (Redis AOF, Volume-Mounts)
-- **Zero-Bug Declaration** am Ende von P10 — kein einziger offener Bug
+- Alle 6 Konfliktkarten ausgefüllt mit Code-Referenzen
+
+**Fix-Phase (P06a–P09b):**
+- `cd assistant && python -m pytest --tb=short -q` grün nach jeder Fix-Phase
+- `python -m py_compile` erfolgreich für alle geänderten Dateien
+- Jeder Fix committet mit beschreibender Nachricht
+
+**Abschluss (P10–P11):**
+- OFFEN-Liste enthält keine 🔴/🟠 Bugs mehr (nur 🟡 mit Begründung erlaubt)
+- Alle Result-Dateien gelöscht, nur `OPEN_BUGS.md` verbleibt (falls Bugs offen)
+- `cd assistant && python -m pytest --tb=short -q` grün
 
 ## Eskalations-Schema fuer offene Bugs
 

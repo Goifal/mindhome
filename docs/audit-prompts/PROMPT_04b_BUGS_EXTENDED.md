@@ -6,14 +6,9 @@ Du bist ein Elite-Debugging-Experte für Python, AsyncIO, FastAPI, Flask, Redis,
 
 ---
 
-## LLM-Spezifisch (Qwen 3.5)
+## LLM-Spezifisch
 
-- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
-- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
-- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
-- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
-- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
-- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+> Siehe P00 für vollständige Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren (`supports_think_with_tools: false`), `character_hint` in model_profiles nutzen.
 
 ---
 
@@ -25,13 +20,17 @@ Du arbeitest mit dem Quellcode, nicht mit einem laufenden System. Prüfe auch wi
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–4a bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
->
-> **Wenn dies eine neue Konversation ist**: Füge hier ein:
-> - Kontext-Block aus Prompt 1 (Konflikt-Karte)
-> - Kontext-Block aus Prompt 2 (Memory-Analyse)
-> - Kontext-Block aus Prompt 3a + 3b (Flow-Analyse)
-> - Kontext-Block aus Prompt 4a (Core-Bugs — besonders die "Patterns die weitergesucht werden sollten")
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_01_KONFLIKTKARTE.md
+Read: docs/audit-results/RESULT_02_MEMORY.md
+Read: docs/audit-results/RESULT_03a_FLOWS_CORE.md
+Read: docs/audit-results/RESULT_03b_FLOWS_EXTENDED.md
+Read: docs/audit-results/RESULT_04a_BUGS_CORE.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 >
 > **⚠️ OHNE den Kontext-Block aus P4a fehlen dir die Bug-Patterns aus den Core-Modulen!** Die gleichen Fehler-Patterns (z.B. fehlende awaits) wiederholen sich oft in Extended-Modulen. Wenn du den Block nicht hast, starte zuerst mit Prompt 4a.
 
@@ -140,6 +139,27 @@ Prüfe die **Extended-Module** (Priorität 5–9, 63 Module) systematisch auf di
 78. `task_registry.py`
 79. `timer_manager.py` — Timer-Verwaltung
 
+### Priorität 9b — Fehlende Module (PFLICHT — wurden in früheren Versionen übersehen!)
+
+> **ACHTUNG**: Diese 16 Module waren in keinem Bug-Prompt gelistet. Sie MÜSSEN geprüft werden!
+
+80. `state_change_log.py` — **379KB!** Attribution: WER hat WAS geändert (Jarvis/Automation/User/Unbekannt), 80+ Abhängigkeitsregeln. Größtes Modul nach brain.py — KRITISCH!
+81. `brain_humanizers.py` — Anti-Bot-Features: Antwortstruktur variieren, natürliche Pausen, Denkpausen
+82. `core_identity.py` — Unveränderlicher Identitätsblock: Werte (Loyalität, Ehrlichkeit, Diskretion), Emotionsspektrum
+83. `inner_state.py` — Jarvis' eigene Emotionen: 7 Stimmungen (neutral, zufrieden, amüsiert, besorgt, stolz, neugierig, gereizt)
+84. `notification_dedup.py` — Duplikat-Benachrichtigungen unterdrücken (Cooldown, Batching)
+85. `family_manager.py` — Multi-User Familienverwaltung, Personen-Profile
+86. `settings_validator.py` — Config-Validation für settings.yaml
+87. `knowledge_graph.py` — Wissensgraph für Fakten-Verknüpfungen
+88. `llm_enhancer.py` — LLM-Prompt-Optimierung, Prompt-Engineering
+89. `latency_tracker.py` — Response-Time-Tracking, Optimierungsziele
+90. `response_cache.py` — Cache häufiger Antworten, TTL-basiert
+91. `person_preferences.py` — Persönliche Präferenzen pro Benutzer
+92. `personal_dates.py` — Geburtstage, Jahrestage, wichtige Termine
+93. `meal_planner.py` — Mahlzeitenplanung, Ernährungsprofile
+94. `note_manager.py` — Notizen-Verwaltung
+95. `task_manager.py` — Aufgaben-/Todo-Verwaltung
+
 ---
 
 ## Spezifische Problemzonen
@@ -166,6 +186,26 @@ Prüfe die **Extended-Module** (Priorität 5–9, 63 Module) systematisch auf di
 > - **Batch 11** (Priorität 9 — Domain): `calendar_intelligence.py`, `inventory.py`, `web_search.py`, `knowledge_base.py`, `summarizer.py`, `ocr.py`, `file_handler.py`
 > - **Batch 12** (Priorität 9 — Monitoring): `workshop_library.py`, `workshop_generator.py`, `health_monitor.py`, `device_health.py`, `energy_optimizer.py`, `predictive_maintenance.py`, `repair_planner.py`
 > - **Batch 13** (Priorität 9 — Rest): `visitor_manager.py`, `follow_me.py`, `wellness_advisor.py`, `activity.py`, `seasonal_insight.py`, `explainability.py`, `diagnostics.py`, `task_registry.py`, `timer_manager.py`
+> - **Batch 14** (Priorität 9b — KRITISCH): `state_change_log.py` (**379KB — in Abschnitten lesen!**), `brain_humanizers.py`, `core_identity.py`, `inner_state.py`, `notification_dedup.py`, `family_manager.py`
+> - **Batch 15** (Priorität 9b — Rest): `settings_validator.py`, `knowledge_graph.py`, `llm_enhancer.py`, `latency_tracker.py`, `response_cache.py`, `person_preferences.py`, `personal_dates.py`, `meal_planner.py`, `note_manager.py`, `task_manager.py`
+
+### Fortschritts-Tracking (Pflicht!)
+
+Dokumentiere nach JEDEM Batch deinen Fortschritt:
+
+```
+=== CHECKPOINT Batch X/11 ===
+Geprüfte Module: [Liste]
+Bugs gefunden: 🔴 X, 🟠 X, 🟡 X, 🟢 X
+Verbleibende Batches: [Liste]
+=============================
+```
+
+**Falls der Kontext knapp wird** (Claude Code komprimiert):
+1. Speichere den bisherigen Output sofort: `Write: docs/audit-results/RESULT_04b_BUGS_EXTENDED.md`
+2. Starte eine neue Session
+3. Lies den gespeicherten Output: `Read: docs/audit-results/RESULT_04b_BUGS_EXTENDED.md`
+4. Mache mit dem nächsten Batch weiter
 
 ---
 
@@ -199,7 +239,7 @@ Gesamt: X Bugs (Priorität 5–9)
 - **Jeder Bug mit Code-Referenz** (Datei:Zeile)
 - **Keine false positives** — nur echte Bugs
 - **Nicht fixen** — nur finden und dokumentieren
-- **Priorität 5–7 gründlich**, Priorität 8–9 mindestens auf Top-6 Fehlerklassen (Async, Stille Fehler, Race Conditions, None, Init, Performance)
+- **Priorität 5–7 gründlich** (alle 13 Fehlerklassen), Priorität 8–9 mindestens Fehlerklassen 1-6 (Async, Stille Fehler, Race Conditions, None, Init, API). Bei Zeitmangel: Prio 5-6 sind Pflicht, Prio 7-9 nach Möglichkeit.
 
 ---
 
@@ -207,7 +247,7 @@ Gesamt: X Bugs (Priorität 5–9)
 
 - Alle Extended-Module (Prio 5-9) gelesen, Bugs nach 13 Fehlerklassen kategorisiert
 - Jeder Bug hat: Datei:Zeile, Fehlerklasse, Severity, konkreten Fix-Vorschlag
-- Mindestens 30 Bugs in den Extended-Modulen gefunden
+- Alle Extended-Module (Prio 5-9) geprüft — jeder Bug hat Datei:Zeile, Fehlerklasse, Severity und Fix-Vorschlag
 
 ### Erfolgs-Check (Schnellpruefung)
 
@@ -246,6 +286,16 @@ Gesamt: X Bugs in Priorität 5–9 (🔴 X, 🟠 X, 🟡 X, 🟢 X)
 ```
 
 **Wenn du Prompt 4c in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke automatisch ein.
+
+---
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_04b_BUGS_EXTENDED.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ---
 

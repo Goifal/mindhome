@@ -1,11 +1,71 @@
-# Audit P03b: Extended-Flows (8-13) + Kollisionen + Service-Interaktion
+# Prompt 3b: Extended-Flows (8-13) + Kollisionen + Service-Interaktion
 
-**Datum**: 2026-03-13
-**Auditor**: Claude Opus 4.6 (P03b)
-**Scope**: Flows 8-13, Flow-Kollisionen, Service-Interaktionsanalyse
-**Kontext**: Aufbauend auf P03a Core-Flows (1-7)
+## Rolle
+
+Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Du analysierst die erweiterten Flows und deren Kollisionen.
+
+## LLM-Spezifisch
+
+> Siehe P00 für Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren, character_hint nutzen.
+
+## Kontext aus vorherigen Prompts
+
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse:
+
+```
+Read: docs/audit-results/RESULT_03a_FLOWS_CORE.md
+```
+
+> Falls die Datei nicht existiert → nutze Kontext-Blöcke aus der Konversation.
 
 ---
+
+## Aufgabe
+
+Analysiere die Extended-Flows 8-13, deren Kollisionen untereinander und mit Core-Flows, sowie die Service-Interaktion zwischen Assistant und Addon.
+
+### Schritt 1: Flows 8-13 analysieren
+Für JEDEN der 6 Extended-Flows:
+
+1. **Flow 8: Addon-Automation** — Wie steuert der Addon HA-Entities eigenständig? Koordination mit Assistant?
+2. **Flow 9: Domain-Assistenten** — Cooking, Workshop etc. — umgehen sie die Personality-Pipeline?
+3. **Flow 10: Workshop-System** — 84 Endpoints, eigene LLM-Prompts, Hardware-Steuerung
+4. **Flow 11: Boot-Sequenz** — Startreihenfolge, Boot-Announcement
+5. **Flow 12: File-Upload & OCR** — Sicherheit, Pfad-Validierung, MIME-Type
+6. **Flow 13: WebSocket-Streaming** — Events, Reconnection, Backpressure
+
+Für JEDEN Flow dokumentiere:
+- **Ablauf**: Schritt für Schritt mit Datei:Zeile
+- **Bruchstellen**: Wo kann es schiefgehen?
+- **Fehler-Pfade**: Was passiert bei Fehler?
+- **Kollisionen**: Kann dieser Flow mit anderen gleichzeitig laufen?
+
+### Schritt 2: Flow-Kollisions-Tabelle erstellen
+Erstelle eine Matrix: Welche Flows können gleichzeitig laufen und was passiert?
+
+### Schritt 3: Service-Interaktions-Analyse
+- Wie kommunizieren Assistant und Addon?
+- Welche Kommunikationslücken gibt es?
+- Gibt es doppelte Steuerung gleicher HA-Entities?
+
+### Schritt 4: Feature-Gaps identifizieren
+Liste fehlende Features mit Severity (🔴/🟠/🟡/🟢).
+
+## Output-Format
+1. Flow-Dokumentation (Flows 8-13) mit Ablauf, Bruchstellen, Fehler-Pfaden
+2. Flow-Kollisions-Tabelle
+3. Service-Interaktions-Diagramm + Kommunikationslücken
+4. Feature-Gaps mit Severity
+5. Kontext-Block für nächsten Prompt (max 30 Zeilen)
+
+---
+
+## Referenz-Ergebnisse aus Durchlauf #1
+
+> **⚠️ ACHTUNG**: Die folgenden Ergebnisse stammen aus einem früheren Durchlauf.
+> **ALLE Zeilennummern sind veraltet** und dürfen NICHT direkt verwendet werden!
+> Nutze sie nur als Orientierung WAS zu prüfen ist, nicht WO im Code.
+> Für jede Referenz: Suche mit Grep nach dem Funktions-/Variablennamen, nicht nach der Zeilennummer.
 
 ## 1. Flow-Dokumentation (Flows 8-13)
 
@@ -61,7 +121,7 @@
 **Bruchstellen**:
 - **brain.py:1431,1443**: Cooking-Shortcut gibt `model="cooking_assistant"` zurueck — UMGEHT die volle Personality-Pipeline (kein System-Prompt, kein Character-Lock). Der Cooking-LLM-Call nutzt `model_router.get_best_available()` aber baut eigenen Prompt.
 - **brain.py:1451**: Workshop-Shortcut ebenfalls — `model="workshop_activation"`, eigene Logik
-- **smart_shopping, music_dj**: Erreichbar NUR wenn das LLM den richtigen Function Call generiert — kein deterministischer Shortcut. Bei kleinem Modell (qwen3.5:4b) koennte der FC fehlschlagen.
+- **smart_shopping, music_dj**: Erreichbar NUR wenn das LLM den richtigen Function Call generiert — kein deterministischer Shortcut. Bei kleinem Modell (qwen3.5:9b) koennte der FC fehlschlagen.
 - **calendar_intelligence**: Nur passiv als Context-Hint im System-Prompt. Kein eigener Endpunkt, kein Intent-Shortcut.
 
 **Memory-Zugriff**:
@@ -291,16 +351,26 @@
 
 ## 5. Feature-Gaps
 
-| Feature | Status | Beschreibung |
-|---|---|---|
-| **Cross-System Entity Lock** | FEHLT | Kein Mechanismus um zu verhindern dass Addon und Assistant gleichzeitig die gleiche Entity steuern |
-| **Addon → Assistant Event-Kanal** | FEHLT | Addon kann nicht melden "Ich habe X getan" — Assistant ist blind gegenueber Addon-Aktionen |
-| **Shared Schemas/Constants** | FEHLT | Kein shared/ Verzeichnis. Jeder Service definiert eigene Datenstrukturen |
-| **TTS-Lock** | FEHLT | Kein Mechanismus der verhindert dass proaktive TTS und User-Antwort-TTS gleichzeitig sprechen |
-| **WebSocket Event-Recovery** | FEHLT | Kein Replay bei Verbindungsabbruch |
-| **Upload Virus-Scan** | FEHLT | Hochgeladene Dateien werden ohne Malware-Check gespeichert |
-| **Domain-Assistant-Discovery** | FEHLT | Kein automatisches Routing zu Domain-Assistenten — abhaengig von LLM Function-Call-Faehigkeit |
-| **Workshop-Code-Validierung** | FEHLT | LLM-generierter Code (Arduino, Python) wird nicht validiert/kompiliert vor Ausgabe |
+| Feature | Status | Severity | Beschreibung |
+|---|---|---|---|
+| **Cross-System Entity Lock** | FEHLT | 🔴 KRITISCH | Kein Mechanismus um zu verhindern dass Addon und Assistant gleichzeitig die gleiche Entity steuern |
+| **Addon → Assistant Event-Kanal** | FEHLT | 🔴 KRITISCH | Addon kann nicht melden "Ich habe X getan" — Assistant ist blind gegenueber Addon-Aktionen |
+| **Shared Schemas/Constants** | FEHLT | 🟠 HOCH | Kein shared/ Verzeichnis. Jeder Service definiert eigene Datenstrukturen |
+| **TTS-Lock** | FEHLT | 🟠 HOCH | Kein Mechanismus der verhindert dass proaktive TTS und User-Antwort-TTS gleichzeitig sprechen |
+| **WebSocket Event-Recovery** | FEHLT | 🟡 MITTEL | Kein Replay bei Verbindungsabbruch |
+| **Upload Virus-Scan** | FEHLT | 🟡 MITTEL | Hochgeladene Dateien werden ohne Malware-Check gespeichert |
+| **Domain-Assistant-Discovery** | FEHLT | 🟡 MITTEL | Kein automatisches Routing zu Domain-Assistenten — abhaengig von LLM Function-Call-Faehigkeit |
+| **Workshop-Code-Validierung** | FEHLT | 🟢 NIEDRIG | LLM-generierter Code (Arduino, Python) wird nicht validiert/kompiliert vor Ausgabe |
+
+---
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_03b_FLOWS_EXTENDED.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ---
 

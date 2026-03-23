@@ -4,25 +4,23 @@
 
 Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. In 6a hast du stabilisiert, in 6b die Architektur aufgeräumt. Jetzt machst du Jarvis zu **einem** Charakter.
 
-## LLM-Spezifisch (Qwen 3.5)
+## LLM-Spezifisch
 
-- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
-- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
-- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
-- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
-- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
-- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+> Siehe P00 für vollständige Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren (`supports_think_with_tools: false`), `character_hint` in model_profiles nutzen.
 
 ---
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–6b bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch.
->
-> **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke ein:
-> - Prompt 5: Persönlichkeits-Audit & Config-Analyse (MCU-Score, Inkonsistenzen, Config-Probleme)
-> - Prompt 4 gesamt (4a + 4b + 4c): Bug-Report — die 🟡 MITTLEREN Bugs
-> - Prompt 6b: Architektur-Ergebnisse (gelöste Konflikte, reparierte Flows)
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_05_PERSOENLICHKEIT.md
+Read: docs/audit-results/RESULT_06a_STABILISIERUNG.md
+Read: docs/audit-results/RESULT_06b_ARCHITEKTUR.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 
 ---
 
@@ -112,7 +110,7 @@ Prüfe ob `addon/config.yaml` und `assistant/config/settings.yaml` sich widerspr
 
 ### Schritt 4: 🟡 Mittlere Bugs fixen (aus Prompt 4)
 
-Logik-Fehler, fehlende Integrationen, Inkonsistenzen. Arbeite die 🟡-Bug-Liste ab.
+Logik-Fehler, fehlende Integrationen, Inkonsistenzen. Arbeite die 🟡-Bug-Liste ab (aus dem Bug-Zuordnungs-Tabelle in P06a Kontext-Block).
 
 ### Schritt 5: Sarkasmus-System (5 Stufen) verifizieren & fixen
 
@@ -544,6 +542,14 @@ Wenn ein Bug NICHT gefixt werden kann, dokumentiere ihn im OFFEN-Block mit:
 ### Offene Punkte für 6d
 [Was noch fehlt]
 ```
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_06c_CHARAKTER.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ## Output
 

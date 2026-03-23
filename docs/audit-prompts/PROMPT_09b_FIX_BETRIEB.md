@@ -12,6 +12,19 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Du fi
 
 ---
 
+## Kontext aus vorherigen Prompts
+
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_08b_BETRIEB.md
+Read: docs/audit-results/RESULT_09a_FIX_CODEQUALITAET.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
+
+---
+
 ## Grundregel
 
 **Jedes Finding wird gefixt. Keine Ausnahmen.**
@@ -234,6 +247,9 @@ Wenn Health-Endpoints fehlen oder unvollständig:
 
 ```python
 # In jedem Service (FastAPI/Flask):
+import time
+START_TIME = time.time()  # Am Modul-Top-Level definieren (beim Import/Start)
+
 @app.get("/health")
 async def health():
     checks = {}
@@ -345,6 +361,16 @@ Checkliste:
 □ Alle Volumes gemounted
 □ Tests bestehen
 ```
+
+---
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_09b_FIX_BETRIEB.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ---
 

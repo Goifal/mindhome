@@ -18,14 +18,14 @@ Jarvis steuert Geraete ueber LLM-Tool-Calls. Das LLM (Qwen 3.5, 4B Parameter) ge
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–6d bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Bloecke) automatisch.
->
-> **Wenn dies eine neue Konversation ist**: Fuege hier ein:
-> - Kontext-Block aus Prompt 1 (Konflikt-Karte, besonders brain.py-Architektur)
-> - Kontext-Block aus Prompt 4a (Bug-Report, besonders Tool-Calling Bugs)
-> - Kontext-Block aus Prompt 6a-6d (Stabilisierungs-/Architektur-/Charakter-/Haertungs-Ergebnisse)
->
-> **Ohne diese Kontext-Bloecke** fehlt dir das Verstaendnis wie brain.py die Tool-Calls orchestriert und wie der System-Prompt aufgebaut wird.
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_06a_STABILISIERUNG.md
+Read: docs/audit-results/RESULT_06d_HAERTUNG.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 
 ---
 
@@ -37,7 +37,7 @@ Jarvis steuert Geraete ueber LLM-Tool-Calls. Das LLM (Qwen 3.5, 4B Parameter) ge
 > - **Token-Budget ist knapp** — alles ueber ~2000 Token im System-Prompt reduziert die Tool-Calling-Zuverlaessigkeit dramatisch
 > - **Tool-Beschreibungen muessen kurz und praezise sein** — lange Docstrings verwirren das Modell
 > - **Thinking-Modus (`<think>...</think>`) konkurriert mit Tool-Calls** — das Modell "denkt" statt zu handeln
-> - **Weniger Tools = bessere Trefferquote** — bei 15 Tools ist die Trefferquote ~80%, bei 45+ sinkt sie auf ~30%
+> - **Weniger Tools = bessere Trefferquote** — bei 15 Tools ist die Trefferquote ~80%, bei 45+ sinkt sie auf ~30% (Erfahrungswerte aus Tests — exakte Zahlen variieren je nach Modell-Version und Prompt-Länge)
 > - **Die ersten 10 Zeilen des System-Prompts haben 5x mehr Gewicht** als spaetere Zeilen — Tool-Regeln muessen OBEN stehen
 > - **Explizite Beispiele im System-Prompt erhoehen die Trefferquote um ~40%** — "Licht an → set_light(state='on')"
 
@@ -829,6 +829,16 @@ Formatiere am Ende einen kompakten **Kontext-Block**:
 - [ ] Tool-Call-Logging fuer Monitoring einbauen
 - [ ] Groessere Modelle (Qwen 3 30B) testen — evtl. andere Optimierungen noetig
 ```
+
+---
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_06e_GERAETESTEUERUNG.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ---
 

@@ -8,31 +8,26 @@ Du bist ein Elite-QA-Engineer mit tiefem Wissen in:
 - **Security Testing**: Endpoint-Schutz, Rate-Limiting, Auth-Verifikation
 - **Resilience Testing**: Service-Ausfall-Szenarien, Graceful Degradation
 
-## LLM-Spezifisch (Qwen 3.5)
+## LLM-Spezifisch
 
-- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
-- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
-- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
-- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
-- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
-- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+> Siehe P00 für vollständige Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren (`supports_think_with_tools: false`), `character_hint` in model_profiles nutzen.
 
 ---
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–6d bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch.
->
-> **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke aus allen vorherigen Prompts ein:
-> - Prompt 1: Konflikt-Karte & Architektur-Bewertung
-> - Prompt 2: Memory-Diagnose & Root Cause
-> - Prompt 3a + 3b: Flow-Analyse mit Bruchstellen (13 Flows)
-> - Prompt 4a + 4b + 4c: Bug-Report mit allen Bugs + Security + Resilience + Performance
-> - Prompt 5: Persönlichkeits-Audit & Config
-> - Prompt 6a: Stabilisierung (Kritische Bugs + Memory)
-> - Prompt 6b: Architektur (Konflikte + Flows + Performance)
-> - Prompt 6c: Charakter (Persönlichkeit + Config + Dead Code)
-> - Prompt 6d: Härtung (Security + Resilience + Addon-Koordination)
+> **Automatisch**: Lies die Ergebnisse der Fix-Prompts 6a–6f:
+
+```
+Read: docs/audit-results/RESULT_06a_STABILISIERUNG.md
+Read: docs/audit-results/RESULT_06b_ARCHITEKTUR.md
+Read: docs/audit-results/RESULT_06c_CHARAKTER.md
+Read: docs/audit-results/RESULT_06d_HAERTUNG.md
+Read: docs/audit-results/RESULT_06e_GERAETESTEUERUNG.md
+Read: docs/audit-results/RESULT_06f_TTS_RESPONSE.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 
 ---
 
@@ -103,26 +98,31 @@ cd assistant && python -m pytest --cov=assistant --cov-report=term-missing --cov
 
 | Modul-Bereich | Tests vorhanden? | Abdeckung | Ziel |
 |---|---|---|---|
-| brain.py (Orchestrator) | ? | ? | **≥ 70%** |
-| Memory-Kette (7 Module) | ? | ? | **≥ 80%** |
-| Function Calling | ? | ? | **≥ 80%** |
-| Persönlichkeit | ? | ? | ≥ 60% |
-| Proaktive Systeme | ? | ? | ≥ 50% |
-| Speech Pipeline | ? | ? | ≥ 50% |
+| brain.py (Orchestrator) | ? | ? | Alle öffentlichen Methoden |
+| Memory-Kette (7 Module) | ? | ? | Alle öffentlichen Methoden |
+| Function Calling | ? | ? | Alle öffentlichen Methoden |
+| Persönlichkeit | ? | ? | Happy-Path + Sarkasmus-Level |
+| Proaktive Systeme | ? | ? | Happy-Path + Quiet-Hours |
+| Speech Pipeline | ? | ? | Happy-Path |
 | **Addon-Module** | ? | ? | Nur statisch (kein HA) |
-| **Integration zwischen Services** | ? | ? | **≥ 70%** |
+| **Integration zwischen Services** | ? | ? | Kritische Pfade |
 
-**Coverage-Schwellwerte (Pflicht!):**
+**Coverage-Ziele:**
 
-| Kategorie | Ziel-Coverage | Begründung |
+Coverage-Ziele orientieren sich an Modul-Kritikalität:
+- **Sicherheitskritische Module** (function_validator, autonomy, threat_assessment): Höchste Coverage anstreben
+- **Core-Flow-Module** (brain, memory, context_builder): Alle öffentlichen Methoden testen
+- **Utility-Module**: Mindestens Happy-Path-Tests
+Konkrete Prozent-Ziele sind weniger wichtig als: Sind die kritischen Pfade getestet?
+
+| Kategorie | Ziel | Begründung |
 |---|---|---|
-| 🔴 Kritische Module (brain, memory, function_calling) | **≥ 80% Line + Branch** | Core-Logik, höchstes Risiko |
-| 🟠 Wichtige Module (personality, context, handlers) | **≥ 60% Line** | Wichtig aber weniger komplex |
-| 🟡 Support-Module (helpers, utils, formatters) | **≥ 40% Line** | Geringes Risiko |
+| 🔴 Sicherheitskritische Module (function_validator, autonomy, threat_assessment) | **Höchste Coverage** — alle Pfade inkl. Edge Cases | Sicherheitsrelevant, Fehlverhalten gefährdet das Zuhause |
+| 🟠 Core-Flow-Module (brain, memory, function_calling, context_builder) | **Alle öffentlichen Methoden** getestet | Core-Logik, höchstes Risiko |
+| 🟡 Support-Module (helpers, utils, formatters) | **Mindestens Happy-Path-Tests** | Geringes Risiko |
 | ⬜ Addon-Module | **Statische Analyse** | Kein pytest möglich (braucht HA) |
 
 > **Tool:** `pytest-cov` (bereits in requirements.txt). Wenn nicht vorhanden: `pip install pytest-cov`
-> **Akzeptanz-Kriterium:** Gesamt-Coverage **≥ 60%**, kein kritisches Modul unter 50%.
 
 ### Teil B: Kritische Test-Lücken schließen
 
@@ -173,13 +173,16 @@ async def test_factory_reset_requires_auth():
             f"Factory-Reset ohne Auth erlaubt! Status: {response.status_code}"
 
 async def test_pin_auth_rate_limiting():
-    """Nach 10 falschen PIN-Versuchen: Rate-Limiting aktiv."""
+    """Nach mehrfachen falschen PIN-Versuchen (prüfe den konfigurierten Schwellwert im Code): Rate-Limiting aktiv."""
     async with AsyncClient(app=app) as client:
-        for i in range(10):
+        # Anzahl der Versuche aus dem Code ermitteln (z.B. MAX_PIN_ATTEMPTS, rate_limit config)
+        # Grep: pattern="MAX_PIN|max_attempts|pin.*limit|LOGIN.*LIMIT" path="." output_mode="content"
+        attempts = 10  # Anpassen an den tatsächlichen Schwellwert im Code!
+        for i in range(attempts):
             await client.post("/api/ui/auth", json={"pin": f"wrong_{i}"})
-        response = await client.post("/api/ui/auth", json={"pin": "wrong_11"})
+        response = await client.post("/api/ui/auth", json={"pin": f"wrong_{attempts + 1}"})
         assert response.status_code == 429, \
-            f"Kein Rate-Limiting nach 10 Fehlversuchen! Status: {response.status_code}"
+            f"Kein Rate-Limiting nach {attempts} Fehlversuchen! Status: {response.status_code}"
 ```
 
 Für **jedes fehlende kritische Szenario**: **Schreibe einen Test mit dem Write/Edit-Tool** und führe ihn sofort mit Bash aus:
@@ -335,6 +338,14 @@ Neue Tests geschrieben: [Liste]
 ```
 
 **Wenn du Prompt 7b in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke automatisch ein.
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_07a_TESTING.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ## Output
 

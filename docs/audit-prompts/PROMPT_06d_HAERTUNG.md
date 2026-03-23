@@ -4,25 +4,25 @@
 
 Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte mit Fokus auf Security und Resilience. In 6a–6c hast du stabilisiert, die Architektur aufgeräumt und den Charakter harmonisiert. Jetzt härtest du das System.
 
-## LLM-Spezifisch (Qwen 3.5)
+## LLM-Spezifisch
 
-- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
-- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
-- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
-- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
-- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
-- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+> Siehe P00 für vollständige Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren (`supports_think_with_tools: false`), `character_hint` in model_profiles nutzen.
 
 ---
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–6c bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch.
->
-> **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke ein:
-> - Prompt 1: Konflikt-Karte — **Konflikt F** (Assistant ↔ Addon Interaktion)
-> - Prompt 4c: Bug-Report — **Security-Report** und **Resilience-Report**
-> - Prompt 6a–6c: Stabilisierungs-/Architektur-/Charakter-Ergebnisse
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_01_ARCHITEKTUR.md
+Read: docs/audit-results/RESULT_04c_BUGS_ADDON_SECURITY.md
+Read: docs/audit-results/RESULT_06a_STABILISIERUNG.md
+Read: docs/audit-results/RESULT_06b_ARCHITEKTUR.md
+Read: docs/audit-results/RESULT_06c_CHARAKTER.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 
 ---
 
@@ -92,6 +92,17 @@ Arbeite **jeden** Security-Bug aus dem Prompt-4c-Report ab:
 | 9 | Ungültiges LLM-Response | Parsing-Fehler abfangen | Try/Except + Fallback |
 | 10 | Disk voll | Logging + DB graceful | Prüfe Log-Rotation |
 
+**Compound-Failure-Szenarien** (zusätzlich prüfen — mehrere Services gleichzeitig down):
+
+| # | Szenario | Erwartetes Verhalten | Was prüfen |
+|---|---|---|---|
+| 11 | Ollama + Redis gleichzeitig down | Fehlermeldung, kein Crash, kein Endlos-Retry | Prüfe ob Retry-Logik bei beiden Services unabhängig ist |
+| 12 | HA nicht erreichbar + proaktive Events aktiv | Proactive-Loop stoppt sauber, kein CPU-Spin | Prüfe Reconnect-Loop auf Backoff-Limit |
+| 13 | ChromaDB voll + neue Fakten-Speicherung | Warnung loggen, keine Exception, Daten nicht verloren | Prüfe ob store_fact() Fehler abfängt |
+| 14 | Redis + ChromaDB gleichzeitig down | Degraded Mode, Chat funktioniert (ohne Memory) | Prüfe ob brain.process() ohne Memory weiterläuft |
+
+> **Compound-Failures sind realistisch** — z.B. bei Docker-Restart laufen Redis und ChromaDB gleichzeitig nicht. Der Assistant muss das überleben.
+
 **Prüfe und integriere bestehende Resilience-Module:**
 ```
 Grep: pattern="circuit_breaker|CircuitBreaker" path="assistant/assistant/" output_mode="content"
@@ -145,7 +156,7 @@ async def call_external_service(self, ...):
 **Schritt 4: Verifizieren:**
 ```
 Grep: pattern="circuit_breaker|CircuitBreaker" path="assistant/assistant/" output_mode="count"
-→ Mindestens 5 Dateien müssen CircuitBreaker importieren
+→ Alle Module die externe Services aufrufen (Ollama, Redis, ChromaDB, HA) SOLLTEN CircuitBreaker nutzen. Prüfe mit Grep welche Module externe Calls machen und welche davon CircuitBreaker importieren.
 ```
 
 ### Schritt 3: Addon-Koordination fixen (Konflikt F aus Prompt 1)
@@ -509,6 +520,19 @@ Wenn ein Bug NICHT gefixt werden kann, dokumentiere ihn im OFFEN-Block mit:
 □ cd /home/user/mindhome/assistant && python -m pytest tests/ -x --tb=short -q
 ```
 
+### Self-Check (Pflicht — vor Übergabe ausfüllen!)
+
+```
+SELF-CHECK P06d:
+□ Kontext-Block ≤ 30 Zeilen: [Ja/Nein]
+□ pytest nach letztem Fix: [X passed, Y failed]
+□ Alle Security-Checks (1-15) geprüft: [Ja/Nein]
+□ Resilience-Szenarien (1-14) geprüft: [Ja/Nein]
+□ CircuitBreaker in externen Service-Modulen integriert: [Ja/Nein]
+□ Addon-Dopplungen haben klare Zuständigkeit: [Ja/Nein]
+□ Keine eval()/exec()/os.system() im Code: [Ja/Nein]
+```
+
 ## ⚡ Übergabe an Prompt 6e
 
 > **Nach P06d folgen P06e (Geraetesteuerung) und P06f (TTS/Response)** bevor es zu P07a (Testing) geht. Diese adressieren die zwei groessten User-Pain-Points: Geraete reagieren nicht + "speak" in Sprachausgabe.
@@ -533,6 +557,14 @@ Wenn ein Bug NICHT gefixt werden kann, dokumentiere ihn im OFFEN-Block mit:
 ```
 
 **Wenn du Prompt 7a in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1–6d) automatisch ein.
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_06d_HAERTUNG.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ## Output
 

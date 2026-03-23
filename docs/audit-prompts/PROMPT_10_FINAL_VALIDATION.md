@@ -14,21 +14,41 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Deine
 
 ## Grundregel
 
-**Am Ende dieses Prompts darf KEIN EINZIGER Bug offen sein.**
+**Am Ende dieses Prompts darf KEIN 🔴/🟠 Bug offen sein.**
 
-- Kein "das machen wir im nächsten Durchlauf"
-- Kein "Empfehlung für später"
+- Kein "das machen wir im nächsten Durchlauf" für KRITISCHE oder HOHE Bugs
+- Kein "Empfehlung für später" — FIXEN oder als FALSE_POSITIVE mit BEWEIS markieren
 - Kein "MENSCH-Eskalation" ohne dass DU zuerst den besten Fix versucht hast
-- Jedes Finding wird entweder GEFIXT oder mit BEWEIS als FALSE_POSITIVE markiert
+- Jedes Finding wird entweder GEFIXT, als FALSE_POSITIVE markiert, oder als NICHT_FIXBAR dokumentiert
+
+**Ausnahmen** (nur für 🟡 MITTLERE und 🟢 NIEDRIGE Bugs):
+- **Hardware-abhängig** — Bug kann nur mit laufendem Redis/ChromaDB/Ollama verifiziert werden
+- **External API** — Bug in Drittanbieter-Paket
+- **Architektur-Limitation** — Fix würde >500 Zeilen ändern und hat hohes Regressions-Risiko
+
+Für jede Ausnahme: exakten Fix beschreiben + Test schreiben der den Bug verifiziert.
+
+---
+
+## Kontext aus vorherigen Prompts
+
+> **Automatisch**: Lies ALLE verfügbaren Ergebnisse:
+
+```
+Glob: pattern="RESULT_*.md" path="docs/audit-results/"
+```
+
+> Lies jede gefundene RESULT-Datei. Sammle alle OFFEN-Einträge aus allen Dateien.
+> Falls keine Result-Dateien existieren → nutze Kontext-Blöcke aus der Konversation.
 
 ---
 
 ## Phase 1: OFFEN-Bugs sammeln
 
-Lies alle Kontext-Blöcke der vorherigen Prompts und sammle **JEDEN** offenen Bug:
+Lies alle Result-Dateien und sammle **JEDEN** offenen Bug:
 
 ```
-# Alle OFFEN-Einträge aus den Kontext-Blöcken zusammentragen
+# Alle OFFEN-Einträge aus den Result-Dateien zusammentragen
 ```
 
 | # | Bug | Severity | Datei:Zeile | Aus Prompt | Status |
@@ -116,8 +136,8 @@ ruff check assistant/ addon/ speech/ shared/ 2>/dev/null || echo "ruff nicht ins
 **Akzeptanzkriterien:**
 - □ Alle Tests bestehen (0 failures)
 - □ Keine neuen Failures durch Fixes
-- □ Coverage ≥ 60% gesamt
-- □ Kein kritisches Modul unter 50%
+- □ Coverage nicht verschlechtert gegenüber P07a-Baseline
+- □ Sicherheitskritische Module (function_validator, autonomy) haben Tests für alle öffentlichen Methoden
 
 ---
 
@@ -184,6 +204,19 @@ Jeder Fund → sofort fixen oder als sicher belegen.
 | 9 | Alle Docker-Container buildbar | □ |
 | 10 | README aktuell | □ |
 
+### Self-Check (Pflicht — vor Declaration ausfüllen!)
+
+```
+SELF-CHECK P10:
+□ Alle OFFEN-Bugs aus P01-P09b gesammelt: [X Bugs total]
+□ Jeder Bug verifiziert (existiert noch?): [Ja/Nein]
+□ Alle 🔴/🟠 gefixt oder FALSE_POSITIVE: [Ja/Nein]
+□ pytest nach allen Fixes: [X passed, Y failed]
+□ Security Quick-Scan durchgeführt: [Ja/Nein]
+□ Keine neuen Bugs durch Fixes eingeführt: [Ja/Nein]
+□ OPEN_BUGS.md Inhalt vorbereitet (falls Bugs offen): [Ja/Nein/Nicht nötig]
+```
+
 ### Zero-Bug Declaration
 
 Wenn alle Checks bestanden:
@@ -206,19 +239,22 @@ Wenn alle Checks bestanden:
 
 ---
 
-## Wenn Bugs WIRKLICH nicht fixbar sind
+## Nicht-fixbare Bugs
 
-Nur in diesen Ausnahmen darf ein Bug offen bleiben:
+> Die Ausnahme-Regeln stehen in der Grundregel oben. Für jeden nicht-fixbaren Bug:
+> - Dokumentiere mit **maximaler Präzision** (Datei:Zeile, exakter Fix-Vorschlag)
+> - Erstelle einen **Test** der den Bug verifiziert (damit er im nächsten Durchlauf sofort gefunden wird)
+> - Trage ihn in die `OPEN_BUGS.md` ein (wird in P11 erstellt)
 
-1. **Hardware-abhängig** — Bug tritt nur mit laufendem Redis/ChromaDB/Ollama auf und kann nicht aus Code allein verifiziert werden
-2. **External API** — Bug in Drittanbieter-Paket (z.B. Ollama-Client Bug)
-3. **Architektur-Limitation** — Fix würde >500 Zeilen Code ändern und hat hohes Regressions-Risiko
+---
 
-In jedem Fall:
-- Dokumentiere den Bug mit **maximaler Präzision**
-- Gib den **exakten Fix** an (was geändert werden muss)
-- Erkläre warum du es **jetzt nicht tun kannst**
-- Erstelle einen **Test** der den Bug verifiziert (damit er beim nächsten Durchlauf sofort gefunden wird)
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_10_FINAL_VALIDATION.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ---
 

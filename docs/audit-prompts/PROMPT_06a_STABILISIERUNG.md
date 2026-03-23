@@ -4,24 +4,26 @@
 
 Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Du hast in den vorherigen 5 Prompts das System analysiert. Jetzt stabilisierst du es.
 
-## LLM-Spezifisch (Qwen 3.5)
+## LLM-Spezifisch
 
-- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
-- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
-- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
-- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
-- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
-- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+> Siehe P00 für vollständige Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren (`supports_think_with_tools: false`), `character_hint` in model_profiles nutzen.
 
 ---
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–5 bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_02_MEMORY.md
+Read: docs/audit-results/RESULT_04a_BUGS_CORE.md
+Read: docs/audit-results/RESULT_04b_BUGS_EXTENDED.md
+Read: docs/audit-results/RESULT_04c_BUGS_ADDON_SECURITY.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 >
-> **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke ein:
-> - Prompt 2: Memory-Diagnose & Root Cause (inkl. alle 12 Memory-Module)
-> - Prompt 4 gesamt (4a + 4b + 4c): Bug-Report — **nur die 🔴 KRITISCHEN Bugs**
+> **⚠️ OHNE die Bug-Reports (P04a–P04c) fehlt dir die Liste der kritischen Bugs für die Stabilisierung!**
 
 ---
 
@@ -264,15 +266,15 @@ Aufrufer geprueft: [Grep-Ergebnis: X Stellen, alle kompatibel]
 
 - **Nur 🔴 Bugs und Memory** — keine 🟠/🟡 Bugs, keine Persönlichkeit, keine Config
 - **Einfach > Komplex** — Wenn ein simpler Fix reicht, kein Refactoring
-- **Tests nicht brechen** — Nach jedem Fix `pytest` ausführen
+- **Tests nach JEDEM Fix** — `cd assistant && python -m pytest --tb=short -q` nach jedem einzelnen Fix, nicht erst am Ende. Bei Fehlschlag: Fix sofort reverten.
 - **Jede Änderung committen** — `git commit -m "Fix: Beschreibung"`
 - **Wenn ein Fix Tests bricht**: (a) Fix rückgängig machen (`git checkout -- datei.py`), (b) Ursache analysieren — ist der Test falsch oder der Fix?, (c) Fix anpassen und erneut versuchen
 - **Abhängigkeitsreihenfolge beachten**: Wenn Bug A in `memory.py` liegt und Bug B in `brain.py` `memory.py` aufruft → fixe zuerst A, dann B
 
 ### Scope-Begrenzung
-Pro Durchlauf: MAX 20 Bugs fixen. Strikt nach Priorität:
-KRITISCH → HOCH → MITTEL → NIEDRIG.
+Strikt nach Priorität: KRITISCH → HOCH → MITTEL → NIEDRIG.
 NIEMALS einen MITTEL Bug vor allen HOCH Bugs fixen.
+Falls mehr als 20 🔴 Bugs existieren: Fixe alle 🔴, dokumentiere im OFFEN-Block welche 🟠 auf P06b verschoben werden.
 
 ### Checkpoint
 Nach jedem 5. Fix: Zusammenfassung:
@@ -306,6 +308,18 @@ Bevor du zu 6b übergehst:
 □ grep "_safe_init" assistant/assistant/brain.py → alle Module in _safe_init gewrapped
 ```
 
+### Self-Check (Pflicht — vor Übergabe ausfüllen!)
+
+```
+SELF-CHECK P06a:
+□ Kontext-Block ≤ 30 Zeilen: [Ja/Nein]
+□ Alle Datei:Zeile Referenzen verifiziert: [Ja/Nein]
+□ pytest nach letztem Fix: [X passed, Y failed]
+□ Alle 🔴 Bugs gefixt oder eskaliert: [X/Y gefixt, Z eskaliert]
+□ Bug-Zuordnungstabelle erstellt: [Ja/Nein]
+□ Keine neuen except:pass eingeführt: [Ja/Nein]
+```
+
 ## ⚡ Übergabe an Prompt 6b
 
 Formatiere am Ende einen kompakten **Kontext-Block**:
@@ -325,6 +339,14 @@ Formatiere am Ende einen kompakten **Kontext-Block**:
 ### Test-Status
 [X Tests bestanden, Y fehlgeschlagen]
 ```
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_06a_STABILISIERUNG.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ## Output
 

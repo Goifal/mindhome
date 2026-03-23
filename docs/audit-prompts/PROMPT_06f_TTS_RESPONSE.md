@@ -4,18 +4,21 @@
 
 Jarvis darf NIEMALS interne Begriffe wie "speak", "tts", "emit", Funktionsnamen, JSON-Fragmente oder Meta-Text in seiner Antwort haben. Aktuell sagt Jarvis bei Sprachausgabe (TTS) manchmal "speak" — das kommt vom LLM, das interne Begriffe in den Antwort-Text leakt.
 
-## LLM-SPEZIFISCH (Qwen 3.5)
+## LLM-Spezifisch
 
-- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
-- Neigt zu höflichen Floskeln ("Natürlich!", "Gerne!")
-- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
-- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
-- Kann interne Begriffe wie "speak", "tts", "emit" in den Antwort-Text leaken
-- character_hint in settings.yaml model_profiles nutzen für Anti-Leakage
+> Siehe P00 für vollständige Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren (`supports_think_with_tools: false`), `character_hint` in model_profiles nutzen.
+> **TTS-spezifisch**: Qwen kann interne Begriffe wie "speak", "tts", "emit" in den Antwort-Text leaken.
 
-## KONTEXT AUS VORHERIGEM PROMPT
+## Kontext aus vorherigen Prompts
 
-[Hier den Output-Block aus PROMPT_06e einfuegen]
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_06a_STABILISIERUNG.md
+Read: docs/audit-results/RESULT_06e_GERAETESTEUERUNG.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 
 ## ARCHITEKTUR
 
@@ -41,9 +44,9 @@ Grep: pattern="def _filter_response" path="assistant/assistant/brain.py" output_
 
 Dann den Filter lesen:
 ```
-Read: assistant/assistant/brain.py
-Offset: [Ergebnis aus Grep], Limit: 200
-Funktion: _filter_response_inner()
+# Nutze die Zeilennummer aus dem Grep oben:
+Read: assistant/assistant/brain.py offset=[Ergebnis aus Grep] limit=200
+# Funktion: _filter_response_inner()
 
 Prüfe:
 □ Werden Meta-Begriffe wie "speak", "tts", "emit" gefiltert?
@@ -206,7 +209,7 @@ _meta_patterns = [
     r'\bspeak\b', r'\btts\b', r'\bemit\b',
     r'\btool_call\b', r'\bfunction_call\b',
     r'\bset_light\b', r'\bset_cover\b', r'\bset_climate\b',
-    r'\bset_switch\b', r'\bget_\w+\b',
+    r'\bset_switch\b', r'\bget_\w+\b',  # ACHTUNG: Pattern matcht auch natürliche Wörter wie 'get'. Nur auf LLM-Output anwenden, nicht auf User-Input.
     r'\bemit_speaking\b', r'\bemit_action\b',
     r'\bspeak_response\b', r'\bcall_service\b',
     r'<tool_call>.*?</tool_call>',
@@ -226,6 +229,33 @@ Grep: "meta_leak_patterns\|Meta-Leakage" in brain.py → mindestens 1 Treffer
 Read: brain.py um die neue Stelle → Code-Syntax korrekt?
 ```
 
+### FIX 1b: Markdown + Entity-ID + Timestamp Filter (Ergänzung P04d)
+
+> **Dieses Fix ergänzt FIX 1.** P04d (Speech Pipeline) hat zusätzliche Leakage-Typen identifiziert die in FIX 1 fehlen.
+
+**Datei:** `assistant/assistant/brain.py` — DIREKT NACH dem Meta-Leakage-Block aus FIX 1
+
+```python
+# 0f. Markdown entfernen (wird sonst von TTS vorgelesen)
+text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # **fett** → fett
+text = re.sub(r'\*([^*]+)\*', r'\1', text)       # *kursiv* → kursiv
+text = re.sub(r'`([^`]+)`', r'\1', text)         # `code` → code
+text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)  # # Überschrift → Überschrift
+text = re.sub(r'^\s*[-*]\s+', '', text, flags=re.MULTILINE)  # - Liste → Liste
+
+# 0g. Entity-IDs durch natürliche Namen ersetzen
+# "light.wohnzimmer_decke" → "Wohnzimmer Decke" (falls im Response)
+text = re.sub(
+    r'\b(light|switch|cover|climate|sensor|lock|media_player)\.\w+',
+    lambda m: m.group(0).split('.')[-1].replace('_', ' ').title(),
+    text
+)
+
+# 0h. Timestamps und Debug-Info entfernen
+text = re.sub(r'\[\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]]*\]', '', text)
+text = re.sub(r'\b(DEBUG|INFO|WARNING|ERROR|CRITICAL):?\s*', '', text)
+```
+
 ### FIX 2: Pre-TTS-Filter in sound_manager.py
 
 **Datei:** `assistant/assistant/sound_manager.py`
@@ -241,7 +271,7 @@ Read: brain.py um die neue Stelle → Code-Syntax korrekt?
 import re as _re
 text = _re.sub(
     r'\b(?:speak|tts|emit|tool_call|function_call|call_service'
-    r'|set_light|set_cover|set_climate|set_switch|get_\w+)\b',
+    r'|set_light|set_cover|set_climate|set_switch|get_\w+)\b',  # ACHTUNG: Pattern matcht auch natürliche Wörter wie 'get'. Nur auf LLM-Output anwenden, nicht auf User-Input.
     '', text, flags=_re.IGNORECASE,
 ).strip()
 if not text:
@@ -378,6 +408,16 @@ TEST 3: Komplexer Befehl
 □ grep "VERBOTEN.*speak\|VERBOTEN.*tts" personality.py → vorhanden
 □ grep "fallback\|Ersatz.*Antwort" brain.py → Empty-Response-Fallback existiert
 □ python -c "import assistant.brain" → kein ImportError
+
+---
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_06f_TTS_RESPONSE.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ---
 

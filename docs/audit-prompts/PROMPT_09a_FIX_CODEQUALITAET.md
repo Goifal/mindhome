@@ -12,6 +12,18 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Du fi
 
 ---
 
+## Kontext aus vorherigen Prompts
+
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_08a_CODEQUALITAET.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
+
+---
+
 ## Grundregel
 
 **Analysieren war gestern. Heute wird gefixt.**
@@ -23,7 +35,7 @@ Für jedes Finding aus P08a:
 4. Wenn du **nicht genug Kontext** hast → Lies mehr Code (Grep, Read) bis du genug weißt
 5. Wenn der Fix **Architektur-Änderungen** braucht → Triff die beste Entscheidung selbst, dokumentiere WARUM
 
-> **Kein Finding wird übersprungen.** Wenn ein Fix nicht möglich ist, muss der GRUND dokumentiert und eskaliert werden.
+> **Kein Finding wird übersprungen.** Falls ein Fix andere Findings bricht: (1) Fix reverten, (2) Abhängigkeit dokumentieren, (3) beide Findings zusammen lösen. Wenn ein Fix nicht möglich ist, muss der GRUND dokumentiert und eskaliert werden.
 
 ---
 
@@ -160,6 +172,16 @@ Checkliste:
 □ Übersetzungen komplett
 □ Tests bestehen (Regression-Check)
 ```
+
+---
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_09a_FIX_CODEQUALITAET.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ---
 

@@ -1,14 +1,136 @@
 # Prompt 3a: End-to-End Flow-Analyse — Core-Flows (1-7)
 
-**Datum**: 2026-03-13
-**Analysiertes Projekt**: MindHome/Jarvis in `/home/user/mindhome`
-**Kontext**: Aufbauend auf P01 (Architektur/Konflikte) und P02 (Memory-Analyse)
+## Rolle
+
+Du bist ein Elite-Software-Architekt und KI-Ingenieur mit tiefem Wissen in:
+
+- **LLM-Engineering**: Prompt Design, Context Window Management, Token-Budgetierung, Function Calling, Chain-of-Thought
+- **Agent-Architekturen**: ReAct, Tool-Use-Loops, Planning-Agents, Multi-Agent-Koordination, Autonomy Levels, Self-Reflection
+- **Python**: AsyncIO, FastAPI, Flask, Pydantic, aiohttp, Type Hints, Dataclasses, ABC/Protocols, GIL-Implikationen
+- **Smart Home**: Home Assistant REST/WebSocket API, Entity States, Services, Automations, Event Bus, Area/Device Registry
+- **Infrastruktur**: Docker, Redis, SQLite, YAML/Jinja2 Templating, WebSocket, Multi-Service-Architekturen
+
+Du kennst **J.A.R.V.I.S. aus dem MCU** in- und auswendig und nutzt ihn als Goldstandard:
+- **Ein Bewusstsein** mit vielen Fähigkeiten — nie isolierte Module
+- **Widerspricht sich nie**, kennt immer den Kontext, handelt koordiniert
+- **Eine Stimme, ein Charakter** — egal ob Licht, Wetter oder Warnung
+
+## LLM-Spezifisch
+
+> Siehe **PROMPT_00_OVERVIEW.md** fuer Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren, `character_hint` in `settings.yaml model_profiles` nutzen fuer Anti-Floskel.
 
 ---
 
-## 1. Init-Sequenz (komplett)
+## Arbeitsumgebung: GitHub-Repository
 
-### INIT-REIHENFOLGE:
+Du arbeitest mit dem **GitHub-Quellcode**, NICHT mit einem laufenden System. Das bedeutet:
+- **Keine `.env`-Datei vorhanden** — nur `.env.example`
+- **Kein laufendes Redis/ChromaDB/Ollama** — du kannst nur den Code lesen, nicht testen
+- **Konsequenz**: Du musst ALLES aus dem Code herauslesen. Keine Annahmen. Folge jedem Funktionsaufruf bis zum Ende.
+
+---
+
+## Kontext aus vorherigen Prompts
+
+Dieser Prompt baut auf den Ergebnissen von **P01 (Architektur/Konflikte)** und **P02 (Memory-Analyse)** auf. Du brauchst:
+- Die Modul-Uebersicht und Abhaengigkeitsgraphen aus P01
+- Die Memory-Architektur-Analyse aus P02 (5 Memory-Systeme, Silos, Konflikte)
+
+---
+
+## Aufgabe
+
+### Schritt 1: Init-Sequenz dokumentieren
+
+- Lies `main.py` und `brain.py` (**Grep-first!** — diese Dateien sind sehr gross) und dokumentiere die **vollstaendige Boot-Reihenfolge**
+- Fuer jede Abhaengigkeit (Redis, ChromaDB, Ollama, Home Assistant): Was passiert bei Ausfall? (Graceful Degradation?)
+- Pruefe: Wird `brain` auf Module-Level instanziiert? (Import-Fehler = Server-Crash?)
+- Erstelle eine Dependencies-Tabelle: Abhaengigkeit | Datei:Zeile | Verbindung noetig? | Fehlerbehandlung
+
+### Schritt 2: System-Prompt rekonstruieren
+
+- Verfolge den Prompt-Aufbau von `personality.py` → `brain.py` → LLM
+- Dokumentiere: Welche Bloecke, in welcher Reihenfolge, mit welchem Token-Budget
+- Pruefe: Gibt es ein Budget-Management? Was wird gedroppt bei Token-Knappheit?
+- Rekonstruiere den vollstaendigen System-Prompt als Pseudo-Struktur (Block 1-7)
+
+### Schritt 3: Flows 1-7 analysieren
+
+Fuer **JEDEN** der 7 Core-Flows:
+
+1. **Flow 1: Sprach-Input → Antwort** (Hauptpfad) — Verfolge von `main.py` POST `/api/assistant/chat` bis zur TTS-Ausgabe. Beachte die Shortcut-Kaskade VOR dem LLM-Pfad.
+2. **Flow 2: Proaktive Benachrichtigung** — Von HA-Event bis zur TTS/WebSocket-Ausgabe. Pruefe zirkulaere Referenzen (Brain → ProactiveManager → Brain).
+3. **Flow 3: Morgen-Briefing / Routinen** — Trigger (automatisch vs. manuell), Daten-Sammlung, LLM-Call, Ausgabe. Pruefe ob `model_router` oder hardcoded Modell verwendet wird.
+4. **Flow 4: Autonome Aktion** — Anticipation → Autonomy Check → Execute. Pruefe: Gibt es tatsaechlich einen Auto-Execute-Pfad, oder wird nur vorgeschlagen?
+5. **Flow 5: Persoenlichkeits-Pipeline** — System-Prompt-Aufbau, Shortcuts die Personality umgehen, Character-Lock. Pruefe Konsistenz zwischen Shortcut- und LLM-Pfad.
+6. **Flow 6: Memory-Abruf** — Alle Memory-Pfade (explizit, intent-basiert, passiv im Kontext). Pruefe ob alle Memory-Systeme durchsucht werden oder ob es Silos gibt.
+7. **Flow 7: Speech-Pipeline** — Wyoming → Whisper → HA → Assistant → TTS. Pruefe Timeout-Asymmetrien und Doppel-TTS-Probleme.
+
+Fuer **JEDEN** Flow dokumentiere:
+- **Ablauf**: Schritt fuer Schritt mit Datei:Zeile
+- **Bruchstellen**: Wo kann es schiefgehen?
+- **Fehler-Pfade**: Was passiert bei Fehler in jedem Schritt?
+- **Kollisionen**: Kann dieser Flow mit anderen gleichzeitig laufen? Was passiert dann?
+
+### Schritt 4: Bruchstellen priorisieren
+
+Erstelle eine **Top-5** der kritischsten Bruchstellen ueber alle Flows, sortiert nach Impact.
+Fuer jede Bruchstelle: Datei:Zeile, Impact (HOCH/MITTEL/NIEDRIG), Eskalation (ARCHITEKTUR_NOETIG / NAECHSTER_PROMPT).
+
+---
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_03a_FLOWS_CORE.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
+
+---
+
+## Output-Format
+
+### Flow-Status-Uebersicht
+
+| Flow | Status | Kritischste Bruchstelle |
+|---|---|---|
+| 1: Sprach-Input → Antwort | [Funktioniert/Teilweise/Kaputt] | [Einzeiler] |
+| ... | ... | ... |
+
+### Pro Flow
+
+Fuer jeden Flow: Ablauf (nummerierte Schritte mit Datei:Zeile), Bruchstellen, Fehler-Pfade, Kollisionen.
+
+### Top-5 kritische Bruchstellen
+
+Nummerierte Liste, sortiert nach Impact, mit Datei:Zeile und Eskalations-Level.
+
+### Kontext-Block fuer naechsten Prompt
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste]
+OFFEN: [Liste mit Prioritaet und Eskalation]
+GEAENDERTE DATEIEN: [Liste]
+NAECHSTER SCHRITT: Prompt 3b — Extended-Flows 8-13 + Flow-Kollisionen + Cross-Cutting Concerns
+===================================
+```
+
+---
+
+## Referenz-Ergebnisse aus Durchlauf #1
+
+> **⚠️ ACHTUNG**: Die folgenden Ergebnisse stammen aus einem früheren Durchlauf.
+> **ALLE Zeilennummern sind veraltet** und dürfen NICHT direkt verwendet werden!
+> Nutze sie nur als Orientierung WAS zu prüfen ist, nicht WO im Code.
+> Für jede Referenz: Suche mit Grep nach dem Funktions-/Variablennamen, nicht nach der Zeilennummer.
+>
+> **Datum des Durchlaufs**: 2026-03-13
+
+### 1. Init-Sequenz (komplett)
+
+#### INIT-REIHENFOLGE:
 
 ```
 1.  main.py:210      → brain = AssistantBrain()  [Module-Level, beim Import]
@@ -62,7 +184,7 @@
 27. main.py:369      → yield [Server ist bereit]
 ```
 
-### DEPENDENCIES CHECK:
+#### DEPENDENCIES CHECK:
 
 | Abhaengigkeit | Datei:Zeile | Verbindung noetig? | Fehlerbehandlung |
 |---|---|---|---|
@@ -71,21 +193,21 @@
 | **Ollama** | brain.py:490-495 | Ja (LLM-Modelle) | Warning "alle Modelle angenommen" → Degraded |
 | **Home Assistant** | proactive.py:359-370 | Ja (WebSocket Events) | Reconnect-Loop mit Delay (PROACTIVE_WS_RECONNECT_DELAY) |
 
-### FAILURE MODES:
+#### FAILURE MODES:
 
 - **Redis fehlt** → `self.redis = None`, Working Memory deaktiviert, alle Module die `redis_client` brauchen laufen ohne Persistenz. Conversation History verloren. **Kein Crash**, aber massiver Funktionsverlust (Memory, Routines, Anticipation, etc. laufen ohne State).
 - **ChromaDB fehlt** → `self.chroma_collection = None`, Semantic Memory nur in-memory (SemanticMemory nutzt eigenen ChromaDB-Client separat via `semantic.initialize()`). Episodic Memory komplett aus. **Kein Crash**.
 - **Ollama fehlt** → Warning "Modell-Erkennung fehlgeschlagen, alle Modelle angenommen". Requests schlagen erst beim LLM-Call fehl → Circuit Breaker (`ollama_breaker`). **Kein Crash beim Start**, aber jeder Chat-Request scheitert.
 - **HA fehlt** → Proactive WebSocket reconnect-Loop. Alle `executor.execute()` Calls schlagen fehl. Boot-Announcement scheitert (Fallback-Nachricht). **Kein Crash**, aber keine Geraetesteuerung.
 
-### KRITISCHE BEOBACHTUNG:
+#### KRITISCHE BEOBACHTUNG:
 **F-069 (Graceful Degradation)** ist gut implementiert — alle nicht-kritischen Module sind in `_safe_init()` gewrappt. Allerdings: `brain = AssistantBrain()` wird auf **Module-Level** (main.py:210) instanziiert, nicht in `lifespan()`. Das bedeutet: Wenn der Import von einem der 60+ Module fehlschlaegt (z.B. fehlende Dependency), crasht der gesamte Server beim Import, BEVOR `lifespan()` oder `_safe_init()` greifen koennen.
 
 ---
 
-## 2. Der rekonstruierte System-Prompt
+### 2. Der rekonstruierte System-Prompt
 
-### REKONSTRUIERTER SYSTEM-PROMPT (Struktur):
+#### REKONSTRUIERTER SYSTEM-PROMPT (Struktur):
 
 ```
 === BEGINN SYSTEM-PROMPT ===
@@ -195,7 +317,7 @@ tools = get_assistant_tools()  // dynamisch, vacuum-Tools kontextabhaengig gefil
 === ENDE LLM-INPUT ===
 ```
 
-### HERKUNFT:
+#### HERKUNFT:
 - Block 1-2: personality.py → SYSTEM_PROMPT_TEMPLATE (Zeile 242-286) + build_system_prompt() (Zeile 2233-2515)
 - Block 3: personality.py:2473-2476 → _format_context() (Daten aus context_builder.py:159-306)
 - Block 4: personality.py:2478-2494 → Character-Lock
@@ -204,7 +326,7 @@ tools = get_assistant_tools()  // dynamisch, vacuum-Tools kontextabhaengig gefil
 - Block 7: function_calling.py → get_assistant_tools()
 - Zusammenbau: personality.py baut Base-Prompt, brain.py fuegt Sektionen + History + Tools hinzu
 
-### TOKEN-BUDGET:
+#### TOKEN-BUDGET:
 - Basis (SYSTEM_PROMPT_TEMPLATE + format_map): ~1500-2000 Tokens
 - Kontext (_format_context): ~500-1500 Tokens (je nach Hausstatus)
 - P1-Sektionen (scene_intelligence + memory + ...): ~500-1500 Tokens
@@ -217,9 +339,9 @@ tools = get_assistant_tools()  // dynamisch, vacuum-Tools kontextabhaengig gefil
 
 ---
 
-## 3. Flow-Dokumentation (Flows 1-7)
+### 3. Flow-Dokumentation (Flows 1-7)
 
-### Flow 1: Sprach-Input -> Antwort (Hauptpfad)
+#### Flow 1: Sprach-Input -> Antwort (Hauptpfad)
 **Status**: Teilweise funktional — extrem komplex, schwer wartbar
 
 **Ablauf**:
@@ -296,7 +418,7 @@ tools = get_assistant_tools()  // dynamisch, vacuum-Tools kontextabhaengig gefil
 
 ---
 
-### Flow 2: Proaktive Benachrichtigung
+#### Flow 2: Proaktive Benachrichtigung
 **Status**: Funktioniert
 
 **Ablauf**:
@@ -328,7 +450,7 @@ tools = get_assistant_tools()  // dynamisch, vacuum-Tools kontextabhaengig gefil
 
 ---
 
-### Flow 3: Morgen-Briefing / Routinen
+#### Flow 3: Morgen-Briefing / Routinen
 **Status**: Funktioniert
 
 **Ablauf**:
@@ -360,7 +482,7 @@ tools = get_assistant_tools()  // dynamisch, vacuum-Tools kontextabhaengig gefil
 
 ---
 
-### Flow 4: Autonome Aktion
+#### Flow 4: Autonome Aktion
 **Status**: Teilweise — Framework vorhanden, aber nie direkt getriggert
 
 **Ablauf**:
@@ -391,7 +513,7 @@ tools = get_assistant_tools()  // dynamisch, vacuum-Tools kontextabhaengig gefil
 
 ---
 
-### Flow 5: Persoenlichkeits-Pipeline
+#### Flow 5: Persoenlichkeits-Pipeline
 **Status**: Funktioniert — gut integriert, aber komplex
 
 **Ablauf**:
@@ -431,7 +553,7 @@ NACH dem LLM:
 
 ---
 
-### Flow 6: Memory-Abruf (Erinnerung)
+#### Flow 6: Memory-Abruf (Erinnerung)
 **Status**: Teilweise — spezieller Pfad existiert, aber nur fuer explizite Befehle
 
 **Ablauf**:
@@ -471,7 +593,7 @@ Pfad C: Passive Memory im Kontext (context_builder.py:291-344)
 
 ---
 
-### Flow 7: Speech-Pipeline
+#### Flow 7: Speech-Pipeline
 **Status**: Funktioniert — saubere Architektur mit Wyoming Protocol
 
 **Ablauf**:
@@ -508,9 +630,9 @@ Pfad C: Passive Memory im Kontext (context_builder.py:291-344)
 
 ---
 
-## 4. Kritische Findings
+### 4. Kritische Findings
 
-### Top-5 kritische Bruchstellen (sortiert nach Impact):
+#### Top-5 kritische Bruchstellen (sortiert nach Impact):
 
 **1. GOD-OBJECT brain.py mit 1200-Zeilen Shortcut-Kaskade**
 - **Datei:Zeile**: brain.py:1349-2300
@@ -539,7 +661,7 @@ Pfad C: Passive Memory im Kontext (context_builder.py:291-344)
 
 ---
 
-## KONTEXT AUS PROMPT 3a: Flow-Analyse (Core-Flows)
+### KONTEXT AUS PROMPT 3a: Flow-Analyse (Core-Flows)
 
 ### Init-Sequenz
 ```

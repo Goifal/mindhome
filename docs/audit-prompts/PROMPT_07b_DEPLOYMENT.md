@@ -9,14 +9,9 @@ Du bist ein Elite-DevOps-Engineer mit tiefem Wissen in:
 - **Performance**: Latenz-Analyse, Bottleneck-Identifikation, GPU-Setup
 - **CI/CD**: Build-Pipelines, Deployment-Strategien
 
-## LLM-Spezifisch (Qwen 3.5)
+## LLM-Spezifisch
 
-- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
-- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
-- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
-- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
-- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
-- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+> Siehe P00 für vollständige Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren (`supports_think_with_tools: false`), `character_hint` in model_profiles nutzen.
 
 ---
 
@@ -111,11 +106,18 @@ Simuliere (gedanklich oder per Code) diese Ausfallszenarien:
 - Gibt es Fallback-Verhalten?
 - Wird der User informiert oder stirbt Jarvis still?
 
+**Compound-Failure-Szenarien** (zusätzlich prüfen):
+- Ollama + Redis gleichzeitig down → Was passiert? Crash oder graceful?
+- HA nicht erreichbar + proaktive Events aktiv → Endlosschleife?
+- ChromaDB voll + neue Fakten-Speicherung → Datenverlust oder Fallback?
+
 ---
 
 ### Teil E: Performance & Latenz-Verifikation
 
 > **Jarvis muss schnell antworten.** Ziel: < 3 Sekunden für einfache Befehle ("Licht an").
+
+> **Performance kann nur aus dem Code geschätzt werden** (Anzahl sequentieller await-Ketten, LLM-Calls pro Request, Netzwerk-Roundtrips). Exakte Zeitmessungen erfordern ein laufendes System und sind hier nicht möglich. Dokumentiere stattdessen die Anzahl der I/O-Operationen pro Flow.
 
 **Schritt 1** — Latenz-relevante Code-Pfade prüfen:
 
@@ -358,6 +360,14 @@ Wenn du nach Prompt 7b einen **neuen Audit-Durchlauf** starten willst (z.B. um F
 1. Nutze `PROMPT_RESET.md` **vor** Prompt 1
 2. Der Reset sichert die Ergebnisse dieses Durchlaufs als Vergleichsbasis
 3. Starte dann frisch mit Prompt 1 — alle Dateien neu lesen, alle Bugs neu suchen
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_07b_DEPLOYMENT.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ## Output
 

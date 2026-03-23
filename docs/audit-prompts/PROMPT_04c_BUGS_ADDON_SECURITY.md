@@ -6,14 +6,9 @@ Du bist ein Elite-Debugging-Experte für Python, AsyncIO, FastAPI, Flask, Redis,
 
 ---
 
-## LLM-Spezifisch (Qwen 3.5)
+## LLM-Spezifisch
 
-- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
-- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
-- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
-- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
-- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
-- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+> Siehe P00 für vollständige Qwen 3.5 Details. Kurzfassung: Thinking-Mode bei Tool-Calls deaktivieren (`supports_think_with_tools: false`), `character_hint` in model_profiles nutzen.
 
 ---
 
@@ -25,14 +20,15 @@ Du arbeitest mit dem Quellcode, nicht mit einem laufenden System.
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–4b bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch.
->
-> **Wenn dies eine neue Konversation ist**: Füge hier ein:
-> - Kontext-Block aus Prompt 1 (Konflikt-Karte — besonders Konflikt F: Addon ↔ Assistant)
-> - Kontext-Block aus Prompt 2 (Memory-Analyse)
-> - Kontext-Block aus Prompt 3a + 3b (Flow-Analyse — besonders Flow 8: Addon-Automation)
-> - Kontext-Block aus Prompt 4a (Core-Bugs)
-> - Kontext-Block aus Prompt 4b (Extended-Bugs — besonders Dead-Code und Resilience-Findings)
+> **Automatisch**: Lies die Ergebnisse der vorherigen Analyse-Prompts:
+
+```
+Read: docs/audit-results/RESULT_01_KONFLIKTKARTE.md
+Read: docs/audit-results/RESULT_04a_BUGS_CORE.md
+Read: docs/audit-results/RESULT_04b_BUGS_EXTENDED.md
+```
+
+> Falls eine Datei nicht existiert → überspringe sie. Wenn KEINE Result-Dateien existieren, nutze Kontext-Blöcke aus der Konversation oder starte mit Prompt 01.
 >
 > **⚠️ OHNE diese Kontext-Blöcke fehlt dir das Bild der bisherigen Bugs!** Die Security-Analyse hier baut auf den Findings aus 4a/4b auf.
 
@@ -67,6 +63,24 @@ Prüfe die **Addon-Module, Speech, Shared-Module** (Priorität 10–12) und füh
 > - **Batch 14b** (Addon-Domains+Engines): Alle `domains/*.py` + `engines/*.py`
 > - **Batch 14c** (Addon-Routes): Alle `routes/*.py` — API-Endpoints prüfen (Auth, Validierung, Error Handling)
 
+### Fortschritts-Tracking (Pflicht!)
+
+Dokumentiere nach JEDEM Batch deinen Fortschritt:
+
+```
+=== CHECKPOINT Batch X/3 ===
+Geprüfte Module: [Liste]
+Bugs gefunden: 🔴 X, 🟠 X, 🟡 X, 🟢 X
+Verbleibende Batches: [Liste]
+=============================
+```
+
+**Falls der Kontext knapp wird** (Claude Code komprimiert):
+1. Speichere den bisherigen Output sofort: `Write: docs/audit-results/RESULT_04c_BUGS_ADDON_SECURITY.md`
+2. Starte eine neue Session
+3. Lies den gespeicherten Output: `Read: docs/audit-results/RESULT_04c_BUGS_ADDON_SECURITY.md`
+4. Mache mit dem nächsten Batch weiter
+
 **Prüfe für jedes Addon-Modul alle 13 Fehlerklassen**, besonders:
 - Nutzt der Addon die **Shared Schemas** (`shared/schemas/`) oder eigene Definitionen?
 - Nutzt der Addon die **Shared Constants** (`shared/constants.py`) für Ports?
@@ -76,8 +90,20 @@ Prüfe die **Addon-Module, Speech, Shared-Module** (Priorität 10–12) und füh
 
 ## Teil 2: Speech-Server (Priorität 11)
 
-86. `speech/server.py`
-87. `speech/handler.py`
+86. `speech/server.py` — Wyoming-Server, Whisper-Config, initial_prompt
+87. `speech/handler.py` — WhisperEmbeddingHandler, ECAPA-TDNN Voice Embedding
+
+**Prüfe für den Speech-Server:**
+
+| # | Check | Was prüfen |
+|---|---|---|
+| 1 | **Audio-Input-Validierung** | Werden Audio-Daten validiert? Maximale Größe? Format-Check? |
+| 2 | **Embedding-Sicherheit** | Werden Voice-Embeddings sicher in Redis gespeichert? TTL gesetzt? |
+| 3 | **Whisper-Timeout** | Gibt es ein Timeout für die STT-Verarbeitung? Was bei hängendem Whisper? |
+| 4 | **Redis-Abhängigkeit** | Was passiert wenn Redis nicht erreichbar ist? Crash oder Fallback? |
+| 5 | **Concurrent Audio** | Können mehrere Audio-Streams gleichzeitig verarbeitet werden? Race Conditions? |
+| 6 | **Memory-Leak** | Wachsen Audio-Buffer unbegrenzt? Werden temporäre Dateien aufgeräumt? |
+| 7 | **initial_prompt** | Enthält der Whisper-initial_prompt sensible Daten? Ist er aktuell? |
 
 ---
 
@@ -87,8 +113,12 @@ Prüfe die **Addon-Module, Speech, Shared-Module** (Priorität 10–12) und füh
 89. `shared/schemas/chat_request.py` — Wird `ChatRequest` überall verwendet wo Requests gesendet werden?
 90. `shared/schemas/chat_response.py` — Wird `ChatResponse` überall verwendet wo Responses erzeugt werden?
 91. `shared/schemas/events.py` — Werden die Event-Typen konsistent genutzt?
-92. `ha_integration/.../config_flow.py` — Validierung, Error Handling
-93. `ha_integration/.../__init__.py` — Setup/Teardown korrekt?
+92. `ha_integration/.../config_flow.py` — Validierung, Error Handling, XSS bei API-Key-Eingabe
+93. `ha_integration/.../__init__.py` — Setup/Teardown korrekt? Entry Unload? Cleanup?
+94. `ha_integration/.../conversation.py` — HA Voice Pipeline Bridge: STT/TTS Service-Registrierung, Timeout/Retry, Intent-Weiterleitung
+95. `ha_integration/.../manifest.json` — Pflichtfelder vollständig? Version korrekt? Dependencies?
+96. `ha_integration/.../strings.json` — Übersetzungen vollständig?
+97. `ha_integration/.../www/jarvis-chat-card.js` — Lovelace-Card: XSS-Schutz, WebSocket-Reconnect, Error-Handling
 
 ### Shared Schema Verification (Pflicht!)
 
@@ -293,8 +323,8 @@ Performance-Probleme: X
 ## Erfolgskriterien
 
 - Alle Addon-Module gelesen, Bugs nach 13 Fehlerklassen kategorisiert
-- Security-Audit: Mindestens 5 Security-relevante Findings
-- Performance/Latenz: Mindestens 3 Performance-Findings mit Messvorschlaegen
+- Security-Audit: Alle 18 Security-Checks (Teil 4) durchgeführt und dokumentiert
+- Performance/Latenz: Alle 12 Performance-Checks (Teil 6) durchgeführt. Latenz-Schätzungen basieren auf Code-Analyse (Anzahl await-Ketten, LLM-Calls pro Request), nicht auf Laufzeitmessungen.
 - Addon ↔ Assistant Interaktion geprueft
 
 ### Erfolgs-Check (Schnellpruefung)
@@ -343,6 +373,16 @@ Gesamt: X Bugs (🔴 X, 🟠 X, 🟡 X, 🟢 X)
 ```
 
 **Wenn du Prompt 5 in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1–4c) automatisch ein.
+
+---
+
+## Ergebnis speichern (Pflicht!)
+
+> **Speichere dein vollständiges Ergebnis** (den gesamten Output dieses Prompts) in:
+> ```
+> Write: docs/audit-results/RESULT_04c_BUGS_ADDON_SECURITY.md
+> ```
+> Dies ermöglicht nachfolgenden Prompts den automatischen Zugriff auf deine Analyse.
 
 ---
 
