@@ -92,6 +92,17 @@ Arbeite **jeden** Security-Bug aus dem Prompt-4c-Report ab:
 | 9 | Ungültiges LLM-Response | Parsing-Fehler abfangen | Try/Except + Fallback |
 | 10 | Disk voll | Logging + DB graceful | Prüfe Log-Rotation |
 
+**Compound-Failure-Szenarien** (zusätzlich prüfen — mehrere Services gleichzeitig down):
+
+| # | Szenario | Erwartetes Verhalten | Was prüfen |
+|---|---|---|---|
+| 11 | Ollama + Redis gleichzeitig down | Fehlermeldung, kein Crash, kein Endlos-Retry | Prüfe ob Retry-Logik bei beiden Services unabhängig ist |
+| 12 | HA nicht erreichbar + proaktive Events aktiv | Proactive-Loop stoppt sauber, kein CPU-Spin | Prüfe Reconnect-Loop auf Backoff-Limit |
+| 13 | ChromaDB voll + neue Fakten-Speicherung | Warnung loggen, keine Exception, Daten nicht verloren | Prüfe ob store_fact() Fehler abfängt |
+| 14 | Redis + ChromaDB gleichzeitig down | Degraded Mode, Chat funktioniert (ohne Memory) | Prüfe ob brain.process() ohne Memory weiterläuft |
+
+> **Compound-Failures sind realistisch** — z.B. bei Docker-Restart laufen Redis und ChromaDB gleichzeitig nicht. Der Assistant muss das überleben.
+
 **Prüfe und integriere bestehende Resilience-Module:**
 ```
 Grep: pattern="circuit_breaker|CircuitBreaker" path="assistant/assistant/" output_mode="content"
